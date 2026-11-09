@@ -5,7 +5,7 @@
  * this file is what changes.
  */
 import type { DocumentDraftHint } from "@meridian/contracts/branches";
-import type { AiDraftLaunchTarget } from "@/features/project/dock/editor-review-handoff";
+import type { AiDraftLaunchTarget } from "@/features/project/review-launch";
 import type { ContextUri } from "@/lib/context-uri";
 
 /** The hints the view is not already working in: its own Work's draft has the existing chip. */

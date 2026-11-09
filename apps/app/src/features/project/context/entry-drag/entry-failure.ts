@@ -14,7 +14,6 @@ import {
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
 import { getContextTabs } from "@/client/stores";
 import { notifyFailure } from "@/components/app/failure-toast";
-import { useDockDocumentStore } from "../../dock/dock-document-store";
 import type { RemovedNoticeStore } from "../removed-notice-store";
 import { copyFailures, copyFailureTitle } from "./copy-refusal";
 import type { EntryRef } from "./entry";
@@ -175,17 +174,12 @@ export async function runCopy(
     });
 }
 
-/** The documents on the writer's own tabs and dock that deleting `entry` takes away. */
+/** The documents on the writer's own tabs that deleting `entry` takes away. */
 async function ownRemovals(context: EntryContext, entry: EntryRef): Promise<string[]> {
   if (entry.kind === "file") return [entry.id];
   const { projectId } = context;
   const view = await currentView(context);
-  const dock = useDockDocumentStore.getState().occupant;
-  const presented = [
-    ...getContextTabs(projectId).tabs,
-    ...(dock?.projectId === projectId ? [dock.tab] : []),
-  ];
-  return presented.flatMap((tab) =>
+  return getContextTabs(projectId).tabs.flatMap((tab) =>
     tab.kind !== "new" &&
     within(view, parentOf(view, { kind: "file", id: tab.documentId }), entry.id)
       ? [tab.documentId]

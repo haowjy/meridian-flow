@@ -12,7 +12,7 @@ import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
 import { DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { PassageNotice } from "@/features/editor/PassageNotice";
-import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
+import { useAiDraftLauncher } from "../review-launch";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { DocumentProperties } from "./DocumentProperties";
 

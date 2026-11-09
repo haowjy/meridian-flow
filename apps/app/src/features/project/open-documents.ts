@@ -1,42 +1,61 @@
 /**
  * The open-document interface the v1 shell codes against (work/ux-overhaul/plan/open-document-interface.md).
  *
- * An adapter over today's tab store and routes: `tab`, `key`, `selected`, `review`, `outOfScope`,
- * `hasDraftInScope`, `select`, `open` and `close` are derived from them. `preview` and `view` live
- * only in `useAdapterState` below. PR 2a replaces the internals; the names stay.
+ * The tab store is the one owner of the open document: the tabs, one selection per project, and
+ * each tab's view, preview mark and review pin. This file reads them, resolves what a tab paints
+ * (`showing`, `review`) from the tab, the Work scope and the scope's draft list, and offers the
+ * commands. The route no longer decides what is shown: an address arriving is an open or select
+ * command, and in Write the URL follows the selection.
  */
-import { useMemo } from "react";
-import { create } from "zustand";
-import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import { useQueries, useQuery } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
+import { projectReadEnabled } from "@/client/creation/project-read-gate";
+import { unwrapListQuery } from "@/client/query/list-query";
+import { workBranchDraftsQueryOptions } from "@/client/query/useWorkBranchDrafts";
 import {
   type ContextTab,
+  DEFAULT_TAB_VIEW,
   getContextTabs,
   isDraftOnly,
   isEditorContextTab,
   reviewEntriesOf,
   reviewEntryOf,
+  selectedTabOf,
+  type TabView,
+  tabKey,
   useContextTabs,
+  useContextTabsStore,
+  useSelectedContextTab,
 } from "@/client/stores";
 import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 import { useContextRemovalProject } from "@/features/project/context/use-context-removal-project";
 import { settleWriterClose } from "@/features/project/context/use-follow-open-document-placement";
 import type { ReviewAddress } from "@/features/project/presented-document";
-import { useOpenContextRoute } from "@/features/project/routing/ProjectNavigationContext";
+import {
+  useOpenContextRoute,
+  useProjectScreen,
+} from "@/features/project/routing/ProjectNavigationContext";
 import { openDocumentInEditor } from "@/features/project/routing/use-open-document-in-editor";
 
-/** Which version of the document a tab paints. Per tab; a Work switch keeps it. */
-export type TabView = {
-  version: "draft" | "live";
-  showChanges: boolean;
-};
+export { type TabView, useSelectedDocumentId } from "@/client/stores";
 
 export type OpenDocumentTab = {
+  /** Stable: `tabInstanceId ?? documentId`. */
   key: string;
   tab: ContextTab;
+  /** The one peek slot; italics. */
   preview: boolean;
+  /** The review this tab paints, derived from its view, the Work scope and an optional pin. */
   review: ReviewAddress | null;
+  /** What the tab paints once resolved. `pending` is a paint hold: never Live first. */
+  showing: "pending" | "draft" | "live" | "as-of";
+  /** Whether the address that opened the tab has a document to show. */
+  address: { state: "ready" } | { state: "opening" | "not-found" | "removed" };
+  /** Belongs to another Work: mark it, offer "Show <Work>". */
   outOfScope: { workId: string } | null;
+  /** The scoped Work has a draft of this document (the tab's dot). */
   hasDraftInScope: boolean;
   view: TabView;
 };
@@ -45,17 +64,135 @@ export type OpenTarget =
   | { kind: "document"; documentId: string; review?: ReviewAddress }
   | { kind: "tab"; tab: ContextTab; review?: ReviewAddress };
 
-const DEFAULT_VIEW: TabView = { version: "draft", showChanges: true };
+type DraftRows = { status: "loading" | "ready"; rows: readonly ThreadDraftListItem[] };
 
-/** Adapter-only state: no counterpart in today's store, lost on reload. */
-const useAdapterState = create<{
-  /** The one preview tab per project, by document id (the key is unknown until the tab installs). */
-  previewDocumentByProject: Record<string, string | undefined>;
-  viewByKey: Record<string, TabView>;
-}>(() => ({ previewDocumentByProject: {}, viewByKey: {} }));
+const NO_ROWS: readonly ThreadDraftListItem[] = [];
+const READY_EMPTY: DraftRows = { status: "ready", rows: NO_ROWS };
 
-function tabKey(tab: ContextTab): string {
-  return tab.tabInstanceId ?? tab.documentId;
+/** A Work's draft list as the tabs read it: raw rows, no catalog labelling. */
+function useScopeDraftRows(projectId: string, workId: string | null): DraftRows {
+  const list = unwrapListQuery(
+    useQuery({
+      ...workBranchDraftsQueryOptions(projectId, workId ?? ""),
+      enabled: projectReadEnabled(workId !== null),
+    }),
+  );
+  return useMemo(
+    () =>
+      workId === null || list.status === "disabled" || list.status === "error"
+        ? READY_EMPTY
+        : list.data === null
+          ? { status: "loading", rows: NO_ROWS }
+          : { status: "ready", rows: list.data },
+    [workId, list.status, list.data],
+  );
+}
+
+/** The lists of the other Works that tabs pin reviews to. */
+function usePinnedDraftRows(
+  projectId: string,
+  workIds: readonly string[],
+): ReadonlyMap<string, DraftRows> {
+  return useQueries({
+    queries: workIds.map((workId) => ({
+      ...workBranchDraftsQueryOptions(projectId, workId),
+      enabled: projectReadEnabled(true),
+    })),
+    combine: (results) =>
+      new Map(
+        results.map((result, index): [string, DraftRows] => [
+          workIds[index] as string,
+          result.data === undefined
+            ? result.isError
+              ? READY_EMPTY
+              : { status: "loading", rows: NO_ROWS }
+            : { status: "ready", rows: result.data },
+        ]),
+      ),
+  });
+}
+
+/**
+ * What a tab paints (shell-data-flow §3.2). `pinned` holds the lists of the Works that pins name
+ * besides the scope.
+ */
+export function resolveTab(
+  tab: ContextTab,
+  scope: { workId: string | null; drafts: DraftRows },
+  pinned: ReadonlyMap<string, DraftRows>,
+): Pick<OpenDocumentTab, "review" | "showing" | "outOfScope" | "hasDraftInScope" | "view"> {
+  const view = tab.view ?? DEFAULT_TAB_VIEW;
+  const scopeRow = scope.drafts.rows.find((row) => row.documentId === tab.documentId);
+  const entries = reviewEntriesOf(tab);
+  const heldBy = Object.keys(entries)[0];
+  const draftOnly = isDraftOnly(tab);
+  const ownEntry = scope.workId ? reviewEntryOf(tab, scope.workId) : undefined;
+  const ownerWorkId = tab.kind === "new" ? undefined : tab.workId;
+  const foreign =
+    draftOnly && !ownEntry
+      ? heldBy
+      : ownerWorkId && ownerWorkId !== scope.workId
+        ? ownerWorkId
+        : undefined;
+  const base = {
+    view,
+    outOfScope: foreign ? { workId: foreign } : null,
+    hasDraftInScope: Boolean(scopeRow) || Boolean(ownEntry),
+  };
+  const drafted = (review: ReviewAddress) => ({
+    ...base,
+    review,
+    showing: "draft" as const,
+  });
+
+  const pin = tab.reviewPin;
+  if (pin) {
+    const list = pin.workId === scope.workId ? scope.drafts : pinned.get(pin.workId);
+    if (!list || list.status === "loading") return { ...base, review: null, showing: "pending" };
+    if (list.rows.some((row) => row.itemKey === pin.itemKey)) return drafted(pin);
+  }
+  if (draftOnly) {
+    const workId = ownEntry && scope.workId ? scope.workId : heldBy;
+    const entry = workId ? entries[workId] : undefined;
+    return entry && workId
+      ? drafted({ workId, itemKey: entry.itemKey })
+      : { ...base, review: null, showing: "live" };
+  }
+  if (view.version === "draft" && scope.workId) {
+    if (scope.drafts.status === "loading") return { ...base, review: null, showing: "pending" };
+    if (scopeRow) return drafted({ workId: scope.workId, itemKey: scopeRow.itemKey });
+  }
+  return { ...base, review: null, showing: "live" };
+}
+
+function useResolveScope(projectId: string) {
+  const { activeWorkId } = useContextRemovalProject(projectId);
+  const drafts = useScopeDraftRows(projectId, activeWorkId);
+  return useMemo(() => ({ workId: activeWorkId, drafts }), [activeWorkId, drafts]);
+}
+
+function pinWorkIds(tabs: readonly ContextTab[], scopeWorkId: string | null): string[] {
+  return [
+    ...new Set(
+      tabs.flatMap((tab) =>
+        tab.reviewPin && tab.reviewPin.workId !== scopeWorkId ? [tab.reviewPin.workId] : [],
+      ),
+    ),
+  ];
+}
+
+function openDocumentTab(
+  tab: ContextTab,
+  scope: ReturnType<typeof useResolveScope>,
+  pinned: ReadonlyMap<string, DraftRows>,
+): OpenDocumentTab {
+  return {
+    key: tabKey(tab),
+    tab,
+    preview: tab.preview === true,
+    address: { state: "ready" },
+    ...resolveTab(tab, scope, pinned),
+  };
 }
 
 export function useOpenDocuments(projectId: string): {
@@ -63,40 +200,22 @@ export function useOpenDocuments(projectId: string): {
   selected: OpenDocumentTab | null;
 } {
   const slice = useContextTabs(projectId);
-  const { activeWorkId } = useContextRemovalProject(projectId);
-  const drafts = useWorkBranchDrafts(projectId, activeWorkId);
-  const previewDocumentId = useAdapterState((s) => s.previewDocumentByProject[projectId]);
-  const viewByKey = useAdapterState((s) => s.viewByKey);
-
+  const scope = useResolveScope(projectId);
+  const pinned = usePinnedDraftRows(projectId, pinWorkIds(slice.tabs, scope.workId));
   return useMemo(() => {
-    const tabs = slice.tabs.filter(isEditorContextTab).map((tab): OpenDocumentTab => {
-      const key = tabKey(tab);
-      const entry = activeWorkId ? reviewEntryOf(tab, activeWorkId) : undefined;
-      const heldBy = Object.keys(reviewEntriesOf(tab))[0];
-      // Another Work's scratch, or a draft-only tab none of whose entries is the scoped Work's.
-      const ownerWorkId = tab.kind === "new" ? undefined : tab.workId;
-      const foreign =
-        isDraftOnly(tab) && !entry
-          ? heldBy
-          : ownerWorkId && ownerWorkId !== activeWorkId
-            ? ownerWorkId
-            : undefined;
-      return {
-        key,
-        tab,
-        preview: tab.documentId === previewDocumentId,
-        review: entry && activeWorkId ? { workId: activeWorkId, itemKey: entry.itemKey } : null,
-        outOfScope: foreign ? { workId: foreign } : null,
-        hasDraftInScope: drafts.fileForDocument(tab.documentId)?.draft.hasDraft === true,
-        view: viewByKey[key] ?? DEFAULT_VIEW,
-      };
-    });
-    const selectedDocumentId = activeWorkId ? slice.selectedTabIdByWork[activeWorkId] : undefined;
-    return {
-      tabs,
-      selected: tabs.find((t) => t.tab.documentId === selectedDocumentId) ?? null,
-    };
-  }, [slice, activeWorkId, drafts.fileForDocument, previewDocumentId, viewByKey]);
+    const tabs = slice.tabs
+      .filter(isEditorContextTab)
+      .map((tab) => openDocumentTab(tab, scope, pinned));
+    return { tabs, selected: tabs.find((t) => t.key === slice.selectedTabKey) ?? null };
+  }, [slice, scope, pinned]);
+}
+
+/** The selected tab only: the document surface re-renders for its tab, not for the strip. */
+export function useSelectedOpenDocument(projectId: string): OpenDocumentTab | null {
+  const tab = useSelectedContextTab(projectId);
+  const scope = useResolveScope(projectId);
+  const pinned = usePinnedDraftRows(projectId, tab ? pinWorkIds([tab], scope.workId) : []);
+  return useMemo(() => (tab ? openDocumentTab(tab, scope, pinned) : null), [tab, scope, pinned]);
 }
 
 export function useOpenDocumentActions(projectId: string): {
@@ -107,104 +226,110 @@ export function useOpenDocumentActions(projectId: string): {
   close(key: string): void;
   setView(key: string, view: Partial<TabView>): void;
 } {
+  const screen = useProjectScreen();
   const openRoute = useOpenContextRoute();
-  const openDocument = useOpenProjectDocument(projectId);
+  const openChatDocument = useOpenChatDocument(projectId);
   const coordinator = useContextRemovalCoordinator();
   const { activeWorkId } = useContextRemovalProject(projectId);
 
+  const writing = screen === "context";
+
+  const reviewOf = (tab: ContextTab, review?: ReviewAddress | null): ReviewAddress | null => {
+    if (review) return review;
+    const entries = reviewEntriesOf(tab);
+    const workId = activeWorkId && entries[activeWorkId] ? activeWorkId : Object.keys(entries)[0];
+    return workId ? { workId, itemKey: entries[workId].itemKey } : null;
+  };
+
+  /** Write: one route command installs the tab, selects it and writes the URL. */
+  const openInWrite = useCallback(
+    async (tab: ContextTab, review: ReviewAddress | null) => {
+      if (!openRoute) return;
+      if (tab.kind === "new" || tab.rootThreadId || review) {
+        await openDocumentInEditor(openRoute, tab, { review });
+        return;
+      }
+      await openRoute(
+        {
+          scheme: tab.scheme,
+          path: tab.path,
+          workId: tab.workId ?? activeWorkId ?? undefined,
+          documentId: tab.documentId,
+        },
+        { tab },
+      );
+    },
+    [openRoute, activeWorkId],
+  );
+
   return useMemo(() => {
+    const store = () => useContextTabsStore.getState();
     const findTab = (key: string) => getContextTabs(projectId).tabs.find((t) => tabKey(t) === key);
+    const findByDocument = (documentId: string) =>
+      getContextTabs(projectId).tabs.find((t) => t.documentId === documentId);
 
     const close = (key: string) => {
       const tab = findTab(key);
-      if (!tab) return;
-      settleWriterClose(coordinator.writerClose(projectId, tab));
+      if (tab) settleWriterClose(coordinator.writerClose(projectId, tab));
     };
 
-    /** The strip's click path (`handleSelectTab`), aimed at the Work the tab belongs to. */
-    const openStored = async (tab: ContextTab, review?: ReviewAddress | null) => {
-      if (!openRoute) return;
-      const entries = reviewEntriesOf(tab);
-      const reviewWorkId =
-        activeWorkId && entries[activeWorkId] ? activeWorkId : Object.keys(entries)[0];
-      const reviewed =
-        review ??
-        (reviewWorkId ? { workId: reviewWorkId, itemKey: entries[reviewWorkId].itemKey } : null);
-      if (tab.kind === "new" || tab.rootThreadId || reviewed) {
-        await openDocumentInEditor(openRoute, tab, { review: reviewed });
-        return;
-      }
-      const workId = tab.workId ?? activeWorkId ?? undefined;
-      await openRoute(
-        { scheme: tab.scheme, path: tab.path, workId, documentId: tab.documentId },
-        { tab },
-      );
+    /** The pin an explicit review address sets, once the tab exists. */
+    const pinReview = (documentId: string, review: ReviewAddress | undefined) => {
+      const tab = findByDocument(documentId);
+      if (tab && review)
+        store().setTabState(projectId, tabKey(tab), {
+          reviewPin: review,
+          view: { version: "draft" },
+        });
     };
 
     const open = async (target: OpenTarget): Promise<ContextTab | undefined> => {
       const documentId = target.kind === "document" ? target.documentId : target.tab.documentId;
-      const existing = getContextTabs(projectId).tabs.find((t) => t.documentId === documentId);
+      const existing = findByDocument(documentId);
       const stored = existing ?? (target.kind === "tab" ? target.tab : undefined);
-      if (target.kind === "tab" && !existing) {
-        if (openRoute) await openDocumentInEditor(openRoute, target.tab, { review: target.review });
+      if (writing) {
+        if (stored) await openInWrite(stored, reviewOf(stored, target.review));
+        else await openChatDocument({ documentId, workId: activeWorkId ?? undefined });
+      } else if (existing) {
+        await store().selectTab(projectId, documentId, existing);
       } else if (stored) {
-        await openStored(stored, target.review);
+        store().openTab(projectId, stored, undefined, undefined, { select: true });
       } else {
-        await openDocument({ documentId, workId: activeWorkId ?? undefined });
+        // Beside the chat: the door's placement commits the tab into the store and selects it.
+        await openChatDocument({ documentId, workId: activeWorkId ?? undefined, keep: true });
       }
-      return getContextTabs(projectId).tabs.find((t) => t.documentId === documentId);
+      pinReview(documentId, target.review);
+      return findByDocument(documentId);
     };
-
-    const setPreview = (documentId: string | undefined) =>
-      useAdapterState.setState((s) => ({
-        previewDocumentByProject: { ...s.previewDocumentByProject, [projectId]: documentId },
-      }));
 
     return {
       select: (key) => {
         const tab = findTab(key);
-        if (tab) void openStored(tab);
+        if (!tab) return;
+        if (writing) void openInWrite(tab, reviewOf(tab));
+        else void store().selectTab(projectId, tab.documentId, tab);
       },
-      open: (target) => {
-        void open(target);
-      },
-      // A normal tab that replaces the previous preview tab; a document already open stays as it is.
+      open: (target) => void open(target),
+      // A new peek takes the preview slot and the previous peek closes; a document already open
+      // stays as it is and is only selected, so peeking never replaces the tab being worked in.
       openPreview: (target) => {
         const documentId = target.kind === "document" ? target.documentId : target.tab.documentId;
-        const previous = useAdapterState.getState().previewDocumentByProject[projectId];
-        const alreadyOpen = getContextTabs(projectId).tabs.some((t) => t.documentId === documentId);
+        const previous = getContextTabs(projectId).tabs.find((t) => t.preview);
+        const wasOpen = findByDocument(documentId) !== undefined;
         void open(target).then((tab) => {
-          if (!tab) return;
-          if (alreadyOpen && previous !== documentId) return;
-          setPreview(documentId);
-          const stale =
-            previous && previous !== documentId
-              ? getContextTabs(projectId).tabs.find((t) => t.documentId === previous)
-              : undefined;
-          if (stale) close(tabKey(stale));
+          if (!tab || wasOpen) return;
+          store().setTabState(projectId, tabKey(tab), { preview: true });
+          if (previous && previous.documentId !== tab.documentId) close(tabKey(previous));
         });
       },
-      keep: (key) => {
-        const tab = findTab(key);
-        if (
-          tab &&
-          useAdapterState.getState().previewDocumentByProject[projectId] === tab.documentId
-        )
-          setPreview(undefined);
-      },
-      close: (key) => {
-        const tab = findTab(key);
-        if (
-          tab &&
-          useAdapterState.getState().previewDocumentByProject[projectId] === tab.documentId
-        )
-          setPreview(undefined);
-        close(key);
-      },
-      setView: (key, view) =>
-        useAdapterState.setState((s) => ({
-          viewByKey: { ...s.viewByKey, [key]: { ...(s.viewByKey[key] ?? DEFAULT_VIEW), ...view } },
-        })),
+      keep: (key) => store().setTabState(projectId, key, { preview: false }),
+      close,
+      setView: (key, view) => store().setTabState(projectId, key, { view }),
     };
-  }, [projectId, openRoute, openDocument, coordinator, activeWorkId]);
+  }, [projectId, coordinator, writing, openInWrite, openChatDocument, activeWorkId]);
+}
+
+/** The selected tab record, for readers that need the stored tab rather than its resolution. */
+export function getSelectedContextTab(projectId: string): ContextTab | null {
+  return selectedTabOf(getContextTabs(projectId));
 }

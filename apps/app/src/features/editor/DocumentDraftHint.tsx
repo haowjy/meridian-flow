@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { tabLocation } from "@/features/project/context/identity-location";
-import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
+import { useAiDraftLauncher } from "@/features/project/review-launch";
 import { cn } from "@/lib/utils";
 import { branchesOtherThanViews, hintReviewTarget } from "./draft-hint-review";
 

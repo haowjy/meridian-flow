@@ -18,6 +18,8 @@ import {
   type ReviewEntries,
   reviewEntryOf,
   type ServerContextTab,
+  selectedDocumentIdOf,
+  selectingDocument,
 } from "@/client/stores";
 import {
   type ReconcileContextRoutesInput,
@@ -102,7 +104,7 @@ type EditorWorkspacePort = {
     projectId: string,
     input: {
       documentIds: readonly string[];
-      workspaceSelection?: { workId: string; documentId: string | null };
+      workspaceSelection?: { documentId: string | null };
       dropReviewOf?: string;
     },
   ): ContextTab[];
@@ -421,7 +423,7 @@ export class ContextRemovalCoordinator {
       selection.locator.scheme !== "unfiled" ||
       selection.locator.path !== "" ||
       selection.locator.workId !== workId ||
-      this.workspace.read(projectId).selectedTabIdByWork[workId] !== documentId ||
+      selectedDocumentIdOf(this.workspace.read(projectId)) !== documentId ||
       tab?.kind !== "tracked" ||
       tab.origin !== "local-resource" ||
       !targetInEditorOf(routeTargetForTab(tab, workId), workId) ||
@@ -447,7 +449,7 @@ export class ContextRemovalCoordinator {
       const current = this.project(projectId);
       return current.selection.status !== "none" &&
         current.selection.revision === selectionRevision &&
-        this.workspace.read(projectId).selectedTabIdByWork[workId] === documentId
+        selectedDocumentIdOf(this.workspace.read(projectId)) === documentId
         ? applyContextRepairIfCurrent(repair, latest)
         : latest;
     });
@@ -657,7 +659,10 @@ export class ContextRemovalCoordinator {
 
       const workspaceSettlement = this.workspace.applyAvailability(projectId, priorWorkspace, {
         tabs: [...plan.tabs],
-        selectedTabIdByWork: { ...plan.selectedTabIdByWork },
+        selectedTabKey: selectingDocument(
+          { tabs: [...plan.tabs], selectedTabKey: null },
+          plan.selectedDocumentId,
+        ).selectedTabKey,
       });
       const settledPlan = plan;
       const settleLocal = () => {
@@ -859,9 +864,7 @@ export class ContextRemovalCoordinator {
     const plan = planContextRemoval({
       activeWorkId: state.activeWorkId,
       tabs: slice.tabs,
-      selectedTabId: state.activeWorkId
-        ? (slice.selectedTabIdByWork[state.activeWorkId] ?? null)
-        : null,
+      selectedTabId: state.activeWorkId ? selectedDocumentIdOf(slice) : null,
       admitted: state.admitted,
       route: { cleanup: transition.planning.cleanup, current: transition.planning.current },
       intent: transition.planning.intent,
@@ -965,8 +968,7 @@ export class ContextRemovalCoordinator {
     );
     const recentRoutes = this.workingSet.readRecentRoutes(projectId);
     const remainingTabs = tabs.filter((tab) => !documentIds.includes(tab.documentId));
-    const targetSelection =
-      this.workspace.read(projectId).selectedTabIdByWork[activeWorkId] ?? null;
+    const targetSelection = selectedDocumentIdOf(this.workspace.read(projectId));
     const fallback = chooseAdmittedFallback({
       activeWorkId,
       tabs: remainingTabs,
@@ -1004,17 +1006,6 @@ export class ContextRemovalCoordinator {
           ? selectedTab
           : null;
       const fallbackTab = fallback ? tabForTarget(remainingTabs, fallback, activeWorkId) : null;
-      this.workspace.commit(projectId, {
-        documentIds: [],
-        ...(activeWorkId
-          ? {
-              workspaceSelection: {
-                workId: activeWorkId,
-                documentId: compatibleSelected?.documentId ?? fallbackTab?.documentId ?? null,
-              },
-            }
-          : {}),
-      });
       const promotedRoute = fallbackTab ? workingSetRouteForTab(fallbackTab) : null;
       this.workingSet.reconcileContextRoutes(projectId, {
         removedLocators: obsoleteRoutes,
@@ -1195,12 +1186,7 @@ export class ContextRemovalCoordinator {
       documentIds: plan.outcome.removed.map((tab) => tab.documentId),
       ...(intent.reviewWorkId ? { dropReviewOf: intent.reviewWorkId } : {}),
       ...(state.activeWorkId
-        ? {
-            workspaceSelection: {
-              workId: state.activeWorkId,
-              documentId: plan.nextSelectedTabId,
-            },
-          }
+        ? { workspaceSelection: { documentId: plan.nextSelectedTabId } }
         : {}),
     });
     this.workingSet.reconcileContextRoutes(projectId, {
@@ -1319,9 +1305,7 @@ export class ContextRemovalCoordinator {
       rejected: rejection.locator,
       activeWorkId: state.activeWorkId,
       tabs: slice.tabs,
-      selectedTabId: state.activeWorkId
-        ? (slice.selectedTabIdByWork[state.activeWorkId] ?? null)
-        : null,
+      selectedTabId: state.activeWorkId ? selectedDocumentIdOf(slice) : null,
       admitted: state.admitted,
       recentRoutes: this.workingSet.readRecentRoutes(projectId),
     });
@@ -1329,10 +1313,7 @@ export class ContextRemovalCoordinator {
       if (state.activeWorkId) {
         this.workspace.commit(projectId, {
           documentIds: [],
-          workspaceSelection: {
-            workId: state.activeWorkId,
-            documentId: plan.workspaceSelection.documentId,
-          },
+          workspaceSelection: { documentId: plan.workspaceSelection.documentId },
         });
       }
     }
@@ -1403,7 +1384,7 @@ export class ContextRemovalCoordinator {
 }
 
 function selectedTabIdFor(slice: ProjectTabsSlice, workId: string | null): string | null {
-  return workId ? (slice.selectedTabIdByWork[workId] ?? null) : null;
+  return workId ? selectedDocumentIdOf(slice) : null;
 }
 
 function locatorKey(locator: ContextRouteTarget): string {

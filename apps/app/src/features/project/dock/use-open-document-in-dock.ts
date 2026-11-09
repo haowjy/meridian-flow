@@ -1,8 +1,6 @@
 /**
- * Opens a known file from Work Files or the dock's own title menu: in the dock
- * where it holds a document (Chat and Work), and in the Editor where it does not
- * (the Editor screen, which opens tabs, and the phone, whose documents open
- * full-screen). See `use-dock-placement` for the placement rules.
+ * Opens a known file from the dock's own title menu or a path pick: beside the chat where the
+ * dock holds a document (wide Chat), and in the Editor where it does not (see `use-dock-placement`).
  */
 import { useCallback } from "react";
 import type { ServerContextTab } from "@/client/stores";
@@ -14,7 +12,7 @@ export function useOpenDocumentInDock() {
   const openContextRoute = useOpenContextRoute();
   return useCallback(
     (tab: ServerContextTab) => {
-      if (placement.holdsDocument) {
+      if (placement.besideChat) {
         placement.commit(tab);
         return;
       }

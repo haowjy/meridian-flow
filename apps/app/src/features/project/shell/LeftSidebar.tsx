@@ -12,10 +12,11 @@ import { Trash2 } from "lucide-react";
 import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
+import { useSelectedContextTab } from "@/client/stores";
+import { useAccountResourceProjection } from "../context/account-feature-context";
 import { UserRailSection } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import { useDockDocument } from "../dock/dock-document-store";
-import { useDockDocumentTab } from "../dock/use-dock-document-tab";
+import { projectResourceTab } from "../context/context-tab-from-file";
 import { modeOf } from "../layout/placement";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useProjectTrashNavigation, useScreenCommands } from "../routing/ProjectNavigationContext";
@@ -83,9 +84,20 @@ export function LeftSidebar({
     });
   };
   // On the Chat screen the row to highlight is the document open in the dock.
-  const dockDocument = useDockDocument(activeScreen, projectId);
-  const projectedDock = useDockDocumentTab(projectId, dockDocument);
-  const docked = activeScreen === "chat" && !projectedDock.gone ? projectedDock.tab : null;
+  const selectedTab = useSelectedContextTab(projectId);
+  const { records, placement } = useAccountResourceProjection(projectId);
+  const projectedSelected = selectedTab
+    ? projectResourceTab(projectId, selectedTab, records, placement)
+    : null;
+  const docked =
+    activeScreen === "chat" &&
+    selectedTab &&
+    projectedSelected?.kind !== "removed" &&
+    projectedSelected?.kind !== "terminal"
+      ? projectedSelected?.kind === "projected"
+        ? projectedSelected.tab
+        : selectedTab
+      : null;
   const treeActiveScheme = docked
     ? docked.kind === "new"
       ? "unfiled"

@@ -7,14 +7,13 @@
  */
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { type ContextTab, getContextTabs } from "@/client/stores";
-import { useDockDocumentStore } from "../dock/dock-document-store";
 import type {
   ProjectContextAvailabilityCoordinator,
   RemovalAnswer,
 } from "./project-context-availability-coordinator";
 
-/** Where a removed document was showing: the Editor's tabs, or the dock beside Chat or Work. */
-export type NoticeSurface = "editor" | "dock";
+/** Where a removed document was showing: the open tabs, in Write's strip or beside the chat. */
+export type NoticeSurface = "editor";
 
 /** A presented document that vanished, as its presenter showed it. */
 export type PresentedRemoval = Readonly<{
@@ -225,7 +224,7 @@ function documentKey(projectId: string, documentId: string): string {
   return JSON.stringify([projectId, documentId]);
 }
 
-/** Where this browser tab presents a document: its Editor tabs, the dock, both or neither. */
+/** Where this browser tab presents a document: its tabs, or nowhere. */
 function presentingSurfaces(projectId: string, documentId: string): Set<NoticeSurface> {
   const surfaces = new Set<NoticeSurface>();
   if (
@@ -234,12 +233,5 @@ function presentingSurfaces(projectId: string, documentId: string): Set<NoticeSu
     )
   )
     surfaces.add("editor");
-  const occupant = useDockDocumentStore.getState().occupant;
-  if (
-    occupant?.projectId === projectId &&
-    occupant.tab.kind !== "new" &&
-    occupant.tab.documentId === documentId
-  )
-    surfaces.add("dock");
   return surfaces;
 }

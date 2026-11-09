@@ -16,14 +16,9 @@ import {
   usePresentedDraftReview,
 } from "@/features/draft-review/DraftReviewProvider";
 import { DocumentIdentityBar } from "../context/DocumentIdentityBar";
+import { type OpenDocumentTab, useOpenDocumentActions } from "../open-documents";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
-import {
-  DockDocumentCommands,
-  DockViewFailureNote,
-  useDockViewFailed,
-} from "./DockDocumentCommands";
-import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
-import { ReviewLaunchContext, useDockReviewLauncher } from "./useAiDraftLauncher";
+import { DockDocumentCommands } from "./DockDocumentCommands";
 
 const noopCommitted = () => undefined;
 
@@ -33,17 +28,14 @@ export function DockDocumentIdentity({
   trailing,
 }: {
   projectId: string;
-  document: DockDocument;
+  document: OpenDocumentTab;
   trailing: ReactNode;
 }) {
   const review = usePresentedDraftReview();
-  const launch = useDockReviewLauncher(projectId, dockDocument);
   return (
-    <ReviewLaunchContext.Provider value={launch}>
-      <DraftReviewBoundary value={review}>
-        <DockIdentityBody projectId={projectId} document={dockDocument} trailing={trailing} />
-      </DraftReviewBoundary>
-    </ReviewLaunchContext.Provider>
+    <DraftReviewBoundary value={review}>
+      <DockIdentityBody projectId={projectId} document={dockDocument} trailing={trailing} />
+    </DraftReviewBoundary>
   );
 }
 
@@ -53,39 +45,27 @@ function DockIdentityBody({
   trailing,
 }: {
   projectId: string;
-  document: DockDocument;
+  document: OpenDocumentTab;
   trailing: ReactNode;
 }) {
   const tab = dockDocument.tab;
-  const closeDocument = useDockDocumentStore((state) => state.closeDocument);
+  const { close } = useOpenDocumentActions(projectId);
   const openInEditor = useOpenDocumentInEditor();
   const archivedWork = useDockArchivedWork(projectId, tab);
-  const failed = useDockViewFailed();
   return (
     <DocumentIdentityBar
       key={tab.documentId}
       variant="header"
-      leading={<DockDocumentCommands document={dockDocument} failed={failed} />}
-      notice={failed ? <DockViewFailureNote /> : null}
+      leading={<DockDocumentCommands projectId={projectId} document={dockDocument} />}
       trailing={trailing}
       projectId={projectId}
       editorWorkId={tab.kind === "new" ? null : (tab.workId ?? null)}
       tab={tab}
       readOnly={Boolean(archivedWork)}
-      onCloseDraftOnly={isDraftOnly(tab) ? closeDocument : undefined}
+      onCloseDraftOnly={isDraftOnly(tab) ? () => close(dockDocument.key) : undefined}
       // The dock follows a rename through the resource projection; it keeps no tab to patch.
       onCommitted={noopCommitted}
-      onOpenExisting={(scheme, path, owner) => {
-        const claim = useDockDocumentStore.getState().claim();
-        openInEditor(
-          { scheme, path, ...owner },
-          {
-            afterCommit: () => {
-              if (useDockDocumentStore.getState().isCurrent(claim)) closeDocument();
-            },
-          },
-        );
-      }}
+      onOpenExisting={(scheme, path, owner) => openInEditor({ scheme, path, ...owner })}
     />
   );
 }

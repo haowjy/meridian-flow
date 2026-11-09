@@ -11,7 +11,7 @@
  */
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
-import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
+import { useAiDraftLauncher } from "@/features/project/review-launch";
 
 export type DraftReviewChipProps = {
   documentId: string;

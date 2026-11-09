@@ -9,6 +9,7 @@ import {
   matchesReviewItem,
   matchesTabInstance,
   reviewEntryOf,
+  selectedDocumentIdOf,
   useContextTabsStore,
 } from "@/client/stores";
 import { armEditorFocus } from "@/features/editor/focus-on-open";
@@ -129,14 +130,7 @@ export function createEditorDocumentCommand({
         if (selected && resolvedWorkId)
           void useContextTabsStore
             .getState()
-            .selectTab(
-              projectId,
-              selected.kind !== "new" && isWorkScopedScheme(selected.scheme)
-                ? routeTargetForTab(selected, resolvedWorkId).workId
-                : resolvedWorkId,
-              selected.documentId,
-              selected,
-            );
+            .selectTab(projectId, selected.documentId, selected);
         // The writer opened this document: the route is its own from the first frame, whatever
         // another document holds at its cached path. A pasted or reloaded URL names none.
         if (target.documentId && target.path && resolvedWorkId && !next.state)
@@ -220,7 +214,7 @@ export function prepareEditorDestination(
   const documentId =
     target.documentId ??
     (target.path === "" && resolvedWorkId
-      ? workspace.selectedTabIdByWork[resolvedWorkId]
+      ? (selectedDocumentIdOf(workspace) ?? undefined)
       : undefined);
   const eligible = editorTabsForWork(workspace.tabs, resolvedWorkId ?? null);
   const addressedDraft =

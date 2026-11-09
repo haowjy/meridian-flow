@@ -19,7 +19,7 @@ import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { cn } from "@/lib/utils";
-import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
+import { useAiDraftLauncher } from "../review-launch";
 import { useAccountResourceProjection } from "./account-feature-context";
 import { schemeLabel } from "./context-schemes";
 import { DocumentPath } from "./DocumentPath";

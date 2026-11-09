@@ -36,8 +36,8 @@ import {
 } from "@/lib/context-uri";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { BesideChatContext, useOpenChatDocument } from "../context/open-chat-document";
-import { useDockDocumentStore } from "../dock/dock-document-store";
-import { useReviewingLinkDestination } from "../dock/useAiDraftLauncher";
+import { claimOpenIntent, isCurrentOpenIntent } from "../context/open-intent";
+import { useReviewingLinkDestination } from "../review-launch";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { canonicalDoorUri } from "./canonical-door-uri";
 import { usePassageDoors } from "./usePassageDoors";
@@ -121,7 +121,7 @@ export function ProjectChatContextNavigationProvider({
   // could be held by a hidden sibling's review.
   const openLive = useCallback(
     (door: Placement, document: LinkDocumentRef) => {
-      if (door.claim !== null && !useDockDocumentStore.getState().isCurrent(door.claim)) return;
+      if (door.claim !== null && !isCurrentOpenIntent(door.claim)) return;
       if (door.passage) {
         // The passage door opens the document itself, once, and lands on the passage.
         passages.land(door.workId, door.passage, {
@@ -146,7 +146,7 @@ export function ProjectChatContextNavigationProvider({
     (door: Placement, document: LinkDocumentRef, gesture: Parameters<LinkDestination>[1]) => {
       const { review } = document;
       if (!review) return Promise.resolve(openLive(door, document));
-      if (door.claim !== null && !useDockDocumentStore.getState().isCurrent(door.claim))
+      if (door.claim !== null && !isCurrentOpenIntent(door.claim))
         return Promise.resolve();
       if (besideChat && door.claim !== null) {
         const tab = contextTabFromDraftGroup({
@@ -169,7 +169,7 @@ export function ProjectChatContextNavigationProvider({
   // place. A resource door has no route, so it keeps the follower's shared outcome.
   const openMissing = useCallback(
     (door: Placement, target: RouteTarget) => {
-      if (door.claim !== null && !useDockDocumentStore.getState().isCurrent(door.claim)) return;
+      if (door.claim !== null && !isCurrentOpenIntent(door.claim)) return;
       route(target);
     },
     [route],
@@ -203,7 +203,7 @@ export function ProjectChatContextNavigationProvider({
         const door: Placement = {
           workId: null,
           passage,
-          claim: useDockDocumentStore.getState().claim(),
+          claim: claimOpenIntent(),
         };
         return {
           link,
@@ -232,7 +232,7 @@ export function ProjectChatContextNavigationProvider({
         return null;
       }
       // The dock is claimed now, so whatever answers later is inside the claim.
-      const claim = besideChat ? useDockDocumentStore.getState().claim() : null;
+      const claim = besideChat ? claimOpenIntent() : null;
       const door: Placement = { workId: target.workId, passage, claim };
       return {
         link,

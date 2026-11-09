@@ -15,6 +15,7 @@ import {
   isDraftOnly,
   matchesTabInstance,
   replaceOwner,
+  selectedDocumentIdOf,
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
@@ -27,7 +28,7 @@ import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState } from "./context/context-pane-state";
 import { selectionAtRoute } from "./context/context-removal-protocol";
 import { contextTabRouteKey } from "./context/context-tab-identity";
-import type { resolveVisibleEditorTab } from "./context/resolve-visible-editor-tab";
+import type { resolveRouteOwner } from "./context/resolve-route-owner";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
 import {
   settleWriterClose,
@@ -44,7 +45,7 @@ import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
-  resolvedEditor: ReturnType<typeof resolveVisibleEditorTab>;
+  resolvedEditor: ReturnType<typeof resolveRouteOwner>;
   /** Null while the requested Work cannot be shown; the frame keeps its navigation. */
   editorWorkId: string | null;
   /** What masks the document body; the tab strip and the address stay outside it. */
@@ -135,7 +136,7 @@ export function ContextViewerSurfaceController({
     if (workspaceRoute.kind === "owner" && selection.status === "candidate") {
       // A tab found by its cached path paints but proves nothing: the address answer binds.
       if (workspaceRoute.identity.kind === "server")
-        selectTab(projectId, routeWorkId, workspaceRoute.tab.documentId, workspaceRoute.tab);
+        selectTab(projectId, workspaceRoute.tab.documentId, workspaceRoute.tab);
       else
         contextRemoval.bindRouteSelection(
           projectId,
@@ -391,7 +392,7 @@ export function ContextViewerSurfaceController({
           next.routeWorkId === routeWorkId &&
           identityCommitMayNavigate(
             ownership,
-            getContextTabs(projectId).selectedTabIdByWork[routeWorkId],
+            selectedDocumentIdOf(getContextTabs(projectId)) ?? undefined,
             documentId,
           )
         ) {

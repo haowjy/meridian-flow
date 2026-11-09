@@ -58,7 +58,6 @@ import {
   useContextTabsActions,
   useContextTabsStore,
 } from "@/client/stores";
-import { useDockDocumentStore } from "../dock/dock-document-store";
 import {
   type OpenContextRoute,
   useOpenContextRoute,
@@ -713,19 +712,11 @@ export function ProjectDocumentNavigationProvider({
       for (const project of Object.values(useContextTabsStore.getState().byProject)) {
         for (const tab of project.tabs) if (tab.tabInstanceId) active.add(tab.tabInstanceId);
       }
-      const dock = useDockDocumentStore.getState();
-      for (const document of [dock.occupant, dock.restoring]) {
-        if (document?.tab.tabInstanceId) active.add(document.tab.tabInstanceId);
-      }
       opener.pruneTransfers(active);
     };
     const stopTabs = useContextTabsStore.subscribe(prune);
-    const stopDock = useDockDocumentStore.subscribe(prune);
     prune();
-    return () => {
-      stopTabs();
-      stopDock();
-    };
+    return stopTabs;
   }, [opener]);
   const owner = useMemo<ProjectDocumentNavigationOwner>(
     () => ({

@@ -22,7 +22,7 @@ import {
 import { hasTreeLine, reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useBoundWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
-import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
+import { useAiDraftLauncher } from "@/features/project/review-launch";
 import { type DockFile, dockFile, isOnStrip, totalChanges } from "./draft-dock-files";
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;

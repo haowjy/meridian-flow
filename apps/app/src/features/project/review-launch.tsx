@@ -1,4 +1,10 @@
-/** Latest-wins command handoff from any project surface to a review launched in the Editor. */
+/**
+ * The one review-launch path. Every launcher (the composer strip, a change card, a link to a draft,
+ * the Work page, a draft hint, the phone) calls `openAiDraft`; it opens the document's tab, selects
+ * it and pins the review on it (`reviewPin`, `view.version = "draft"`). In Write the route command
+ * does the opening and writes the URL; beside the chat the tab store does. Latest launch wins.
+ * `EditorReviewIntentClaimant` then carries the clicked change's focus to the host that paints it.
+ */
 
 import type { EventRecord } from "@meridian/contracts/observability";
 import {
@@ -10,15 +16,21 @@ import {
   useRef,
   useState,
 } from "react";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import { getContextTabs, tabKey, useContextTabsActions, useContextTabsStore } from "@/client/stores";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
+import type { LinkDestination } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
-import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
-import { type PresentedDocument, usePresentedDocument } from "../presented-document";
-import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
-import { FocusOpenedReview, type ReviewFocusRequest } from "./FocusOpenedReview";
+import { contextTabFromDraftGroup } from "./context/context-tab-from-draft";
+import { BesideChatContext } from "./context/open-chat-document";
+import { claimOpenIntent } from "./context/open-intent";
+import { useProjectDocumentNavigationProjectId } from "./context/open-project-document";
+import { FocusOpenedReview, type ReviewFocusRequest } from "./dock/FocusOpenedReview";
+import { type PresentedDocument, usePresentedDocument } from "./presented-document";
+import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 
 export type AiDraftLaunchTarget = {
   workId: string;
@@ -83,8 +95,18 @@ export function EditorReviewHandoffProvider({
   const latest = useRef<EditorReviewIntent | null>(null);
   const claimed = useRef<number | null>(null);
 
+  const beside = useContext(BesideChatContext);
   const openEditorReview = useCallback<EditorReviewCommand>(
     async (target) => {
+      const tab = contextTabFromDraftGroup(target);
+      // Beside the chat the tab store opens, selects and pins; there is no address to route to.
+      if (beside && tab) {
+        beside(tab, claimOpenIntent(), undefined, {
+          workId: target.workId,
+          itemKey: target.itemKey,
+        });
+        return;
+      }
       const staged = { ...target, sequence: ++sequence.current };
       latest.current = staged;
       claimed.current = null;
@@ -92,8 +114,6 @@ export function EditorReviewHandoffProvider({
       // A matching mounted Editor may claim immediately. This avoids making a
       // same-route review command depend on an unrelated navigation settlement.
       setIntent(staged);
-
-      const tab = contextTabFromDraftGroup(target);
 
       try {
         for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -113,6 +133,14 @@ export function EditorReviewHandoffProvider({
           reportRouteSettlement(projectId, target, result.kind, attempt + 1);
           if (result.kind === "failed") throw result.error;
           if (result.kind === "applied") {
+            const opened = getContextTabs(projectId).tabs.find(
+              (candidate) => candidate.documentId === target.documentId,
+            );
+            if (opened)
+              useContextTabsStore.getState().setTabState(projectId, tabKey(opened), {
+                reviewPin: { workId: target.workId, itemKey: target.itemKey },
+                view: { version: "draft" },
+              });
             if (
               latest.current?.sequence === staged.sequence &&
               claimed.current === staged.sequence
@@ -143,7 +171,7 @@ export function EditorReviewHandoffProvider({
         }
       }
     },
-    [openContextRoute, projectId],
+    [openContextRoute, projectId, beside],
   );
   const claim = useCallback((claimedSequence: number) => {
     if (latest.current?.sequence !== claimedSequence) return;
@@ -169,18 +197,6 @@ export function useOpenEditorReview(): EditorReviewCommand {
 /** For a surface that only sometimes launches a review (a link to a draft), and may mount without an owner. */
 export function useOptionalOpenEditorReview(): EditorReviewCommand | null {
   return useContext(EditorReviewCommandContext);
-}
-
-/**
- * Draft currently crossing the route-to-Editor handoff, if any: its route
- * command is running, or its launch is waiting for the Editor to claim it (the
- * route can settle before the Editor mounts the document). The address owner
- * restores no review for it meanwhile; a restore is a second launch, and the
- * latest one decides which change the review opens on.
- */
-export function usePendingEditorReviewItemKey(): string | null {
-  const handoff = useContext(EditorReviewIntentContext);
-  return handoff?.routingItemKey ?? handoff?.intent?.itemKey ?? null;
 }
 
 /**
@@ -272,4 +288,69 @@ export function requestedReviewItemKey(
       : presenting && presented?.documentId === host.documentId
         ? (presented.review?.itemKey ?? null)
         : null;
+}
+
+export function useAiDraftLauncher() {
+  const openEditorReview = useOpenEditorReview();
+  const openAiDraft = useCallback(
+    (target: AiDraftLaunchTarget) => {
+      void openEditorReview(target).catch((error) => {
+        console.error("[editor-review] launch failed", error);
+      });
+    },
+    [openEditorReview],
+  );
+
+  /** Opens a listed draft in review. A draft with no address yet (still being written) has nothing to open. */
+  const openReviewFile = useCallback(
+    (row: ReviewFileTarget, workId: string, focus?: ReviewFocus) =>
+      row.contextLocation &&
+      openAiDraft({
+        workId,
+        documentId: row.documentId,
+        itemKey: row.draft.itemKey,
+        contextLocation: row.contextLocation,
+        documentName: row.documentName ?? undefined,
+        draftOnly: row.draftOnly,
+        ...(focus ? { focus } : {}),
+      }),
+    [openAiDraft],
+  );
+
+  return { openAiDraft, openReviewFile };
+}
+
+/**
+ * A link destination that sends a document living only in a draft to that
+ * Work's review (by item identity, as the review launch does), and every
+ * other document to the surface's own live opener.
+ */
+export function useReviewingLinkDestination(open: LinkDestination): LinkDestination {
+  const openEditorReview = useOptionalOpenEditorReview();
+  const projectId = useProjectDocumentNavigationProjectId();
+  const { openTab } = useContextTabsActions();
+  return useCallback(
+    (document, gesture) => {
+      const { review } = document;
+      if (!review) return open(document, gesture);
+      // A hidden target exists only in the draft: it is a draft-only review, never a live tab.
+      const target: AiDraftLaunchTarget = {
+        documentId: document.documentId,
+        ...review,
+        draftOnly: true,
+      };
+      if (gesture === "new-tab") {
+        // The writer keeps their place: the review joins the tab strip without a route change.
+        const tab = contextTabFromDraftGroup(target);
+        if (projectId && tab) openTab(projectId, tab);
+        return Promise.resolve();
+      }
+      if (!openEditorReview)
+        throw new Error("Opening a draft requires the project review handoff owner");
+      return openEditorReview(target).catch((error) => {
+        console.error("[editor-review] launch failed", error);
+      });
+    },
+    [open, openEditorReview, projectId, openTab],
+  );
 }

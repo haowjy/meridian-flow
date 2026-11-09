@@ -2,7 +2,7 @@
 
 import { isWorkScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
-import type { ContextTab, ProjectTabsSlice } from "@/client/stores";
+import { type ContextTab, type ProjectTabsSlice, selectedDocumentIdOf } from "@/client/stores";
 import {
   buildWorkingSetRoute,
   reconcileSnapshotContextRoutes,
@@ -34,7 +34,7 @@ export type ContextAvailabilityLocalBatchPlan = Readonly<{
   projectId: string;
   commands: readonly ProjectDocumentAvailabilityCommand[];
   tabs: readonly ContextTab[];
-  selectedTabIdByWork: Readonly<Record<string, string>>;
+  selectedDocumentId: string | null;
   selection: ContextRouteSelection;
   admitted: ContextRouteTarget | null;
   removalFence: ContextRemovalProjectSnapshot["removalFence"];
@@ -74,7 +74,7 @@ export function planContextAvailabilityBatch(
 ): ContextAvailabilityLocalBatchPlan {
   const projectId = input.commands[0]?.projectId ?? "";
   let tabs = [...input.tabs.tabs];
-  const selectedTabIdByWork = { ...input.tabs.selectedTabIdByWork };
+  let selectedDocumentId = selectedDocumentIdOf(input.tabs);
   let selection = input.project.selection;
   let admitted = input.project.admitted;
   let removalFence = input.project.removalFence;
@@ -146,9 +146,6 @@ export function planContextAvailabilityBatch(
           ? [routeTargetForTab(tab, input.project.activeWorkId)]
           : [],
       );
-      const selectedWorks = Object.entries(selectedTabIdByWork).flatMap(([workId, selected]) =>
-        selected === id ? [workId] : [],
-      );
       tabs = tabs.map((tab) => {
         if (tab.kind === "new" || tab.documentId !== id) return tab;
         const common = {
@@ -175,10 +172,6 @@ export function planContextAvailabilityBatch(
           ? ({ ...withoutOwner, workId: targetWorkId } as ContextTab)
           : (withoutOwner as ContextTab);
       });
-      if (isWorkScopedScheme(scheme) && targetWorkId && !lineageId) {
-        for (const workId of selectedWorks) delete selectedTabIdByWork[workId];
-        if (selectedWorks.length) selectedTabIdByWork[targetWorkId] = id;
-      }
       if (
         target &&
         selection.status === "bound" &&
@@ -229,9 +222,7 @@ export function planContextAvailabilityBatch(
       command.kind === "terminal-remove",
     );
     selection = transition.selection;
-    const selectedTabId = input.project.activeWorkId
-      ? (selectedTabIdByWork[input.project.activeWorkId] ?? null)
-      : null;
+    const selectedTabId = input.project.activeWorkId ? selectedDocumentId : null;
     const removal = planContextRemoval({
       activeWorkId: input.project.activeWorkId,
       tabs,
@@ -244,11 +235,9 @@ export function planContextAvailabilityBatch(
       intent,
     });
     if (removal.outcome.kind !== "noop") tabs = [...removal.outcome.remaining];
-    for (const [workId, selected] of Object.entries(selectedTabIdByWork)) {
-      if (selected === id) delete selectedTabIdByWork[workId];
-    }
+    if (selectedDocumentId === id) selectedDocumentId = null;
     if (removal.nextSelectedTabId && input.project.activeWorkId) {
-      selectedTabIdByWork[input.project.activeWorkId] = removal.nextSelectedTabId;
+      selectedDocumentId = removal.nextSelectedTabId;
     }
     const exactRecentRoutes = recentRoutes.filter((route) => route.documentId === id);
     const workingSet = {
@@ -332,7 +321,6 @@ export function planContextAvailabilityBatch(
     recentRoutes = recentRoutes.filter(
       (route) => route.workId == null || !unavailableWorkIds.has(route.workId),
     );
-    for (const workId of unavailableWorkIds) delete selectedTabIdByWork[workId];
     const activeWorkId = input.project.activeWorkId;
     if (activeWorkId && unavailableWorkIds.has(activeWorkId)) {
       if (selection.status !== "none" && selection.locator.workId === activeWorkId) {
@@ -357,7 +345,7 @@ export function planContextAvailabilityBatch(
     projectId,
     commands: input.commands,
     tabs,
-    selectedTabIdByWork,
+    selectedDocumentId,
     selection,
     admitted,
     removalFence,

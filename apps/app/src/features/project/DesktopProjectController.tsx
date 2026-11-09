@@ -1,53 +1,24 @@
-/** Desktop owns displayed documents and their deliberate rail/header transfer; routes own addresses. */
-import {
-  createContext,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-} from "react";
-import type { ContextTab } from "@/client/stores";
-import { useContextTabs } from "@/client/stores";
-import {
-  useAccountResourceProjection,
-  useOptionalRemovedNotices,
-} from "./context/account-feature-context";
+/** Desktop owns the Write pane's presentation of the selected tab and the rail's mode switch; routes own addresses. */
+import { useLayoutEffect, useRef } from "react";
+import { selectedDocumentIdOf, useContextTabs } from "@/client/stores";
+import { useAccountResourceProjection } from "./context/account-feature-context";
 import { projectResourceTab } from "./context/context-tab-from-file";
 import { resolveEditorPresentation } from "./context/editor-presentation";
-import type { VisibleEditorRoute } from "./context/resolve-visible-editor-tab";
-import { resolveVisibleEditorTab } from "./context/resolve-visible-editor-tab";
+import type { VisibleEditorRoute } from "./context/resolve-route-owner";
+import { resolveRouteOwner } from "./context/resolve-route-owner";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
-import {
-  type DockDocument,
-  useDockDocument,
-  useDockDocumentStore,
-} from "./dock/dock-document-store";
-import { handOffVisibleDocument } from "./dock/hand-off-visible-document";
-import { commitDockDocument } from "./dock/use-dock-placement";
-import { modeOf } from "./layout/placement";
-import { useProjectSurfacePrefsStore } from "./layout/surface-prefs-store";
-import { usePresentedDocument } from "./presented-document";
 import { useChatNavigation } from "./routing/chat-navigation";
-import { useDocumentSwitchFailures, useRailScreenSwitch } from "./routing/document-switch-failure";
+import { useRailScreenSwitch } from "./routing/document-switch-failure";
 import {
   useIsCurrentNavigation,
   useOpenContextRoute,
   useScreenCommands,
 } from "./routing/ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
-import type { NavigationSettlement } from "./routing/project-navigation";
 import { openDocumentInEditor } from "./routing/use-open-document-in-editor";
+import { useSelectedContextTab } from "@/client/stores";
 import type { ScreenKey } from "./shell/screens";
 
-const DesktopPresentation = createContext<{
-  screen: ScreenKey;
-  document: DockDocument | null;
-  openDockInEditor: (tab: ContextTab) => void;
-} | null>(null);
-export function useDockEditorJump() {
-  return useContext(DesktopPresentation)?.openDockInEditor;
-}
 export function useDesktopProjectController<
   T extends VisibleEditorRoute & { editorWorkId: string },
 >(input: {
@@ -58,102 +29,31 @@ export function useDesktopProjectController<
   contextLive: boolean;
   issue?: ProjectRouteIssue;
 }) {
-  const { projectId, screen } = input;
-  const presented = usePresentedDocument();
+  const { screen } = input;
   const editorPresentation = useDesktopEditorPresentation(input);
-  const dockDocument = useDesktopDockPresentation(projectId, screen);
-  const collapsed = useProjectSurfacePrefsStore((state) => !state.modes[modeOf(screen)].dockOpen);
-  const editorTab = editorPresentation.visibleTab;
-  const dockTab = collapsed ? null : (dockDocument?.tab ?? null);
   const chat = useChatNavigation();
   const commands = useScreenCommands();
   const open = useOpenContextRoute();
   const isCurrent = useIsCurrentNavigation();
-  const failure = useDocumentSwitchFailures();
   const selectRailScreen = useRailScreenSwitch(screen, isCurrent);
-  const transfer = (source: ScreenKey, destination: ScreenKey, tab: ContextTab | null) => {
-    const store = useDockDocumentStore.getState();
-    return handOffVisibleDocument({
-      source,
-      destination,
-      tab,
-      review:
-        presented && presented.documentId === tab?.documentId
-          ? presented.review
-          : dockDocument?.tab.documentId === tab?.documentId
-            ? (dockDocument?.review ?? null)
-            : null,
-      claim: store.claim,
-      isCurrent: store.isCurrent,
-      transfer: (to, document, claim, review) => {
-        if (to === "chat")
-          commitDockDocument(projectId, "chat", document, chat.revealDock, claim, review);
-        else store.closeDocument();
-      },
-    });
-  };
-  const present = async (
-    operation: Promise<NavigationSettlement>,
-    source: Parameters<typeof failure.report>[1],
-  ) => {
-    const result = await operation;
-    if (result.kind === "failed" && isCurrent?.(result.ticket)) failure.report(result, source);
-  };
+  const selected = useSelectedContextTab(input.projectId);
+  // The selection is the one open document: a mode switch moves the view, never the document.
   const selectScreen = (next: ScreenKey) => {
     if (!commands || !open) return;
-    selectRailScreen(next, () => {
-      const plan = transfer(screen, next, screen === "context" ? editorTab : dockTab);
-      const options = plan ? { afterCommit: plan.afterCommit, review: plan.review } : undefined;
-      // A live dock copy of the warm Editor document resumes the Editor's own
-      // address. Only a different document or an addressed review is a hand-off.
-      return next === "chat"
-        ? chat.showChatScreen(options)
+    selectRailScreen(next, () =>
+      next === "chat"
+        ? chat.showChatScreen()
         : next === "work"
           ? commands.showWork()
-          : plan &&
-              (plan.review || plan.tab.documentId !== editorPresentation.resolved.tab?.documentId)
-            ? openDocumentInEditor(open, plan.tab, options)
-            : commands.showEditor(options);
-    });
-  };
-  const openDockInEditor = (tab: ContextTab) => {
-    if (!open) return;
-    failure.clear("header");
-    const plan = transfer(screen, "context", tab);
-    if (!plan) return;
-    const claim = useDockDocumentStore.getState().revision;
-    void present(
-      openDocumentInEditor(open, tab, { afterCommit: plan.afterCommit, review: plan.review }),
-      {
-        kind: "header",
-        claim,
-      },
+          : selected && selected.documentId !== editorPresentation.resolved.tab?.documentId
+            ? openDocumentInEditor(open, selected)
+            : commands.showEditor(),
     );
   };
-  return {
-    editorPresentation,
-    dockDocument,
-    selectScreen,
-    openDockInEditor,
-  };
+  return { editorPresentation, selectScreen };
 }
-export function DesktopProjectPresentationProvider({
-  children,
-  screen,
-  dockDocument,
-  openDockInEditor,
-}: {
-  children: ReactNode;
-  screen: ScreenKey;
-  dockDocument: DockDocument | null;
-  openDockInEditor: (tab: ContextTab) => void;
-}) {
-  return (
-    <DesktopPresentation.Provider value={{ screen, document: dockDocument, openDockInEditor }}>
-      {children}
-    </DesktopPresentation.Provider>
-  );
-}
+
+/** What the Write pane shows: the selected tab, as the resource projection now places it. */
 export function useDesktopEditorPresentation<
   T extends VisibleEditorRoute & { editorWorkId: string },
 >(input: {
@@ -172,14 +72,14 @@ export function useDesktopEditorPresentation<
   const workspace = useContextTabs(input.projectId);
   const removal = useContextRemovalProject(input.projectId);
   const projection = useAccountResourceProjection(input.projectId);
-  const resolved = resolveVisibleEditorTab({
+  const resolved = resolveRouteOwner({
     ...(presentation.mounted ?? {
       editorWorkId: null,
       activeContextScheme: null,
       activeContextPath: null,
     }),
     tabs: workspace.tabs,
-    selectedTabId: workspace.selectedTabIdByWork[presentation.mounted?.editorWorkId ?? ""],
+    selectedTabId: selectedDocumentIdOf(workspace) ?? undefined,
     selection: removal.selection,
   });
   const resource = resolved.tab
@@ -196,34 +96,4 @@ export function useDesktopEditorPresentation<
     resolved: { ...resolved, tab },
     visibleTab: presentation.visible ? tab : null,
   };
-}
-/**
- * The dock's document as the catalog places it. A document that vanished
- * closes the slot and reports itself to the dock's removed-documents notice,
- * which says why once availability proves a removal.
- */
-export function useDesktopDockPresentation(projectId: string, screen: ScreenKey) {
-  const document = useDockDocument(screen, projectId);
-  const { records, placement } = useAccountResourceProjection(projectId);
-  const projected = document
-    ? projectResourceTab(projectId, document.tab, records, placement)
-    : null;
-  const gone = projected?.kind === "removed" || projected?.kind === "terminal";
-  const close = useDockDocumentStore((state) => state.closeDocument);
-  const notices = useOptionalRemovedNotices();
-  const goneTab = gone ? document?.tab : undefined;
-  useEffect(() => {
-    if (!goneTab) return;
-    notices?.presentedRemoved(projectId, "dock", [goneTab]);
-    close();
-  }, [goneTab, close, notices, projectId]);
-  return gone || !document
-    ? null
-    : projected?.kind === "projected"
-      ? { ...document, tab: projected.tab }
-      : document;
-}
-export function usePresentedDockDocument(screen: ScreenKey) {
-  const presentation = useContext(DesktopPresentation);
-  return presentation ? (presentation.screen === screen ? presentation.document : null) : undefined;
 }

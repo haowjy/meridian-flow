@@ -3,7 +3,7 @@
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { resourceIdentityIndex } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
@@ -13,8 +13,6 @@ import {
   useOptionalAccountResourceReplica,
   useOptionalProjectContextAvailabilityCoordinator,
 } from "@/features/project/context/account-feature-context";
-import { useOptionalOpenEditorReview } from "@/features/project/dock/editor-review-handoff";
-import { usePresentedDocument } from "@/features/project/presented-document";
 import {
   type DraftOnlyContainer,
   type DraftOnlyPresentation,
@@ -22,14 +20,7 @@ import {
 } from "./draft-only-lifecycle";
 import type { DraftRef } from "./review-command-types";
 
-export function DraftOnlySettlement({
-  projectId,
-  editorWorkId,
-}: {
-  projectId: string;
-  /** The Work the Editor presents documents in: the entry its tab restores when no review is addressed. */
-  editorWorkId: string | null;
-}) {
+export function DraftOnlySettlement({ projectId }: { projectId: string }) {
   const lifecycle = useDraftOnlyLifecycle(projectId);
   // Primitive snapshot: a fresh presentation array is not an external-store change.
   useSyncExternalStore(
@@ -44,7 +35,6 @@ export function DraftOnlySettlement({
       key={workId}
       projectId={projectId}
       workId={workId}
-      editorWorkId={editorWorkId}
       lifecycle={lifecycle}
       membership={JSON.stringify(presentations.filter((draft) => draft.workId === workId))}
     />
@@ -54,13 +44,11 @@ export function DraftOnlySettlement({
 function WorkSettlement({
   projectId,
   workId,
-  editorWorkId,
   lifecycle,
   membership,
 }: {
   projectId: string;
   workId: string;
-  editorWorkId: string | null;
   lifecycle: DraftOnlyContainer;
   membership: string;
 }) {
@@ -140,16 +128,12 @@ function WorkSettlement({
     workId,
   ]);
 
-  const presented = usePresentedDocument();
-  const presentedRef = useRef(presented);
-  presentedRef.current = presented;
-  const openReview = useOptionalOpenEditorReview();
   // Draft-only means "hidden live". The replica showing the document (by its
   // current id or an alias: a join, New file, a link's Create) makes it live at
   // once for every Work. Showing means placed: the replica keeps a deleted
   // document's record, and its draft stays draft-only until Apply brings it
-  // back. A tab the writer was looking at keeps the review it showed, opened
-  // over the live document: the view the chip's Draft choice gives.
+  // back. The tab keeps its view and pin through promotion, so a review the writer was
+  // looking at stays on screen over the live document.
   // Availability can apply a live delete before the replica hears of it: while
   // it says the document is removed, a still-placed record is stale and must
   // not undo the hold that just made the tab draft-only (D79).
@@ -167,38 +151,7 @@ function WorkSettlement({
         continue;
       if (promoting.has(draft.documentId)) continue;
       promoting.add(draft.documentId);
-      // The review the Editor shows, captured before promotion clears the entries: its
-      // address, else (a route that has dropped `item`) its own Work's entry on the tab.
-      const shown = presentedRef.current;
-      const own = lifecycle
-        .presentations(projectId)
-        .find(
-          (entry) =>
-            entry.container === "editor" &&
-            entry.documentId === draft.documentId &&
-            entry.workId === editorWorkId,
-        );
-      const review =
-        shown?.container === "editor" && shown.documentId === draft.documentId && shown.draftOnly
-          ? (shown.review ?? (own ? { workId: own.workId, itemKey: own.itemKey } : null))
-          : null;
-      void lifecycle.promote(draft).then((promoted) => {
-        const now = presentedRef.current;
-        if (!promoted || !review) return;
-        // Promotion itself clears the address (the route drops `item`); only a different one means the writer moved.
-        const moved =
-          now?.review !== null &&
-          now?.review !== undefined &&
-          (now.review.workId !== review.workId || now.review.itemKey !== review.itemKey);
-        if (now?.container !== "editor" || now.documentId !== draft.documentId || moved) return;
-        void openReview?.({
-          workId: review.workId,
-          documentId: draft.documentId,
-          itemKey: review.itemKey,
-          contextLocation: draft.contextLocation,
-          draftOnly: false,
-        }).catch(() => undefined);
-      });
+      void lifecycle.promote(draft);
     }
   }, [
     lifecycle,
@@ -209,8 +162,6 @@ function WorkSettlement({
     projection.placement,
     projectId,
     workId,
-    editorWorkId,
-    openReview,
     availability,
   ]);
 

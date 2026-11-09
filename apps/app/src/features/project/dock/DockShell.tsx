@@ -26,11 +26,10 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { usePresentedDockDocument } from "../DesktopProjectController";
 import type { ScreenKey } from "../shell/screens";
 import { DockDocumentView } from "./DockDocumentView";
 import type { DockHeaderSlotArgs } from "./DockHeader";
-import { useDockDocument } from "./dock-document-store";
+import { useDockedDocument } from "./useDockedDocument";
 
 export type DockShellProps = {
   projectId: string;
@@ -51,9 +50,7 @@ export function DockShell({
   renderHeader,
   children,
 }: DockShellProps) {
-  const storedDocument = useDockDocument(screen, projectId);
-  const presentedDocument = usePresentedDockDocument(screen);
-  const dockDocument = presentedDocument === undefined ? storedDocument : presentedDocument;
+  const dockDocument = useDockedDocument(projectId, screen);
   const inDock = placement === "dock";
   const overlay = inDock && dockDocument ? "document" : null;
   const showPrimary = overlay === null;
