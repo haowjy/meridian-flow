@@ -17,6 +17,7 @@ import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton"
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
+import { ToolbarSlotProvider } from "@/features/editor/toolbar-slot";
 import {
   isProjectRouteMasked,
   ProjectRouteBoundary,
@@ -194,63 +195,65 @@ export function ContextViewer({
           status={name ? t`Opening ${name}` : t`Opening draft`}
           className="page-sheet relative"
         >
-          <PaintCapture surface={`${paneState.kind}:${activeTabId ?? optimisticTab?.id ?? ""}`} />
-          {activeTab ? (
-            <DocumentPaneChrome
-              projectId={projectId}
-              tab={activeTab}
-              archivedWork={editorFrozen ? archivedEditorWork : null}
-              onCloseTab={onCloseTab}
-              identity={{ editorWorkId, readOnly: fileFrozen, onCommitted, onOpenExisting }}
-            />
-          ) : null}
-          {/* The TRACKED editor host stays mounted while ANY tracked tab is
+          <ToolbarSlotProvider>
+            <PaintCapture surface={`${paneState.kind}:${activeTabId ?? optimisticTab?.id ?? ""}`} />
+            {activeTab ? (
+              <DocumentPaneChrome
+                projectId={projectId}
+                tab={activeTab}
+                archivedWork={editorFrozen ? archivedEditorWork : null}
+                onCloseTab={onCloseTab}
+                identity={{ editorWorkId, readOnly: fileFrozen, onCommitted, onOpenExisting }}
+              />
+            ) : null}
+            {/* The TRACKED editor host stays mounted while ANY tracked tab is
             open — even when the active tab is a viewer — so the warm-set
             editors aren't torn down on a quick image/PDF detour. We just
             hide the whole host when the active tab isn't tracked. */}
-          {trackedTabs.length > 0 ? (
-            <PaintScope active={activeIsEditable}>
-              <div
-                className={
-                  activeIsEditable ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
-                }
-              >
-                <ContextEditorMountHost
-                  projectId={projectId}
-                  trackedTabs={trackedTabs}
-                  activeTabId={activeIsEditable ? activeTabId : null}
-                  active={active}
-                  // Warm editors are hidden, so following the front tab is enough.
-                  readOnly={editorFrozen}
-                  onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
+            {trackedTabs.length > 0 ? (
+              <PaintScope active={activeIsEditable}>
+                <div
+                  className={
+                    activeIsEditable ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
+                  }
+                >
+                  <ContextEditorMountHost
+                    projectId={projectId}
+                    trackedTabs={trackedTabs}
+                    activeTabId={activeIsEditable ? activeTabId : null}
+                    active={active}
+                    // Warm editors are hidden, so following the front tab is enough.
+                    readOnly={editorFrozen}
+                    onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
+                  />
+                </div>
+              </PaintScope>
+            ) : null}
+            {activeTab?.kind === "viewer" ? (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <ContextViewerHost projectId={projectId} tab={activeTab} />
+              </div>
+            ) : null}
+            {optimisticTab ? (
+              <div className="relative min-h-0 flex-1" aria-busy>
+                <DelayedContentSkeleton
+                  key={JSON.stringify([projectId, optimisticTab.id])}
+                  className="absolute inset-0"
                 />
               </div>
-            </PaintScope>
-          ) : null}
-          {activeTab?.kind === "viewer" ? (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <ContextViewerHost projectId={projectId} tab={activeTab} />
-            </div>
-          ) : null}
-          {optimisticTab ? (
-            <div className="relative min-h-0 flex-1" aria-busy>
-              <DelayedContentSkeleton
-                key={JSON.stringify([projectId, optimisticTab.id])}
-                className="absolute inset-0"
+            ) : null}
+            {paneState.kind === "empty-workspace" ? (
+              <RecentDocumentsLanding
+                projectId={projectId}
+                editorWorkId={editorWorkId}
+                onNewDocument={onNewDocument}
+                holdsRemovedNotice={tabs.length === 0}
               />
-            </div>
-          ) : null}
-          {paneState.kind === "empty-workspace" ? (
-            <RecentDocumentsLanding
-              projectId={projectId}
-              editorWorkId={editorWorkId}
-              onNewDocument={onNewDocument}
-              holdsRemovedNotice={tabs.length === 0}
-            />
-          ) : null}
-          {controller.toast ? (
-            <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
-          ) : null}
+            ) : null}
+            {controller.toast ? (
+              <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
+            ) : null}
+          </ToolbarSlotProvider>
         </PaintHold>
       </ProjectRouteBoundary>
     </div>

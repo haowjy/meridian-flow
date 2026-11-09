@@ -13,7 +13,7 @@
  *
  * The header is a slot, not a fixed component: the desktop dock renders
  * `DockHeader`, and the phone chat sheet renders its own header built from
- * `MobileTopBar` chrome. `DockShell` owns only the document slot (`useDockDocument`)
+ * `MobileTopBar` chrome. `DockShell` owns only the document slot (the selected tab)
  * and hands it to whichever header the caller supplies.
  *
  * The primary body stays MOUNTED when a document covers it: chat

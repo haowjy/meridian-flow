@@ -299,6 +299,11 @@ selection of one), not the open row.
 
 ### Dropping across systems, and dropping references
 
+In the Write sidebar the sources sit behind icon tabs (`shell/sidebar/SourcesBody.tsx`).
+A drag that rests on a tab for 600 ms opens it, as on a closed folder. Trash is a tab
+too, not a scheme: rows dropped on its tab or its list are deleted at once, with no
+menu, through `useDeleteContextEntry().deleteEntries`.
+
 A list row dropped within one system moves at once. A drop that crosses systems (the
 project's areas are one system; User and each Scratch owner and each chat's Uploads
 are their own, `entrySystem` in `entry.ts`) changes ownership, so the list asks first.
@@ -307,7 +312,9 @@ system: a mention chip, an Editor tab, a path crumb, a Recent row, a receipt or 
 change entry, an Uploads entry, a selected Editor link. The
 hover accepts with the first thing the menu would offer and an ellipsis ("Move to
 Act 2…", or "Copy to Act 2…" when Move is disabled); the drop opens a compact menu
-at the pointer, no heading: "Move to Act 2", "Copy to Act 2", then Cancel. A
+at the pointer, no heading: "Move to Act 2", "Copy to Act 2", then Cancel. A drop
+into Your files (the `user` scheme) from outside offers Copy only: what lives in a
+project stays there. A
 disabled item says why, tied to it with `aria-describedby` ("Can't move these from
 here" for a surface that grants Copy only, "Already there", "Some of these items
 are no longer there", "Can't go inside itself"). Escape, Cancel and a click outside

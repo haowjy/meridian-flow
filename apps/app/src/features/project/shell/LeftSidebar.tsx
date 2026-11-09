@@ -8,18 +8,19 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { Trash2 } from "lucide-react";
+import { Settings } from "lucide-react";
 import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
 import { useSelectedContextTab } from "@/client/stores";
+import { AccountMenu } from "@/features/account/AccountMenu";
+import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import { useAccountResourceProjection } from "../context/account-feature-context";
-import { UserRailSection } from "../context/ContextTreePanel";
 import { projectResourceTab } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { modeOf } from "../layout/placement";
 import { useChatNavigation } from "../routing/chat-navigation";
-import { useProjectTrashNavigation, useScreenCommands } from "../routing/ProjectNavigationContext";
+import { useScreenCommands } from "../routing/ProjectNavigationContext";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleSpacer } from "./PanelToggleButton";
 import { ProjectMenu } from "./ProjectMenu";
@@ -58,11 +59,11 @@ export function LeftSidebar({
   activeContextPath,
   onSelectScreen,
 }: LeftSidebarProps) {
-  const trashNavigation = useProjectTrashNavigation();
   const screenCommands = useScreenCommands();
   const chat = useChatNavigation();
   const titleEditor = useRef<TitleEditHandle>(null);
   const treePane = useRef<HTMLDivElement>(null);
+  const settings = useSettingsNavigation();
   const openDocument = useOpenProjectDocument(projectId);
   const { noWork } = useWorks(projectId);
   const scope = useWorkScope(projectId, editorWorkId ?? noWork?.id ?? null);
@@ -156,26 +157,6 @@ export function LeftSidebar({
           onSelectFile={handleSelectFile}
           paneRef={treePane}
         />
-        {contextLive ? (
-          <UserRailSection
-            projectId={projectId}
-            editorWorkId={editorWorkId}
-            activeScheme={treeActiveScheme}
-            activePath={treeActivePath}
-            onSelectFile={handleSelectFile}
-            resizeAgainst={treePane}
-          />
-        ) : null}
-        <div className="shrink-0 px-2">
-          <button
-            type="button"
-            onClick={() => void trashNavigation.navigate(true)}
-            className="focus-ring flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground"
-          >
-            <Trash2 className="size-4 shrink-0" aria-hidden />
-            <Trans>Trash</Trans>
-          </button>
-        </div>
       </div>
 
       <div
@@ -193,6 +174,18 @@ export function LeftSidebar({
           onShowAllChats={() => void chat.openChatIndex()}
           onShowWork={scope.setWorkId}
         />
+      </div>
+
+      <div className="shrink-0 border-t border-border-subtle px-2 py-1.5">
+        <button
+          type="button"
+          onClick={() => settings.open()}
+          className="focus-ring flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground"
+        >
+          <Settings className="size-4 shrink-0" aria-hidden />
+          <Trans>Settings</Trans>
+        </button>
+        <AccountMenu />
       </div>
     </nav>
   );

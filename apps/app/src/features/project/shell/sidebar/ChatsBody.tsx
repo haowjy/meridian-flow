@@ -54,7 +54,9 @@ export function ChatsBody({
     [threads, scopeWorkId, noWorkId, currentThreadId],
   );
   const workName = (workId: string) =>
-    workId === noWorkId ? t`No Work` : (works?.find((work) => work.id === workId)?.name ?? "");
+    workId === noWorkId
+      ? t`Chats without a Work`
+      : (works?.find((work) => work.id === workId)?.name ?? "");
 
   const row = (thread: ThreadListItem, state: RowState) => (
     <div key={thread.id}>
