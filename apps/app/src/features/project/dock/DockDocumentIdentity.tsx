@@ -5,17 +5,14 @@
  * wrap under it (DocumentIdentityBar). It takes the place a tab strip has in
  * the Editor, so the document's name shows once.
  */
-import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
-import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import type { ReactNode } from "react";
-import { useWorks } from "@/client/query/useWorks";
-import type { ContextTab } from "@/client/stores";
 import { isDraftOnly } from "@/client/stores";
 import {
   DraftReviewBoundary,
   usePresentedDraftReview,
 } from "@/features/draft-review/DraftReviewProvider";
 import { DocumentIdentityBar } from "../context/DocumentIdentityBar";
+import { useDocumentFreeze } from "../context/use-document-freeze";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import {
   DockDocumentCommands,
@@ -59,7 +56,8 @@ function DockIdentityBody({
   const tab = dockDocument.tab;
   const closeDocument = useDockDocumentStore((state) => state.closeDocument);
   const openInEditor = useOpenDocumentInEditor();
-  const archivedWork = useDockArchivedWork(projectId, tab);
+  // The identity bar renames and moves the file, which only the file's own Work freezes.
+  const fileFrozen = useDocumentFreeze(projectId, tab, null) !== null;
   const failed = useDockViewFailed();
   return (
     <DocumentIdentityBar
@@ -71,7 +69,7 @@ function DockIdentityBody({
       projectId={projectId}
       editorWorkId={tab.kind === "new" ? null : (tab.workId ?? null)}
       tab={tab}
-      readOnly={Boolean(archivedWork)}
+      readOnly={fileFrozen}
       onCloseDraftOnly={isDraftOnly(tab) ? closeDocument : undefined}
       // The dock follows a rename through the resource projection; it keeps no tab to patch.
       onCommitted={noopCommitted}
@@ -88,20 +86,4 @@ function DockIdentityBody({
       }}
     />
   );
-}
-
-/**
- * The archived Work that freezes a document, if any: the Work that owns its file, or the
- * Work whose draft of it is under review (`reviewOwner`), as the Editor freezes both.
- */
-export function useDockArchivedWork(
-  projectId: string,
-  tab: ContextTab,
-  reviewOwner: string | null = null,
-): Work | null {
-  const { works } = useWorks(projectId);
-  const workId =
-    tab.kind !== "new" && tab.workId && isWorkScopedScheme(tab.scheme) ? tab.workId : reviewOwner;
-  const work = workId ? works?.find((candidate) => candidate.id === workId) : undefined;
-  return work && isWorkArchived(work) ? work : null;
 }

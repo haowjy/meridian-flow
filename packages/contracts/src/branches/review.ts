@@ -189,6 +189,12 @@ export interface DocumentDraftHintsResponse {
 
 export interface ThreadDraftListResponse {
   items: ThreadDraftListItem[];
+  /**
+   * The owner is a conversation lineage with no live chat (every chat in it is in Trash):
+   * its drafts take no text and no Apply, only a whole Discard, until a chat is restored.
+   * Always false for a Work, whose archive state the Work itself carries.
+   */
+  frozen: boolean;
 }
 
 /** SQL-only addressed lookup; no text room is loaded or created. */

@@ -104,7 +104,7 @@ export function useReviewHeader({
   onCloseDraftOnly,
   onOpenDraft,
 }: ReviewHeaderOptions): ReviewHeaderModel {
-  const { controller, files } = useDraftReview();
+  const { controller, files, drafts } = useDraftReview();
   const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
 
   // Only a file with text has a review to move to: a move or delete alone has no draft room.
@@ -157,7 +157,8 @@ export function useReviewHeader({
     view,
     next,
     locked,
-    canApply: ready && view.items.length > 0,
+    // A trashed chat's drafts take no Apply; its notice says how to bring it back.
+    canApply: ready && view.items.length > 0 && !drafts.frozen,
     finished,
     completing,
     commandError,

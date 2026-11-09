@@ -7,7 +7,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
-import { catalogOwnerOf, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
+import { cachedOwnerDrafts, catalogOwnerOf, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import {
   useObservedResourceProjection,
   useOptionalAccountResourceReplica,
@@ -102,10 +102,7 @@ function OwnerSettlement({
         .then((view) => {
           if (attempt.signal.aborted) return;
           queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, scope), view);
-          const currentDrafts =
-            queryClient.getQueryData<ThreadDraftListItem[]>(
-              projectQueryKeys.ownerDrafts(projectId, ownerKey),
-            ) ?? [];
+          const currentDrafts = cachedOwnerDrafts(queryClient, projectId, ownerKey) ?? [];
           for (const draft of lifecycle.presentations(projectId)) {
             if (!isOrphan(draft, currentDrafts) || JSON.stringify(scopeFor(draft)) !== key)
               continue;

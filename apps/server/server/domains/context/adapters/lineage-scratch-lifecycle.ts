@@ -2,6 +2,7 @@
  * One lifecycle owner for lineage Scratch provisioning and for trash reconciliation of the
  * sources a thread owns: its lineage's Scratch and its own chat's uploads.
  */
+import { draftOwnerKey } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contextSources, threads } from "@meridian/database/schema";
@@ -9,7 +10,10 @@ import { and, eq, inArray, isNotNull, type SQL, type SQLWrapper, sql } from "dri
 import { lineageHasLiveMember, lockLineageOwners } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { FileAccessChanges } from "../../file-policy/index.js";
-import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
+import type {
+  ContextCatalogMutationPort,
+  WorkAuthorityCatalogMutationPort,
+} from "../ports/context-catalog.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
 import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import { lockContextNamespaces } from "./context-fs/document-locations.js";
@@ -31,7 +35,11 @@ export function createDrizzleLineageScratchLifecycle(
   db: Database,
   catalog?: ContextCatalogMutationPort,
   arrivals?: Pick<DocumentArrivals, "settle">,
-  fileAccessChanges?: Pick<FileAccessChanges, "publish">,
+  /** Who hears that a lineage froze or thawed: its live rooms, and its owner's draft lists. */
+  liveness?: {
+    fileAccessChanges: Pick<FileAccessChanges, "publish">;
+    draftOwnerHints: Pick<WorkAuthorityCatalogMutationPort, "publishDraftOwnerHints">;
+  },
 ): LineageScratchLifecycle {
   // Use the Scratch namespace boundary already held by context commands. Taking
   // a second lineage lock after that boundary would invert catalog lock order.
@@ -105,8 +113,17 @@ export function createDrizzleLineageScratchLifecycle(
             and(eq(contextSources.scope, "lineage"), eq(contextSources.rootThreadId, rootThreadId)),
             lineageHasLiveMember(rootThreadId),
           );
-          await fileAccessChanges?.publish({ rootThreadId });
+          await liveness?.fileAccessChanges.publish({ rootThreadId });
         }
+        liveness?.draftOwnerHints.publishDraftOwnerHints(
+          [...new Map(roots.map((root) => [root.id, root.projectId]))].map(
+            ([rootThreadId, projectId]) => ({
+              type: "draft-owner-hint" as const,
+              projectId,
+              owner: draftOwnerKey({ kind: "lineage", rootThreadId }),
+            }),
+          ),
+        );
         // A chat's uploads follow that chat's own trash state, not its lineage's.
         await reconcileSources(
           and(

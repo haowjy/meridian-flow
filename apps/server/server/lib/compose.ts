@@ -526,12 +526,10 @@ export async function createProductionAppPorts(input: {
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const organizeWake = createOrganizeWakeHub();
   const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
-  const lineageScratch = createDrizzleLineageScratchLifecycle(
-    db,
-    contextCatalog,
-    arrivals,
+  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals, {
     fileAccessChanges,
-  );
+    draftOwnerHints: contextCatalog,
+  });
   const threadRepos = createDrizzleRepositories(
     db,
     workProjectionMutation,

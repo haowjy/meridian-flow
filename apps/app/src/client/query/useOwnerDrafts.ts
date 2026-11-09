@@ -3,8 +3,12 @@
  *
  * Projects one catalog-labelled file per active document draft, in stable order.
  */
-import { parseDraftOwnerKey, type ThreadDraftListItem } from "@meridian/contracts/branches";
-import { useQuery } from "@tanstack/react-query";
+import {
+  parseDraftOwnerKey,
+  type ThreadDraftListItem,
+  type ThreadDraftListResponse,
+} from "@meridian/contracts/branches";
+import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
 import { listOwnerDrafts } from "@/client/api/branches-api";
@@ -19,9 +23,10 @@ export type OwnerDraftListStatus = ListQueryStatus<ThreadDraftListItem> & {
   drafts: ThreadDraftListItem[] | null;
   files: ReviewFileTarget[] | null;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
+  /** The server's word that the owner's drafts are frozen (`ThreadDraftListResponse.frozen`). */
+  frozen: boolean;
 };
 
-/** The one owner draft-list query, shared by every reader so the list is fetched once. */
 /** The catalog owner whose Scratch names this draft owner's documents. */
 export function catalogOwnerOf(owner: string | null): { workId?: string; rootThreadId?: string } {
   const parsed = owner ? parseDraftOwnerKey(owner) : null;
@@ -29,12 +34,48 @@ export function catalogOwnerOf(owner: string | null): { workId?: string; rootThr
   return parsed.kind === "work" ? { workId: parsed.id } : { rootThreadId: parsed.id };
 }
 
+/** The one owner draft-list query, shared by every reader so the list is fetched once. */
 export function ownerDraftsQueryOptions(projectId: string, owner: string) {
   return {
     queryKey: projectQueryKeys.ownerDrafts(projectId, owner),
-    queryFn: () => listOwnerDrafts(projectId, owner).then((response) => response.items),
+    queryFn: (): Promise<ThreadDraftListResponse> => listOwnerDrafts(projectId, owner),
     staleTime: 15_000,
   };
+}
+
+/** The owner's cached draft rows, without fetching. */
+export function cachedOwnerDrafts(
+  queryClient: QueryClient,
+  projectId: string,
+  owner: string,
+): ThreadDraftListItem[] | undefined {
+  return queryClient.getQueryData<ThreadDraftListResponse>(
+    projectQueryKeys.ownerDrafts(projectId, owner),
+  )?.items;
+}
+
+/** Rewrites the owner's cached draft rows until the next read replaces them. */
+export function patchOwnerDrafts(
+  queryClient: QueryClient,
+  projectId: string,
+  owner: string,
+  update: (items: ThreadDraftListItem[]) => ThreadDraftListItem[],
+): void {
+  queryClient.setQueryData<ThreadDraftListResponse>(
+    projectQueryKeys.ownerDrafts(projectId, owner),
+    (response) => (response ? { ...response, items: update(response.items) } : response),
+  );
+}
+
+/** Whether the owner's drafts are frozen (a lineage with every chat in Trash), as last read. */
+export function useOwnerDraftsFrozen(projectId: string, owner: string): boolean {
+  return (
+    useQuery({
+      ...ownerDraftsQueryOptions(projectId, owner),
+      select: (response) => response.frozen,
+      enabled: projectReadEnabled(Boolean(projectId) && Boolean(owner)),
+    }).data ?? false
+  );
 }
 
 export function useOwnerDrafts(
@@ -44,12 +85,11 @@ export function useOwnerDrafts(
 ): OwnerDraftListStatus {
   const callerEnabled = options?.enabled ?? true;
   const enabled = callerEnabled && Boolean(projectId) && Boolean(owner);
-  const result = unwrapListQuery(
-    useQuery({
-      ...ownerDraftsQueryOptions(projectId ?? "", owner ?? ""),
-      enabled: projectReadEnabled(enabled),
-    }),
-  );
+  const query = useQuery({
+    ...ownerDraftsQueryOptions(projectId ?? "", owner ?? ""),
+    enabled: projectReadEnabled(enabled),
+  });
+  const result = unwrapListQuery({ ...query, data: query.data?.items });
 
   const schemes = useMemo(
     () => [
@@ -91,6 +131,7 @@ export function useOwnerDrafts(
       drafts: null,
       files: null,
       fileForDocument,
+      frozen: false,
     };
   }
 
@@ -106,5 +147,6 @@ export function useOwnerDrafts(
     drafts: result.data,
     files,
     fileForDocument,
+    frozen: query.data?.frozen ?? false,
   };
 }
