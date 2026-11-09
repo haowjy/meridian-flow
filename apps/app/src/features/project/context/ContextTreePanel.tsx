@@ -32,6 +32,7 @@ import {
 import { EntryList, useEntryList } from "./entry-drag/use-entry-list";
 import { ImportHeaderAction } from "./ImportHeaderAction";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
+import { SourceHeading } from "./SourceHeading";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 import { AreaDropRegion } from "./tree-drop/AreaDropRegion";
 import type { FilesRoute } from "./tree-drop/tree-drop";
@@ -62,7 +63,14 @@ type ContextTreePanelProps = {
   creating?: TreeCreationRequest | null;
   onRequestCreate?: (request: TreeCreationRequest) => void;
   onCreateDone?: () => void;
+  /**
+   * Show one source, always open, under a plain heading (Write mode's source
+   * tabs). Omitted, every project source stacks as a collapsible section.
+   */
+  only?: ProjectContextTreeScheme;
 };
+
+const ALWAYS_OPEN: PaneState = { expanded: true, setExpanded: () => {} };
 
 /**
  * VS Code-style multi-scheme file tree. Each context scheme renders as a
@@ -105,7 +113,9 @@ export function ContextTreePanel(props: ContextTreePanelProps) {
         className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2"
       >
         <EntryList list={list} files={files}>
-          {PROJECT_TREE_SCHEMES.map((scheme) => renderScheme(scheme))}
+          {props.only
+            ? renderScheme(props.only, ALWAYS_OPEN, "source")
+            : PROJECT_TREE_SCHEMES.map((scheme) => renderScheme(scheme))}
         </EntryList>
       </div>
     </div>
@@ -162,8 +172,13 @@ function useSchemeTree(
       return catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, accepts: true }] : [];
     }),
   });
-  const renderScheme = (scheme: ProjectContextTreeScheme, pane?: PaneState) => (
+  const renderScheme = (
+    scheme: ProjectContextTreeScheme,
+    pane?: PaneState,
+    heading: "section" | "source" = "section",
+  ) => (
     <SchemeSection
+      heading={heading}
       key={`${projectId}:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`}
       projectId={projectId}
       editorWorkId={editorWorkId}
@@ -186,6 +201,7 @@ function useSchemeTree(
 }
 
 function SchemeSection({
+  heading,
   catalogState,
   projectId,
   editorWorkId,
@@ -198,6 +214,7 @@ function SchemeSection({
   onRequestCreate,
   onCreateDone,
 }: {
+  heading: "section" | "source";
   catalogState: ReturnType<typeof useContextCatalogViews>[ProjectContextTreeScheme];
   projectId: string;
   editorWorkId: string | null;
@@ -398,42 +415,51 @@ function SchemeSection({
     setExpanded(next);
   };
 
-  const header = (dropProps: React.HTMLAttributes<HTMLElement>) => (
-    <RailPaneHeader
-      label={schemeLabel(scheme)}
-      icon={schemeIcon(scheme)}
-      expanded={expanded}
-      onExpandedChange={handleExpandedChange}
-      dropProps={dropProps}
-      actions={
-        schemeAllowsCreation(scheme) ? (
-          <>
-            <PaneHeaderActionButton
-              icon={FilePlus}
-              label={t`New file`}
-              onClick={() => requestCreate("file", "")}
-            />
-            <PaneHeaderActionButton
-              icon={FolderPlus}
-              label={t`New folder`}
-              onClick={() => requestCreate("folder", "")}
-            />
-            {importScheme ? (
-              <ImportHeaderAction
-                scheme={importScheme}
-                onPick={(kind: PickKind) => {
-                  const destination = destinationOf(scheme, null);
-                  if (!destination) return;
-                  setExpanded(true);
-                  pickImport?.(destination, kind);
-                }}
-              />
-            ) : null}
-          </>
-        ) : undefined
-      }
+  const importAction = importScheme ? (
+    <ImportHeaderAction
+      scheme={importScheme}
+      onPick={(kind: PickKind) => {
+        const destination = destinationOf(scheme, null);
+        if (!destination) return;
+        setExpanded(true);
+        pickImport?.(destination, kind);
+      }}
     />
-  );
+  ) : null;
+  const header = (dropProps: React.HTMLAttributes<HTMLElement>) =>
+    heading === "source" ? (
+      <SourceHeading
+        label={schemeLabel(scheme)}
+        dropProps={dropProps}
+        extra={importAction}
+        onCreate={schemeAllowsCreation(scheme) ? (kind) => requestCreate(kind, "") : undefined}
+      />
+    ) : (
+      <RailPaneHeader
+        label={schemeLabel(scheme)}
+        icon={schemeIcon(scheme)}
+        expanded={expanded}
+        onExpandedChange={handleExpandedChange}
+        dropProps={dropProps}
+        actions={
+          schemeAllowsCreation(scheme) ? (
+            <>
+              <PaneHeaderActionButton
+                icon={FilePlus}
+                label={t`New file`}
+                onClick={() => requestCreate("file", "")}
+              />
+              <PaneHeaderActionButton
+                icon={FolderPlus}
+                label={t`New folder`}
+                onClick={() => requestCreate("folder", "")}
+              />
+              {importAction}
+            </>
+          ) : undefined
+        }
+      />
+    );
 
   return (
     <section className={pane ? "flex min-h-0 flex-col" : undefined}>
