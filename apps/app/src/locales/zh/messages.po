@@ -935,8 +935,8 @@ msgid "Active Work"
 msgstr ""
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
-msgid "Active Works"
-msgstr ""
+#~ msgid "Active Works"
+#~ msgstr ""
 
 #: src/components/app/ToastRegion.tsx
 #~ msgid "Activity"
@@ -1008,6 +1008,11 @@ msgstr ""
 msgid "Agent"
 msgstr ""
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "Agent:"
+msgstr ""
+
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent: {0}"
@@ -1015,8 +1020,8 @@ msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "Agent: {agentName}"
-msgstr ""
+#~ msgid "Agent: {agentName}"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "AI assistant"
@@ -2721,6 +2726,10 @@ msgstr ""
 msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
 msgstr ""
 
+#: src/features/editor/DocumentVersionMenu.tsx
+msgid "Deletes this document"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Deleting"
 msgstr ""
@@ -2835,6 +2844,7 @@ msgid "Document name and location"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/editor/DocumentVersionMenu.tsx
 msgid "Document version"
 msgstr ""
 
@@ -2874,6 +2884,10 @@ msgstr ""
 
 #: src/features/project/mobile/MobileReviewHeader.tsx
 msgid "Draft review"
+msgstr ""
+
+#: src/features/editor/DocumentVersionMenu.tsx
+msgid "Drafts"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
@@ -3634,6 +3648,7 @@ msgid "litrpg"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/editor/DocumentVersionMenu.tsx
 msgid "Live"
 msgstr ""
 
@@ -3973,6 +3988,11 @@ msgstr ""
 msgid "Moved to the message box."
 msgstr ""
 
+#. placeholder {0}: hint.tree.movedTo.path
+#: src/features/editor/DocumentVersionMenu.tsx
+msgid "Moves it to {0}"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Moving"
 msgstr ""
@@ -4120,6 +4140,10 @@ msgstr ""
 #: src/features/project/context/ContextTreePanel.tsx
 #~ msgid "No context files yet."
 #~ msgstr ""
+
+#: src/features/editor/DocumentVersionMenu.tsx
+msgid "No drafts"
+msgstr ""
 
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "No favorite chats yet."
@@ -6494,6 +6518,7 @@ msgid "Unknown component: {kindLabel}"
 msgstr ""
 
 #: src/features/editor/DocumentDraftHint.tsx
+#: src/features/editor/DocumentVersionMenu.tsx
 msgid "Unnamed Work"
 msgstr "未命名工作"
 
