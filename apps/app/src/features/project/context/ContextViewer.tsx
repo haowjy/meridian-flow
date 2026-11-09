@@ -12,12 +12,12 @@ import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { type ReactNode, useEffect, useRef } from "react";
-import type { ContextTab } from "@/client/stores";
+import { type ContextTab, isDraftOnly } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
-import { ToolbarSlotProvider } from "@/features/editor/toolbar-slot";
+import { DocumentStateSlotProvider } from "@/features/editor/document-state-slot";
 import {
   isProjectRouteMasked,
   ProjectRouteBoundary,
@@ -29,6 +29,7 @@ import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
 import type { ContextPaneState } from "./context-pane-state";
+import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { PendingDocumentPath } from "./PendingDocumentPath";
 import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
@@ -195,15 +196,28 @@ export function ContextViewer({
           status={name ? t`Opening ${name}` : t`Opening draft`}
           className="page-sheet relative"
         >
-          <ToolbarSlotProvider>
-            <PaintCapture surface={`${paneState.kind}:${activeTabId ?? optimisticTab?.id ?? ""}`} />
+          <PaintCapture surface={`${paneState.kind}:${activeTabId ?? optimisticTab?.id ?? ""}`} />
+          <DocumentStateSlotProvider>
+            {activeTab ? (
+              // Keyed by tab so edit state never crosses tabs.
+              <DocumentIdentityBar
+                key={activeTab.tabInstanceId ?? activeTab.documentId}
+                variant="state"
+                projectId={projectId}
+                editorWorkId={editorWorkId}
+                tab={activeTab}
+                readOnly={fileFrozen}
+                onCloseDraftOnly={isDraftOnly(activeTab) ? () => onCloseTab(activeTab) : undefined}
+                onCommitted={onCommitted}
+                onOpenExisting={onOpenExisting}
+              />
+            ) : null}
             {activeTab ? (
               <DocumentPaneChrome
                 projectId={projectId}
                 tab={activeTab}
                 archivedWork={editorFrozen ? archivedEditorWork : null}
-                onCloseTab={onCloseTab}
-                identity={{ editorWorkId, readOnly: fileFrozen, onCommitted, onOpenExisting }}
+                reviewNotices
               />
             ) : null}
             {/* The TRACKED editor host stays mounted while ANY tracked tab is
@@ -253,7 +267,7 @@ export function ContextViewer({
             {controller.toast ? (
               <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
             ) : null}
-          </ToolbarSlotProvider>
+          </DocumentStateSlotProvider>
         </PaintHold>
       </ProjectRouteBoundary>
     </div>

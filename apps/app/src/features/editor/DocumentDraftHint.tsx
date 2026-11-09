@@ -53,7 +53,7 @@ export function DocumentDraftHint({ projectId, tab }: DocumentDraftHintProps) {
       className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 px-4 font-sans text-ink-muted text-sm [@media(pointer:coarse)]:min-h-11"
     >
       <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
-      <span className="min-w-0">
+      <span className="min-w-0 truncate">
         {others.length === 1 && only ? (
           only.label ? (
             <Trans>A Work has drafts for this ({only.label})</Trans>

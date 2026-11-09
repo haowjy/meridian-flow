@@ -1,8 +1,8 @@
 /**
- * DocumentIdentityBar — where an open document lives: its path, which navigates,
- * and the chips about it (Choose a home for a document in Unfiled, device-only, a
- * refused move, a review). The Editor shows it as a band above the page; a
- * document beside the chat shows it in the dock header (`variant="header"`).
+ * DocumentIdentityBar — an open document's identity and state: the chips about it
+ * (Draft or Live, Choose a home for a document in Unfiled, device-only, a refused
+ * move, a review's controls). Write mode shows it at the tab row's right end with
+ * no path (`variant="state"`); the dock shows it as its header, with the path.
  */
 import "./document-identity-row.css";
 import { t } from "@lingui/core/macro";
@@ -13,10 +13,11 @@ import { refusedMoveDestination } from "@/client/query/context-catalog-projectio
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { ContextTab } from "@/client/stores";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
 import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
+import { DocumentStatePortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
-import { useToolbarSlotRef } from "@/features/editor/toolbar-slot";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { cn } from "@/lib/utils";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
@@ -25,7 +26,6 @@ import { schemeLabel } from "./context-schemes";
 import { DocumentPath } from "./DocumentPath";
 import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
-import { IDENTITY_BAR_BAND_CLASS } from "./identity-bar-geometry";
 import { tabLocation } from "./identity-location";
 import { LinkUpdateNote, useRenameOperation } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
@@ -42,8 +42,11 @@ export type DocumentIdentityBarProps = {
   tab: ContextTab;
   /** The document can't be renamed or moved (its Work is archived). */
   readOnly?: boolean;
-  /** A band above the page (the Editor), or the content of the dock's header row. */
-  variant?: "band" | "header";
+  /**
+   * The content of the dock's header row, with the path; or Write mode's state at
+   * the tab row's right end, without it (the tab's tooltip carries the path).
+   */
+  variant: "header" | "state";
   /** Header only: commands at the row's left edge (the dock's Close and Open in Editor). */
   leading?: ReactNode;
   /** Header only: pinned to the first line's right edge, whether or not the controls wrap (the dock's Collapse). */
@@ -64,7 +67,7 @@ export function DocumentIdentityBar({
   editorWorkId,
   tab,
   readOnly = false,
-  variant = "band",
+  variant,
   leading,
   trailing,
   notice,
@@ -145,21 +148,75 @@ export function DocumentIdentityBar({
   // Only a provisional placement can be repaired here.
   const repairable = location.provisional && !readOnly;
   const manuscriptState = useManuscriptState(projectId, tab);
-  const toolbarSlotRef = useToolbarSlotRef();
 
+  // Reviewing a draft is a mode, not a notice: its controls take a line of their own
+  // above the toolbar. Everything else is state on the toolbar row.
+  const renderState = (version: ReactNode, controls: ReactNode) => (
+    <>
+      {controls ? (
+        <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-x-2 border-b border-border-subtle bg-dock-surface px-4 text-[13px] text-ink-muted">
+          {version}
+          {controls}
+        </div>
+      ) : null}
+      <DocumentStatePortal>
+        <div
+          ref={rowRef}
+          data-document-identity-row
+          className="flex min-w-0 shrink items-center gap-1 text-[13px] text-ink-muted"
+        >
+          {placementOpen ? (
+            <IdentityPlacementField
+              projectId={projectId}
+              editorWorkId={editorWorkId}
+              tab={tab}
+              location={location}
+              failure={identityFailure}
+              commit={commit}
+              onExit={(reason) => {
+                setFieldOpen(false);
+                if (repair) setDismissedRepairId(repair.intentId);
+                if (reason === "escape") focusEditorProse(tab.documentId);
+              }}
+              onOpenExisting={onOpenExisting}
+            />
+          ) : null}
+          <ManuscriptStateSlot state={manuscriptState} />
+          {repair && !placementOpen ? (
+            repairable ? (
+              <button
+                type="button"
+                className="focus-ring flex min-w-0 text-left"
+                onClick={() => {
+                  setDismissedRepairId(null);
+                  setFieldOpen(true);
+                }}
+              >
+                <NamespaceFailureMark failure={repair.kind} labelled />
+              </button>
+            ) : (
+              <NamespaceFailureMark
+                failure={repair.kind}
+                message={repair.kind === "create" ? undefined : passiveFailure}
+              />
+            )
+          ) : null}
+          <IdentityChipSlot
+            projectId={projectId}
+            tab={tab}
+            show={showChip && !placementOpen}
+            onChooseHome={() => setFieldOpen(true)}
+          />
+          {controls || reviewItemKey || reviewPending ? null : (
+            <DocumentVersionMenu projectId={projectId} tab={tab} />
+          )}
+        </div>
+      </DocumentStatePortal>
+    </>
+  );
   const renderRow = (version: ReactNode, controls: ReactNode) => (
-    <div
-      className={cn(
-        "min-w-0",
-        variant === "header" ? "flex-1" : "shrink-0",
-        reviewItemKey &&
-          variant === "band" &&
-          "bg-dock-surface shadow-[inset_0_-1px_0_var(--color-border)]",
-      )}
-    >
-      {/* Navigation chrome like the tab strip above it: it spans edge to edge,
-          NOT the prose column. Geometry contract lives in identity-bar-geometry.ts.
-          One line when the path and the review controls fit together; otherwise
+    <div className="min-w-0 flex-1">
+      {/* One line when the path and the review controls fit together; otherwise
           the controls wrap to a line of their own (flex-wrap, no breakpoint), so
           the path keeps its room. The trailing command is pinned to the first
           line. Crumb text is text-sm to match the suggestion-popover rows. */}
@@ -168,16 +225,14 @@ export function DocumentIdentityBar({
         data-document-identity-row
         className={cn(
           "relative flex flex-wrap items-center gap-x-1 font-mono text-ink-subtle text-sm",
-          variant === "header"
-            ? "min-h-10 gap-y-0.5 py-1 pl-2"
-            : ["gap-y-0.5 px-4 py-[3px]", IDENTITY_BAR_BAND_CLASS],
+          "min-h-10 gap-y-0.5 py-1 pl-2",
           trailing && "pr-12 [@media(pointer:coarse)]:pr-14",
           // The row grows so every control can own a 44px target (document-identity-row.css).
           "[@media(pointer:coarse)]:min-h-11",
         )}
       >
         {/* One unit for wrapping: the commands never part from the path. */}
-        <div className="flex min-w-0 flex-[1_1_16rem] items-center gap-1">
+        <div className="flex min-w-0 flex-auto items-center gap-1">
           {leading ? <div className="flex shrink-0 items-center gap-0.5">{leading}</div> : null}
           <div data-identity-main className="flex min-w-0 flex-auto items-center gap-1">
             {placementOpen ? (
@@ -234,9 +289,6 @@ export function DocumentIdentityBar({
             />
           </div>
         </div>
-        {variant === "band" && toolbarSlotRef ? (
-          <div ref={toolbarSlotRef} className="ml-auto flex shrink-0 items-center font-sans" />
-        ) : null}
         {/* Before the controls in DOM order: Tab follows the first line, then the second. */}
         {trailing ? (
           <div className="absolute top-0 right-2 flex h-10 items-center gap-0.5 [@media(pointer:coarse)]:h-11">
@@ -250,10 +302,7 @@ export function DocumentIdentityBar({
       {repair && repairable && !placementOpen ? (
         <button
           type="button"
-          className={cn(
-            "focus-ring flex w-full min-w-0 pb-1 text-left",
-            variant === "header" ? "pl-2" : "px-4",
-          )}
+          className="focus-ring flex w-full min-w-0 pb-1 pl-2 text-left"
           onClick={() => {
             setDismissedRepairId(null);
             setFieldOpen(true);
@@ -279,7 +328,9 @@ export function DocumentIdentityBar({
       onOpenDraft={openDraft}
       onCloseDraftOnly={onCloseDraftOnly}
     >
-      {({ version, controls }) => renderRow(version, controls)}
+      {({ version, controls }) =>
+        variant === "state" ? renderState(version, controls) : renderRow(version, controls)
+      }
     </DraftReviewBand>
   );
 }
