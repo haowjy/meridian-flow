@@ -10,7 +10,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -51,7 +50,7 @@ export function WorkScopePicker({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md border border-border-subtle bg-background/40 px-2 text-left text-[13px] hover:bg-background/70"
+          className="focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md border border-border-subtle bg-background/40 px-2 text-left text-[13px] hover:bg-background/70 data-[state=open]:rounded-b-none data-[state=open]:border-border data-[state=open]:border-b-transparent data-[state=open]:bg-popover"
         >
           <Layers className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
           {scoped || noWorkScoped ? (
@@ -77,7 +76,12 @@ export function WorkScopePicker({
           <ChevronDown className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
+      {/* Attached: the menu continues the trigger, one piece square at the seam. */}
+      <DropdownMenuContent
+        align="start"
+        sideOffset={0}
+        className="w-[var(--radix-dropdown-menu-trigger-width)] rounded-t-none border-t-0"
+      >
         {noWork ? (
           <PickRow
             name={t`None`}
@@ -89,9 +93,6 @@ export function WorkScopePicker({
         {active.length > 0 ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[11px] font-normal text-ink-subtle">
-              <Trans>Active Works</Trans>
-            </DropdownMenuLabel>
             {active.map((work) => (
               <PickRow
                 key={work.id}
