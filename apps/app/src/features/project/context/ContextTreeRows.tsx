@@ -175,8 +175,9 @@ type DropFolder = NonNullable<TreeDropTarget["folder"]>;
 /** The `mx-2` every row sits inside its region with. */
 const ROW_INSET_PX = 8;
 
+/** Top-level rows start 6px in, so their icons line up with the 28px tab buttons' icons above. */
 export function rowPaddingLeft(depth: number): number {
-  return depth * 16;
+  return 6 + depth * 16;
 }
 
 function activateOnKey(handler: (event: KeyboardEvent) => void) {
