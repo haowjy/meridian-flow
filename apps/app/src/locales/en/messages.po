@@ -904,13 +904,17 @@ msgid "Account"
 msgstr "Account"
 
 #: src/features/account/AccountMenu.tsx
-msgid "Account menu"
-msgstr "Account menu"
+#~ msgid "Account menu"
+#~ msgstr "Account menu"
 
 #: src/features/account/PhoneSettings.tsx
 #: src/features/account/SettingsDialog.tsx
 msgid "Account settings."
 msgstr "Account settings."
+
+#: src/features/account/AccountMenu.tsx
+msgid "Account: {label}"
+msgstr "Account: {label}"
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/DocumentTrashDialog.tsx
@@ -5221,7 +5225,6 @@ msgstr "Set the status to “{status}”"
 #: src/features/account/PhoneSettings.tsx
 #: src/features/account/SettingsDialog.tsx
 #: src/features/billing/BillingPage.tsx
-#: src/features/project/shell/LeftSidebar.tsx
 #: src/features/project/shell/ProjectMenu.tsx
 msgid "Settings"
 msgstr "Settings"
