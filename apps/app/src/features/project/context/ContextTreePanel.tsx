@@ -141,6 +141,12 @@ export function UserRailSection({
   );
 }
 
+/** The writer's own files, always open, for a pane of their own (the Your files popup). */
+export function UserFilesTree(props: ContextTreePanelProps) {
+  const { list, renderScheme } = useSchemeTree(props, USER_SCHEMES);
+  return <EntryList list={list}>{renderScheme("user", ALWAYS_OPEN, "source")}</EntryList>;
+}
+
 type PaneState = { expanded: boolean; setExpanded: (next: boolean) => void };
 
 /** One list over `schemes`, and each scheme's section. */
