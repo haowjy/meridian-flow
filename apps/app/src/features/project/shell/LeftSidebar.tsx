@@ -25,8 +25,6 @@ import { PanelToggleSpacer } from "./PanelToggleButton";
 import { ProjectMenu } from "./ProjectMenu";
 import type { ScreenKey } from "./screens";
 import { ChatsBody } from "./sidebar/ChatsBody";
-import { ModeSwitch } from "./sidebar/ModeSwitch";
-
 import { SourcesBody } from "./sidebar/SourcesBody";
 import { WorkScopePicker } from "./sidebar/WorkScopePicker";
 import type { TitleEditHandle } from "./TitleEditSlot";
@@ -132,14 +130,11 @@ export function LeftSidebar({
         onPick={scope.setWorkId}
         onManage={() => void screenCommands?.showWork()}
       />
-      <ModeSwitch
+      <SourcesBody
         mode={mode}
-        onSelect={(next) => {
+        onSelectMode={(next) => {
           if (next !== mode) onSelectScreen(modeMeta(next).screen);
         }}
-      />
-
-      <SourcesBody
         projectId={projectId}
         editorWorkId={editorWorkId}
         chatThreadId={chatThreadId}
