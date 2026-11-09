@@ -12,7 +12,6 @@
  * inserted row carries that object.
  */
 import type {
-  ContextParentOrderPolicy,
   ContextSiblingPosition,
   DocumentFileType,
   Filetype,
@@ -53,8 +52,6 @@ export interface CopySourceFolder {
   uri: string;
   folderId: string;
   name: string;
-  /** The folder's own child ordering; a copy keeps it. */
-  orderPolicy: ContextParentOrderPolicy;
   /** Children in the folder's visible order (empty folders included). */
   children: CopySourceEntry[];
   /** Set by the command on a selected root only: the client's id for the root's copy. */

@@ -149,7 +149,6 @@ export const contextSources = pgTable(
     scope: text("scope").notNull().default("project"),
     description: text("description"),
     sortOrder: integer("sort_order").notNull().default(0),
-    orderPolicy: text("order_policy").$type<"default" | "manual">().notNull().default("default"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
@@ -199,7 +198,6 @@ export const contextSources = pgTable(
       "context_sources_scope_project_fk",
       sql`${table.scope} = 'work' OR ${table.workId} IS NULL`,
     ),
-    check("context_sources_order_policy_valid", sql`${table.orderPolicy} IN ('default', 'manual')`),
   ],
 );
 
@@ -216,7 +214,6 @@ export const folders = pgTable(
     description: text("description"),
     sortOrder: integer("sort_order").notNull().default(0),
     rank: text("rank"),
-    orderPolicy: text("order_policy").$type<"default" | "manual">().notNull().default("default"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
@@ -242,7 +239,6 @@ export const folders = pgTable(
     index("folders_sibling_rank_live")
       .on(table.contextSourceId, table.parentId, sql`${table.rank} COLLATE "C"`, table.id)
       .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden} AND ${table.rank} IS NOT NULL`),
-    check("folders_order_policy_valid", sql`${table.orderPolicy} IN ('default', 'manual')`),
     // Hidden folders occupy no live path; nothing makes them unique.
     uniqueIndex("folders_context_parent_name_live")
       .on(table.contextSourceId, table.parentId, table.name)

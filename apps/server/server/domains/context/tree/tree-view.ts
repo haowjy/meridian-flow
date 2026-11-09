@@ -102,7 +102,6 @@ export type VisibleFolder = {
   parentId: FolderId | null;
   name: string;
   rank: string | null;
-  orderPolicy: "default" | "manual";
   hidden: boolean;
   locationVersion: bigint;
   path: string;
@@ -311,7 +310,6 @@ type VisibleFolderRow = {
   parentId: FolderId | null;
   name: string;
   rank: string | null;
-  orderPolicy: "default" | "manual";
   hidden: boolean;
   locationVersion: bigint;
 };
@@ -351,7 +349,6 @@ export function createTreeReader(
         parentId: vf.parentId,
         name: vf.name,
         rank: vf.rank,
-        orderPolicy: vf.orderPolicy,
         hidden: vf.hidden,
         locationVersion: vf.locationVersion,
       })

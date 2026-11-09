@@ -283,11 +283,9 @@ one source's tree contributes.
   Under the lock `copyInto` re-reads the parent and confirms the roots would take the same
   names; if a concurrent write took one, it inserts nothing and answers `replan`, and the
   command plans and binds again under the lock (a second plan cannot move).
-- A copied folder keeps its source's order policy and its children arrive in source order,
-  so a manual folder's visible order survives. Roots arrive by the destination parent's own
-  rule (the end of a manual parent, name order in a default one). An explicit position
-  places the roots as one run: the first there, each next one after the previous, so a
-  default parent becomes manual exactly as a reorder makes it.
+- A copied folder's children arrive in source order, so its visible order survives. Roots
+  arrive at the end of the destination parent. An explicit position places the roots as one
+  run: the first there, each next one after the previous.
 - Content is bound for the address each copy will have (`bindCopiedBlocks`, a fresh holder,
   so it lands only in an empty document) and encoded to its first Yjs state
   (`encodeSeed`) outside the lock. The insert is set-based, because nothing below a root can
@@ -488,6 +486,6 @@ no `results://` scheme. Neither Recent list lives here: chat Recent reads
 
 `context_staged_folders` and `context_staged_documents` are private generation-tagged rows. Catalog, ContextFS, address lookup, link resolution, and tree readers do not read them. Reveal validates the whole placement, locks Works before namespace keys, inserts the generation set-wise, settles membership and arrivals, then publishes one catalog refresh. A changed destination refuses the generation rather than revealing a partial tree.
 
-The reveal inserts rows unranked, then places the stage's top level like any other arrival (`placeArrivedBatch` in `tree/sibling-order.ts`): a default destination leaves them unranked, a manual one appends them after its last rank in default order, with server-minted ranks under the namespace lock it already holds. Everything below the top level sits in new default-order folders.
+The reveal inserts rows unranked, then places the stage's top level like any other arrival (`placeArrivedBatch` in `tree/sibling-order.ts`): the rows take ranks after the destination's last rank in name order, server-minted under the namespace lock it already holds. Everything below the top level sits in new folders whose children `rankNewFolderChildren` ranks in name order.
 
 Both write paths that insert rows in bulk take their ranks from the same rule, `arrivalRanks` in `tree/sibling-order.ts`: `placeArrivedBatch` updates rows a caller already inserted, and `insertNewTree` (a Copy's result) writes the ranks in with the rows. A write path that inserts `folders` or `documents` rows must place them through `arrivalRanks`; setting `rank` by hand bypasses the allocator.

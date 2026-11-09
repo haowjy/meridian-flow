@@ -32,11 +32,7 @@ import {
 } from "../../ports/context-document-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { createLive, findLiveCreateCandidate } from "../../tree/creates.js";
-import {
-  branchRankOverrides,
-  effectiveParentPolicy,
-  siblingParent,
-} from "../../tree/effective-order.js";
+import { branchRankOverrides, siblingParent } from "../../tree/effective-order.js";
 import { findForward, lastLocationOf, recordForward } from "../../tree/forwards.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
@@ -452,7 +448,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           parentId: vf.parentId,
           name: vf.name,
           rank: vf.rank,
-          orderPolicy: vf.orderPolicy,
         })
         .from(vf)
         .where(eq(vf.contextSourceId, this.sourceId)),
@@ -460,16 +455,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     ]);
     // Base ranks: the one caller (grep) sorts by path.
     return { folders, documents: docs.map(mapDocument) };
-  }
-
-  async parentOrderPolicy(view: TreeView, parentId: string | null) {
-    return (
-      await effectiveParentPolicy(
-        this.db,
-        view.kind === "branch" ? view.branchId : null,
-        siblingParent(this.sourceId, parentId as FolderId | null),
-      )
-    ).policy;
   }
 
   namesAt(view: TreeView, parentId: string | null): Promise<Set<string>> {
@@ -487,7 +472,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         parentId: vf.parentId,
         name: vf.name,
         rank: vf.rank,
-        orderPolicy: vf.orderPolicy,
       })
       .from(vf)
       .where(

@@ -114,7 +114,7 @@ export async function insertDocumentRow(
 /** The `folders` columns of a folder at `at`. */
 export function folderRowValues(
   at: { contextSourceId: ContextSourceId; parentId: FolderId | null; name: string },
-  options: { hidden: boolean; id?: FolderId; orderPolicy?: "default" | "manual" },
+  options: { hidden: boolean; id?: FolderId },
 ) {
   return {
     ...(options.id ? { id: options.id } : {}),
@@ -122,7 +122,6 @@ export function folderRowValues(
     parentId: at.parentId,
     name: at.name,
     hidden: options.hidden,
-    ...(options.orderPolicy ? { orderPolicy: options.orderPolicy } : {}),
   };
 }
 

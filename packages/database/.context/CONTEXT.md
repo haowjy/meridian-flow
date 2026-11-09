@@ -118,6 +118,16 @@ Apply, and the connector columns on `context_sources` (`adapter_type`, `adapter_
 `sync_state`, `is_primary`), which the old release names on every source insert. Nothing
 reads either, so no data is lost.
 
+`0130` needs the same stop. Its code half (`0130_ordered_folders.ts`) ranks every visible
+child of a name-ordered parent in the order it displays, then the SQL half drops
+`order_policy` from `context_sources`, `folders` and `branch_tree_parent_orders` and gives
+every catalog scope a new generation, so a browser resuming from its stored catalog takes a
+fresh snapshot instead of showing unranked folders in id order. The old release reads the
+policy column and leaves new rows unranked, so either release breaks on the other's schema.
+Only rank is written, so no data is lost, and a rerun after a crash ranks the same way.
+Branch rows in a formerly name-ordered parent open across the cutover have a null
+`moved_rank` and show first in their draft.
+
 `0092` rebuilds what an active branch's drafted tree entries own
 (`branch_tree_folders`, `branch_tree_unsettled`, which 0090 and 0091 started
 from current rows only) from `document_edits.tree_change`: the branch's rows on a
