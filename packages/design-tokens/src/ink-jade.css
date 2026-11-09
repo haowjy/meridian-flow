@@ -146,18 +146,15 @@
   --color-shelf-border-strong: color-mix(in oklab, var(--color-foreground) 32%, transparent);
   --color-shelf-muted: color-mix(in oklab, var(--color-foreground) 8%, var(--color-shelf));
   --color-shelf-hover: color-mix(in oklab, var(--color-foreground) 5%, var(--color-shelf));
-  --color-shelf-ring: color-mix(in oklab, var(--color-foreground) 65%, transparent);
 
   --color-border-subtle: oklch(0.9 0.014 86);
   --color-border-focus: oklch(0.78 0.05 175);
   /* Inset keyboard indicator for rounded dropdown rows. Unlike the softer
      ordinary control ring, this role must contrast with every row fill. */
   --color-dropdown-focus-indicator: oklch(0.45 0.07 176);
-  /* List rows sit on page paper, not the darker shelf. Hover is a half-step
-     toward selection; the night palette lifts both above its popover panel. */
+  /* One menu highlight: the hovered row, the current value, and an open
+     trigger all wear it. Rows sit on page paper, a half-step from the shelf. */
   --color-dropdown-hover: color-mix(in oklab, var(--color-sidebar-accent) 50%, var(--color-background));
-  /* The current value wears the hover fill: one highlight in every menu. */
-  --color-dropdown-selected: var(--color-dropdown-hover);
 
   /* Code surface — fenced code blocks sit on the warm canvas as a recessed
      "tablet": a notch DEEPER than the card lift (the canvas reads as raised
@@ -306,6 +303,9 @@
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem;
   --text-sm--line-height: 1.25rem;
+  /* Menu and picker rows read a step above dense chrome. */
+  --text-menu: 0.875rem;
+  --text-menu--line-height: 1.25rem;
   --text-headline-hero: 2.625rem;
   --text-headline-hero--line-height: 1.08;
   --text-headline-hero--letter-spacing: -0.02em;

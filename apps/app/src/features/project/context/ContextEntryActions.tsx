@@ -28,7 +28,7 @@ import {
   dropdownMenuContentClass,
   dropdownMenuItemClass,
   dropdownMenuSeparatorClass,
-  dropdownNavigationPageClass,
+  dropdownPageClass,
   dropdownRowVariants,
 } from "@/components/ui/dropdown-presentation";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
@@ -135,7 +135,7 @@ export function ContextEntryMenu({
       <ContextMenuPrimitive.Portal>
         <ContextMenuPrimitive.Content
           className={cn(
-            dropdownNavigationPageClass,
+            dropdownPageClass,
             dropdownMenuContentClass,
             "origin-(--radix-context-menu-content-transform-origin) [--radix-menu-content-available-height:var(--radix-context-menu-content-available-height)]",
           )}
@@ -172,22 +172,17 @@ export function EntryKebabButton({
   allowedActions,
   onAction,
   className,
-  align = "start",
-  sideOffset = 2,
 }: {
   allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
   className?: string;
-  align?: "start" | "center" | "end";
-  sideOffset?: number;
 }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
   if (allowedActions.length === 0) return null;
   return (
     <OverflowMenu
       label={t`Actions`}
-      align={align}
-      sideOffset={sideOffset}
+      align="start"
       onCloseAutoFocus={onCloseAutoFocus}
       triggerClassName={cn(contextTreeOverflowTriggerClassName, className)}
     >
@@ -247,7 +242,7 @@ function ContextActionItems({
               <ContextMenuPrimitive.Portal>
                 <ContextMenuPrimitive.SubContent
                   className={cn(
-                    dropdownNavigationPageClass,
+                    dropdownPageClass,
                     dropdownMenuContentClass,
                     "origin-(--radix-context-menu-content-transform-origin)",
                   )}

@@ -107,7 +107,7 @@ export function DraftSwitcher({
           onRename?.();
         }}
       >
-        <DropdownMenuLabel className="text-caption font-normal text-muted-foreground">
+        <DropdownMenuLabel>
           <Trans>Versions of this document</Trans>
         </DropdownMenuLabel>
         {draftOnly ? null : (

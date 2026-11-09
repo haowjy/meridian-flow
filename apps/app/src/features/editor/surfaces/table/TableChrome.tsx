@@ -335,7 +335,7 @@ export function TableChrome({ editor }: { editor: Editor }) {
         ) : null}
       </EditorMenu>
 
-      {/* The table's object controls: one ⋮, and only while the table is
+      {/* The table's object controls: one ⋯, and only while the table is
           selected. §5.4 rules out a hover icon row here — the grips already
           own the top edge, and a second system would crowd them.
 

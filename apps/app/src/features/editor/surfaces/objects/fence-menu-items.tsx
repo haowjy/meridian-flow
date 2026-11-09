@@ -2,7 +2,7 @@
  * What a code fence offers, in one place for its two doors.
  *
  * The chip cluster spreads the same verbs across three controls — a labeled
- * language button, a copy icon, and a ⋮ — because a fence's language is worth
+ * language button, a copy icon, and a ⋯ — because a fence's language is worth
  * a label of its own in the corner (ruling 15). A right-click has one list to
  * put them in, so it nests the language and keeps the rest flat. Same verbs,
  * same wording, same commands: a second copy of them would be two answers
@@ -16,7 +16,7 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { ChevronDown, Copy, CopyPlus, Trash2, WrapText } from "lucide-react";
+import { Copy, CopyPlus, Trash2, WrapText } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { diagramProviderForLanguage, EDITOR_DIAGRAM_PROVIDERS } from "@/core/editor/diagrams";
@@ -101,7 +101,7 @@ export function FenceLanguageItems({ editor, target }: FenceMenuProps) {
   );
 }
 
-/** What the ⋮ holds: how the fence reads, and what becomes of it. */
+/** What the ⋯ holds: how the fence reads, and what becomes of it. */
 export function FenceShapeItems({ editor, target }: FenceMenuProps) {
   const wrapped = useWrappedLines(target.element);
 
@@ -145,10 +145,7 @@ export function FenceMenuItems({
   return (
     <>
       <EditorMenuSub open={languageOpen} onOpenChange={setLanguageOpen}>
-        <EditorMenuSubTrigger data-fence-submenu="language">
-          <ChevronDown aria-hidden />
-          {t`Language`}
-        </EditorMenuSubTrigger>
+        <EditorMenuSubTrigger data-fence-submenu="language">{t`Language`}</EditorMenuSubTrigger>
         <EditorMenuSubContent
           className="min-w-44"
           // Radix answers Escape inside a submenu by closing the whole menu,

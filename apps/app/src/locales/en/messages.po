@@ -3376,8 +3376,8 @@ msgid "Images need a project before they can be uploaded."
 msgstr "Images need a project before they can be uploaded."
 
 #: src/features/import/ImportPanel.tsx
-msgid "Import"
-msgstr "Import"
+#~ msgid "Import"
+#~ msgstr "Import"
 
 #: src/features/import/ImportPanel.tsx
 msgid "Import another"

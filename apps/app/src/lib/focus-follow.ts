@@ -8,20 +8,49 @@
 let keyboardInput = false;
 const tracked = new WeakSet<Document>();
 
-/** Starts tracking the writer's input modality in `doc`; safe to call again. */
+/**
+ * Keys that move focus. Only these turn the keyboard ring on: Shift held for a
+ * shift-click, Escape closing a menu, or typing must not ring what was clicked.
+ */
+const NAVIGATION_KEYS = new Set([
+  "Tab",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+]);
+
+/**
+ * Starts tracking the writer's input modality in `doc`; safe to call again.
+ * `data-focus-keys` on the root gates every focus ring (globals.css).
+ */
 export function trackInputModality(doc: Document) {
   if (tracked.has(doc)) return;
   tracked.add(doc);
+  const root = doc.documentElement;
   // Capture phase, so handlers that stop propagation still count. Shortcuts
   // with a modifier (switching apps, copying) are not keyboard navigation.
   doc.addEventListener(
     "keydown",
     (event) => {
-      if (!event.metaKey && !event.ctrlKey && !event.altKey) keyboardInput = true;
+      if (event.metaKey || event.ctrlKey || event.altKey || !NAVIGATION_KEYS.has(event.key)) return;
+      keyboardInput = true;
+      root.dataset.focusKeys = "";
     },
     true,
   );
-  doc.addEventListener("pointerdown", () => (keyboardInput = false), true);
+  doc.addEventListener(
+    "pointerdown",
+    () => {
+      keyboardInput = false;
+      delete root.dataset.focusKeys;
+    },
+    true,
+  );
 }
 
 /** Whether the writer's latest input was a key press rather than a pointer. */

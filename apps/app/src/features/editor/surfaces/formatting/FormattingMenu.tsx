@@ -35,7 +35,6 @@ import { openLinkForm } from "@/core/editor/links";
 import { cn } from "@/lib/utils";
 import {
   EditorMenu,
-  EditorMenuCheckboxItem,
   EditorMenuItem,
   EditorMenuSeparator,
   EditorMenuShortcut,
@@ -217,13 +216,13 @@ function TurnIntoItem({
   editor: Editor;
 }) {
   return (
-    <EditorMenuCheckboxItem
-      checked={state.active}
+    <EditorMenuItem
+      selected={state.active}
       blockedReason={formattingBlockedMessage("block-type", state.blockedBy)}
       onSelect={() => turnIntoBlockType(editor, id)}
     >
       {blockTypeLabel(id)}
-    </EditorMenuCheckboxItem>
+    </EditorMenuItem>
   );
 }
 

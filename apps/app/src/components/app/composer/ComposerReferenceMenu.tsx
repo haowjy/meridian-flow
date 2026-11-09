@@ -168,9 +168,7 @@ export function ComposerReferenceMenu({
             }}
           >
             <ContextMenuLabel>{label}</ContextMenuLabel>
-            <ContextMenuLabel className="max-w-80 break-all font-normal text-muted-foreground">
-              {reference.uri}
-            </ContextMenuLabel>
+            <ContextMenuLabel className="max-w-80 break-all pt-0">{reference.uri}</ContextMenuLabel>
             {follow ? <ContextMenuItem onSelect={follow}>{t`Open link`}</ContextMenuItem> : null}
             <ContextMenuItem
               onSelect={() => {

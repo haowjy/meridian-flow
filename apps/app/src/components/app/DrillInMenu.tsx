@@ -29,7 +29,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 
 /** The list scrolls above the actions, which stay in reach on a long folder. */
 const MENU_CLASS =
@@ -221,7 +220,7 @@ export function DrillInMenuBody({
           aria-label={t`Back from ${choosing.label}`}
         >
           <ChevronLeft aria-hidden />
-          <span className="min-w-0 flex-1 truncate font-medium">{choosing.label}</span>
+          <span className="min-w-0 flex-1 truncate">{choosing.label}</span>
         </DropdownMenuItem>
         {status ? (
           <div role="alert" className="px-2 py-1.5 text-xs text-destructive">
@@ -256,7 +255,7 @@ export function DrillInMenuBody({
           aria-label={t`Back from ${folder.title ?? folder.name}`}
         >
           <ChevronLeft aria-hidden />
-          <span className="min-w-0 flex-1 truncate font-medium">{folder.title ?? folder.name}</span>
+          <span className="min-w-0 flex-1 truncate">{folder.title ?? folder.name}</span>
         </DropdownMenuItem>
       ) : null}
       <div className="min-h-0 overflow-y-auto">
@@ -264,8 +263,7 @@ export function DrillInMenuBody({
           <DropdownMenuItem
             key={node.id}
             disabled={isDisabled?.(node)}
-            aria-current={isHere(node.id) ? "true" : undefined}
-            className={cn(isHere(node.id) && "bg-dropdown-selected font-medium")}
+            selected={isHere(node.id)}
             onSelect={(event) => {
               if (node.folder) {
                 event.preventDefault();

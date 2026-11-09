@@ -232,7 +232,7 @@ export function TranscriptReference({
       >
         <ContextMenuLabel>{label}</ContextMenuLabel>
         {uri || targetHref ? (
-          <ContextMenuLabel className="max-w-80 break-all font-normal text-muted-foreground">
+          <ContextMenuLabel className="max-w-80 break-all pt-0">
             {uri ?? targetHref}
           </ContextMenuLabel>
         ) : null}

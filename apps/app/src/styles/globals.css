@@ -14,6 +14,13 @@
 /* Components' `dark:` utilities key off the UI-theme attribute the boot
    script stamps on <html> — one switch for tokens and variants alike. */
 @custom-variant dark (&:is([data-ui-theme="dark"] *));
+/* A focus ring paints only after the writer moves focus with the keyboard
+   (lib/focus-follow.ts sets data-focus-keys); a click, Shift or Escape never rings. */
+@custom-variant focus-visible (:root[data-focus-keys] &:focus-visible);
+/* A trigger whose menu, popover or listbox is open. Keyed on aria-expanded, which
+   a wrapping Tooltip can't overwrite the way it does data-state; aria-haspopup
+   (implicit on a combobox) keeps plain disclosures (expanded sections) out. */
+@custom-variant popup-open (&:is([aria-haspopup]:not([aria-haspopup="false"]), [role="combobox"])[aria-expanded="true"]);
 
 @theme {
   --container-chat-column: 56rem;
@@ -237,7 +244,7 @@
     text-decoration-color: var(--color-border-subtle);
     text-underline-offset: 0.15em;
   }
-  [data-composer-skill]:focus-visible {
+  :root[data-focus-keys] [data-composer-skill]:focus-visible {
     outline: 2px solid var(--color-border-focus);
     outline-offset: 2px;
   }
@@ -605,7 +612,7 @@
    focus styles. Consumes --border-focus + --ring tokens. */
 @utility focus-ring {
   @apply outline-none;
-  &:focus-visible:not([data-focus-quiet]) {
+  :root[data-focus-keys] &:focus-visible:not([data-focus-quiet]) {
     /* Outer glow derives from the ring token so surfaces that re-point the
        ring (shelf → ink) don't leak a jade halo from a hardcoded literal. */
     box-shadow:
@@ -618,8 +625,8 @@
    rounded row, including composite rows that own a focused child. */
 @utility dropdown-focus-ring {
   @apply outline-none;
-  &:focus-visible,
-  &:has(> :focus-visible) {
+  :root[data-focus-keys] &:focus-visible,
+  :root[data-focus-keys] &:has(> :focus-visible) {
     box-shadow: inset 0 0 0 2px var(--color-dropdown-focus-indicator) !important;
   }
 }
@@ -757,8 +764,8 @@
   --color-accent: var(--color-shelf-hover);
   --color-muted: var(--color-shelf-muted);
   --color-destructive: var(--color-shelf-destructive);
-  --color-border-focus: var(--color-shelf-ring);
-  --color-ring: var(--color-foreground);
+  /* An open trigger on the rail wears the rail's hover, not the page's. */
+  --color-dropdown-hover: var(--color-shelf-hover);
 }
 
 /*
@@ -842,6 +849,10 @@
     &:hover::before {
       background-color: color-mix(in oklab, var(--tab-chip-surface) 50%, transparent);
     }
+  }
+  /* A chip that opens a switcher holds its hover pill while the switcher is open. */
+  &[aria-haspopup][aria-expanded="true"]::before {
+    background-color: color-mix(in oklab, var(--tab-chip-surface) 50%, transparent);
   }
 }
 

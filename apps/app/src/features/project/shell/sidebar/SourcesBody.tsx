@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { Check, MessageSquare, Plus, Trash2 } from "lucide-react";
+import { MessageSquare, Plus, Trash2 } from "lucide-react";
 import {
   type HTMLAttributes,
   type ReactNode,
@@ -13,8 +13,8 @@ import {
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -93,7 +93,7 @@ export function SourcesBody({
       <div
         role="tablist"
         aria-label={t`Sources`}
-        className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="-m-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {shown.map((key) => {
           const rootId = isTreeSource(key) ? (rootIdOf?.(key) ?? null) : null;
@@ -123,7 +123,7 @@ export function SourcesBody({
           <TooltipTrigger asChild>
             <DropdownMenuTrigger
               aria-label={t`Choose tabs`}
-              className="focus-ring grid size-7 shrink-0 place-items-center rounded-md text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground"
+              className="focus-ring grid size-7 shrink-0 place-items-center rounded-md text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground popup-open:bg-dropdown-hover popup-open:text-foreground"
             >
               <Plus className="size-4" aria-hidden />
             </DropdownMenuTrigger>
@@ -131,16 +131,13 @@ export function SourcesBody({
           <TooltipContent side="bottom">{t`Choose tabs`}</TooltipContent>
         </Tooltip>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuLabel className="text-caption font-normal text-muted-foreground">
-            {t`Tabs`}
-          </DropdownMenuLabel>
+          <DropdownMenuLabel>{t`Tabs`}</DropdownMenuLabel>
           {ALL_SOURCES.map((key) => {
             const on = shown.includes(key);
             return (
-              <DropdownMenuItem
+              <DropdownMenuCheckboxItem
                 key={key}
-                role="menuitemcheckbox"
-                aria-checked={on}
+                checked={on}
                 // The last tab stays: the sidebar always shows a list.
                 disabled={on && shown.length === 1}
                 onSelect={(event) => {
@@ -149,9 +146,8 @@ export function SourcesBody({
                 }}
               >
                 <SourceIcon source={key} />
-                <span className="flex-1">{sourceLabel(key)}</span>
-                <Check className={cn("size-3.5", on ? "opacity-100" : "opacity-0")} aria-hidden />
-              </DropdownMenuItem>
+                {sourceLabel(key)}
+              </DropdownMenuCheckboxItem>
             );
           })}
         </DropdownMenuContent>

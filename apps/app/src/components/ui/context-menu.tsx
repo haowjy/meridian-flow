@@ -3,9 +3,10 @@ import { ContextMenu as Primitive } from "radix-ui";
 import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
 import {
+  dropdownGroupLabelClass,
   dropdownMenuContentClass,
   dropdownMenuItemClass,
-  dropdownNavigationPageClass,
+  dropdownPageClass,
   dropdownRowVariants,
 } from "./dropdown-presentation";
 
@@ -53,7 +54,7 @@ export function ContextMenuContent({
           if (event.button !== 0) event.preventDefault();
         }}
         className={cn(
-          dropdownNavigationPageClass,
+          dropdownPageClass,
           dropdownMenuContentClass,
           "[--radix-menu-content-available-height:var(--radix-context-menu-content-available-height)]",
           className,
@@ -73,7 +74,5 @@ export function ContextMenuItem({ className, ...props }: ComponentProps<typeof P
 }
 
 export function ContextMenuLabel({ className, ...props }: ComponentProps<typeof Primitive.Label>) {
-  return (
-    <Primitive.Label {...props} className={cn("px-2 py-1.5 text-sm font-medium", className)} />
-  );
+  return <Primitive.Label {...props} className={cn(dropdownGroupLabelClass, className)} />;
 }

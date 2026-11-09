@@ -16,10 +16,15 @@ import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { Forward, GitFork } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
+import {
+  dropdownGroupLabelClass,
+  dropdownSurfaceVariants,
+} from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AgentPickerPanel } from "@/features/agents/AgentPicker";
 import type { CreationAgent } from "@/features/agents/creation-agent";
+import { cn } from "@/lib/utils";
 import { TURN_ACTION_TOOLTIP_SIDE } from "../turn-action-tooltip";
 
 export type TurnDerivation = {
@@ -150,7 +155,7 @@ function HandoffPicker({
         tabIndex={-1}
         align={align}
         aria-label={t`Hand off to an Agent`}
-        className="text-tier-chat w-72 p-1"
+        className={cn(dropdownSurfaceVariants({ measure: "identity" }), "text-tier-chat")}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           contentRef.current?.focus();
@@ -163,9 +168,7 @@ function HandoffPicker({
           setOpen(false);
         }}
       >
-        <p className="px-2 pt-1 pb-1.5 text-xs font-medium text-muted-foreground">
-          {t`Hand off to`}
-        </p>
+        <p className={dropdownGroupLabelClass}>{t`Hand off to`}</p>
         <AgentPickerPanel
           status={catalog}
           agents={agents}

@@ -49,7 +49,7 @@ export function DocumentVersionMenu({ projectId, tab }: { projectId: string; tab
           <Trans>Live</Trans>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-caption font-normal text-muted-foreground">
+        <DropdownMenuLabel>
           {hints.length > 0 ? <Trans>Drafts</Trans> : <Trans>No drafts</Trans>}
         </DropdownMenuLabel>
         {hints.map((hint) => {

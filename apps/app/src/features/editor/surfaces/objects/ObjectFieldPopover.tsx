@@ -3,7 +3,7 @@
  * in a small popover").
  *
  * One surface for every field a registration declares, rather than one popover
- * per verb: the ⋮ item the writer picked decides which field takes the caret, and
+ * per verb: the ⋯ item the writer picked decides which field takes the caret, and
  * a figure editing its caption can reach its label without going back to the
  * menu. Which fields are here at all is `surfaceFields` on the object's row, so
  * the inline picture and the captioned figure share this surface.
