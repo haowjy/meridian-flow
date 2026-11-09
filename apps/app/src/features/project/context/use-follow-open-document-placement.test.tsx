@@ -51,7 +51,7 @@ const candidate: ContextRouteSelection = {
 
 beforeEach(() => {
   useContextTabsStore.setState({
-    byProject: { project: { tabs: [tab], selectedTabIdByWork: {} } },
+    byProject: { project: { tabs: [tab], selectedTabKey: null } },
     _workspaceHydrated: true,
   });
 });

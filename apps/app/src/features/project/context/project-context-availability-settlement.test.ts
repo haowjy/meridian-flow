@@ -38,7 +38,7 @@ function composed(settleWorkspace: () => Promise<void>) {
             schemaType: "document" as const,
           },
         ],
-        selectedTabIdByWork: { work: documentId },
+        selectedTabKey: "tab",
       }),
       commit: () => [],
       settleDraft: async () => ({ kind: "not-settled" as const }),

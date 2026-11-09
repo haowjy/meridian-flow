@@ -46,6 +46,7 @@ export {
   type ProjectTabsSlice,
   type ReviewEntries,
   type ReviewItemTabIdentity,
+  type ReviewOwner,
   type ReviewPin,
   replaceOwner,
   reviewEntriesOf,

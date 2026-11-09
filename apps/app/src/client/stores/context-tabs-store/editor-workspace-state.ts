@@ -24,6 +24,7 @@ import {
   tabStateOf,
   withoutReviewEntry,
   withTabState,
+  workReviewOwner,
 } from "./editor-workspace-model";
 
 export const EDITOR_WORKSPACE_STORAGE_KEY = "meridian:editor-workspace:v2";
@@ -198,7 +199,7 @@ function validTabState(tab: Record<string, unknown>): boolean {
     reviewPin !== undefined &&
     !(
       isRecord(reviewPin) &&
-      isString(reviewPin.workId) &&
+      isString(reviewPin.owner) &&
       isString(reviewPin.itemKey) &&
       (reviewPin.changeId === undefined || isString(reviewPin.changeId))
     )
@@ -298,7 +299,7 @@ function normalizeProject(workspace: ProjectTabsSlice): ProjectTabsSlice {
 
 /** The tab to select once `removed` is gone: it keeps the selection unless it was the selected one. */
 function pinWithoutWork(tab: ContextTab, workId: string): ContextTab {
-  if (tab.reviewPin?.workId !== workId) return tab;
+  if (tab.reviewPin?.owner !== workReviewOwner(workId)) return tab;
   const { reviewPin: _pin, ...rest } = tab;
   return rest as ContextTab;
 }
@@ -631,7 +632,8 @@ export function reduceEditorWorkspace(
     if (!workspace) return outcome("not-referenced", current);
     const matches = (tab: ContextTab) =>
       tab.reviewPin !== undefined &&
-      (command.workId === undefined || tab.reviewPin.workId === command.workId) &&
+      (command.workId === undefined ||
+        tab.reviewPin.owner === workReviewOwner(command.workId)) &&
       (command.itemKey === undefined || tab.reviewPin.itemKey === command.itemKey);
     if (!workspace.tabs.some(matches)) return outcome("already-committed", current);
     return replaceProject(current, command.projectId, {

@@ -147,7 +147,7 @@ describe("AccountFeatureTestProvider", () => {
       byProject: {
         "project-1": {
           tabs: [{ ...tracked("a", "/a.md"), tabInstanceId: "instance-a" }],
-          selectedTabIdByWork: { "work-1": "a" },
+          selectedTabKey: "a",
         },
       },
       _workspaceHydrated: true,

@@ -67,8 +67,8 @@ export function tabContextOwner(owner: TabOwner): ContextOwner {
 /** One Work's draft-only presentation of a document: the draft item it shows and its tab-generation fence. */
 export type ReviewEntry = { itemKey: string; tabInstanceToken: string };
 
-/** Work id to that Work's entry; one entry per Work whose branch creates the document. */
-export type ReviewEntries = Record<string, ReviewEntry>;
+/** Owner key to that owner's entry; one entry per owner whose branch creates the document. */
+export type ReviewEntries = Record<ReviewOwner, ReviewEntry>;
 
 /**
  * Which version of the document a tab paints. Per tab, persisted with the record; a Work
@@ -81,8 +81,24 @@ export type TabView = {
 
 export const DEFAULT_TAB_VIEW: TabView = { version: "draft", showChanges: true };
 
+/**
+ * Who owns a draft, as the string the tab session stores: `work:<id>` today, and a chat lineage's
+ * key when lineage drafts exist. Persisted review entries and pins key on it, so a new kind of
+ * owner needs no migration; this is the one place that converts to and from a Work id.
+ */
+export type ReviewOwner = string;
+
+export function workReviewOwner(workId: string): ReviewOwner {
+  return `work:${workId}`;
+}
+
+/** The Work id behind an owner key, or null for an owner that is not a Work. */
+export function workIdOfReviewOwner(owner: ReviewOwner): string | null {
+  return owner.startsWith("work:") ? owner.slice("work:".length) : null;
+}
+
 /** An explicit review address (a review link, Back to a review), counted while its item is listed. */
-export type ReviewPin = { workId: string; itemKey: string; changeId?: string };
+export type ReviewPin = { owner: ReviewOwner; itemKey: string; changeId?: string };
 
 /** What the writer has done to a tab, kept with the record in the tab session. */
 export type TabState = {
@@ -246,7 +262,12 @@ export function reviewEntryOf(
   tab: ContextTab | EditorTabCandidate,
   workId: string,
 ): ReviewEntry | undefined {
-  return reviewEntriesOf(tab)[workId];
+  return reviewEntriesOf(tab)[workReviewOwner(workId)];
+}
+
+/** The Works whose branches create this document (its draft-only entries). */
+export function reviewWorkIds(tab: ContextTab | EditorTabCandidate): string[] {
+  return Object.keys(reviewEntriesOf(tab)).flatMap((owner) => workIdOfReviewOwner(owner) ?? []);
 }
 
 /**
@@ -254,7 +275,7 @@ export function reviewEntryOf(
  * Discard or a writer's close leaves behind. null means no Work presents it any more.
  */
 export function withoutReviewEntry(tab: ContextTab, workId: string): ContextTab | null {
-  const { [workId]: _dropped, ...reviews } = reviewEntriesOf(tab);
+  const { [workReviewOwner(workId)]: _dropped, ...reviews } = reviewEntriesOf(tab);
   return tab.kind === "tracked" && Object.keys(reviews).length > 0 ? { ...tab, reviews } : null;
 }
 
