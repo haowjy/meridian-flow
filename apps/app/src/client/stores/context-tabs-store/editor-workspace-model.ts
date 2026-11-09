@@ -70,6 +70,44 @@ export type ReviewEntry = { itemKey: string; tabInstanceToken: string };
 /** Work id to that Work's entry; one entry per Work whose branch creates the document. */
 export type ReviewEntries = Record<string, ReviewEntry>;
 
+/**
+ * Which version of the document a tab paints. Per tab, persisted with the record; a Work
+ * switch keeps it. "draft" means the scoped Work's draft when it has one, and is the default.
+ */
+export type TabView = {
+  version: "draft" | "live";
+  showChanges: boolean;
+};
+
+export const DEFAULT_TAB_VIEW: TabView = { version: "draft", showChanges: true };
+
+/** An explicit review address (a review link, Back to a review), counted while its item is listed. */
+export type ReviewPin = { workId: string; itemKey: string; changeId?: string };
+
+/** What the writer has done to a tab, kept with the record in the tab session. */
+export type TabState = {
+  view?: TabView;
+  /** The one peek slot, drawn in italics; at most one tab per project. */
+  preview?: true;
+  reviewPin?: ReviewPin;
+};
+
+export const TAB_STATE_KEYS = ["view", "preview", "reviewPin"] as const;
+
+export function tabStateOf(tab: ContextTab): TabState {
+  const { view, preview, reviewPin } = tab;
+  return {
+    ...(view ? { view } : {}),
+    ...(preview ? { preview } : {}),
+    ...(reviewPin ? { reviewPin } : {}),
+  };
+}
+
+/** A rebuilt record (from the catalog or the server) keeps what the writer did to the tab it replaces. */
+export function withTabState<T extends ContextTab>(next: T, from: ContextTab): T {
+  return { ...next, ...tabStateOf(from) };
+}
+
 export type ContextTab =
   | ({
       tabInstanceId?: string;
@@ -96,7 +134,8 @@ export type ContextTab =
        * names only held documents: one for this tab makes the server refuse the whole snapshot.
        */
       localOnly?: true;
-    } & TabOwner)
+    } & TabOwner &
+      TabState)
   | ({
       tabInstanceId?: string;
       kind: "viewer";
@@ -109,21 +148,48 @@ export type ContextTab =
       mimeType?: string;
       /** Stable resource identity for namespace operations and local cache lookup. */
       resourceHandle?: string;
-    } & TabOwner)
-  | {
+    } & TabOwner &
+      TabState)
+  | ({
       tabInstanceId?: string;
       kind: "new";
       documentId: string;
       name: string;
       resourceHandle: string;
-    };
+    } & TabState);
 
 export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" }>;
 
+/** The tab store's slice for one project: one selection, whatever the Work scope or mode. */
 export type ProjectTabsSlice = {
   tabs: ContextTab[];
-  selectedTabIdByWork: Record<string, string>;
+  /** `tabKey` of the selected tab. */
+  selectedTabKey: string | null;
 };
+
+/** Stable across a document's identity changes: the tab instance, else the document. */
+export function tabKey(tab: ContextTab): string {
+  return tab.tabInstanceId ?? tab.documentId;
+}
+
+export function selectedTabOf(slice: ProjectTabsSlice): ContextTab | null {
+  return slice.selectedTabKey === null
+    ? null
+    : (slice.tabs.find((tab) => tabKey(tab) === slice.selectedTabKey) ?? null);
+}
+
+export function selectedDocumentIdOf(slice: ProjectTabsSlice): string | null {
+  return selectedTabOf(slice)?.documentId ?? null;
+}
+
+/** The slice with the tab for `documentId` selected (none if absent). */
+export function selectingDocument(
+  slice: ProjectTabsSlice,
+  documentId: string | null,
+): ProjectTabsSlice {
+  const tab = documentId === null ? null : slice.tabs.find((t) => t.documentId === documentId);
+  return { ...slice, selectedTabKey: tab ? tabKey(tab) : null };
+}
 
 /**
  * The one scheme the Editor never opens: uploads belong to a chat and open in
