@@ -19,7 +19,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { Folder } from "lucide-react";
-import { type RefObject, useMemo } from "react";
+import { type HTMLAttributes, type RefObject, useMemo, useState } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabs } from "@/client/stores";
@@ -30,7 +30,6 @@ import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { serverTabFromFile } from "../context/context-tab-from-file";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { RailPaneHeader } from "../context/RailPaneHeader";
-import { SourceHeading } from "../context/SourceHeading";
 import { AreaDropRegion } from "../context/tree-drop/AreaDropRegion";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useDeleteContextEntry } from "../context/use-delete-context-entry";
@@ -129,13 +128,26 @@ export function ScratchSource({
 }) {
   const scratch = useChatScratchSource(projectId, threadId);
   const { list, primary } = useChatScratchList(projectId, scratch);
+  const [expanded, setExpanded] = useState(true);
+  const header = (dropProps?: HTMLAttributes<HTMLElement>) => (
+    <RailPaneHeader
+      label={schemeLabel("scratch")}
+      icon={schemeIcon("scratch")}
+      title={scratch?.heading}
+      expanded={expanded}
+      onExpandedChange={setExpanded}
+      dropProps={dropProps}
+    />
+  );
   if (!scratch)
     return (
       <>
-        <SourceHeading label={schemeLabel("scratch")} />
-        <p className="px-4 py-1 text-[13px] text-ink-muted">
-          <Trans>Open a chat to see its Scratch.</Trans>
-        </p>
+        {header()}
+        {expanded ? (
+          <p className="px-4 py-1 text-[13px] text-ink-muted">
+            <Trans>Open a chat to see its Scratch.</Trans>
+          </p>
+        ) : null}
       </>
     );
   return (
@@ -145,17 +157,17 @@ export function ScratchSource({
         catalogRootId={primary.catalog?.root.entryId ?? null}
         reveal={() => {}}
         className="flex min-h-0 flex-1 flex-col"
-        header={(dropProps) => (
-          <SourceHeading
-            label={schemeLabel("scratch")}
-            title={scratch.heading}
-            dropProps={dropProps}
-          />
-        )}
+        header={header}
       >
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-1">
-          <ChatScratchTree projectId={projectId} threadId={threadId} editorWorkId={editorWorkId} />
-        </div>
+        {expanded ? (
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-1">
+            <ChatScratchTree
+              projectId={projectId}
+              threadId={threadId}
+              editorWorkId={editorWorkId}
+            />
+          </div>
+        ) : null}
       </AreaDropRegion>
     </EntryList>
   );
