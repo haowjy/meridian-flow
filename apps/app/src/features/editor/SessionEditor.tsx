@@ -53,7 +53,6 @@ import { ImageIngressRuntime } from "./surfaces/images";
 import { ProjectLinkRuntime } from "./surfaces/link";
 import { documentSlashCatalog } from "./surfaces/slash";
 import { DocumentToolbar } from "./surfaces/toolbar";
-import { usePlacedToolbar } from "./toolbar-slot";
 import { useAgentNames } from "./useAgentNames";
 import { WordCount } from "./WordCount";
 import "./editor.css";
@@ -412,7 +411,6 @@ function ActiveSessionEditorView({
         </div>
         <EditorCanvas
           editor={editor}
-          active={active}
           notices={
             <SchemaNotices
               fence={snapshot.schemaFence}
@@ -466,7 +464,6 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
           document opens, greyed and saying so, rather than popping in. */}
       <EditorCanvas
         editor={null}
-        active
         toolbar={showToolbar ? <DocumentToolbar editor={null} /> : undefined}
       />
     </section>
@@ -475,14 +472,12 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
 
 function EditorCanvas({
   editor,
-  active,
   notices,
   toolbar,
   scrollRef,
   onScroll,
 }: {
   editor: Editor | null;
-  active: boolean;
   notices?: ReactNode;
   toolbar?: ReactNode;
   scrollRef?: RefObject<HTMLDivElement | null>;
@@ -497,19 +492,16 @@ function EditorCanvas({
     [editor, touch, scrollRef],
   );
 
-  const placed = usePlacedToolbar(toolbar, active);
-
   return (
     <EditorSurfaceFrame
       notices={notices}
-      toolbar={placed.inline}
+      toolbar={toolbar}
       textCursor={editor !== null}
       scrollRef={scrollRef}
       scrollClassName="meridian-editor main-pane"
       onScroll={onScroll}
     >
       <EditorContent editor={editor} className={editorColumnFill} />
-      {placed.portal}
     </EditorSurfaceFrame>
   );
 }
