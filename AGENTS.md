@@ -120,12 +120,10 @@ each other, and the piece's worktree, stack and processes go as soon as it's in.
 carries the integration branch into `main`.
 
 A fix restores intended behavior; changing what writers are meant to see is a feature.
-A big refactor, reorganization or architecture change needs the owner's approval first,
-and its issue or PR states what he approved and the date; another agent's report of
-that approval doesn't count. Small
-fixes need no approval to start. Before a merge, CI is green, the regressions the change
-could cause are tested, and the PR body is reread against the final diff, with evidence
-from the commit being merged. A big fix or refactor also needs an independent review.
+A feature waits for the owner. Nothing else needs his approval to start or merge, big
+changes included. Before a merge, CI is green, the regressions the change could cause are
+tested, and the PR body is reread against the final diff, with evidence from the commit being
+merged. A big fix or refactor also needs an independent review.
 
 Big means impact, not size: a change is big when it crosses a boundary others depend on.
 That is `packages/contracts` or a package's public exports, the database schema or a
