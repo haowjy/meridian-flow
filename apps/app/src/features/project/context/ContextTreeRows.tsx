@@ -289,7 +289,7 @@ function DirRow({
           )}
           style={{ paddingLeft: rowPaddingLeft(depth) }}
         >
-          <Twistie expanded={isOpen} />
+          {/* The open or closed folder is the twistie: rows need no chevron column. */}
           <RowIcon icon={isOpen ? FolderOpen : Folder} />
           <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
             <span className="truncate">{dir.name}</span>
@@ -352,7 +352,6 @@ function PendingTreeRow({ row, depth }: { row: PendingRow; depth: number }) {
       )}
       style={{ paddingLeft: rowPaddingLeft(depth) }}
     >
-      <span className="w-4 shrink-0" aria-hidden />
       <RowIcon icon={Folder} />
       <span className="ml-0.5 min-w-0 flex-1 truncate">{row.name}</span>
       <LoaderCircle
@@ -416,7 +415,6 @@ function FileRow({
         style={{ paddingLeft: rowPaddingLeft(depth) }}
       >
         <InsertionLine edge={drop.edge} inset={rowPaddingLeft(depth)} />
-        <span className="h-7 w-4 shrink-0" aria-hidden />
         <RowIcon icon={fileKindIcon(file)} />
         <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
           <span className="truncate">{file.name}</span>
@@ -462,7 +460,6 @@ function RenameRow({
       className={cn("mx-2 flex items-center pr-1 text-sm text-foreground", contextTreeRowClassName)}
       style={{ paddingLeft: rowPaddingLeft(depth) }}
     >
-      <span className="h-7 w-4 shrink-0" aria-hidden />
       <RowIcon icon={icon} />
       <EntryNameField form={form} label={t`Rename`} className="ml-0.5" />
     </div>
@@ -497,7 +494,6 @@ function CreateRow({
       className={cn("mx-2 flex items-center pr-1 text-sm text-foreground", contextTreeRowClassName)}
       style={{ paddingLeft: rowPaddingLeft(depth) }}
     >
-      <span className="h-7 w-4 shrink-0" aria-hidden />
       <RowIcon icon={form.icon} />
       <EntryNameField
         form={form}
