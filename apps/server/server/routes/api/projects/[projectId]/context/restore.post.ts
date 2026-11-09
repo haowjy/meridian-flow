@@ -16,5 +16,6 @@ export default defineEventHandler(async (event) => {
     userId: user.userId,
     projectId,
     documents: body.data.documents,
+    destination: body.data.destination,
   });
 });
