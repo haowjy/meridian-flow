@@ -40,6 +40,7 @@ import { useRemovalRecord } from "@/features/project/context/use-removal-record"
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
+import { DocumentStateSlotHost } from "./document-state-slot";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnFill, editorProseClass } from "./editor-column";
@@ -411,6 +412,7 @@ function ActiveSessionEditorView({
         </div>
         <EditorCanvas
           editor={editor}
+          active={active}
           notices={
             <SchemaNotices
               fence={snapshot.schemaFence}
@@ -464,6 +466,7 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
           document opens, greyed and saying so, rather than popping in. */}
       <EditorCanvas
         editor={null}
+        active
         toolbar={showToolbar ? <DocumentToolbar editor={null} /> : undefined}
       />
     </section>
@@ -472,12 +475,14 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
 
 function EditorCanvas({
   editor,
+  active,
   notices,
   toolbar,
   scrollRef,
   onScroll,
 }: {
   editor: Editor | null;
+  active: boolean;
   notices?: ReactNode;
   toolbar?: ReactNode;
   scrollRef?: RefObject<HTMLDivElement | null>;
@@ -496,6 +501,7 @@ function EditorCanvas({
     <EditorSurfaceFrame
       notices={notices}
       toolbar={toolbar}
+      toolbarTrailing={active ? <DocumentStateSlotHost /> : null}
       textCursor={editor !== null}
       scrollRef={scrollRef}
       scrollClassName="meridian-editor main-pane"
