@@ -124,6 +124,9 @@ owner. Before the merge, CI is green, the regressions the change could cause are
 PR body is reread against the final diff, with evidence from the commit being merged. Don't hold
 a finished PR for the owner: he uses the app, and what he finds wrong becomes a follow-up PR.
 
+Open a draft PR as soon as a branch has its first commit, and update its body with each push,
+so anyone can see the work's state from the PR. Mark it ready when it's complete.
+
 Write a PR body for a reader who knows nothing about the area, from the
 [template](.github/PULL_REQUEST_TEMPLATE.md), and check it with
 `pnpm check:pr-body <body.md>`. Its `## Changelog` section is the changelog; never
