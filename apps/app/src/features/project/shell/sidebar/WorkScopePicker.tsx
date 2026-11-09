@@ -159,10 +159,10 @@ function WorkState({ work, needsYou }: { work: Work; needsYou: number }) {
   const toReview = work.pendingDocumentCount;
   if (toReview === 0 && needsYou === 0) return null;
   return (
-    <span className="flex shrink-0 gap-2 text-[11px] text-ink-muted tabular-nums">
+    <span className="flex shrink-0 gap-2 text-[11px] text-primary tabular-nums">
       {toReview > 0 ? <Trans>{toReview} to review</Trans> : null}
       {needsYou > 0 ? (
-        <span className="text-primary">
+        <span>
           <Trans>{needsYou} needs you</Trans>
         </span>
       ) : null}
