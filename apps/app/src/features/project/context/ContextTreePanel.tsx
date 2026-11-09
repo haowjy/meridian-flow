@@ -5,7 +5,15 @@ import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus } from "lucide-react";
-import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -32,7 +40,6 @@ import {
 import { EntryList, useEntryList } from "./entry-drag/use-entry-list";
 import { ImportHeaderAction } from "./ImportHeaderAction";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
-import { SourceHeading } from "./SourceHeading";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 import { AreaDropRegion } from "./tree-drop/AreaDropRegion";
 import type { FilesRoute } from "./tree-drop/tree-drop";
@@ -64,13 +71,18 @@ type ContextTreePanelProps = {
   onRequestCreate?: (request: TreeCreationRequest) => void;
   onCreateDone?: () => void;
   /**
-   * Show one source, always open, under a plain heading (Write mode's source
-   * tabs). Omitted, every project source stacks as a collapsible section.
+   * Show one source alone (Write mode's source tabs). Omitted, every project source
+   * stacks. Either way each source collapses under its own header.
    */
   only?: ProjectContextTreeScheme;
+  /**
+   * The source tabs, drawn inside the tree's drag scope so each tab takes a drop
+   * at its source's root. With tabs the scope spans every source, Your files included.
+   */
+  tabs?: (rootIdOf: (scheme: ProjectContextTreeScheme) => string | null) => ReactNode;
+  /** A source the tree doesn't draw (Scratch, Trash), shown in place of `only`. */
+  body?: ReactNode;
 };
-
-const ALWAYS_OPEN: PaneState = { expanded: true, setExpanded: () => {} };
 
 /**
  * VS Code-style multi-scheme file tree. Each context scheme renders as a
@@ -84,9 +96,9 @@ const ALWAYS_OPEN: PaneState = { expanded: true, setExpanded: () => {} };
 export function ContextTreePanel(props: ContextTreePanelProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const imports = useOptionalImports();
-  const { list, renderScheme } = useSchemeTree(
+  const { list, renderScheme, rootIdOf } = useSchemeTree(
     props,
-    props.only === "user" ? USER_SCHEMES : PROJECT_TREE_SCHEMES,
+    props.tabs ? SOURCE_TAB_SCHEMES : PROJECT_TREE_SCHEMES,
   );
   const dropImport = imports?.drop;
   const files = useMemo<FilesRoute>(
@@ -103,29 +115,32 @@ export function ContextTreePanel(props: ContextTreePanelProps) {
     [dropImport],
   );
   return (
-    <div className="flex h-full min-h-0 w-full flex-col">
-      {/* The destination rows own the sidebar's single rule. Explorer panes
+    <EntryList list={list} files={files}>
+      <div className="flex h-full min-h-0 w-full flex-col">
+        {props.tabs?.(rootIdOf)}
+        {/* The destination rows own the sidebar's single rule. Explorer panes
           stay on one uninterrupted rail material beneath it. */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: a drag is a pointer shortcut; every drop has a menu path (Move… on the row). slop-lint: allow suppression the reason is stated in this comment */}
-      <div
-        ref={scroller}
-        onDragOver={(event) => {
-          if (dragPayloadKind(Array.from(event.dataTransfer.types)) !== "none")
-            dragEdgeScroll(scroller.current, event.clientY);
-        }}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2"
-      >
-        <EntryList list={list} files={files}>
-          {props.only
-            ? renderScheme(props.only, ALWAYS_OPEN, "source")
-            : PROJECT_TREE_SCHEMES.map((scheme) => renderScheme(scheme))}
-        </EntryList>
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: a drag is a pointer shortcut; every drop has a menu path (Move… on the row). slop-lint: allow suppression the reason is stated in this comment */}
+        <div
+          ref={scroller}
+          onDragOver={(event) => {
+            if (dragPayloadKind(Array.from(event.dataTransfer.types)) !== "none")
+              dragEdgeScroll(scroller.current, event.clientY);
+          }}
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2"
+        >
+          {props.body ??
+            (props.only
+              ? renderScheme(props.only, undefined, true)
+              : PROJECT_TREE_SCHEMES.map((scheme) => renderScheme(scheme)))}
+        </div>
       </div>
-    </div>
+    </EntryList>
   );
 }
 
 const USER_SCHEMES = ["user"] as const;
+const SOURCE_TAB_SCHEMES: readonly ProjectContextTreeScheme[] = [...PROJECT_TREE_SCHEMES, "user"];
 
 /**
  * The writer's User documents, docked above the account row like Scratch. Its
@@ -175,13 +190,11 @@ function useSchemeTree(
       return catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, accepts: true }] : [];
     }),
   });
-  const renderScheme = (
-    scheme: ProjectContextTreeScheme,
-    pane?: PaneState,
-    heading: "section" | "source" = "section",
-  ) => (
+  const rootIdOf = (scheme: ProjectContextTreeScheme) =>
+    catalogs[scheme]?.catalog?.root.entryId ?? null;
+  const renderScheme = (scheme: ProjectContextTreeScheme, pane?: PaneState, fill = false) => (
     <SchemeSection
-      heading={heading}
+      fill={fill}
       key={`${projectId}:${scheme}:${isWorkScopedScheme(scheme) ? editorWorkId : "project"}`}
       projectId={projectId}
       editorWorkId={editorWorkId}
@@ -200,11 +213,11 @@ function useSchemeTree(
       onCreateDone={onCreateDone}
     />
   );
-  return { list, renderScheme };
+  return { list, renderScheme, rootIdOf };
 }
 
 function SchemeSection({
-  heading,
+  fill,
   catalogState,
   projectId,
   editorWorkId,
@@ -217,11 +230,12 @@ function SchemeSection({
   onRequestCreate,
   onCreateDone,
 }: {
-  heading: "section" | "source";
   catalogState: ReturnType<typeof useContextCatalogViews>[ProjectContextTreeScheme];
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
+  /** Alone in its tab: the section fills the pane, and the space below its rows takes drops at its root. */
+  fill: boolean;
   /** A docked section's open state, owned by the rail instead of the tree. */
   pane?: PaneState;
   activeScheme: ProjectContextTreeScheme | null;
@@ -429,49 +443,42 @@ function SchemeSection({
       }}
     />
   ) : null;
-  const header = (dropProps: React.HTMLAttributes<HTMLElement>) =>
-    heading === "source" ? (
-      <SourceHeading
-        label={schemeLabel(scheme)}
-        dropProps={dropProps}
-        extra={importAction}
-        onCreate={schemeAllowsCreation(scheme) ? (kind) => requestCreate(kind, "") : undefined}
-      />
-    ) : (
-      <RailPaneHeader
-        label={schemeLabel(scheme)}
-        icon={schemeIcon(scheme)}
-        expanded={expanded}
-        onExpandedChange={handleExpandedChange}
-        dropProps={dropProps}
-        actions={
-          schemeAllowsCreation(scheme) ? (
-            <>
-              <PaneHeaderActionButton
-                icon={FilePlus}
-                label={t`New file`}
-                onClick={() => requestCreate("file", "")}
-              />
-              <PaneHeaderActionButton
-                icon={FolderPlus}
-                label={t`New folder`}
-                onClick={() => requestCreate("folder", "")}
-              />
-              {importAction}
-            </>
-          ) : undefined
-        }
-      />
-    );
+  const header = (dropProps: React.HTMLAttributes<HTMLElement>) => (
+    <RailPaneHeader
+      label={schemeLabel(scheme)}
+      icon={schemeIcon(scheme)}
+      expanded={expanded}
+      onExpandedChange={handleExpandedChange}
+      dropProps={dropProps}
+      actions={
+        schemeAllowsCreation(scheme) ? (
+          <>
+            <PaneHeaderActionButton
+              icon={FilePlus}
+              label={t`New file`}
+              onClick={() => requestCreate("file", "")}
+            />
+            <PaneHeaderActionButton
+              icon={FolderPlus}
+              label={t`New folder`}
+              onClick={() => requestCreate("folder", "")}
+            />
+            {importAction}
+          </>
+        ) : undefined
+      }
+    />
+  );
 
   return (
-    <section className={pane ? "flex min-h-0 flex-col" : undefined}>
+    <section className={pane ? "flex min-h-0 flex-col" : fill ? "flex flex-1 flex-col" : undefined}>
       <AreaDropRegion
         scheme={scheme}
         catalogRootId={catalog?.root.entryId ?? null}
         reveal={() => !expanded && setExpanded(true)}
         header={header}
-        className={pane ? "flex min-h-0 flex-col" : undefined}
+        className={pane ? "flex min-h-0 flex-col" : fill ? "flex flex-1 flex-col" : undefined}
+        fill={fill}
       >
         {expanded ? (
           // Docked, the header stays put and the rows scroll under it.

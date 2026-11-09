@@ -77,10 +77,7 @@ export function WorkScopePicker({
           <ChevronDown className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-64"
-      >
+      <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
         {noWork ? (
           <PickRow
             name={t`None`}
