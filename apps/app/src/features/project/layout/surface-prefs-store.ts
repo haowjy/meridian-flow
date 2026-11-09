@@ -10,14 +10,14 @@ import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { createJSONStorage, devtools, persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 
-import { MODE_KEYS, type ModeKey, type PanelSlotId } from "./types";
+import { MODE_KEYS, MODES, type ModeKey, type ModePanels, modeMeta } from "./modes";
+import type { PanelSlotId } from "./types";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
 export type SlotWidths = Record<PanelSlotId, number>;
-export type ModePanels = { railOpen: boolean; dockOpen: boolean };
 export type ModePanelsMap = Record<ModeKey, ModePanels>;
 
 export const SLOT_WIDTH_BOUNDS: Record<PanelSlotId, { min: number; max: number }> = {
@@ -28,11 +28,9 @@ export const SLOT_WIDTH_BOUNDS: Record<PanelSlotId, { min: number; max: number }
 
 export const DEFAULT_SLOT_WIDTHS: SlotWidths = { "rail-l": 264, dock: 360 };
 
-/** Write gives the page the room; Chat shows the page beside the conversation. */
-export const DEFAULT_MODE_PANELS: ModePanelsMap = {
-  write: { railOpen: true, dockOpen: false },
-  chat: { railOpen: true, dockOpen: true },
-};
+export const DEFAULT_MODE_PANELS = Object.fromEntries(
+  MODES.map((mode) => [mode.key, mode.defaultPanels]),
+) as ModePanelsMap;
 
 function savedWidth(slot: PanelSlotId, width: unknown): number {
   if (typeof width !== "number" || !Number.isFinite(width)) return DEFAULT_SLOT_WIDTHS[slot];
@@ -51,7 +49,7 @@ export function normalizeModePanels(modes?: Partial<Record<ModeKey, Partial<Mode
   const normalized = {} as ModePanelsMap;
   for (const mode of MODE_KEYS) {
     const saved = modes?.[mode];
-    const defaults = DEFAULT_MODE_PANELS[mode];
+    const defaults = modeMeta(mode).defaultPanels;
     normalized[mode] = {
       railOpen: typeof saved?.railOpen === "boolean" ? saved.railOpen : defaults.railOpen,
       dockOpen: typeof saved?.dockOpen === "boolean" ? saved.dockOpen : defaults.dockOpen,

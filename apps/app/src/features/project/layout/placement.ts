@@ -7,16 +7,15 @@
 import { useMemo } from "react";
 
 import type { ScreenKey } from "../shell/screens";
+import { MODES, type ModeKey, type ModePanels, modeMeta } from "./modes";
 import {
   DEFAULT_MODE_PANELS,
   DEFAULT_SLOT_WIDTHS,
-  type ModePanels,
   type SlotWidths,
   useProjectSurfacePrefsStore,
 } from "./surface-prefs-store";
 import {
   type DesktopProjectSlotId,
-  type ModeKey,
   PROJECT_SURFACE_IDS,
   type SurfaceId,
   type SurfaceLayoutMap,
@@ -26,7 +25,7 @@ import {
 
 /** The mode a destination shows in; the Work page reads as Chat until it goes. */
 export function modeOf(screen: ScreenKey): ModeKey {
-  return screen === "context" ? "write" : "chat";
+  return (MODES.find((mode) => mode.screen === screen) ?? modeMeta("chat")).key;
 }
 
 /** Stable "nothing held" argument, so the layout memo does not thrash. */
@@ -60,28 +59,10 @@ const HIDDEN_PLACEMENT: SurfacePlacementMap = {
 };
 
 export function placeSurfaces(screen: ScreenKey): SurfacePlacementMap {
-  switch (screen) {
-    case "work":
-      return {
-        ...HIDDEN_PLACEMENT,
-        threads: placement("rail-l"),
-        chat: placement("dock"),
-      };
-    case "chat":
-      return {
-        ...HIDDEN_PLACEMENT,
-        threads: placement("rail-l"),
-        chat: placement("center"),
-        "context-rail": placement("dock"),
-      };
-    case "context":
-      return {
-        ...HIDDEN_PLACEMENT,
-        threads: placement("rail-l"),
-        "context-viewer": placement("center"),
-        chat: placement("dock"),
-      };
+  if (screen === "work") {
+    return { ...HIDDEN_PLACEMENT, threads: placement("rail-l"), chat: placement("dock") };
   }
+  return modeMeta(modeOf(screen)).placement;
 }
 
 export function mergeSurfaceLayout(

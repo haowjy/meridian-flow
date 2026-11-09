@@ -15,6 +15,7 @@ import { AccountMenu } from "@/features/account/AccountMenu";
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { projectResourceTab } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
+import { modeMeta } from "../layout/modes";
 import { modeOf } from "../layout/placement";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useScreenCommands } from "../routing/ProjectNavigationContext";
@@ -25,7 +26,7 @@ import { ProjectMenu } from "./ProjectMenu";
 import type { ScreenKey } from "./screens";
 import { ChatsBody } from "./sidebar/ChatsBody";
 import { ModeSwitch } from "./sidebar/ModeSwitch";
-import { MODES } from "./sidebar/modes";
+
 import { SourcesBody } from "./sidebar/SourcesBody";
 import { WorkScopePicker } from "./sidebar/WorkScopePicker";
 import type { TitleEditHandle } from "./TitleEditSlot";
@@ -134,8 +135,7 @@ export function LeftSidebar({
       <ModeSwitch
         mode={mode}
         onSelect={(next) => {
-          const entry = MODES.find((candidate) => candidate.key === next);
-          if (entry && next !== mode) onSelectScreen(entry.screen);
+          if (next !== mode) onSelectScreen(modeMeta(next).screen);
         }}
       />
 

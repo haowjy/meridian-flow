@@ -1,7 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { cn } from "@/lib/utils";
-import type { ModeKey } from "../../layout/types";
-import { MODES, modeLabel } from "./modes";
+import { MODES, type ModeKey, modeLabel } from "../../layout/modes";
 
 /** Write | Chat: which surface takes the centre. One segment per entry in `MODES`. */
 export function ModeSwitch({
