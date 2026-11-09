@@ -238,7 +238,7 @@ function ShowChangesToggle({
           onClick={() => onChange(!visible)}
           className={cn(
             "focus-ring inline-flex h-5.5 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-sidebar-accent hover:text-foreground",
-            visible ? "text-jade-text" : "text-muted-foreground",
+            visible ? "text-foreground" : "text-muted-foreground",
           )}
         >
           <Icon aria-hidden className="size-3.5" />
