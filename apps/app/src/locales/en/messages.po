@@ -3204,6 +3204,11 @@ msgstr "Fit"
 msgid "flowchart"
 msgstr "flowchart"
 
+#. placeholder {0}: modeLabel(mode)
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "Focus: {0}"
+msgstr "Focus: {0}"
+
 #: src/features/project/context/use-create-entry-form.ts
 msgid "Folder name"
 msgstr "Folder name"
@@ -3840,8 +3845,8 @@ msgid "missing kind"
 msgstr "missing kind"
 
 #: src/features/project/shell/sidebar/ModeSwitch.tsx
-msgid "Mode"
-msgstr "Mode"
+#~ msgid "Mode"
+#~ msgstr "Mode"
 
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
