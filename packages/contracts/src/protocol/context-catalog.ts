@@ -182,16 +182,14 @@ export type CatalogWakeHint = {
 };
 
 /**
- * A lineage's pending draft count moved: the owner's draft list is stale. Truth-free, like the
- * catalog hint; it rides the same per-project subscription. Work branches keep the Work
- * authority entry instead.
+ * A lineage's draft list is stale: its pending draft count moved, or it lost or regained its
+ * last live chat (trash, restore). Truth-free, like the catalog hint; it rides the same
+ * per-project subscription. Work branches keep the Work authority entry instead.
  */
 export type DraftOwnerHint = {
   type: "draft-owner-hint";
   projectId: ProjectId;
   owner: DraftOwnerKey;
-  branchId: string;
-  pendingDocuments: number;
 };
 
 /** What a project's catalog subscription receives. */

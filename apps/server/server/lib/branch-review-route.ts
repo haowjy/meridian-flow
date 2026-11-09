@@ -423,6 +423,10 @@ export async function handleOwnerDraftListRequest(
     { accountId: input.userId },
     listed.items.filter((item) => !item.isNew).map((item) => item.documentId),
   );
+  // The branch's owner lifecycle is the one the draft rooms and commands enforce.
+  const frozen =
+    listed.branchId !== null &&
+    (await deps.documentSync.draftReview.branchOwner(listed.branchId))?.lifecycle === "frozen";
   return {
     items: listed.items
       .filter(
@@ -430,6 +434,7 @@ export async function handleOwnerDraftListRequest(
           readable.has(item.documentId) || liveReadable.has(item.documentId) || item.deletedLive,
       )
       .map((item) => toWireItem(item, listed.threadTitles)),
+    frozen,
   };
 }
 

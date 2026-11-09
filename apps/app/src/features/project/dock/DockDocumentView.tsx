@@ -2,7 +2,7 @@
  * DockDocumentView — the dock's one document, shown in the standard editor.
  *
  * It is another view of the Editor's document, not a reduced one: the same
- * chrome (identity bar, review header, archived notice), the same host and
+ * chrome (identity bar, review header, frozen-document notice), the same host and
  * session path, the same toolbar and link following. What differs is that
  * there is one document and no tab bar; the title menu in the dock header
  * replaces it. The slot stores the tab it was opened with; this view follows
@@ -18,14 +18,15 @@ import { useCallback } from "react";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import {
   DraftReviewBoundary,
+  useDraftReview,
   usePresentedDraftReview,
 } from "@/features/draft-review/DraftReviewProvider";
 import { useAccountResourceReplica } from "../context/account-feature-context";
 import { ContextDocumentHost } from "../context/ContextDocumentHost";
 import { ContextViewerHost } from "../context/ContextViewerHost";
 import { DocumentPaneChrome } from "../context/DocumentPaneChrome";
+import { useDocumentFreeze } from "../context/use-document-freeze";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
-import { useDockArchivedWork } from "./DockDocumentIdentity";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
 import { ReviewLaunchContext, useDockReviewLauncher } from "./useAiDraftLauncher";
 
@@ -84,14 +85,18 @@ function DockDocumentBody({
     if (tab.kind === "new") await resources.markCreateEligible({ handle: tab.resourceHandle });
   }, [resources, tab]);
 
-  const archived = useDockArchivedWork(projectId, tab);
+  // A draft under review freezes with its owner, as in the Editor.
+  const { controller } = useDraftReview();
+  const review = controller.inlineReview;
+  const reviewing = review?.documentId === tab.documentId && review.shown;
+  const freeze = useDocumentFreeze(projectId, tab, reviewing ? controller.ownerKey : null);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <DocumentPaneChrome
         projectId={projectId}
         tab={tab}
-        archivedWork={archived}
+        freeze={freeze}
         onCloseTab={closeDocument}
         identity={null}
       />
@@ -105,7 +110,7 @@ function DockDocumentBody({
             active={visible}
             onCloseDraftOnly={closeDocument}
             onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
-            readOnly={Boolean(archived)}
+            readOnly={freeze !== null}
             editorClassName="bg-transparent"
           />
         </div>

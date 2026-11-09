@@ -30,7 +30,7 @@ export function useOpenReviewChanges(
     ...ownerDraftsQueryOptions(controller.projectId, controller.ownerKey),
     enabled: projectReadEnabled(Boolean(draft)),
   });
-  const item = draft ? listed.data?.find((row) => row.itemKey === draft.itemKey) : undefined;
+  const item = draft ? listed.data?.items.find((row) => row.itemKey === draft.itemKey) : undefined;
   const withoutText = item?.hasDraft === false || item?.tree?.deleted === true;
   const read = useRoomReview(draft);
   const line = item && !item.isNew ? treeLineOf(item) : null;

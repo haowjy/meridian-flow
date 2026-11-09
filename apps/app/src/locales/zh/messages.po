@@ -2373,6 +2373,10 @@ msgstr ""
 msgid "Couldn't restore {name}. Try again."
 msgstr ""
 
+#: src/features/draft-review/TrashedChatNotice.tsx
+msgid "Couldn't restore the chat. Try again."
+msgstr ""
+
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
 msgstr ""
@@ -4768,6 +4772,7 @@ msgstr ""
 msgid "Response complete"
 msgstr "回复完成"
 
+#: src/features/draft-review/TrashedChatNotice.tsx
 #: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore"
@@ -5877,6 +5882,10 @@ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This chat is in the trash, so its drafts are frozen. Restore the chat to apply them."
+msgstr ""
+
+#: src/features/draft-review/TrashedChatNotice.tsx
+msgid "This chat is in Trash. Restore it to edit or apply its drafts."
 msgstr ""
 
 #. placeholder {0}: commit.work.name

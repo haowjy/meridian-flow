@@ -167,13 +167,15 @@ export function useDraftDock({
     changeCount: totalChanges(files),
     /** Unread previews keep the controls visible but disabled until their scope is known. */
     showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
-    canApply: applicable.some(
-      (file) =>
-        (!file.row.draft.hasDraft && file.row.draft.isNew) ||
-        hasTreeLine(file.row.draft) ||
-        (reads[targets.findIndex((target) => target.itemKey === file.row.draft.itemKey)]?.frame
-          ?.groups.length ?? 0) > 0,
-    ),
+    canApply:
+      !controller.frozen &&
+      applicable.some(
+        (file) =>
+          (!file.row.draft.hasDraft && file.row.draft.isNew) ||
+          hasTreeLine(file.row.draft) ||
+          (reads[targets.findIndex((target) => target.itemKey === file.row.draft.itemKey)]?.frame
+            ?.groups.length ?? 0) > 0,
+      ),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     projectId,
     ownerKey,

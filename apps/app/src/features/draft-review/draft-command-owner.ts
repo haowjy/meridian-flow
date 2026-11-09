@@ -828,13 +828,18 @@ export class DraftCommandOwner {
   }
   /**
    * Discards a whole item on the server: a created document, which the draft alone holds, or
-   * a draft whose room refuses the writer's text (a trashed chat's). No Undo. Server-only
-   * lifecycle commands share this account owner, never the Apply-all route.
+   * a frozen owner's draft, whose room refuses the writer's text. No Undo. A created document
+   * leaves at once; a frozen draft stays in review, discarding, until the server answers, so
+   * a refusal shows on it. Server-only lifecycle commands share this account owner, never
+   * the Apply-all route.
    */
   async discardOnServer(ref: DraftRef, item: ThreadDraftListItem): Promise<CommandOutcome> {
     if (!this.active) return { kind: "blocked" };
     const settleOwn = item.isNew ? this.lifecycle.markOwnRemoval?.(ref) : undefined;
-    this.setState(ref.itemKey, { hidden: true, failure: null });
+    this.setState(
+      ref.itemKey,
+      item.isNew ? { hidden: true, failure: null } : { discarding: () => true, failure: null },
+    );
     if (item.isNew) this.lifecycle.closeCreated?.(ref);
     try {
       const result = await discardCreatedDraft(ref, {
@@ -845,18 +850,24 @@ export class DraftCommandOwner {
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") {
         settleOwn?.("removed");
+        this.setState(ref.itemKey, { hidden: true, discarding: null });
         return { kind: "done" };
       }
       settleOwn?.("kept");
       this.setState(ref.itemKey, {
         hidden: false,
+        discarding: null,
         failure: shownRefusal({ code: "discard-refused", serverCode: result.status }),
       });
       return { kind: "change-refused", code: result.status };
     } catch {
       settleOwn?.("kept");
       if (this.active)
-        this.setState(ref.itemKey, { hidden: false, failure: { code: "discard-unknown" } });
+        this.setState(ref.itemKey, {
+          hidden: false,
+          discarding: null,
+          failure: { code: "discard-unknown" },
+        });
       return { kind: "change-refused", code: "unknown" };
     }
   }

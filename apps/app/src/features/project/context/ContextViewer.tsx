@@ -3,7 +3,8 @@
  * archived Work, and a review of its draft, open read-only under the archived
  * notice. The Editor shows only its own Work's files and drafts, so the
  * Editor's Work is that file's Work. Archiving here freezes them at once; the
- * server's own read-only scope follows.
+ * server's own read-only scope follows. A review of a trashed chat's draft
+ * opens read-only under the trashed-chat notice, as the server reports it.
  */
 
 import { t } from "@lingui/core/macro";
@@ -34,6 +35,7 @@ import { PendingDocumentPath } from "./PendingDocumentPath";
 import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
 import { RemovedDocumentChip } from "./RemovedDocumentNotice";
 import { recentOpening } from "./recent-opening";
+import type { DocumentFreeze } from "./use-document-freeze";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 import { useRecordOpenedDocument } from "./use-record-opened-document";
 
@@ -140,7 +142,7 @@ export function ContextViewer({
     activeTab.rootThreadId === undefined;
 
   // Draft review state: the review's controls live in the identity bar.
-  const { controller } = useDraftReview();
+  const { controller, drafts } = useDraftReview();
   const activeReviewItemKey =
     activeTab &&
     controller.inlineReview?.documentId === activeTab.documentId &&
@@ -152,7 +154,12 @@ export function ContextViewer({
   // review edits the draft, so its editor freezes and shows the notice; the
   // reviewed file itself may be project-owned and keeps its identity bar.
   const fileFrozen = Boolean(activeFileInWork && archivedEditorWork);
-  const editorFrozen = Boolean((activeFileInWork || activeReviewItemKey) && archivedEditorWork);
+  const freeze: DocumentFreeze | null =
+    (activeFileInWork || activeReviewItemKey) && archivedEditorWork
+      ? { kind: "work", work: archivedEditorWork }
+      : activeReviewItemKey && drafts.frozen
+        ? { kind: "chat", ownerKey: controller.ownerKey }
+        : null;
 
   return (
     <div
@@ -200,7 +207,7 @@ export function ContextViewer({
             <DocumentPaneChrome
               projectId={projectId}
               tab={activeTab}
-              archivedWork={editorFrozen ? archivedEditorWork : null}
+              freeze={freeze}
               onCloseTab={onCloseTab}
               identity={{ editorWorkId, readOnly: fileFrozen, onCommitted, onOpenExisting }}
             />
@@ -222,7 +229,7 @@ export function ContextViewer({
                   activeTabId={activeIsEditable ? activeTabId : null}
                   active={active}
                   // Warm editors are hidden, so following the front tab is enough.
-                  readOnly={editorFrozen}
+                  readOnly={freeze !== null}
                   onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
                 />
               </div>

@@ -337,8 +337,6 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
     owner: z.string().regex(/^(work|lineage):.+$/) as z.ZodType<
       `work:${string}` | `lineage:${string}`
     >,
-    branchId: z.string().min(1),
-    pendingDocuments: z.number().int().nonnegative(),
   }),
   wsAskAnswerOkSchema,
   wsAskAnswerErrorSchema,

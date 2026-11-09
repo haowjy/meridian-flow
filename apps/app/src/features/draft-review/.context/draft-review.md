@@ -76,8 +76,8 @@ can't close a newer one.
 While the item's known draft is closed, the review address port and the route's address
 clearing ask the server first (`reconcileClosed`). `gone`, the same closed draft or a
 failed read refuse admission, because the room owner just ended that review and admitting
-it again would loop; a different active draft is the replacement. While a command hides the item (a Discard in flight), the port refuses it outright for
-the same reason; the end of the hide is a new port, so a refused Discard restores the
+it again would loop; a different active draft is the replacement. While a command hides
+the item (a Discard in flight), the port refuses it outright for the same reason; the end of the hide is a new port, so a refused Discard restores the
 review. `ReviewAddressOwner` remembers a refusal only for the port that gave it, so a
 replacement that becomes known later is retried once.
 
@@ -166,6 +166,24 @@ belongs to its exact session binding, so replacement documents never inherit the
 Created-document removal and Work Discard go through the server. Their optimistic
 visibility is lifecycle state, never text-group hiding. `4205` maps to terminal `closed`,
 including in-band code-1000 delivery, and `4208` to `removed`.
+
+A frozen owner's drafts go through the server too. A frozen owner is a chat lineage whose
+chats are all in Trash. Its rooms admit read-only and drop the writer's text, so a local
+revert would show a Discard that never landed. Frozen state comes only from the server:
+the owner list's `frozen`, the same `lifecycle` the rooms and commands enforce. A chat's
+subagents are not trashed with it, so a lineage with a live subagent is not frozen, and
+the thread list can't tell. The list re-reads on the `draft-owner-hint` that trash and
+restore publish, and when a review room's access disagrees with the host's `readOnly`.
+
+While frozen:
+- the review's editor is read-only under `TrashedChatNotice` (`useDocumentFreeze`, the
+  archived Work's path);
+- single changes are locked and Apply is hidden;
+- Discard draft is the server's item Discard. The item stays in review, `discarding`,
+  until the answer, so a refusal shows on it.
+
+Restore restores the lineage's first chat and thaws only once the list says so. Thawing
+first would let the writer type into a room that still drops their text.
 
 A terminal room frame and an authoritative metadata `gone` are two arrivals of the same
 fact. For `gone`, the owner resolves the exact document through the availability owner:

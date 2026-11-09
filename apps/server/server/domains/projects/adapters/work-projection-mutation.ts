@@ -259,8 +259,6 @@ export function createWorkProjectionMutation(input: {
                   type: "draft-owner-hint" as const,
                   projectId: row.projectId,
                   owner: draftOwnerKey({ kind: "lineage", rootThreadId: row.rootThreadId }),
-                  branchId: row.branchId,
-                  pendingDocuments: row.count,
                 },
               ]
             : [],
