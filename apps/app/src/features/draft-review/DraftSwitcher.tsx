@@ -17,7 +17,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { Check, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { type ReactNode, useRef } from "react";
 import {
   DropdownMenu,
@@ -98,7 +98,7 @@ export function DraftSwitcher({
         </DraftChipFace>
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        align="start"
+        align="end"
         className={touch ? "w-[min(18rem,calc(100vw-1rem))]" : "w-60"}
         onCloseAutoFocus={(event) => {
           if (!renaming.current) return;
@@ -124,7 +124,7 @@ export function DraftSwitcher({
             <DropdownMenuItem
               disabled={disabled || !draftCommands.canApply}
               onSelect={draftCommands.onApply}
-              className="pl-7 font-medium"
+              className="font-medium"
             >
               {draftCommands.applying ? <Loader2 className="animate-spin" aria-hidden /> : null}
               <Trans>Apply draft</Trans>
@@ -133,14 +133,13 @@ export function DraftSwitcher({
               variant="destructive"
               disabled={disabled}
               onSelect={draftCommands.onDiscard}
-              className="pl-7"
             >
               <Trans>Discard draft</Trans>
             </DropdownMenuItem>
           </>
         ) : null}
         {marks ? (
-          <DropdownMenuItem onSelect={() => marks.onChange(!marks.visible)} className="pl-7">
+          <DropdownMenuItem onSelect={() => marks.onChange(!marks.visible)}>
             {marks.visible ? <Trans>Hide changes</Trans> : <Trans>Show changes</Trans>}
           </DropdownMenuItem>
         ) : null}
@@ -150,13 +149,12 @@ export function DraftSwitcher({
             onSelect={() => {
               renaming.current = true;
             }}
-            className="pl-7"
           >
             <Trans>Rename</Trans>
           </DropdownMenuItem>
         ) : null}
         {draftOnly ? (
-          <DropdownMenuItem onSelect={onShowLive} className="pl-7">
+          <DropdownMenuItem onSelect={onShowLive}>
             <Trans>Close review</Trans>
           </DropdownMenuItem>
         ) : null}
@@ -174,13 +172,8 @@ function VersionItem({
   onSelect?: () => void;
   children: ReactNode;
 }) {
-  return current ? (
-    <DropdownMenuItem aria-current="true" className="gap-2 font-medium">
-      <Check aria-hidden className="size-3.5" />
-      {children}
-    </DropdownMenuItem>
-  ) : (
-    <DropdownMenuItem onSelect={onSelect} className="pl-7">
+  return (
+    <DropdownMenuItem selected={current} onSelect={current ? undefined : onSelect}>
       {children}
     </DropdownMenuItem>
   );

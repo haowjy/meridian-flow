@@ -1,7 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { DocumentDraftHint } from "@meridian/contracts/branches";
-import { Check } from "lucide-react";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import { useWorks } from "@/client/query/useWorks";
 import type { ContextTab } from "@/client/stores";
@@ -46,8 +45,7 @@ export function DocumentVersionMenu({ projectId, tab }: { projectId: string; tab
         </DraftChipFace>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuItem aria-current="true" className="gap-2 font-medium">
-          <Check aria-hidden className="size-3.5" />
+        <DropdownMenuItem selected>
           <Trans>Live</Trans>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
@@ -65,7 +63,7 @@ export function DocumentVersionMenu({ projectId, tab }: { projectId: string; tab
               key={hint.branchId}
               disabled={!target}
               onSelect={() => target && openAiDraft(target)}
-              className="flex-col items-start gap-0.5 pl-7"
+              className="h-auto min-h-8 flex-col items-start gap-0.5"
             >
               <WorkIdentity
                 name={workName(hint)}

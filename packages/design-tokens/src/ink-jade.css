@@ -156,7 +156,8 @@
   /* List rows sit on page paper, not the darker shelf. Hover is a half-step
      toward selection; the night palette lifts both above its popover panel. */
   --color-dropdown-hover: color-mix(in oklab, var(--color-sidebar-accent) 50%, var(--color-background));
-  --color-dropdown-selected: var(--color-sidebar-accent);
+  /* The current value wears the hover fill: one highlight in every menu. */
+  --color-dropdown-selected: var(--color-dropdown-hover);
 
   /* Code surface — fenced code blocks sit on the warm canvas as a recessed
      "tablet": a notch DEEPER than the card lift (the canvas reads as raised
