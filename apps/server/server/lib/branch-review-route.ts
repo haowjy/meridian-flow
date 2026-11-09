@@ -638,8 +638,8 @@ export async function handleApplyClickRequest(
     return refuse(
       grant.facts?.branchOwner?.deleted || grant.facts?.ownerWork?.deleted
         ? "work_deleted"
-        : grant.reason === "work_archived"
-          ? "work_archived"
+        : grant.reason === "work_archived" || grant.reason === "chat_frozen"
+          ? grant.reason
           : "not_found",
     );
   }
@@ -648,9 +648,8 @@ export async function handleApplyClickRequest(
   const { owner } = access;
   if (!owner) return refuse("not_found");
   if (access.lifecycle === "deleted") return refuse("work_deleted");
-  // A lineage with no live member refuses like an archived Work.
-  if (access.lifecycle === "archived" || access.lifecycle === "frozen")
-    return refuse("work_archived");
+  if (access.lifecycle === "frozen") return refuse("chat_frozen");
+  if (access.lifecycle === "archived") return refuse("work_archived");
   const item = await deps.documentSync.draftReview.resolveItemInBranch({
     branchId: input.branchId,
     documentId: input.documentId,

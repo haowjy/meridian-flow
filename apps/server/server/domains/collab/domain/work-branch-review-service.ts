@@ -27,7 +27,7 @@ export function createWorkBranchReviewService(input: {
   applyClick: CollabBranches["draftReview"]["applyClick"];
   unapplyClick: CollabBranches["draftReview"]["unapplyClick"];
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
-  pending: Pick<WorkBranchPendingStore, "listBranchesChangingDocument">;
+  pending: Pick<WorkBranchPendingStore, "listBranchesChangingDocument" | "countPendingInProject">;
 }): CollabBranches {
   async function ownerItems(
     owner: DraftOwner,
@@ -106,6 +106,7 @@ export function createWorkBranchReviewService(input: {
         ]);
         return { branchId, items, threadTitles };
       },
+      pendingDocumentCount: (projectId) => input.pending.countPendingInProject(projectId),
       branchesChangingDocument: (command) => input.pending.listBranchesChangingDocument(command),
       items: (command) => ownerItems(command.owner),
       branchOwner: (branchId) => input.branches.ownerOf(branchId),

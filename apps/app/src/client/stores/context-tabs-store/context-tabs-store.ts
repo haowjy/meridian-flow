@@ -12,7 +12,6 @@ import {
   matchesTabInstance,
   type ProjectTabsSlice,
   type ReviewEntries,
-  reviewEntryOf,
   type TabOwner,
 } from "./editor-workspace-model";
 import {

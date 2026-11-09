@@ -62,6 +62,13 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
         count: Number(row.count),
       }));
     },
+    async countPendingInProject(projectId) {
+      const [row] = await currentDrizzleDb(db)
+        .select({ count: sql<number>`coalesce(sum(${branches.pendingDocumentCount}), 0)::int` })
+        .from(branches)
+        .where(and(eq(branches.projectId, projectId), eq(branches.status, "active")));
+      return row?.count ?? 0;
+    },
     async listBranchesChangingDocument({ projectId, documentId }) {
       const tx = currentDrizzleDb(db);
       const active = sql`SELECT b.id FROM branches b

@@ -49,6 +49,7 @@ export type ApplyClickRefusalReason =
   | "unsynced"
   | "malformed"
   | "work_archived"
+  | "chat_frozen"
   | "work_deleted"
   | "not_found"
   | "ancestor_taken";

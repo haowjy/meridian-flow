@@ -8,7 +8,7 @@ import type { Database } from "@meridian/database";
 import { branches } from "@meridian/database/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { assertBranchWriteJoinAllowed } from "../../../shared/branch-write-join.js";
-import { branchOwnedBy, branchOwnerSql } from "../../../shared/draft-owner.js";
+import { branchOwnedBy, branchOwnerSql, ownerOfColumns } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -62,15 +62,11 @@ export function createDrizzleBranchStore(db: Database): BranchStore {
       const { handle, lifecycle, ...branch } = row;
       return {
         branch,
-        owner: branch.originWorkId
-          ? { kind: "work", workId: branch.originWorkId }
-          : branch.originRootThreadId
-            ? {
-                kind: "lineage",
-                projectId: branch.projectId,
-                rootThreadId: branch.originRootThreadId,
-              }
-            : null,
+        owner: ownerOfColumns({
+          projectId: branch.projectId,
+          workId: branch.originWorkId,
+          rootThreadId: branch.originRootThreadId,
+        }),
         handle,
         lifecycle,
       };

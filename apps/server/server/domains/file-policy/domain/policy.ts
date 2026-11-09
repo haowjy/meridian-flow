@@ -148,10 +148,10 @@ function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
   return terms;
 }
 
-/** A lineage with no live member is read-only, as an archived Work is. */
+/** A lineage with no live member is read-only until a chat in it is restored. */
 function branchOwnerTerms(owner: FileBranchOwnerFacts): Term[] {
   if (owner.owner.kind === "lineage") {
-    return owner.frozen ? [{ cap: "read", limit: "work_archived" }] : [];
+    return owner.frozen ? [{ cap: "read", limit: "chat_frozen" }] : [];
   }
   return workTerms({ id: owner.owner.workId, ...owner });
 }

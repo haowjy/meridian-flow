@@ -50,6 +50,8 @@ export type WorkBranchPendingStore = {
     projectId: ProjectId;
     documentId: DocumentId;
   }): Promise<DocumentBranchOrigin[]>;
+  /** Pending documents summed over the project's active branches, from the stored branch counts. */
+  countPendingInProject(projectId: ProjectId): Promise<number>;
   /** Every active branch of these owners with its pending documents (zero when none). */
   countPendingByOwners: WorkBranchPendingCounts["countPendingByOwners"];
 };
