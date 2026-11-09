@@ -69,7 +69,7 @@ export function WorkScopePicker({
           {pending > 0 ? (
             <span
               className="rounded-full bg-primary/12 px-1.5 text-[11px] font-medium text-primary tabular-nums"
-              title={t`${pending} documents with changes`}
+              title={t`${pending} documents to review`}
             >
               {pending}
             </span>
@@ -156,14 +156,13 @@ function PickRow({
   );
 }
 
-/** Only state that asks for action: pending changes and chats waiting on the writer. */
+/** Only state that asks for action: documents to review and chats waiting on the writer. */
 function WorkState({ work, needsYou }: { work: Work; needsYou: number }) {
-  const changes = work.pendingDocumentCount;
-  if (changes === 0 && needsYou === 0) return null;
+  const toReview = work.pendingDocumentCount;
+  if (toReview === 0 && needsYou === 0) return null;
   return (
-    <span className="shrink-0 text-[11px] text-ink-muted tabular-nums">
-      {changes > 0 ? <Trans>{changes} changes</Trans> : null}
-      {changes > 0 && needsYou > 0 ? " · " : null}
+    <span className="flex shrink-0 gap-2 text-[11px] text-ink-muted tabular-nums">
+      {toReview > 0 ? <Trans>{toReview} to review</Trans> : null}
       {needsYou > 0 ? (
         <span className="text-primary">
           <Trans>{needsYou} needs you</Trans>
