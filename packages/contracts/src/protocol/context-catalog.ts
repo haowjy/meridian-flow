@@ -3,7 +3,7 @@ import type { CanonicalContextUri, ContextUriScheme } from "../context-uri.js";
 import type { ContextSourceId, DocumentId, FolderId, ProjectId, UserId, WorkId } from "../ids.js";
 import type { WorkAuthorityDto } from "../works/work-authority.js";
 import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
-import type { ContextParentOrderPolicy, DocumentFileType } from "./http-types.js";
+import type { DocumentFileType } from "./http-types.js";
 
 export type CatalogScope =
   | { kind: "project"; projectId: ProjectId }
@@ -29,7 +29,6 @@ export type CatalogSourceEntry = {
   scheme: ContextUriScheme;
   name: string;
   uri: CanonicalContextUri;
-  orderPolicy?: ContextParentOrderPolicy;
 };
 
 export type CatalogFolderEntry = {
@@ -47,7 +46,6 @@ export type CatalogFolderEntry = {
   uri: CanonicalContextUri;
   hasChildren: boolean;
   rank?: string | null;
-  orderPolicy?: ContextParentOrderPolicy;
   /** Device-synthesized ancestry has no server folder identity or management actions. */
   navigationOnly?: true;
 };

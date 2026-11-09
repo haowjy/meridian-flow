@@ -170,7 +170,7 @@ export const branchTreeChanges = pgTable(
   ],
 );
 
-/** Branch-local parent ordering policy overrides. Absence inherits the live parent's policy. */
+/** A row says the branch owns this parent's whole order in `branch_tree_ranks`; absence reads the live ranks. */
 export const branchTreeParentOrders = pgTable(
   "branch_tree_parent_orders",
   {
@@ -181,21 +181,16 @@ export const branchTreeParentOrders = pgTable(
     parentKind: text("parent_kind").$type<BranchTreeParentKind>().notNull(),
     /** context_sources.id or folders.id; both live rows are tombstoned rather than hard-deleted. */
     parentId: uuid("parent_id").notNull(),
-    orderPolicy: text("order_policy").$type<"default" | "manual">().notNull(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (table) => [
     primaryKey({ columns: [table.branchId, table.parentKind, table.parentId] }),
     check("branch_tree_parent_orders_kind_valid", sql`${table.parentKind} IN ('source', 'folder')`),
-    check(
-      "branch_tree_parent_orders_policy_valid",
-      sql`${table.orderPolicy} IN ('default', 'manual')`,
-    ),
   ],
 );
 
-/** Branch-local ranks established together when a parent first becomes manual in the branch. */
+/** Branch-local ranks; a parent with a `branch_tree_parent_orders` row has one for every child. */
 export const branchTreeRanks = pgTable(
   "branch_tree_ranks",
   {

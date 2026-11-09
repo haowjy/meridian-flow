@@ -178,7 +178,6 @@ function toNewTree(
         kind: "folder",
         id: node.id as FolderId,
         name: node.name,
-        orderPolicy: node.source.orderPolicy,
         children,
       });
     }

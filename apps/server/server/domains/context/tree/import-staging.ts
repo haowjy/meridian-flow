@@ -20,7 +20,7 @@ import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { ContextStagedCreation } from "../ports/context-staged-creation.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
 import type { AheadRegistration, LinkAheadRegistry } from "../ports/link-ahead-registry.js";
-import { type ArrivedBatch, placeArrivedBatch } from "./sibling-order.js";
+import { type ArrivedBatch, placeArrivedBatch, rankNewFolderChildren } from "./sibling-order.js";
 import {
   createTreeReader,
   LIVE_TREE,
@@ -272,7 +272,8 @@ export function createDrizzleContextStagedCreation(deps: {
           and cs.work_id is null and cs.root_thread_id is null and cs.deleted_at is null
         where d.staging_id = ${stagingId}`);
       // Only the stage's top level arrives in an existing parent; everything beneath it is a
-      // new default-order folder. The rows go in unranked, then take the parent's arrival rule.
+      // new folder. The rows go in unranked, then the top level takes the parent's arrival rule
+      // and each new folder ranks its children in name order.
       const arrivals = new Map<string, ArrivedBatch>();
       for (const row of top) {
         const sourceId = sourceOf.get(row.area);
@@ -292,6 +293,18 @@ export function createDrizzleContextStagedCreation(deps: {
         arrivals.set(key, batch);
       }
       for (const batch of arrivals.values()) await placeArrivedBatch(db, batch);
+      const inside = new Map<string, ArrivedBatch["nodes"]>();
+      for (const row of nodes) {
+        if (!row.parentId || !stagedFolders.has(row.parentId)) continue;
+        const children = inside.get(row.parentId) ?? [];
+        children.push(
+          row.kind === "folder"
+            ? { kind: "folder", id: row.id, name: row.name }
+            : { kind: "document", id: row.id, name: renderFilename(row.name, row.extension) },
+        );
+        inside.set(row.parentId, children);
+      }
+      await rankNewFolderChildren(db, [...inside.values()]);
       await tx.execute(sql`
         with recursive nodes as (
           select id, parent_id, area, name as filename from context_staged_folders where staging_id = ${stagingId}
