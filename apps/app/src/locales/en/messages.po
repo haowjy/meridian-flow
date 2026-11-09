@@ -1626,6 +1626,7 @@ msgstr "Chat updates disconnected"
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/shell/sidebar/SourcesBody.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Chats"
 msgstr "Chats"
@@ -1679,6 +1680,10 @@ msgstr "Choose agent"
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent, currently {0}"
 msgstr "Choose agent, currently {0}"
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "Choose tabs"
+msgstr "Choose tabs"
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Choose what to do before continuing."
@@ -3862,8 +3867,8 @@ msgid "More composer controls"
 msgstr "More composer controls"
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "More sources"
-msgstr "More sources"
+#~ msgid "More sources"
+#~ msgstr "More sources"
 
 #: src/features/project/context/EntryDestinationPicker.tsx
 #~ msgid "Move {rowName}"
@@ -5552,6 +5557,10 @@ msgstr "Table options"
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Table placement"
 msgstr "Table placement"
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "Tabs"
+msgstr "Tabs"
 
 #: src/components/app/composer/placeholders.ts
 msgid "Talk it out"

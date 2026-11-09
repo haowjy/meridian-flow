@@ -1626,6 +1626,7 @@ msgstr ""
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/shell/sidebar/SourcesBody.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Chats"
 msgstr ""
@@ -1678,6 +1679,10 @@ msgstr ""
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent, currently {0}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "Choose tabs"
 msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
@@ -3862,8 +3867,8 @@ msgid "More composer controls"
 msgstr ""
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "More sources"
-msgstr ""
+#~ msgid "More sources"
+#~ msgstr ""
 
 #: src/features/project/context/EntryDestinationPicker.tsx
 #~ msgid "Move {rowName}"
@@ -5551,6 +5556,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Table placement"
+msgstr ""
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "Tabs"
 msgstr ""
 
 #: src/components/app/composer/placeholders.ts
