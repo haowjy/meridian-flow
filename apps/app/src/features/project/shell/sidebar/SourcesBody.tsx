@@ -125,9 +125,7 @@ export function SourcesBody({
           <TooltipContent side="bottom">{t`Choose tabs`}</TooltipContent>
         </Tooltip>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuLabel className="text-caption font-normal text-muted-foreground">
-            {t`Tabs`}
-          </DropdownMenuLabel>
+          <DropdownMenuLabel>{t`Tabs`}</DropdownMenuLabel>
           {ALL_SOURCES.map((key) => {
             const on = shown.includes(key);
             return (

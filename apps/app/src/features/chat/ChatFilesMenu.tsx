@@ -191,7 +191,7 @@ function FilesDropdown({
         ref={contentRef}
         align="end"
         className={cn(
-          dropdownSurfaceVariants({ measure: "catalog", page: null }),
+          dropdownSurfaceVariants({ measure: "catalog" }),
           "text-tier-chat w-[min(22rem,calc(100vw-1.5rem))] p-0",
         )}
         onOpenAutoFocus={(event) => {

@@ -21,13 +21,15 @@ const buttonVariants = cva(
           "bg-primary text-primary-foreground shadow-button hover:bg-primary/90 hover:brightness-105",
         destructive: "bg-destructive text-white hover:bg-destructive/90 dark:bg-destructive/60",
         outline:
-          "border bg-background shadow-xs hover:border-border-focus hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border bg-background shadow-xs hover:border-border-focus hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50 popup-open:bg-dropdown-hover",
         secondary:
           "bg-secondary text-secondary-foreground hover:border-border-focus hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+        ghost:
+          "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 popup-open:bg-dropdown-hover",
         // Quiet chrome affordance: muted by default, presses into the rail on
         // hover. The default tone for dense icon-only buttons (see IconButton).
-        quiet: "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+        quiet:
+          "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground popup-open:bg-dropdown-hover popup-open:text-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

@@ -137,10 +137,7 @@ export function ThreadSwitcherPopover({
         {...densityPopoverCollisionProps}
         ref={contentRef}
         align="start"
-        className={cn(
-          dropdownSurfaceVariants({ measure: "catalog", page: null }),
-          "text-tier-chat p-0",
-        )}
+        className={cn(dropdownSurfaceVariants({ measure: "catalog" }), "text-tier-chat p-0")}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           const content = contentRef.current;

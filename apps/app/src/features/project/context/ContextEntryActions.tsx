@@ -28,7 +28,7 @@ import {
   dropdownMenuContentClass,
   dropdownMenuItemClass,
   dropdownMenuSeparatorClass,
-  dropdownNavigationPageClass,
+  dropdownPageClass,
   dropdownRowVariants,
 } from "@/components/ui/dropdown-presentation";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
@@ -135,7 +135,7 @@ export function ContextEntryMenu({
       <ContextMenuPrimitive.Portal>
         <ContextMenuPrimitive.Content
           className={cn(
-            dropdownNavigationPageClass,
+            dropdownPageClass,
             dropdownMenuContentClass,
             "origin-(--radix-context-menu-content-transform-origin) [--radix-menu-content-available-height:var(--radix-context-menu-content-available-height)]",
           )}
@@ -247,7 +247,7 @@ function ContextActionItems({
               <ContextMenuPrimitive.Portal>
                 <ContextMenuPrimitive.SubContent
                   className={cn(
-                    dropdownNavigationPageClass,
+                    dropdownPageClass,
                     dropdownMenuContentClass,
                     "origin-(--radix-context-menu-content-transform-origin)",
                   )}
