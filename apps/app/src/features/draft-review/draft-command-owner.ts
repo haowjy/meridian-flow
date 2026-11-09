@@ -826,12 +826,16 @@ export class DraftCommandOwner {
     if (this.items.get(itemKey)?.queue.stalled) this.setState(itemKey, { failure: null });
     this.items.get(itemKey)?.queue.retry();
   }
-  /** Server-only lifecycle commands share this account owner, never the Apply-all route. */
-  async removeCreated(ref: DraftRef, item: ThreadDraftListItem): Promise<CommandOutcome> {
-    if (!this.active || !item.isNew) return { kind: "blocked" };
-    const settleOwn = this.lifecycle.markOwnRemoval?.(ref);
+  /**
+   * Discards a whole item on the server: a created document, which the draft alone holds, or
+   * a draft whose room refuses the writer's text (a trashed chat's). No Undo. Server-only
+   * lifecycle commands share this account owner, never the Apply-all route.
+   */
+  async discardOnServer(ref: DraftRef, item: ThreadDraftListItem): Promise<CommandOutcome> {
+    if (!this.active) return { kind: "blocked" };
+    const settleOwn = item.isNew ? this.lifecycle.markOwnRemoval?.(ref) : undefined;
     this.setState(ref.itemKey, { hidden: true, failure: null });
-    this.lifecycle.closeCreated?.(ref);
+    if (item.isNew) this.lifecycle.closeCreated?.(ref);
     try {
       const result = await discardCreatedDraft(ref, {
         branchId: item.branchId,

@@ -149,7 +149,9 @@ export function createDrizzleBranchDiscard(
       .filter((item) => item.origin === "created" && hiddenNow.has(item.documentId))
       .map((item) => item.documentId);
     // Any other item is the branch's move or delete of a live document: its facts go (the
-    // hidden folders they prune were never in the live catalog).
+    // hidden folders they prune were never in the live catalog). An edit with neither ends its
+    // text draft: the writer's own text Discard can't reach a frozen lineage's room.
+    const edited: DocumentId[] = [];
     for (const item of items) {
       if (created.includes(item.documentId)) continue;
       const ended = await discardBranchTreeFacts(db, {
@@ -157,10 +159,12 @@ export function createDrizzleBranchDiscard(
         documentId: item.documentId,
         userId: input.userId ?? null,
       });
-      if (!ended.discarded) throw new BranchDiscardApplicableStateChangedError();
+      if (ended.discarded) continue;
+      if (!item.draftId) throw new BranchDiscardApplicableStateChangedError();
+      edited.push(item.documentId);
     }
     // A hidden create another branch still uses stays, but this branch's drafts on it end.
-    await closeBranchDrafts(db, deps, branchId, "document_discarded", created);
+    await closeBranchDrafts(db, deps, branchId, "document_discarded", [...created, ...edited]);
     const ended = await endUseReconciled(
       db,
       deps,
