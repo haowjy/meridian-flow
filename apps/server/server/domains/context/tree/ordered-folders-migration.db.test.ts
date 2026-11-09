@@ -1,6 +1,6 @@
 /**
  * Migration 0130 ranks every visible child in the order the old name-ordered parents displayed,
- * so nothing moves when the order policy goes.
+ * so nothing moves when the order policy goes, and rotates every catalog generation.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - rank order equals `compareDefaultSiblings` for a name-ordered parent, and a manual parent's
@@ -63,8 +63,8 @@ if (!enabled || !databaseUrl) {
         await db`INSERT INTO projects (id, user_id, name, slug) VALUES (${projectId}, ${userId}, 'P', 'p')`;
         const source = async (slug: string, policy: string) => {
           const [row] = await db<{ id: string }[]>`INSERT INTO context_sources
-            (project_id, slug, name, scope, adapter_type, order_policy)
-            VALUES (${projectId}, ${slug}, ${slug}, 'project', 'local', ${policy}) RETURNING id`;
+            (project_id, slug, name, scope, order_policy)
+            VALUES (${projectId}, ${slug}, ${slug}, 'project', ${policy}) RETURNING id`;
           return row?.id as string;
         };
         const folder = async (
@@ -120,7 +120,13 @@ if (!enabled || !databaseUrl) {
         const lateNull = await file(manual, null, "null-b", "md");
         const earlyNull = await folder(manual, null, "null-a");
 
+        const heads = () =>
+          db<{ generation: string }[]>`SELECT generation FROM context_catalog_scope_heads`;
+        await db`INSERT INTO context_catalog_scope_heads (scope_key, scope) VALUES ('project:t', '{}')`;
+        const generationBefore = await heads();
         await runMigrations({ databaseUrl: target.databaseUrl, migrationsDirectory: migrations });
+        // A stored client catalog carries no ranks; a new generation forces it to refetch.
+        expect(await heads()).not.toEqual(generationBefore);
 
         const rows = await db<
           {
