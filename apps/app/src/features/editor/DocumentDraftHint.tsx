@@ -18,21 +18,18 @@ import {
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { tabLocation } from "@/features/project/context/identity-location";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
-import { cn } from "@/lib/utils";
 import { branchesOtherThanViews, hintReviewTarget } from "./draft-hint-review";
 
 export type DocumentDraftHintProps = {
   projectId: string;
   /** The open document's tab; a local reservation (`new`) has no branches to find. */
   tab: ContextTab;
-  /** A line of its own under the dock's header, or a phrase in Write mode's tab row. */
-  variant: "line" | "inline";
 };
 
 const REVIEW_CLASS =
   "focus-ring inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 font-medium text-jade-text hover:bg-primary/10 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:px-2.5";
 
-export function DocumentDraftHint({ projectId, tab, variant }: DocumentDraftHintProps) {
+export function DocumentDraftHint({ projectId, tab }: DocumentDraftHintProps) {
   const { documentId } = tab;
   const location = tabLocation(tab);
   const contextLocation = location.path ? { scheme: location.scheme, path: location.path } : null;
@@ -53,22 +50,11 @@ export function DocumentDraftHint({ projectId, tab, variant }: DocumentDraftHint
   return (
     <div
       data-document-draft-hint
-      className={cn(
-        "flex min-w-0 items-center font-sans text-ink-muted",
-        variant === "line"
-          ? "min-h-8 flex-wrap gap-x-2 px-4 text-sm [@media(pointer:coarse)]:min-h-11"
-          : "gap-x-1 text-[13px]",
-      )}
+      className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 px-4 font-sans text-ink-muted text-sm [@media(pointer:coarse)]:min-h-11"
     >
       <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
-      <span className="min-w-0 truncate">
-        {variant === "inline" ? (
-          others.length === 1 && only ? (
-            <Trans>{labelOf(only)} has changes</Trans>
-          ) : (
-            plural(others.length, { other: "# Works have changes" })
-          )
-        ) : others.length === 1 && only ? (
+      <span className="min-w-0">
+        {others.length === 1 && only ? (
           only.label ? (
             <Trans>A Work has drafts for this ({only.label})</Trans>
           ) : (

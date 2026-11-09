@@ -1,38 +1,54 @@
 /**
- * DocumentPaneChrome — what sits above an open document's editor: the passage
- * notice, the archived-Work notice, a failed review command, and the document's
- * properties. The Editor's page and the dock's document stack the same chrome.
- * The document's identity and state are elsewhere: in Write mode at the tab
- * row's right end, in the dock in its header.
+ * DocumentPaneChrome — the strip above an open document's editor: the passage
+ * notice, the archived-Work notice, the review-capable identity bar (whose free end
+ * says what live did to the document this draft holds), and the document's
+ * properties.
+ * The Editor's page and the dock's document stack the same chrome, so an open
+ * document looks and behaves alike wherever it is shown; the dock shows the
+ * identity bar in its header instead (`identity: null`). The draft hint is the
+ * same in both, live or reviewing.
  */
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import type { ContextTab } from "@/client/stores";
+import { isDraftOnly } from "@/client/stores";
 import { DraftedDeleteNotice } from "@/features/draft-review/DraftedDeleteNotice";
-import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
-import { DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { PassageNotice } from "@/features/editor/PassageNotice";
-import { useAiDraftLauncher } from "../review-launch";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
+import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import { DocumentProperties } from "./DocumentProperties";
+import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
+
+/** The identity bar's inputs, or null where the pane's header shows the path instead (the dock). */
+export type PaneIdentity = {
+  /** The Work whose files this surface edits; identity moves resolve against it. */
+  editorWorkId: string | null;
+  /** The identity bar can't rename or move the document. */
+  readOnly: boolean;
+  onCommitted: (
+    documentId: string,
+    next: IdentityCommitted,
+    ownership: IdentityCommitOwnership,
+  ) => void;
+  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string, owner: ContextOwner) => void;
+};
 
 export type DocumentPaneChromeProps = {
   projectId: string;
   tab: ContextTab;
   /** Set when the document is frozen by its archived Work. */
   archivedWork: Work | null;
-  /**
-   * Write mode: show a failed review command here (the dock's header shows its
-   * own), and leave other Works' drafts to the tab row.
-   */
-  reviewNotices: boolean;
+  onCloseTab: (tab: ContextTab) => void;
+  identity: PaneIdentity | null;
 };
 
 export function DocumentPaneChrome({
   projectId,
   tab,
   archivedWork,
-  reviewNotices,
+  onCloseTab,
+  identity,
 }: DocumentPaneChromeProps) {
   return (
     <>
@@ -42,26 +58,26 @@ export function DocumentPaneChrome({
       {archivedWork ? (
         <ArchivedWorkNotice projectId={projectId} work={archivedWork} className="px-4 pt-3" />
       ) : null}
-      {reviewNotices ? <ReviewFailureNotices tab={tab} /> : null}
+      {/* Identity bar — the top edge of the page every open document
+          shares. Keyed by document so edit state never crosses tabs. */}
+      {identity ? (
+        <DocumentIdentityBar
+          key={tab.tabInstanceId ?? tab.documentId}
+          projectId={projectId}
+          editorWorkId={identity.editorWorkId}
+          tab={tab}
+          readOnly={identity.readOnly}
+          onCloseDraftOnly={isDraftOnly(tab) ? () => onCloseTab(tab) : undefined}
+          onCommitted={identity.onCommitted}
+          onOpenExisting={identity.onOpenExisting}
+        />
+      ) : null}
+      {/* Properties — read-only frontmatter, under the path in the Editor and
+          the first chrome row in the dock, where the path is in the dock header. */}
       <DocumentProperties projectId={projectId} tab={tab} />
       <DraftedDeleteNotice documentId={tab.documentId} />
-      {/* Other Works' drafts of this document are discoverable wherever it is shown, live or
-          in review. Write mode shows the hint in its tab row instead. */}
-      {reviewNotices ? null : <DocumentDraftHint projectId={projectId} tab={tab} variant="line" />}
+      {/* Other Works' drafts of this document are discoverable wherever it is shown, live or in review. */}
+      <DocumentDraftHint projectId={projectId} tab={tab} />
     </>
-  );
-}
-
-function ReviewFailureNotices({ tab }: { tab: ContextTab }) {
-  const { controller } = useDraftReview();
-  const { openReviewFile } = useAiDraftLauncher();
-  const review = controller.inlineReview;
-  if (review?.documentId !== tab.documentId || !review.shown) return null;
-  return (
-    <DraftReviewFailureNotices
-      documentId={tab.documentId}
-      itemKey={review.itemKey}
-      onOpenDraft={(row) => openReviewFile(row, controller.workId)}
-    />
   );
 }

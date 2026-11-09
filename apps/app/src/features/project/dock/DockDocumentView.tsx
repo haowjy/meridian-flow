@@ -74,7 +74,8 @@ function DockDocumentBody({
         projectId={projectId}
         tab={tab}
         archivedWork={archived}
-        reviewNotices={false}
+        onCloseTab={closeDocument}
+        identity={null}
       />
       {tab.kind !== "viewer" ? (
         <div className="relative min-h-0 flex-1">
