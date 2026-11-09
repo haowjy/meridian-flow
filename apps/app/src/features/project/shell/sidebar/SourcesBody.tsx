@@ -1,21 +1,12 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { MessageSquare, Plus, Trash2 } from "lucide-react";
-import {
-  type HTMLAttributes,
-  type ReactNode,
-  type RefObject,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { type HTMLAttributes, type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -27,22 +18,21 @@ import { schemeIcon, schemeLabel } from "../../context/context-schemes";
 import { activeDragSession } from "../../context/entry-drag/drag-session";
 import { type TreeDropTarget, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
 import { useDeleteContextEntry } from "../../context/use-delete-context-entry";
-import { MODES, type ModeKey, modeLabel, modeMeta } from "../../layout/modes";
 import { ALL_SOURCES, type SourceKey, useSidebarTabs } from "./sidebar-tabs-store";
 import { TrashSource } from "./TrashSource";
 import { acceptEntryDrag, draggedEntries } from "./trash-drop";
 
-type TreeSource = Exclude<SourceKey, "trash" | "scratch" | "chats">;
+type TreeSource = Exclude<SourceKey, "trash" | "scratch">;
 
 function isTreeSource(key: SourceKey): key is TreeSource {
-  return key !== "trash" && key !== "scratch" && key !== "chats";
+  return key !== "trash" && key !== "scratch";
 }
 
 /**
- * The sidebar: one source at a time behind a strip of tabs, so each list gets
- * the full height. The selected tab shows its name; + picks which tabs the
- * strip shows. Which list shows is independent of the mode. The open
- * document's source becomes the shown one when it changes.
+ * Write mode's sidebar: one source at a time behind a strip of tabs, so each
+ * list gets the full height. The selected tab shows its name; + picks which
+ * tabs the strip shows. The open document's source becomes the shown one when
+ * it changes.
  */
 export function SourcesBody({
   projectId,
@@ -52,10 +42,7 @@ export function SourcesBody({
   activeScheme,
   activePath,
   onSelectFile,
-  chats,
   paneRef,
-  mode,
-  onSelectMode,
 }: {
   projectId: string;
   editorWorkId: string | null;
@@ -68,12 +55,7 @@ export function SourcesBody({
     file: ContextFile,
     options?: { focus?: true },
   ) => void;
-  /** The Chats tab's list. */
-  chats: ReactNode;
   paneRef?: RefObject<HTMLDivElement | null>;
-  /** The main mode, which fills the centre; it is independent of the tab picked here. */
-  mode: ModeKey;
-  onSelectMode: (mode: ModeKey) => void;
 }) {
   const shown = useSidebarTabs((state) => state.shown);
   const toggle = useSidebarTabs((state) => state.toggle);
@@ -153,7 +135,6 @@ export function SourcesBody({
           })}
         </DropdownMenuContent>
       </DropdownMenu>
-      <FocusMenu mode={mode} onSelect={onSelectMode} />
     </div>
   );
   const other =
@@ -161,8 +142,6 @@ export function SourcesBody({
       <TrashSource projectId={projectId} />
     ) : source === "scratch" ? (
       <ScratchSource projectId={projectId} threadId={chatThreadId} editorWorkId={editorWorkId} />
-    ) : source === "chats" ? (
-      chats
     ) : undefined;
 
   return (
@@ -297,56 +276,20 @@ function SourceTab({
 }
 
 function SourceIcon({ source }: { source: SourceKey }) {
-  const Icon =
-    source === "trash" ? Trash2 : source === "chats" ? MessageSquare : schemeIcon(source);
+  const Icon = source === "trash" ? Trash2 : schemeIcon(source);
   return <Icon className="size-4" aria-hidden />;
 }
 
 function sourceLabel(source: SourceKey): string {
-  return source === "trash" ? t`Trash` : source === "chats" ? t`Chats` : schemeLabel(source);
+  return source === "trash" ? t`Trash` : schemeLabel(source);
 }
 
-function isSourceKey(
-  scheme: ProjectContextTreeScheme,
-): scheme is Exclude<SourceKey, "trash" | "chats"> {
+function isSourceKey(scheme: ProjectContextTreeScheme): scheme is Exclude<SourceKey, "trash"> {
   return (
     scheme === "manuscript" ||
     scheme === "kb" ||
     scheme === "scratch" ||
     scheme === "user" ||
     scheme === "unfiled"
-  );
-}
-
-/** Which main mode fills the centre. One row per entry in `MODES`. */
-function FocusMenu({ mode, onSelect }: { mode: ModeKey; onSelect: (mode: ModeKey) => void }) {
-  const Icon = modeMeta(mode).icon;
-  const label = t`Focus: ${modeLabel(mode)}`;
-  return (
-    <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger
-            aria-label={label}
-            className="focus-ring grid size-7 shrink-0 place-items-center rounded-md text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground popup-open:bg-dropdown-hover popup-open:text-foreground"
-          >
-            <Icon className="size-4" aria-hidden />
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{label}</TooltipContent>
-      </Tooltip>
-      <DropdownMenuContent align="end" className="w-40">
-        {MODES.map((entry) => (
-          <DropdownMenuItem
-            key={entry.key}
-            selected={entry.key === mode}
-            onSelect={() => onSelect(entry.key)}
-          >
-            <entry.icon className="size-4" aria-hidden />
-            <span className="flex-1">{modeLabel(entry.key)}</span>
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }

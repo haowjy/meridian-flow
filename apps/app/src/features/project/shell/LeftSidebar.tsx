@@ -1,15 +1,13 @@
 /**
  * LeftSidebar — the desktop project sidebar. The header holds the project menu,
- * then the Work scope, then the mode switch. The body follows the mode: sources
- * in Write, chats in Chat. Both bodies stay mounted (the hidden one inert), so
- * tree expansion and scroll survive a mode switch. The phone drawer composes
- * `WorkspaceNavBody` instead.
+ * then the Work scope, then the mode switch. Under the switch sits the mode's
+ * own sidebar (`MODE_SIDEBARS`). The phone drawer has no mode switch: it
+ * composes `WorkspaceNavBody` instead.
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import { useWorks } from "@/client/query/useWorks";
 import { useSelectedContextTab } from "@/client/stores";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { useAccountResourceProjection } from "../context/account-feature-context";
@@ -17,15 +15,14 @@ import { projectResourceTab } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { modeMeta } from "../layout/modes";
 import { modeOf } from "../layout/placement";
-import { useChatNavigation } from "../routing/chat-navigation";
 import { useScreenCommands } from "../routing/ProjectNavigationContext";
 import { useWorkScope } from "../use-work-scope";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleSpacer } from "./PanelToggleButton";
 import { ProjectMenu } from "./ProjectMenu";
 import type { ScreenKey } from "./screens";
-import { ChatsBody } from "./sidebar/ChatsBody";
-import { SourcesBody } from "./sidebar/SourcesBody";
+import { ModeSwitch } from "./sidebar/ModeSwitch";
+import { MODE_SIDEBARS } from "./sidebar/mode-sidebars";
 import { WorkScopePicker } from "./sidebar/WorkScopePicker";
 import type { TitleEditHandle } from "./TitleEditSlot";
 
@@ -56,13 +53,11 @@ export function LeftSidebar({
   onSelectScreen,
 }: LeftSidebarProps) {
   const screenCommands = useScreenCommands();
-  const chat = useChatNavigation();
   const titleEditor = useRef<TitleEditHandle>(null);
-  const treePane = useRef<HTMLDivElement>(null);
   const openDocument = useOpenProjectDocument(projectId);
-  const { noWork } = useWorks(projectId);
   const scope = useWorkScope(projectId);
   const mode = modeOf(activeScreen);
+  const Sidebar = MODE_SIDEBARS[mode];
 
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
@@ -130,11 +125,13 @@ export function LeftSidebar({
         onPick={scope.setWorkId}
         onManage={() => void screenCommands?.showWork()}
       />
-      <SourcesBody
+      <ModeSwitch
         mode={mode}
-        onSelectMode={(next) => {
+        onSelect={(next) => {
           if (next !== mode) onSelectScreen(modeMeta(next).screen);
         }}
+      />
+      <Sidebar
         projectId={projectId}
         editorWorkId={editorWorkId}
         chatThreadId={chatThreadId}
@@ -142,19 +139,8 @@ export function LeftSidebar({
         activeScheme={treeActiveScheme}
         activePath={treeActivePath}
         onSelectFile={handleSelectFile}
-        paneRef={treePane}
-        chats={
-          <ChatsBody
-            projectId={projectId}
-            scopeWorkId={scope.workId}
-            noWorkId={noWork?.id ?? null}
-            currentThreadId={chatThreadId}
-            onOpenChat={(threadId) => void chat.openChat(threadId)}
-            onNewChat={() => void chat.openChatIndex()}
-            onShowAllChats={() => void chat.openChatIndex()}
-            onShowWork={scope.setWorkId}
-          />
-        }
+        scopeWorkId={scope.workId}
+        onShowWork={scope.setWorkId}
       />
     </nav>
   );
