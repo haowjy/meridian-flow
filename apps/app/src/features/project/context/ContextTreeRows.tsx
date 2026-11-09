@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { ChevronRight, type Folder, LoaderCircle } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen, LoaderCircle } from "lucide-react";
 import {
   createContext,
   type KeyboardEvent,
@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { type DeleteTarget, EntryKebabButton } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
+import { fileKindIcon } from "./context-file-icon";
 import {
   contextTreeFileRowClassName,
   contextTreeRowClassName,
@@ -261,7 +262,9 @@ function DirRow({
     env.toggleEntry(dir.entryId);
   };
   if (interaction.renaming) {
-    return <RenameRow options={interaction.rename} depth={depth} />;
+    return (
+      <RenameRow options={interaction.rename} depth={depth} icon={isOpen ? FolderOpen : Folder} />
+    );
   }
 
   return (
@@ -287,6 +290,7 @@ function DirRow({
           style={{ paddingLeft: rowPaddingLeft(depth) }}
         >
           <Twistie expanded={isOpen} />
+          <RowIcon icon={isOpen ? FolderOpen : Folder} />
           <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
             <span className="truncate">{dir.name}</span>
             <LinkUpdateNote
@@ -349,6 +353,7 @@ function PendingTreeRow({ row, depth }: { row: PendingRow; depth: number }) {
       style={{ paddingLeft: rowPaddingLeft(depth) }}
     >
       <span className="w-4 shrink-0" aria-hidden />
+      <RowIcon icon={Folder} />
       <span className="ml-0.5 min-w-0 flex-1 truncate">{row.name}</span>
       <LoaderCircle
         aria-hidden
@@ -394,7 +399,7 @@ function FileRow({
   const entry = useMemo(() => dragEntry(file), [file]);
   const row = useEntryRow(entry, active);
   if (interaction.renaming) {
-    return <RenameRow options={interaction.rename} depth={depth} />;
+    return <RenameRow options={interaction.rename} depth={depth} icon={fileKindIcon(file)} />;
   }
 
   return (
@@ -412,6 +417,7 @@ function FileRow({
       >
         <InsertionLine edge={drop.edge} inset={rowPaddingLeft(depth)} />
         <span className="h-7 w-4 shrink-0" aria-hidden />
+        <RowIcon icon={fileKindIcon(file)} />
         <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
           <span className="truncate">{file.name}</span>
           <LinkUpdateNote
@@ -444,9 +450,11 @@ function FileRow({
 function RenameRow({
   options,
   depth,
+  icon,
 }: {
   options: Parameters<typeof useRenameEntryForm>[0];
   depth: number;
+  icon: typeof Folder;
 }) {
   const form = useRenameEntryForm(options);
   return (
@@ -455,6 +463,7 @@ function RenameRow({
       style={{ paddingLeft: rowPaddingLeft(depth) }}
     >
       <span className="h-7 w-4 shrink-0" aria-hidden />
+      <RowIcon icon={icon} />
       <EntryNameField form={form} label={t`Rename`} className="ml-0.5" />
     </div>
   );
@@ -489,6 +498,7 @@ function CreateRow({
       style={{ paddingLeft: rowPaddingLeft(depth) }}
     >
       <span className="h-7 w-4 shrink-0" aria-hidden />
+      <RowIcon icon={form.icon} />
       <EntryNameField
         form={form}
         label={form.placeholder}

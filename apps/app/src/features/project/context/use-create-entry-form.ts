@@ -1,7 +1,7 @@
 /**
  * useCreateEntryForm — inline context entry creation, built on useInlineEdit.
  *
- * Adds a kind-aware placeholder and
+ * Adds create-specific metadata (dynamic file icon, kind-aware placeholder) and
  * the create mutation. Submit semantics are the shared inline-edit protocol:
  * Enter or blur commits, Escape or an empty name cancels.
  */
@@ -14,6 +14,8 @@ import {
   storedFilename,
 } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
+import type { LucideIcon } from "lucide-react";
+import { Folder } from "lucide-react";
 import { useCallback } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
@@ -26,6 +28,7 @@ import {
   joinContextEntryPath,
   validateContextEntryName,
 } from "./context-entry-name";
+import { fileKindIcon } from "./context-file-icon";
 
 export type UseCreateEntryFormOptions = {
   projectId: string;
@@ -42,6 +45,8 @@ export type UseCreateEntryFormOptions = {
 };
 
 export type CreateEntryForm = InlineEdit & {
+  /** Icon for the current kind + name (updates dynamically by extension). */
+  icon: LucideIcon;
   placeholder: string;
 };
 
@@ -133,6 +138,13 @@ export function useCreateEntryForm({
 
   return {
     ...form,
+    icon: kind === "folder" ? Folder : fileKindIcon(iconName(form.draft)),
     placeholder: kind === "folder" ? t`Folder name` : t`File name`,
   };
+}
+
+/** The icon previews the name the file will be stored under; an empty field is prose. */
+function iconName(draft: string): string {
+  const stored = storedFilename(draft);
+  return stored.ok ? stored.name : draft;
 }

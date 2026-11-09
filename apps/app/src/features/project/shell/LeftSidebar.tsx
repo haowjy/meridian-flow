@@ -12,6 +12,7 @@ import { Trash2 } from "lucide-react";
 import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
+import { AccountMenu } from "@/features/account/AccountMenu";
 import { UserRailSection } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useDockDocument } from "../dock/dock-document-store";
@@ -181,6 +182,10 @@ export function LeftSidebar({
           onShowAllChats={() => void chat.openChatIndex()}
           onShowWork={scope.setWorkId}
         />
+      </div>
+
+      <div className="shrink-0 border-t border-border-subtle px-2 py-1.5">
+        <AccountMenu />
       </div>
     </nav>
   );
