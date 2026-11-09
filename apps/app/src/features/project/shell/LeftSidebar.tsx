@@ -142,39 +142,28 @@ export function LeftSidebar({
         }}
       />
 
-      <div
-        className="flex min-h-0 flex-1 flex-col"
-        hidden={mode !== "write"}
-        inert={mode !== "write"}
-      >
-        <SourcesBody
-          projectId={projectId}
-          editorWorkId={editorWorkId}
-          chatThreadId={chatThreadId}
-          contextLive={contextLive}
-          activeScheme={treeActiveScheme}
-          activePath={treeActivePath}
-          onSelectFile={handleSelectFile}
-          paneRef={treePane}
-        />
-      </div>
-
-      <div
-        className="flex min-h-0 flex-1 flex-col"
-        hidden={mode !== "chat"}
-        inert={mode !== "chat"}
-      >
-        <ChatsBody
-          projectId={projectId}
-          scopeWorkId={scope.workId}
-          noWorkId={noWork?.id ?? null}
-          currentThreadId={chatThreadId}
-          onOpenChat={(threadId) => void chat.openChat(threadId)}
-          onNewChat={() => void chat.openChatIndex()}
-          onShowAllChats={() => void chat.openChatIndex()}
-          onShowWork={scope.setWorkId}
-        />
-      </div>
+      <SourcesBody
+        projectId={projectId}
+        editorWorkId={editorWorkId}
+        chatThreadId={chatThreadId}
+        contextLive={contextLive}
+        activeScheme={treeActiveScheme}
+        activePath={treeActivePath}
+        onSelectFile={handleSelectFile}
+        paneRef={treePane}
+        chats={
+          <ChatsBody
+            projectId={projectId}
+            scopeWorkId={scope.workId}
+            noWorkId={noWork?.id ?? null}
+            currentThreadId={chatThreadId}
+            onOpenChat={(threadId) => void chat.openChat(threadId)}
+            onNewChat={() => void chat.openChatIndex()}
+            onShowAllChats={() => void chat.openChatIndex()}
+            onShowWork={scope.setWorkId}
+          />
+        }
+      />
 
       <div className="shrink-0 border-t border-border-subtle px-2 py-1.5">
         <button
