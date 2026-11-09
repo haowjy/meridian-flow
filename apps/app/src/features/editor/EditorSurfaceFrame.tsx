@@ -44,15 +44,21 @@ export function EditorSurfaceFrame({
         </div>
       ) : null}
       {toolbar ? (
+        // Equal gutters keep the toolbar on the prose column; the state sits at the pane's right
+        // edge, in the right gutter, and takes room from the column only when the pane is narrow.
         <div className="flex h-9 shrink-0 items-center [@media(pointer:coarse)]:h-11">
+          <div className="min-w-0 flex-1 basis-0" />
           {/* The toolbar's geometry is fixed (ten controls, one order), so a
               pane too narrow for it scrolls the row rather than dropping controls. */}
-          <div className={cn(editorColumnChrome, "flex min-w-0 items-center gap-3")}>
-            <div className="min-w-0 shrink overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {toolbar}
-            </div>
-            {toolbarTrailing}
+          <div
+            className={cn(
+              editorColumnChrome,
+              "min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+            )}
+          >
+            {toolbar}
           </div>
+          <div className="flex flex-1 basis-0 justify-end pr-3">{toolbarTrailing}</div>
         </div>
       ) : null}
       <div
