@@ -5861,6 +5861,10 @@ msgstr ""
 msgid "This chat continues without a brief."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This chat is in the trash, so its drafts are frozen. Restore the chat to apply them."
+msgstr ""
+
 #. placeholder {0}: commit.work.name
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat now uses {0}."
