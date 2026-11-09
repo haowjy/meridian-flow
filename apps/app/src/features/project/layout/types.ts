@@ -22,10 +22,6 @@ export type DesktopProjectSlotId = "rail-l" | "center" | "dock";
 /** The slots a writer opens, closes and resizes. */
 export type PanelSlotId = Exclude<DesktopProjectSlotId, "center">;
 
-export const MODE_KEYS = ["write", "chat"] as const;
-/** Write puts the page in the centre, Chat the conversation; each keeps its own panels. */
-export type ModeKey = (typeof MODE_KEYS)[number];
-
 /** Render-time width and collapse for one surface. */
 export type SurfacePrefs = {
   /** Width of the slot the surface sits in, in CSS pixels. */

@@ -1600,10 +1600,10 @@ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/ChatView.tsx
+#: src/features/project/layout/modes.ts
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/screens.ts
-#: src/features/project/shell/sidebar/modes.ts
 msgid "Chat"
 msgstr ""
 
@@ -6775,7 +6775,7 @@ msgstr ""
 msgid "Wrap lines"
 msgstr ""
 
-#: src/features/project/shell/sidebar/modes.ts
+#: src/features/project/layout/modes.ts
 msgid "Write"
 msgstr ""
 
