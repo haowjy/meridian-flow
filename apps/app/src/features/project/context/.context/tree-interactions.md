@@ -435,6 +435,6 @@ A scope holds two routes: `entries` (rows dragged inside the app) and `files` (d
 into the target's folder; see the [import feature](../../../import/AGENTS.md)). The routes share the
 verdict shape, so the hint says what the drop will do ("Import into Lore"). Edges are for rows only: a
 file drag skips `targetAt`, so a drop on a row's edge or centre alike imports into that row's folder
-and lands by the folder's order rule (name order in a default parent, the end of a manual one), never
+and lands at the end of that folder (a batch in name order), never
 at the edge's position. Import can't place an arbitrary position for a batch, and an edge that
 appeared to accept but landed elsewhere would mislead.

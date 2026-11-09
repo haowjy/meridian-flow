@@ -2,7 +2,7 @@
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import type { ContextSiblingPosition } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { contextSources, documents, folders } from "@meridian/database/schema";
+import { documents, folders } from "@meridian/database/schema";
 import { compareDefaultSiblings } from "@meridian/resource-replica";
 import { and, eq, isNull, type SQL, sql } from "drizzle-orm";
 import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
@@ -11,7 +11,6 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 type Sibling = {
   kind: "folder" | "file";
   id: string;
-  name: string;
   rank: string | null;
 };
 
@@ -57,7 +56,7 @@ async function siblings(
   const tx = currentDrizzleDb(db);
   const [folderRows, documentRows] = await Promise.all([
     tx
-      .select({ id: folders.id, name: folders.name, rank: folders.rank })
+      .select({ id: folders.id, rank: folders.rank })
       .from(folders)
       .where(
         and(
@@ -68,12 +67,7 @@ async function siblings(
         ),
       ),
     tx
-      .select({
-        id: documents.id,
-        name: documents.name,
-        extension: documents.extension,
-        rank: documents.rank,
-      })
+      .select({ id: documents.id, rank: documents.rank })
       .from(documents)
       .where(
         and(
@@ -86,35 +80,8 @@ async function siblings(
   ]);
   return [
     ...folderRows.map((row) => ({ kind: "folder" as const, ...row })),
-    ...documentRows.map((row) => ({
-      kind: "file" as const,
-      id: row.id,
-      name: row.extension ? `${row.name}.${row.extension}` : row.name,
-      rank: row.rank,
-    })),
+    ...documentRows.map((row) => ({ kind: "file" as const, ...row })),
   ];
-}
-
-export async function liveParentOrderPolicy(
-  db: Database,
-  sourceId: ContextSourceId,
-  parentId: FolderId | null,
-): Promise<"default" | "manual"> {
-  const tx = currentDrizzleDb(db);
-  if (parentId === null) {
-    const [row] = await tx
-      .select({ orderPolicy: contextSources.orderPolicy })
-      .from(contextSources)
-      .where(eq(contextSources.id, sourceId));
-    if (!row) throw new Error("Sibling-order source disappeared under its namespace lock");
-    return row.orderPolicy;
-  }
-  const [row] = await tx
-    .select({ orderPolicy: folders.orderPolicy })
-    .from(folders)
-    .where(eq(folders.id, parentId));
-  if (!row) throw new Error("Sibling-order parent disappeared under its namespace lock");
-  return row.orderPolicy;
 }
 
 async function setRank(db: Database, sibling: Pick<Sibling, "kind" | "id">, rank: string | null) {
@@ -129,30 +96,6 @@ async function setRank(db: Database, sibling: Pick<Sibling, "kind" | "id">, rank
       .update(documents)
       .set({ rank })
       .where(eq(documents.id, sibling.id as DocumentId));
-}
-
-async function promote(
-  db: Database,
-  sourceId: ContextSourceId,
-  parentId: FolderId | null,
-  rows: Sibling[],
-) {
-  const ordered = [...rows].sort((left, right) =>
-    compareDefaultSiblings(
-      { kind: left.kind, name: left.name, identity: left.id },
-      { kind: right.kind, name: right.name, identity: right.id },
-    ),
-  );
-  const ranks = generateNKeysBetween(null, null, ordered.length);
-  await Promise.all(ordered.map((row, index) => setRank(db, row, ranks[index] as string)));
-  const tx = currentDrizzleDb(db);
-  if (parentId === null)
-    await tx
-      .update(contextSources)
-      .set({ orderPolicy: "manual" })
-      .where(eq(contextSources.id, sourceId));
-  else await tx.update(folders).set({ orderPolicy: "manual" }).where(eq(folders.id, parentId));
-  return ordered.map((row, index) => ({ ...row, rank: ranks[index] as string }));
 }
 
 async function rebalance(db: Database, rows: Sibling[]): Promise<Sibling[]> {
@@ -234,9 +177,8 @@ async function liveRankBoundary(
 }
 
 /**
- * The ranks a run of `count` arrivals takes in a parent, in arrival order: nothing in a
- * default-ordered parent, which sorts by name, and the keys after its last sibling in a
- * manual one. The same keys `count` single arrivals in a row would take.
+ * The ranks a run of `count` arrivals takes in a parent, in arrival order: the keys after its
+ * last sibling. The same keys `count` single arrivals in a row would take.
  */
 export async function arrivalRanks(
   db: Database,
@@ -247,10 +189,7 @@ export async function arrivalRanks(
     /** A row already under the parent that must not bound the append it joins. */
     excludeId?: string;
   },
-): Promise<(string | null)[]> {
-  if ((await liveParentOrderPolicy(db, input.sourceId, input.parentId)) === "default") {
-    return Array.from({ length: input.count }, () => null);
-  }
+): Promise<string[]> {
   const last = await liveRankBoundary(db, {
     sourceId: input.sourceId,
     parentId: input.parentId,
@@ -271,43 +210,16 @@ export async function placeLiveSibling(
     arrived: boolean;
   },
 ): Promise<"placed" | "stale-anchor"> {
-  let parentPolicy = await liveParentOrderPolicy(db, input.sourceId, input.parentId);
   if (!input.position) {
-    if (!input.arrived) return "placed";
-    if (parentPolicy === "manual") {
+    if (input.arrived)
       await placeArrivedBatch(db, {
         sourceId: input.sourceId,
         parentId: input.parentId,
         nodes: [{ kind: input.node.kind, id: input.node.id }],
         excludeId: input.node.id,
       });
-    } else {
-      // The allocator leaves default-parent rows as the caller inserted them, so a single
-      // arrival clears the rank it carried from where it came.
-      await setRank(
-        db,
-        { kind: input.node.kind === "folder" ? "folder" : "file", id: input.node.id },
-        null,
-      );
-    }
     return "placed";
   }
-  let rows: Sibling[] | null = null;
-  if (parentPolicy === "default") {
-    rows = await siblings(db, input.sourceId, input.parentId);
-    if (!rows.some((row) => row.id === input.node.id))
-      throw new Error("Moved node is absent from its committed parent");
-    // A missing anchor must not turn the parent manual on its way to being refused.
-    const anchorId = "siblingId" in input.position ? input.position.siblingId : null;
-    if (
-      anchorId !== null &&
-      (anchorId === input.node.id || !rows.some((row) => row.id === anchorId))
-    )
-      return "stale-anchor";
-    rows = await promote(db, input.sourceId, input.parentId, rows);
-    parentPolicy = "manual";
-  }
-  if (parentPolicy !== "manual") throw new Error("Unexpected sibling order policy");
   let before: string | null = null;
   let after: string | null = null;
   if (!input.position || input.position.kind === "end")
@@ -352,8 +264,7 @@ export async function placeLiveSibling(
     }
   }
   if (before !== null && before === after) {
-    rows ??= await siblings(db, input.sourceId, input.parentId);
-    rows = await rebalance(db, rows);
+    const rows = await rebalance(db, await siblings(db, input.sourceId, input.parentId));
     const ordered = rows.filter((row) => row.id !== input.node.id);
     let index: number;
     if (!input.position || input.position.kind === "end") index = ordered.length;
@@ -389,44 +300,29 @@ export type ArrivedBatch = {
   excludeId?: string;
 };
 
-/**
- * The one arrival rule: a new entry lands at the end, in default order. A manual parent
- * appends the rows after its last rank, one allocation and one write per table, so a reveal
- * of thousands of rows stays set-wise; a default parent leaves them as inserted, so the rows
- * must already be unranked. Caller holds the namespace lock.
- */
-export async function placeArrivedBatch(db: Database, input: ArrivedBatch): Promise<void> {
-  if (input.nodes.length === 0) return;
-  const ordered = [...input.nodes].sort((left, right) =>
-    compareDefaultSiblings(
-      {
-        kind: left.kind === "folder" ? "folder" : "file",
-        name: left.name ?? "",
-        identity: left.id,
-      },
-      {
-        kind: right.kind === "folder" ? "folder" : "file",
-        name: right.name ?? "",
-        identity: right.id,
-      },
-    ),
-  );
-  // Null ranks mean a default parent, which sorts by name: the rows keep the rank they
-  // were inserted with, so there is nothing to write.
-  const ranks = await arrivalRanks(db, {
-    sourceId: input.sourceId,
-    parentId: input.parentId,
-    count: ordered.length,
-    excludeId: input.excludeId,
+type ArrivedNode = ArrivedBatch["nodes"][number];
+
+function inNameOrder(nodes: readonly ArrivedNode[]): ArrivedNode[] {
+  const key = (node: ArrivedNode) => ({
+    kind: node.kind === "folder" ? ("folder" as const) : ("file" as const),
+    name: node.name ?? "",
+    identity: node.id,
   });
-  if (ranks.every((rank) => rank === null)) return;
+  return [...nodes].sort((left, right) => compareDefaultSiblings(key(left), key(right)));
+}
+
+/** One write per table, so a reveal of thousands of rows stays set-wise. */
+async function writeRanks(
+  db: Database,
+  ranked: readonly { node: ArrivedNode; rank: string }[],
+): Promise<void> {
   const tx = currentDrizzleDb(db);
   for (const [kind, table] of [
     ["folder", sql.raw("folders")],
     ["document", sql.raw("documents")],
   ] as const) {
-    const rows = ordered.flatMap((node, index) =>
-      node.kind === kind ? [{ id: node.id, rank: ranks[index] }] : [],
+    const rows = ranked.flatMap(({ node, rank }) =>
+      node.kind === kind ? [{ id: node.id, rank }] : [],
     );
     if (rows.length === 0) continue;
     await tx.execute(sql`
@@ -434,6 +330,43 @@ export async function placeArrivedBatch(db: Database, input: ArrivedBatch): Prom
       FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS x(id uuid, rank text)
       WHERE t.id = x.id`);
   }
+}
+
+/**
+ * The one arrival rule: a new entry lands at the end, a batch in name order. The rows take
+ * the keys after the parent's last rank. Caller holds the namespace lock.
+ */
+export async function placeArrivedBatch(db: Database, input: ArrivedBatch): Promise<void> {
+  if (input.nodes.length === 0) return;
+  const ordered = inNameOrder(input.nodes);
+  const ranks = await arrivalRanks(db, {
+    sourceId: input.sourceId,
+    parentId: input.parentId,
+    count: ordered.length,
+    excludeId: input.excludeId,
+  });
+  await writeRanks(
+    db,
+    ordered.map((node, index) => ({ node, rank: ranks[index] as string })),
+  );
+}
+
+/**
+ * Rank the children of folders created in this transaction, each folder's children in name
+ * order from the start: they have no earlier siblings to follow, so no read is needed.
+ */
+export async function rankNewFolderChildren(
+  db: Database,
+  parents: readonly (readonly ArrivedNode[])[],
+): Promise<void> {
+  await writeRanks(
+    db,
+    parents.flatMap((children) => {
+      const ordered = inNameOrder(children);
+      const ranks = generateNKeysBetween(null, null, ordered.length);
+      return ordered.map((node, index) => ({ node, rank: ranks[index] as string }));
+    }),
+  );
 }
 
 /** Reconcile a branch-relative placement against the siblings that are live at Apply time. */
@@ -482,9 +415,6 @@ export async function applyLiveRank(
   if (input.rank == null) return;
   const desiredRank = input.rank;
   let rows = await siblings(db, input.sourceId, input.parentId);
-  if ((await liveParentOrderPolicy(db, input.sourceId, input.parentId)) === "default") {
-    rows = await promote(db, input.sourceId, input.parentId, rows);
-  }
   let others = rows
     .filter((row) => row.id !== input.documentId)
     .sort((left, right) => {

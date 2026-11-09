@@ -669,7 +669,6 @@ export class ContextFS implements ContextSchemeAdapter {
           documents.filter((doc) => doc.fileType === null).map((doc) => doc.id as DocumentId),
         )
       : new Map<string, number>();
-    const orderPolicy = await this.store.parentOrderPolicy(view, folderId);
     const siblings = [
       ...folders.map((folder) => ({
         order: {
@@ -689,9 +688,7 @@ export class ContextFS implements ContextSchemeAdapter {
         },
         document,
       })),
-    ].sort((left, right) =>
-      compareCatalogSiblings(orderPolicy === "manual", left.order, right.order),
-    );
+    ].sort((left, right) => compareCatalogSiblings(left.order, right.order));
     const entries: AdapterFileEntry[] = [];
     for (const sibling of siblings) {
       if ("folder" in sibling) {

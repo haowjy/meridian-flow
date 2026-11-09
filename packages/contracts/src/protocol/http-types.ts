@@ -299,9 +299,6 @@ export type ContextSiblingPosition =
   | { kind: "before" | "after"; siblingId: string }
   | { kind: "start" | "end" };
 
-/** Whether a parent's children follow default name order or stored sibling ranks. */
-export type ContextParentOrderPolicy = "default" | "manual";
-
 /** One file or folder by its id. */
 export type ContextEntryRef = { kind: "file" | "folder"; nodeId: string };
 

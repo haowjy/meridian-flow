@@ -54,7 +54,6 @@ const visibleFolderShape = pgTable("visible_folders", {
   name: text("name").notNull(),
   description: text("description"),
   rank: text("rank"),
-  orderPolicy: text("order_policy").$type<"default" | "manual">().notNull(),
   hidden: boolean("hidden").notNull(),
   locationVersion: bigint("location_version", { mode: "bigint" }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
@@ -89,7 +88,7 @@ const documentTail = sql.raw(
     "d.location_version, d.hidden, d.created_at, d.updated_at",
 );
 const folderColumns = sql.raw(
-  "f.id, f.context_source_id, f.parent_id, f.name, f.description, f.rank, f.order_policy, f.hidden, " +
+  "f.id, f.context_source_id, f.parent_id, f.name, f.description, f.rank, f.hidden, " +
     "f.location_version, f.created_at, f.updated_at",
 );
 
