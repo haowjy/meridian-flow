@@ -104,7 +104,9 @@ import { useDockDocumentRestoration } from "./dock/restore-dock-document";
 import { EditorWorkRecovery } from "./EditorWorkRecovery";
 import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
 import {
+  type DesktopProjectSlotId,
   modeOf,
+  NO_COLLAPSED_SLOTS,
   type PanelSlotId,
   type SlotGridSurface,
   type SurfaceId,
@@ -733,11 +735,15 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const proseFocus = useReviewProseFocus(props.activeScreen, props.presentedReview);
   // useProjectLayout subscribes to the slot widths and this mode's panels and
   // returns the merged SurfaceLayoutMap; no other whole-prefs subscription exists.
-  const layout = useProjectLayout(props.activeScreen, proseFocus.collapsedSlots);
+  const narrowHold = useNarrowWindowHold();
+  const heldSlots = useMemo(
+    () => mergeHeldSlots(proseFocus.collapsedSlots, narrowHold.collapsedSlots),
+    [proseFocus.collapsedSlots, narrowHold.collapsedSlots],
+  );
+  const layout = useProjectLayout(props.activeScreen, heldSlots);
   const mode = modeOf(props.activeScreen);
 
-  const { setSlotOpen, setSlotWidth, closeSlotEverywhere } = useProjectSurfacePrefsActions();
-  useCompactDesktopAutoCollapse(closeSlotEverywhere);
+  const { setSlotOpen, setSlotWidth } = useProjectSurfacePrefsActions();
   const clearDocumentOn = useDockDocumentStore((state) => state.clearDocumentOn);
 
   useDockReveal((view) => {
@@ -757,6 +763,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // write a pref that changes nothing on screen.
   const setSlotOpenHere = (slot: PanelSlotId, open: boolean) => {
     if (open && slot === "rail-l") proseFocus.release();
+    if (open) narrowHold.release(slot);
     setSlotOpen(mode, slot, open);
   };
   const setCollapsedFor = (surfaceId: SurfaceId, collapsed: boolean) => {
@@ -957,13 +964,21 @@ function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: Surfa
   }
 }
 
-function useCompactDesktopAutoCollapse(closeSlotEverywhere: (slot: PanelSlotId) => void) {
+/**
+ * A window too narrow for a panel holds it closed while it stays narrow, without
+ * writing prefs, so the writer's own choice returns when the window widens.
+ * Opening the panel by hand releases the hold until the window narrows again.
+ */
+function useNarrowWindowHold() {
+  const [held, setHeld] = useState<readonly PanelSlotId[]>([]);
   useEffect(() => {
     const compact = window.matchMedia(COMPACT_DESKTOP_QUERY);
     const narrow = window.matchMedia(NARROW_DESKTOP_QUERY);
     const apply = () => {
-      if (compact.matches) closeSlotEverywhere("dock");
-      if (narrow.matches) closeSlotEverywhere("rail-l");
+      const next: PanelSlotId[] = [];
+      if (compact.matches) next.push("dock");
+      if (narrow.matches) next.push("rail-l");
+      setHeld(next);
     };
     compact.addEventListener("change", apply);
     narrow.addEventListener("change", apply);
@@ -972,5 +987,19 @@ function useCompactDesktopAutoCollapse(closeSlotEverywhere: (slot: PanelSlotId) 
       compact.removeEventListener("change", apply);
       narrow.removeEventListener("change", apply);
     };
-  }, [closeSlotEverywhere]);
+  }, []);
+  const release = useCallback(
+    (slot: PanelSlotId) => setHeld((current) => current.filter((held) => held !== slot)),
+    [],
+  );
+  return { collapsedSlots: held.length === 0 ? NO_COLLAPSED_SLOTS : held, release };
+}
+
+function mergeHeldSlots(
+  a: readonly DesktopProjectSlotId[],
+  b: readonly DesktopProjectSlotId[],
+): readonly DesktopProjectSlotId[] {
+  if (b.length === 0) return a;
+  if (a.length === 0) return b;
+  return [...new Set([...a, ...b])];
 }
