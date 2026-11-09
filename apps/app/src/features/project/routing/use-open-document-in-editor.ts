@@ -2,7 +2,7 @@
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback } from "react";
 import { type ContextTab, isEditorContextTab } from "@/client/stores";
-import type { ReviewAddress } from "../presented-document";
+import { type ReviewAddress, reviewAddressWorkId } from "../presented-document";
 import { type OpenContextRoute, useOpenContextRoute } from "./ProjectNavigationContext";
 
 type EditorDocument =
@@ -25,7 +25,7 @@ export function openDocumentInEditor(
     {
       scheme: target.scheme,
       path: target.path,
-      workId: review?.workId ?? target.workId ?? undefined,
+      workId: (review && reviewAddressWorkId(review)) ?? target.workId ?? undefined,
       ...(tab ? { documentId: tab.documentId } : {}),
       ...(target.rootThreadId ? { rootThreadId: target.rootThreadId } : {}),
     },

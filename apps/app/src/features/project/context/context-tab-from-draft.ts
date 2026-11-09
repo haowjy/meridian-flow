@@ -16,7 +16,7 @@
  * a visible extension (`outline.json`) states its type.
  */
 import { classifyFiletype, filetypeForPath } from "@meridian/contracts/protocol";
-import type { ContextTab } from "@/client/stores";
+import { type ContextTab, workReviewOwner } from "@/client/stores";
 import type { ContextUri } from "@/lib/context-uri";
 
 export function contextTabFromDraftGroup(group: {
@@ -56,7 +56,7 @@ export function contextTabFromDraftGroup(group: {
     ...(group.draftOnly
       ? {
           reviews: {
-            [group.workId]: { itemKey: group.itemKey, tabInstanceToken: crypto.randomUUID() },
+            [workReviewOwner(group.workId)]: { itemKey: group.itemKey, tabInstanceToken: crypto.randomUUID() },
           },
         }
       : {}),

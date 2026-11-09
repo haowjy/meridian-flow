@@ -51,6 +51,7 @@ export {
   replaceOwner,
   reviewEntriesOf,
   reviewEntryOf,
+  reviewWorkIds,
   type ServerContextTab,
   selectedDocumentIdOf,
   selectedTabOf,
@@ -60,6 +61,8 @@ export {
   tabContextOwner,
   tabKey,
   withoutReviewEntry,
+  workIdOfReviewOwner,
+  workReviewOwner,
 } from "./editor-workspace-model";
 
 type ContextTabsState = {

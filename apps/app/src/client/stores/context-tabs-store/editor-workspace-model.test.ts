@@ -26,11 +26,10 @@ it("admits Scratch documents but keeps Upload resources out of the Editor", () =
   expect(isEditorContextTab(tab("uploads"))).toBe(false);
 });
 
-it("drops old No Work snapshots with empty selection keys or ownerless Scratch tabs", () => {
+it("drops snapshots holding ownerless Scratch tabs", () => {
   const scratch = { ...tab("scratch"), tabInstanceId: "tab" };
   for (const project of [
-    { tabs: [scratch], selectedTabIdByWork: { "": scratch.documentId } },
-    { tabs: [{ ...scratch, workId: undefined }], selectedTabIdByWork: {} },
+    { tabs: [{ ...scratch, workId: undefined }], selectedTabKey: null },
   ]) {
     expect(parseEditorWorkspace({ project })).toBeUndefined();
   }
@@ -48,7 +47,7 @@ function lineageTab(): ContextTab {
 }
 
 function workspaceWith(tab: ContextTab) {
-  return { project: { tabs: [{ ...tab, tabInstanceId: "tab" }], selectedTabIdByWork: {} } };
+  return { project: { tabs: [{ ...tab, tabInstanceId: "tab" }], selectedTabKey: null } };
 }
 
 it("shows a chat's Scratch in every Editor, and a Work's Scratch only in its own", () => {

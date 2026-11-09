@@ -29,7 +29,7 @@ import { BesideChatContext } from "./context/open-chat-document";
 import { claimOpenIntent } from "./context/open-intent";
 import { useProjectDocumentNavigationProjectId } from "./context/open-project-document";
 import { FocusOpenedReview, type ReviewFocusRequest } from "./dock/FocusOpenedReview";
-import { type PresentedDocument, usePresentedDocument } from "./presented-document";
+import { type PresentedDocument, reviewAddress, usePresentedDocument } from "./presented-document";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 
 export type AiDraftLaunchTarget = {
@@ -101,10 +101,7 @@ export function EditorReviewHandoffProvider({
       const tab = contextTabFromDraftGroup(target);
       // Beside the chat the tab store opens, selects and pins; there is no address to route to.
       if (beside && tab) {
-        beside(tab, claimOpenIntent(), undefined, {
-          workId: target.workId,
-          itemKey: target.itemKey,
-        });
+        beside(tab, claimOpenIntent(), undefined, reviewAddress(target.workId, target.itemKey));
         return;
       }
       const staged = { ...target, sequence: ++sequence.current };
@@ -138,7 +135,7 @@ export function EditorReviewHandoffProvider({
             );
             if (opened)
               useContextTabsStore.getState().setTabState(projectId, tabKey(opened), {
-                reviewPin: { workId: target.workId, itemKey: target.itemKey },
+                reviewPin: reviewAddress(target.workId, target.itemKey),
                 view: { version: "draft" },
               });
             if (

@@ -19,8 +19,8 @@ import {
   getContextTabs,
   isDraftOnly,
   isEditorContextTab,
-  reviewEntriesOf,
   reviewEntryOf,
+  reviewWorkIds,
   selectedTabOf,
   type TabView,
   tabKey,
@@ -32,7 +32,11 @@ import { useContextRemovalCoordinator } from "@/features/project/context/account
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 import { useContextRemovalProject } from "@/features/project/context/use-context-removal-project";
 import { settleWriterClose } from "@/features/project/context/use-follow-open-document-placement";
-import type { ReviewAddress } from "@/features/project/presented-document";
+import {
+  type ReviewAddress,
+  reviewAddress,
+  reviewAddressWorkId,
+} from "@/features/project/presented-document";
 import {
   useOpenContextRoute,
   useProjectScreen,
@@ -123,8 +127,7 @@ export function resolveTab(
 ): Pick<OpenDocumentTab, "review" | "showing" | "outOfScope" | "hasDraftInScope" | "view"> {
   const view = tab.view ?? DEFAULT_TAB_VIEW;
   const scopeRow = scope.drafts.rows.find((row) => row.documentId === tab.documentId);
-  const entries = reviewEntriesOf(tab);
-  const heldBy = Object.keys(entries)[0];
+  const heldBy = reviewWorkIds(tab)[0];
   const draftOnly = isDraftOnly(tab);
   const ownEntry = scope.workId ? reviewEntryOf(tab, scope.workId) : undefined;
   const ownerWorkId = tab.kind === "new" ? undefined : tab.workId;
@@ -146,21 +149,22 @@ export function resolveTab(
   });
 
   const pin = tab.reviewPin;
-  if (pin) {
-    const list = pin.workId === scope.workId ? scope.drafts : pinned.get(pin.workId);
+  const pinWorkId = pin ? reviewAddressWorkId(pin) : null;
+  if (pin && pinWorkId) {
+    const list = pinWorkId === scope.workId ? scope.drafts : pinned.get(pinWorkId);
     if (!list || list.status === "loading") return { ...base, review: null, showing: "pending" };
     if (list.rows.some((row) => row.itemKey === pin.itemKey)) return drafted(pin);
   }
   if (draftOnly) {
     const workId = ownEntry && scope.workId ? scope.workId : heldBy;
-    const entry = workId ? entries[workId] : undefined;
+    const entry = workId ? reviewEntryOf(tab, workId) : undefined;
     return entry && workId
-      ? drafted({ workId, itemKey: entry.itemKey })
+      ? drafted(reviewAddress(workId, entry.itemKey))
       : { ...base, review: null, showing: "live" };
   }
   if (view.version === "draft" && scope.workId) {
     if (scope.drafts.status === "loading") return { ...base, review: null, showing: "pending" };
-    if (scopeRow) return drafted({ workId: scope.workId, itemKey: scopeRow.itemKey });
+    if (scopeRow) return drafted(reviewAddress(scope.workId, scopeRow.itemKey));
   }
   return { ...base, review: null, showing: "live" };
 }
@@ -174,9 +178,10 @@ function useResolveScope(projectId: string) {
 function pinWorkIds(tabs: readonly ContextTab[], scopeWorkId: string | null): string[] {
   return [
     ...new Set(
-      tabs.flatMap((tab) =>
-        tab.reviewPin && tab.reviewPin.workId !== scopeWorkId ? [tab.reviewPin.workId] : [],
-      ),
+      tabs.flatMap((tab) => {
+        const workId = tab.reviewPin ? reviewAddressWorkId(tab.reviewPin) : null;
+        return workId && workId !== scopeWorkId ? [workId] : [];
+      }),
     ),
   ];
 }
@@ -236,9 +241,10 @@ export function useOpenDocumentActions(projectId: string): {
 
   const reviewOf = (tab: ContextTab, review?: ReviewAddress | null): ReviewAddress | null => {
     if (review) return review;
-    const entries = reviewEntriesOf(tab);
-    const workId = activeWorkId && entries[activeWorkId] ? activeWorkId : Object.keys(entries)[0];
-    return workId ? { workId, itemKey: entries[workId].itemKey } : null;
+    const workIds = reviewWorkIds(tab);
+    const workId = activeWorkId && workIds.includes(activeWorkId) ? activeWorkId : workIds[0];
+    const entry = workId ? reviewEntryOf(tab, workId) : undefined;
+    return workId && entry ? reviewAddress(workId, entry.itemKey) : null;
   };
 
   /** Write: one route command installs the tab, selects it and writes the URL. */

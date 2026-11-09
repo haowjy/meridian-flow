@@ -7,7 +7,7 @@ import {
   editorTabsForWork,
   isDraftOnly,
   matchesTabInstance,
-  reviewEntriesOf,
+  reviewWorkIds,
   reviewEntryOf,
   withoutReviewEntry,
 } from "@/client/stores";
@@ -215,7 +215,7 @@ export function routeTargetForTab(tab: ContextTab, activeWorkId: string): Contex
       rootThreadId: tab.rootThreadId,
       documentId: tab.documentId,
     };
-  const reviewers = Object.keys(reviewEntriesOf(tab));
+  const reviewers = reviewWorkIds(tab);
   let workId = reviewEntryOf(tab, activeWorkId) ? activeWorkId : (reviewers[0] ?? activeWorkId);
   if (isWorkScopedScheme(tab.scheme)) {
     if (!tab.workId) throw new Error("Work-scoped tab has no Work owner");
