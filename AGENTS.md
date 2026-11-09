@@ -121,8 +121,7 @@ soon as it's in. One PR carries the integration branch into `main`.
 
 Before a merge, CI is green, the regressions the change could cause are tested, and the PR body
 is reread against the final diff, with evidence from the commit being merged. Whether a change
-also gets an independent review is your call. When the owner has been steering the work as it's
-built, confirm the result with him and let him review it before it merges.
+also gets an independent review is your call.
 
 Write a PR body for a reader who knows nothing about the area, from the
 [template](.github/PULL_REQUEST_TEMPLATE.md), and check it with
