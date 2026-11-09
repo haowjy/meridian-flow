@@ -103,9 +103,10 @@ export function TreeGroup({ depth, children }: { depth: number; children: ReactN
   return (
     <div className="relative isolate">
       {children}
+      {/* An empty folder draws no guide stub: alone in the group, it hides. */}
       <span
         aria-hidden
-        className="pointer-events-none absolute -inset-y-1 z-10 border-l border-border-subtle"
+        className="pointer-events-none absolute -inset-y-1 z-10 border-l border-border-subtle only:hidden"
         style={{ left: rowPaddingLeft(depth) }}
       />
     </div>
