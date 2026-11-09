@@ -43,7 +43,7 @@ export function DocumentDraftHint({ projectId, tab }: DocumentDraftHintProps) {
   const review = (hint: (typeof others)[number]) => {
     openAiDraft(hintReviewTarget(hint, { documentId, contextLocation, documentName }));
   };
-  const labelOf = (hint: (typeof others)[number]) => hint.label ?? t`Unnamed Work`;
+  const labelOf = (hint: (typeof others)[number]) => hint.label ?? t`Unnamed draft`;
   const [only] = others;
 
   return (
@@ -55,12 +55,12 @@ export function DocumentDraftHint({ projectId, tab }: DocumentDraftHintProps) {
       <span className="min-w-0">
         {others.length === 1 && only ? (
           only.label ? (
-            <Trans>A Work has drafts for this ({only.label})</Trans>
+            <Trans>Drafts for this ({only.label})</Trans>
           ) : (
-            <Trans>A Work has drafts for this</Trans>
+            <Trans>Drafts for this</Trans>
           )
         ) : (
-          plural(others.length, { other: "# Works have drafts for this" })
+          plural(others.length, { other: "# sets of drafts for this" })
         )}
       </span>
       {others.length === 1 && only ? (

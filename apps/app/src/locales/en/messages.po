@@ -219,8 +219,13 @@ msgstr "{0, plural, one {read # document} other {read # documents}}"
 
 #. placeholder {0}: others.length
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "{0, plural, other {# Works have drafts for this}}"
-msgstr "{0, plural, other {# Works have drafts for this}}"
+msgid "{0, plural, other {# sets of drafts for this}}"
+msgstr "{0, plural, other {# sets of drafts for this}}"
+
+#. placeholder {0}: others.length
+#: src/features/editor/DocumentDraftHint.tsx
+#~ msgid "{0, plural, other {# Works have drafts for this}}"
+#~ msgstr "{0, plural, other {# Works have drafts for this}}"
 
 #. placeholder {0}: list( entries.map( ({ name, outcome }) => `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`, ), )
 #: src/features/chat/subagent/DeliveryEventRows.tsx
@@ -854,13 +859,13 @@ msgid "A Work groups the chats and drafts for one piece of writing."
 msgstr "A Work groups the chats and drafts for one piece of writing."
 
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "A Work has drafts for this"
-msgstr "A Work has drafts for this"
+#~ msgid "A Work has drafts for this"
+#~ msgstr "A Work has drafts for this"
 
 #. placeholder {0}: only.label
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "A Work has drafts for this ({0})"
-msgstr "A Work has drafts for this ({0})"
+#~ msgid "A Work has drafts for this ({0})"
+#~ msgstr "A Work has drafts for this ({0})"
 
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "a writer"
@@ -2820,6 +2825,15 @@ msgstr "Draft review"
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "Drafts ({waiting})"
 msgstr "Drafts ({waiting})"
+
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "Drafts for this"
+msgstr "Drafts for this"
+
+#. placeholder {0}: only.label
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "Drafts for this ({0})"
+msgstr "Drafts for this ({0})"
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 #~ msgid "Drop image to insert it"
@@ -6346,8 +6360,12 @@ msgid "Unknown component: {kindLabel}"
 msgstr "Unknown component: {kindLabel}"
 
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "Unnamed Work"
-msgstr "Unnamed Work"
+msgid "Unnamed draft"
+msgstr "Unnamed draft"
+
+#: src/features/editor/DocumentDraftHint.tsx
+#~ msgid "Unnamed Work"
+#~ msgstr "Unnamed Work"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
