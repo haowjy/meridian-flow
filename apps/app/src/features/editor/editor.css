@@ -5,7 +5,7 @@
  * Shared document rules live in styles/document.css. Geometry and color use
  * Ink & Jade variables so the editor follows the app theme.
  *
- * Long-form manuscript reading: a calm ~68ch measure and the shared
+ * Long-form manuscript reading: a calm ~76ch measure and the shared
  * `prose-tokens` reading scale. The prose stays undecorated: the cinnabar
  * signature lives only in chrome, never in the manuscript itself. Internal
  * links are the deliberate exception. They draw as the same tag chip they are
