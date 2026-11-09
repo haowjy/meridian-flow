@@ -22,7 +22,7 @@ import { Folder } from "lucide-react";
 import { type RefObject, useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
-import { useContextTabs } from "@/client/stores";
+import { useSelectedDocumentId } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import type { DeleteTarget } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
@@ -37,7 +37,6 @@ import { useDeleteContextEntry } from "../context/use-delete-context-entry";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
 import { useScratchCatalogs } from "../context/use-scratch-catalogs";
 import { useTreeExpansion } from "../context/use-tree-expansion";
-import { useDockDocument } from "../dock/dock-document-store";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { DockedRailSection } from "../shell/DockedRailSection";
@@ -47,11 +46,8 @@ import { useChatScratchSource } from "./use-chat-scratch-source";
 /** The document open beside the writer, if any: the dock's on the Chat screen, the selected tab in the Editor. */
 function useOpenDocumentId(projectId: string, editorWorkId: string | null): string | undefined {
   const screen = useProjectScreen();
-  const docked = useDockDocument(screen, projectId)?.tab.documentId;
-  const { selectedTabIdByWork } = useContextTabs(projectId);
-  if (screen === "chat") return docked;
-  if (screen === "context") return selectedTabIdByWork[editorWorkId ?? ""] ?? undefined;
-  return undefined;
+  const selected = useSelectedDocumentId(projectId);
+  return screen === "chat" || screen === "context" ? (selected ?? undefined) : undefined;
 }
 
 export function RailScratchSection({

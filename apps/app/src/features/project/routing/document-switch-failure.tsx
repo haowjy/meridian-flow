@@ -3,8 +3,8 @@ import { createContext, type ReactNode, useContext, useEffect, useState } from "
 import type { ScreenKey } from "../shell/screens";
 import type { NavigationSettlement, ProjectNavigationTicket } from "./project-navigation";
 
-type Origin = "rail" | "header";
-export type SwitchSource = { kind: "rail"; screen: ScreenKey } | { kind: "header"; claim: number };
+type Origin = "rail";
+export type SwitchSource = { kind: "rail"; screen: ScreenKey };
 type SwitchFailure = {
   location: "source" | "destination";
   source: SwitchSource;
@@ -76,14 +76,6 @@ export function railFailure(
   return failed?.location === "source" && failed.ticket.key === key && failed.source.kind === "rail"
     ? failed.source.screen
     : null;
-}
-export function headerFailure(failures: Partial<Record<Origin, SwitchFailure>>, revision: number) {
-  const failed = failures.header;
-  return (
-    failed?.location === "source" &&
-    failed.source.kind === "header" &&
-    failed.source.claim === revision
-  );
 }
 export function destinationFailure(
   failures: Partial<Record<Origin, SwitchFailure>>,

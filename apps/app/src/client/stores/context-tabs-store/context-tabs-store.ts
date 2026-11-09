@@ -7,15 +7,21 @@ import {
   type ContextTab,
   isDraftOnly,
   isEditorContextTab,
-  isEditorTab,
   matchesTabInstance,
   type ProjectTabsSlice,
   type ReviewEntries,
+  type ReviewPin,
   reviewEntryOf,
+  selectedDocumentIdOf,
+  selectedTabOf,
+  selectingDocument,
   type TabOwner,
+  type TabView,
+  tabKey,
 } from "./editor-workspace-model";
 import {
   EDITOR_WORKSPACE_STORAGE_KEY,
+  EDITOR_WORKSPACE_VERSION,
   type EditorWorkspaceCommand,
   parseEditorWorkspace,
   reduceEditorWorkspace,
@@ -29,6 +35,7 @@ export type TrackedTabPatch = Partial<
 
 export {
   type ContextTab,
+  DEFAULT_TAB_VIEW,
   editorTabsForWork,
   isDraftOnly,
   isEditorContextTab,
@@ -39,17 +46,23 @@ export {
   type ProjectTabsSlice,
   type ReviewEntries,
   type ReviewItemTabIdentity,
+  type ReviewPin,
   replaceOwner,
   reviewEntriesOf,
   reviewEntryOf,
   type ServerContextTab,
+  selectedDocumentIdOf,
+  selectedTabOf,
+  selectingDocument,
   type TabOwner,
+  type TabView,
   tabContextOwner,
+  tabKey,
   withoutReviewEntry,
 } from "./editor-workspace-model";
 
 type ContextTabsState = {
-  /** One tab per document, independent of other browser contexts. Draft-only tabs are never persisted. */
+  /** One tab per document, independent of other browser contexts. */
   byProject: Record<string, ProjectTabsSlice>;
   _workspaceHydrated: boolean;
   _layoutPersistenceError: unknown | null;
@@ -65,6 +78,7 @@ type ContextTabsActions = {
     tab: ContextTab,
     isCurrent?: () => boolean,
     editorWorkId?: string,
+    options?: { select?: true },
   ) => OpenEditorTabResult;
   reconcileResourceTab: (
     projectId: string,
@@ -79,10 +93,17 @@ type ContextTabsActions = {
   reorderTabs: (projectId: string, fromIndex: number, toIndex: number) => Promise<void>;
   selectTab: (
     projectId: string,
-    workId: string,
     documentId: string | null,
     addressed?: ContextTab,
   ) => Promise<void>;
+  /** The writer's choices on one tab (view, preview slot, review pin). */
+  setTabState: (
+    projectId: string,
+    key: string,
+    patch: { view?: Partial<TabView>; preview?: boolean; reviewPin?: ReviewPin | null },
+  ) => void;
+  /** Drops pins by Work and/or item (a scope switch, a settled or dropped review); no filter drops all. */
+  clearReviewPins: (projectId: string, filter?: { workId?: string; itemKey?: string }) => void;
   reconcileBootstrap: (
     projectId: string,
     changes: readonly { prior: ContextTab; next: ContextTab | null }[],
@@ -103,26 +124,20 @@ export type DraftWorkspaceSettlementReceipt = { kind: "settled" } | { kind: "not
 // here defeats `useShallow` in `useContextTabs`: a new `tabs: []` identity every
 // call makes the snapshot unequal on every render -> "getSnapshot should be
 // cached" -> infinite render loop. Never mutated (all updates are immutable).
-const EMPTY_SLICE: ProjectTabsSlice = { tabs: [], selectedTabIdByWork: {} };
+const EMPTY_SLICE: ProjectTabsSlice = { tabs: [], selectedTabKey: null };
 
 function emptySlice(): ProjectTabsSlice {
   return EMPTY_SLICE;
 }
 
-function normalizeSelections(
-  tabs: readonly ContextTab[],
-  selections: Record<string, string>,
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(selections).filter(([workId, documentId]) =>
-      tabs.some((tab) => tab.documentId === documentId && isEditorTab(tab, workId)),
-    ),
-  );
-}
-
 function durableSlice(slice: ProjectTabsSlice): ProjectTabsSlice {
-  const tabs = slice.tabs.filter((tab) => !isDraftOnly(tab) && isEditorContextTab(tab));
-  return { tabs, selectedTabIdByWork: normalizeSelections(tabs, slice.selectedTabIdByWork) };
+  const tabs = slice.tabs.filter(isEditorContextTab);
+  return {
+    tabs,
+    selectedTabKey: tabs.some((tab) => tabKey(tab) === slice.selectedTabKey)
+      ? slice.selectedTabKey
+      : null,
+  };
 }
 
 function sliceFor(state: ContextTabsState, projectId: string): ProjectTabsSlice {
@@ -143,7 +158,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         if (!command) return null;
         const result = reduceEditorWorkspace(
           {
-            version: 1,
+            version: EDITOR_WORKSPACE_VERSION,
             accountId: workspaceAccountId ?? "unhydrated",
             projects: current.byProject,
           },
@@ -168,11 +183,11 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         _workspaceHydrated: false,
         _layoutPersistenceError: null,
 
-        openTab: (projectId, input, isCurrent, editorWorkId) => {
+        openTab: (projectId, input, isCurrent, editorWorkId, options) => {
           if (isCurrent?.() === false) return { kind: "superseded" };
           if (!isEditorContextTab(input)) return { kind: "ineligible" };
           const tab = { ...input, tabInstanceId: input.tabInstanceId ?? crypto.randomUUID() };
-          dispatchResult(() => ({ kind: "open", projectId, tab }), isCurrent);
+          dispatchResult(() => ({ kind: "open", projectId, tab, ...options }), isCurrent);
           const installed = sliceFor(get(), projectId).tabs.find(
             (member) => member.documentId === tab.documentId,
           );
@@ -221,7 +236,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             };
           }),
 
-        selectTab: (projectId, workId, documentId, addressed) => {
+        selectTab: (projectId, documentId, addressed) => {
           if (
             addressed &&
             !sliceFor(get(), projectId).tabs.some((tab) => matchesTabInstance(tab, addressed))
@@ -235,8 +250,21 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                 : slice.tabs.find((tab) => tab.documentId === documentId)?.tabInstanceId;
             return documentId !== null && !tabInstanceId
               ? null
-              : { kind: "select", projectId, workId, tabInstanceId: tabInstanceId ?? null };
+              : { kind: "select", projectId, tabInstanceId: tabInstanceId ?? null };
           });
+        },
+
+        setTabState: (projectId, key, patch) => {
+          dispatchResult(() => ({
+            kind: "set-tab-state",
+            projectId,
+            tabInstanceId: key,
+            patch,
+          }));
+        },
+
+        clearReviewPins: (projectId, filter) => {
+          dispatchResult(() => ({ kind: "clear-review-pins", projectId, ...filter }));
         },
 
         reconcileBootstrap: async (projectId, changes) => {
@@ -267,22 +295,15 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                 ? [{ prior: candidate, next: tab }]
                 : [];
             });
-            const keys = new Set([
-              ...Object.keys(durablePrior.selectedTabIdByWork),
-              ...Object.keys(durableNext.selectedTabIdByWork),
-            ]);
+            const priorDocumentId = selectedDocumentIdOf(durablePrior);
+            const nextDocumentId = selectedDocumentIdOf(durableNext);
             return {
               kind: "apply-availability",
               projectId,
               removals: [...unmatched].map((index) => durablePrior.tabs[index] as ContextTab),
               updates,
-              selections: [...keys].flatMap((workId) => {
-                const priorDocumentId = durablePrior.selectedTabIdByWork[workId] ?? null;
-                const nextDocumentId = durableNext.selectedTabIdByWork[workId] ?? null;
-                return priorDocumentId === nextDocumentId
-                  ? []
-                  : [{ workId, priorDocumentId, nextDocumentId }];
-              }),
+              selection:
+                priorDocumentId === nextDocumentId ? null : { priorDocumentId, nextDocumentId },
             };
           }),
 
@@ -331,7 +352,7 @@ export function commitPlannedContextRemoval(
   projectId: string,
   input: {
     documentIds: readonly string[];
-    workspaceSelection?: { workId: string; documentId: string | null };
+    workspaceSelection?: { documentId: string | null };
     /** A Work's Discard drops only its entry; the tab survives while another Work reviews it. */
     dropReviewOf?: string;
   },
@@ -350,16 +371,16 @@ export function commitPlannedContextRemoval(
   const tabs = input.dropReviewOf
     ? slice.tabs
     : slice.tabs.filter((tab) => !documentIds.has(tab.documentId));
-  const selectedTabIdByWork = { ...slice.selectedTabIdByWork };
-  if (input.workspaceSelection) {
-    const { workId, documentId } = input.workspaceSelection;
-    if (documentId === null) delete selectedTabIdByWork[workId];
-    else selectedTabIdByWork[workId] = documentId;
-  }
-  void useContextTabsStore.getState().applyAvailability(projectId, slice, {
-    tabs,
-    selectedTabIdByWork: normalizeSelections(tabs, selectedTabIdByWork),
-  });
+  const kept = { tabs, selectedTabKey: slice.selectedTabKey };
+  void useContextTabsStore
+    .getState()
+    .applyAvailability(
+      projectId,
+      slice,
+      input.workspaceSelection
+        ? selectingDocument(kept, input.workspaceSelection.documentId)
+        : kept,
+    );
   return removed;
 }
 
@@ -379,6 +400,16 @@ export function commitDraftApplyMetadata(
   return useContextTabsStore.getState().settleDraft(projectId, tab);
 }
 
+/** The selected tab's document id; a re-render only when the selection moves. */
+export function useSelectedDocumentId(projectId: string): string | null {
+  return useContextTabsStore((state) => selectedDocumentIdOf(sliceFor(state, projectId)));
+}
+
+/** The selected tab record, stable until that tab or the selection changes. */
+export function useSelectedContextTab(projectId: string): ContextTab | null {
+  return useContextTabsStore((state) => selectedTabOf(sliceFor(state, projectId)));
+}
+
 /** Selector helper — returns the tab slice for a project (stable empty default). */
 export function useContextTabs(projectId: string): ProjectTabsSlice {
   return useContextTabsStore((state) => sliceFor(state, projectId));
@@ -394,7 +425,7 @@ let workspaceAccountId: string | null = null;
 function workspaceRecord(accountId: string) {
   return browserRecord(
     "session",
-    { key: EDITOR_WORKSPACE_STORAGE_KEY, version: 1, accountId },
+    { key: EDITOR_WORKSPACE_STORAGE_KEY, version: EDITOR_WORKSPACE_VERSION, accountId },
     parseEditorWorkspace,
     (error) => useContextTabsStore.setState({ _layoutPersistenceError: error }),
   );
@@ -403,7 +434,6 @@ function workspaceRecord(accountId: string) {
 function persistWorkspace(): void {
   if (!workspaceAccountId) return;
   const { byProject } = useContextTabsStore.getState();
-  // A hidden draft's tab is not persisted: its address (document and item key) reopens it.
   const persisted = Object.fromEntries(
     Object.entries(byProject).map(([projectId, slice]) => [projectId, durableSlice(slice)]),
   );
@@ -426,7 +456,13 @@ export async function rehydrateEditorWorkspace(userId: string): Promise<void> {
 
 type PublicContextTabsActions = Pick<
   ContextTabsActions,
-  "openTab" | "reconcileResourceTab" | "updateTrackedTab" | "reorderTabs" | "selectTab"
+  | "openTab"
+  | "reconcileResourceTab"
+  | "updateTrackedTab"
+  | "reorderTabs"
+  | "selectTab"
+  | "setTabState"
+  | "clearReviewPins"
 >;
 
 export function useContextTabsActions(): PublicContextTabsActions {
@@ -437,6 +473,8 @@ export function useContextTabsActions(): PublicContextTabsActions {
       updateTrackedTab: s.updateTrackedTab,
       reorderTabs: s.reorderTabs,
       selectTab: s.selectTab,
+      setTabState: s.setTabState,
+      clearReviewPins: s.clearReviewPins,
     })),
   );
 }

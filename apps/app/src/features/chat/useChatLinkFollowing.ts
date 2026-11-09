@@ -61,7 +61,7 @@ import {
 } from "@/features/links";
 import type { FolderMenuHost } from "@/features/project/context/FolderMenu";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
-import { useReviewingLinkDestination } from "@/features/project/dock/useAiDraftLauncher";
+import { useReviewingLinkDestination } from "@/features/project/review-launch";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
 import { type ChatDoors, type ContextPassageAnchor, useChatDoors } from "./ChatContextNavigation";
 import { createReferenceAvailability, type ReferenceAvailability } from "./reference-availability";

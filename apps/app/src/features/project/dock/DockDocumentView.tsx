@@ -24,46 +24,27 @@ import { useAccountResourceReplica } from "../context/account-feature-context";
 import { ContextDocumentHost } from "../context/ContextDocumentHost";
 import { ContextViewerHost } from "../context/ContextViewerHost";
 import { DocumentPaneChrome } from "../context/DocumentPaneChrome";
-import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { useDockArchivedWork } from "./DockDocumentIdentity";
-import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
-import { ReviewLaunchContext, useDockReviewLauncher } from "./useAiDraftLauncher";
+import { type OpenDocumentTab, useOpenDocumentActions } from "../open-documents";
 
 export function DockDocumentView(props: {
   projectId: string;
-  document: DockDocument;
+  document: OpenDocumentTab;
   visible: boolean;
 }) {
   const review = usePresentedDraftReview();
-  const launch = useDockReviewLauncher(props.projectId, props.document);
   return (
-    <ReviewLaunchContext.Provider value={launch}>
-      <DraftReviewBoundary value={review}>
-        <PaintScope active={props.visible}>
-          <PaintHold
-            status={t`Opening ${props.document.tab.name}`}
-            className="relative flex min-h-0 flex-1 flex-col"
-          >
-            <PaintCapture surface={props.document.tab.documentId} />
-            {props.document.reviewAdmission && props.document.reviewAdmission !== "admitted" ? (
-              <ProjectRouteBoundary
-                issue={
-                  props.document.reviewAdmission === "failed"
-                    ? "error"
-                    : props.document.reviewAdmission === "pending"
-                      ? "loading"
-                      : "unavailable"
-                }
-              >
-                {null}
-              </ProjectRouteBoundary>
-            ) : (
-              <DockDocumentBody {...props} />
-            )}
-          </PaintHold>
-        </PaintScope>
-      </DraftReviewBoundary>
-    </ReviewLaunchContext.Provider>
+    <DraftReviewBoundary value={review}>
+      <PaintScope active={props.visible}>
+        <PaintHold
+          status={t`Opening ${props.document.tab.name}`}
+          className="relative flex min-h-0 flex-1 flex-col"
+        >
+          <PaintCapture surface={props.document.tab.documentId} />
+          <DockDocumentBody {...props} />
+        </PaintHold>
+      </PaintScope>
+    </DraftReviewBoundary>
   );
 }
 
@@ -73,11 +54,12 @@ function DockDocumentBody({
   visible,
 }: {
   projectId: string;
-  document: DockDocument;
+  document: OpenDocumentTab;
   /** Whether the dock is on screen; a hidden dock's editor chrome stands down. */
   visible: boolean;
 }) {
-  const closeDocument = useDockDocumentStore((state) => state.closeDocument);
+  const { close } = useOpenDocumentActions(projectId);
+  const closeDocument = () => close(dockDocument.key);
   const resources = useAccountResourceReplica();
   const tab = dockDocument.tab;
   const onUntitledBecameNonEmpty = useCallback(async () => {

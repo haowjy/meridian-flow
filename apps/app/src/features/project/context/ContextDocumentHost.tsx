@@ -31,7 +31,7 @@ import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
-import { useRequestedReview } from "../dock/editor-review-handoff";
+import { useRequestedReview } from "../review-launch";
 import {
   useAccountResourceProjection,
   useContextRemovalCoordinator,

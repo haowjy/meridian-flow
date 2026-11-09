@@ -6,7 +6,7 @@
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import { expect, it } from "vitest";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
-import { admissible, requestedReviewItemKey } from "./editor-review-handoff";
+import { admissible, requestedReviewItemKey } from "./review-launch";
 
 it.each(CONTEXT_URI_SCHEMES)("admits a %s review in its matching document and Work", (scheme) => {
   const intent = {

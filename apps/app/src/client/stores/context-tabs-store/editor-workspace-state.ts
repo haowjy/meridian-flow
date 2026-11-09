@@ -16,10 +16,12 @@ import {
   type ReviewPin,
   reviewEntriesOf,
   reviewEntryOf,
+  DEFAULT_TAB_VIEW,
   selectedDocumentIdOf,
   selectingDocument,
   type TabState,
   tabKey,
+  tabStateOf,
   withoutReviewEntry,
   withTabState,
 } from "./editor-workspace-model";
@@ -40,8 +42,6 @@ export type EditorWorkspaceCommand =
       tab: ContextTab;
       /** Select the tab in the same commit. */
       select?: true;
-      /** Fill the preview slot: a new tab is marked, any other tab loses the mark. A tab already open is left as it is. */
-      preview?: true;
     }
   | { kind: "close"; projectId: string; tabInstanceId: string }
   | { kind: "select"; projectId: string; tabInstanceId: string | null }
@@ -297,6 +297,12 @@ function normalizeProject(workspace: ProjectTabsSlice): ProjectTabsSlice {
 }
 
 /** The tab to select once `removed` is gone: it keeps the selection unless it was the selected one. */
+function pinWithoutWork(tab: ContextTab, workId: string): ContextTab {
+  if (tab.reviewPin?.workId !== workId) return tab;
+  const { reviewPin: _pin, ...rest } = tab;
+  return rest as ContextTab;
+}
+
 function selectionAfterRemoval(
   workspace: ProjectTabsSlice,
   removed: readonly ContextTab[],
@@ -440,7 +446,7 @@ export function reduceEditorWorkspace(
     return replaceProject(current, command.projectId, {
       ...workspace,
       tabs: workspace.tabs.map((tab, candidateIndex) =>
-        candidateIndex === index ? durableContextTab(prior) : tab,
+        candidateIndex === index ? withTabState(durableContextTab(prior), prior) : tab,
       ),
     });
   }
@@ -467,17 +473,11 @@ export function reduceEditorWorkspace(
     );
     if (!workspace || !tab || !reviewEntryOf(tab, command.workId)) return outcome("stale", current);
     const after = withoutReviewEntry(tab, command.workId);
-    const selections = Object.fromEntries(
-      Object.entries(workspace.selectedTabIdByWork).filter(
-        ([workId, documentId]) =>
-          documentId !== tab.documentId || (after !== null && workId !== command.workId),
-      ),
-    );
     return replaceProject(current, command.projectId, {
       tabs: workspace.tabs.flatMap((candidate) =>
-        candidate !== tab ? [candidate] : after ? [after] : [],
+        candidate !== tab ? [candidate] : after ? [pinWithoutWork(after, command.workId)] : [],
       ),
-      selectedTabIdByWork: selections,
+      selectedTabKey: after ? workspace.selectedTabKey : selectionAfterRemoval(workspace, [tab]),
     });
   }
   if (command.kind === "reconcile-resource") {
@@ -502,21 +502,22 @@ export function reduceEditorWorkspace(
       (tab, candidateIndex) =>
         candidateIndex !== index && tab.documentId === command.tab.documentId,
     );
-    const next = durableContextTab({
-      ...command.tab,
-      tabInstanceId: prior.tabInstanceId,
-    } as ContextTab);
+    const next = withTabState(
+      durableContextTab({
+        ...command.tab,
+        tabInstanceId: prior.tabInstanceId,
+      } as ContextTab),
+      prior,
+    );
     if (absorbed.length === 0 && JSON.stringify(next) === JSON.stringify(prior))
       return outcome("already-committed", current);
     return replaceProject(current, command.projectId, {
       tabs: workspace.tabs
         .filter((tab) => !absorbed.includes(tab))
         .map((tab) => (tab === prior ? next : tab)),
-      selectedTabIdByWork: rewriteSelections(
-        workspace.selectedTabIdByWork,
-        prior.documentId,
-        next.documentId,
-      ),
+      selectedTabKey: absorbed.some((tab) => tabKey(tab) === workspace.selectedTabKey)
+        ? tabKey(next)
+        : workspace.selectedTabKey,
     });
   }
   if (command.kind === "open") {
@@ -549,6 +550,9 @@ export function reduceEditorWorkspace(
           ...existingWithoutResourceOwnership,
           ...tab,
           tabInstanceId: existing.tabInstanceId,
+          // What the writer did to the tab is not the opener's to undo.
+          ...tabStateOf(existing),
+          ...(tab.reviewPin ? { reviewPin: tab.reviewPin } : {}),
           // Each Work keeps the entry it first opened; another Work's draft adds its own.
           ...(existing.kind !== "new" && isDraftOnly(existing)
             ? {
@@ -566,16 +570,15 @@ export function reduceEditorWorkspace(
         : workspace.tabs.map((candidate, candidateIndex) =>
             candidateIndex === index ? merged : candidate,
           );
-    if (index >= 0 && JSON.stringify(tabs[index]) === JSON.stringify(workspace.tabs[index]))
+    const opened = tabs[index < 0 ? tabs.length - 1 : index] as ContextTab;
+    const selectedTabKey = command.select ? tabKey(opened) : workspace.selectedTabKey;
+    if (
+      index >= 0 &&
+      selectedTabKey === workspace.selectedTabKey &&
+      JSON.stringify(tabs[index]) === JSON.stringify(workspace.tabs[index])
+    )
       return outcome("already-committed", current);
-    return replaceProject(
-      current,
-      command.projectId,
-      normalizeProject({
-        ...workspace,
-        tabs,
-      }),
-    );
+    return replaceProject(current, command.projectId, { tabs, selectedTabKey });
   }
   if (command.kind === "close") {
     const workspace = current.projects[command.projectId];
@@ -583,30 +586,61 @@ export function reduceEditorWorkspace(
     if (!workspace || !closed) return outcome("stale", current);
     return replaceProject(current, command.projectId, {
       tabs: workspace.tabs.filter((tab) => tab.tabInstanceId !== command.tabInstanceId),
-      selectedTabIdByWork: Object.fromEntries(
-        Object.entries(workspace.selectedTabIdByWork).filter(([, id]) => id !== closed.documentId),
-      ),
+      selectedTabKey: selectionAfterRemoval(workspace, [closed]),
     });
   }
   if (command.kind === "select") {
     const workspace = current.projects[command.projectId];
     if (!workspace) return outcome("stale", current);
-    const selections = { ...workspace.selectedTabIdByWork };
-    if (command.tabInstanceId === null) {
-      if (!(command.workId in selections)) return outcome("already-committed", current);
-      delete selections[command.workId];
-    } else {
+    if (command.tabInstanceId !== null) {
       const tab = workspace.tabs.find(
         (candidate) => candidate.tabInstanceId === command.tabInstanceId,
       );
       if (!tab || !isEditorContextTab(tab)) return outcome("stale", current);
-      if (selections[command.workId] === tab.documentId)
-        return outcome("already-committed", current);
-      selections[command.workId] = tab.documentId;
     }
+    if (workspace.selectedTabKey === command.tabInstanceId)
+      return outcome("already-committed", current);
     return replaceProject(current, command.projectId, {
       ...workspace,
-      selectedTabIdByWork: selections,
+      selectedTabKey: command.tabInstanceId,
+    });
+  }
+  if (command.kind === "set-tab-state") {
+    const workspace = current.projects[command.projectId];
+    const tab = workspace?.tabs.find((candidate) => candidate.tabInstanceId === command.tabInstanceId);
+    if (!workspace || !tab) return outcome("stale", current);
+    const { patch } = command;
+    const next = { ...tab } as ContextTab;
+    if (patch.view) next.view = { ...DEFAULT_TAB_VIEW, ...tab.view, ...patch.view };
+    // Choosing Live ends an explicit review address: the pin would keep the review on screen.
+    if (patch.reviewPin === null || patch.view?.version === "live") delete next.reviewPin;
+    if (patch.reviewPin) next.reviewPin = patch.reviewPin;
+    if (patch.preview === false) delete next.preview;
+    const tabs = workspace.tabs.map((candidate) => {
+      if (candidate === tab) return patch.preview ? ({ ...next, preview: true } as ContextTab) : next;
+      if (!patch.preview || !candidate.preview) return candidate;
+      const { preview: _preview, ...rest } = candidate;
+      return rest as ContextTab;
+    });
+    if (JSON.stringify(tabs) === JSON.stringify(workspace.tabs))
+      return outcome("already-committed", current);
+    return replaceProject(current, command.projectId, { ...workspace, tabs });
+  }
+  if (command.kind === "clear-review-pins") {
+    const workspace = current.projects[command.projectId];
+    if (!workspace) return outcome("not-referenced", current);
+    const matches = (tab: ContextTab) =>
+      tab.reviewPin !== undefined &&
+      (command.workId === undefined || tab.reviewPin.workId === command.workId) &&
+      (command.itemKey === undefined || tab.reviewPin.itemKey === command.itemKey);
+    if (!workspace.tabs.some(matches)) return outcome("already-committed", current);
+    return replaceProject(current, command.projectId, {
+      ...workspace,
+      tabs: workspace.tabs.map((tab) => {
+        if (!matches(tab)) return tab;
+        const { reviewPin: _pin, ...rest } = tab;
+        return rest as ContextTab;
+      }),
     });
   }
   if (command.kind === "reorder") {

@@ -9,13 +9,13 @@ import { PaneTitle } from "../PaneTitle";
 import { PanelToggleSpacer } from "../shell/PanelToggleButton";
 import type { ScreenKey } from "../shell/screens";
 import { DockDocumentIdentity } from "./DockDocumentIdentity";
-import type { DockDocument } from "./dock-document-store";
+import type { OpenDocumentTab } from "../open-documents";
 
 export type DockHeaderSlotArgs = {
   screen: ScreenKey;
   projectId: string;
   /** The document that replaces the views while the dock shows one. */
-  document: DockDocument | null;
+  document: OpenDocumentTab | null;
 };
 
 export type DockHeaderProps = DockHeaderSlotArgs & {
@@ -59,7 +59,7 @@ export function DockHeader({
             </PaneTitle>
             {/* The header's free end holds the notice for a document the dock closed. */}
             <RemovedNoticeSlot>
-              <RemovedDocumentChip projectId={projectId} surface="dock" />
+              <RemovedDocumentChip projectId={projectId} surface="editor" />
             </RemovedNoticeSlot>
           </>
         ) : null}

@@ -1,4 +1,9 @@
-/** The workspace tab rendered by an Editor pane, from its route props and removal binding. */
+/**
+ * The Write pane's tab and the route's claim on it. The pane shows the store's selected tab; the
+ * address only claims a tab (`workspaceRoute`) so the route can bind and select it. An address that
+ * has no tab yet shows nothing, so the pane waits for the open command instead of showing the
+ * previous document under a new URL.
+ */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ContextTab } from "@/client/stores";
 import { type ContextRouteSelection, routeSelectionDocumentId } from "./context-removal-protocol";
@@ -12,7 +17,7 @@ export type VisibleEditorRoute = {
   activeContextChat?: string | null;
 };
 
-export function resolveVisibleEditorTab({
+export function resolveRouteOwner({
   tabs,
   selectedTabId,
   selection,
@@ -43,10 +48,13 @@ export function resolveVisibleEditorTab({
     locator,
     boundDocumentId,
   });
+  const selected = tabs.find((tab) => tab.documentId === selectedDocumentId) ?? null;
   return {
     selectedDocumentId,
     locator,
     workspaceRoute,
-    tab: workspaceRoute.kind === "unowned" ? null : workspaceRoute.tab,
+    // A locator with no owning tab is an open still in flight; with one, the selection
+    // follows it in the same commit.
+    tab: locator && workspaceRoute.kind === "unowned" ? null : selected,
   };
 }

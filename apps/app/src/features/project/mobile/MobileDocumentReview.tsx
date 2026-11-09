@@ -29,7 +29,7 @@ import {
   ManuscriptStateSlot,
   useManuscriptState,
 } from "@/features/editor/ManuscriptStateNotice";
-import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
+import { useAiDraftLauncher } from "../review-launch";
 import { MobileChangeBar } from "./MobileChangeBar";
 import { MobileChangeSheet } from "./MobileChangeSheet";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";

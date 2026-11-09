@@ -1,4 +1,5 @@
 /** Work changes and ordinary Scratch, using the same nested rows as the sidebar and phone. */
+import { useSelectedDocumentId } from "@/client/stores";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
@@ -16,9 +17,7 @@ import { useTreeDropTarget } from "../context/tree-drop/tree-drop";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useDeleteContextEntry } from "../context/use-delete-context-entry";
 import { useTreeExpansion } from "../context/use-tree-expansion";
-import { useDockDocument } from "../dock/dock-document-store";
 import { useOpenDocumentInDock } from "../dock/use-open-document-in-dock";
-import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import { useWorkNoteIntake } from "./use-work-note-intake";
 import { WorkChanges } from "./WorkChanges";
 import { WorkFileGroup, WorkFileGroupLoading, WorkFileGroupNote } from "./WorkFileGroup";
@@ -79,7 +78,7 @@ export function WorkFilesView({ projectId, work, search, files }: WorkFilesViewP
   const scratchDelete = useDeleteContextEntry(projectId);
   const catalog = scratch.catalog;
   const openFile = useOpenDocumentInDock();
-  const docked = useDockDocument(useProjectScreen(), projectId)?.tab.documentId;
+  const docked = useSelectedDocumentId(projectId) ?? undefined;
   const folderIds = useMemo(
     () =>
       catalog && scratch.isComplete

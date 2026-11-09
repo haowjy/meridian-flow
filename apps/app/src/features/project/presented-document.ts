@@ -1,8 +1,8 @@
-/** The current container's address, independent of collapse and retained Editor paint. */
+/** The document the selected tab presents, and where: the Editor in Write, the dock beside Chat. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createContext, useContext } from "react";
 import { isDraftOnly } from "@/client/stores";
-import type { DockDocument } from "./dock/dock-document-store";
+import type { OpenDocumentTab } from "./open-documents";
 import type { ScreenKey } from "./shell/screens";
 
 /** The route's verdict on an explicit review selector, asked of the server by `{ workId, itemKey }`. */
@@ -17,42 +17,25 @@ export type PresentedDocument = {
   draftOnly: boolean;
 };
 
+/**
+ * The selected tab, presented where the screen puts it. The Work screen and the phone's Chat hold
+ * no document.
+ */
 export function resolvePresentedDocument(input: {
   phone: boolean;
   screen: ScreenKey;
-  editor: {
-    workId: string | null;
-    scheme: ProjectContextTreeScheme | null;
-    path: string | null;
-    documentId?: string | null;
-    itemKey?: string;
-    changeId?: string;
-    draftOnly: boolean;
-  };
-  dock: DockDocument | null;
+  selected: OpenDocumentTab | null;
 }): PresentedDocument | null {
-  if (input.screen === "context") {
-    const editor = input.editor;
-    return {
-      container: "editor",
-      documentId: editor.documentId ?? null,
-      scheme: editor.scheme,
-      path: editor.path,
-      draftOnly: editor.draftOnly,
-      review:
-        editor.workId && editor.itemKey
-          ? { workId: editor.workId, itemKey: editor.itemKey, changeId: editor.changeId }
-          : null,
-    };
-  }
-  if (input.phone || !input.dock) return null;
-  const { tab, review } = input.dock;
+  const { selected, screen, phone } = input;
+  if (!selected) return null;
+  if (screen !== "context" && (screen !== "chat" || phone)) return null;
+  const { tab } = selected;
   return {
-    container: "dock",
+    container: screen === "context" ? "editor" : "dock",
     documentId: tab.documentId,
     scheme: tab.kind === "new" ? null : tab.scheme,
     path: tab.kind === "new" ? null : tab.path,
-    review,
+    review: selected.review,
     draftOnly: isDraftOnly(tab),
   };
 }

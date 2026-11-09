@@ -21,7 +21,7 @@ import { useDraftView } from "@/features/draft-review/useDraftView";
 import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { cn } from "@/lib/utils";
 import { useReferenceDrag } from "../context/entry-drag/reference-source";
-import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
+import { useAiDraftLauncher } from "../review-launch";
 
 export function WorkChangeFile({
   projectId,

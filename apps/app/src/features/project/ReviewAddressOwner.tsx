@@ -1,71 +1,20 @@
-/** Owns inline-review restoration and the Work/item selection on the presenting container's address. */
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+/**
+ * Makes the review controller follow the selected tab: the tab says which review it paints
+ * (`presented.review`, resolved from its view, the Work scope and an optional pin), and the
+ * controller enters, keeps or leaves it to match. The one thing that flows the other way is the
+ * focused change, which the pin records so a review link can name it.
+ */
 import { useEffect, useRef } from "react";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
-import {
-  type AiDraftLaunchTarget,
-  usePendingEditorReviewItemKey,
-} from "./dock/editor-review-handoff";
-import type {
-  PresentedDocument,
-  ReviewAddress,
-  ReviewAddressAdmission,
-} from "./presented-document";
+import type { PresentedDocument, ReviewAddress, ReviewAddressAdmission } from "./presented-document";
+import type { AiDraftLaunchTarget } from "./review-launch";
 
 export type ReviewAddressPort = {
-  write(review: ReviewAddress | null): void;
+  /** Records the focused change on the tab's pin. */
+  write(review: ReviewAddress): void;
   /** `false`: refused, because the item's known draft is closed and no newer one replaced it. */
   admit(target: AiDraftLaunchTarget): Promise<boolean>;
 };
-
-type ReviewLocator = { scheme: ProjectContextTreeScheme; path: string };
-
-/** The review the owner last confirmed on the address, kept to recognise its own Exit. */
-type OwnedReview = {
-  container: PresentedDocument["container"];
-  workId: string;
-  itemKey: string;
-  documentId: string;
-  /** Confirmed by identity or the review's location, never a pending rename guess. */
-  locator: ReviewLocator | null;
-};
-
-/**
- * Only the teardown of the review still named by the address may consume its request. A known
- * document identity decides; while it is unresolved only the exact confirmed locator does.
- * Another container, Work or item is never consumed.
- */
-export function exitedReviewOwnsAddress(
-  owned: OwnedReview,
-  address: {
-    container: PresentedDocument["container"];
-    workId: string;
-    itemKey?: string;
-    documentId?: string | null;
-    locator: ReviewLocator | null;
-  },
-): boolean {
-  if (
-    !address.itemKey ||
-    owned.container !== address.container ||
-    owned.workId !== address.workId ||
-    owned.itemKey !== address.itemKey
-  )
-    return false;
-  if (address.documentId) return owned.documentId === address.documentId;
-  return (
-    !!owned.locator &&
-    !!address.locator &&
-    owned.locator.scheme === address.locator.scheme &&
-    owned.locator.path === address.locator.path
-  );
-}
-
-function locatorOf(presented: PresentedDocument): ReviewLocator | null {
-  return presented.scheme && presented.path
-    ? { scheme: presented.scheme, path: presented.path }
-    : null;
-}
 
 export function ReviewAddressOwner({
   review,
@@ -75,167 +24,72 @@ export function ReviewAddressOwner({
 }: {
   review: DraftReviewContextValue;
   presented: PresentedDocument | null;
-  /** The route's verdict on the Editor's explicit selector; the dock restores through its own port. */
+  /** The route's verdict on an explicit review selector in the address. */
   admission: ReviewAddressAdmission;
   port: ReviewAddressPort;
 }) {
-  const pendingItemKey = usePendingEditorReviewItemKey();
   const restoring = useRef<string | null>(null);
   /**
    * The port that refused the request. Admitting the same item through it again would be
-   * refused again; a new port (a newer draft generation, another container) gets one try.
+   * refused again; a new port (a newer draft generation) gets one try.
    */
   const refused = useRef<{ itemKey: string; port: ReviewAddressPort } | null>(null);
-  const ownedReview = useRef<OwnedReview | null>(null);
-  const requestedItemKey = presented?.review?.itemKey;
-  const write = (address: ReviewAddress | null) => {
-    if (!address && presented?.draftOnly) return;
-    port.write(address);
-  };
-  const restore = (target: AiDraftLaunchTarget) => {
-    restoring.current = target.itemKey;
-    void port.admit(target).then(
-      (admitted) => {
-        if (admitted || restoring.current !== target.itemKey) return;
-        restoring.current = null;
-        refused.current = { itemKey: target.itemKey, port };
-      },
-      (error) => {
-        if (restoring.current === target.itemKey) restoring.current = null;
-        console.error("[review] address restore failed", error);
-      },
-    );
-  };
-  const attempted = (itemKey: string) =>
-    restoring.current === itemKey ||
-    (refused.current?.itemKey === itemKey && refused.current.port === port);
-  // Missing metadata (a list still loading) is "pending", never a mismatch.
-  const addressNames = (
-    documentId: string,
-    location: ReviewLocator | null | undefined,
-  ): "yes" | "no" | "pending" => {
-    if (presented?.documentId) return presented.documentId === documentId ? "yes" : "no";
-    return location && location.scheme === presented?.scheme && location.path === presented?.path
-      ? "yes"
-      : "pending";
-  };
+  const requested = presented?.review ?? null;
 
   useEffect(() => {
     const inline = review.controller.inlineReview;
     if (inline) {
       restoring.current = null;
-      // Only the address says the writer left. Whether the draft is still in the
-      // list is the review's own decision (row X): a list that lags behind a new
-      // proposal must not end a review the reducer keeps.
-      // A resolved address identity decides on its own: an unlisted item (its changes
-      // drained) still has an owner. The list's locator is consulted only while the
-      // identity is unresolved.
-      const file = presented?.documentId ? null : review.fileForDocument(inline.documentId);
-      const match = presented?.documentId
-        ? addressNames(inline.documentId, null)
-        : file
-          ? addressNames(inline.documentId, file.contextLocation)
-          : "pending";
-      // An inline review that lags a warm change of Work or item yields to the
-      // address; it never relabels a newer request with its own identity.
-      if (
-        !presented ||
-        match === "no" ||
-        (presented.review &&
-          (presented.review.workId !== review.controller.workId ||
-            presented.review.itemKey !== inline.itemKey))
-      ) {
+      const names =
+        requested !== null &&
+        presented?.documentId === inline.documentId &&
+        requested.workId === review.controller.workId &&
+        requested.itemKey === inline.itemKey;
+      if (!names) {
         review.controller.exitInlineReview();
         return;
       }
-      // The address is still resolving: keep the review, and its query, until it decides.
-      if (match === "pending" || admission !== "admitted") return;
-      // The route command already carries this identity. Let it settle instead
-      // of competing with itself through an address-owner replacement.
-      ownedReview.current = {
-        container: presented.container,
-        workId: review.controller.workId,
-        itemKey: inline.itemKey,
-        documentId: inline.documentId,
-        locator: locatorOf(presented),
-      };
-      if (presented.container === "editor" && pendingItemKey === inline.itemKey) return;
       const changeId = review.controller.focus?.id;
-      if (
-        requestedItemKey !== inline.itemKey ||
-        ((changeId || !presented.review?.changeId) && presented.review?.changeId !== changeId)
-      )
-        write({
-          workId: review.controller.workId,
-          itemKey: inline.itemKey,
-          ...(changeId ? { changeId } : {}),
-        });
+      if (changeId && admission === "admitted" && requested.changeId !== changeId)
+        port.write({ workId: requested.workId, itemKey: requested.itemKey, changeId });
       return;
     }
-    if (ownedReview.current) {
-      const owned = ownedReview.current;
-      ownedReview.current = null;
-      restoring.current = null;
-      if (
-        presented?.review &&
-        exitedReviewOwnsAddress(owned, {
-          container: presented.container,
-          workId: presented.review.workId,
-          itemKey: presented.review.itemKey,
-          documentId: presented.documentId,
-          locator: locatorOf(presented),
-        })
-      ) {
-        write(null);
-        return;
-      }
-    }
-    if (!presented?.review || !requestedItemKey) {
+    if (!requested || !presented?.documentId || !presented.scheme || !presented.path) {
       restoring.current = null;
       refused.current = null;
       return;
     }
-    if (admission !== "admitted") return;
-    if (presented.container === "dock") {
-      if (
-        !presented.documentId ||
-        !presented.path ||
-        !presented.scheme ||
-        review.controller.workId !== presented.review.workId ||
-        attempted(requestedItemKey)
-      )
-        return;
-      restore({
-        workId: presented.review.workId,
-        documentId: presented.documentId,
-        itemKey: requestedItemKey,
-        contextLocation: { scheme: presented.scheme, path: presented.path },
-        draftOnly: presented.draftOnly,
-      });
-      return;
-    }
-    // Only the route's server answer admits an Editor selector. Pending, failed and
-    // unavailable leave it as written: the pane says why, the live occupant never stands in.
-    if (admission !== "admitted") return;
-    if (pendingItemKey === requestedItemKey || attempted(requestedItemKey)) return;
+    if (admission !== "admitted" || review.controller.workId !== requested.workId) return;
+    const itemKey = requested.itemKey;
     if (
-      !presented.documentId ||
-      !presented.scheme ||
-      !presented.path ||
-      review.controller.workId !== presented.review.workId
+      restoring.current === itemKey ||
+      (refused.current?.itemKey === itemKey && refused.current.port === port)
     )
       return;
     // The list, when loaded, supplies labels and whole-item state; it is never an authority.
-    const file = review.files.find((candidate) => candidate.draft.itemKey === requestedItemKey);
-    restore({
-      workId: presented.review.workId,
-      documentId: presented.documentId,
-      itemKey: requestedItemKey,
-      contextLocation: { scheme: presented.scheme, path: presented.path },
-      documentName: file?.documentName ?? undefined,
-      draftOnly: file?.draftOnly ?? presented.draftOnly,
-    });
-  }, [presented, port, pendingItemKey, requestedItemKey, review, admission]);
+    const file = review.files.find((candidate) => candidate.draft.itemKey === itemKey);
+    restoring.current = itemKey;
+    void port
+      .admit({
+        workId: requested.workId,
+        documentId: presented.documentId,
+        itemKey,
+        contextLocation: { scheme: presented.scheme, path: presented.path },
+        documentName: file?.documentName ?? undefined,
+        draftOnly: file?.draftOnly ?? presented.draftOnly,
+      })
+      .then(
+        (admitted) => {
+          if (admitted || restoring.current !== itemKey) return;
+          restoring.current = null;
+          refused.current = { itemKey, port };
+        },
+        (error) => {
+          if (restoring.current === itemKey) restoring.current = null;
+          console.error("[review] address restore failed", error);
+        },
+      );
+  }, [presented, port, requested, review, admission]);
 
   return null;
 }

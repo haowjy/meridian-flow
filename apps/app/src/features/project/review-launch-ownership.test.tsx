@@ -5,7 +5,7 @@ import { expect, it, vi } from "vitest";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { exitedReviewOwnsAddress, ReviewAddressOwner } from "../ReviewAddressOwner";
-import { EditorReviewHandoffProvider } from "./editor-review-handoff";
+import { EditorReviewHandoffProvider } from "./review-launch";
 
 it.each(["work", "item"])("a same-locator %s switch keeps the new request", async (change) => {
   let switchRequest!: () => void;

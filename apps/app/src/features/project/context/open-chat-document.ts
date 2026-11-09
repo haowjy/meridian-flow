@@ -11,9 +11,8 @@
  * its background tab.
  */
 import { createContext, useCallback, useContext } from "react";
-import type { ContextTab } from "@/client/stores";
-import { useDockDocumentStore } from "../dock/dock-document-store";
-import type { ReviewAddress } from "../presented-document";
+import type { BesideCommit } from "../dock/use-dock-placement";
+import { claimOpenIntent } from "./open-intent";
 import {
   type OpenProjectDocument,
   type OpenProjectDocumentRequest,
@@ -21,19 +20,13 @@ import {
 } from "./open-project-document";
 
 /** Shows the tab beside the chat under a claim; `cancelled` if a newer intent won. */
-export type OpenBesideChat = (
-  tab: ContextTab,
-  claim: number,
-  focus?: true,
-  /** A draft-only review's address: the dock shows it by item identity, not by path. */
-  review?: ReviewAddress,
-) => { kind: "opened"; tab: ContextTab } | { kind: "cancelled" };
-
-export const BesideChatContext = createContext<OpenBesideChat | null>(null);
+export const BesideChatContext = createContext<BesideCommit | null>(null);
 
 export type ChatDocumentRequest = OpenProjectDocumentRequest & {
   /** A claim the caller took when its intent began (a URI door claims before its lookup). */
   claim?: number;
+  /** Keep a normal tab instead of filling the preview slot. */
+  keep?: true;
 };
 
 /**
@@ -63,10 +56,14 @@ export function useOpenChatDocument(
   const open = useOpenProjectDocument(projectId);
   const beside = useContext(BesideChatContext);
   return useCallback(
-    ({ claim, ...request }) => {
+    ({ claim, keep, ...request }) => {
       if (request.disposition === "background" || !beside) return open(request);
-      const attempt = claim ?? useDockDocumentStore.getState().claim();
-      return open({ ...request, beside: (tab, focus) => beside(tab, attempt, focus) });
+      const attempt = claim ?? claimOpenIntent();
+      return open({
+        ...request,
+        beside: (tab, focus) =>
+          beside(tab, attempt, focus, undefined, keep ? "open" : "peek"),
+      });
     },
     [beside, open],
   );

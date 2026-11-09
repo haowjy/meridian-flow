@@ -33,6 +33,7 @@ import {
   isDraftOnly,
   isEditorScheme,
   matchesReviewItem,
+  selectedDocumentIdOf,
   useContextTabs,
   useContextTabsStore,
 } from "@/client/stores";
@@ -241,7 +242,7 @@ function ReadableProjectDestination({
       : undefined;
   useLayoutEffect(() => {
     if (localDocumentId && workId)
-      void useContextTabsStore.getState().selectTab(projectId, workId, localDocumentId);
+      void useContextTabsStore.getState().selectTab(projectId, localDocumentId);
   }, [projectId, workId, localDocumentId]);
   const shown = useRef<DisplayedProjectSelection>({ work: { kind: "none" } });
   useBlocker({
@@ -963,7 +964,7 @@ function ReadableProjectDestination({
       const workspace = getContextTabs(projectId);
       const tab = selectEditorEntryTab({
         tabs: workspace.tabs,
-        selectedDocumentId: workspace.selectedTabIdByWork[workId],
+        selectedDocumentId: selectedDocumentIdOf(workspace) ?? undefined,
         recentRoutes: readRecentRoutes(projectId),
         workId,
       });
