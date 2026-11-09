@@ -79,7 +79,10 @@ A `branches` row is one owner's pending file tree. The owner is a Work
 count; `works.pending_document_count` sums its active branches. Migration 0129
 closed empty No Work branches, moved single-lineage ones to their lineage, and left
 the rest on the No Work row as legacy branches (reviewable and discardable, no new
-writes). It needs all writers stopped. `document_drafts` stores each
+writes). It moves a branch only when every author it ever recorded (open, applied and
+discarded drafts alike) sits in one lineage, so old receipts keep naming the chat that
+made them. It also drops the unused `branch_commands.work_id` and can be re-run after a
+partial failure. It needs all writers stopped. `document_drafts` stores each
 document version, with writes in `draft_write_journal`; `branch_tree_changes`
 and `branch_commands` belong to the whole branch. Expand-only migrations 0075
 (server journal source and Apply-click command kind) and 0076 precede preflight and write no data. Migration 0077 refuses legacy
