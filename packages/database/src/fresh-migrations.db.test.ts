@@ -311,7 +311,7 @@ if (!enabled || !databaseUrl) {
       );
     });
 
-    it("moves No Work branches to their lineage through 0129 and recounts pending documents", async () => {
+    it("moves No Work branches to their lineage through 0131 and recounts pending documents", async () => {
       const ids = (n: number) => `00000000-0000-4000-8000-0000000008${String(n).padStart(2, "0")}`;
       const user = ids(1);
       // One project per case; each has its own No Work row, and a branch per ids() below.
@@ -323,7 +323,7 @@ if (!enabled || !databaseUrl) {
       const thread = (i: number, k: number) => ids(60 + i * 3 + k);
       await upgradeWithRows(
         databaseUrl ?? "",
-        "0129_lineage_owned_drafts",
+        "0131_lineage_owned_drafts",
         async (target) => {
           await target`INSERT INTO users (id, external_id, email)
             VALUES (${user}, 'lineage-migration', 'lineage-migration@test.invalid')`;

@@ -64,6 +64,7 @@ import {
   documentTarget,
   isFileAccessRefusal,
   requireFileGrant,
+  throwFileAccessDenied,
   withEditGrants,
 } from "./file-access-http.js";
 import { throwWorkMutationHttpError } from "./work-http.js";
@@ -875,7 +876,7 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
     }
     if (cause instanceof WorkLifecycleUnavailableError) throwWorkMutationHttpError(cause);
     if (cause instanceof LineageDraftsUnavailableError)
-      throw createError({ statusCode: 409, message: "This chat's drafts are read-only" });
+      throwFileAccessDenied({ reason: "chat_frozen" });
     if (cause instanceof Error && cause.message === "draft_not_found") {
       throw createError({ statusCode: 404, message: "Draft not found" });
     }
