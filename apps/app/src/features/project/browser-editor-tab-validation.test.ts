@@ -51,7 +51,7 @@ const restored: ContextTab = {
 describe("server tab validation", () => {
   it("preserves existing membership when exact availability is unresolved", async () => {
     useContextTabsStore.setState({
-      byProject: { project: { tabs: [restored], selectedTabIdByWork: {} } },
+      byProject: { project: { tabs: [restored], selectedTabKey: null } },
     });
     mocks.availability.mockRejectedValue(new Error("offline"));
 
@@ -73,7 +73,7 @@ describe("device-local tab validation", () => {
       resourceHandle: "missing-resource",
     };
     useContextTabsStore.setState({
-      byProject: { project: { tabs: [local], selectedTabIdByWork: { "": local.documentId } } },
+      byProject: { project: { tabs: [local], selectedTabKey: local.tabInstanceId as string } },
     });
 
     await validate();
@@ -81,7 +81,7 @@ describe("device-local tab validation", () => {
     expect(resources.readProjection).toHaveBeenCalledOnce();
     expect(useContextTabsStore.getState().byProject.project).toEqual({
       tabs: [],
-      selectedTabIdByWork: {},
+      selectedTabKey: null,
     });
   });
 
@@ -109,7 +109,7 @@ describe("device-local tab validation", () => {
       resourceHandle: "resource-local",
     };
     useContextTabsStore.setState({
-      byProject: { project: { tabs: [local], selectedTabIdByWork: { "": local.documentId } } },
+      byProject: { project: { tabs: [local], selectedTabKey: local.tabInstanceId as string } },
     });
     resources.readProjection.mockResolvedValue({
       records: [foreign],
@@ -122,7 +122,7 @@ describe("device-local tab validation", () => {
 
     expect(useContextTabsStore.getState().byProject.project).toEqual({
       tabs: [],
-      selectedTabIdByWork: {},
+      selectedTabKey: null,
     });
   });
 
@@ -141,7 +141,7 @@ describe("device-local tab validation", () => {
       origin: "local-resource",
     };
     useContextTabsStore.setState({
-      byProject: { project: { tabs: [local], selectedTabIdByWork: { "": local.documentId } } },
+      byProject: { project: { tabs: [local], selectedTabKey: local.tabInstanceId as string } },
     });
     resources.readProjection.mockResolvedValue({
       records: [localPlacement()],
@@ -175,7 +175,7 @@ describe("device-local tab validation", () => {
           origin: "local-resource",
         }),
       ],
-      selectedTabIdByWork: { "": "local-id" },
+      selectedTabKey: "local-instance",
     });
   });
 });

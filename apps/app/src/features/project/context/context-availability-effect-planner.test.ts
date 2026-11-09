@@ -52,7 +52,7 @@ function plan(by: "navigation" | "review") {
       transitionRevision: 0,
       live: true,
     },
-    tabs: { tabs: [tab], selectedTabIdByWork: { work: "doc" } },
+    tabs: { tabs: [tab], selectedTabKey: tab.tabInstanceId as string },
     recentRoutes: [],
     routeSearch: { screen: "context", scheme: "manuscript", path: "/old.md", work: "work" },
     appliedGenerations: new Map(),

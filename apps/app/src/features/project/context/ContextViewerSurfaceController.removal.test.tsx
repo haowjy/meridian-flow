@@ -7,7 +7,12 @@ import "fake-indexeddb/auto";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { act, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
-import { type ContextTab, rehydrateEditorWorkspace, useContextTabsStore } from "@/client/stores";
+import {
+  type ContextTab,
+  rehydrateEditorWorkspace,
+  selectedDocumentIdOf,
+  useContextTabsStore,
+} from "@/client/stores";
 import {
   AccountFeatureTestProvider,
   useAccountResourceReplica,
@@ -109,7 +114,7 @@ beforeEach(() => {
             schemaType: "document",
           },
         ],
-        selectedTabIdByWork: { "work-1": "a" },
+        selectedTabKey: "instance-a",
       },
     },
     _workspaceHydrated: false,
@@ -211,7 +216,7 @@ it("persists and admits the real New action without an empty working-set route",
                   useContextTabsStore.getState().openTab("project", options.tab);
                   void useContextTabsStore
                     .getState()
-                    .selectTab("project", "work-a", options.tab.documentId);
+                    .selectTab("project", options.tab.documentId);
                 }
                 search = { ...search, scheme: target.scheme, path: target.path };
                 setRoute({ scheme: target.scheme, path: target.path });
@@ -253,19 +258,19 @@ it("persists and admits the real New action without an empty working-set route",
       const slice = useContextTabsStore.getState().byProject.project;
       const local = slice?.tabs.find((tab) => tab.kind === "new");
       expect(local).toBeDefined();
-      expect(slice?.selectedTabIdByWork["work-a"]).toBe(local?.documentId);
+      expect(slice && selectedDocumentIdOf(slice)).toBe(local?.documentId);
       expect(search).toMatchObject({ scheme: "unfiled", path: "" });
       expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
         selection: { status: "bound", identity: { kind: "local", documentId: local?.documentId } },
         admitted: { scheme: "unfiled", path: "", workId: "work-a" },
       });
       const workspaceWrites = writes
-        .filter((write) => write.key === "meridian:editor-workspace:v1")
+        .filter((write) => write.key === "meridian:editor-workspace:v2")
         .map((write) => JSON.parse(write.value));
       expect(workspaceWrites.length).toBeGreaterThan(0);
-      expect(workspaceWrites.every((workspace) => workspace.version === 1)).toBe(true);
+      expect(workspaceWrites.every((workspace) => workspace.version === 2)).toBe(true);
       expect(workspaceWrites.at(-1)?.payload.project).toMatchObject({
-        selectedTabIdByWork: { "work-a": local?.documentId },
+        selectedTabKey: local?.tabInstanceId,
       });
       expect(workspaceWrites.at(-1)?.payload.project.tabs).toEqual(
         expect.arrayContaining([
@@ -312,7 +317,7 @@ it("restores the exact older local owner across A to B to A through mounted cont
     byProject: {
       project: {
         tabs: [chapter, older, newer],
-        selectedTabIdByWork: { "work-a": older.documentId, "work-b": chapter.documentId },
+        selectedTabKey: older.tabInstanceId as string,
       },
     },
     _workspaceHydrated: false,
@@ -378,7 +383,7 @@ it("restores the exact older local owner across A to B to A through mounted cont
     expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
       selection: { status: "candidate", locator: { workId: "work-b", path: "/a.md" } },
     });
-    expect(useContextTabsStore.getState().byProject.project?.selectedTabIdByWork["work-a"]).toBe(
+    expect(selectedDocumentIdOf(useContextTabsStore.getState().byProject.project as never)).toBe(
       older.documentId,
     );
 
@@ -475,7 +480,7 @@ it("a pending navigation to a document only another Work reviews shows one loadi
             reviews: { "work-1": { itemKey: "draft-1", tabInstanceToken: "token" } },
           },
         ],
-        selectedTabIdByWork: {},
+        selectedTabKey: null,
       },
     },
     _workspaceHydrated: false,

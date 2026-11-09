@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  selectedDocumentIdOf,
   type ContextTab,
   editorTabsForWork,
   getContextTabs,
@@ -74,7 +75,7 @@ describe("draft tab settlement", () => {
       expect(new Set(ids).size).toBe(ids.length);
     };
     store.openTab(project, draftTab());
-    await store.selectTab(project, "work-a", "document-a");
+    await store.selectTab(project, "document-a");
     // New file: the device-minted document N, reserved under handle H.
     store.openTab(project, {
       kind: "new",
@@ -82,7 +83,7 @@ describe("draft tab settlement", () => {
       name: "chapter",
       resourceHandle: "handle-h",
     });
-    await store.selectTab(project, "work-a", "document-n");
+    await store.selectTab(project, "document-n");
     distinct();
     // The join re-identifies N to D; D's tab (draft-only, or already promoted by the
     // replica showing D) is the same document.
@@ -100,7 +101,7 @@ describe("draft tab settlement", () => {
     expect(slice.tabs).toHaveLength(1);
     expect(slice.tabs[0]).toMatchObject({ documentId: "document-a", resourceHandle: "handle-h" });
     expect(slice.tabs[0] && isDraftOnly(slice.tabs[0])).toBe(false);
-    expect(slice.selectedTabIdByWork).toEqual({ "work-a": "document-a" });
+    expect(selectedDocumentIdOf(slice)).toBe("document-a");
   });
 
   it("keeps one tab per document with an entry per Work, so Works neither take nor close each other's", async () => {
@@ -134,7 +135,7 @@ describe("draft tab settlement", () => {
       },
     });
 
-    await store.selectTab("project-a", "work-b", "document-a");
+    await store.selectTab("project-a", "document-a");
     const revision = coordinator.beginRouteSelection("project-a", {
       scheme: "manuscript",
       path: "/chapter.md",
@@ -156,7 +157,7 @@ describe("draft tab settlement", () => {
     expect(inWork("work-b")).toEqual(["document-a"]);
     expect(updateSearch).not.toHaveBeenCalled();
     expect(coordinator.getProjectSnapshot("project-a").selection.status).toBe("bound");
-    expect(getContextTabs("project-a").selectedTabIdByWork).toEqual({ "work-b": "document-a" });
+    expect(selectedDocumentIdOf(getContextTabs("project-a"))).toBe("document-a");
     // A writer's close in A drops A's entry the same way.
     store.openTab("project-a", draftTab());
     coordinator.changeWorkSelection("project-a", "work-a", null);
