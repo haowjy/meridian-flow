@@ -3,9 +3,8 @@ import {
   type Dispatch,
   type ReactNode,
   type SetStateAction,
-  useCallback,
   useContext,
-  useRef,
+  useLayoutEffect,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
@@ -34,25 +33,16 @@ export function DocumentStateSlotProvider({ children }: { children: ReactNode })
 /** The toolbar row's end, where the state lands. Only the active editor renders it. */
 export function DocumentStateSlotHost() {
   const setElement = useContext(DocumentStateSlotContext)?.setElement;
-  const mine = useRef<HTMLElement | null>(null);
-  // An editor swap (live to draft review) mounts the new row before the old one
-  // unmounts: the old row may only clear the slot while it still holds it.
-  const ref = useCallback(
-    (node: HTMLElement | null) => {
-      if (!setElement) return;
-      if (node) {
-        mine.current = node;
-        setElement(node);
-      } else {
-        const previous = mine.current;
-        mine.current = null;
-        setElement((current) => (current === previous ? null : current));
-      }
-    },
-    [setElement],
-  );
+  const [node, setNode] = useState<HTMLElement | null>(null);
+  // An editor swap (live to draft review) can mount the new row before the old one
+  // unmounts: a row may only clear the slot while it still holds it.
+  useLayoutEffect(() => {
+    if (!setElement || !node) return;
+    setElement(node);
+    return () => setElement((current) => (current === node ? null : current));
+  }, [node, setElement]);
   if (!setElement) return null;
-  return <div ref={ref} className="flex min-w-0 items-center" />;
+  return <div ref={setNode} className="flex min-w-0 items-center" />;
 }
 
 /** Renders into the toolbar row when one is up; otherwise in place, so no state is ever lost. */

@@ -272,7 +272,8 @@ function SchemeSection({
     folderIds,
   );
   const { isExpanded, toggleEntry, setExpandedEntryIds } = expansion;
-  const expanded = pane?.expanded ?? expansion.expanded;
+  // Alone in its tab, the section is the whole list: it doesn't collapse.
+  const expanded = fill || (pane?.expanded ?? expansion.expanded);
   const setExpanded = pane?.setExpanded ?? expansion.setExpanded;
   const activeLocationPath = activeScheme === scheme ? activePath : null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
@@ -448,7 +449,7 @@ function SchemeSection({
       label={schemeLabel(scheme)}
       icon={schemeIcon(scheme)}
       expanded={expanded}
-      onExpandedChange={handleExpandedChange}
+      onExpandedChange={fill ? undefined : handleExpandedChange}
       dropProps={dropProps}
       actions={
         schemeAllowsCreation(scheme) ? (
