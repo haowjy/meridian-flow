@@ -113,6 +113,11 @@ afterwards. Intakes still open across the cutover read `size_bytes = 0`: a resum
 attach gets `idempotency_conflict` and an old `object_stored` row gets `size_mismatch`
 (its object is deleted). The documents are untouched.
 
+`0129` needs the same stop. It drops `push_lineage`, which the old release inserts on every
+Apply, and the connector columns on `context_sources` (`adapter_type`, `adapter_config`,
+`sync_state`, `is_primary`), which the old release names on every source insert. Nothing
+reads either, so no data is lost.
+
 `0092` rebuilds what an active branch's drafted tree entries own
 (`branch_tree_folders`, `branch_tree_unsettled`, which 0090 and 0091 started
 from current rows only) from `document_edits.tree_change`: the branch's rows on a
