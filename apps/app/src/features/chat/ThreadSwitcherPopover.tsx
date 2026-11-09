@@ -7,7 +7,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
-import { ChevronDown, Pencil, Plus, Search } from "lucide-react";
+import { ChevronsUpDown, Pencil, Plus, Search } from "lucide-react";
 import { type KeyboardEvent, type RefObject, useRef, useState } from "react";
 
 import { useThreadStore } from "@/client/stores";
@@ -130,13 +130,7 @@ export function ThreadSwitcherPopover({
           className={cn("focus-ring text-left", titleChipClass(variant))}
         >
           <PaneTitle className="min-w-0 flex-1">{title}</PaneTitle>
-          <ChevronDown
-            className={cn(
-              "size-4 shrink-0 text-muted-foreground transition-transform",
-              open && "rotate-180",
-            )}
-            aria-hidden
-          />
+          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         </button>
       </PopoverTrigger>
       <PopoverContent

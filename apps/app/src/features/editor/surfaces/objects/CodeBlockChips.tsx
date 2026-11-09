@@ -26,7 +26,7 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { ChevronDown, Copy, MoreVertical } from "lucide-react";
+import { ChevronsUpDown, Copy, MoreVertical } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -107,7 +107,7 @@ export function CodeBlockChips({
         trigger={
           <Button type="button" size="xs" variant="ghost" className="meridian-code-chip-language">
             {fenceLanguageLabel(fenceLanguage(target))}
-            <ChevronDown aria-hidden />
+            <ChevronsUpDown aria-hidden />
           </Button>
         }
       >

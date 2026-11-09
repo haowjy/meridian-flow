@@ -9,7 +9,7 @@
  * button or menu trigger that owns the click, focus ring and hit area (the
  * wrapper carries `group/chip` so the face can answer hover and open).
  */
-import { ChevronDown } from "lucide-react";
+import { ChevronsUpDown } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { IDENTITY_BAR_BOX_CLASS } from "@/features/project/context/identity-bar-geometry";
@@ -64,7 +64,7 @@ export function DraftChipFace({
         />
       )}
       <span>{children}</span>
-      {menu ? <ChevronDown aria-hidden className="-mr-0.5 size-3 shrink-0 opacity-70" /> : null}
+      {menu ? <ChevronsUpDown aria-hidden className="-mr-0.5 size-3 shrink-0 opacity-70" /> : null}
     </span>
   );
 }

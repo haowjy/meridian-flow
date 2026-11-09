@@ -1,5 +1,5 @@
 /** Current-value chrome for interactive composer controls and readonly status. */
-import { ChevronDown } from "lucide-react";
+import { ChevronsUpDown } from "lucide-react";
 import { type ComponentProps, forwardRef, type ReactNode } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -26,7 +26,7 @@ const CurrentValueChrome = forwardRef<
         {value}
       </span>
       {chevron ? (
-        <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+        <ChevronsUpDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
       ) : null}
     </button>
   );
