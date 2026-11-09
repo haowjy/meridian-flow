@@ -66,7 +66,11 @@ export function ReviewAddressOwner({
       refused.current = null;
       return;
     }
-    if (admission !== "admitted" || !requestedWorkId || review.controller.workId !== requestedWorkId)
+    if (
+      admission !== "admitted" ||
+      !requestedWorkId ||
+      review.controller.workId !== requestedWorkId
+    )
       return;
     const itemKey = requested.itemKey;
     if (

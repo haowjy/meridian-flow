@@ -7,8 +7,8 @@ import {
   editorTabsForWork,
   isDraftOnly,
   matchesTabInstance,
-  reviewWorkIds,
   reviewEntryOf,
+  reviewWorkIds,
   withoutReviewEntry,
 } from "@/client/stores";
 import {

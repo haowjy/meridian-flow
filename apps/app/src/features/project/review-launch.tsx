@@ -17,7 +17,12 @@ import {
   useState,
 } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import { getContextTabs, tabKey, useContextTabsActions, useContextTabsStore } from "@/client/stores";
+import {
+  getContextTabs,
+  tabKey,
+  useContextTabsActions,
+  useContextTabsStore,
+} from "@/client/stores";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";

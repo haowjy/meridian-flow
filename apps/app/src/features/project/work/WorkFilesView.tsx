@@ -1,5 +1,5 @@
 /** Work changes and ordinary Scratch, using the same nested rows as the sidebar and phone. */
-import { useSelectedDocumentId } from "@/client/stores";
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
@@ -7,6 +7,7 @@ import { FilePlus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { AddressableWork } from "@/client/query/useWorks";
+import { useSelectedDocumentId } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";

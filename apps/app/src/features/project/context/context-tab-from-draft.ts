@@ -56,7 +56,10 @@ export function contextTabFromDraftGroup(group: {
     ...(group.draftOnly
       ? {
           reviews: {
-            [workReviewOwner(group.workId)]: { itemKey: group.itemKey, tabInstanceToken: crypto.randomUUID() },
+            [workReviewOwner(group.workId)]: {
+              itemKey: group.itemKey,
+              tabInstanceToken: crypto.randomUUID(),
+            },
           },
         }
       : {}),

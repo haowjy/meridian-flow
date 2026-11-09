@@ -147,8 +147,7 @@ export function ProjectChatContextNavigationProvider({
     (door: Placement, document: LinkDocumentRef, gesture: Parameters<LinkDestination>[1]) => {
       const { review } = document;
       if (!review) return Promise.resolve(openLive(door, document));
-      if (door.claim !== null && !isCurrentOpenIntent(door.claim))
-        return Promise.resolve();
+      if (door.claim !== null && !isCurrentOpenIntent(door.claim)) return Promise.resolve();
       if (besideChat && door.claim !== null) {
         const tab = contextTabFromDraftGroup({
           documentId: document.documentId,

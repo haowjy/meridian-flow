@@ -214,9 +214,7 @@ it("persists and admits the real New action without an empty working-set route",
               releaseLocalRoute = () => {
                 if (options?.tab) {
                   useContextTabsStore.getState().openTab("project", options.tab);
-                  void useContextTabsStore
-                    .getState()
-                    .selectTab("project", options.tab.documentId);
+                  void useContextTabsStore.getState().selectTab("project", options.tab.documentId);
                 }
                 search = { ...search, scheme: target.scheme, path: target.path };
                 setRoute({ scheme: target.scheme, path: target.path });

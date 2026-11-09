@@ -295,7 +295,10 @@ export class ContextRemovalCoordinator {
       }
       const reviews: ReviewEntries = {};
       for (const draft of this.drafts.boundDrafts(projectId, tab.documentId))
-        reviews[workReviewOwner(draft.workId)] = { itemKey: draft.itemKey, tabInstanceToken: crypto.randomUUID() };
+        reviews[workReviewOwner(draft.workId)] = {
+          itemKey: draft.itemKey,
+          tabInstanceToken: crypto.randomUUID(),
+        };
       if (Object.keys(reviews).length === 0) continue;
       this.workspace.holdForDrafts(projectId, tab.documentId, reviews);
       held.add(tab.documentId);
@@ -1002,7 +1005,7 @@ export class ContextRemovalCoordinator {
         remainingTabs.find(
           (tab) => tab.documentId === targetSelection && isEditorTab(tab, activeWorkId),
         ) ?? null;
-      const compatibleSelected =
+      const _compatibleSelected =
         selectedTab && targetInEditorOf(routeTargetForTab(selectedTab, activeWorkId), activeWorkId)
           ? selectedTab
           : null;
@@ -1186,9 +1189,7 @@ export class ContextRemovalCoordinator {
     this.workspace.commit(projectId, {
       documentIds: plan.outcome.removed.map((tab) => tab.documentId),
       ...(intent.reviewWorkId ? { dropReviewOf: intent.reviewWorkId } : {}),
-      ...(state.activeWorkId
-        ? { workspaceSelection: { documentId: plan.nextSelectedTabId } }
-        : {}),
+      ...(state.activeWorkId ? { workspaceSelection: { documentId: plan.nextSelectedTabId } } : {}),
     });
     this.workingSet.reconcileContextRoutes(projectId, {
       ...plan.workingSet,

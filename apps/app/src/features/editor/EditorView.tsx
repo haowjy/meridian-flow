@@ -1,5 +1,5 @@
 /** Review composition over a warm live editor and the scope owner's addressed branch binding. */
-import { showDocumentLive } from "@/features/project/tab-view-commands";
+
 import { Trans } from "@lingui/react/macro";
 import { canonicalContextUri } from "@meridian/contracts";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
@@ -14,6 +14,7 @@ import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { InlineDraftReview } from "@/features/draft-review/draft-review-session";
 import type { ReviewSurface } from "@/features/draft-review/review-runtime";
 import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
+import { showDocumentLive } from "@/features/project/tab-view-commands";
 import { type EditorSurfaceOptions, PendingEditorShell, SessionEditor } from "./SessionEditor";
 import { useInlineReviewFocus } from "./useInlineReviewFocus";
 import { useInlineReviewSync } from "./useInlineReviewSync";

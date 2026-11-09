@@ -1,5 +1,3 @@
-/** Document commands normalize preparation failures and install tabs before any transfer effect. */
-import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import {
   type ContextTab,
@@ -128,9 +126,7 @@ export function createEditorDocumentCommand({
             armEditorFocus(installed.tab.tabInstanceId);
         }
         if (selected && resolvedWorkId)
-          void useContextTabsStore
-            .getState()
-            .selectTab(projectId, selected.documentId, selected);
+          void useContextTabsStore.getState().selectTab(projectId, selected.documentId, selected);
         // The writer opened this document: the route is its own from the first frame, whatever
         // another document holds at its cached path. A pasted or reloaded URL names none.
         if (target.documentId && target.path && resolvedWorkId && !next.state)
