@@ -40,6 +40,7 @@ import { useRemovalRecord } from "@/features/project/context/use-removal-record"
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
+import { DocumentStateSlotHost } from "./document-state-slot";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnFill, editorProseClass } from "./editor-column";
@@ -53,7 +54,6 @@ import { ImageIngressRuntime } from "./surfaces/images";
 import { ProjectLinkRuntime } from "./surfaces/link";
 import { documentSlashCatalog } from "./surfaces/slash";
 import { DocumentToolbar } from "./surfaces/toolbar";
-import { usePlacedToolbar } from "./toolbar-slot";
 import { useAgentNames } from "./useAgentNames";
 import { WordCount } from "./WordCount";
 import "./editor.css";
@@ -497,19 +497,17 @@ function EditorCanvas({
     [editor, touch, scrollRef],
   );
 
-  const placed = usePlacedToolbar(toolbar, active);
-
   return (
     <EditorSurfaceFrame
       notices={notices}
-      toolbar={placed.inline}
+      toolbar={toolbar}
+      toolbarTrailing={active ? <DocumentStateSlotHost /> : null}
       textCursor={editor !== null}
       scrollRef={scrollRef}
       scrollClassName="meridian-editor main-pane"
       onScroll={onScroll}
     >
       <EditorContent editor={editor} className={editorColumnFill} />
-      {placed.portal}
     </EditorSurfaceFrame>
   );
 }
