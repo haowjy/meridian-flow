@@ -34,7 +34,6 @@ import {
   branchCommands,
   branches,
   documentDrafts,
-  pushLineage,
 } from "@meridian/database/schema";
 import {
   allocateDocumentClient,
@@ -798,20 +797,6 @@ export function createDrizzleApplyClick(
                           };
                         }),
                       );
-                      const seq = liveEffects.find((effect) => effect.seq !== null)?.seq ?? null;
-                      const receiptId = randomUUID();
-                      const [push] = await tx
-                        .insert(pushLineage)
-                        .values({
-                          draftId: base.snapshot.draftId,
-                          documentId: command.documentId,
-                          upstreamUpdateSeq: seq,
-                          pushedByUserId: command.envelope.accountId,
-                          idempotencyKey: command.envelope.commandId,
-                          receiptId,
-                        })
-                        .returning({ id: pushLineage.id });
-                      if (!push) throw new Error("Missing Apply lineage");
                       const overrode = merged.overrode;
                       const answer: ApplyClickResult = {
                         status: "applied",
