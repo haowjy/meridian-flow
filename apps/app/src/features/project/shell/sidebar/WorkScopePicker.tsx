@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { ChevronsUpDown } from "lucide-react";
 import { useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
@@ -17,7 +17,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 
 /**
  * The Work scope under the project name: which Work's drafts the documents show
@@ -138,11 +137,7 @@ function PickRow({
   detail: React.ReactNode;
 }) {
   return (
-    <DropdownMenuItem onSelect={onSelect} className="gap-2">
-      <Check
-        className={cn("size-3.5 shrink-0", selected ? "opacity-100" : "opacity-0")}
-        aria-hidden
-      />
+    <DropdownMenuItem selected={selected} onSelect={onSelect}>
       <span className="min-w-0 flex-1 truncate">{name}</span>
       {detail}
     </DropdownMenuItem>

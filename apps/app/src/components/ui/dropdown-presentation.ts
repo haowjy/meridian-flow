@@ -15,7 +15,7 @@ export const dropdownRowVariants = cva(
         false: null,
       },
       selected: {
-        true: "bg-dropdown-selected font-medium [&:is(:hover,:focus-visible,[data-highlighted])]:bg-dropdown-selected",
+        true: "bg-dropdown-selected [&:is(:hover,:focus-visible,[data-highlighted])]:bg-dropdown-selected",
         false: null,
       },
     },
@@ -23,8 +23,8 @@ export const dropdownRowVariants = cva(
   },
 );
 
-export const dropdownNavigationPageClass = "px-1 py-1";
-export const dropdownPickerPageClass = "px-1 py-2";
+export const dropdownNavigationPageClass = "p-1.5";
+export const dropdownPickerPageClass = "px-1.5 py-2";
 export const dropdownPanelClass =
   "rounded-lg border border-border-subtle bg-background text-popover-foreground shadow-md dark:bg-popover";
 export const dropdownGroupLabelClass = "px-2 py-1.5 text-sm font-medium text-foreground";

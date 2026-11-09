@@ -65,17 +65,21 @@ function DropdownMenuItem({
   className,
   inset,
   variant = "default",
+  selected = false,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
   inset?: boolean;
   variant?: "default" | "destructive";
+  /** The picker's current value: it wears the hover fill, with no check. */
+  selected?: boolean;
 }) {
   return (
     <DropdownMenuPrimitive.Item
       data-slot="dropdown-menu-item"
       data-inset={inset}
       data-variant={variant}
-      className={cn(dropdownRowVariants(), dropdownMenuItemClass, className)}
+      aria-current={selected || undefined}
+      className={cn(dropdownRowVariants({ selected }), dropdownMenuItemClass, className)}
       {...props}
     />
   );
