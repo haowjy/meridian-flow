@@ -10,6 +10,7 @@
  * `uri`, `aheadAddress`, registry keys) is a decoded canonical Context URI. A
  * stored `href`/`src` is an escaped wire spelling, built only by `storedHref`.
  */
+import type { DraftOwnerKey } from "./branches/owner.js";
 import { isProjectScopedScheme, parseContextUri } from "./context-uri.js";
 import {
   documentPathKey,
@@ -48,7 +49,7 @@ export interface CatalogDocument {
    * Present iff presence is "branch": the branch holding the document, the reader's own
    * if it uses the document, otherwise the oldest active branch that does.
    */
-  branch?: { branchId: string; workId: string | null };
+  branch?: { branchId: string; owner: DraftOwnerKey };
   /** The reader may read it (file policy). False is answered exactly like a missing row. */
   readable: boolean;
   /** Nameable from the holder: same project, or the reader's personal `user://` space. */

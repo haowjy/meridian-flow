@@ -23,6 +23,8 @@ import {
 export interface EditConfirmation {
   /** Named Works the grants lock, so a seam sorts them with its own Work locks. */
   readonly workIds: readonly string[];
+  /** Lineages whose drafts the grants write into: locked after the Works, before the seam's branch and namespace locks. */
+  readonly lineageRootIds: readonly string[];
   /** Re-checks the grants under the seam's Work locks, in its transaction; throws on a refusal. */
   confirm(): Promise<void>;
   /** The grants name each document, or it lies in a container they grant. */
@@ -52,6 +54,11 @@ export function runOutsideEditConfirmation<T>(operation: () => T): T {
 /** The Works the bound grants lock; a seam adds them to its own sorted Work locks. */
 export function scopedEditWorkIds(): readonly string[] {
   return scope.getStore()?.workIds ?? [];
+}
+
+/** The lineages' draft-owner locks the bound grants need, taken right after the Work locks. */
+export function scopedEditLineageRoots(): readonly string[] {
+  return scope.getStore()?.lineageRootIds ?? [];
 }
 
 /**

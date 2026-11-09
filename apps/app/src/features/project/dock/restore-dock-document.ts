@@ -21,7 +21,7 @@ import { workingSetRouteForTab } from "../context/context-removal-planner";
 import { projectResourceTab } from "../context/context-tab-from-file";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
 
-type ReviewSelector = { workId: string; itemKey: string };
+type ReviewSelector = { ownerKey: string; itemKey: string };
 
 export type DockRestorePorts = {
   resources: Pick<AccountResourceReplica, "readProjection" | "acquireCatalog">;
@@ -141,7 +141,9 @@ export function useDockDocumentRestoration(projectId: string, workspaceHydrated:
     void restoreDockDocument(restoring, {
       resources,
       admitReview: (project, review, locator) =>
-        getProjectDocumentAddress(project, locator.scheme, locator.path, { review }),
+        getProjectDocumentAddress(project, locator.scheme, locator.path, {
+          review: { owner: review.ownerKey, itemKey: review.itemKey },
+        }),
     }).then(
       (tab) => {
         if (live) useDockDocumentStore.getState().restore(restoring, tab);

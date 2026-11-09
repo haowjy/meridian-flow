@@ -15,9 +15,9 @@ import {
 import {
   type AGUIEvent,
   type CancelTurnResponse,
+  type CatalogChannelMessage,
   type MeridianError,
   parseWsServerMessage,
-  type WsServerMessage,
 } from "@meridian/contracts/protocol";
 import type { DraftAnswers } from "@meridian/contracts/threads";
 
@@ -54,7 +54,7 @@ export class ThreadSocketClient implements ThreadTransport {
   private readonly connectionListeners = new Set<(state: ConnectionState) => void>();
   private readonly catalogSubscriptions = new Map<
     string,
-    Set<(hint: Extract<WsServerMessage, { type: "context-catalog-hint" }>) => void>
+    Set<(hint: CatalogChannelMessage) => void>
   >();
   /** Unanswered `ask.answer` frames by request id; a close settles every one as unconfirmed. */
   private readonly askAnswers = new Map<
@@ -125,10 +125,7 @@ export class ThreadSocketClient implements ThreadTransport {
     return () => this.subscriptions.remove(threadId, handlers);
   }
 
-  subscribeCatalog(
-    projectId: string,
-    listener: (hint: Extract<WsServerMessage, { type: "context-catalog-hint" }>) => void,
-  ): () => void {
+  subscribeCatalog(projectId: string, listener: (hint: CatalogChannelMessage) => void): () => void {
     const listeners = this.catalogSubscriptions.get(projectId) ?? new Set();
     const first = listeners.size === 0;
     listeners.add(listener);
@@ -201,6 +198,11 @@ export class ThreadSocketClient implements ThreadTransport {
 
     const message = parseWsServerMessage(data);
     if (!message) return;
+    if (message.type === "draft-owner-hint") {
+      for (const listener of this.catalogSubscriptions.get(message.projectId) ?? [])
+        listener(message);
+      return;
+    }
     if (message.type === "context-catalog-hint") {
       const projectId = message.scope.kind === "user" ? null : message.scope.projectId;
       const targets = projectId

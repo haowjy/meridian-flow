@@ -12,7 +12,7 @@ import {
   type FileFacts,
   type FileGrant,
   type FileTarget,
-  grantWorkIds,
+  grantOwnerLocks,
   isFileAccessDenied,
 } from "./domain/types.js";
 import type { FileAccess } from "./file-access.js";
@@ -36,7 +36,10 @@ export async function runWithEditGrants<T>(
 ): Promise<{ ok: true; value: T } | { ok: false; refusal: FileEditRefusedError }> {
   let refusal: FileEditRefusedError | undefined;
   const confirmation: EditConfirmation = {
-    workIds: [...new Set(grants.flatMap((grant) => grantWorkIds(grant.facts)))].sort(),
+    workIds: [...new Set(grants.flatMap((grant) => grantOwnerLocks(grant.facts).workIds))].sort(),
+    lineageRootIds: [
+      ...new Set(grants.flatMap((grant) => grantOwnerLocks(grant.facts).lineageRootIds)),
+    ].sort(),
     async confirm() {
       const refused = await access.confirmEdit(grants);
       if (refused.length === 0) return;

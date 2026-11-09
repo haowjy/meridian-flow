@@ -117,6 +117,7 @@ export function workGrant(
 ): EditConfirmation & { confirmations: number } {
   const grant = {
     workIds: [workId],
+    lineageRootIds: [],
     confirmations: 0,
     covers: async () => true,
     async confirm() {

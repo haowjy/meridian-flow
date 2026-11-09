@@ -10,13 +10,17 @@ reversal, and WebSocket details; this page keeps their shared rules.
 `@meridian/agent-edit`. Model reads and writes enter through the thread-peer
 pool and carry an explicit destination. A `live` destination uses the live
 core and creates no Work draft or thread peer; a `draft` destination uses the
-thread-peer core and names its Work. Scratch and upload content is always live;
+thread-peer core and names its owner: the chat's Work, or for a chat with no Work
+its lineage (the first chat, its forks and subagents; a handoff starts a new one).
+`shared/draft-owner.ts` is the one reader of a branch's owner and lifecycle
+(`branchOwnerSql`). A lineage is writable while some chat in it is live; with none,
+writes and Apply are refused and Discard still works. Scratch and upload content is always live;
 their placement can still be a Work branch fact.
 
 A reply may hold a live core and a thread core at once. Staged writes overlay
 only reads of the destination to which they were pinned. A live read never
 shows staged draft content. Rebinding is resolved again for each query; a
-read-only draft query without a peer may rebase live content into the shared Work draft,
+read-only draft query without a peer may rebase live content into the owner's draft,
 but does not create a peer.
 
 The composition root wires required services and provider ports. It owns no

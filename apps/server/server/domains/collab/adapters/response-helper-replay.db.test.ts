@@ -40,8 +40,9 @@ async function _expectScopedReplay(
     codec: fixture.runtime.codec,
     links: fixture.links,
     branches: {
-      viewForWork: async (workId) => {
-        const { branchId } = await fixture.collab.draftReview.items({ workId: workId as never });
+      viewForOwner: async (owner) => {
+        if (!owner) return { kind: "live" };
+        const { branchId } = await fixture.collab.draftReview.items({ owner });
         return branchId ? { kind: "branch", branchId } : { kind: "live" };
       },
     },
@@ -51,7 +52,7 @@ async function _expectScopedReplay(
     threadId: THREAD_ID,
     responseId,
     destination: "draft" as const,
-    workId: WORK_ID,
+    owner: { kind: "work", workId: WORK_ID } as const,
   };
   const markdown = await reader.readEffectiveMarkdown(args);
   expect(markdown).toMatchObject({ ok: true });

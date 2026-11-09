@@ -1,5 +1,5 @@
 /** End a hidden creation's branch use, or close a whole Work branch, with post-commit retirement. */
-import type { BranchId, UserId, WorkId } from "@meridian/contracts";
+import type { BranchId, UserId } from "@meridian/contracts";
 import type { BranchCommandResult } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { testHook } from "../../../shared/test-hooks.js";
@@ -20,9 +20,11 @@ export type DiscardResult =
   | { status: "gone"; branchId: BranchId };
 
 export interface BranchDiscard {
-  /** The public command: writer and model. Refuses archived and deleted Works (D30). */
+  /**
+   * The public command: writer and model. Refuses archived and deleted Works; a lineage
+   * with no live member can still be discarded, so the writer can always clear it.
+   */
   discardItems(input: {
-    workId: WorkId;
     branchId: BranchId;
     selection: DiscardSelection;
     userId?: UserId;
@@ -60,12 +62,11 @@ export type DiscardKernelResult = {
 
 export interface BranchDiscardStore {
   /**
-   * `discardItems`' transaction (§12.2): the Work, refusing an archived or deleted one;
+   * `discardItems`' transaction (§12.2): the branch's owner, refusing an archived or deleted Work;
    * the branch (null: not active any more); the namespaces and documents; the kernel inside
    * the Work's pending projection.
    */
   discardLocked(input: {
-    workId: WorkId;
     kernel: DiscardKernelInput;
     command?: { envelope: BranchCommandEnvelope; result: BranchCommandResult };
   }): Promise<DiscardKernelResult | null>;
@@ -139,13 +140,11 @@ export function createBranchDiscard(deps: {
 
   function whole(
     attempt: Attempt,
-    workId: WorkId,
     branchId: BranchId,
     command: CommandClaim | undefined,
     userId: UserId | undefined,
   ): Promise<DiscardKernelResult | null> {
     return commitDiscard(attempt, {
-      workId,
       kernel: { userId, branchId, selection: { kind: "whole" } },
       ...(command ? { command } : {}),
     });
@@ -153,14 +152,12 @@ export function createBranchDiscard(deps: {
 
   function items(
     attempt: Attempt,
-    workId: WorkId,
     branchId: BranchId,
     selected: readonly DiscardItem[],
     command: CommandClaim | undefined,
     userId: UserId | undefined,
   ): Promise<DiscardKernelResult | null> {
     return commitDiscard(attempt, {
-      workId,
       kernel: { userId, branchId, selection: { kind: "items", items: selected } },
       ...(command ? { command } : {}),
     });
@@ -168,14 +165,14 @@ export function createBranchDiscard(deps: {
 
   return {
     async discardItems(input) {
-      const { branchId, workId } = input;
+      const { branchId } = input;
       const gone = { status: "gone" as const, branchId };
       const [branch] = await deps.branches.byIds([branchId]);
-      if (branch?.status !== "active" || branch.originWorkId !== workId) return gone;
+      if (branch?.status !== "active") return gone;
 
       if (input.selection.kind === "whole") {
         const ended = await deps.holdRetirement(() =>
-          attempts((attempt) => whole(attempt, workId, branchId, input.command, input.userId)),
+          attempts((attempt) => whole(attempt, branchId, input.command, input.userId)),
         );
         return ended ? { status: "discarded", branchId, branchClosed: true } : gone;
       }
@@ -183,9 +180,7 @@ export function createBranchDiscard(deps: {
       const selected = input.selection.items;
       if (selected.length === 0) return { status: "discarded", branchId, branchClosed: false };
       const ended = await deps.holdRetirement(() =>
-        attempts((attempt) =>
-          items(attempt, workId, branchId, selected, input.command, input.userId),
-        ),
+        attempts((attempt) => items(attempt, branchId, selected, input.command, input.userId)),
       );
       return ended ? { status: "discarded", branchId, branchClosed: false } : gone;
     },

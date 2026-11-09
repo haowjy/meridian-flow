@@ -37,12 +37,11 @@ export function DocumentDraftHint({ projectId, tab }: DocumentDraftHintProps) {
   const { controller } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
-  const others = branchesOtherThanViews(hints, controller.workId);
+  const others = branchesOtherThanViews(hints, controller.ownerKey);
   if (!contextLocation || others.length === 0) return null;
 
   const review = (hint: (typeof others)[number]) => {
-    const target = hintReviewTarget(hint, { documentId, contextLocation, documentName });
-    if (target) openAiDraft(target);
+    openAiDraft(hintReviewTarget(hint, { documentId, contextLocation, documentName }));
   };
   const labelOf = (hint: (typeof others)[number]) => hint.label ?? t`Unnamed Work`;
   const [only] = others;

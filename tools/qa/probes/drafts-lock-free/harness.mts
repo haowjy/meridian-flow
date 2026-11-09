@@ -99,7 +99,11 @@ export async function openHarness(
   const projection = createWorkProjectionMutation({
     db,
     availability: { advance: async () => "0" },
-    catalog: { refreshProject: async () => {}, upsertWorkAuthorities: async () => {} },
+    catalog: {
+      refreshProject: async () => {},
+      upsertWorkAuthorities: async () => {},
+      publishDraftOwnerHints: async () => {},
+    },
     pendingCounts: pending,
   });
   const branches = createDrizzleBranchStore(db);

@@ -47,10 +47,10 @@ export function useAiDraftLauncher() {
 
   /** Opens a listed draft in review. A draft with no address yet (still being written) has nothing to open. */
   const openReviewFile = useCallback(
-    (row: ReviewFileTarget, workId: string, focus?: ReviewFocus) =>
+    (row: ReviewFileTarget, ownerKey: string, focus?: ReviewFocus) =>
       row.contextLocation &&
       openAiDraft({
-        workId,
+        ownerKey,
         documentId: row.documentId,
         itemKey: row.draft.itemKey,
         contextLocation: row.contextLocation,
@@ -74,7 +74,7 @@ export function useDockReviewLauncher(projectId: string, document: DockDocument)
       const tab = contextTabFromDraftGroup(target);
       if (tab)
         commitDockDocument(projectId, document.screen, tab, revealDock, claim, {
-          workId: target.workId,
+          ownerKey: target.ownerKey,
           itemKey: target.itemKey,
         });
     },

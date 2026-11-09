@@ -100,8 +100,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         accountId: USER_ID as never,
         agent: {
           chain,
-          branchWork: draftMode
-            ? { id: workId as WorkId, handle: handles.get(workId) ?? null }
+          branchOwner: draftMode
+            ? {
+                owner: { kind: "work" as const, workId: workId as WorkId },
+                handle: handles.get(workId) ?? null,
+              }
             : null,
         },
       };
@@ -284,7 +287,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: documentId as never,
         threadId: THREAD_ID as never,
         destination: "draft",
-        workId: WORK_ID as never,
+        owner: { kind: "work", workId: WORK_ID as never },
       });
       return read.ok ? read.value.content : "";
     }

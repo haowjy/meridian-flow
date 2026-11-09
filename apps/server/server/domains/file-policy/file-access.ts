@@ -16,7 +16,7 @@ import {
   type FileGrant,
   type FileNeed,
   type FileTarget,
-  grantWorkIds,
+  grantOwnerLocks,
   type Principal,
 } from "./domain/types.js";
 import type { FileFactsPort, FileFactsRequest } from "./ports/file-facts.js";
@@ -55,7 +55,7 @@ export interface FileAccess {
   ): Promise<FileGrant<N> | FileAccessDenied>;
   /**
    * Authoritative, inside the ambient transaction (§5, §5.2). The caller has
-   * already locked the Works the grants' facts name (`grantWorkIds`), in one
+   * already locked the Works and lineages the grants' facts name (`grantOwnerLocks`), in one
    * id-ordered select with its own. Re-reads facts and each agent chain, and
    * re-runs the policy at each grant's destination. A file whose owner or
    * branch Work moved outside that locked set is refused, since locking it now
@@ -93,11 +93,12 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     async destinationAvailability(target, destination) {
       const facts = await deps.facts.load({
         target,
-        ...(destination.kind === "draft" ? { branchWorkId: destination.workId } : {}),
+        ...(destination.kind === "draft" ? { branchOwner: destination.owner } : {}),
       });
       if (!facts) return { frozen: false };
-      const work = destination.kind === "draft" ? facts.branchWork : facts.ownerWork;
-      return { frozen: work?.archived === true || work?.deleted === true };
+      const work = destination.kind === "draft" ? facts.branchOwner : facts.ownerWork;
+      const frozenLineage = destination.kind === "draft" && facts.branchOwner?.frozen === true;
+      return { frozen: work?.archived === true || work?.deleted === true || frozenLineage };
     },
     async authorize(principal, target, need) {
       const facts = await deps.facts.load(factsRequest(principal, target));
@@ -110,7 +111,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     async authorizeAt(principal, target, destination, need) {
       const facts = await deps.facts.load({
         target,
-        ...(destination.kind === "draft" ? { branchWorkId: destination.workId } : {}),
+        ...(destination.kind === "draft" ? { branchOwner: destination.owner } : {}),
       });
       if (!facts) return notFound(principal, target);
       const grants = await deps.grants.personGrants(principal.accountId, facts);
@@ -120,13 +121,16 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     },
 
     async confirmEdit(grants) {
-      const locked = new Set(grants.flatMap((grant) => grantWorkIds(grant.facts)));
+      const lockedWorks = new Set(grants.flatMap((grant) => grantOwnerLocks(grant.facts).workIds));
+      const lockedLineages = new Set(
+        grants.flatMap((grant) => grantOwnerLocks(grant.facts).lineageRootIds),
+      );
       const fresh: (FileFacts | null)[] = [];
       for (const { facts, destination } of grants) {
         fresh.push(
           await deps.facts.load({
             target: facts.target,
-            ...(destination.kind === "draft" ? { branchWorkId: destination.workId } : {}),
+            ...(destination.kind === "draft" ? { branchOwner: destination.owner } : {}),
           }),
         );
       }
@@ -142,7 +146,12 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       const refused: FileAccessDenied[] = [];
       for (const [index, grant] of grants.entries()) {
         const facts = fresh[index];
-        if (!facts || !grantWorkIds(facts).every((id) => locked.has(id))) {
+        const needed = facts ? grantOwnerLocks(facts) : null;
+        if (
+          !facts ||
+          !needed?.workIds.every((id) => lockedWorks.has(id)) ||
+          !needed.lineageRootIds.every((id) => lockedLineages.has(id))
+        ) {
           refused.push(notFound(grant.principal, grant.facts.target));
           continue;
         }
@@ -165,7 +174,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     async listAccess(principal, documentIds, options) {
       const facts = await deps.facts.loadList(
         documentIds,
-        principal.agent?.branchWork?.id,
+        principal.agent?.branchOwner?.owner,
         options?.branchViews,
       );
       const out = new Map<DocumentId, FileDecision>();
@@ -180,9 +189,9 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
 
 /** An agent's document or container access may go through its draft-mode chat's Work branch. */
 function factsRequest(principal: Principal, target: FileTarget): FileFactsRequest {
-  const branchWork = principal.agent?.branchWork;
-  return target.kind !== "draft" && target.kind !== "restore" && branchWork
-    ? { target, branchWorkId: branchWork.id }
+  const branchOwner = principal.agent?.branchOwner;
+  return target.kind !== "draft" && target.kind !== "restore" && branchOwner
+    ? { target, branchOwner: branchOwner.owner }
     : { target };
 }
 

@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { browserRecord } from "@/client/storage/browser-record";
 import {
   type ContextTab,
+  editorHasReview,
   isDraftOnly,
   isEditorContextTab,
   isEditorTab,
@@ -29,6 +30,7 @@ export type TrackedTabPatch = Partial<
 
 export {
   type ContextTab,
+  editorHasReview,
   editorTabsForWork,
   isDraftOnly,
   isEditorContextTab,
@@ -42,6 +44,7 @@ export {
   replaceOwner,
   reviewEntriesOf,
   reviewEntryOf,
+  reviewOwnerOfTab,
   type ServerContextTab,
   type TabOwner,
   tabContextOwner,
@@ -93,7 +96,7 @@ type ContextTabsActions = {
     next: ProjectTabsSlice,
   ) => Promise<void>;
   settleDraft: (projectId: string, tab: ContextTab) => Promise<DraftWorkspaceSettlementReceipt>;
-  dropReviewEntry: (projectId: string, workId: string, tabInstanceId: string) => void;
+  dropReviewEntry: (projectId: string, ownerKey: string, tabInstanceId: string) => void;
   keepForDrafts: (projectId: string, documentId: string, reviews: ReviewEntries) => void;
 };
 
@@ -180,7 +183,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           return installed &&
             (editorWorkId === undefined ||
               !isDraftOnly(installed) ||
-              reviewEntryOf(installed, editorWorkId) !== undefined)
+              editorHasReview(installed, editorWorkId))
             ? { kind: "opened", tab: installed }
             : { kind: "not-opened" };
         },
@@ -286,8 +289,8 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             };
           }),
 
-        dropReviewEntry: (projectId, workId, tabInstanceId) => {
-          dispatchResult(() => ({ kind: "drop-review", projectId, workId, tabInstanceId }));
+        dropReviewEntry: (projectId, ownerKey, tabInstanceId) => {
+          dispatchResult(() => ({ kind: "drop-review", projectId, ownerKey, tabInstanceId }));
         },
 
         keepForDrafts: (projectId, documentId, reviews) => {

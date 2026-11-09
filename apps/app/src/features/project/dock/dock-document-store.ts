@@ -125,7 +125,7 @@ export function createDockDocumentStore(
           const document = state.occupant;
           if (!document || (isDraftOnly(document.tab) && !review)) return state;
           if (
-            document.review?.workId === review?.workId &&
+            document.review?.ownerKey === review?.ownerKey &&
             document.review?.itemKey === review?.itemKey &&
             document.review?.changeId === review?.changeId
           )
@@ -134,7 +134,7 @@ export function createDockDocumentStore(
             occupant: {
               ...document,
               review,
-              ...(document.review?.workId !== review?.workId ||
+              ...(document.review?.ownerKey !== review?.ownerKey ||
               document.review?.itemKey !== review?.itemKey
                 ? { reviewAdmission: undefined }
                 : {}),
@@ -219,17 +219,18 @@ export function dockDocument(
 ): DockDocument {
   if (tab.kind !== "tracked" || !tab.reviews || !isDraftOnly(tab))
     return { projectId, screen, screenWorkId: null, tab, review };
-  const workId = review && tab.reviews[review.workId] ? review.workId : Object.keys(tab.reviews)[0];
-  const entry = tab.reviews[workId];
+  const ownerKey =
+    review && tab.reviews[review.ownerKey] ? review.ownerKey : Object.keys(tab.reviews)[0];
+  const entry = tab.reviews[ownerKey];
   return {
     projectId,
     screen,
     screenWorkId: null,
-    tab: { ...tab, reviews: { [workId]: entry } },
+    tab: { ...tab, reviews: { [ownerKey]: entry } },
     review: {
-      workId,
+      ownerKey,
       itemKey: entry.itemKey,
-      ...(review?.workId === workId && review.itemKey === entry.itemKey && review.changeId
+      ...(review?.ownerKey === ownerKey && review.itemKey === entry.itemKey && review.changeId
         ? { changeId: review.changeId }
         : {}),
     },

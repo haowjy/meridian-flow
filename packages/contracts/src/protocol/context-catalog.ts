@@ -1,4 +1,5 @@
 /** JSON-natural protocol for the authoritative context metadata catalog. */
+import type { DraftOwnerKey } from "../branches/owner.js";
 import type { CanonicalContextUri, ContextUriScheme } from "../context-uri.js";
 import type { ContextSourceId, DocumentId, FolderId, ProjectId, UserId, WorkId } from "../ids.js";
 import type { WorkAuthorityDto } from "../works/work-authority.js";
@@ -179,6 +180,22 @@ export type CatalogWakeHint = {
   scope: CatalogScope;
   headRevision: string;
 };
+
+/**
+ * A lineage's pending draft count moved: the owner's draft list is stale. Truth-free, like the
+ * catalog hint; it rides the same per-project subscription. Work branches keep the Work
+ * authority entry instead.
+ */
+export type DraftOwnerHint = {
+  type: "draft-owner-hint";
+  projectId: ProjectId;
+  owner: DraftOwnerKey;
+  branchId: string;
+  pendingDocuments: number;
+};
+
+/** What a project's catalog subscription receives. */
+export type CatalogChannelMessage = CatalogWakeHint | DraftOwnerHint;
 
 export function catalogScopeKey(scope: CatalogScope): string {
   switch (scope.kind) {

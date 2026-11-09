@@ -7,7 +7,13 @@
  * the other project sources, or `user://` for the writer's personal source.
  */
 import { randomUUID } from "node:crypto";
-import type { DocumentId, DocumentLinkAnswer, WorkId } from "@meridian/contracts";
+import {
+  type BranchId,
+  type DocumentId,
+  type DocumentLinkAnswer,
+  draftOwnerKey,
+  type WorkId,
+} from "@meridian/contracts";
 import type {
   BranchCommandPendingResponse,
   BranchCommandResult,
@@ -30,7 +36,7 @@ import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import {
   handleDiscardAllWorkBranchRequest,
   handleDiscardWorkDraftRequest,
-  handleWorkBranchListRequest,
+  handleOwnerDraftListRequest,
   selectBranchRouteServices,
 } from "../lib/branch-review-route.js";
 import { handleDocumentLinkResolveRequest } from "../lib/document-link-route.js";
@@ -146,7 +152,7 @@ export interface BranchTreeCommands {
    */
   purge(work: ScenarioWork): Promise<number>;
   /** The Work's review list through its route core: the `items`. */
-  review(work: ScenarioWork): ReturnType<typeof handleWorkBranchListRequest>;
+  review(work: ScenarioWork): ReturnType<typeof handleOwnerDraftListRequest>;
   /** The review list's `items` only. */
   items(work: ScenarioWork): Promise<ThreadDraftListItem[]>;
   /** The statuses of every branch whose origin is the Work, oldest first. */
@@ -461,7 +467,10 @@ export function branchTreeCommands(
 
   async function documentDraft(work: ScenarioWork, documentId: DocumentId) {
     const review = ports().documentSync.draftReview;
-    const item = await review.resolveItemByDocument({ workId: work.id, documentId });
+    const item = await review.resolveItemByDocument({
+      owner: { kind: "work", workId: work.id },
+      documentId,
+    });
     if (!item) throw new Error(`No draft of ${documentId} in ${work.handle}`);
     if (!item.draftId || !item.item.hasDraft) throw new Error("Missing draft room");
     return { draftId: item.draftId };
@@ -524,7 +533,7 @@ export function branchTreeCommands(
   ) {
     for (const documentId of documentIds) {
       const item = await ports().documentSync.draftReview.resolveItemByDocument({
-        workId: work.id,
+        owner: { kind: "work", workId: work.id },
         documentId,
       });
       if (!item) throw new Error(`No draft of ${documentId} to ${verb}`);
@@ -535,7 +544,11 @@ export function branchTreeCommands(
   const routes = () => selectBranchRouteServices(composed().runtime.app);
 
   function review(work: ScenarioWork) {
-    return handleWorkBranchListRequest(routes(), { projectId, workId: work.id, userId });
+    return handleOwnerDraftListRequest(routes(), {
+      projectId,
+      owner: draftOwnerKey({ kind: "work", workId: work.id }),
+      userId,
+    });
   }
 
   async function discard(
@@ -545,12 +558,13 @@ export function branchTreeCommands(
   ) {
     if (items === "all") {
       const branchId =
-        options.branchId ?? (await ports().documentSync.branches.activeForWork(work.id))?.id;
+        options.branchId ??
+        (await ports().documentSync.branches.activeForOwner({ kind: "work", workId: work.id }))?.id;
       if (!branchId) throw new Error(`${work.handle} has no branch to discard`);
       return (
         await handleDiscardAllWorkBranchRequest(routes(), {
           projectId,
-          workId: work.id,
+          branchId: branchId as BranchId,
           userId,
           request: { branchId, commandId: randomUUID() },
         })
@@ -562,7 +576,7 @@ export function branchTreeCommands(
         (
           await handleDiscardWorkDraftRequest(routes(), {
             projectId,
-            workId: work.id,
+            branchId: branchId as BranchId,
             documentId,
             userId,
             request: { branchId, itemKey, commandId: randomUUID() },

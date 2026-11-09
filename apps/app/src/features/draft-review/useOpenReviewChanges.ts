@@ -6,28 +6,28 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
-import { workBranchDraftsQueryOptions } from "@/client/query/useWorkBranchDrafts";
+import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import type { DraftChangesData } from "./draft-changes";
 import { useChangeItems, useDraftCommandState } from "./draft-changes";
 import { treeChange, treeLineOf } from "./tree-line";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { useRoomReview } from "./useRoomReview";
 export function useOpenReviewChanges(
-  controller: Pick<DraftReviewController, "projectId" | "workId" | "inlineReview">,
+  controller: Pick<DraftReviewController, "projectId" | "ownerKey" | "inlineReview">,
   options?: { enabled?: boolean },
 ) {
   const inline = options?.enabled === false ? null : controller.inlineReview;
   const draft = inline
     ? {
         projectId: controller.projectId,
-        workId: controller.workId,
+        ownerKey: controller.ownerKey,
         documentId: inline.documentId,
         itemKey: inline.itemKey,
       }
     : null;
   const command = useDraftCommandState(draft?.itemKey ?? "");
   const listed = useQuery({
-    ...workBranchDraftsQueryOptions(controller.projectId, controller.workId),
+    ...ownerDraftsQueryOptions(controller.projectId, controller.ownerKey),
     enabled: projectReadEnabled(Boolean(draft)),
   });
   const item = draft ? listed.data?.find((row) => row.itemKey === draft.itemKey) : undefined;

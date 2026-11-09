@@ -36,7 +36,7 @@ import { mountedLinks } from "./links";
 
 type MeridianFigureExtensionOptions = {
   projectId?: string;
-  workId?: string;
+  owner?: string;
 };
 
 function textAttr(value: unknown, fallback = ""): string {
@@ -52,10 +52,10 @@ export function FigureNodeView(props: NodeViewProps) {
   const alt = nullableTextAttr(props.node.attrs.alt);
   const label = nullableTextAttr(props.node.attrs.label);
   const caption = textAttr(props.node.attrs.caption);
-  const { projectId, workId } = (props.extension.options ?? {}) as MeridianFigureExtensionOptions;
+  const { projectId, owner } = (props.extension.options ?? {}) as MeridianFigureExtensionOptions;
   const [renderState, renderActions] = useAssetImageRenderState({
     projectId,
-    workId,
+    owner,
     src,
     ref: props.node.attrs.ref,
     links: mountedLinks(props.editor),

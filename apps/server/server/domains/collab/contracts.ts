@@ -5,21 +5,14 @@ import type {
   ObservationFrontier,
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
-import type { BranchId, LinkView } from "@meridian/contracts";
+import type { BranchId, DraftOwner, LinkView } from "@meridian/contracts";
 import type { BranchCommandResult } from "@meridian/contracts/branches";
 import type {
   DocumentRemovalRecord,
   ReversalOutcome,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
-import type {
-  DocumentId,
-  ProjectId,
-  ThreadId,
-  TurnId,
-  UserId,
-  WorkId,
-} from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
@@ -44,6 +37,7 @@ import type { Branches } from "./domain/branches.js";
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { BoundWrite, ImportLinkBinder, LinkBinder } from "./domain/link-binding.js";
+import type { BranchOwnerView } from "./domain/ports/branch-store.js";
 import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
 
@@ -118,8 +112,8 @@ export type CollabTransport = {
   resolveDraftHocuspocusRoom(draftId: string): Promise<{
     draftId: string;
     documentId: DocumentId;
-    /** The Work whose draft the room is; its lifecycle caps the room's access. */
-    workId: WorkId;
+    /** The owner whose draft the room is; its lifecycle caps the room's access. */
+    owner: DraftOwner;
     schemaVersion: CollabSchemaVersion;
     status: "active";
   } | null>;
@@ -415,20 +409,20 @@ export type ModelDraftRow = {
 
 export type DraftReviewApi = {
   applyClick(input: {
-    workId: WorkId;
+    branchId: BranchId;
     documentId: DocumentId;
     request: import("@meridian/contracts/branches").ApplyClick;
     envelope: BranchCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
   unapplyClick(input: {
-    workId: WorkId;
+    branchId: BranchId;
     documentId: DocumentId;
     request: import("@meridian/contracts/branches").UnapplyClick;
     envelope: BranchCommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer>;
-  list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ModelDraftRow[]>;
+  list(input: { owner: DraftOwner }): Promise<ModelDraftRow[]>;
   /** The review list route's one read: the active branch's listed items with live text tokens. */
-  listItems(input: { workId: WorkId }): Promise<{
+  listItems(input: { owner: DraftOwner }): Promise<{
     branchId: BranchId | null;
     items: DraftReviewItem[];
     threadTitles: ReadonlyMap<string, string>;
@@ -438,24 +432,31 @@ export type DraftReviewApi = {
     projectId: ProjectId;
     documentId: DocumentId;
   }): Promise<DocumentBranchOrigin[]>;
-  /** The Work's active branch's listed items, live text tokens unread: what Apply authorizes. */
+  /** The owner's active branch's listed items, live text tokens unread: what Apply authorizes. */
   items(input: {
-    workId: WorkId;
+    owner: DraftOwner;
   }): Promise<{ branchId: BranchId | null; items: DraftReviewItem[] }>;
-  resolveItem(input: { workId: WorkId; itemKey: string }): Promise<ResolvedReviewItem | null>;
+  /** A branch, any status, with its owner and the owner's lifecycle as it reads now. */
+  branchOwner(branchId: BranchId): Promise<BranchOwnerView | null>;
+  /** The item a key names, when its branch is active. */
+  resolveItem(input: { itemKey: string }): Promise<ResolvedReviewItem | null>;
+  /** One document of an active branch. */
+  resolveItemInBranch(input: {
+    branchId: BranchId;
+    documentId: DocumentId;
+  }): Promise<ResolvedReviewItem | null>;
+  /** One document of the owner's active branch. */
   resolveItemByDocument(input: {
-    workId: WorkId;
+    owner: DraftOwner;
     documentId: DocumentId;
   }): Promise<ResolvedReviewItem | null>;
   lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
   discardItem(input: {
-    workId: WorkId;
     item: DraftReviewItem;
     userId: UserId;
     envelope: BranchCommandEnvelope;
   }): Promise<CommandOutcome>;
   discardAll(input: {
-    workId: WorkId;
     branchId: BranchId;
     userId: UserId;
     envelope: BranchCommandEnvelope;
@@ -490,7 +491,7 @@ export type TurnLiveLineageAccess = {
  */
 export type EffectiveReadVersion =
   | { destination: "live"; workId?: never }
-  | { destination: "draft"; workId: WorkId };
+  | { destination: "draft"; owner: DraftOwner };
 
 /** A draft read of a Work that holds no draft of the document. */
 export type WorkDraftMissing = { code: "draft_not_found"; documentId: string };

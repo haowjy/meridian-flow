@@ -1,45 +1,52 @@
 /**
- * useWorkBranchDrafts — reviewable AI draft list for one Work (one entry per document).
+ * useOwnerDrafts — reviewable AI draft list for one owner (one entry per document).
  *
  * Projects one catalog-labelled file per active document draft, in stable order.
  */
-import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import { parseDraftOwnerKey, type ThreadDraftListItem } from "@meridian/contracts/branches";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
-import { listWorkBranchDrafts } from "@/client/api/branches-api";
+import { listOwnerDrafts } from "@/client/api/branches-api";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { useContextCatalogViews } from "./useContextCatalog";
 import { projectWorkBranchFiles, type ReviewFileTarget } from "./work-branch-files";
 
-export type WorkDraftListStatus = ListQueryStatus<ThreadDraftListItem> & {
+export type OwnerDraftListStatus = ListQueryStatus<ThreadDraftListItem> & {
   /** Raw query rows for generation evidence and command fences. */
   drafts: ThreadDraftListItem[] | null;
   files: ReviewFileTarget[] | null;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
 };
 
-/** The one Work draft-list query, shared by every reader so the list is fetched once. */
-export function workBranchDraftsQueryOptions(projectId: string, workId: string) {
+/** The one owner draft-list query, shared by every reader so the list is fetched once. */
+/** The catalog owner whose Scratch names this draft owner's documents. */
+export function catalogOwnerOf(owner: string | null): { workId?: string; rootThreadId?: string } {
+  const parsed = owner ? parseDraftOwnerKey(owner) : null;
+  if (!parsed) return {};
+  return parsed.kind === "work" ? { workId: parsed.id } : { rootThreadId: parsed.id };
+}
+
+export function ownerDraftsQueryOptions(projectId: string, owner: string) {
   return {
-    queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
-    queryFn: () => listWorkBranchDrafts(projectId, workId).then((response) => response.items),
+    queryKey: projectQueryKeys.ownerDrafts(projectId, owner),
+    queryFn: () => listOwnerDrafts(projectId, owner).then((response) => response.items),
     staleTime: 15_000,
   };
 }
 
-export function useWorkBranchDrafts(
+export function useOwnerDrafts(
   projectId: string | null,
-  workId: string | null,
+  owner: string | null,
   options?: { enabled?: boolean },
-): WorkDraftListStatus {
+): OwnerDraftListStatus {
   const callerEnabled = options?.enabled ?? true;
-  const enabled = callerEnabled && Boolean(projectId) && Boolean(workId);
+  const enabled = callerEnabled && Boolean(projectId) && Boolean(owner);
   const result = unwrapListQuery(
     useQuery({
-      ...workBranchDraftsQueryOptions(projectId ?? "", workId ?? ""),
+      ...ownerDraftsQueryOptions(projectId ?? "", owner ?? ""),
       enabled: projectReadEnabled(enabled),
     }),
   );
@@ -54,7 +61,7 @@ export function useWorkBranchDrafts(
   );
   const catalogs = useContextCatalogViews(projectId ?? "", schemes, {
     enabled: enabled && Boolean(result.data?.length),
-    workId,
+    ...catalogOwnerOf(owner),
   });
   const visible = result.data;
   const files = useMemo(

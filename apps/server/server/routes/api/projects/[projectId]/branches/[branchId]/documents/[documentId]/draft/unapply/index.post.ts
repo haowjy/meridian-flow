@@ -1,22 +1,20 @@
-/** Discard one item, or the clicked classes of one item. */
-import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
+/** Un-Apply one editor-originated frozen text Apply. */
+import type { BranchId } from "@meridian/contracts";
+import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";
 import {
-  handleDiscardWorkDraftRequest,
-  parseDraftDiscardItem,
+  handleUnapplyClickRequest,
   selectBranchRouteServices,
 } from "../../../../../../../../../../lib/branch-review-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const result = await handleDiscardWorkDraftRequest(selectBranchRouteServices(app), {
+  return handleUnapplyClickRequest(selectBranchRouteServices(app), {
     projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
-    workId: (getRouterParam(event, "workId") ?? "") as WorkId,
+    branchId: (getRouterParam(event, "branchId") ?? "") as BranchId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     userId: user.userId,
-    request: parseDraftDiscardItem(await readBody(event)),
+    request: await readBody(event),
   });
-  event.res.status = result.httpStatus;
-  return result.body;
 });

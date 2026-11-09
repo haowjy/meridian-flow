@@ -1,5 +1,5 @@
 /** Work draft listing, idempotent hidden-create/whole Discard, and the frozen Apply command. */
-import type { BranchId, WorkId } from "@meridian/contracts";
+import type { BranchId, DraftOwner } from "@meridian/contracts";
 import type { BranchCommandResult, ThreadDraftListItem } from "@meridian/contracts/branches";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -19,7 +19,7 @@ import type { Branches } from "./branches.js";
 import type { WorkBranchPendingStore } from "./ports/work-branch-pending-store.js";
 
 export function createWorkBranchReviewService(input: {
-  branches: Pick<Branches, "activeForWork">;
+  branches: Pick<Branches, "activeForOwner" | "ownerOf">;
   reviewItems: BranchReviewItems;
   identity: BranchReviewIdentity;
   discard: BranchDiscard;
@@ -29,10 +29,10 @@ export function createWorkBranchReviewService(input: {
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   pending: Pick<WorkBranchPendingStore, "listBranchesChangingDocument">;
 }): CollabBranches {
-  async function workItems(
-    workId: WorkId,
+  async function ownerItems(
+    owner: DraftOwner,
   ): Promise<{ branchId: BranchId | null; items: DraftReviewItem[] }> {
-    const branch = await input.branches.activeForWork(workId);
+    const branch = await input.branches.activeForOwner(owner);
     if (!branch) return { branchId: null, items: [] };
     return { branchId: branch.id, items: await input.reviewItems.list(branch.id) };
   }
@@ -89,7 +89,7 @@ export function createWorkBranchReviewService(input: {
       applyClick: input.applyClick,
       unapplyClick: input.unapplyClick,
       async list(command) {
-        const { items } = await workItems(command.workId);
+        const { items } = await ownerItems(command.owner);
         return items.map(
           (item): ModelDraftRow => ({
             documentId: item.documentId,
@@ -100,15 +100,17 @@ export function createWorkBranchReviewService(input: {
         );
       },
       async listItems(command) {
-        const { branchId, items } = await workItems(command.workId);
+        const { branchId, items } = await ownerItems(command.owner);
         const threadTitles = await input.resolveThreadTitles([
           ...new Set(items.flatMap((item) => item.actorThreadIds)),
         ]);
         return { branchId, items, threadTitles };
       },
       branchesChangingDocument: (command) => input.pending.listBranchesChangingDocument(command),
-      items: (command) => workItems(command.workId),
+      items: (command) => ownerItems(command.owner),
+      branchOwner: (branchId) => input.branches.ownerOf(branchId),
       resolveItem: (command) => input.identity.resolveReviewItem(command),
+      resolveItemInBranch: (command) => input.identity.resolveReviewItemInBranch(command),
       resolveItemByDocument: (command) => input.identity.resolveReviewItemByDocument(command),
       lookupCommand: (envelope) => input.commands.lookup(envelope),
       async discardItem(command) {
@@ -125,7 +127,6 @@ export function createWorkBranchReviewService(input: {
         return effect(envelope, async () => {
           const result = await input.discard
             .discardItems({
-              workId: command.workId,
               branchId: item.branchId,
               selection: {
                 kind: "items",
@@ -159,7 +160,6 @@ export function createWorkBranchReviewService(input: {
         const settled: BranchCommandResult = { status: "discarded", branchId };
         return effect(envelope, async () => {
           const result = await input.discard.discardItems({
-            workId: command.workId,
             branchId,
             selection: { kind: "whole" },
             userId: command.userId,

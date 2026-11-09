@@ -12,7 +12,7 @@ import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useRef } from "react";
-import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
+import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
@@ -31,7 +31,7 @@ export function useWriteModeToolbarControl({
   value: AiWriteMode;
   onChoose(mode: AiWriteMode): void;
 }): ComposerToolbarControl {
-  const waiting = useWorkBranchDrafts(projectId, workId).files?.length ?? 0;
+  const waiting = useOwnerDrafts(projectId, workId).files?.length ?? 0;
   const draftRef = useRef<HTMLButtonElement | null>(null);
   const directRef = useRef<HTMLButtonElement | null>(null);
   const draftLabel = waiting > 0 ? t`Drafts (${waiting})` : t`Draft`;

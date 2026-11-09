@@ -6,8 +6,8 @@
  * takes no lock but the draft rows'; Work admission, receipts and effect policy belong to the
  * callers.
  */
-import type { WorkId } from "@meridian/contracts/runtime";
-import { documentDrafts, draftWriteJournal, works } from "@meridian/database/schema";
+import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import { branches, documentDrafts, draftWriteJournal } from "@meridian/database/schema";
 import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
@@ -16,8 +16,8 @@ import {
 } from "@meridian/prosemirror-schema";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { branchOwnerSql } from "../../../shared/draft-owner.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { draftBranchWork } from "../../../shared/work-branch-lifecycle.js";
 import { assertFreshAgentUpdate } from "../domain/document-mutation-policy.js";
 import type {
   AppendDraftJournalInput,
@@ -27,7 +27,6 @@ import type {
   DraftReadSince,
   DraftSnapshot,
   DraftTailRow,
-  DraftWorkLifecycle,
   RewriteOutcome,
   RewritePolicy,
 } from "../domain/draft-store.js";
@@ -82,24 +81,24 @@ export async function insertJournalRows(
 
 type DraftSelectRow = Awaited<ReturnType<ReturnType<typeof selectDraft>["limit"]>>[number];
 
+const draftOwner = branchOwnerSql(branches);
+
 const draftColumns = {
   draftId: documentDrafts.id,
   documentId: documentDrafts.documentId,
   kind: documentDrafts.kind,
   upstreamDraftId: documentDrafts.upstreamDraftId,
   branchId: documentDrafts.branchId,
-  workId: draftBranchWork.workId,
+  workId: draftOwner.workId,
+  rootThreadId: draftOwner.rootThreadId,
+  projectId: branches.projectId,
   threadId: documentDrafts.threadId,
   status: documentDrafts.status,
   closedCause: documentDrafts.closedCause,
   revision: documentDrafts.revision,
   checkpointRevision: documentDrafts.checkpointRevision,
   checkpointSeq: documentDrafts.checkpointSeq,
-  lifecycle: sql<DraftWorkLifecycle>`case
-    when ${works.id} is null then 'missing'
-    when ${works.deletedAt} is not null then 'deleted'
-    when ${works.archivedAt} is not null then 'archived'
-    else 'active' end`,
+  lifecycle: draftOwner.lifecycle,
   hasEffect: documentDrafts.hasEffect,
   schemaVersion: documentDrafts.schemaVersion,
   seedOrigins: documentDrafts.seedOrigins,
@@ -118,17 +117,17 @@ export function selectDraft(db: DrizzleDb) {
   return db
     .select(draftColumns)
     .from(documentDrafts)
-    .innerJoin(draftBranchWork.branches, draftBranchWork.on)
-    .leftJoin(works, eq(works.id, draftBranchWork.workId));
+    .innerJoin(branches, eq(branches.id, documentDrafts.branchId));
 }
 
 /**
- * The draft's branch has an origin Work that is neither archived nor deleted, evaluated inside
- * the write's own statement so the lifecycle decision and the write are one observation.
+ * The draft's branch has an active owner (a Work neither archived nor deleted, or a lineage with
+ * a live member), evaluated inside the write's own statement so the lifecycle decision and the
+ * write are one observation.
  */
-const draftWorkActive = sql`exists (
-  select 1 from branches d join works w on w.id = d.origin_work_id
-  where d.id = ${documentDrafts.branchId} and w.archived_at is null and w.deleted_at is null
+const draftOwnerActive = sql`exists (
+  select 1 from branches d
+  where d.id = ${documentDrafts.branchId} and ${branchOwnerSql("d").lifecycle} = 'active'
 )`;
 
 export function mapDraft(row: DraftSelectRow): DraftSnapshot {
@@ -139,6 +138,8 @@ export function mapDraft(row: DraftSelectRow): DraftSnapshot {
     upstreamDraftId: row.upstreamDraftId,
     branchId: row.branchId,
     workId: (row.workId as WorkId | null) ?? null,
+    rootThreadId: (row.rootThreadId as ThreadId | null) ?? null,
+    projectId: row.projectId as ProjectId,
     threadId: row.threadId,
     status: row.status,
     closedCause: row.closedCause,
@@ -199,8 +200,7 @@ export async function readDraftAt(
       )`,
     })
     .from(documentDrafts)
-    .innerJoin(draftBranchWork.branches, draftBranchWork.on)
-    .leftJoin(works, eq(works.id, draftBranchWork.workId))
+    .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
     .where(eq(documentDrafts.id, draftId))
     .limit(1);
   if (!row) return null;
@@ -252,7 +252,7 @@ export async function appendRowsWithinTx(
       and(
         eq(documentDrafts.id, input.draftId),
         eq(documentDrafts.status, "active"),
-        input.work === "any" ? undefined : draftWorkActive,
+        input.work === "any" ? undefined : draftOwnerActive,
       ),
     )
     .returning({
@@ -373,7 +373,7 @@ export async function commitRewriteWithinTx(
     .where(
       and(
         eq(documentDrafts.id, input.draftId),
-        input.work === "active" ? draftWorkActive : undefined,
+        input.work === "active" ? draftOwnerActive : undefined,
       ),
     )
     .returning({

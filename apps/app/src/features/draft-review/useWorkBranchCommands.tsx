@@ -39,20 +39,22 @@ export type WorkBranchCommands = ReturnType<typeof useWorkBranchCommands>;
 export function useWorkBranchCommands({
   projectId,
   work,
+  ownerKey,
   threadId = null,
   surface = "dock",
   editorHistory,
 }: {
   projectId: string;
   work: Work | null;
+  /** Whose drafts the commands act on (`work:<id>` or `lineage:<root>`); "" acts on none. */
+  ownerKey: string;
   threadId?: string | null;
   surface?: "editor" | "dock";
   editorHistory?: (draft: DraftReviewSelection) => EditorHistoryHandle | null;
 }) {
   const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
-  const workId = work?.id ?? "";
-  const locked = !work || isWorkArchived(work);
+  const locked = !ownerKey || !work || isWorkArchived(work);
   const [notice, setNotice] = useState<SurfaceNotice | null>(null);
   const heldNotice = useRef<SurfaceNotice | null>(null);
   const endNotice = () => {
@@ -66,23 +68,23 @@ export function useWorkBranchCommands({
       heldNotice.current = null;
       setNotice(null);
     },
-    [owner, projectId, workId, threadId],
+    [owner, projectId, ownerKey, threadId],
   );
   return useMemo(() => {
-    const ref = (draft: DraftReviewSelection) => ({ projectId, workId, ...draft });
+    const ref = (draft: DraftReviewSelection) => ({ projectId, ownerKey, ...draft });
     const row = (draft: DraftReviewSelection) =>
       queryClient
-        .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workBranchDrafts(projectId, workId))
+        .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.ownerDrafts(projectId, ownerKey))
         ?.find((item) => item.itemKey === draft.itemKey);
     // The Work's list re-reads with the touched documents' own reads: the route reads a
     // discarded move from the item's metadata, and the document header reads its draft hints.
     const refresh = (documentIds: readonly string[]) => {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
+        queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
       });
       for (const documentId of documentIds) {
         void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workDraftMetadataOf(projectId, workId, documentId),
+          queryKey: projectQueryKeys.ownerDraftMetadataOf(projectId, ownerKey, documentId),
         });
         void queryClient.invalidateQueries({
           queryKey: projectQueryKeys.documentDraftHints(projectId, documentId),
@@ -92,7 +94,7 @@ export function useWorkBranchCommands({
     /** The list without the item's move or delete, until the refetch confirms it. */
     const dropTreeLine = (item: ThreadDraftListItem) =>
       queryClient.setQueryData<ThreadDraftListItem[]>(
-        projectQueryKeys.workBranchDrafts(projectId, workId),
+        projectQueryKeys.ownerDrafts(projectId, ownerKey),
         (rows) =>
           rows?.flatMap((row) =>
             row.itemKey !== item.itemKey ? [row] : row.hasDraft ? [{ ...row, tree: null }] : [],
@@ -154,7 +156,7 @@ export function useWorkBranchCommands({
       if (locked) return null;
       const rows =
         queryClient.getQueryData<ThreadDraftListItem[]>(
-          projectQueryKeys.workBranchDrafts(projectId, workId),
+          projectQueryKeys.ownerDrafts(projectId, ownerKey),
         ) ?? [];
       const item = rows.find((candidate) => candidate.itemKey === draft.itemKey);
       const bringBack = restore ?? isDeletedFromManuscript(item);
@@ -256,7 +258,7 @@ export function useWorkBranchCommands({
                 const acknowledged = discarded.notice.undo?.() ?? Promise.resolve();
                 if (item)
                   queryClient.setQueryData<ThreadDraftListItem[]>(
-                    projectQueryKeys.workBranchDrafts(projectId, workId),
+                    projectQueryKeys.ownerDrafts(projectId, ownerKey),
                     (rows) =>
                       rows?.some((row) => row.itemKey === item.itemKey)
                         ? rows
@@ -279,7 +281,7 @@ export function useWorkBranchCommands({
       start(mode, draft, { kind: "draft" });
     return {
       projectId,
-      workId,
+      ownerKey,
       threadId,
       owner,
       notice,
@@ -363,7 +365,7 @@ export function useWorkBranchCommands({
         });
       },
     };
-  }, [owner, locked, projectId, workId, threadId, surface, editorHistory, queryClient, notice]);
+  }, [owner, locked, projectId, ownerKey, threadId, surface, editorHistory, queryClient, notice]);
 }
 
 const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);

@@ -209,7 +209,7 @@ function withDestination(
     result: {
       ...outcome.result,
       destination: destination.kind,
-      ...(destination.kind === "draft" ? { draftWork: destination.workHandle ?? "/" } : {}),
+      ...(destination.kind === "draft" ? { draftWork: destination.ownerHandle ?? "/" } : {}),
     },
   };
 }
@@ -320,7 +320,13 @@ export async function readTrackedDocument(
     };
   const reader =
     version === "draft"
-      ? await keptDraftReader(deps, call.principal, call.execution, address.documentId)
+      ? await keptDraftReader(
+          deps,
+          call.principal,
+          call.execution,
+          call.context.resolution.thread,
+          address.documentId,
+        )
       : call.principal;
   const grant = await documentGrant(deps, reader, "read", address, "read");
   if (isToolError(grant)) return { ...grant, revision: null };

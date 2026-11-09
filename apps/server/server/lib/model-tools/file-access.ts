@@ -10,8 +10,10 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
+import type { Thread } from "@meridian/contracts/threads";
 import type { ThreadExecutionContext } from "@meridian/contracts/works";
 import {
+  type BranchOwnerRef,
   type FileAccessDenied,
   type FileEditRefusedError,
   type FileGrant,
@@ -20,8 +22,8 @@ import {
   isFileAccessDenied,
   type Principal,
   runWithEditGrants,
-  type WorkRef,
 } from "../../domains/file-policy/index.js";
+import { chatOwner } from "../../shared/draft-owner.js";
 import {
   isPermissionDenial,
   permissionDeniedMessage,
@@ -35,10 +37,10 @@ import type {
   WriteToolErrorOutput,
 } from "./tool-context.js";
 
-/** The principal with its drafted writes routed to `work`'s drafts, or live for null. */
-export function withBranchWork(principal: Principal, work: WorkRef | null): Principal {
+/** The principal with its drafted writes routed to `owner`'s drafts, or live for null. */
+export function withBranchOwner(principal: Principal, owner: BranchOwnerRef | null): Principal {
   return principal.agent
-    ? { ...principal, agent: { ...principal.agent, branchWork: work } }
+    ? { ...principal, agent: { ...principal.agent, branchOwner: owner } }
     : principal;
 }
 
@@ -57,8 +59,8 @@ export async function agentPrincipal(
     accountId: thread.userId as Principal["accountId"],
     agent: {
       chain: await deps.readAgentChain(thread.id as ThreadId),
-      branchWork: execution.branchOwner
-        ? { id: execution.branchOwner.workId, handle: execution.scope.workHandle }
+      branchOwner: execution.branchOwner
+        ? { owner: execution.branchOwner, handle: execution.scope.workHandle }
         : null,
     },
   };
@@ -74,13 +76,15 @@ export async function keptDraftReader(
   deps: Pick<ToolWiringDeps, "branches">,
   principal: Principal,
   execution: ThreadExecutionContext,
+  thread: Pick<Thread, "projectId" | "rootThreadId">,
   documentId: string,
 ): Promise<Principal> {
-  if (!principal.agent || principal.agent.branchWork || execution.branchOwner) return principal;
+  if (!principal.agent || principal.agent.branchOwner || execution.branchOwner) return principal;
   const { workId, workHandle } = execution.scope;
-  const drafts = await deps.branches.draftReview.list({ workId });
+  const owner = chatOwner(thread, { id: workId, isNoWork: workHandle === null });
+  const drafts = await deps.branches.draftReview.list({ owner });
   if (!drafts.some((draft) => draft.documentId === documentId)) return principal;
-  return withBranchWork(principal, { id: workId, handle: workHandle });
+  return withBranchOwner(principal, { owner, handle: workHandle });
 }
 
 /** The file policy's grant on a document; a denial comes back as the tool's error. */

@@ -37,7 +37,11 @@ export const TURN_2_ID = "00000000-0000-4000-8000-000000000708";
 const TURN_3_ID = "00000000-0000-4000-8000-000000000709";
 export const CREATED_DOC_ID = "00000000-0000-4000-8000-000000000710";
 
-export const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workHandle: "work" } as const;
+export const DRAFT_DESTINATION = {
+  kind: "draft",
+  owner: { kind: "work", workId: WORK_ID },
+  ownerHandle: "work",
+} as const;
 
 export function createWorkBranchFixture(db: Database) {
   const hocuspocus = fakeHocuspocus();
@@ -143,7 +147,7 @@ export function createWorkBranchFixture(db: Database) {
     documentId: string,
   ): Promise<string> {
     const draft = await collab.draftReview.resolveItemByDocument({
-      workId: WORK_ID as never,
+      owner: { kind: "work", workId: WORK_ID as never },
       documentId: documentId as never,
     });
     if (!draft?.draftId) throw new Error(`missing reviewable draft for ${documentId}`);

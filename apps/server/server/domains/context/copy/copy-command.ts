@@ -33,12 +33,12 @@
  */
 
 import { setTimeout as delay } from "node:timers/promises";
+import { draftOwnerKey } from "@meridian/contracts";
 import type {
   ContextOperationCommand,
   CopyContextEntriesResult,
   CopyContextEntryCommandSource,
   CopyContextEntryCreated,
-  CopyContextEntryView,
 } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { PMNode } from "@meridian/markup";
@@ -66,7 +66,12 @@ import type {
   CopySourceFile,
   CopySourceFolder,
 } from "../ports/context-copy.js";
-import type { ContextCopyRequest, ContextError, ContextScheme } from "../ports/context-port.js";
+import type {
+  ContextCopyRequest,
+  ContextError,
+  ContextScheme,
+  CopySourceView,
+} from "../ports/context-port.js";
 
 /** How long a read waits for the room to receive the edits a client's vector names. */
 const SOURCE_CATCH_UP_MS = 2_000;
@@ -84,7 +89,7 @@ export interface CopySourceHandoff {
   copy: ContextCopyAdapter;
   /** Scheme-relative path of the root. */
   path: string;
-  view: CopyContextEntryView;
+  view: CopySourceView;
   expected: { kind: "file" | "folder"; nodeId: string };
   /** The device-minted identity for this root's copy; descendants are server-minted. */
   copyId?: string;
@@ -379,7 +384,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       ? {
           documentId: file.documentId as DocumentId,
           destination: "draft" as const,
-          workId: draft.workId,
+          owner: draft.owner,
         }
       : { documentId: file.documentId as DocumentId, destination: "live" as const };
     const client = clientVector ? decodeStateVector(clientVector) : null;
@@ -579,7 +584,10 @@ function receiptCommand(
     sources: input.sources.map(
       (source): CopyContextEntryCommandSource => ({
         uri: source.uri,
-        view: source.view,
+        view:
+          source.view.kind === "draft"
+            ? { kind: "draft", owner: draftOwnerKey(source.view.owner) }
+            : source.view,
         expected: source.expected,
         ...(source.copyId ? { copyId: source.copyId } : {}),
       }),

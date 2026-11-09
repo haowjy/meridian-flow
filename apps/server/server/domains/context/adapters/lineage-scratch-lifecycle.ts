@@ -6,7 +6,9 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contextSources, threads } from "@meridian/database/schema";
 import { and, eq, inArray, isNotNull, type SQL, type SQLWrapper, sql } from "drizzle-orm";
+import { lineageHasLiveMember, lockLineageOwners } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import type { FileAccessChanges } from "../../file-policy/index.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
 import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
@@ -19,11 +21,6 @@ export class LineageScratchUnavailableError extends Error {
   }
 }
 
-/** Identity is independent of availability: a trashed first chat can have live forks. */
-export function lineageHasLiveMember(rootThreadId: string | SQLWrapper) {
-  return sql<boolean>`EXISTS (SELECT 1 FROM threads member WHERE member.root_thread_id = ${rootThreadId} AND member.deleted_at IS NULL)`;
-}
-
 export interface LineageScratchLifecycle {
   requireLive(projectId: string, rootThreadId: string): Promise<void>;
   ensureSource(projectId: string, rootThreadId: string): Promise<string>;
@@ -34,6 +31,7 @@ export function createDrizzleLineageScratchLifecycle(
   db: Database,
   catalog?: ContextCatalogMutationPort,
   arrivals?: Pick<DocumentArrivals, "settle">,
+  fileAccessChanges?: Pick<FileAccessChanges, "publish">,
 ): LineageScratchLifecycle {
   // Use the Scratch namespace boundary already held by context commands. Taking
   // a second lineage lock after that boundary would invert catalog lock order.
@@ -93,16 +91,21 @@ export function createDrizzleLineageScratchLifecycle(
           .select({ id: threads.rootThreadId, projectId: threads.projectId })
           .from(threads)
           .where(inArray(threads.id, [...threadIds]));
+        // Draft writes decide liveness under the lineage lock, ahead of the namespaces, so a
+        // trash or restore waits for a write in flight and the next write sees the new state.
+        const rootIds = [...new Set(roots.map((root) => root.id))].sort();
+        await lockLineageOwners(db, rootIds);
         for (const projectId of [...new Set(roots.map((root) => root.projectId))].sort())
           await lockContextNamespaces(db, { projectId, userId: "" }, [
             { scheme: "scratch", workId: null },
             { scheme: "uploads", workId: null },
           ]);
-        for (const rootThreadId of [...new Set(roots.map((root) => root.id))].sort()) {
+        for (const rootThreadId of rootIds) {
           await reconcileSources(
             and(eq(contextSources.scope, "lineage"), eq(contextSources.rootThreadId, rootThreadId)),
             lineageHasLiveMember(rootThreadId),
           );
+          await fileAccessChanges?.publish({ rootThreadId });
         }
         // A chat's uploads follow that chat's own trash state, not its lineage's.
         await reconcileSources(

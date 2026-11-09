@@ -336,8 +336,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       liveUtilityCore: runtime.liveUtilityCore,
       fileAccess: deps.fileAccess,
       removals: removalRecords,
-      async lockWorks(workIds) {
-        await deps.workProjectionMutation.lockWorks({ works: workIds as WorkId[] });
+      async lockOwners({ workIds, lineageRootIds }) {
+        await deps.workProjectionMutation.lockWorks({
+          works: workIds as WorkId[],
+          lineages: lineageRootIds,
+        });
       },
       async lockLiveDocuments(documentIds) {
         const tx = currentDrizzleDb(deps.db);

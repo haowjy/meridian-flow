@@ -83,7 +83,7 @@ export function ContextDocumentHost({
   const availabilityRevision = resourceAvailabilityRevision(resourceProjection, tab.documentId);
   const requestedReview = useRequestedReview({
     container,
-    editorWorkId: controller.workId,
+    editorWorkId: controller.ownerKey,
     activeScheme: tab.kind === "tracked" ? tab.scheme : null,
     documentId: shown ? tab.documentId : null,
   });
@@ -173,7 +173,7 @@ export function ContextDocumentHost({
                   projectId={projectId}
                   session={session}
                   reviewRoomName={reviewRoomName}
-                  reviewWorkId={controller.workId}
+                  reviewOwner={controller.ownerKey}
                   readOnly={readOnly}
                 />
               ) : null}
@@ -257,7 +257,7 @@ function RoomScopeCatalogCheck({
   projectId,
   session,
   reviewRoomName,
-  reviewWorkId,
+  reviewOwner,
   readOnly,
 }: {
   projectId: string;
@@ -265,7 +265,7 @@ function RoomScopeCatalogCheck({
   session: DocumentSession | null;
   reviewRoomName: string | null;
   /** The Work a review room belongs to; its archive state is that room's expected scope. */
-  reviewWorkId: string | null;
+  reviewOwner: string | null;
   readOnly: boolean;
 }) {
   const queryClient = useQueryClient();
@@ -274,7 +274,7 @@ function RoomScopeCatalogCheck({
   const [access, setAccess] = useState<DocumentSessionAccess | null>(null);
   // A review room follows the review's Work even when the reviewed file is
   // project-owned; a live room follows the file's own scope (`readOnly`).
-  const reviewWork = reviewRoomName ? works?.find((work) => work.id === reviewWorkId) : undefined;
+  const reviewWork = reviewRoomName ? works?.find((work) => work.id === reviewOwner) : undefined;
   const expectedReadOnly = reviewRoomName
     ? Boolean(reviewWork && isWorkArchived(reviewWork))
     : readOnly;

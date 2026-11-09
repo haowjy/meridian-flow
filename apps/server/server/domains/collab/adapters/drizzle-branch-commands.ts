@@ -27,7 +27,6 @@ export async function lookupCommand(
   const [row] = await db
     .select({
       accountId: branchCommands.accountId,
-      workId: branchCommands.workId,
       requestDigest: branchCommands.requestDigest,
       branchId: branchCommands.branchId,
       kind: branchCommands.kind,
@@ -40,7 +39,7 @@ export async function lookupCommand(
   if (!row) return { kind: "none" };
   if (
     row.accountId !== envelope.accountId ||
-    row.workId !== envelope.workId ||
+    row.branchId !== envelope.branchId ||
     (envelope.digest !== undefined && row.requestDigest !== envelope.digest)
   ) {
     return { kind: "conflict" };
@@ -65,7 +64,6 @@ export async function claimCommandWithinTx(
     .insert(branchCommands)
     .values({
       id: envelope.commandId,
-      workId: envelope.workId,
       branchId: envelope.branchId,
       accountId: envelope.accountId,
       kind: envelope.kind,

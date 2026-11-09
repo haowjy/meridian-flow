@@ -7,6 +7,7 @@
  * relative links spell from where it is now.
  */
 
+import type { DraftOwner } from "@meridian/contracts";
 import {
   type CatalogDocument,
   type DocumentLinkAnswer,
@@ -40,7 +41,7 @@ export interface DocumentLinkRouteDeps {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   fileAccess: Pick<FileAccess, "listAccess">;
   /** The selected Work's view: its active branch, or live when it has none (F7). */
-  branches: Pick<Branches, "viewForWork">;
+  branches: Pick<Branches, "viewForOwner">;
   /** Project-authorized retained identities for gone links; purged rows are absent. */
   documentTrash: Pick<DocumentTrash, "retained">;
   /** What a chip says of a stored file: its type and size. */
@@ -55,11 +56,8 @@ export async function handleDocumentLinkResolveRequest(
 ): Promise<ResolveDocumentLinksResponse> {
   const { projectId, userId, request } = input;
   await requireProjectOwner({ projects: deps.projectRepo }, projectId, userId);
-  // Lineage is Scratch's owner, not a replacement for the chat's No Work
-  // branch view: project-document refs still read in that Work's branch view.
-  const workId = request.rootThreadId
-    ? ((await deps.workAuthorityResolver.noWork(projectId as ProjectId))?.workId ?? null)
-    : (request.workId ?? null);
+  // A lineage note reads project-document refs through its lineage's own drafts.
+  const workId = request.rootThreadId ? null : (request.workId ?? null);
   // The selected Work must be this project's; a branch view is never provisioned for any other.
   if (
     workId &&
@@ -67,10 +65,13 @@ export async function handleDocumentLinkResolveRequest(
   ) {
     throwContextWorkUnavailableHttpError("work_missing");
   }
-  // A Work's branch view is the live tree plus what that branch created.
-  const view: LinkView = workId
-    ? await deps.branches.viewForWork(workId as WorkId)
-    : { kind: "live" };
+  // An owner's branch view is the live tree plus what that branch created.
+  const owner: DraftOwner | null = request.rootThreadId
+    ? { kind: "lineage", projectId: projectId as ProjectId, rootThreadId: request.rootThreadId }
+    : workId
+      ? { kind: "work", workId: workId as WorkId }
+      : null;
+  const view: LinkView = await deps.branches.viewForOwner(owner);
   const answers: DocumentLinkAnswer[] = new Array(request.links.length);
   let holderUri: string | undefined;
   const refResolutions: Array<{

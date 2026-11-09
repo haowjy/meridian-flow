@@ -340,7 +340,7 @@ it.each([
     ...document,
     screen: "work" as const,
     screenWorkId: "work",
-    review: { workId: "work", itemKey: "draft" },
+    review: { ownerKey: "work:work", itemKey: "draft" },
   };
   const restored = reload(manuscript);
   restored.getState().syncOccupantScope(scope.projectId, scope.screen, scope.workId);
@@ -396,7 +396,7 @@ it.each([
   { screen: ["work"] },
   { review: undefined },
   { review: {} },
-  { review: { workId: "", itemKey: "draft" } },
+  { review: { ownerKey: "", itemKey: "draft" } },
 ])("rejects malformed occupant identity: %o", (invalid) => {
   const disk = storage();
   disk.setItem(
@@ -414,7 +414,7 @@ it.each([
   false,
   true,
 ])("restores a saved review of an unlisted active item, hidden=%s", async (hidden) => {
-  const review = { workId: "work", itemKey: "branch:admitted" };
+  const review = { ownerKey: "work:work", itemKey: "branch:admitted" };
   const candidate: DockDocument = {
     ...document,
     review,
@@ -461,7 +461,7 @@ it.each([
   expect(restored && isDraftOnly(restored.tab)).toBe(hidden);
 });
 it("keeps failed and unavailable saved selectors without showing a live occupant", async () => {
-  const review = { workId: "work", itemKey: "branch:doc" };
+  const review = { ownerKey: "work:work", itemKey: "branch:doc" };
   const candidate = { ...document, review };
   const replica = resources();
   replica.admitReview.mockResolvedValue({ kind: "unavailable" });
@@ -477,7 +477,7 @@ it("keeps failed and unavailable saved selectors without showing a live occupant
   expect(replica.resources.readProjection).not.toHaveBeenCalled();
 });
 it("keeps a manuscript review while the selector repairs its renamed identity", async () => {
-  const review = { workId: "work", itemKey: "branch:doc" };
+  const review = { ownerKey: "work:work", itemKey: "branch:doc" };
   const replica = resources();
   expect(await restoreDockDocument({ ...document, review }, replica)).toMatchObject({
     review,
@@ -494,7 +494,7 @@ it("keeps a manuscript review while the selector repairs its renamed identity", 
 it("round trips a changed selection on the same dock review address", () => {
   const disk = storage();
   const first = createDockDocumentStore(() => disk, "account");
-  const review = { workId: "work", itemKey: "draft", changeId: "class:first" };
+  const review = { ownerKey: "work:work", itemKey: "draft", changeId: "class:first" };
   first.getState().commit(first.getState().claim(), { ...document, review });
   first.getState().setDocumentReview({ ...review, changeId: "class:second" });
   const restored = createDockDocumentStore(() => disk, "account");

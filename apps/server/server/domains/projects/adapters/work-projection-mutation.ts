@@ -9,10 +9,18 @@
  * every append and recounts then, through `mutate`.
  */
 import type { BranchId } from "@meridian/contracts";
+import { draftOwnerKey } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { branches, works } from "@meridian/database/schema";
 import { and, inArray, ne, sql } from "drizzle-orm";
+import {
+  type BranchDraftRef,
+  branchDraftRefs,
+  LineageDraftsUnavailableError,
+  lockLineageOwners,
+  type OwnerLocks,
+} from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   type DrizzleTransactionParticipant,
@@ -22,7 +30,6 @@ import {
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
-import { type BranchDraftRef, branchDraftRefs } from "../../../shared/work-branch-lifecycle.js";
 import {
   type LockedWork,
   lockSeamWorks,
@@ -34,9 +41,13 @@ import { WorkLifecycleUnavailableError } from "../domain/work-lifecycle.js";
 import type { ContextCatalogLifecyclePort } from "../ports/context-catalog-lifecycle.js";
 import type { WorkBranchPendingCounts } from "../ports/work-branch-pending-counts.js";
 
-/** The Works a write names: directly, or through the branches and drafts it changes. */
+/**
+ * The owners a write names: directly, or through the branches and drafts it changes. A lineage
+ * is named by its root thread id.
+ */
 export type WorkWriteSet = {
   works?: readonly WorkId[];
+  lineages?: readonly string[];
   branches?: readonly BranchId[];
   drafts?: readonly string[];
 };
@@ -45,16 +56,20 @@ export type WorkWriteOptions = {
   /** With the bound edit grants' Works, then the grants' confirmation (file-access §5). */
   seam?: boolean;
   /**
-   * Refuses unless every Work of the set is active: a named draft that doesn't exist is an
-   * error, and one whose branch has no origin Work is frozen (`missing`).
+   * Refuses unless every Work and lineage of the set is active: a named draft that doesn't
+   * exist is an error, and one whose branch has no owner is frozen (`missing`).
    */
   requireActive?: boolean;
+  /** With `requireActive`: a lineage with no live member still passes, so Discard can clear it. */
+  allowFrozenLineage?: boolean;
 };
 
 export type LockedWorkWriteSet = {
   /** Every locked Work's lifecycle, read under its lock. */
   works: ReadonlyMap<string, LockedWork>;
-  /** Each named draft that exists, with its branch's Work (`null`: frozen). */
+  /** Every locked lineage's liveness, read under its lock. */
+  lineages: ReadonlyMap<string, "active" | "frozen">;
+  /** Each named draft that exists, with its branch's owner (neither set: frozen). */
   drafts: readonly BranchDraftRef[];
 };
 
@@ -63,11 +78,12 @@ export type WorkProjectionMutation = {
   /** Activity on the Works (`lastActivityAt`): a revision and a notice, count or not. */
   touchWorks(workIds: readonly WorkId[], activityAt: Date): Promise<void>;
   /**
-   * Work-first order: the set's Works locked `FOR NO KEY UPDATE` in id order, in the caller's
-   * transaction, before it takes any draft, branch or document row. At commit each locked
-   * Work's pending count is reconciled against its stored value, and a Work whose count moved
-   * gets a revision and a notice; one whose count stayed gets neither. Apart from the Work's
-   * own lifecycle writers, nothing else in collab or projects locks a Work for a write.
+   * Owner-first order: the set's Works locked `FOR NO KEY UPDATE` in id order, then its
+   * lineages' draft-owner locks in root order, in the caller's transaction, before it takes any
+   * draft, branch or document row. At commit each locked owner's branches are recounted and
+   * stored; a Work whose total moved gets a revision and a notice, a lineage branch whose
+   * count moved gets a `draft-owner-hint`; unmoved counts get neither. Apart from the owners'
+   * own lifecycle writers, nothing else in collab or projects locks an owner for a write.
    */
   lockWorks(set: WorkWriteSet, options?: WorkWriteOptions): Promise<LockedWorkWriteSet>;
   /** `lockWorks`, then `operation`, in one transaction (its own when the caller has none). */
@@ -77,7 +93,7 @@ export type WorkProjectionMutation = {
    * past Work-first order): each is recounted in a root transaction of its own once the caller
    * commits, unless the caller already locked it through this boundary.
    */
-  recountAfterCommit(workIds: readonly WorkId[]): void;
+  recountAfterCommit(owners: OwnerLocks): void;
 };
 
 const WORKS_NOTICE_STATE = {};
@@ -85,8 +101,11 @@ type WorksNoticeState = {
   touchedWorkIds: Set<WorkId>;
   /** Works locked through the boundary: their pending count is reconciled once, at commit. */
   reconcileWorkIds: Set<WorkId>;
-  /** Works changed but not locked: recounted after commit unless locked by then. */
+  /** Lineages locked through the boundary: their branches' counts are reconciled at commit. */
+  reconcileRootIds: Set<string>;
+  /** Owners changed but not locked: recounted after commit unless locked by then. */
   recountWorkIds: Set<WorkId>;
+  recountRootIds: Set<string>;
   pendingWorkIdsByProject: Map<string, Set<WorkId>>;
 };
 
@@ -103,13 +122,17 @@ export function createWorkProjectionMutation(input: {
     create: () => ({
       touchedWorkIds: new Set(),
       reconcileWorkIds: new Set(),
+      reconcileRootIds: new Set(),
       recountWorkIds: new Set(),
+      recountRootIds: new Set(),
       pendingWorkIdsByProject: new Map(),
     }),
     fork: (parent) => ({
       touchedWorkIds: new Set(parent.touchedWorkIds),
       reconcileWorkIds: new Set(parent.reconcileWorkIds),
+      reconcileRootIds: new Set(parent.reconcileRootIds),
       recountWorkIds: new Set(parent.recountWorkIds),
+      recountRootIds: new Set(parent.recountRootIds),
       pendingWorkIdsByProject: new Map(
         [...parent.pendingWorkIdsByProject].map(([projectId, workIds]) => [
           projectId,
@@ -120,7 +143,9 @@ export function createWorkProjectionMutation(input: {
     merge(parent, child) {
       for (const workId of child.touchedWorkIds) parent.touchedWorkIds.add(workId);
       for (const workId of child.reconcileWorkIds) parent.reconcileWorkIds.add(workId);
+      for (const root of child.reconcileRootIds) parent.reconcileRootIds.add(root);
       for (const workId of child.recountWorkIds) parent.recountWorkIds.add(workId);
+      for (const root of child.recountRootIds) parent.recountRootIds.add(root);
       for (const [projectId, childWorkIds] of child.pendingWorkIdsByProject) {
         const parentWorkIds = parent.pendingWorkIdsByProject.get(projectId) ?? new Set<WorkId>();
         for (const workId of childWorkIds) parentWorkIds.add(workId);
@@ -130,7 +155,11 @@ export function createWorkProjectionMutation(input: {
     },
     async beforeCommit(state) {
       const unlocked = [...state.recountWorkIds].filter((id) => !state.reconcileWorkIds.has(id));
-      if (unlocked.length) runAfterDrizzleCommit(() => recountInRoot(unlocked.sort()));
+      const unlockedRoots = [...state.recountRootIds].filter(
+        (root) => !state.reconcileRootIds.has(root),
+      );
+      if (unlocked.length || unlockedRoots.length)
+        runAfterDrizzleCommit(() => recountInRoot(unlocked.sort(), unlockedRoots.sort()));
       await reconcilePendingCounts(state);
       if (state.pendingWorkIdsByProject.size === 0) return;
       const projectIds = [...state.pendingWorkIdsByProject.keys()].sort();
@@ -142,10 +171,10 @@ export function createWorkProjectionMutation(input: {
     },
   };
 
-  async function recountInRoot(workIds: WorkId[]): Promise<void> {
+  async function recountInRoot(workIds: WorkId[], lineages: string[]): Promise<void> {
     try {
       await runInRootDrizzleTransaction(input.db, () =>
-        mutation.mutate({ works: workIds }, async () => undefined),
+        mutation.mutate({ works: workIds, lineages }, async () => undefined),
       );
     } catch (error) {
       // The next mutation of these Works reconciles their counts again.
@@ -154,7 +183,7 @@ export function createWorkProjectionMutation(input: {
           level: "error",
           source: "projects.work_projection",
           name: "recount.failed",
-          payload: { workIds, ...unknownToEventPayload(error) },
+          payload: { workIds, lineages, ...unknownToEventPayload(error) },
         });
     }
   }
@@ -184,22 +213,70 @@ export function createWorkProjectionMutation(input: {
   }
 
   /**
-   * Under the Work locks `lockWriteSet` took, which serialize reconciles of one Work: counts once
-   * per transaction, however many writes it made, and writes only a count that moved. An
+   * Under the owner locks `lockWriteSet` took, which serialize reconciles of one owner: counts
+   * once per transaction, however many writes it made, and writes only a count that moved. An
    * append that commits after the count is not lost: it schedules the draft-effect
    * projection, whose `mutate` reconciles again; the stored value, not a count taken before
    * this transaction's own writes, is what that compares against.
    */
   async function reconcilePendingCounts(state: WorksNoticeState): Promise<void> {
-    if (state.reconcileWorkIds.size === 0) return;
+    if (state.reconcileWorkIds.size === 0 && state.reconcileRootIds.size === 0) return;
     const workIds = [...state.reconcileWorkIds].sort() as WorkId[];
+    const rootThreadIds = [...state.reconcileRootIds].sort();
     state.reconcileWorkIds.clear();
-    const counts = await input.pendingCounts.countPendingByWorkIds(workIds);
+    state.reconcileRootIds.clear();
+    const tx = currentDrizzleDb(input.db);
+    const branchCounts = await input.pendingCounts.countPendingByOwners({ workIds, rootThreadIds });
+    if (branchCounts.length) {
+      const counts = sql`(case ${branches.id} ${sql.join(
+        branchCounts.map(
+          ({ branchId, count }) => sql`when ${branchId}::uuid then ${count}::integer`,
+        ),
+        sql` `,
+      )} end)`;
+      const movedBranches = new Set(
+        (
+          await tx
+            .update(branches)
+            .set({ pendingDocumentCount: counts })
+            .where(
+              and(
+                inArray(
+                  branches.id,
+                  branchCounts.map(({ branchId }) => branchId),
+                ),
+                ne(branches.pendingDocumentCount, counts),
+              ),
+            )
+            .returning({ id: branches.id })
+        ).map(({ id }) => id as string),
+      );
+      input.catalog.publishDraftOwnerHints(
+        branchCounts.flatMap((row) =>
+          row.rootThreadId && movedBranches.has(row.branchId)
+            ? [
+                {
+                  type: "draft-owner-hint" as const,
+                  projectId: row.projectId,
+                  owner: draftOwnerKey({ kind: "lineage", rootThreadId: row.rootThreadId }),
+                  branchId: row.branchId,
+                  pendingDocuments: row.count,
+                },
+              ]
+            : [],
+        ),
+      );
+    }
+    if (workIds.length === 0) return;
+    // A Work's total is the sum over its active branches.
+    const totals = new Map<string, number>();
+    for (const row of branchCounts)
+      if (row.workId) totals.set(row.workId, (totals.get(row.workId) ?? 0) + row.count);
     const count = sql`(case ${works.id} ${sql.join(
-      workIds.map((workId) => sql`when ${workId}::uuid then ${counts.get(workId) ?? 0}::integer`),
+      workIds.map((workId) => sql`when ${workId}::uuid then ${totals.get(workId) ?? 0}::integer`),
       sql` `,
     )} end)`;
-    const moved = await currentDrizzleDb(input.db)
+    const moved = await tx
       .update(works)
       .set({ pendingDocumentCount: count, entityRevision: sql`${works.entityRevision} + 1` })
       .where(and(inArray(works.id, workIds), ne(works.pendingDocumentCount, count)))
@@ -218,42 +295,57 @@ export function createWorkProjectionMutation(input: {
     const drafts = await branchDraftRefs(input.db, [...draftIds]);
     if (options.requireActive) {
       if (drafts.length !== draftIds.size) throw new Error("Draft not found");
-      // A draft whose branch has no origin Work is frozen, as a missing Work is.
-      const frozen = drafts.find((row) => row.workId === null);
+      // A draft whose branch has no owner is frozen, as a missing Work is.
+      const frozen = drafts.find((row) => row.workId === null && row.rootThreadId === null);
       if (frozen) throw new WorkLifecycleUnavailableError(frozen.branchId, "missing");
     }
     const branchIds = [...new Set(set.branches ?? [])];
-    // A branch's Work is its origin Work, as the pending projection maps a branch.
-    const branchWorks =
+    // A branch's owner is its origin columns, as the pending projection maps a branch.
+    const branchOwners =
       branchIds.length === 0
         ? []
         : await currentDrizzleDb(input.db)
-            .select({ workId: branches.originWorkId })
+            .select({ workId: branches.originWorkId, rootThreadId: branches.originRootThreadId })
             .from(branches)
             .where(inArray(branches.id, branchIds));
+    const owned = [...drafts, ...branchOwners];
     const workIds = [
       ...new Set([
         ...(set.works ?? []),
-        ...branchWorks.flatMap(({ workId }) => (workId ? [workId as WorkId] : [])),
-        ...drafts.flatMap((row) => (row.workId ? [row.workId] : [])),
+        ...owned.flatMap(({ workId }) => (workId ? [workId as WorkId] : [])),
       ]),
     ].sort() as WorkId[];
+    const rootIds = [
+      ...new Set([
+        ...(set.lineages ?? []),
+        ...owned.flatMap(({ rootThreadId }) => (rootThreadId ? [rootThreadId] : [])),
+      ]),
+    ].sort();
     const db = currentDrizzleDb(input.db);
     const locked = options.seam
-      ? await lockSeamWorks(db, workIds)
-      : await lockWorksInIdOrder(db, workIds);
+      ? await lockSeamWorks(db, workIds, rootIds)
+      : {
+          works: await lockWorksInIdOrder(db, workIds),
+          lineages: await lockLineageOwners(db, rootIds),
+        };
     if (options.requireActive) {
       for (const workId of workIds) {
-        const work = locked.get(workId);
+        const work = locked.works.get(workId);
         if (work && work.state !== "active") {
           throw new WorkLifecycleUnavailableError(workId, work.state, work.handle);
         }
       }
+      for (const root of rootIds) {
+        if (!options.allowFrozenLineage && locked.lineages.get(root) !== "active") {
+          throw new LineageDraftsUnavailableError(root);
+        }
+      }
     }
-    // Whatever the caller changes under these locks, the count follows at commit.
+    // Whatever the caller changes under these locks, the counts follow at commit.
     const state = worksNoticeState();
     for (const workId of workIds) state.reconcileWorkIds.add(workId);
-    return { works: locked, drafts };
+    for (const root of rootIds) state.reconcileRootIds.add(root);
+    return { ...locked, drafts };
   }
 
   const mutation: WorkProjectionMutation = {
@@ -276,10 +368,11 @@ export function createWorkProjectionMutation(input: {
       });
     },
     lockWorks: lockWriteSet,
-    recountAfterCommit(workIds) {
-      if (!workIds.length) return;
+    recountAfterCommit({ workIds, lineageRootIds }) {
+      if (!workIds.length && !lineageRootIds.length) return;
       const state = worksNoticeState();
-      for (const workId of workIds) state.recountWorkIds.add(workId);
+      for (const workId of workIds) state.recountWorkIds.add(workId as WorkId);
+      for (const root of lineageRootIds) state.recountRootIds.add(root);
     },
     /**
      * The set's Works locked before `operation` takes any branch or draft row, so every

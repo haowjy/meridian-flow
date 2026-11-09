@@ -21,8 +21,9 @@ import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
 import {
   applyDraftClick,
+  branchOf,
+  discardBranchDrafts,
   discardCreatedDraft,
-  discardWorkDrafts,
   observeDraftClick,
   unapplyDraftClick,
 } from "@/client/api/branches-api";
@@ -159,7 +160,7 @@ export class DraftCommandOwner {
   private readonly identities = new Map<string, string>();
   private readonly records = new Map<string, DraftCommandState>();
   private readonly listeners = new Set<() => void>();
-  private readonly closingWorks = new Set<string>();
+  private readonly closingBranches = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
   private readonly reconciling = new Map<string, Promise<boolean>>();
   /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
@@ -898,16 +899,16 @@ export class DraftCommandOwner {
   }
   async discardAll(refs: readonly DraftRef[], branchId: string): Promise<CommandOutcome> {
     const ref = refs[0];
-    if (!this.active || !ref || this.closingWorks.has(ref.workId)) return { kind: "blocked" };
-    this.closingWorks.add(ref.workId);
+    if (!this.active || !ref || this.closingBranches.has(branchId)) return { kind: "blocked" };
+    this.closingBranches.add(branchId);
     const scope = new Map(refs.map((draft) => [draft.itemKey, draft]));
     for (const entry of this.entries.values())
-      if (entry.ref.projectId === ref.projectId && entry.ref.workId === ref.workId)
+      if (entry.ref.projectId === ref.projectId && branchOf(entry.ref.itemKey) === branchId)
         scope.set(entry.ref.itemKey, entry.ref);
     for (const draft of scope.values())
       this.setState(draft.itemKey, { hidden: true, failure: null });
     try {
-      const answer = await discardWorkDrafts(ref, { branchId, commandId: crypto.randomUUID() });
+      const answer = await discardBranchDrafts(ref, { branchId, commandId: crypto.randomUUID() });
       if (answer.status !== "discarded") throw new Error("Drafts no longer active");
       return { kind: "done" };
     } catch {
@@ -916,7 +917,7 @@ export class DraftCommandOwner {
           this.setState(draft.itemKey, { hidden: false, failure: { code: "discard-unknown" } });
       return { kind: "change-refused", code: "unknown" };
     } finally {
-      this.closingWorks.delete(ref.workId);
+      this.closingBranches.delete(branchId);
     }
   }
   close() {

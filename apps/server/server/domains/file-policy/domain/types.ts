@@ -2,6 +2,8 @@
  * File-policy vocabulary (file-access §2, §3, §3.1): who asks, what they ask
  * about, the facts the policy decides on, and the grant it returns.
  */
+
+import type { DraftOwner } from "@meridian/contracts";
 import type { AgentPermission } from "@meridian/contracts/agents";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { FileAccessDenial } from "@meridian/contracts/protocol";
@@ -14,6 +16,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts/runtime";
+import type { OwnerLocks } from "../../../shared/draft-owner.js";
 
 // ---------------------------------------------------------------------------
 // Levels
@@ -61,16 +64,22 @@ export interface WorkRef {
   handle: string | null;
 }
 
+/** The owner whose branch drafted writes land in, with the handle refusal copy names it by. */
+export interface BranchOwnerRef {
+  owner: DraftOwner;
+  handle: string | null;
+}
+
 /**
  * Who is asking. A person acts alone; an agent acts for the person, under its
- * delegation chain, and in draft mode routes drafted sources to `branchWork`.
+ * delegation chain, and in draft mode routes drafted sources to `branchOwner`.
  */
 export interface Principal {
   accountId: UserId;
   agent?: {
     chain: AgentChain;
-    /** The Work whose branch drafted sources land in; null outside draft mode. */
-    branchWork: WorkRef | null;
+    /** The owner whose branch drafted sources land in; null outside draft mode. */
+    branchOwner: BranchOwnerRef | null;
   };
 }
 
@@ -107,7 +116,7 @@ export type FileOwnerRef =
  */
 export type FileTarget =
   | { kind: "document"; documentId: DocumentId }
-  | { kind: "draft"; documentId: DocumentId; workId: WorkId }
+  | { kind: "draft"; documentId: DocumentId; owner: DraftOwner }
   | { kind: "restore"; documentId: DocumentId }
   | { kind: "container"; scheme: ContextUriScheme; owner: FileOwnerRef };
 
@@ -127,6 +136,19 @@ export interface FileWorkFacts {
   deleted: boolean;
 }
 
+/**
+ * A branch owner's lifecycle: a Work as `FileWorkFacts` reads it, or a lineage, which is
+ * `frozen` while no chat in it is live.
+ */
+export interface FileBranchOwnerFacts {
+  owner: DraftOwner;
+  handle: string | null;
+  isNoWork: boolean;
+  archived: boolean;
+  deleted: boolean;
+  frozen: boolean;
+}
+
 /** Everything the policy decides on, loaded by the `FileFacts` port. */
 export interface FileFacts {
   target: FileTarget;
@@ -141,7 +163,7 @@ export interface FileFacts {
   /** The document, a folder above it, or its source is deleted. */
   deleted: boolean;
   /**
-   * `deleted` is the document's own delete or its folder's, and `branchWork`'s branch has an
+   * `deleted` is the document's own delete or its folder's, and `branchOwner`'s branch has an
    * active Work draft of it, which outlived that delete (D79): a draft destination in that
    * branch stays open. Never set from the draft's pending effect.
    */
@@ -153,18 +175,18 @@ export interface FileFacts {
   self: FileNode | null;
   /** Nearest first: folders up to the source, the source, the owning Work, the project. */
   ancestors: readonly FileNode[];
-  /** The Work whose branch this access goes through, when one was asked about. */
-  branchWork?: FileWorkFacts;
+  /** The owner whose branch this access goes through, when one was asked about. */
+  branchOwner?: FileBranchOwnerFacts;
 }
 
 // ---------------------------------------------------------------------------
 // Decisions
 // ---------------------------------------------------------------------------
 
-/** Where a write lands: the live document, or a Work's branch (D20). */
+/** Where a write lands: the live document, or an owner's branch. */
 export type FileDestination =
   | { kind: "live" }
-  | { kind: "draft"; workId: WorkId; workHandle: string | null };
+  | { kind: "draft"; owner: DraftOwner; ownerHandle: string | null };
 
 /** The reason a transport reports (§9); the wire type. A deleted file is `not_found`. */
 export type { FileAccessDenial };
@@ -219,15 +241,22 @@ export function targetDocumentId(target: FileTarget): DocumentId {
 }
 
 /**
- * The named Works a write to this file locks (§5): its owner and its branch's
- * Work. The project and No Work can't be archived, so they lock nothing.
+ * The named Works and the lineages a write to this file locks (§5): its owner and its branch's
+ * owner. The project and No Work can't be archived, so they lock nothing.
  */
-export function grantWorkIds(facts: FileFacts): WorkId[] {
-  const ids: WorkId[] = [];
-  if (facts.ownerWork && !facts.ownerWork.isNoWork) ids.push(facts.ownerWork.id);
-  if (facts.branchWork && !facts.branchWork.isNoWork) ids.push(facts.branchWork.id);
-  return ids;
+export function grantOwnerLocks(facts: FileFacts): OwnerLocks {
+  const workIds: string[] = [];
+  const lineageRootIds: string[] = [];
+  if (facts.ownerWork && !facts.ownerWork.isNoWork) workIds.push(facts.ownerWork.id);
+  const branchOwner = facts.branchOwner;
+  if (branchOwner && !branchOwner.isNoWork) {
+    if (branchOwner.owner.kind === "work") workIds.push(branchOwner.owner.workId);
+    else lineageRootIds.push(branchOwner.owner.rootThreadId);
+  }
+  return { workIds, lineageRootIds };
 }
+
+export type { OwnerLocks };
 
 export function isFileAccessDenied(value: unknown): value is FileAccessDenied {
   return (

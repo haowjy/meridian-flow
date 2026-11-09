@@ -462,6 +462,7 @@ export type BranchUseRow = {
   documentId: DocumentId;
   branchId: BranchId;
   originWorkId: WorkId | null;
+  originRootThreadId: string | null;
   branchCreatedAt: Date;
 };
 
@@ -474,10 +475,12 @@ export async function loadActiveBranchUses(
     document_id: string;
     branch_id: string;
     origin_work_id: string | null;
+    origin_root_thread_id: string | null;
     branch_created_ms: number;
   }>(sql`
     SELECT c.node_id::text AS document_id, r.id::text AS branch_id,
       r.origin_work_id::text AS origin_work_id,
+      r.origin_root_thread_id::text AS origin_root_thread_id,
       (extract(epoch FROM r.created_at) * 1000)::float8 AS branch_created_ms
     FROM branch_tree_changes c JOIN branches r ON r.id = c.branch_id
     JOIN documents d ON d.id = c.node_id
@@ -488,6 +491,7 @@ export async function loadActiveBranchUses(
     documentId: row.document_id as DocumentId,
     branchId: row.branch_id as BranchId,
     originWorkId: row.origin_work_id as WorkId | null,
+    originRootThreadId: row.origin_root_thread_id,
     branchCreatedAt: new Date(Number(row.branch_created_ms)),
   }));
 }

@@ -14,7 +14,7 @@
  */
 
 import type { BranchId, UserId, WorkId } from "@meridian/contracts";
-import type { DocumentId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   currentDrizzleDb,
@@ -174,12 +174,12 @@ export function createDrizzleBranchDiscard(
   return {
     kernel,
     deferUntilCommit: deferUntilDrizzleCommit,
-    async discardLocked({ workId, kernel: input, command }) {
+    async discardLocked({ kernel: input, command }) {
       return runInDrizzleTransaction(db, async () => {
-        // The Work and the branch enter the Work boundary before the branch row and the scope
+        // The branch's owner enters the Work boundary before the branch row and the scope
         // locks (decision D17).
         return deps.workProjection.mutate(
-          { works: [workId as WorkId], branches: [input.branchId] },
+          { branches: [input.branchId] },
           async () => {
             // Claims follow the Work boundary for every command, including conflicting deliveries.
             if (
@@ -202,7 +202,7 @@ export function createDrizzleBranchDiscard(
             });
             return kernel(input);
           },
-          { seam: true, requireActive: true },
+          { seam: true, requireActive: true, allowFrozenLineage: true },
         );
       });
     },
@@ -222,10 +222,19 @@ const PURGE_ATTEMPTS = 3;
  */
 export function createDrizzleWorkBranchDisposal(
   db: Database,
-  deps: KernelDeps & { branches: Pick<Branches, "byOriginWork" | "lockActive" | "close"> },
+  deps: KernelDeps & {
+    branches: Pick<Branches, "byOriginWork" | "activeByOriginLineages" | "lockActive" | "close">;
+  },
 ): WorkBranchDisposal {
-  async function dispose(workId: WorkId): Promise<{ releasedObjects: readonly string[] }> {
-    const branchIds = (await deps.branches.byOriginWork(workId)).map((branch) => branch.id).sort();
+  async function dispose(
+    workId: WorkId,
+    lineageRootIds: readonly string[],
+  ): Promise<{ releasedObjects: readonly string[] }> {
+    const owned = [
+      ...(await deps.branches.byOriginWork(workId)),
+      ...(await deps.branches.activeByOriginLineages(lineageRootIds as ThreadId[])),
+    ];
+    const branchIds = owned.map((branch) => branch.id).sort();
     const active: BranchId[] = [];
     for (const branchId of branchIds) {
       if (await deps.branches.lockActive(branchId)) active.push(branchId);
@@ -249,7 +258,7 @@ export function createDrizzleWorkBranchDisposal(
         // The purge transaction `run` opens is each attempt's one commit scope.
         scope: NO_ATTEMPT_SCOPE,
         isMiss: (cause) => cause instanceof BranchDiscardScopeChangedError,
-        run: (attempt) => attempt.commit(() => run(() => dispose(workId))),
+        run: (attempt) => attempt.commit(() => run((roots) => dispose(workId, roots))),
         exhausted: (cause) => {
           throw cause;
         },

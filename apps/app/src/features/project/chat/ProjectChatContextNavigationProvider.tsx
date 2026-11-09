@@ -156,7 +156,7 @@ export function ProjectChatContextNavigationProvider({
         });
         if (tab)
           besideChat(tab, door.claim, undefined, {
-            workId: review.workId,
+            ownerKey: review.ownerKey,
             itemKey: review.itemKey,
           });
         return Promise.resolve();

@@ -3,7 +3,14 @@ import { type DocumentId, type ProjectId, serializeRemovalIdentity } from "@meri
 import type { DocumentTrashEntry, GetDocumentTrashResponse } from "@meridian/contracts/protocol";
 import { deletionPurgeAt, deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
-import { branches, contextSources, documents, projects, works } from "@meridian/database/schema";
+import {
+  branches,
+  contextSources,
+  documents,
+  projects,
+  threads,
+  works,
+} from "@meridian/database/schema";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -98,14 +105,16 @@ export function createDrizzleDocumentTrash(deps: {
     const held = new Map<DocumentId, Array<{ id: string; name: string }>>();
     if (ids.length) {
       const pending = await tx.execute<{ document_id: string; id: string; name: string }>(sql`
-        SELECT DISTINCT p.document_id::text, w.id::text, w.name
+        SELECT DISTINCT p.document_id::text,
+               coalesce(w.id, t.id)::text AS id, coalesce(w.name, nullif(t.title, ''), 'A chat') AS name
         FROM (${pendingDocuments(
           sql`SELECT ${branches.id} FROM ${branches} WHERE ${branches.status} = 'active'`,
         )}) p
         JOIN ${branches} b ON b.id = p.branch_id
-        JOIN ${works} w ON w.id = b.origin_work_id
-        WHERE p.document_id IN (${sql.join(ids, sql`, `)})
-        ORDER BY p.document_id::text, w.name, w.id::text
+        LEFT JOIN ${works} w ON w.id = b.origin_work_id
+        LEFT JOIN ${threads} t ON t.id = b.origin_root_thread_id
+        WHERE p.document_id IN (${sql.join(ids, sql`, `)}) AND (w.id IS NOT NULL OR t.id IS NOT NULL)
+        ORDER BY p.document_id::text, 3, 2
       `);
       for (const row of pending) {
         const documentId = row.document_id as DocumentId;

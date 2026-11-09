@@ -8,6 +8,8 @@ import type { AgentPermission } from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import { branches } from "@meridian/database/schema";
+import { and, eq, sql } from "drizzle-orm";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
 import {
@@ -525,7 +527,13 @@ export async function createProductionAppPorts(input: {
   const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, { eventSink });
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const organizeWake = createOrganizeWakeHub();
-  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals);
+  const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
+  const lineageScratch = createDrizzleLineageScratchLifecycle(
+    db,
+    contextCatalog,
+    arrivals,
+    fileAccessChanges,
+  );
   const threadRepos = createDrizzleRepositories(
     db,
     workProjectionMutation,
@@ -667,7 +675,6 @@ export async function createProductionAppPorts(input: {
     documents: documentSync,
     catalogLifecycle: contextCatalog,
   });
-  const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
   workRepo = createDrizzleProjectWorkRepository({
     db,
     removal: documentRemoval,
@@ -1186,12 +1193,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       snapshot: ports.exportSnapshot,
       pendingDrafts: {
         async count(projectId) {
-          const works = await ports.workRepo.listByProject(projectId, { lifecycle: "all" });
-          const noWork = await ports.workRepo.findNoWork(projectId);
-          return [...works, ...(noWork ? [noWork] : [])].reduce(
-            (sum, work) => sum + work.pendingDocumentCount,
-            0,
-          );
+          const [row] = await ports.db
+            .select({ count: sql<number>`coalesce(sum(${branches.pendingDocumentCount}), 0)::int` })
+            .from(branches)
+            .where(and(eq(branches.projectId, projectId), eq(branches.status, "active")));
+          return row?.count ?? 0;
         },
       },
       documents: exportDocumentsFrom(ports.documentSync),
