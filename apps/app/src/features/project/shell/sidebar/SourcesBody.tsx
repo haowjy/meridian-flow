@@ -30,9 +30,9 @@ function isTreeSource(key: SourceKey): key is TreeSource {
 
 /**
  * Write mode's sidebar: one source at a time behind a strip of tabs, so each
- * list gets the full height. The selected tab shows its name; + picks which
- * tabs the strip shows. The open document's source becomes the shown one when
- * it changes.
+ * list gets the full height. Tabs are icons named on hover; the list names its
+ * source. + picks which tabs the strip shows. The open document's source
+ * becomes the shown one when it changes.
  */
 export function SourcesBody({
   projectId,
@@ -258,19 +258,17 @@ function SourceTab({
             onDropTrash();
           }}
           className={cn(
-            "focus-ring flex h-7 shrink-0 items-center gap-1.5 rounded-md text-[13px] transition-colors",
+            "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors",
             active
-              ? "bg-sidebar-accent px-2 font-medium text-foreground"
-              : "w-7 justify-center text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",
+              ? "bg-sidebar-accent text-foreground"
+              : "text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",
             (over || lit) && "bg-sidebar-accent ring-1 ring-border-focus ring-inset",
           )}
         >
           <SourceIcon source={source} />
-          {/* The selected tab names itself; the others name themselves on hover. */}
-          {active ? <span className="whitespace-nowrap">{sourceLabel(source)}</span> : null}
         </button>
       </TooltipTrigger>
-      {active ? null : <TooltipContent side="bottom">{sourceLabel(source)}</TooltipContent>}
+      <TooltipContent side="bottom">{sourceLabel(source)}</TooltipContent>
     </Tooltip>
   );
 }
