@@ -251,7 +251,7 @@ export function createDrizzleContextStagedCreation(deps: {
         on conflict (project_id, slug) where work_id is null and root_thread_id is null and chat_thread_id is null and deleted_at is null do nothing`);
       const liveSources = nodes.length
         ? await tx
-            .select({ id: contextSources.id })
+            .select({ id: contextSources.id, area: contextSources.slug })
             .from(contextSources)
             .where(
               and(
@@ -275,10 +275,11 @@ export function createDrizzleContextStagedCreation(deps: {
       // new folder. The rows go in unranked, then the top level takes the parent's arrival rule
       // and each new folder ranks its children in name order.
       const arrivals = new Map<string, ArrivedBatch>();
+      const liveSourceOf = new Map(liveSources.map((row) => [row.area, row.id]));
       for (const row of top) {
-        const sourceId = sourceOf.get(row.area);
-        // An area provisioned just above is empty and default-ordered.
-        if (!sourceId) continue;
+        // Read after provisioning: a fresh area's top level needs ranks too.
+        const sourceId = liveSourceOf.get(row.area);
+        if (!sourceId) throw new Error("Staged area has no source");
         const key = parentKey(row.area, row.parentId);
         const batch = arrivals.get(key) ?? {
           sourceId: sourceId as ContextSourceId,

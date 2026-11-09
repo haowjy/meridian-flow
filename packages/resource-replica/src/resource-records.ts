@@ -206,7 +206,7 @@ export type ResourceDescriptor = ResourceKey & {
   canonical: ResourceLocation | null;
   /** Parent identity from the same canonical observation; absent until observed. */
   canonicalParent?: ParentRef;
-  /** Sibling rank from the same canonical observation; meaningful when its parent is manual. */
+  /** Sibling rank from the same canonical observation. */
   canonicalRank?: string | null;
   /** Per-entry namespace mutation revision from the same canonical observation. */
   canonicalLocationVersion?: string;
