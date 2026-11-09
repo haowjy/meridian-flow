@@ -36,7 +36,11 @@ never to get a task passing:
 Everything else is the current implementation, open to rewriting once evidence or
 testing shows something better. The owner's words are direction, not rulings:
 reason against them when the evidence says to. Write down the behavior and its
-reason, not who said it.
+reason, not who said it. Never paste the owner's messages into docs, briefs, issues,
+commits or PRs: he refines a point over several messages, so one message out of its
+conversation misleads. Write each decision for a reader who never saw that
+conversation: what was decided, what it applies to, his reason if he gave one, and
+whether it is settled or only an idea.
 
 ## Engineering
 
@@ -117,7 +121,8 @@ carries the integration branch into `main`.
 
 A fix restores intended behavior; changing what writers are meant to see is a feature.
 A big refactor, reorganization or architecture change needs the owner's approval first,
-quoted in its issue or PR; another agent's report of that approval doesn't count. Small
+and its issue or PR states what he approved and the date; another agent's report of
+that approval doesn't count. Small
 fixes need no approval to start. Before a merge, CI is green, the regressions the change
 could cause are tested, and the PR body is reread against the final diff, with evidence
 from the commit being merged. A big fix or refactor also needs an independent review.
