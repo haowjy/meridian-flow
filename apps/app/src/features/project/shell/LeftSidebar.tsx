@@ -6,15 +6,12 @@
  * `WorkspaceNavBody` instead.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { Settings } from "lucide-react";
 import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
 import { useSelectedContextTab } from "@/client/stores";
 import { AccountMenu } from "@/features/account/AccountMenu";
-import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { projectResourceTab } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
@@ -63,7 +60,6 @@ export function LeftSidebar({
   const chat = useChatNavigation();
   const titleEditor = useRef<TitleEditHandle>(null);
   const treePane = useRef<HTMLDivElement>(null);
-  const settings = useSettingsNavigation();
   const openDocument = useOpenProjectDocument(projectId);
   const { noWork } = useWorks(projectId);
   const scope = useWorkScope(projectId);
@@ -126,6 +122,7 @@ export function LeftSidebar({
           project={projectTitle}
           onRename={() => titleEditor.current?.start(projectTitle)}
         />
+        <AccountMenu />
       </div>
 
       <WorkScopePicker
@@ -164,18 +161,6 @@ export function LeftSidebar({
           />
         }
       />
-
-      <div className="shrink-0 border-t border-border-subtle px-2 py-1.5">
-        <button
-          type="button"
-          onClick={() => settings.open()}
-          className="focus-ring flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground"
-        >
-          <Settings className="size-4 shrink-0" aria-hidden />
-          <Trans>Settings</Trans>
-        </button>
-        <AccountMenu />
-      </div>
     </nav>
   );
 }
