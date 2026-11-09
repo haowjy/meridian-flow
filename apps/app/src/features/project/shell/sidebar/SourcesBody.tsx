@@ -1,12 +1,21 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { MoreHorizontal, Trash2 } from "lucide-react";
-import { type HTMLAttributes, type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { Check, MessageSquare, Plus, Trash2 } from "lucide-react";
+import {
+  type HTMLAttributes,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -17,19 +26,21 @@ import { schemeIcon, schemeLabel } from "../../context/context-schemes";
 import { activeDragSession } from "../../context/entry-drag/drag-session";
 import { type TreeDropTarget, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
 import { useDeleteContextEntry } from "../../context/use-delete-context-entry";
+import { ALL_SOURCES, type SourceKey, useSidebarTabs } from "./sidebar-tabs-store";
 import { TrashSource } from "./TrashSource";
 import { acceptEntryDrag, draggedEntries } from "./trash-drop";
 
-type SourceKey = "manuscript" | "kb" | "scratch" | "user" | "trash" | "unfiled";
+type TreeSource = Exclude<SourceKey, "trash" | "scratch" | "chats">;
 
-/** Fixed slots, then the "…" slot. A source picked from "…" shows in that slot, so no tab moves. */
-const TAB_SOURCES: readonly SourceKey[] = ["manuscript", "kb", "scratch", "user", "trash"];
-const OVERFLOW_SOURCES: readonly SourceKey[] = ["unfiled"];
+function isTreeSource(key: SourceKey): key is TreeSource {
+  return key !== "trash" && key !== "scratch" && key !== "chats";
+}
 
 /**
- * Write mode's sidebar: one source at a time behind icon tabs, so the
- * manuscript gets the full height. The open document's source becomes the
- * shown one when it changes.
+ * The sidebar: one source at a time behind a strip of tabs, so each list gets
+ * the full height. The selected tab shows its name; + picks which tabs the
+ * strip shows. Which list shows is independent of the mode. The open
+ * document's source becomes the shown one when it changes.
  */
 export function SourcesBody({
   projectId,
@@ -39,6 +50,7 @@ export function SourcesBody({
   activeScheme,
   activePath,
   onSelectFile,
+  chats,
   paneRef,
 }: {
   projectId: string;
@@ -52,68 +64,90 @@ export function SourcesBody({
     file: ContextFile,
     options?: { focus?: true },
   ) => void;
+  /** The Chats tab's list. */
+  chats: ReactNode;
   paneRef?: RefObject<HTMLDivElement | null>;
 }) {
-  const [source, setSource] = useState<SourceKey>("manuscript");
+  const shown = useSidebarTabs((state) => state.shown);
+  const toggle = useSidebarTabs((state) => state.toggle);
   useEffect(() => {
-    if (activeScheme && isSourceKey(activeScheme)) setSource(activeScheme);
+    void useSidebarTabs.persist.rehydrate();
+  }, []);
+  const [picked, setPicked] = useState<SourceKey>("manuscript");
+  useEffect(() => {
+    if (activeScheme && isSourceKey(activeScheme)) setPicked(activeScheme);
   }, [activeScheme]);
-  const overflowShown = OVERFLOW_SOURCES.includes(source);
+  // A tab the writer hid can't stay selected: the strip's first tab shows instead.
+  const source = shown.includes(picked) ? picked : (shown[0] ?? "manuscript");
   const deletion = useDeleteContextEntry(projectId);
 
-  const selectFrom = (key: SourceKey) => () => setSource(key);
+  const selectFrom = (key: SourceKey) => () => setPicked(key);
   const tabs = (rootIdOf?: (scheme: ProjectContextTreeScheme) => string | null) => (
-    <div
-      role="tablist"
-      aria-label={t`Sources`}
-      className="flex shrink-0 items-center gap-0.5 px-2 py-1"
-    >
-      {TAB_SOURCES.map((key) => {
-        const rootId = key !== "trash" && key !== "scratch" ? (rootIdOf?.(key) ?? null) : null;
-        return rootId && key !== "trash" && key !== "scratch" ? (
-          <TreeSourceTab
-            key={key}
-            source={key}
-            rootId={rootId}
-            active={key === source}
-            onSelect={selectFrom(key)}
-          />
-        ) : (
-          <SourceTab
-            key={key}
-            source={key}
-            active={key === source}
-            onSelect={selectFrom(key)}
-            onDropTrash={
-              key === "trash" ? () => deletion.deleteEntries(draggedEntries()) : undefined
-            }
-          />
-        );
-      })}
-      <span className="flex-1" />
+    <div className="flex shrink-0 items-center gap-1 px-2 py-1">
+      <div
+        role="tablist"
+        aria-label={t`Sources`}
+        className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {shown.map((key) => {
+          const rootId = isTreeSource(key) ? (rootIdOf?.(key) ?? null) : null;
+          return rootId && isTreeSource(key) ? (
+            <TreeSourceTab
+              key={key}
+              source={key}
+              rootId={rootId}
+              active={key === source}
+              onSelect={selectFrom(key)}
+            />
+          ) : (
+            <SourceTab
+              key={key}
+              source={key}
+              active={key === source}
+              onSelect={selectFrom(key)}
+              onDropTrash={
+                key === "trash" ? () => deletion.deleteEntries(draggedEntries()) : undefined
+              }
+            />
+          );
+        })}
+      </div>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={overflowShown}
-            aria-label={t`More sources`}
-            className={cn(
-              "focus-ring flex h-7 items-center gap-1 rounded-md px-1.5 text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",
-              overflowShown && "bg-sidebar-accent text-foreground",
-            )}
-          >
-            {overflowShown ? <SourceIcon source={source} /> : null}
-            <MoreHorizontal className="size-4" aria-hidden />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {OVERFLOW_SOURCES.map((key) => (
-            <DropdownMenuItem key={key} onSelect={selectFrom(key)}>
-              <SourceIcon source={key} />
-              {sourceLabel(key)}
-            </DropdownMenuItem>
-          ))}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger
+              aria-label={t`Choose tabs`}
+              className="focus-ring grid size-7 shrink-0 place-items-center rounded-md text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground"
+            >
+              <Plus className="size-4" aria-hidden />
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t`Choose tabs`}</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuLabel className="text-caption font-normal text-muted-foreground">
+            {t`Tabs`}
+          </DropdownMenuLabel>
+          {ALL_SOURCES.map((key) => {
+            const on = shown.includes(key);
+            return (
+              <DropdownMenuItem
+                key={key}
+                role="menuitemcheckbox"
+                aria-checked={on}
+                // The last tab stays: the sidebar always shows a list.
+                disabled={on && shown.length === 1}
+                onSelect={(event) => {
+                  event.preventDefault();
+                  toggle(key);
+                }}
+              >
+                <SourceIcon source={key} />
+                <span className="flex-1">{sourceLabel(key)}</span>
+                <Check className={cn("size-3.5", on ? "opacity-100" : "opacity-0")} aria-hidden />
+              </DropdownMenuItem>
+            );
+          })}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -123,6 +157,8 @@ export function SourcesBody({
       <TrashSource projectId={projectId} />
     ) : source === "scratch" ? (
       <ScratchSource projectId={projectId} threadId={chatThreadId} editorWorkId={editorWorkId} />
+    ) : source === "chats" ? (
+      chats
     ) : undefined;
 
   return (
@@ -134,7 +170,7 @@ export function SourcesBody({
           activeScheme={activeScheme}
           activePath={activePath}
           onSelectFile={onSelectFile}
-          only={source === "trash" || source === "scratch" ? undefined : source}
+          only={isTreeSource(source) ? source : undefined}
           tabs={tabs}
           body={other}
         />
@@ -155,7 +191,7 @@ function TreeSourceTab({
   active,
   onSelect,
 }: {
-  source: Exclude<SourceKey, "trash" | "scratch">;
+  source: TreeSource;
   rootId: string;
   active: boolean;
   onSelect: () => void;
@@ -197,6 +233,11 @@ function SourceTab({
 }) {
   const spring = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [over, setOver] = useState(false);
+  const self = useRef<HTMLButtonElement>(null);
+  // The strip scrolls when its tabs outgrow the sidebar: keep the selected one in view.
+  useEffect(() => {
+    if (active) self.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active]);
   const cancelSpring = () => {
     if (spring.current) clearTimeout(spring.current);
     spring.current = null;
@@ -207,6 +248,7 @@ function SourceTab({
     <Tooltip>
       <TooltipTrigger asChild>
         <button
+          ref={self}
           type="button"
           role="tab"
           aria-selected={active}
@@ -233,31 +275,36 @@ function SourceTab({
             onDropTrash();
           }}
           className={cn(
-            "focus-ring grid h-7 w-8 place-items-center rounded-md transition-colors",
+            "focus-ring flex h-7 shrink-0 items-center gap-1.5 rounded-md text-[13px] transition-colors",
             active
-              ? "bg-sidebar-accent text-foreground"
-              : "text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",
+              ? "bg-sidebar-accent px-2 font-medium text-foreground"
+              : "w-7 justify-center text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",
             (over || lit) && "bg-sidebar-accent ring-1 ring-border-focus ring-inset",
           )}
         >
           <SourceIcon source={source} />
+          {/* The selected tab names itself; the others name themselves on hover. */}
+          {active ? <span className="whitespace-nowrap">{sourceLabel(source)}</span> : null}
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">{sourceLabel(source)}</TooltipContent>
+      {active ? null : <TooltipContent side="bottom">{sourceLabel(source)}</TooltipContent>}
     </Tooltip>
   );
 }
 
 function SourceIcon({ source }: { source: SourceKey }) {
-  const Icon = source === "trash" ? Trash2 : schemeIcon(source);
+  const Icon =
+    source === "trash" ? Trash2 : source === "chats" ? MessageSquare : schemeIcon(source);
   return <Icon className="size-4" aria-hidden />;
 }
 
 function sourceLabel(source: SourceKey): string {
-  return source === "trash" ? t`Trash` : schemeLabel(source);
+  return source === "trash" ? t`Trash` : source === "chats" ? t`Chats` : schemeLabel(source);
 }
 
-function isSourceKey(scheme: ProjectContextTreeScheme): scheme is Exclude<SourceKey, "trash"> {
+function isSourceKey(
+  scheme: ProjectContextTreeScheme,
+): scheme is Exclude<SourceKey, "trash" | "chats"> {
   return (
     scheme === "manuscript" ||
     scheme === "kb" ||
