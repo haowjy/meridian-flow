@@ -406,8 +406,8 @@ it("does not admit an old bound document while its retained controller is inacti
           activeContextScheme="manuscript"
           activeContextPath="/a.md"
           active={false}
-          sidebarToggle={{ open: true, onExpand() {}, label: "Sidebar" }}
-          dockToggle={{ open: true, onExpand() {}, label: "Chat" }}
+          sidebarToggle={{ open: true }}
+          dockToggle={{ open: true }}
           onSelectContextPath={() => {
             throw new Error("Inactive navigation");
           }}

@@ -19,9 +19,16 @@ export type SurfaceId = (typeof PROJECT_SURFACE_IDS)[number];
 /** Desktop slot topology for the project project. */
 export type DesktopProjectSlotId = "rail-l" | "center" | "dock";
 
-/** Device-local surface prefs persisted across sessions. */
+/** The slots a writer opens, closes and resizes. */
+export type PanelSlotId = Exclude<DesktopProjectSlotId, "center">;
+
+export const MODE_KEYS = ["write", "chat"] as const;
+/** Write puts the page in the centre, Chat the conversation; each keeps its own panels. */
+export type ModeKey = (typeof MODE_KEYS)[number];
+
+/** Render-time width and collapse for one surface. */
 export type SurfacePrefs = {
-  /** Last committed expanded width in CSS pixels. */
+  /** Width of the slot the surface sits in, in CSS pixels. */
   width: number;
   /** Collapsed surfaces stay mounted in the grid parent but park offscreen. */
   collapsed: boolean;
@@ -36,7 +43,6 @@ export type SurfacePlacement = {
 /** Merged render-time layout for one surface. */
 export type SurfaceLayout = SurfacePlacement & SurfacePrefs;
 
-export type SurfacePrefsMap = Record<SurfaceId, SurfacePrefs>;
 export type SurfacePlacementMap = Record<SurfaceId, SurfacePlacement>;
 export type SurfaceLayoutMap = Record<SurfaceId, SurfaceLayout>;
 

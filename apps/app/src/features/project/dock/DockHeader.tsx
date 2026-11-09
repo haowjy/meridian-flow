@@ -1,14 +1,12 @@
 /** The desktop dock header names its document or the screen’s native occupant. */
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { PanelRightClose } from "lucide-react";
 import type { ReactNode } from "react";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { RemovedDocumentChip, RemovedNoticeSlot } from "../context/RemovedDocumentNotice";
 import { PaneTitle } from "../PaneTitle";
-import { PanelToggleButton } from "../shell/PanelToggleButton";
+import { PanelToggleSpacer } from "../shell/PanelToggleButton";
 import type { ScreenKey } from "../shell/screens";
 import { DockDocumentIdentity } from "./DockDocumentIdentity";
 import type { DockDocument } from "./dock-document-store";
@@ -38,13 +36,8 @@ export function DockHeader({
     threadId: threadId ?? "",
     seed: null,
   });
-  // px-2 matches ContextTabBar's trailing zone so the collapse toggle sits
-  // exactly where the expand toggle appears when the dock closes: collapse and
-  // expand must round-trip without moving the mouse. The document's header
-  // pins the same toggle to its first line (DocumentIdentityBar `trailing`).
-  const collapse = onClose ? (
-    <PanelToggleButton icon={PanelRightClose} label={t`Collapse dock`} onClick={onClose} />
-  ) : null;
+  // The dock's toggle is the shell's corner button; px-2 here holds its place.
+  const collapse = onClose ? <PanelToggleSpacer /> : null;
   if (dockDocument) {
     return (
       <header className="flex min-h-10 shrink-0 items-stretch">

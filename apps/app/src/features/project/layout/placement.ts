@@ -1,40 +1,33 @@
 /**
- * Pure screen-to-surface placement for the project project.
- *
- * Purpose: own the only mapping from active screen to surface slot, then merge
- * that placement with device-local prefs for render consumers. Key decision:
- * prefs never influence placement; center-slot surfaces are forced expanded in
- * the merged layout because the main pane is not collapsible; the right dock
- * has its own shared width/collapse pref that overrides the occupant
- * surface's own pref, so the dock reads as one persistent sidebar across
- * screens regardless of which surface is currently inside it.
- *
- * A transient mode can additionally HOLD slots collapsed for as long as it
- * lasts (`collapsedSlots`). The hold is render-time only and never reaches the
- * prefs store, so the writer's saved collapse state is neither captured nor
- * restored — it reappears on its own the moment the hold lifts.
- *
- * The file explorer belongs to the persistent left sidebar (`threads`), so it
- * needs no independent surface placement or preferences.
+ * Pure mode-to-surface placement for the project, merged with the mode's panel
+ * prefs for render consumers. The centre slot is never collapsible. A transient
+ * hold (`collapsedSlots`, review's prose focus) collapses slots for as long as it
+ * lasts without touching prefs, so the writer's choice returns when it lifts.
  */
 import { useMemo } from "react";
 
 import type { ScreenKey } from "../shell/screens";
 import {
-  DEFAULT_DOCK_PREFS,
-  DEFAULT_SURFACE_PREFS,
-  type SlotPrefsMap,
+  DEFAULT_MODE_PANELS,
+  DEFAULT_SLOT_WIDTHS,
+  type ModePanels,
+  type SlotWidths,
   useProjectSurfacePrefsStore,
 } from "./surface-prefs-store";
 import {
   type DesktopProjectSlotId,
+  type ModeKey,
   PROJECT_SURFACE_IDS,
   type SurfaceId,
   type SurfaceLayoutMap,
   type SurfacePlacement,
   type SurfacePlacementMap,
-  type SurfacePrefsMap,
 } from "./types";
+
+/** The mode a destination shows in; the Work page reads as Chat until it goes. */
+export function modeOf(screen: ScreenKey): ModeKey {
+  return screen === "context" ? "write" : "chat";
+}
 
 /** Stable "nothing held" argument, so the layout memo does not thrash. */
 export const NO_COLLAPSED_SLOTS: readonly DesktopProjectSlotId[] = [];
@@ -93,30 +86,23 @@ export function placeSurfaces(screen: ScreenKey): SurfacePlacementMap {
 
 export function mergeSurfaceLayout(
   placements: SurfacePlacementMap,
-  prefs: SurfacePrefsMap,
-  slotPrefs: SlotPrefsMap = { dock: DEFAULT_DOCK_PREFS },
+  widths: SlotWidths = DEFAULT_SLOT_WIDTHS,
+  panels: ModePanels = DEFAULT_MODE_PANELS.chat,
   collapsedSlots: readonly DesktopProjectSlotId[] = NO_COLLAPSED_SLOTS,
 ): SurfaceLayoutMap {
-  const dockPref = slotPrefs.dock ?? DEFAULT_DOCK_PREFS;
   const layout = {} as SurfaceLayoutMap;
   for (const surfaceId of Object.keys(placements) as SurfaceId[]) {
-    const surfacePlacement = placements[surfaceId];
-    const defaultPrefs = DEFAULT_SURFACE_PREFS[surfaceId];
-    const persistedPrefs = prefs[surfaceId];
-    const surfacePrefs = {
-      width: persistedPrefs?.width ?? defaultPrefs.width,
-      collapsed: persistedPrefs?.collapsed ?? defaultPrefs.collapsed,
-    };
-    // Whichever surface lands in the dock slot reads the shared dock pref;
-    // the surface's own width/collapsed pref is ignored while it is docked.
-    const isDocked = surfacePlacement.slot === "dock";
-    const widthPref = isDocked ? dockPref.width : surfacePrefs.width;
-    const collapsedPref = isDocked ? dockPref.collapsed : surfacePrefs.collapsed;
-    const held = surfacePlacement.slot !== null && collapsedSlots.includes(surfacePlacement.slot);
+    const { slot } = placements[surfaceId];
+    const held = slot !== null && collapsedSlots.includes(slot);
     layout[surfaceId] = {
-      ...surfacePlacement,
-      width: widthPref,
-      collapsed: surfacePlacement.slot === "center" ? false : held || collapsedPref,
+      slot,
+      width: slot === "rail-l" || slot === "dock" ? widths[slot] : 0,
+      collapsed:
+        slot === "rail-l"
+          ? held || !panels.railOpen
+          : slot === "dock"
+            ? held || !panels.dockOpen
+            : slot === null,
     };
   }
   if (import.meta.env.DEV) {
@@ -129,11 +115,12 @@ export function useProjectLayout(
   screen: ScreenKey,
   collapsedSlots: readonly DesktopProjectSlotId[] = NO_COLLAPSED_SLOTS,
 ): SurfaceLayoutMap {
-  const prefs = useProjectSurfacePrefsStore((state) => state.prefs);
-  const slotPrefs = useProjectSurfacePrefsStore((state) => state.slotPrefs);
+  const mode = modeOf(screen);
+  const widths = useProjectSurfacePrefsStore((state) => state.widths);
+  const panels = useProjectSurfacePrefsStore((state) => state.modes[mode]);
   return useMemo(
-    () => mergeSurfaceLayout(placeSurfaces(screen), prefs, slotPrefs, collapsedSlots),
-    [collapsedSlots, prefs, screen, slotPrefs],
+    () => mergeSurfaceLayout(placeSurfaces(screen), widths, panels, collapsedSlots),
+    [collapsedSlots, panels, screen, widths],
   );
 }
 

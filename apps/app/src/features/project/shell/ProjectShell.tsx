@@ -1,55 +1,46 @@
 /** ProjectShell — destination-agnostic desktop layout mechanics. */
 
 import { t } from "@lingui/core/macro";
-import { type CSSProperties, type ReactNode, type RefObject, useEffect, useRef } from "react";
+import { PanelLeft, PanelRight } from "lucide-react";
+import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
 
+import { IconButton } from "@/components/ui/icon-button";
+import { cn } from "@/lib/utils";
 import {
   type DesktopProjectSlotId,
   occupantOf,
+  type PanelSlotId,
   ResizeHandle,
   SLOT_WIDTH_BOUNDS,
   SlotGrid,
   type SlotGridSurface,
-  type SurfaceId,
   type SurfaceLayoutMap,
-  type SurfaceWidthBounds,
 } from "../layout";
 import { DESKTOP_PROJECT_SLOTS, getDesktopGridTemplate } from "../layout/desktop-layout";
 
 export type ProjectShellProps = {
-  /** Merged screen placement + persisted prefs for every stable surface. */
+  /** Merged mode placement + the mode's panel prefs for every stable surface. */
   layout: SurfaceLayoutMap;
   /** Stable surfaces rendered once as direct children of the grid container. */
   surfaces: readonly SlotGridSurface[];
-  /** Commit a resizable surface width (left rail today). */
-  onSetWidth: (surfaceId: SurfaceId, widthPx: number) => void;
-  /** Commit a surface collapse/expand preference (non-dock surfaces). */
-  onSetCollapsed: (surfaceId: SurfaceId, collapsed: boolean) => void;
-  /** Commit the shared dock width. Used by the dock resize handle. */
-  onSetDockWidth: (widthPx: number) => void;
-  /** Commit the shared dock collapsed state. Used by `]` and the dock close. */
-  onSetDockCollapsed: (collapsed: boolean) => void;
-  /** Per-surface resize bounds. Only resizable edge surfaces need entries. */
-  bounds: SurfaceWidthBounds;
+  /** Commit a panel slot's width. */
+  onSetSlotWidth: (slot: PanelSlotId, widthPx: number) => void;
+  /** Open or close a panel slot in the current mode. */
+  onSetSlotOpen: (slot: PanelSlotId, open: boolean) => void;
+  /** A running agent while the dock is closed: the dock toggle carries a spinner. */
+  dockActivity?: boolean;
   /** Minimum width (px) the main column may shrink to. */
   mainMinWidth?: number;
   /** Main column content. */
   children: ReactNode;
 };
 
-type ToggleTargets = {
-  left: SurfaceId | null;
-  right: SurfaceId | null;
-};
-
 export function ProjectShell({
   layout,
   surfaces,
-  onSetWidth,
-  onSetCollapsed,
-  onSetDockWidth,
-  onSetDockCollapsed,
-  bounds,
+  onSetSlotWidth,
+  onSetSlotOpen,
+  dockActivity = false,
   mainMinWidth,
   children,
 }: ProjectShellProps) {
@@ -59,30 +50,17 @@ export function ProjectShell({
   const dockOccupant = visibleOccupantOf(layout, "dock");
   const leftWidth = leftOccupant ? layout[leftOccupant].width : 0;
   const dockWidth = dockOccupant ? layout[dockOccupant].width : 0;
-  // A route pane goes in `center` whenever there is no center surface. Context
-  // no longer renders a route pane (the tab strip absorbs
-  // the sidebar/dock toggles in-line), so it leaves `routePaneArea` null and
-  // the center surface owns the column outright.
   const hasRoutePane = children !== null && children !== undefined && children !== false;
   const routePaneArea: "center" | null = hasRoutePane && !centerOccupant ? "center" : null;
   const desktopGridTemplate = getDesktopGridTemplate();
+  const railOpen = leftOccupant !== null;
+  const dockOpen = dockOccupant !== null;
+  const hasDock = occupantOf(layout, "dock") !== null;
 
-  // `[` toggles the left surface, `]` toggles the shared dock. Read through a
-  // ref so the listener never re-binds while still seeing fresh layout state.
-  // The dock toggle goes through onSetDockCollapsed (slot-level pref), not the
-  // occupant surface's own pref — that's what makes the dock read as one
-  // persistent sidebar across screens.
-  const toggleTargetsRef = useRef<ToggleTargets>({ left: null, right: null });
-  toggleTargetsRef.current = {
-    left: occupantOf(layout, "rail-l"),
-    right: occupantOf(layout, "dock"),
-  };
-  const layoutRef = useRef(layout);
-  layoutRef.current = layout;
-  const onSetCollapsedRef = useRef(onSetCollapsed);
-  onSetCollapsedRef.current = onSetCollapsed;
-  const onSetDockCollapsedRef = useRef(onSetDockCollapsed);
-  onSetDockCollapsedRef.current = onSetDockCollapsed;
+  // `[` toggles the sidebar, `]` the dock. Read through a ref so the listener
+  // never re-binds while still seeing fresh layout state.
+  const toggleRef = useRef({ railOpen, dockOpen, hasDock, onSetSlotOpen });
+  toggleRef.current = { railOpen, dockOpen, hasDock, onSetSlotOpen };
   useEffect(() => {
     function isEditableTarget(target: EventTarget | null): boolean {
       if (!(target instanceof HTMLElement)) return false;
@@ -93,17 +71,10 @@ export function ProjectShell({
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key !== "[" && e.key !== "]") return;
       if (isEditableTarget(e.target)) return;
-      const { left, right } = toggleTargetsRef.current;
-      if (e.key === "[") {
-        if (!left) return;
-        e.preventDefault();
-        onSetCollapsedRef.current(left, !layoutRef.current[left].collapsed);
-        return;
-      }
-      // `]` — drive the shared dock pref directly, regardless of occupant.
-      if (!right) return;
+      const current = toggleRef.current;
       e.preventDefault();
-      onSetDockCollapsedRef.current(!layoutRef.current[right].collapsed);
+      if (e.key === "[") current.onSetSlotOpen("rail-l", !current.railOpen);
+      else if (current.hasDock) current.onSetSlotOpen("dock", !current.dockOpen);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -152,76 +123,87 @@ export function ProjectShell({
       ) : null}
       {leftOccupant ? (
         <div className="relative z-20 min-h-0 overflow-visible" style={{ gridArea: "left-resize" }}>
-          <SurfaceResizeHandle
+          <ResizeHandle
             gridRef={gridRef}
             cssVariableName="--project-left-width"
-            surfaceId={leftOccupant}
             widthPx={leftWidth}
-            bounds={bounds}
-            onSetWidth={onSetWidth}
+            minWidthPx={SLOT_WIDTH_BOUNDS["rail-l"].min}
+            maxWidthPx={SLOT_WIDTH_BOUNDS["rail-l"].max}
+            onCommit={(px) => onSetSlotWidth("rail-l", px)}
             ariaLabel={t`Resize sidebar`}
           />
         </div>
       ) : null}
       {dockOccupant ? (
         <div className="relative z-20 min-h-0 overflow-visible" style={{ gridArea: "dock-resize" }}>
-          {/* Dock width is a slot-level pref — drives the shared dock sidebar
-              regardless of which surface is currently inside it. */}
           <ResizeHandle
             gridRef={gridRef}
             cssVariableName="--project-dock-width"
             widthPx={dockWidth}
-            minWidthPx={SLOT_WIDTH_BOUNDS.dock?.min ?? 280}
-            maxWidthPx={SLOT_WIDTH_BOUNDS.dock?.max ?? 520}
-            onCommit={onSetDockWidth}
-            ariaLabel={t`Resize right rail`}
+            minWidthPx={SLOT_WIDTH_BOUNDS.dock.min}
+            maxWidthPx={SLOT_WIDTH_BOUNDS.dock.max}
+            onCommit={(px) => onSetSlotWidth("dock", px)}
+            ariaLabel={t`Resize side panel`}
             dragDirection={-1}
           />
         </div>
+      ) : null}
+      {/* The two panel toggles sit at the window's top corners whether their
+          panel is open or closed, so closing and reopening never moves the
+          pointer. Headers under them keep a PanelToggleSpacer in their place. */}
+      <CornerToggle
+        side="left"
+        open={railOpen}
+        label={railOpen ? t`Close sidebar  [` : t`Open sidebar  [`}
+        onClick={() => onSetSlotOpen("rail-l", !railOpen)}
+      />
+      {hasDock ? (
+        <CornerToggle
+          side="right"
+          open={dockOpen}
+          busy={!dockOpen && dockActivity}
+          label={dockOpen ? t`Close side panel  ]` : t`Open side panel  ]`}
+          onClick={() => onSetSlotOpen("dock", !dockOpen)}
+        />
       ) : null}
     </SlotGrid>
   );
 }
 
-function SurfaceResizeHandle({
-  gridRef,
-  cssVariableName,
-  surfaceId,
-  widthPx,
-  bounds,
-  onSetWidth,
-  ariaLabel,
-  dragDirection,
-  className,
+function CornerToggle({
+  side,
+  open,
+  busy = false,
+  label,
+  onClick,
 }: {
-  gridRef: RefObject<HTMLDivElement | null>;
-  cssVariableName: `--${string}`;
-  surfaceId: SurfaceId;
-  widthPx: number;
-  bounds: SurfaceWidthBounds;
-  onSetWidth: (surfaceId: SurfaceId, widthPx: number) => void;
-  ariaLabel: string;
-  dragDirection?: 1 | -1;
-  className?: string;
+  side: "left" | "right";
+  open: boolean;
+  busy?: boolean;
+  label: string;
+  onClick: () => void;
 }) {
-  const surfaceBounds = bounds[surfaceId];
-  if (!surfaceBounds) return null;
+  const Icon = side === "left" ? PanelLeft : PanelRight;
   return (
-    <ResizeHandle
-      gridRef={gridRef}
-      cssVariableName={cssVariableName}
-      widthPx={widthPx}
-      minWidthPx={surfaceBounds.min}
-      maxWidthPx={surfaceBounds.max}
-      onCommit={(px) => onSetWidth(surfaceId, px)}
-      ariaLabel={ariaLabel}
-      dragDirection={dragDirection}
-      className={className}
-    />
+    <IconButton
+      size="sm"
+      aria-label={label}
+      aria-expanded={open}
+      title={label}
+      onClick={onClick}
+      data-panel-toggle={side}
+      className={cn(
+        "absolute top-1 z-30 text-muted-foreground hover:text-foreground",
+        side === "left" ? "left-2" : "right-2",
+      )}
+    >
+      <Icon className="size-4" aria-hidden />
+      {busy ? <span aria-hidden className="streaming-dot absolute top-1 right-1 size-1.5" /> : null}
+    </IconButton>
   );
 }
 
-function visibleOccupantOf(layout: SurfaceLayoutMap, slot: DesktopProjectSlotId): SurfaceId | null {
+function visibleOccupantOf(layout: SurfaceLayoutMap, slot: DesktopProjectSlotId) {
   const surfaceId = occupantOf(layout, slot);
   if (!surfaceId) return null;
   return layout[surfaceId].collapsed ? null : surfaceId;
