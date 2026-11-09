@@ -1,15 +1,19 @@
 /** Project-title menu shared by the desktop rail and phone drawer. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { MoreHorizontal, Upload } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { ArrowLeft, MoreHorizontal, Settings, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
+import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import { ExportProjectDialog } from "@/features/export/ExportProjectDialog";
 import { useAccountEpochSignal } from "../context/account-feature-context";
 export function ProjectMenu({
@@ -22,6 +26,7 @@ export function ProjectMenu({
   onRename(): void;
 }) {
   const accountSignal = useAccountEpochSignal();
+  const settings = useSettingsNavigation();
   const [exporting, setExporting] = useState(false);
   const selecting = useRef(false);
   return (
@@ -57,6 +62,18 @@ export function ProjectMenu({
           >
             <Upload aria-hidden className="size-3.5" />
             <Trans>Export project…</Trans>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => settings.open()}>
+            <Settings aria-hidden className="size-3.5" />
+            <Trans>Settings</Trans>
+            <DropdownMenuShortcut>Ctrl ,</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to="/">
+              <ArrowLeft aria-hidden className="size-3.5" />
+              <Trans>All projects</Trans>
+            </Link>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

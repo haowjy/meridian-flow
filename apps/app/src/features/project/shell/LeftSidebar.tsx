@@ -1,45 +1,43 @@
 /**
- * LeftSidebar — desktop project navigation combining destinations with the
- * persistent project file tree. Mobile navigation uses a drawer and its
- * context destination uses drill-in browsing.
- *
- * The project-name/collapse header and file-tree body are desktop-specific. The
- * destination and account rows come from `WorkspaceNavBody`, which the phone
- * drawer also composes.
+ * LeftSidebar — the desktop project sidebar. The header holds the project menu,
+ * then the Work scope, then the mode switch. The body follows the mode: sources
+ * in Write, chats in Chat. Both bodies stay mounted (the hidden one inert), so
+ * tree expansion and scroll survive a mode switch. The phone drawer composes
+ * `WorkspaceNavBody` instead.
  */
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { Trash2 } from "lucide-react";
 import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import { RailScratchSection } from "../chat/ChatScratch";
-import { ContextTreePanel, UserRailSection } from "../context/ContextTreePanel";
+import { useWorks } from "@/client/query/useWorks";
+import { UserRailSection } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
-import { useProjectTrashNavigation } from "../routing/ProjectNavigationContext";
+import { modeOf } from "../layout/placement";
+import { useChatNavigation } from "../routing/chat-navigation";
+import { useProjectTrashNavigation, useScreenCommands } from "../routing/ProjectNavigationContext";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleSpacer } from "./PanelToggleButton";
 import { ProjectMenu } from "./ProjectMenu";
 import type { ScreenKey } from "./screens";
+import { ChatsBody } from "./sidebar/ChatsBody";
+import { ModeSwitch } from "./sidebar/ModeSwitch";
+import { MODES } from "./sidebar/modes";
+import { SourcesBody } from "./sidebar/SourcesBody";
+import { useWorkScope } from "./sidebar/use-work-scope-stub";
+import { WorkScopePicker } from "./sidebar/WorkScopePicker";
 import type { TitleEditHandle } from "./TitleEditSlot";
-import { WorkspaceNavBody } from "./WorkspaceNavBody";
 
-/**
- * LeftSidebar — content of the persistent left project slot. The
- * `shelf-surface` slot wrapper in `desktop-layout.ts` paints the rail. One column:
- *
- *   project name (rename), Chat/Work/Editor nav, file tree, Scratch, library/account
- *
- * The collapse control sits at the far-left (same x as the PaneHeader expand
- * control) so toggling the rail never moves the cursor.
- */
 type LeftSidebarProps = {
   projectId: string;
   projectTitle: string;
   titleEdit: ProjectTitleEdit;
   activeScreen: ScreenKey;
   editorWorkId: string | null;
-  /** The chat on screen, which the Scratch control browses; null hides the control. */
+  /** The chat on screen: Scratch follows it, and its row reads as current. */
   chatThreadId: string | null;
   contextLive: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
@@ -60,8 +58,15 @@ export function LeftSidebar({
   onSelectScreen,
 }: LeftSidebarProps) {
   const trashNavigation = useProjectTrashNavigation();
+  const screenCommands = useScreenCommands();
+  const chat = useChatNavigation();
   const titleEditor = useRef<TitleEditHandle>(null);
+  const treePane = useRef<HTMLDivElement>(null);
   const openDocument = useOpenProjectDocument(projectId);
+  const { noWork } = useWorks(projectId);
+  const scope = useWorkScope(projectId, editorWorkId ?? noWork?.id ?? null);
+  const mode = modeOf(activeScreen);
+
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
     file: ContextFile,
@@ -81,7 +86,6 @@ export function LeftSidebar({
   const dockDocument = useDockDocument(activeScreen, projectId);
   const projectedDock = useDockDocumentTab(projectId, dockDocument);
   const docked = activeScreen === "chat" && !projectedDock.gone ? projectedDock.tab : null;
-  const treePane = useRef<HTMLDivElement>(null);
   const treeActiveScheme = docked
     ? docked.kind === "new"
       ? "unfiled"
@@ -92,7 +96,7 @@ export function LeftSidebar({
   return (
     <nav
       aria-label={t`Workspace navigation`}
-      className="relative flex h-full min-h-0 w-full flex-col text-foreground"
+      className="relative flex h-full min-h-0 w-full flex-col gap-2 pb-1 text-foreground"
     >
       <div className="flex h-10 shrink-0 items-center gap-1 px-2">
         <PanelToggleSpacer />
@@ -111,43 +115,73 @@ export function LeftSidebar({
         />
       </div>
 
-      <WorkspaceNavBody
-        activeScreen={activeScreen}
-        onSelectScreen={onSelectScreen}
-        presentation="desktop"
-        childrenRef={treePane}
-        onOpenTrash={() => void trashNavigation.navigate(true)}
-        user={
-          contextLive ? (
-            <UserRailSection
-              projectId={projectId}
-              editorWorkId={editorWorkId}
-              activeScheme={treeActiveScheme}
-              activePath={treeActivePath}
-              onSelectFile={handleSelectFile}
-              resizeAgainst={treePane}
-            />
-          ) : null
-        }
-        scratch={
-          <RailScratchSection
-            projectId={projectId}
-            threadId={chatThreadId}
-            editorWorkId={editorWorkId}
-            resizeAgainst={treePane}
-          />
-        }
+      <WorkScopePicker
+        projectId={projectId}
+        workId={scope.workId}
+        onPick={scope.setWorkId}
+        onManage={() => void screenCommands?.showWork()}
+      />
+      <ModeSwitch
+        mode={mode}
+        onSelect={(next) => {
+          const entry = MODES.find((candidate) => candidate.key === next);
+          if (entry && next !== mode) onSelectScreen(entry.screen);
+        }}
+      />
+
+      <div
+        className="flex min-h-0 flex-1 flex-col"
+        hidden={mode !== "write"}
+        inert={mode !== "write"}
       >
+        <SourcesBody
+          projectId={projectId}
+          editorWorkId={editorWorkId}
+          chatThreadId={chatThreadId}
+          contextLive={contextLive}
+          activeScheme={treeActiveScheme}
+          activePath={treeActivePath}
+          onSelectFile={handleSelectFile}
+          paneRef={treePane}
+        />
         {contextLive ? (
-          <ContextTreePanel
+          <UserRailSection
             projectId={projectId}
             editorWorkId={editorWorkId}
             activeScheme={treeActiveScheme}
             activePath={treeActivePath}
             onSelectFile={handleSelectFile}
+            resizeAgainst={treePane}
           />
         ) : null}
-      </WorkspaceNavBody>
+        <div className="shrink-0 px-2">
+          <button
+            type="button"
+            onClick={() => void trashNavigation.navigate(true)}
+            className="focus-ring flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground"
+          >
+            <Trash2 className="size-4 shrink-0" aria-hidden />
+            <Trans>Trash</Trans>
+          </button>
+        </div>
+      </div>
+
+      <div
+        className="flex min-h-0 flex-1 flex-col"
+        hidden={mode !== "chat"}
+        inert={mode !== "chat"}
+      >
+        <ChatsBody
+          projectId={projectId}
+          scopeWorkId={scope.workId}
+          noWorkId={noWork?.id ?? null}
+          currentThreadId={chatThreadId}
+          onOpenChat={(threadId) => void chat.openChat(threadId)}
+          onNewChat={() => void chat.openChatIndex()}
+          onShowAllChats={() => void chat.openChatIndex()}
+          onShowWork={scope.setWorkId}
+        />
+      </div>
     </nav>
   );
 }

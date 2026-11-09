@@ -124,8 +124,6 @@ export type SurfacePrefsState = {
 export type SurfacePrefsActions = {
   setSlotWidth: (slot: PanelSlotId, widthPx: number) => void;
   setSlotOpen: (mode: ModeKey, slot: PanelSlotId, open: boolean) => void;
-  /** A window too narrow for a panel closes it in every mode. */
-  closeSlotEverywhere: (slot: PanelSlotId) => void;
   setRailExpanded: (id: RailSectionId, expanded: boolean) => void;
   setRailHeight: (id: DockedRailSectionId, height: number | null) => void;
   setPropertiesOpen: (open: boolean) => void;
@@ -165,12 +163,6 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
           set((state) => ({
             modes: { ...state.modes, [mode]: { ...state.modes[mode], [openKey(slot)]: open } },
           })),
-        closeSlotEverywhere: (slot) =>
-          set((state) => {
-            const modes = { ...state.modes };
-            for (const mode of MODE_KEYS) modes[mode] = { ...modes[mode], [openKey(slot)]: false };
-            return { modes };
-          }),
         setRailExpanded: (id, expanded) =>
           set((state) => ({ railPrefs: { ...state.railPrefs, [`${id}Expanded`]: expanded } })),
         setRailHeight: (id, height) =>
@@ -238,7 +230,6 @@ export function useProjectSurfacePrefsActions(): SurfacePrefsActions {
     useShallow((state) => ({
       setSlotWidth: state.setSlotWidth,
       setSlotOpen: state.setSlotOpen,
-      closeSlotEverywhere: state.closeSlotEverywhere,
       setRailExpanded: state.setRailExpanded,
       setRailHeight: state.setRailHeight,
       setPropertiesOpen: state.setPropertiesOpen,
