@@ -50,7 +50,7 @@ export function WorkScopePicker({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md border border-border-subtle bg-background/40 px-2 text-left text-[13px] hover:bg-background/70 data-[state=open]:rounded-b-none data-[state=open]:border-border data-[state=open]:border-b-transparent data-[state=open]:bg-popover"
+          className="focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md border border-border-subtle bg-popover/50 px-2 text-left text-[13px] hover:bg-popover data-[state=open]:rounded-b-none data-[state=open]:border-border data-[state=open]:border-b-transparent data-[state=open]:bg-popover"
         >
           <Layers className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
           {scoped || noWorkScoped ? (
