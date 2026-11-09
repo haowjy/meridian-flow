@@ -38,7 +38,8 @@ export function RailPaneHeader({
       data-rail-pane-header
       className={cn(
         "relative mx-2 flex h-7 items-center rounded-md transition-colors",
-        onExpandedChange && "hover:bg-sidebar-accent/50",
+        // A header that can't collapse names the whole list, so it stays put while the rows scroll.
+        onExpandedChange ? "hover:bg-sidebar-accent/50" : "sticky top-0 z-20 bg-sidebar",
       )}
     >
       {onExpandedChange ? (
