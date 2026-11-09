@@ -486,9 +486,14 @@ function SchemeSection({
           <div className={pane ? "min-h-0 overflow-y-auto overflow-x-hidden pb-1" : undefined}>
             {catalog && importedTree && env ? (
               <TreeEnvProvider value={env}>
-                <TreeGroup depth={1}>
-                  <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
-                </TreeGroup>
+                {/* Alone in its tab, the rows are the list itself: no indent or guide under the header. */}
+                {fill ? (
+                  <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={0} />
+                ) : (
+                  <TreeGroup depth={1}>
+                    <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
+                  </TreeGroup>
+                )}
               </TreeEnvProvider>
             ) : null}
             {/* The status line never waits on rows: a load that is still running and a
@@ -501,7 +506,7 @@ function SchemeSection({
                 role="status"
                 aria-live="polite"
                 className="py-1.5 pr-2 text-xs text-ink-subtle"
-                style={{ paddingLeft: rowPaddingLeft(1) }}
+                style={{ paddingLeft: rowPaddingLeft(fill ? 0 : 1) }}
               >
                 <Trans>Loading files…</Trans>
               </p>
