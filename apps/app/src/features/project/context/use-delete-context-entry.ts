@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from "react";
 import { useAccountResourceReplica, useOptionalRemovedNotices } from "./account-feature-context";
 import type { DeleteTarget } from "./ContextEntryActions";
+import type { DragEntry } from "./entry-drag/entry";
 import { runDelete } from "./entry-drag/entry-failure";
 
 export function useDeleteContextEntry(projectId: string) {
@@ -18,5 +19,13 @@ export function useDeleteContextEntry(projectId: string) {
       ),
     [notices, projectId, resources],
   );
-  return useMemo(() => ({ requestDelete }), [requestDelete]);
+  /** Deletes dragged rows at once: a drop onto Trash. */
+  const deleteEntries = useCallback(
+    (entries: readonly DragEntry[]) => {
+      for (const { ref, name } of entries)
+        void runDelete({ resources, projectId, notices }, { kind: ref.kind, id: ref.id, name });
+    },
+    [notices, projectId, resources],
+  );
+  return useMemo(() => ({ requestDelete, deleteEntries }), [requestDelete, deleteEntries]);
 }

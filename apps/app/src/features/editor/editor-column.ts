@@ -41,7 +41,7 @@ import { cn } from "@/lib/utils";
  * toolbar has.
  */
 export const editorColumnChrome =
-  "mx-auto w-full max-w-3xl px-4 @md:pr-8 @md:pl-12 @2xl:px-14 @3xl:px-16";
+  "mx-auto w-full max-w-4xl px-4 @md:pr-8 @md:pl-12 @2xl:px-14 @3xl:px-16";
 
 /**
  * Fill chain for `EditorContent`, so the ProseMirror
@@ -88,11 +88,11 @@ export function editorProseClass(toolbar: "docked" | "none"): string {
   return cn(
     "prose-tokens document-prose min-h-full shrink-0",
     // Padding percentages resolve against the parent's width: the pane. The
-    // trailing padding also holds the reading measure (68ch less the old 2.5rem
+    // trailing padding also holds the reading measure (76ch less the old 2.5rem
     // of padding either side) where the pane is wider than it.
     "[--prose-lead:3rem] [--prose-trail:2rem] @2xl:[--prose-lead:3.5rem] @2xl:[--prose-trail:3.5rem] @3xl:[--prose-lead:4rem] @3xl:[--prose-trail:4rem]",
-    "pl-[calc(max(0px,(100%-48rem)/2)+var(--prose-lead))]",
-    "pr-[max(calc(max(0px,(100%-48rem)/2)+var(--prose-trail)),calc(100%-max(0px,(100%-48rem)/2)-var(--prose-lead)-68ch+5rem))]",
+    "pl-[calc(max(0px,(100%-56rem)/2)+var(--prose-lead))]",
+    "pr-[max(calc(max(0px,(100%-56rem)/2)+var(--prose-trail)),calc(100%-max(0px,(100%-56rem)/2)-var(--prose-lead)-76ch+5rem))]",
     editorProseScrollPastEnd,
     toolbar === "docked" ? "pt-4" : "pt-6 md:pt-8",
   );

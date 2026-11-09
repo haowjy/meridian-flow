@@ -87,7 +87,10 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
             selectedId={selectedId}
             states={states}
             onSelect={(documentId) => void navigate(documentId, { replace: true })}
-            onRestore={restore}
+            onRestore={(entry, afterRestore) => {
+              void navigate(entry.documentId, { replace: true });
+              restore(entry, afterRestore);
+            }}
             showHeading
             className="w-72 shrink-0 border-r border-border-subtle bg-muted pt-4"
           />
@@ -238,7 +241,7 @@ function PhoneTrashContent({
   );
 }
 
-function TrashListPane({
+export function TrashListPane({
   entries,
   query,
   selectedId,
@@ -258,7 +261,6 @@ function TrashListPane({
   showHeading?: boolean;
 }) {
   const now = useMinuteClock();
-  const { navigate } = useProjectTrashNavigation();
   return (
     <aside className={cn("min-h-0 overflow-y-auto", className)}>
       {showHeading ? (
@@ -286,7 +288,6 @@ function TrashListPane({
               state={states.get(entry.documentId)}
               onOpen={() => onSelect(entry.documentId)}
               onRestore={() => {
-                void navigate(entry.documentId, { replace: true });
                 onRestore(entry);
               }}
             />

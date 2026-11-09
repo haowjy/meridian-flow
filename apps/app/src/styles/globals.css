@@ -16,7 +16,7 @@
 @custom-variant dark (&:is([data-ui-theme="dark"] *));
 
 @theme {
-  --container-chat-column: 48rem;
+  --container-chat-column: 56rem;
   --container-project-screen: 60rem;
   --animate-progress-slide: progress-slide 1.4s ease-in-out infinite;
   @keyframes progress-slide {
