@@ -176,7 +176,7 @@ function VersionItem({
 }) {
   return current ? (
     <DropdownMenuItem aria-current="true" className="gap-2 font-medium">
-      <Check aria-hidden className="size-3.5 text-primary" />
+      <Check aria-hidden className="size-3.5" />
       {children}
     </DropdownMenuItem>
   ) : (
