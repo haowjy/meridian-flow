@@ -2,10 +2,11 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
-import { Check, ChevronDown, Layers } from "lucide-react";
+import { Check, ChevronsUpDown } from "lucide-react";
 import { useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
+import { WorkIdentity } from "@/components/app/WorkIdentity";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,18 +49,17 @@ export function WorkScopePicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
+        {/* A sidebar row like the rest: no box, the pressed fill while its menu is open. */}
         <button
           type="button"
-          className="focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md border border-border-subtle bg-popover/50 px-2 text-left text-[13px] hover:bg-popover data-[state=open]:rounded-b-none data-[state=open]:border-border data-[state=open]:border-b-transparent data-[state=open]:bg-popover"
+          className="focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md px-2 text-left text-[13px] hover:bg-sidebar-accent/50 data-[state=open]:bg-sidebar-accent"
         >
-          <Layers className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
           {scoped || noWorkScoped ? (
-            <span className="min-w-0 flex-1 truncate">
-              <span className="text-ink-muted">
-                <Trans>Work</Trans>
-              </span>{" "}
-              <span className="font-medium">{scoped ? scoped.name : t`None`}</span>
-            </span>
+            <WorkIdentity
+              name={scoped ? scoped.name : t`None`}
+              unavailableLabel={t`None`}
+              className="flex-1 text-[13px]"
+            />
           ) : (
             <span className="min-w-0 flex-1 truncate text-ink-muted">
               <Trans>Loading Works…</Trans>
@@ -73,15 +73,10 @@ export function WorkScopePicker({
               {pending}
             </span>
           ) : null}
-          <ChevronDown className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
+          <ChevronsUpDown className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
         </button>
       </DropdownMenuTrigger>
-      {/* Attached: the menu continues the trigger, one piece square at the seam. */}
-      <DropdownMenuContent
-        align="start"
-        sideOffset={0}
-        className="w-[var(--radix-dropdown-menu-trigger-width)] rounded-t-none border-t-0"
-      >
+      <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
         {noWork ? (
           <PickRow
             name={t`None`}
