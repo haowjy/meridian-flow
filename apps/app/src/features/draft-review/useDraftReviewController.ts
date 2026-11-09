@@ -65,7 +65,7 @@ export type DraftReviewController = {
    * another change's command are accepted and queued.
    */
   changesLocked: boolean;
-  /** The header's "Show changes". The editor paints from it (`useInlineReviewFocus`). */
+  /** The presented tab's "Show changes" (`view.showChanges`). The editor paints from it (`useInlineReviewFocus`). */
   marksVisible: boolean;
   setMarksVisible: (visible: boolean) => void;
   /**
@@ -113,12 +113,15 @@ export function useDraftReviewController({
   work,
   threadId = null,
   stateOwner,
+  marks,
 }: {
   projectId: string;
   /** The Work whose drafts this surface reviews; null scopes nothing. */
   work: Work | null;
   threadId?: string | null;
   stateOwner: DraftReviewStateOwner;
+  /** Show changes, which belongs to the presented tab's view, not to this review. */
+  marks: { visible: boolean; set: (visible: boolean) => void };
 }): DraftReviewController {
   const workId = work?.id ?? "";
   const queryClient = useQueryClient();
@@ -234,10 +237,6 @@ export function useDraftReviewController({
     [reportFocusedChange],
   );
 
-  const setMarksVisible = useCallback((visible: boolean) => {
-    dispatch({ type: "marksVisible", visible });
-  }, []);
-
   const dismissToast = useCallback((id: number) => {
     dispatch({ type: "toastDismissed", id });
   }, []);
@@ -253,8 +252,8 @@ export function useDraftReviewController({
       commandChange: commands.commandChange,
       dispositionLocked,
       changesLocked,
-      marksVisible: state.marksVisible,
-      setMarksVisible,
+      marksVisible: marks.visible,
+      setMarksVisible: marks.set,
       focus: inlineReview?.focus ?? null,
       reportFocusedChange,
       focusReviewChange,
@@ -279,8 +278,8 @@ export function useDraftReviewController({
       inlineReview,
       dispositionLocked,
       changesLocked,
-      state.marksVisible,
-      setMarksVisible,
+      marks.visible,
+      marks.set,
       inlineReview?.focus,
       reportFocusedChange,
       focusReviewChange,
