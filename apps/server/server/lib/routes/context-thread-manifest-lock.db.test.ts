@@ -136,7 +136,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         schema.pendingNotices,
         schema.agentEditWidCounters,
         schema.draftWriteJournal,
-        schema.pushLineage,
         schema.documentDrafts,
         schema.documentYjsCheckpoints,
         schema.documentYjsHeads,

@@ -172,38 +172,6 @@ export const draftWriteJournal = pgTable(
   ],
 );
 
-export const pushLineage = pgTable(
-  "push_lineage",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    draftId: text("draft_id").references(() => documentDrafts.id, { onDelete: "set null" }),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    upstreamUpdateSeq: bigint("upstream_update_seq", { mode: "number" }),
-    pushedByUserId: uuid("pushed_by_user_id")
-      .$type<UserId>()
-      .references(() => users.id, { onDelete: "set null" }),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .references(() => threads.id, { onDelete: "set null" }),
-    turnId: uuid("turn_id")
-      .$type<TurnId>()
-      .references(() => turns.id, { onDelete: "set null" }),
-    idempotencyKey: text("idempotency_key").notNull(),
-    receiptId: uuid("receipt_id").notNull().default(sql`gen_random_uuid()`),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    uniqueIndex("push_lineage_idempotency").on(table.idempotencyKey),
-    index("push_lineage_document").on(table.documentId),
-    index("push_lineage_draft").on(table.draftId),
-    index("push_lineage_turn").on(table.threadId, table.turnId),
-    index("push_lineage_receipt").on(table.receiptId),
-  ],
-);
-
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
   {
