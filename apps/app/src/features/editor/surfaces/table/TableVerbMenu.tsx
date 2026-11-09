@@ -7,7 +7,7 @@
  * and the tooltip are the shared row's (`chrome/EditorMenuItem`); this file
  * only knows which verb is blocked and by what.
  *
- * The table verbs appear twice on purpose — flat under the selected table's ⋮
+ * The table verbs appear twice on purpose — flat under the selected table's ⋯
  * and as a submenu at the foot of both grip menus. Selecting a whole table is
  * a deliberate act (arrow-walk or Esc out of a cell), and the header toggle
  * should not be behind it: the grips are the surface a writer already found.
@@ -255,7 +255,7 @@ export function TableCellMenuItems({ run, states, ...table }: VerbProps) {
   );
 }
 
-/** The table's own verbs, flat. What the selected table's ⋮ shows. */
+/** The table's own verbs, flat. What the selected table's ⋯ shows. */
 export function TableMenuItems({ run, states, alignment, placement }: VerbProps) {
   return (
     <>
@@ -269,9 +269,7 @@ export function TableMenuItems({ run, states, alignment, placement }: VerbProps)
       <EditorMenuSeparator />
       <TableAlignmentItems run={run} alignment={alignment} />
       <EditorMenuSeparator />
-      <EditorMenuLabel className="text-muted-foreground text-xs">
-        {tableChromeCopy.tablePlacement()}
-      </EditorMenuLabel>
+      <EditorMenuLabel>{tableChromeCopy.tablePlacement()}</EditorMenuLabel>
       <EditorMenuRadioGroup
         value={placement}
         onValueChange={(value) => {
@@ -417,9 +415,7 @@ function TableAlignmentItems({
 }) {
   return (
     <>
-      <EditorMenuLabel className="text-muted-foreground text-xs">
-        {tableChromeCopy.textAlignment()}
-      </EditorMenuLabel>
+      <EditorMenuLabel>{tableChromeCopy.textAlignment()}</EditorMenuLabel>
       <EditorMenuRadioGroup
         value={alignment ?? ""}
         onValueChange={(value) => {

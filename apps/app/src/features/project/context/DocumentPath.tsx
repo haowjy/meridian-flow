@@ -171,7 +171,7 @@ function Crumb({
       {...drag}
       className={cn(
         classes,
-        "focus-ring hover:bg-sidebar-accent/50 hover:text-foreground data-[state=open]:bg-sidebar-accent/50 data-[state=open]:text-foreground",
+        "focus-ring hover:bg-sidebar-accent/50 hover:text-foreground popup-open:bg-dropdown-hover popup-open:text-foreground",
       )}
     >
       {children}

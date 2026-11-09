@@ -195,7 +195,7 @@ function ChangeListPopover({ header }: { header: ReviewHeaderModel }) {
           disabled={view.finished || !!view.completing}
           tooltip={changeListLabel(view.items.length)}
           data-review-secondary
-          className="size-5.5 data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground"
+          className="size-5.5"
         >
           <List aria-hidden className="size-3.5" />
         </IconButton>

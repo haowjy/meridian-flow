@@ -70,14 +70,13 @@ export function MobileCreateEntryMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        sideOffset={6}
         // Radix restores focus to the trigger when the menu closes, which
         // would beat the create row's input autofocus — the row would render
         // with focus (and the phone keyboard) stuck on the `+` button.
         // Selecting an item always opens the naming row, so the row owns the
         // next focus.
         onCloseAutoFocus={(event) => event.preventDefault()}
-        className="min-w-44 border-border bg-background shadow-md"
+        className="min-w-44"
       >
         <DropdownMenuItem className="cursor-pointer" onSelect={() => onSelect("file")}>
           <FilePlus className="size-4 text-muted-foreground" aria-hidden />

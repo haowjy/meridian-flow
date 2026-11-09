@@ -13,6 +13,8 @@ import { type KeyboardEvent, type RefObject, useRef, useState } from "react";
 import { useThreadStore } from "@/client/stores";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
+  dropdownGroupLabelClass,
+  dropdownMenuSeparatorClass,
   dropdownResultsClass,
   dropdownRowContainerClass,
   dropdownRowVariants,
@@ -22,7 +24,6 @@ import {
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { sectionLabelVariants } from "@/components/ui/section-label";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { PaneTitle } from "@/features/project/PaneTitle";
 import { relativeTime } from "@/features/project/relative-time";
@@ -137,10 +138,7 @@ export function ThreadSwitcherPopover({
         {...densityPopoverCollisionProps}
         ref={contentRef}
         align="start"
-        className={cn(
-          dropdownSurfaceVariants({ measure: "catalog", page: null }),
-          "text-tier-chat p-0",
-        )}
+        className={cn(dropdownSurfaceVariants({ measure: "catalog" }), "text-tier-chat")}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           const content = contentRef.current;
@@ -158,23 +156,21 @@ export function ThreadSwitcherPopover({
         }}
         onKeyDown={handleNavigationKeyDown}
       >
-        <div className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)]">
-          <button
-            data-switcher-focus
-            type="button"
-            className={cn(dropdownRowVariants(), "text-jade-text hover:bg-primary/10")}
-            onClick={() => {
-              focusHandoff.current = true;
-              changeOpen(false);
-              void openNewChat();
-            }}
-          >
-            <Plus aria-hidden />
-            <Trans>New chat</Trans>
-          </button>
-        </div>
+        <button
+          data-switcher-focus
+          type="button"
+          className={cn(dropdownRowVariants(), "[&_svg]:text-muted-foreground")}
+          onClick={() => {
+            focusHandoff.current = true;
+            changeOpen(false);
+            void openNewChat();
+          }}
+        >
+          <Plus aria-hidden />
+          <Trans>New chat</Trans>
+        </button>
         {showSearch ? (
-          <div className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]">
+          <div className="py-1">
             <div className="relative">
               <Search
                 className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -194,31 +190,20 @@ export function ThreadSwitcherPopover({
           </div>
         ) : null}
 
-        <div
-          className={cn(
-            dropdownResultsClass,
-            "max-h-72 px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]",
-          )}
-        >
+        <div className={dropdownMenuSeparatorClass} />
+        <div className={cn(dropdownResultsClass, "max-h-72")}>
           {filteredThreads.length === 0 ? (
-            <p className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-center text-sm text-muted-foreground">
+            <p className="px-2 py-1.5 text-center text-sm text-muted-foreground">
               <Trans>No matching chats</Trans>
             </p>
           ) : (
-            <div className="flex flex-col gap-[var(--chat-space-inline)]">
+            <div className="flex flex-col">
               {visibleWorkItems.map((group) => (
                 <section key={group.id} aria-label={showGroupHeaders ? group.name : undefined}>
                   {showGroupHeaders ? (
-                    <h3
-                      className={cn(
-                        sectionLabelVariants({ variant: "group" }),
-                        "mb-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)]",
-                      )}
-                    >
-                      {group.name}
-                    </h3>
+                    <h3 className={dropdownGroupLabelClass}>{group.name}</h3>
                   ) : null}
-                  <ul className="flex flex-col gap-[var(--chat-space-row)]">
+                  <ul className="flex flex-col">
                     {group.threadIds.map((id) => {
                       const thread = threadById.get(id);
                       if (!thread) return null;
@@ -237,7 +222,7 @@ export function ThreadSwitcherPopover({
                 </section>
               ))}
               {visibleUngrouped.length > 0 ? (
-                <ul className="flex flex-col gap-[var(--chat-space-row)]">
+                <ul className="flex flex-col">
                   {visibleUngrouped.map((thread) => (
                     <ThreadSwitchItem
                       key={thread.id}
@@ -278,9 +263,7 @@ function ThreadSwitchItem({
     <li
       className={cn(
         dropdownRowContainerClass,
-        "group flex min-w-0 items-center transition-colors",
-        "hover:bg-dropdown-hover",
-        active && "text-foreground",
+        "group flex min-w-0 items-center transition-colors hover:bg-dropdown-hover",
       )}
       data-selected={active}
     >
@@ -289,11 +272,7 @@ function ThreadSwitchItem({
         type="button"
         aria-current={active ? "page" : undefined}
         onClick={() => onSelect(thread.id)}
-        className={cn(
-          dropdownRowVariants({ interactive: false }),
-          "flex-1",
-          active ? "font-medium" : "text-ink-muted group-hover:text-foreground",
-        )}
+        className={cn(dropdownRowVariants({ interactive: false }), "flex-1")}
       >
         <span className="min-w-0 flex-1 truncate">{title}</span>
         <span className="min-w-0 max-w-24 shrink-0 truncate text-xs font-medium text-ink-muted">

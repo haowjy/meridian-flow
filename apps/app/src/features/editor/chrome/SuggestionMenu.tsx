@@ -174,7 +174,7 @@ export function SuggestionMenu({
         role="listbox"
         aria-label={label}
         data-overflow={overflow}
-        className="meridian-suggestion-menu p-1"
+        className="meridian-suggestion-menu p-1.5"
       >
         {rows.map((row, index) => {
           const active = index === activeIndex;

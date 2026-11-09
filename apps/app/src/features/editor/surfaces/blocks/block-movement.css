@@ -62,7 +62,7 @@
   color: var(--color-foreground);
 }
 
-.meridian-block-handle:focus-visible {
+:root[data-focus-keys] .meridian-block-handle:focus-visible {
   outline: 2px solid var(--color-ring);
   outline-offset: 1px;
 }

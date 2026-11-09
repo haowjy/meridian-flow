@@ -309,10 +309,7 @@ export function ComposerToolbar({
           aria-label={panel?.ariaLabel ?? t`More composer controls`}
           aria-busy={locked || activeBusy || undefined}
           data-page={panel ? panel.focus.pageId : "root"}
-          className={dropdownSurfaceVariants({
-            measure: panel?.size ?? "compact",
-            page: !panel || panel.size === "compact" ? "navigation" : "picker",
-          })}
+          className={dropdownSurfaceVariants({ measure: panel?.size ?? "compact" })}
           onEscapeKeyDown={(event) => {
             event.preventDefault();
             if (state.surface.kind === "panel")
