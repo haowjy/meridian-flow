@@ -1,47 +1,56 @@
-/** Shared restore command for the Trash list and read-only Trash view. */
+/** The restore command behind Trash's Restore action and a drag out of Trash. */
 import type { DocumentTrashEntry, ListDocumentTrashResponse } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 import { restoreContextDocuments } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import type { RestoreDestination } from "@/client/trash-restore/pending-restores";
 
 export type TrashRestoreOutcome =
   | { kind: "living"; landedAt?: string }
-  | { kind: "superseded" | "ancestor_taken" | "refused" };
+  | { kind: "superseded" | "ancestor_taken" | "refused" | "destination_unavailable" };
 
-export async function restoreTrashedDocument(
+/**
+ * Restores `entries` in one request, each to its original path or, with a destination, into it.
+ * Every entry answers on its own. Living ones leave the Trash list; a superseded one refreshes it.
+ */
+export async function restoreTrashedDocuments(
   queryClient: QueryClient,
   projectId: string,
-  entry: Pick<DocumentTrashEntry, "documentId" | "removal">,
-): Promise<TrashRestoreOutcome> {
+  entries: readonly Pick<DocumentTrashEntry, "documentId" | "removal">[],
+  destination?: RestoreDestination,
+): Promise<Map<string, TrashRestoreOutcome>> {
   const { documents } = await restoreContextDocuments(projectId, {
-    documents: [{ documentId: entry.documentId, removal: entry.removal }],
+    documents: entries.map(({ documentId, removal }) => ({ documentId, removal })),
+    ...(destination ? { destination } : {}),
   });
-  const result = documents[0];
-  if (!result) throw new Error("Restore returned no result");
-  if (result.outcome === "restored" || result.outcome === "already_living") {
+  const outcomes = new Map<string, TrashRestoreOutcome>();
+  const living: string[] = [];
+  for (const result of documents) {
+    if (result.outcome === "restored" || result.outcome === "already_living") {
+      living.push(result.documentId);
+      outcomes.set(result.documentId, {
+        kind: "living",
+        ...(result.outcome === "restored" && result.landedAt ? { landedAt: result.landedAt } : {}),
+      });
+    } else outcomes.set(result.documentId, { kind: result.outcome });
+  }
+  if (living.length > 0) {
     queryClient.setQueryData<ListDocumentTrashResponse>(
       projectQueryKeys.documentTrash(projectId),
       (current) =>
         current
           ? {
-              documents: current.documents.filter(
-                ({ documentId }) => documentId !== entry.documentId,
-              ),
+              documents: current.documents.filter(({ documentId }) => !living.includes(documentId)),
             }
           : current,
     );
-    queryClient.removeQueries({
-      queryKey: projectQueryKeys.trashedDocument(projectId, entry.documentId),
-      exact: true,
-    });
-    return {
-      kind: "living",
-      ...(result.outcome === "restored" && result.landedAt ? { landedAt: result.landedAt } : {}),
-    };
+    for (const documentId of living)
+      queryClient.removeQueries({
+        queryKey: projectQueryKeys.trashedDocument(projectId, documentId),
+        exact: true,
+      });
   }
-  if (result.outcome === "superseded") {
+  if ([...outcomes.values()].some(({ kind }) => kind === "superseded"))
     await queryClient.invalidateQueries({ queryKey: projectQueryKeys.documentTrash(projectId) });
-    return { kind: "superseded" };
-  }
-  return { kind: result.outcome === "destination_unavailable" ? "refused" : result.outcome };
+  return outcomes;
 }
