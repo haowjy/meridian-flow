@@ -8,13 +8,6 @@
 import { useMemo } from "react";
 import { create } from "zustand";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
-import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { useContextRemovalProject } from "@/features/project/context/use-context-removal-project";
-import { settleWriterClose } from "@/features/project/context/use-follow-open-document-placement";
-import type { ReviewAddress } from "@/features/project/presented-document";
-import { useOpenContextRoute } from "@/features/project/routing/ProjectNavigationContext";
-import { openDocumentInEditor } from "@/features/project/routing/use-open-document-in-editor";
 import {
   type ContextTab,
   getContextTabs,
@@ -23,7 +16,14 @@ import {
   reviewEntriesOf,
   reviewEntryOf,
   useContextTabs,
-} from "./context-tabs-store";
+} from "@/client/stores";
+import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
+import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useContextRemovalProject } from "@/features/project/context/use-context-removal-project";
+import { settleWriterClose } from "@/features/project/context/use-follow-open-document-placement";
+import type { ReviewAddress } from "@/features/project/presented-document";
+import { useOpenContextRoute } from "@/features/project/routing/ProjectNavigationContext";
+import { openDocumentInEditor } from "@/features/project/routing/use-open-document-in-editor";
 
 /** Which version of the document a tab paints. Per tab; a Work switch keeps it. */
 export type TabView = {

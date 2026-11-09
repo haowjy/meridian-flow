@@ -32,11 +32,3 @@ export {
 } from "./context-tabs-store";
 
 export { durableContextTab, parseContextTab } from "./editor-workspace-state";
-
-export {
-  type OpenDocumentTab,
-  type OpenTarget,
-  type TabView,
-  useOpenDocumentActions,
-  useOpenDocuments,
-} from "./open-documents";
