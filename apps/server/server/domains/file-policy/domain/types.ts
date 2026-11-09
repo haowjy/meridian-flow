@@ -198,18 +198,29 @@ export interface FileDecision {
   /** Set for `work_archived`: the archived Work, for refusal copy. */
   archivedWork: WorkRef | null;
   destination: FileDestination;
+  /**
+   * Whether the principal may throw this draft away: `edit` ignoring a frozen
+   * lineage, which only holds back writes that keep a draft alive.
+   */
+  discard: boolean;
 }
 
-export type FileNeed = "read" | "edit";
+export type FileNeed = "read" | "edit" | "discard";
 
 declare const fileGrantBrand: unique symbol;
 
 /**
  * Proof that a principal may `N` a target, minted only by the file-access
- * service. `FileGrant<"edit">` satisfies `FileGrant<"read">`.
+ * service. `FileGrant<"edit">` and `FileGrant<"discard">` each satisfy `FileGrant<"read">`.
  */
 export interface FileGrant<N extends FileNeed = FileNeed> {
-  readonly [fileGrantBrand]: N extends "edit" ? { read: true; edit: true } : { read: true };
+  readonly [fileGrantBrand]: N extends "edit"
+    ? { read: true; edit: true }
+    : N extends "discard"
+      ? { read: true; discard: true }
+      : { read: true };
+  /** What `confirmEdit` re-checks. */
+  readonly need: N;
   readonly principal: Principal;
   /** What was granted; `facts.target` names it. */
   readonly facts: FileFacts;

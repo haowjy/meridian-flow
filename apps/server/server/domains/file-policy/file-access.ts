@@ -62,7 +62,7 @@ export interface FileAccess {
    * would break the id order. Refused grants are returned, not thrown, so the
    * rest of the reply can commit.
    */
-  confirmEdit(grants: readonly FileGrant<"edit">[]): Promise<FileAccessDenied[]>;
+  confirmEdit(grants: readonly FileGrant<"edit" | "discard">[]): Promise<FileAccessDenied[]>;
   /**
    * The list path (§6): each listed document's decision from one facts query,
    * with an agent's drafted documents decided in its branch. A document the principal
@@ -104,8 +104,8 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       const facts = await deps.facts.load(factsRequest(principal, target));
       if (!facts) return notFound(principal, target);
       const result = await decision(principal, facts);
-      if (!atLeast(result.level, need)) return denied(principal, facts, result);
-      return mint(principal, facts, result);
+      if (!allows(result, need)) return denied(principal, facts, result);
+      return mint(principal, facts, result, need);
     },
 
     async authorizeAt(principal, target, destination, need) {
@@ -116,8 +116,9 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       if (!facts) return notFound(principal, target);
       const grants = await deps.grants.personGrants(principal.accountId, facts);
       const result = levelAt(principal, facts, grants, destination);
-      if (!atLeast(result.level, need ?? "edit")) return denied(principal, facts, result);
-      return mint(principal, facts, result);
+      const asked: FileNeed = need ?? "edit";
+      if (!allows(result, asked)) return denied(principal, facts, result);
+      return mint(principal, facts, result, asked);
     },
 
     async confirmEdit(grants) {
@@ -158,7 +159,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
         const principal = await refreshPrincipal(grant.principal, freshChain);
         const personGrants = await deps.grants.personGrants(principal.accountId, facts);
         const at = levelAt(principal, facts, personGrants, grant.destination);
-        if (!atLeast(at.level, "edit")) refused.push(denied(principal, facts, at));
+        if (!allows(at, grant.need)) refused.push(denied(principal, facts, at));
       }
       return refused;
     },
@@ -204,12 +205,18 @@ async function refreshPrincipal(
   return { ...principal, agent: { ...principal.agent, chain: await readChain(caller.threadId) } };
 }
 
+/** `confirmEdit` re-checks a grant against the need it was minted for. */
+function allows(result: FileDecision, need: FileNeed): boolean {
+  return need === "discard" ? result.discard : atLeast(result.level, need);
+}
+
 function mint<N extends FileNeed>(
   principal: Principal,
   facts: FileFacts,
   result: FileDecision,
+  need: FileNeed,
 ): FileGrant<N> {
-  return { principal, facts, destination: result.destination } as unknown as FileGrant<N>;
+  return { principal, facts, destination: result.destination, need } as unknown as FileGrant<N>;
 }
 
 function denied(principal: Principal, facts: FileFacts, result: FileDecision): FileAccessDenied {

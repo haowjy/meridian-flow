@@ -109,7 +109,11 @@ export function levelAt(
   ];
   const level = terms.reduce<FileAccessLevel>((min, term) => lowerLevel(min, term.cap), "edit");
   const limiting = level === "edit" ? undefined : terms.find((term) => term.cap === level);
+  const discard = terms
+    .filter((term) => term.limit !== "chat_frozen")
+    .every((term) => term.cap === "edit");
   return {
+    discard,
     level,
     limitedBy: limiting?.limit ?? null,
     archivedWork: limiting?.limit === "work_archived" ? (limiting.work ?? null) : null,

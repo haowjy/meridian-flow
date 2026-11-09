@@ -31,7 +31,7 @@ export class FileEditRefusedError extends Error {
  */
 export async function runWithEditGrants<T>(
   access: Pick<FileAccess, "authorize" | "confirmEdit">,
-  grants: readonly FileGrant<"edit">[],
+  grants: readonly FileGrant<"edit" | "discard">[],
   operation: () => Promise<T>,
 ): Promise<{ ok: true; value: T } | { ok: false; refusal: FileEditRefusedError }> {
   let refusal: FileEditRefusedError | undefined;
@@ -63,7 +63,7 @@ export async function runWithEditGrants<T>(
  */
 async function grantsCover(
   access: Pick<FileAccess, "authorize">,
-  grants: readonly FileGrant<"edit">[],
+  grants: readonly FileGrant<"edit" | "discard">[],
   documentIds: readonly string[],
 ): Promise<boolean> {
   const named = new Set<string>();
