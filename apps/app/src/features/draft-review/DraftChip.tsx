@@ -1,6 +1,6 @@
 /**
- * DraftChip — the version chip of a document with a pending draft, in its
- * states. Pending: "Live" on the live document. Reviewing: "Draft". Both are
+ * DraftChip — the version chip of a document, in its states. Green means a
+ * draft exists. Live: a document no Work has drafted. Pending: "Live" on the live document. Reviewing: "Draft". Both are
  * the trigger of the same version menu (`DraftSwitcher`). Same jade pill, dot,
  * chevron and box in every state, so the control the writer clicked to get in is
  * still where they look to get out.
@@ -15,9 +15,10 @@ import type { ReactNode } from "react";
 import { IDENTITY_BAR_BOX_CLASS } from "@/features/project/context/identity-bar-geometry";
 import { cn } from "@/lib/utils";
 
-export type DraftChipState = "pending" | "reviewing" | "failed";
+export type DraftChipState = "live" | "pending" | "reviewing" | "failed";
 
 const TONE: Record<DraftChipState, string> = {
+  live: "border-border-subtle text-ink-muted group-hover/chip:bg-muted group-hover/chip:text-foreground group-data-[state=open]/chip:bg-muted",
   pending: "border-primary/30 bg-primary/10 text-jade-text group-hover/chip:bg-primary/15",
   reviewing:
     "border-primary/40 bg-primary/15 text-jade-text group-hover/chip:bg-primary/20 group-data-[state=open]/chip:bg-primary/25",
@@ -53,13 +54,15 @@ export function DraftChipFace({
         TONE[state],
       )}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "size-1.5 rounded-full",
-          state === "failed" ? "bg-destructive" : "bg-primary",
-        )}
-      />
+      {state === "live" ? null : (
+        <span
+          aria-hidden
+          className={cn(
+            "size-1.5 rounded-full",
+            state === "failed" ? "bg-destructive" : "bg-primary",
+          )}
+        />
+      )}
       <span>{children}</span>
       {menu ? <ChevronDown aria-hidden className="-mr-0.5 size-3 shrink-0 opacity-70" /> : null}
     </span>

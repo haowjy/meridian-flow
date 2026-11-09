@@ -41,13 +41,8 @@ export function DocumentVersionMenu({ projectId, tab }: { projectId: string; tab
   return (
     <DropdownMenu>
       <DropdownMenuTrigger aria-label={t`Document version`} className={draftChipHitClass(false)}>
-        <DraftChipFace state="pending" menu>
+        <DraftChipFace state={hints.length > 0 ? "pending" : "live"} menu>
           <Trans>Live</Trans>
-          {hints.length > 0 ? (
-            <span className="ml-1 tabular-nums opacity-80" title={t`${hints.length} drafts`}>
-              {hints.length}
-            </span>
-          ) : null}
         </DraftChipFace>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
