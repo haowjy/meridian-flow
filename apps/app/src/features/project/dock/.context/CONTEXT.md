@@ -41,8 +41,9 @@ its own owner's Scratch.
 
 A tab carries its own `view` (Live/Draft, Show changes), `preview` flag and optional `reviewPin`,
 persisted in tab session v2 with draft-only tabs. The review controller follows the selected tab
-(`ReviewAddressOwner`): it enters, keeps or leaves the review the tab names, and only the
-focused change flows back into the pin. A launch carries `ReviewFocus`: a group id with its
+(`ReviewAddressOwner`): it enters, keeps or leaves the review the tab names. The focused change
+moves both ways: a change the writer focuses is written to the pin, and a pin that moves by itself
+(reload, shared link, Back) focuses the change it names, or the first when that change is gone. A launch carries `ReviewFocus`: a group id with its
 immutable projection frame. `FocusOpenedReview` waits for review paint and resolves only within
 that same projection. A stale frame or a persisted bare id opens without that selection.
 Launchers live in `../review-launch.tsx`.
