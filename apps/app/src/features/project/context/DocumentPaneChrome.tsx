@@ -47,7 +47,7 @@ export function DocumentPaneChrome({
       <DraftedDeleteNotice documentId={tab.documentId} />
       {/* Other Works' drafts of this document are discoverable wherever it is shown, live or
           in review. Write mode shows the hint in its tab row instead. */}
-      {reviewNotices ? null : <DocumentDraftHint projectId={projectId} tab={tab} variant="line" />}
+      {reviewNotices ? null : <DocumentDraftHint projectId={projectId} tab={tab} />}
     </>
   );
 }

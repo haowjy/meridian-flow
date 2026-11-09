@@ -23,7 +23,7 @@ export function DocumentStateSlotProvider({ children }: { children: ReactNode })
 export function DocumentStateSlotHost() {
   const slot = useContext(DocumentStateSlotContext);
   if (!slot) return null;
-  return <div ref={slot.setElement} className="flex min-w-0 items-center" />;
+  return <div ref={slot.setElement} className="ml-auto flex min-w-0 items-center" />;
 }
 
 /** Renders into the toolbar row when one is up; otherwise in place, so no state is ever lost. */
