@@ -23,7 +23,6 @@ import {
   draftWriteJournal,
   folders,
   observationFrontiers,
-  pushLineage,
   threadDocuments,
   threadShownLinks,
   turnDocumentTouches,
@@ -216,7 +215,6 @@ export async function releaseDocumentStorage(
       ),
     );
   await tx.delete(applyCommandEffects).where(inArray(applyCommandEffects.documentId, list));
-  await tx.delete(pushLineage).where(inArray(pushLineage.documentId, list));
   await tx.delete(threadShownLinks).where(inArray(threadShownLinks.documentId, list));
   await tx.delete(threadDocuments).where(inArray(threadDocuments.documentId, list));
   await tx.delete(turnDocumentTouches).where(inArray(turnDocumentTouches.documentId, list));

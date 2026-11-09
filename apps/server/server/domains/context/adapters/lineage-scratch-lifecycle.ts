@@ -69,7 +69,6 @@ export function createDrizzleLineageScratchLifecycle(
             scope: "lineage",
             name: "Scratch",
             slug: "scratch",
-            adapterType: "local",
           })
           .onConflictDoNothing()
           .returning({ id: contextSources.id });

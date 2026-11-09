@@ -174,7 +174,6 @@ export async function branchTreeWorld(
             projectId,
             name: slug,
             slug,
-            isPrimary: slug === "manuscript",
             sortOrder: index,
           })
           .returning({ id: contextSources.id });

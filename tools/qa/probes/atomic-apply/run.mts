@@ -370,7 +370,7 @@ try {
     await applied(f, c);
     assert.equal(
       (
-        await h.raw`select count(*)::int as n from push_lineage where idempotency_key=${c.request.commandId}`
+        await h.raw`select count(*)::int as n from branch_commands where id=${c.request.commandId}`
       )[0].n,
       1,
     );
@@ -456,7 +456,7 @@ try {
     }
     assert.equal(
       (
-        await h.raw`select count(*)::int as n from push_lineage where idempotency_key=${c.request.commandId}`
+        await h.raw`select count(*)::int as n from branch_commands where id=${c.request.commandId}`
       )[0].n,
       1,
     );
