@@ -179,8 +179,8 @@ While frozen:
 - the review's editor is read-only under `TrashedChatNotice` (`useDocumentFreeze`, the
   archived Work's path);
 - single changes are locked and Apply is hidden;
-- Discard draft is the server's whole-item Discard (`ends: "item"`), move or delete
-  included. The item stays in review, `discarding`, until the answer, so a refusal shows
+- Discard draft, and the chat strip's Discard, is the server's whole-item Discard
+  (`ends: "item"`), move or delete included. The item stays in review, `discarding`, until the answer, so a refusal shows
   on it. It carries the row's `updatedAt` as `draftSeenAt`, so a chat restored on another
   device and written to since refuses `draft_changed` instead of closing text the writer
   never saw. A created document's Discard in a live chat sends no fence: the writer's own
