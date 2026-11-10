@@ -3,8 +3,8 @@
  * jade button; Discard is quiet ink, never red and never a trash icon (red and the trash
  * belong to Delete). Each scope has one name everywhere (`reviewActionLabel`).
  *
- * A change's ✓ in a list row is jade ink, not a fill: the group's own Apply is the one
- * filled button, and a column of filled squares would drown it.
+ * A change's or a document's ✓ in a list row is jade ink, not a fill: the group's own Apply
+ * is the one filled button, and a column of filled squares would drown it.
  *
  * `density` picks the form: the scope's name, the bare verb, or ×/✓. Leave it unset where
  * a container measures its own fit and sets `data-density` on `[data-review-actions]`
@@ -80,7 +80,7 @@ export function ReviewActions({
           short={reviewActionLabel("apply", "change")}
           icon={applying ? <Loader2 aria-hidden className="animate-spin" /> : <Check aria-hidden />}
           busy={applying}
-          variant={scope === "change" && density === "icon" ? "row" : "default"}
+          variant={scope !== "all" && density === "icon" ? "row" : "default"}
           touch={touch}
           disabled={disabled || applyDisabled}
           onClick={onApply}

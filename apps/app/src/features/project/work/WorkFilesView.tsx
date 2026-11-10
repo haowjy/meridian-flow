@@ -1,4 +1,4 @@
-/** Work changes and ordinary Scratch, using the same nested rows as the sidebar and phone. */
+/** A Work's Scratch, using the same nested rows as the sidebar and phone. Its drafts are reviewed from the sidebar's Changes tab. */
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -20,10 +20,8 @@ import { useDeleteContextEntry } from "../context/use-delete-context-entry";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useOpenDocumentInDock } from "../dock/use-open-document-in-dock";
 import { useWorkNoteIntake } from "./use-work-note-intake";
-import { WorkChanges } from "./WorkChanges";
 import { WorkFileGroup, WorkFileGroupLoading, WorkFileGroupNote } from "./WorkFileGroup";
 import { NoteAttemptRow } from "./WorkFileRows";
-import { workFileSearch } from "./work-files-model";
 
 export function useWorkFiles(projectId: string, work: AddressableWork) {
   const scratch = useContextCatalogView(projectId, "scratch", { workId: work.id });
@@ -127,14 +125,12 @@ export function WorkFilesView({ projectId, work, search, files }: WorkFilesViewP
     [catalog, owner, files.editable],
   );
   const list = useEntryList({ projectId, areas });
-  const matchesSearch = workFileSearch(search);
   const hasRows = catalog
     ?.children(catalog.root.entryId)
     .some((node) => !visibleIds || visibleIds.has(node.entryId));
 
   return (
     <div className="min-w-0 [--row-rule-inset:--spacing(2)]">
-      <WorkChanges projectId={projectId} work={work} matchesSearch={matchesSearch} />
       <EntryList list={list}>
         <ScratchDropGroup catalogRootId={catalog?.root.entryId ?? null}>
           <WorkFileGroup label={t`Scratch`}>

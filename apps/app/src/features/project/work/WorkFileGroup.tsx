@@ -1,4 +1,4 @@
-/** One group of the Work Files tab (Changes to review, Scratch), with its placeholders. */
+/** One group of the Work Files tab (Scratch), with its placeholders. */
 import { t } from "@lingui/core/macro";
 import type { ReactNode } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
