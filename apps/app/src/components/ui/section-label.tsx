@@ -27,9 +27,9 @@ import { cn } from "@/lib/utils";
 const sectionLabelVariants = cva("text-meta uppercase", {
   variants: {
     variant: {
-      section: "font-normal tracking-section-label text-muted-foreground",
-      group: "font-semibold tracking-label text-ink-subtle",
-      status: "font-semibold tracking-status text-primary",
+      section: "font-normal tracking-caps text-muted-foreground",
+      group: "font-semibold tracking-caps text-muted-foreground",
+      status: "font-semibold tracking-caps text-primary",
     },
   },
   defaultVariants: {

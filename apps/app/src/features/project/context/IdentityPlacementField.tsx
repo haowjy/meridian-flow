@@ -275,13 +275,13 @@ export function IdentityPlacementField({
           )}
         >
           {destination ? (
-            <span aria-hidden className="shrink-0 select-none whitespace-pre text-ink-subtle">
+            <span aria-hidden className="shrink-0 select-none whitespace-pre text-muted-foreground">
               {prefix}
             </span>
           ) : null}
           <input
             ref={inputRef}
-            className="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-ink-subtle/70"
+            className="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
             aria-label={t`Document name and location`}
             value={value}
             placeholder={ghost || location.leaf}

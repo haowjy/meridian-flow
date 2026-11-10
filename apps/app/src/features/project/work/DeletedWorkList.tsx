@@ -53,7 +53,7 @@ function DeletedRow({ work, now, onRestore }: { work: Work; now: number; onResto
         <span className="block truncate text-sm font-medium text-muted-foreground">
           {work.name}
         </span>
-        <span className="block truncate text-xs text-ink-subtle">
+        <span className="block truncate text-xs text-muted-foreground">
           {days <= 1
             ? t`Less than a day left`
             : plural(days, {

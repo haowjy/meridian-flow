@@ -26,7 +26,12 @@ export function RuledList({ rows, className }: { rows: readonly RuledRow[]; clas
 /** A row's leading icon, in the row's text rank. */
 export function RowIcon({ icon: Icon, className }: { icon: LucideIcon; className?: string }) {
   return (
-    <span className={cn("grid size-[18px] shrink-0 place-items-center text-ink-subtle", className)}>
+    <span
+      className={cn(
+        "grid size-[18px] shrink-0 place-items-center text-muted-foreground",
+        className,
+      )}
+    >
       <Icon className="size-4" aria-hidden />
     </span>
   );

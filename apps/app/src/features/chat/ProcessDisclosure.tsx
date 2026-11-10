@@ -48,7 +48,7 @@ export function ProcessDisclosure({ label, toolCallIds, children }: ProcessDiscl
         className="disclosure-trigger justify-start"
       >
         <ChevronRight
-          className={cn("size-3 shrink-0 transition-transform duration-200", open && "rotate-90")}
+          className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")}
           aria-hidden
         />
         {/* The digest is short in English and not necessarily in translation;
@@ -61,7 +61,7 @@ export function ProcessDisclosure({ label, toolCallIds, children }: ProcessDiscl
         data-process-fold
         aria-hidden={!open}
         className={cn(
-          "grid transition-[grid-template-rows] duration-300 ease-out",
+          "grid transition-[grid-template-rows] duration-(--motion-duration-panel) ease-out",
           open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
         )}
       >

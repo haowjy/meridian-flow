@@ -43,7 +43,7 @@ export function CommandNotice({
   return (
     <div
       ref={footer}
-      className="flex min-h-7 [@media(pointer:coarse)]:min-h-11 flex-wrap items-center gap-x-2 gap-y-0.5 px-2 py-0.5 text-caption text-ink-muted"
+      className="flex min-h-7 [@media(pointer:coarse)]:min-h-11 flex-wrap items-center gap-x-2 gap-y-0.5 px-2 py-0.5 text-caption text-muted-foreground"
       role="status"
       data-command-notice={question ? undefined : notice?.kind}
       data-command-question={question?.kind}

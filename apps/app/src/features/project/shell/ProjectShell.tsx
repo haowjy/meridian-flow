@@ -87,8 +87,7 @@ export function ProjectShell({
       layout={layout}
       surfaces={surfaces}
       // The grid shows only in the center field's rounded top-left notch.
-      // Resolve muted here before the shelf remaps it for its own controls.
-      className="relative h-full w-full bg-muted"
+      className="relative h-full w-full bg-chrome"
       gridTemplateAreas={desktopGridTemplate.areas}
       gridTemplateColumns={desktopGridTemplate.columns}
       gridTemplateRows={desktopGridTemplate.rows}

@@ -3,14 +3,16 @@
  * (`children`), and the account row. `NavigationDrawer` owns the Sheet and
  * closes it on select; this body never needs to know it lives in one.
  */
+
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
+import { role } from "@/components/ui/roles";
 
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
-import { sidebarIcon, sidebarRole } from "../context/context-row-geometry";
+import { sidebarIcon } from "../context/context-row-geometry";
 import { useRailSwitchFailed } from "../routing/document-switch-failure";
 import { SCREENS, type ScreenKey, type ScreenMeta, screenLabel } from "./screens";
 
@@ -59,9 +61,9 @@ export function WorkspaceNavBody({
           to="/"
           className={cn(
             "focus-ring flex min-h-11 items-center gap-2 rounded-md px-2 no-underline hover:text-foreground",
-            sidebarRole.row,
-            sidebarRole.secondary,
-            sidebarRole.hover,
+            role.row,
+            role.secondary,
+            role.hover,
           )}
         >
           <ArrowLeft className={cn(sidebarIcon.action, "shrink-0")} aria-hidden />
@@ -89,10 +91,10 @@ function ScreenNavItem({
       aria-current={active ? "page" : undefined}
       className={cn(
         "focus-ring flex min-h-11 w-full items-center gap-2.5 rounded-md px-2 text-left transition-colors active:scale-[0.98]",
-        sidebarRole.row,
+        role.row,
         active
-          ? cn(sidebarRole.selected, "font-medium text-foreground")
-          : cn(sidebarRole.secondary, sidebarRole.hover, "hover:text-foreground"),
+          ? cn(role.selected, "font-medium text-foreground")
+          : cn(role.secondary, role.hover, "hover:text-foreground"),
       )}
     >
       <span className="grid size-5 place-items-center">

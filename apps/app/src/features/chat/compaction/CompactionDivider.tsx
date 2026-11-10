@@ -105,7 +105,7 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
             data-focus-landing
             // Negative margin: the hover wash grows outward, so the icon keeps
             // the edge every other divider state and the instructions align to.
-            className="focus-ring -mx-1 flex min-w-0 items-center gap-[var(--chat-space-block)] rounded-md px-1 py-1 text-ink-muted transition-colors hover:bg-sidebar-accent hover:text-foreground aria-expanded:text-foreground"
+            className="focus-ring -mx-1 flex min-w-0 items-center gap-[var(--chat-space-block)] rounded-md px-1 py-1 text-muted-foreground transition-colors hover:bg-ink-fill hover:text-foreground aria-expanded:text-foreground"
           >
             <DividerMark state={view.state} />
             <DividerLabel label={label} className="text-inherit" />
@@ -113,7 +113,7 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
         ) : (
           <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
             <DividerMark state={view.state} />
-            <DividerLabel label={label} className="text-ink-muted" />
+            <DividerLabel label={label} className="text-muted-foreground" />
           </span>
         )}
 
@@ -162,7 +162,7 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
                 <span className="w-px flex-1 bg-border" data-activity-rail />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="rounded-md bg-muted/40 px-2.5 py-1.5">
+                <div className="rounded-md bg-ink-fill px-2.5 py-1.5">
                   <Markdown variant="compact">{view.summary}</Markdown>
                 </div>
               </div>
@@ -261,7 +261,7 @@ export function DividerRule() {
 
 function DividerMark({ state }: { state: DividerView["state"] }) {
   if (state === "pending") return <span aria-hidden className="streaming-dot mx-1" />;
-  return <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />;
+  return <FoldVertical aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />;
 }
 
 function formatTokens(value: number): string {

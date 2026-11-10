@@ -127,7 +127,7 @@ export function TitleEditSlot({
           id={failureId}
           role="alert"
           className={cn(
-            "absolute top-full z-20 mt-1 rounded-md border border-border bg-popover px-2 py-1.5 text-xs font-normal text-destructive shadow-sm",
+            "absolute top-full z-20 mt-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs font-normal text-destructive shadow-float",
             failureClassName,
           )}
         >

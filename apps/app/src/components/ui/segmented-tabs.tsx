@@ -38,7 +38,7 @@ export function SegmentedTabs<T extends string>({
       role="tablist"
       aria-label={label}
       className={cn(
-        "flex shrink-0 items-center self-center rounded-lg bg-foreground/6 p-0.5",
+        "flex shrink-0 items-center self-center rounded-lg bg-ink-fill p-0.5",
         className,
       )}
     >
@@ -72,7 +72,7 @@ export function SegmentedTabs<T extends string>({
                 }
               }}
               className={cn(
-                "focus-ring inline-flex h-6 shrink-0 items-center gap-1 rounded-[calc(var(--radius-lg)-2px)] px-2.5 text-xs transition-colors [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:px-3.5 [@media(pointer:coarse)]:text-sm",
+                "focus-ring inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2.5 text-xs transition-colors [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:px-3.5 [@media(pointer:coarse)]:text-sm",
                 option.closeAction && "pr-1 [@media(pointer:coarse)]:pr-1.5",
                 active
                   ? "bg-background font-medium text-foreground"
@@ -85,7 +85,7 @@ export function SegmentedTabs<T extends string>({
                 <span
                   data-segmented-tab-close
                   aria-hidden="true"
-                  className="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground [@media(pointer:coarse)]:size-8"
+                  className="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-ink-fill-strong hover:text-foreground [@media(pointer:coarse)]:size-8"
                 >
                   {option.closeAction.icon}
                 </span>

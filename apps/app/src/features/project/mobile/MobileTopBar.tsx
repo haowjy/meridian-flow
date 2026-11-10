@@ -66,7 +66,7 @@ export function MobileTopBar({
         {balance ? <div aria-hidden className="size-11 shrink-0" /> : null}
         <div className="flex min-w-0 flex-1 flex-col items-center justify-center px-1">
           <div
-            className="max-w-full truncate text-xs leading-4 text-ink-muted"
+            className="max-w-full truncate text-xs leading-4 text-muted-foreground"
             title={projectTitle}
           >
             {projectTitle}

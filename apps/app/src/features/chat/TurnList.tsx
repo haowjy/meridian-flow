@@ -418,7 +418,7 @@ function JumpToLatestButton({
 }) {
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 flex justify-center transition-[opacity,translate] duration-200 data-[hidden=true]:translate-y-full data-[hidden=true]:opacity-0"
+      className="pointer-events-none absolute inset-x-0 flex justify-center transition-[opacity,translate] data-[hidden=true]:translate-y-full data-[hidden=true]:opacity-0"
       data-hidden={hidden}
       // `inert` makes the faded-out pill genuinely gone — unclickable, unfocusable,
       // and out of the accessibility tree — while CSS keeps animating the exit.
@@ -431,7 +431,7 @@ function JumpToLatestButton({
         variant="secondary"
         size="icon-sm"
         onClick={onClick}
-        className="pointer-events-auto rounded-full border border-border shadow-button"
+        className="pointer-events-auto rounded-full border border-border"
       >
         <ArrowDownIcon />
         <span className="sr-only">Scroll to latest</span>

@@ -27,7 +27,7 @@ export function SubagentIdentity({
       <SubagentMark
         agentName={run.agentName}
         status={run.status}
-        className={size === "card" ? undefined : "size-5 text-[10px]"}
+        className={size === "card" ? undefined : "size-5 text-meta"}
       />
       {agentLabel ?? <SubagentIdentityName run={run} />}
       {showName && run.name ? (
@@ -151,7 +151,7 @@ export function SubagentRow({
   children?: ReactNode;
   className?: string;
 }) {
-  const gap = "gap-[var(--chat-space-row)]";
+  const gap = "gap-[var(--chat-space-inline)]";
   const fill = size === "card" && "flex-1";
   const identity = identityOverride ?? <SubagentIdentity run={run} size={size} />;
   return (
@@ -190,12 +190,12 @@ export function SubagentRow({
         ) : null}
       </div>
       {detail ? (
-        <div className="mt-[var(--chat-space-row)] pl-[calc(1.5rem+var(--chat-space-row))]">
+        <div className="mt-[var(--chat-space-inline)] pl-[calc(1.5rem+var(--chat-space-inline))]">
           {detail}
         </div>
       ) : null}
       {expanded && children ? (
-        <div className="mt-[var(--chat-space-row)] pl-[calc(1.5rem+var(--chat-space-row))]">
+        <div className="mt-[var(--chat-space-inline)] pl-[calc(1.5rem+var(--chat-space-inline))]">
           {children}
         </div>
       ) : null}

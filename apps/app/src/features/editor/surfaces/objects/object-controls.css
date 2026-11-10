@@ -34,12 +34,12 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-float);
   color: var(--color-foreground);
 }
 
 .meridian-code-chip-language {
-  color: var(--color-ink-muted);
+  color: var(--color-muted-foreground);
 }
 
 .meridian-code-chip-divider {
@@ -93,8 +93,8 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  border-right: 1px solid var(--color-code-border);
-  background: var(--color-code-surface);
+  border-right: 1px solid var(--color-border);
+  background: var(--color-ink-fill);
 }
 
 .meridian-lightbox-source-text {
@@ -103,7 +103,7 @@
   padding: 0.9rem 1.1rem;
   border: 0;
   background: transparent;
-  color: var(--color-code-foreground);
+  color: var(--color-foreground);
   font-family: var(--font-mono);
   font-size: 0.78125rem;
   line-height: 1.75;
@@ -123,7 +123,7 @@
 
   .meridian-lightbox-source {
     border-right: 0;
-    border-bottom: 1px solid var(--color-code-border);
+    border-bottom: 1px solid var(--color-border);
   }
 }
 
@@ -132,10 +132,10 @@
    picture on screen is the last one that rendered. */
 .meridian-diagram-parse-note {
   padding: 0.45rem 0.65rem;
-  border: 1px solid var(--color-warning-border);
+  border: 1px solid color-mix(in oklab, var(--color-warning) 40%, transparent);
   border-radius: var(--radius-md);
-  background: var(--color-warning-bg);
-  color: var(--color-warning-foreground);
+  background: var(--color-warning-tint);
+  color: var(--color-warning-ink);
   font-size: 0.75rem;
   line-height: 1.45;
 }
@@ -162,10 +162,10 @@
   flex-direction: column;
   gap: 0.5rem;
   padding: 0.75rem 0.75rem 0.75rem 0.9rem;
-  border: 1px solid var(--color-warning-border);
+  border: 1px solid color-mix(in oklab, var(--color-warning) 40%, transparent);
   border-radius: var(--radius-md);
-  background: var(--color-warning-bg);
-  color: var(--color-warning-foreground);
+  background: var(--color-warning-tint);
+  color: var(--color-warning-ink);
 }
 
 .meridian-diagram-error-head {
@@ -247,13 +247,13 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-float);
 }
 
 .meridian-viewer-percent {
   min-width: 3.2rem;
   text-align: center;
-  color: var(--color-ink-muted);
+  color: var(--color-muted-foreground);
   font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
 }
@@ -304,7 +304,7 @@
 .meridian-object-field {
   display: grid;
   gap: 0.25rem;
-  color: var(--color-ink-muted);
+  color: var(--color-muted-foreground);
   font-size: 0.75rem;
   font-weight: 600;
 }
@@ -323,7 +323,7 @@
 }
 
 .meridian-object-field-input:focus {
-  border-color: var(--color-border-focus);
+  border-color: var(--color-focus);
   outline: none;
-  box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--color-border-focus) 24%, transparent);
+  box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--color-focus) 24%, transparent);
 }

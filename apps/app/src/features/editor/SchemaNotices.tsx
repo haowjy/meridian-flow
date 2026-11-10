@@ -89,10 +89,13 @@ function NoticeBar({
         "flex min-h-8 items-center gap-2 rounded-md border py-1 pr-1 pl-2.5 text-xs",
         tone === "error"
           ? "border-destructive-border bg-destructive-tint text-destructive"
-          : "border-border bg-muted text-ink-muted",
+          : "border-border bg-ink-fill text-muted-foreground",
       )}
     >
-      <Icon aria-hidden className={cn("size-3.5 shrink-0", tone === "info" && "text-ink-subtle")} />
+      <Icon
+        aria-hidden
+        className={cn("size-3.5 shrink-0", tone === "info" && "text-muted-foreground")}
+      />
       {/* Wraps rather than truncates on a phone: the reason is the point. */}
       <p id={labelId} className="min-w-0 flex-1">
         {children}
@@ -197,7 +200,7 @@ function SchemaRepairNotice({
           ))}
         </ol>
         <div className="flex items-center gap-3">
-          <p className="min-w-0 flex-1 text-ink-muted">
+          <p className="min-w-0 flex-1 text-muted-foreground">
             <Trans>This version of Meridian can't display it.</Trans>
           </p>
           <Button
@@ -281,7 +284,7 @@ function RemovedFragment({ repair }: { repair: SchemaRepairEvent }) {
         // The same box as a rescued passage, so it reads as its own item.
         <p
           data-schema-repair-no-text
-          className="rounded-md border border-border-subtle bg-background py-2 pr-1.5 pl-3 text-ink-muted"
+          className="rounded-md border border-border-subtle bg-background py-2 pr-1.5 pl-3 text-muted-foreground"
         >
           <Trans>This passage couldn't be recovered.</Trans>
         </p>

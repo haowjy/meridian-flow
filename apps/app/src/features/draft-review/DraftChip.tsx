@@ -18,11 +18,11 @@ import { cn } from "@/lib/utils";
 export type DraftChipState = "live" | "pending" | "reviewing" | "failed";
 
 const TONE: Record<DraftChipState, string> = {
-  live: "border-border-subtle text-ink-muted group-hover/chip:bg-muted group-hover/chip:text-foreground group-popup-open/chip:bg-dropdown-hover group-popup-open/chip:text-foreground",
-  pending: "border-primary/30 bg-primary/10 text-jade-text group-hover/chip:bg-primary/15",
+  live: "border-border-subtle text-muted-foreground group-hover/chip:bg-ink-fill group-hover/chip:text-foreground group-popup-open/chip:bg-ink-fill-strong group-popup-open/chip:text-foreground",
+  pending: "border-primary/40 bg-primary/12 text-jade-text group-hover/chip:bg-primary/12",
   reviewing:
-    "border-primary/40 bg-primary/15 text-jade-text group-hover/chip:bg-primary/20 group-popup-open/chip:bg-primary/20",
-  failed: "border-destructive/40 bg-destructive/10 text-destructive",
+    "border-primary/40 bg-primary/12 text-jade-text group-hover/chip:bg-primary/22 group-popup-open/chip:bg-primary/22",
+  failed: "border-destructive/40 bg-destructive/12 text-destructive",
 };
 
 /** The wrapper's hit area: the pill itself on desktop, a 44px target around it on a phone. */

@@ -54,7 +54,7 @@ export function ProjectLibrary() {
               </Button>
             </div>
           ) : projects === null ? (
-            <p className="mt-10 text-sm text-ink-muted" role="status">
+            <p className="mt-10 text-sm text-muted-foreground" role="status">
               <Trans>Loading projects…</Trans>
             </p>
           ) : projects.length === 0 ? (
@@ -62,7 +62,7 @@ export function ProjectLibrary() {
               <h2 className="text-xl font-semibold">
                 <Trans>No projects yet</Trans>
               </h2>
-              <p className="mt-2 text-sm text-ink-muted">
+              <p className="mt-2 text-sm text-muted-foreground">
                 <Trans>Create a project for your first book, series, or story world.</Trans>
               </p>
             </div>
@@ -91,7 +91,7 @@ export function ProjectLibrary() {
                         className="group focus-ring block rounded-xl"
                         aria-label={t`Open ${title}`}
                       >
-                        <div className="flex aspect-[4/5] items-center justify-center rounded-xl border border-border bg-card p-4 text-center transition-transform duration-200 ease-out group-hover:-translate-y-1 motion-reduce:transition-none motion-reduce:transform-none">
+                        <div className="flex aspect-[4/5] items-center justify-center rounded-xl border border-border bg-card p-4 text-center transition-transform ease-out group-hover:-translate-y-1 motion-reduce:transition-none motion-reduce:transform-none">
                           <span
                             aria-hidden
                             className="max-w-full select-none text-balance break-words text-base font-semibold leading-snug sm:text-lg"
@@ -111,7 +111,7 @@ export function ProjectLibrary() {
                             This timestamp can differ from the server's English snapshot. */}
                         <p
                           suppressHydrationWarning
-                          className="shrink-0 cursor-text select-text text-xs text-ink-muted"
+                          className="shrink-0 cursor-text select-text text-xs text-muted-foreground"
                         >
                           {t`Edited ${formatRelativeTime(project.updatedAt, now)}`}
                         </p>

@@ -228,7 +228,7 @@ function RecentDocumentContent({ item, now }: { item: AccountRecentItem; now: nu
           </span>
         ) : null}
       </span>
-      <span aria-hidden className="mt-0.5 shrink-0 text-xs tabular-nums text-ink-subtle">
+      <span aria-hidden className="mt-0.5 shrink-0 text-xs tabular-nums text-muted-foreground">
         {age}
       </span>
     </>

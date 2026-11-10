@@ -105,7 +105,7 @@ function TakeoverFrame({ labelledBy, children }: { labelledBy: string; children:
       ref={frame}
       aria-labelledby={labelledBy}
       data-ask-takeover=""
-      className="flex flex-col gap-[var(--chat-space-block)] rounded-composer-pinned border border-composer-border bg-composer-surface px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
+      className="flex flex-col gap-[var(--chat-space-block)] rounded-xl border border-border bg-card px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
     >
       {children}
     </section>
@@ -250,8 +250,8 @@ function QuestionTakeover({
             aria-pressed={picked === option.label}
             onClick={() => choose({ kind: "option", label: option.label })}
             className={cn(
-              "focus-ring flex w-full items-start gap-[var(--chat-space-block)] rounded-field border border-border-subtle bg-background px-[var(--chat-space-block)] py-[var(--chat-space-inline)] text-left transition-colors hover:border-border-focus hover:bg-accent",
-              picked === option.label && "border-border-focus bg-accent",
+              "focus-ring flex w-full items-start gap-[var(--chat-space-block)] rounded-lg border border-border-subtle bg-background px-[var(--chat-space-block)] py-[var(--chat-space-inline)] text-left transition-colors hover:border-focus hover:bg-ink-fill",
+              picked === option.label && "border-focus bg-ink-fill",
             )}
           >
             <span className="min-w-0 flex-1">
@@ -272,9 +272,9 @@ function QuestionTakeover({
       </fieldset>
       <div
         className={cn(
-          "flex items-end gap-[var(--chat-space-inline)] rounded-field border border-border-subtle bg-background py-1 pl-[var(--chat-space-block)] focus-within:border-border-focus",
+          "flex items-end gap-[var(--chat-space-inline)] rounded-lg border border-border-subtle bg-background py-1 pl-[var(--chat-space-block)] focus-within:border-focus",
           several ? "pr-[var(--chat-space-block)]" : "pr-1",
-          entry.choice?.kind === "text" && "border-border-focus",
+          entry.choice?.kind === "text" && "border-focus",
         )}
       >
         <textarea
@@ -294,7 +294,7 @@ function QuestionTakeover({
           <Button
             type="button"
             size="icon-sm"
-            className="rounded-field"
+            className="rounded-lg"
             aria-label={t`Send answer`}
             disabled={entry.choice?.kind !== "text"}
             onClick={forward}
@@ -311,7 +311,7 @@ function QuestionTakeover({
           aria-pressed={entry.choice?.kind === "skipped"}
           className={cn(
             "border border-transparent",
-            entry.choice?.kind === "skipped" && "border-border-focus bg-accent text-foreground",
+            entry.choice?.kind === "skipped" && "border-focus bg-ink-fill text-foreground",
           )}
           onClick={() => choose({ kind: "skipped" })}
         >

@@ -89,7 +89,7 @@ export const ProjectChatRow = memo(function ProjectChatRow({
       data-project-chat-row={item.id}
       // The shared inset list-row recipe: rounded hover paint inside the gutter,
       // the same ground as the chat switcher's rows.
-      className="group relative min-w-0 rounded-md px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-dropdown-hover"
+      className="group relative min-w-0 rounded-md px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-ink-fill"
       onFocusCapture={() => setFocusWithin(true)}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setFocusWithin(false);

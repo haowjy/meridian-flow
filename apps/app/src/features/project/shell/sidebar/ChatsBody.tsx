@@ -5,10 +5,11 @@ import { Layers, Plus } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
+import { role } from "@/components/ui/roles";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import { RowIcon, rowPaddingLeft } from "../../context/ContextTreeRows";
-import { contextTreeFileRowClassName, sidebarRole } from "../../context/context-row-geometry";
+import { contextTreeFileRowClassName } from "../../context/context-row-geometry";
 import { PaneHeaderActionButton } from "../../context/RailPaneHeader";
 import { SourceHint, SourcePane } from "./SourcePane";
 
@@ -106,11 +107,7 @@ export function ChatsBody({
                 <button
                   type="button"
                   onClick={onShowAllChats}
-                  className={cn(
-                    ROW_BUTTON,
-                    contextTreeFileRowClassName(false),
-                    sidebarRole.secondary,
-                  )}
+                  className={cn(ROW_BUTTON, contextTreeFileRowClassName(false), role.secondary)}
                   style={{ paddingLeft: rowPaddingLeft(1) }}
                 >
                   <Trans>Older</Trans>
@@ -136,7 +133,7 @@ export function ChatsBody({
                   <span
                     className={cn(
                       "shrink-0 pr-1",
-                      sidebarRole.rowSecondary,
+                      role.rowSecondary,
                       other.needsYou > 0 && "text-primary",
                     )}
                   >
@@ -172,7 +169,7 @@ function Group({
   if (hidden) return null;
   return (
     <section aria-label={label} className="pt-2">
-      <h3 className={cn("pr-2 pb-1 pl-3.5", sidebarRole.rowSecondary)}>{label}</h3>
+      <h3 className={cn("pr-2 pb-1 pl-3.5", role.rowSecondary)}>{label}</h3>
       {children}
     </section>
   );
@@ -209,8 +206,8 @@ function ChatRow({
         <span
           aria-hidden
           className={cn(
-            "grid size-4 shrink-0 place-items-center rounded border border-border-subtle font-medium leading-none",
-            sidebarRole.rowSecondary,
+            "grid size-4 shrink-0 place-items-center rounded-sm border border-border-subtle font-medium leading-none",
+            role.rowSecondary,
           )}
           title={thread.agentName}
         >
@@ -228,7 +225,7 @@ function StateMark({ state }: { state: RowState }) {
       <span
         role="img"
         aria-label={t`Running`}
-        className="size-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-ink-muted/25 border-t-ink-muted motion-reduce:animate-none"
+        className="size-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-border-subtle border-t-muted-foreground motion-reduce:animate-none"
       />
     );
   if (state === "needs-you")
@@ -239,7 +236,7 @@ function StateMark({ state }: { state: RowState }) {
         className="size-2 shrink-0 rounded-full bg-primary"
       />
     );
-  return <span aria-hidden className="size-2 shrink-0 rounded-full border border-ink-subtle/60" />;
+  return <span aria-hidden className="size-2 shrink-0 rounded-full border border-border" />;
 }
 
 export function groupChats(

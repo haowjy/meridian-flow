@@ -189,7 +189,7 @@ export function DrillInMenuBody({
       {action.note ? (
         <p
           id={`${noteId}-${action.key}`}
-          className="mx-1 mb-1 rounded-sm border border-warning-border bg-warning-bg px-2 py-1 text-xs text-warning-foreground"
+          className="mx-1 mb-1 rounded-sm border border-warning/40 bg-warning-tint px-2 py-1 text-xs text-warning-ink"
         >
           {action.note}
         </p>

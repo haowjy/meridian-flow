@@ -19,13 +19,14 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { role } from "@/components/ui/roles";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { cn } from "@/lib/utils";
 import { ScratchSource, useChatScratch } from "../../chat/ChatScratch";
 import { type CatalogState, ContextTreePanel } from "../../context/ContextTreePanel";
-import { sidebarIcon, sidebarRole } from "../../context/context-row-geometry";
+import { sidebarIcon } from "../../context/context-row-geometry";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../../context/context-schemes";
 import type { MoveArea } from "../../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../../context/entry-drag/use-entry-list";
@@ -274,9 +275,9 @@ function SourceTabs({
               aria-label={t`Choose tabs`}
               className={cn(
                 TAB_BUTTON,
-                sidebarRole.secondary,
-                sidebarRole.hover,
-                sidebarRole.open,
+                role.secondary,
+                role.hover,
+                role.open,
                 "hover:text-foreground",
               )}
             >
@@ -350,10 +351,10 @@ function SourceTab({
           className={cn(
             TAB_BUTTON,
             drop.dropState === "over"
-              ? sidebarRole.dropTarget
+              ? role.dropTarget
               : active
-                ? sidebarRole.selected
-                : cn(sidebarRole.secondary, sidebarRole.hover, "hover:text-foreground"),
+                ? role.selected
+                : cn(role.secondary, role.hover, "hover:text-foreground"),
           )}
         >
           <Icon className={sidebarIcon.tab} aria-hidden />

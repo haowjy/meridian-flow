@@ -11,11 +11,11 @@ export const dropdownRowVariants = cva(
         identity: "min-h-11 flex-col items-start gap-0.5 py-0.5",
       },
       interactive: {
-        true: "dropdown-focus-ring transition-colors hover:bg-dropdown-hover focus-visible:bg-dropdown-hover data-[highlighted]:bg-dropdown-hover",
+        true: "dropdown-focus-ring transition-colors hover:bg-ink-fill focus-visible:bg-ink-fill data-[highlighted]:bg-ink-fill",
         false: null,
       },
       selected: {
-        true: "bg-dropdown-hover",
+        true: "bg-ink-fill-strong",
         false: null,
       },
     },
@@ -25,13 +25,13 @@ export const dropdownRowVariants = cva(
 
 export const dropdownPageClass = "p-1.5";
 export const dropdownPanelClass =
-  "rounded-lg border border-border-subtle bg-background text-popover-foreground shadow-md dark:bg-popover";
+  "rounded-lg border border-border-subtle bg-background text-foreground shadow-float dark:bg-card";
 export const dropdownGroupLabelClass = "px-2 py-1.5 text-caption font-normal text-muted-foreground";
 
 export const dropdownMenuContentClass = `z-50 max-h-(--radix-menu-content-available-height) min-w-[8rem] overflow-x-hidden overflow-y-auto ${dropdownPanelClass} data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95`;
 
 export const dropdownMenuItemClass =
-  "relative cursor-default data-[inset]:pl-8 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 [&_svg:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:*:[svg]:text-destructive!";
+  "relative cursor-default data-[inset]:pl-8 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/12 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/12 [&_svg:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:*:[svg]:text-destructive!";
 
 export const dropdownMenuSeparatorClass = "my-1 h-px bg-border";
 
@@ -55,4 +55,4 @@ export const dropdownResultsClass = "app-scroll max-h-64";
 
 /** Lets a composite row own selected, hover, and descendant-focus geometry. */
 export const dropdownRowContainerClass =
-  "dropdown-focus-ring rounded-md has-[>:focus-visible]:bg-dropdown-hover data-[selected=true]:bg-dropdown-hover";
+  "dropdown-focus-ring rounded-md has-[>:focus-visible]:bg-ink-fill data-[selected=true]:bg-ink-fill-strong";

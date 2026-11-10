@@ -44,7 +44,7 @@ export function ModelRequestInspector({
   return (
     <div className="space-y-3">
       {retention && retention.droppedRecords > 0 ? (
-        <p className="rounded border border-border-subtle bg-muted px-3 py-2 text-meta text-muted-foreground">
+        <p className="rounded-sm border border-border-subtle bg-ink-fill px-3 py-2 text-meta text-muted-foreground">
           This capture ring has evicted {retention.droppedRecords} requests totaling{" "}
           {formatBytes(retention.droppedBytes)}. Earlier context may be unavailable.
         </p>
@@ -108,7 +108,7 @@ function ModelRequestView({
   };
 
   return (
-    <article className="overflow-hidden rounded border border-border-subtle bg-muted">
+    <article className="overflow-hidden rounded-sm border border-border-subtle bg-ink-fill">
       <header className="space-y-3 border-b border-border-subtle px-3 py-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>

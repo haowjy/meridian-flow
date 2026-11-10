@@ -179,7 +179,7 @@ function FilesDropdown({
           aria-label={t`Files`}
           aria-expanded={open}
           aria-haspopup="dialog"
-          className="focus-ring inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground popup-open:bg-dropdown-hover popup-open:text-foreground [@media(pointer:coarse)]:min-h-11"
+          className="focus-ring inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-ink-fill hover:text-foreground popup-open:bg-ink-fill-strong popup-open:text-foreground [@media(pointer:coarse)]:min-h-11"
         >
           <Paperclip className="size-3.5" aria-hidden />
           <span aria-hidden="true">
@@ -210,7 +210,10 @@ function FilesDropdown({
         }}
       >
         {continuesFrom ? (
-          <p className="px-2 py-1.5 text-sm text-ink-muted" onClickCapture={() => close(false)}>
+          <p
+            className="px-2 py-1.5 text-sm text-muted-foreground"
+            onClickCapture={() => close(false)}
+          >
             <ContinuesFrom source={continuesFrom} />
           </p>
         ) : null}
@@ -229,7 +232,7 @@ function FilesDropdown({
                 <Trans>No files attached in this chat yet.</Trans>
               </p>
             ) : (
-              <ul className="flex flex-col gap-[var(--chat-space-row)]">
+              <ul className="flex flex-col gap-[var(--chat-space-inline)]">
                 {rows.map((upload) => (
                   <UploadRow
                     key={upload.documentId}
@@ -288,7 +291,7 @@ function UploadRow({
       <div
         className={cn(
           dropdownRowContainerClass,
-          "flex min-w-0 items-center transition-colors hover:bg-dropdown-hover",
+          "flex min-w-0 items-center transition-colors hover:bg-ink-fill",
         )}
       >
         <button
@@ -310,7 +313,7 @@ function UploadRow({
                 {failure}
               </span>
             ) : (
-              <span className="flex min-w-0 justify-between gap-3 text-meta text-ink-subtle">
+              <span className="flex min-w-0 justify-between gap-3 text-meta text-muted-foreground">
                 <span className="truncate">{uploadTypeLabel(upload.fileType)}</span>
                 <span className="shrink-0 tabular-nums">{attachedAgo(upload.attachedAt, now)}</span>
               </span>

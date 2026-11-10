@@ -72,7 +72,7 @@ export function useWriteModeToolbarControl({
         <div
           role="radiogroup"
           aria-label={t`AI write mode`}
-          className="space-y-[var(--chat-space-row)]"
+          className="space-y-[var(--chat-space-inline)]"
         >
           {(["draft", "direct"] as const).map((mode) => (
             <Button

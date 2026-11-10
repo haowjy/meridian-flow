@@ -102,7 +102,7 @@ function CrumbRow({ location, browse }: { location: TabLocation; browse: Browse 
           {location.leaf}
         </span>,
         folders.length + 1,
-        "min-w-16 flex-1 text-ink-muted [@media(pointer:coarse)]:min-w-0",
+        "min-w-16 flex-1 text-muted-foreground [@media(pointer:coarse)]:min-w-0",
         subjects.leaf,
       )}
     </span>
@@ -171,7 +171,7 @@ function Crumb({
       {...drag}
       className={cn(
         classes,
-        "focus-ring hover:bg-sidebar-accent/50 hover:text-foreground popup-open:bg-dropdown-hover popup-open:text-foreground",
+        "focus-ring hover:bg-ink-fill hover:text-foreground popup-open:bg-ink-fill-strong popup-open:text-foreground",
       )}
     >
       {children}

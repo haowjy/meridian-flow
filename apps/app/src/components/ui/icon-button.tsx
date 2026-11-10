@@ -23,7 +23,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 const SIZE_TO_BUTTON = {
   xs: "icon-xs", // size-6 — dense in-row actions
   sm: "icon-sm", // size-8 — panel toggles, menu triggers
-  md: "icon", // size-9 — standalone controls
+  md: "icon", // size-8 — standalone controls
 } as const;
 
 type ButtonProps = React.ComponentProps<typeof Button>;

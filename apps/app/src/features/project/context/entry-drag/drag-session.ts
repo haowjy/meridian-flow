@@ -39,13 +39,13 @@ function endEntryDrag() {
 function setPreview(transfer: DataTransfer, entries: readonly DragEntry[]) {
   const chip = document.createElement("div");
   chip.className =
-    "pointer-events-none fixed -top-96 left-0 flex items-center gap-1.5 rounded-md border border-border bg-popover px-2.5 py-1.5 text-sm text-popover-foreground shadow-sm";
+    "pointer-events-none fixed -top-96 left-0 flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-sm text-foreground shadow-float";
   const name = document.createElement("span");
   name.textContent = entries[0]?.name ?? "";
   chip.append(name);
   if (entries.length > 1) {
     const count = document.createElement("span");
-    count.className = "rounded-full bg-secondary px-1.5 text-xs text-secondary-foreground";
+    count.className = "rounded-full bg-ink-fill px-1.5 text-xs text-foreground";
     count.textContent = `+${entries.length - 1}`;
     chip.append(count);
   }

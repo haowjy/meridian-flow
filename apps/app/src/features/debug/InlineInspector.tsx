@@ -322,7 +322,7 @@ export function InlineInspector() {
       <section
         className={cn(
           "absolute flex max-h-[20rem] w-96 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden",
-          "rounded-lg border border-border bg-background text-foreground shadow-rail-left",
+          "rounded-lg border border-border bg-background text-foreground shadow-modal",
         )}
         style={{ left: hit.x, top: hit.y }}
         aria-label="Inline inspector"
@@ -383,11 +383,11 @@ export function InlineInspector() {
                         ? "system prompt (frozen)"
                         : "system prompt (will be baked at the first turn attempt)"}
                     </p>
-                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded border border-border-subtle bg-muted p-2 font-mono text-meta text-foreground">
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-sm border border-border-subtle bg-ink-fill p-2 font-mono text-meta text-foreground">
                       {turnContextPreview.preview.systemPrompt}
                     </pre>
                   </div>
-                  <details className="rounded border border-border-subtle bg-muted p-2">
+                  <details className="rounded-sm border border-border-subtle bg-ink-fill p-2">
                     <summary className={cn(sectionLabelVariants({ variant: "group" }), "")}>
                       tools ({turnContextPreview.preview.tools.length})
                     </summary>
@@ -396,7 +396,7 @@ export function InlineInspector() {
                       className="mt-2 max-h-none border-0 bg-transparent p-0"
                     />
                   </details>
-                  <details className="rounded border border-border-subtle bg-muted p-2">
+                  <details className="rounded-sm border border-border-subtle bg-ink-fill p-2">
                     <summary className={cn(sectionLabelVariants({ variant: "group" }), "")}>
                       gateway params
                     </summary>

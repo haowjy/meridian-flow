@@ -20,7 +20,7 @@ export function PassageNotice({ documentId }: { documentId: string | null }) {
     <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4">
       <p
         role="status"
-        className="animate-in rounded-full border border-border bg-card px-3 py-1 text-caption text-ink-muted shadow-card fade-in-0 slide-in-from-top-1"
+        className="animate-in rounded-full border border-border bg-card px-3 py-1 text-caption text-muted-foreground shadow-float fade-in-0 slide-in-from-top-1"
       >
         <Trans>That passage changed after this search.</Trans>
       </p>

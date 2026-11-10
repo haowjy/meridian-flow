@@ -49,7 +49,7 @@ export function InlineProjectTitle({
           >
             <span className="min-w-0 flex-1 cursor-text truncate">{title}</span>
             {showRenameHint ? (
-              <span className="text-xs font-normal text-ink-muted">{t`Rename`}</span>
+              <span className="text-xs font-normal text-muted-foreground">{t`Rename`}</span>
             ) : null}
           </button>
         )}

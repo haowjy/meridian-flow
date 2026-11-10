@@ -237,7 +237,7 @@ function ShowChangesToggle({
           aria-label={name}
           onClick={() => onChange(!visible)}
           className={cn(
-            "focus-ring inline-flex h-5.5 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-sidebar-accent hover:text-foreground",
+            "focus-ring inline-flex h-5.5 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-ink-fill hover:text-foreground",
             visible ? "text-foreground" : "text-muted-foreground",
           )}
         >

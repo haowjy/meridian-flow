@@ -1,29 +1,6 @@
-/** Shared row geometry and the sidebar's named looks. */
+/** Shared row geometry and the sidebar's icon sizes. Looks come from `role`. */
+import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
-
-/**
- * Every text size, secondary colour and fill in the sidebar comes from one of
- * these roles, so re-pointing a role restyles the whole sidebar at once.
- */
-export const sidebarRole = {
-  /** A row's name, and controls that read as rows. Colour is the inherited foreground. */
-  row: "text-sm",
-  /** The secondary colour: row icons, facts beside a name, controls at rest. */
-  secondary: "text-ink-muted",
-  /** Facts beside or under a row's name: age, former place, counts; group labels. */
-  rowSecondary: "text-xs text-ink-muted",
-  /** A list's name above its rows. */
-  heading: "text-xs font-medium uppercase tracking-wide text-ink-muted",
-  /** Lines standing in for rows: loading, empty. */
-  hint: "text-xs text-ink-subtle",
-  hover: "hover:bg-sidebar-accent/50",
-  /** The open row, the shown tab, the current chat, rows in a selection. Ink, never jade. */
-  selected: "bg-sidebar-accent",
-  /** A control whose menu is open wears the selected fill. */
-  open: "popup-open:bg-sidebar-accent popup-open:text-foreground",
-  /** A drag's lit target: a tab, a source, a folder with everything shown inside it. */
-  dropTarget: "bg-sidebar-accent ring-1 ring-border-focus ring-inset",
-} as const;
 
 /** One icon size per role. */
 export const sidebarIcon = {
@@ -45,7 +22,7 @@ const selectionRunShape =
   "data-[selection-run=start]:rounded-b-none data-[selection-run=middle]:rounded-none data-[selection-run=end]:rounded-t-none";
 
 /** A row in an explicit selection; the open row tells itself apart by its weight. */
-export const contextTreeSelectedRowClassName = cn(sidebarRole.selected, selectionRunShape);
+export const contextTreeSelectedRowClassName = cn(role.selected, selectionRunShape);
 
 /**
  * A row's frame: tree rows, Trash rows, chat rows and the right rail's Recent
@@ -55,10 +32,10 @@ export const contextTreeSelectedRowClassName = cn(sidebarRole.selected, selectio
 export function contextTreeFileRowClassName(active: boolean, selected = false): string {
   return cn(
     "group mx-2 flex items-center rounded-md pr-1 text-foreground",
-    sidebarRole.row,
+    role.row,
     contextTreeRowGrowClassName,
     active && "font-medium",
-    active || selected ? contextTreeSelectedRowClassName : sidebarRole.hover,
+    active || selected ? contextTreeSelectedRowClassName : role.hover,
   );
 }
 

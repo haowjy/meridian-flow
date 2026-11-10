@@ -49,7 +49,7 @@ export function DraftCommandStatus({
   return (
     <div
       role="status"
-      className="flex min-h-7 [@media(pointer:coarse)]:min-h-11 items-center gap-2 px-2 text-caption text-ink-muted"
+      className="flex min-h-7 [@media(pointer:coarse)]:min-h-11 items-center gap-2 px-2 text-caption text-muted-foreground"
     >
       {content}
     </div>

@@ -20,7 +20,7 @@ export function NoteAttemptRow({
         {attempt.name}
       </span>
       {attempt.state === "pending" ? (
-        <span role="status" className="shrink-0 text-xs text-ink-subtle">
+        <span role="status" className="shrink-0 text-xs text-muted-foreground">
           <Trans>Creating…</Trans>
         </span>
       ) : (

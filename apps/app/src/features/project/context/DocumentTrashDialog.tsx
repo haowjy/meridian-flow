@@ -1,4 +1,5 @@
 /** Routed Trash popup: a desktop list and preview, or a phone list/detail flow. */
+
 import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
@@ -22,6 +23,7 @@ import {
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { role } from "@/components/ui/roles";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
@@ -36,7 +38,6 @@ import { fileKindIcon } from "./context-file-icon";
 import {
   contextTreeFileRowClassName,
   contextTreeOverflowTriggerClassName,
-  sidebarRole,
 } from "./context-row-geometry";
 import { schemeLabel } from "./context-schemes";
 import { type TrashRestoreState, useDocumentTrashRestore } from "./DocumentTrashRestoreProvider";
@@ -95,7 +96,7 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
               restore(entry, afterRestore);
             }}
             showHeading
-            className="w-72 shrink-0 border-r border-border-subtle bg-muted pt-4"
+            className="w-72 shrink-0 border-r border-border-subtle bg-ink-fill pt-4"
           />
           <section className="min-h-0 min-w-0 flex-1 bg-background [&>section>header]:pr-12">
             {selectedId ? (
@@ -178,7 +179,7 @@ function PhoneTrashContent({
           event.preventDefault();
           (event.target as HTMLElement | null)?.focus({ preventScroll: true });
         }}
-        className="fixed inset-0 z-50 flex flex-col bg-background outline-none duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
+        className="fixed inset-0 z-50 flex flex-col bg-background outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
       >
         <header
           className="shrink-0 border-b border-border-subtle bg-background"
@@ -351,12 +352,12 @@ export function TrashRow({
         <span className="ml-0.5 min-w-0 flex-1">
           <span className="flex min-w-0 items-baseline gap-2">
             <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-            <span className={cn("shrink-0 font-normal tabular-nums", sidebarRole.rowSecondary)}>
+            <span className={cn("shrink-0 font-normal tabular-nums", role.rowSecondary)}>
               {restoring ? <Trans>Restoring</Trans> : age}
             </span>
           </span>
           <span
-            className={cn("block truncate leading-snug font-normal", sidebarRole.rowSecondary)}
+            className={cn("block truncate leading-snug font-normal", role.rowSecondary)}
             title={location}
           >
             {location}

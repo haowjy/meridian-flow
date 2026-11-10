@@ -1,8 +1,8 @@
 import { type HTMLAttributes, type ReactNode, useRef } from "react";
+import { role } from "@/components/ui/roles";
 import { dragPayloadKind } from "@/core/editor/landing/drag-payload";
 import { dragEdgeScroll } from "@/core/editor/landing/edge-scroll";
 import { cn } from "@/lib/utils";
-import { sidebarRole } from "../../context/context-row-geometry";
 import { PaneHeaderActions } from "../../context/RailPaneHeader";
 import { DropRegion } from "../../context/tree-drop/DropRegion";
 import type { TreeDropState } from "../../context/tree-drop/tree-drop";
@@ -42,7 +42,7 @@ export function SourcePane({
           <h2
             title={title}
             aria-label={title}
-            className={cn("min-w-0 flex-1 truncate pr-1 pl-1.5", sidebarRole.heading)}
+            className={cn("min-w-0 flex-1 truncate pr-1 pl-1.5", role.groupLabel)}
           >
             {label}
           </h2>
@@ -76,7 +76,7 @@ export function SourceHint({
     <p
       role={status ? "status" : undefined}
       aria-live={status ? "polite" : undefined}
-      className={cn("py-1.5 pr-2 pl-3.5 leading-snug", sidebarRole.hint)}
+      className={cn("py-1.5 pr-2 pl-3.5 leading-snug", role.hint)}
     >
       {children}
     </p>

@@ -129,7 +129,7 @@ function DeliveryEventRow(event: DeliveryEvent) {
           <SubagentIdentity
             run={run}
             afterName={
-              <span className="min-w-0 truncate py-[var(--chat-space-row)] text-sm text-muted-foreground">
+              <span className="min-w-0 truncate py-[var(--chat-space-inline)] text-sm text-muted-foreground">
                 {completed ? <Trans>finished</Trans> : <Trans>stopped</Trans>}
               </span>
             }

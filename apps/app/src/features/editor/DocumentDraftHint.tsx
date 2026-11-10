@@ -27,7 +27,7 @@ export type DocumentDraftHintProps = {
 };
 
 const REVIEW_CLASS =
-  "focus-ring inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 font-medium text-jade-text hover:bg-primary/10 popup-open:bg-primary/10 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:px-2.5";
+  "focus-ring inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 font-medium text-jade-text hover:bg-primary/12 popup-open:bg-primary/12 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:px-2.5";
 
 export function DocumentDraftHint({ projectId, tab }: DocumentDraftHintProps) {
   const { documentId } = tab;
@@ -50,7 +50,7 @@ export function DocumentDraftHint({ projectId, tab }: DocumentDraftHintProps) {
   return (
     <div
       data-document-draft-hint
-      className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 px-4 font-sans text-ink-muted text-sm [@media(pointer:coarse)]:min-h-11"
+      className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 px-4 font-sans text-muted-foreground text-sm [@media(pointer:coarse)]:min-h-11"
     >
       <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
       <span className="min-w-0 truncate">
