@@ -131,7 +131,6 @@ it("starts a cold copied URL's selector read while the list is unresolved and ro
       destination: address.address.destination,
       owner: {},
       binding: bindDocumentAddressReview(address.address.itemKey, owner),
-      workResolved: true,
     },
     read,
   );
@@ -156,7 +155,6 @@ it("starts a cold copied URL's selector read while the list is unresolved and ro
             destination: address.address.destination,
             owner: {},
             binding,
-            workResolved: true,
           },
           read,
         ).queryKey,

@@ -7,24 +7,21 @@ import { type Removal, RemovedDocumentSentence } from "../context/RemovedDocumen
 
 export type ProjectRouteIssue = "loading" | "unavailable" | "error" | "resource-viewing";
 
-/** Whether the destination body is masked, including Work recovery. */
+/** Whether the destination body is masked. */
 export function isProjectRouteMasked({
   issue,
   retainWhileLoading = false,
-  recovery,
 }: {
   issue?: ProjectRouteIssue;
   retainWhileLoading?: boolean;
-  recovery?: ReactNode;
 }): boolean {
   const retainedPending = issue === "loading" && retainWhileLoading;
-  return (!!issue && !retainedPending) || !!recovery;
+  return !!issue && !retainedPending;
 }
 
 /** What masks a destination's body. Its navigation frame is composed outside the boundary. */
 export type ProjectRouteMask = {
   issue?: ProjectRouteIssue;
-  recovery?: ReactNode;
   retainWhileLoading?: boolean;
   destinationKey?: string;
   /** Offered with a failed destination: the address stays, only its reads run again. */
@@ -36,19 +33,15 @@ export type ProjectRouteMask = {
 export function ProjectRouteBoundary({
   issue,
   children,
-  recovery,
   retainWhileLoading = false,
   destinationKey,
   onRetry,
   removed,
 }: ProjectRouteMask & { children: ReactNode }) {
-  const blocked = isProjectRouteMasked({ issue, retainWhileLoading, recovery });
+  const blocked = isProjectRouteMasked({ issue, retainWhileLoading });
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div
-        className="relative flex min-h-0 flex-1 flex-col"
-        aria-busy={issue === "loading" && !recovery}
-      >
+      <div className="relative flex min-h-0 flex-1 flex-col" aria-busy={issue === "loading"}>
         <div
           className="flex min-h-0 flex-1 flex-col"
           inert={blocked}
@@ -57,9 +50,7 @@ export function ProjectRouteBoundary({
         >
           {children}
         </div>
-        {recovery ? (
-          <div className="absolute inset-0 bg-background">{recovery}</div>
-        ) : issue === "loading" ? (
+        {issue === "loading" ? (
           blocked && <DelayedContentSkeleton key={destinationKey} className="absolute inset-0" />
         ) : issue ? (
           <div

@@ -6,7 +6,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { useRouterState } from "@tanstack/react-router";
+import { useRouter } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import {
   createContext,
@@ -77,12 +77,18 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
     deletion.dismissAll();
     onClose();
   };
-  // A change row opens its review in main: the dialog gets out of its way.
-  const href = useRouterState({ select: (state) => state.location.href });
-  const openedAt = useRef(href);
-  useEffect(() => {
-    if (href !== openedAt.current) onClose();
-  }, [href, onClose]);
+  // A change row opens its review in main: the dialog gets out of its way on a push or a
+  // traversal, through the goal guard. The shell's own replaces repair the address in place.
+  const router = useRouter();
+  const leave = useRef(() => leaveVia(close));
+  leave.current = () => leaveVia(close);
+  useEffect(
+    () =>
+      router.history.subscribe(({ action }) => {
+        if (action.type !== "REPLACE") leave.current();
+      }),
+    [router],
+  );
   const openWork = (workId: string) => {
     deletion.dismissAll();
     setView({ kind: "work", workId });

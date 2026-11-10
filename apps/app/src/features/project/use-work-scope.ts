@@ -1,3 +1,4 @@
+import { isWorkArchived } from "@meridian/contracts/works";
 import { useCallback, useMemo } from "react";
 import { NO_SCOPE, useProjectScope, writeProjectScope } from "@/client/project-shell/store";
 import { useWorks } from "@/client/query/useWorks";
@@ -11,7 +12,8 @@ export type WorkScope =
 /**
  * The one Work scope per project: whose drafts, chats and Scratch the shell shows. It is a stored
  * value, never read from the address, and only the Work picker writes it. A stored Work the
- * catalog no longer holds resolves to No Work.
+ * catalog no longer holds, or that is archived (it refuses new chats and freezes its drafts), resolves
+ * to No Work, and nothing navigates.
  */
 export function useWorkScopeState(projectId: string): WorkScope & { retry: () => void } {
   const accountId = useAccountId();
@@ -22,7 +24,8 @@ export function useWorkScopeState(projectId: string): WorkScope & { retry: () =>
   const ready = works.status === "ready" || works.status === "empty";
   const known =
     stored !== NO_SCOPE &&
-    (works.works?.some((work) => work.id === stored) || works.creations.has(stored));
+    (works.works?.some((work) => work.id === stored && !isWorkArchived(work)) ||
+      works.creations.has(stored));
   return useMemo(() => {
     const scope: WorkScope =
       ready && noWorkId

@@ -110,7 +110,6 @@ export function documentAddressQueryOptions(
     destination: Extract<ProjectDestination, { kind: "document" }> | null;
     owner: ContextOwner;
     binding: DocumentAddressBinding;
-    workResolved: boolean;
   },
   read: typeof getProjectDocumentAddress,
 ) {
@@ -132,9 +131,7 @@ export function documentAddressQueryOptions(
         ...(review ? { review } : {}),
       });
     },
-    enabled: projectReadEnabled(
-      !!input.destination && input.workResolved && input.binding.kind !== "pending",
-    ),
+    enabled: projectReadEnabled(!!input.destination && input.binding.kind !== "pending"),
     staleTime: 0,
     // A review's answer names another key's path and is only true while the draft's move
     // stands. Kept past its key, two such answers point at each other and the URL loops.

@@ -15,7 +15,6 @@ import { RecentDocumentsLanding } from "../context/RecentDocumentsLanding";
 import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useFollowOpenDocumentPlacement } from "../context/use-follow-open-document-placement";
-import { EditorWorkRecovery } from "../EditorWorkRecovery";
 import type { ReviewScopedProjectProps } from "../ProjectView";
 import { EditorReviewIntentClaimant } from "../review-launch";
 import {
@@ -110,9 +109,7 @@ export function MobileProject(props: MobileProjectProps) {
           removed={props.routeIssues?.main ? undefined : props.routeIssues?.removed}
           issue={
             props.routeIssues?.main ??
-            (props.activeScreen === "context" && props.editorScope.status === "ready"
-              ? props.routeIssues?.editor
-              : undefined)
+            (props.activeScreen === "context" ? props.routeIssues?.editor : undefined)
           }
         >
           {renderActiveView(props, localTab)}
@@ -184,12 +181,7 @@ function renderActiveView(
         </WorkBranchCommandsBoundary>
       );
     case "context":
-      if (props.editorScope.status !== "ready") {
-        return (
-          <EditorWorkRecovery status={props.editorScope.status} onRetry={props.retryEditorWork} />
-        );
-      }
-      if (!props.contextLive) return null;
+      if (!props.contextLive || props.editorScope.status !== "ready") return null;
       // A masked cold address must not mount a host that repairs it to Files.
       // A warm pending address still owns its retained document presentation.
       if (props.routeIssues?.editor && !props.retainEditorWhileLoading) return null;

@@ -300,7 +300,7 @@ function ReadableProjectDestination({
   );
   const addressCatalogs = useContextCatalogViews(projectId, addressSchemes, {
     ...addressOwner,
-    enabled: !!documentDestination && workId !== null,
+    enabled: !!documentDestination,
   });
   const {
     catalog: addressCatalog,
@@ -327,7 +327,6 @@ function ReadableProjectDestination({
         destination: documentDestination,
         owner: addressOwner,
         binding: addressBinding,
-        workResolved: workId !== null,
       },
       getProjectDocumentAddress,
     ),
@@ -631,7 +630,8 @@ function ReadableProjectDestination({
     void documentLookup.refetch();
     refetchAddressCatalog();
     editorDrafts.refetch();
-  }, [documentLookup.refetch, refetchAddressCatalog, editorDrafts.refetch]);
+    editorScope.retry();
+  }, [documentLookup.refetch, refetchAddressCatalog, editorDrafts.refetch, editorScope.retry]);
   const editorIssue = resourceDestination
     ? "resource-viewing"
     : ((localDocument.kind === "loading" || localDocument.kind === "unavailable"
