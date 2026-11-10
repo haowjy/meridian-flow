@@ -139,9 +139,11 @@ export function useDraftDock({
   const send = useCallback(
     (mode: "apply" | "discard", restore: ReadonlySet<string> = new Set()) => {
       const files = mode === "apply" ? applicable : actionableFiles;
+      // A frozen owner's draft takes only the whole draft's Discard, which the server ends.
+      const whole = mode === "discard" && controller.frozen;
       const items = files.map((file) => ({
         draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
-        target: targetOfChanges(file.actionable),
+        target: whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
       }));
       if (items.length === 0) return Promise.resolve([]);
       // The runner hides every file's selection at the click and returns each as
@@ -151,7 +153,7 @@ export function useDraftDock({
         () => [],
       );
     },
-    [actionableFiles, applicable, runner],
+    [actionableFiles, applicable, runner, controller.frozen],
   );
 
   const fileFailures = (file: DockFile): BranchCommandFailure[] => {
