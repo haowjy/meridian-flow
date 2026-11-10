@@ -165,9 +165,12 @@ export function parseProjectAddress(
     destination.kind === "editor";
   const work = editor ? selection(query.get("work")) : ABSENT;
   const chatParam = query.get("chat");
-  const lineage = lineageIsIdentity(destination)
-    ? (parseRequestId(chatParam) ?? undefined)
-    : undefined;
+  // A review of a lineage's draft names that lineage in `chat`, beside its item.
+  const reviewsLineage = destination.kind === "document" && Boolean(query.get("item"));
+  const lineage =
+    lineageIsIdentity(destination) || reviewsLineage
+      ? (parseRequestId(chatParam) ?? undefined)
+      : undefined;
   // A Scratch resource has exactly one owner; a chat's Scratch has no No Work spelling.
   if (workIsIdentity(destination)) {
     const owned = lineage ? work.kind === "absent" : work.kind === "id";
@@ -226,7 +229,11 @@ function queryStatesNoWork(address: ProjectAddress): boolean {
 }
 
 function writeWork(query: URLSearchParams, address: ProjectAddress): void {
-  if (address.lineage && lineageIsIdentity(address.destination)) {
+  if (
+    address.lineage &&
+    (lineageIsIdentity(address.destination) ||
+      (address.destination.kind === "document" && address.itemKey !== undefined))
+  ) {
     query.set("chat", address.lineage);
     return;
   }

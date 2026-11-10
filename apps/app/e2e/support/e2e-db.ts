@@ -81,8 +81,8 @@ export async function seedProjectFixture(
 
   await db.begin(async (tx) => {
     await tx`
-      INSERT INTO context_sources (id, project_id, name, slug, scope, adapter_type, is_primary, sort_order)
-      VALUES (${contextSourceId}, ${projectId}, 'Knowledge Base', 'kb', 'project', 'local', false, 1)
+      INSERT INTO context_sources (id, project_id, name, slug, scope, sort_order)
+      VALUES (${contextSourceId}, ${projectId}, 'Knowledge Base', 'kb', 'project', 1)
     `;
   });
 

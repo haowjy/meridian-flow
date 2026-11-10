@@ -17,7 +17,7 @@ import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { MoreHorizontal } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
+import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ import {
   type CommandQuestion,
 } from "@/features/draft-review/CommandNotice";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
+import { workOwnerKey } from "@/features/draft-review/draft-owner-key";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { hasTreeLine } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
@@ -52,20 +53,20 @@ export function WorkChanges({
   work: Work;
   matchesSearch: WorkFileSearch;
 }) {
-  const workId = work.id;
-  const controller = useWorkBranchCommands({ projectId, work });
+  const ownerKey = workOwnerKey(work);
+  const controller = useWorkBranchCommands({ projectId, work, ownerKey });
   useSyncExternalStore(
     controller.owner.subscribe,
     controller.owner.snapshot,
     controller.owner.snapshot,
   );
-  const drafts = useWorkBranchDrafts(projectId, workId);
+  const drafts = useOwnerDrafts(projectId, ownerKey);
   const held = useRoomReviews(
     (drafts.files ?? [])
       .filter((file) => file.draft.hasDraft)
       .map((file) => ({
         projectId,
-        workId,
+        ownerKey,
         documentId: file.documentId,
         itemKey: file.draft.itemKey,
       })),
@@ -223,7 +224,7 @@ export function WorkChanges({
           node: (
             <WorkChangeFile
               projectId={projectId}
-              workId={workId}
+              ownerKey={ownerKey}
               file={file}
               controller={controller}
               touch={touch}

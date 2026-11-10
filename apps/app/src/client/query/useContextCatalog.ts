@@ -1,5 +1,5 @@
 /** React Query acquisition and flat selectors over one normalized ID cache. */
-import { matchDocumentAddress } from "@meridian/contracts";
+import { draftOwnerKey, matchDocumentAddress } from "@meridian/contracts";
 import {
   type CatalogScope,
   type CatalogWakeHint,
@@ -609,6 +609,15 @@ export function useContextCatalogWake(
     () =>
       projectId
         ? transport?.subscribeCatalog(projectId, (hint) => {
+            if (hint.type === "draft-owner-hint") {
+              void queryClient.invalidateQueries({
+                queryKey: projectQueryKeys.ownerDrafts(projectId, hint.owner),
+              });
+              void queryClient.invalidateQueries({
+                queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
+              });
+              return;
+            }
             bumpLinkResolutionEpoch(projectId);
             void queryClient.invalidateQueries({
               queryKey: projectQueryKeys.documentTrash(projectId),
@@ -635,21 +644,15 @@ export function useContextCatalogWake(
 
 /** Every draft read of the project: each Work's list and each document's hints. */
 function invalidateDraftReads(queryClient: QueryClient, projectId: string): void {
-  void queryClient.invalidateQueries(allWorkDraftListsOf(projectId));
+  void queryClient.invalidateQueries(allOwnerDraftListsOf(projectId));
   void queryClient.invalidateQueries({
     queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
   });
 }
 
-/** Every mounted draft list of the project, whatever Work it belongs to. */
-function allWorkDraftListsOf(projectId: string) {
-  return {
-    predicate: ({ queryKey }: { queryKey: readonly unknown[] }) =>
-      queryKey[0] === "projects" &&
-      queryKey[1] === projectId &&
-      queryKey[2] === "works" &&
-      queryKey[4] === "branches",
-  };
+/** Every mounted draft list of the project, whatever owner it belongs to. */
+function allOwnerDraftListsOf(projectId: string) {
+  return { queryKey: ["projects", projectId, "drafts"] as readonly unknown[] };
 }
 
 /** The newest installed catalog revision each scope's hints have already re-read draft lists for. */
@@ -699,8 +702,13 @@ export function pullContextCatalogOnHint(
       if (!advancesDraftRefresh(queryClient, requestedScope, next.appliedRevision)) return;
       void queryClient.invalidateQueries(
         requestedScope.kind === "work"
-          ? { queryKey: projectQueryKeys.workBranchDrafts(projectId, requestedScope.workId) }
-          : allWorkDraftListsOf(projectId),
+          ? {
+              queryKey: projectQueryKeys.ownerDrafts(
+                projectId,
+                draftOwnerKey({ kind: "work", workId: requestedScope.workId }),
+              ),
+            }
+          : allOwnerDraftListsOf(projectId),
       );
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.documentDraftHintsOf(projectId),

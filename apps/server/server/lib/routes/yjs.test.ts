@@ -131,7 +131,7 @@ describe("Yjs draft handshake route guard", () => {
           resolveDraftHocuspocusRoom: vi.fn(async () => ({
             draftId: "draft_1",
             documentId: "document-1",
-            workId: "work-1",
+            owner: { kind: "work" as const, workId: "work-1" },
             schemaVersion: COLLAB_SCHEMA_VERSION,
             status: "active",
           })),
@@ -451,7 +451,7 @@ describe("Yjs room access", () => {
       resolveDraftHocuspocusRoom: vi.fn(async () => ({
         draftId: "draft_1",
         documentId: liveRoom,
-        workId: "work-1",
+        owner: { kind: "work" as const, workId: "work-1" },
         schemaVersion: COLLAB_SCHEMA_VERSION,
         status: "active",
       })),

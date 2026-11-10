@@ -1,5 +1,6 @@
 /** GET addressed draft metadata without opening its collaborative room. */
-import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
+import type { BranchId } from "@meridian/contracts";
+import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../../../lib/auth-gate.js";
 import {
@@ -13,7 +14,7 @@ export default defineEventHandler(async (event) => {
   return handleDraftMetadataRequest(selectBranchRouteServices(app), {
     userId: user.userId,
     projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
-    workId: (getRouterParam(event, "workId") ?? "") as WorkId,
+    branchId: (getRouterParam(event, "branchId") ?? "") as BranchId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     itemKey: typeof itemKey === "string" ? itemKey : "",
   });

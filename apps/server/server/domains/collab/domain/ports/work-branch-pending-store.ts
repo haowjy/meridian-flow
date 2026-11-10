@@ -1,13 +1,16 @@
 /** Loads active Work-draft membership and text-derived conversation evidence. */
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
+import type { WorkBranchPendingCounts } from "../../../projects/ports/work-branch-pending-counts.js";
 
-/** An active branch with changes to one document, oldest first, and the Work it came from. */
+/** An active branch with changes to one document, oldest first, and the owner it came from. */
 export type DocumentBranchOrigin = {
   branchId: BranchId;
-  originWorkId: WorkId;
-  /** The origin Work's name; null for the locked No Work row, which has none to show. */
-  originWorkName: string | null;
+  /** Exactly one of these two is set. */
+  originWorkId: WorkId | null;
+  originRootThreadId: string | null;
+  /** The owner's label: a named Work's name, a lineage's first chat title; null when it has none to show. */
+  originLabel: string | null;
 };
 
 export type WorkBranchDraftMetadata = {
@@ -47,5 +50,8 @@ export type WorkBranchPendingStore = {
     projectId: ProjectId;
     documentId: DocumentId;
   }): Promise<DocumentBranchOrigin[]>;
-  countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
+  /** Pending documents summed over the project's active branches, from the stored branch counts. */
+  countPendingInProject(projectId: ProjectId): Promise<number>;
+  /** Every active branch of these owners with its pending documents (zero when none). */
+  countPendingByOwners: WorkBranchPendingCounts["countPendingByOwners"];
 };

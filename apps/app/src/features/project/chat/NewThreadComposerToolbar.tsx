@@ -17,6 +17,7 @@ import {
 } from "@/components/app/work-composer-controls";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
 import type { CreationAgent } from "@/features/agents/creation-agent";
+import { workOwnerKey } from "@/features/draft-review/draft-owner-key";
 
 export function NewThreadComposerToolbar({
   projectId,
@@ -72,7 +73,7 @@ export function NewThreadComposerToolbar({
   return (
     <AvailableNewThreadControls
       projectId={projectId}
-      workId={work.id}
+      work={work}
       writeMode={writeMode}
       agent={agent}
       workControl={workControl}
@@ -83,14 +84,14 @@ export function NewThreadComposerToolbar({
 
 function AvailableNewThreadControls({
   projectId,
-  workId,
+  work,
   writeMode,
   agent,
   workControl,
   onWriteModeChange,
 }: {
   projectId: string;
-  workId: string;
+  work: Work;
   writeMode: AiWriteMode;
   agent: ComposerToolbarControl;
   workControl: ComposerToolbarControl;
@@ -98,7 +99,8 @@ function AvailableNewThreadControls({
 }) {
   const mode = useWriteModeToolbarControl({
     projectId,
-    workId,
+    // A new chat in No Work has no lineage yet, so nothing is waiting.
+    ownerKey: work.isNoWork ? "" : workOwnerKey(work),
     value: writeMode,
     onChoose: onWriteModeChange,
   });

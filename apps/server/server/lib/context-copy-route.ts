@@ -4,6 +4,7 @@
  * canonical addresses. Everything that writes happens in the domain command.
  */
 
+import { type DraftOwnerKey, draftOwnerFromKey, parseDraftOwnerKey } from "@meridian/contracts";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import { parseHandle } from "@meridian/contracts/handles";
 import type {
@@ -13,11 +14,12 @@ import type {
   CopyContextEntryView,
 } from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import { decodeStateVector } from "yjs";
 import {
   type ContextPort,
+  type CopySourceView,
   contextPortForProjectAuthorities,
   parseUnifiedContextUri,
   type UnifiedContextPortFactory,
@@ -202,6 +204,14 @@ function parseSourceLocator(source: Record<string, unknown>): CopySourceLocator 
   return { scope: "project", scheme, path };
 }
 
+/** The wire view with its draft owner resolved inside the project. */
+function copyView(view: CopyContextEntryView, projectId: ProjectId): CopySourceView {
+  if (view.kind === "live") return view;
+  const owner = draftOwnerFromKey(view.owner, projectId);
+  if (!owner) throw createError({ statusCode: 400, message: "A draft view names its owner" });
+  return { kind: "draft", owner };
+}
+
 function parseView(raw: unknown): CopyContextEntryView {
   if (raw === undefined) return { kind: "live" };
   if (!raw || typeof raw !== "object") {
@@ -210,10 +220,10 @@ function parseView(raw: unknown): CopyContextEntryView {
   const view = raw as Record<string, unknown>;
   if (view.kind === "live") return { kind: "live" };
   if (view.kind === "draft") {
-    if (typeof view.workId !== "string" || !view.workId.trim()) {
-      throw createError({ statusCode: 400, message: "A draft view names its Work" });
+    if (typeof view.owner !== "string" || !parseDraftOwnerKey(view.owner)) {
+      throw createError({ statusCode: 400, message: "A draft view names its owner" });
     }
-    return { kind: "draft", workId: view.workId as WorkId };
+    return { kind: "draft", owner: view.owner as DraftOwnerKey };
   }
   throw createError({ statusCode: 400, message: "Source view is invalid" });
 }
@@ -336,7 +346,11 @@ export async function handleContextCopyRequest(
     const workId = resolved.scope === "work" ? resolved.authority.workId : null;
     if (workId) workIds.add(workId);
     // The port below refuses a Work that isn't this project's (`work_missing`).
-    if (source.view.kind === "draft") workIds.add(source.view.workId);
+    const draftOwner =
+      source.view.kind === "draft"
+        ? draftOwnerFromKey(source.view.owner, input.projectId as ProjectId)
+        : null;
+    if (draftOwner?.kind === "work") workIds.add(draftOwner.workId);
     sources.push({
       uri: locatorUri(resolved),
       expected: source.expected,
@@ -347,7 +361,7 @@ export async function handleContextCopyRequest(
         source.expected.kind === "file"
           ? documentTarget(source.expected.nodeId)
           : containerOf(resolved, input.projectId),
-      workId: workId ?? (source.view.kind === "draft" ? source.view.workId : null),
+      workId: workId ?? (draftOwner?.kind === "work" ? draftOwner.workId : null),
     });
   }
 
@@ -411,7 +425,7 @@ export async function handleContextCopyRequest(
       operationId: copy.operationId,
       sources: sources.map((source) => ({
         uri: source.uri,
-        view: source.view,
+        view: copyView(source.view, input.projectId as ProjectId),
         expected: source.expected,
         ...(source.copyId ? { copyId: source.copyId } : {}),
         ...(source.stateVector ? { stateVector: source.stateVector } : {}),

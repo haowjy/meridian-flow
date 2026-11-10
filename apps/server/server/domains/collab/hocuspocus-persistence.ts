@@ -5,6 +5,7 @@ import { draftRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { ownerOfColumns } from "../../shared/draft-owner.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { type DetachedWorkTracker, processDetachedWork } from "../runtime/detached-work.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
@@ -306,16 +307,13 @@ export function createHocuspocusPersistenceService(
 
     async resolveDraftHocuspocusRoom(draftId) {
       const documentDraft = await requireDraftStore().getDraft(draftId);
-      if (
-        documentDraft?.status !== "active" ||
-        documentDraft.kind !== "work_draft" ||
-        !documentDraft.workId
-      )
+      const owner = documentDraft && ownerOfColumns(documentDraft);
+      if (documentDraft?.status !== "active" || documentDraft.kind !== "work_draft" || !owner)
         return null;
       return {
         draftId: documentDraft.draftId,
         documentId: documentDraft.documentId,
-        workId: documentDraft.workId,
+        owner,
         schemaVersion: documentDraft.schemaVersion,
         status: documentDraft.status,
       };

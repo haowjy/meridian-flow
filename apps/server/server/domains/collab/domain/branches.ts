@@ -1,32 +1,48 @@
 /**
- * The one branches resolver: which branch a Work's drafted writes share, the view a read in
- * that Work sees, and the lock and lifecycle calls every later lane makes on branches. A
- * branch is made only at the write boundary, never by a read (F7): a draft-mode chat's Work with
- * no active branch reads live. Callers reach branches only through this object.
+ * The one branches resolver: which branch an owner's drafted writes share (a Work, or a
+ * conversation lineage), the view a read by that owner sees, and the lock and lifecycle calls
+ * every later lane makes on branches. A branch is made only at the write boundary, never by a
+ * read (F7): a draft-mode chat whose owner has no active branch reads live. Callers reach
+ * branches only through this object.
  */
-import type { BranchId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts";
+import type {
+  BranchId,
+  DraftOwner,
+  ProjectId,
+  ThreadId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts";
 import type { TreeView } from "../../context/tree/tree-view.js";
-import type { Branch, BranchStore, BranchWriteBoundary } from "./ports/branch-store.js";
+import type {
+  Branch,
+  BranchOwnerView,
+  BranchStore,
+  BranchWriteBoundary,
+} from "./ports/branch-store.js";
 
 export interface Branches {
-  /** Reads: the Work's active branch as a view, else live. Never creates a branch. */
-  viewForWork(workId: WorkId | null): Promise<TreeView>;
+  /** Reads: the owner's active branch as a view, else live. Never creates a branch. */
+  viewForOwner(owner: DraftOwner | null): Promise<TreeView>;
   /**
-   * The write boundary only, and the only path that makes a branch: locks the Work row
-   * (refusing an archived or deleted Work), then the Work's active branch, made if absent,
-   * row-locked. With no ambient transaction it runs in its own. Inside one it joins only
-   * a transaction the ContextFS command boundary approved (`approveBranchWriteJoin`: it has
-   * locked nothing but Works); any other ambient caller gets `BranchWriteJoinRefusedError`,
-   * so it never takes the Work lock after namespace or document locks.
+   * The write boundary only, and the only path that makes a branch: locks the owner (the Work
+   * row, or the lineage lock; refusing an archived, deleted or frozen one), then the owner's
+   * active branch, made if absent, row-locked. With no ambient transaction it runs in its own.
+   * Inside one it joins only a transaction the ContextFS command boundary approved
+   * (`approveBranchWriteJoin`: it has locked nothing but owners); any other ambient caller gets
+   * `BranchWriteJoinRefusedError`, so it never takes the owner lock after namespace or document
+   * locks.
    */
   ensureActiveForWrite(input: {
-    workId: WorkId;
+    owner: DraftOwner;
     projectId: ProjectId;
     threadId: ThreadId | null;
     userId: UserId;
   }): Promise<Branch>;
-  /** No lock. The oldest active branch whose origin is this Work, else null. */
-  activeForWork(workId: WorkId): Promise<Branch | null>;
+  /** No lock. The branch and its owner's lifecycle as it reads now; any status. */
+  ownerOf(branchId: BranchId): Promise<BranchOwnerView | null>;
+  /** No lock. The oldest active branch this owner has, else null. */
+  activeForOwner(owner: DraftOwner): Promise<Branch | null>;
   /**
    * Caller's transaction, after its Work row locks: `FOR NO KEY UPDATE` on the branch;
    * null when closed or missing. Apply, Discard and closing take this.
@@ -47,12 +63,14 @@ export interface Branches {
   byIds(branchIds: readonly BranchId[]): Promise<Branch[]>;
   /** Purge only: every branch whose origin is this Work, any status, oldest first. */
   byOriginWork(workId: WorkId): Promise<Branch[]>;
+  /** Purge only: the active branches these lineages own. */
+  activeByOriginLineages(rootThreadIds: readonly ThreadId[]): Promise<Branch[]>;
 }
 
-export class BranchClosedUnderWorkLockError extends Error {
+export class BranchClosedUnderOwnerLockError extends Error {
   constructor(readonly branchId: BranchId) {
-    super(`Branch ${branchId} closed while its Work was locked`);
-    this.name = "BranchClosedUnderWorkLockError";
+    super(`Branch ${branchId} closed while its owner was locked`);
+    this.name = "BranchClosedUnderOwnerLockError";
   }
 }
 
@@ -62,30 +80,32 @@ export function createBranches(deps: {
 }): Branches {
   const { store } = deps;
   return {
-    async viewForWork(workId) {
-      if (workId === null) return { kind: "live" };
-      const branch = await store.activeForWork(workId);
+    async viewForOwner(owner) {
+      if (owner === null) return { kind: "live" };
+      const branch = await store.activeForOwner(owner);
       return branch ? { kind: "branch", branchId: branch.id } : { kind: "live" };
     },
     ensureActiveForWrite(input) {
-      return deps.boundary.withActiveWorkLocked(input.workId, async () => {
+      return deps.boundary.withActiveOwnerLocked(input.owner, async () => {
         const ensured = await store.ensureActiveLocked({
-          workId: input.workId,
+          owner: input.owner,
           projectId: input.projectId,
           originThreadId: input.threadId,
           createdBy: input.userId,
         });
-        // Every close locks the Work first, so the branch can't close between these.
+        // Every close locks the owner first, so the branch can't close between these.
         const locked = await store.lockActive(ensured.id);
-        if (!locked) throw new BranchClosedUnderWorkLockError(ensured.id);
+        if (!locked) throw new BranchClosedUnderOwnerLockError(ensured.id);
         return locked;
       });
     },
-    activeForWork: (workId) => store.activeForWork(workId),
+    ownerOf: (branchId) => store.ownerOf(branchId),
+    activeForOwner: (owner) => store.activeForOwner(owner),
     lockActive: (branchId) => store.lockActive(branchId),
     shareActive: (branchId) => store.shareActive(branchId),
     close: (branchId, at) => store.close(branchId, at),
     byIds: (branchIds) => store.byIds(branchIds),
     byOriginWork: (workId) => store.byOriginWork(workId),
+    activeByOriginLineages: (rootThreadIds) => store.activeByOriginLineages(rootThreadIds),
   };
 }

@@ -136,7 +136,6 @@ export async function moveInBranch(
     documentId: input.documentId,
     sourceId: contextSourceId,
     parentId: walk.folderId,
-    name: free.filename,
     ...(input.position ? { position: input.position } : {}),
     arrived:
       current.document.contextSourceId !== contextSourceId ||

@@ -154,7 +154,6 @@ async function ensureProjectContextSource(
       name: CONTEXT_SOURCE_NAMES[scheme],
       slug: scheme,
       scope: "project",
-      adapterType: "local",
     })
     .onConflictDoNothing({
       target: [contextSources.projectId, contextSources.slug],
@@ -212,7 +211,6 @@ export async function ensureWorkContextSource(
         name: CONTEXT_SOURCE_NAMES[scheme],
         slug: scheme,
         scope: "work",
-        adapterType: "local",
       })
       .onConflictDoNothing({
         target: [contextSources.workId, contextSources.slug],
@@ -414,10 +412,6 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return (await this.readableSourceStore())?.listFolders(view, parentId) ?? [];
   }
 
-  async parentOrderPolicy(view: TreeView, parentId: string | null) {
-    return (await this.readableSourceStore())?.parentOrderPolicy(view, parentId) ?? "default";
-  }
-
   async listDocuments(view: TreeView, folderId: string | null) {
     return (await this.readableSourceStore())?.listDocuments(view, folderId) ?? [];
   }
@@ -538,7 +532,6 @@ async function ensureChatContextSource(
       name: CONTEXT_SOURCE_NAMES[scheme],
       slug: scheme,
       scope: "chat",
-      adapterType: "local",
     })
     .onConflictDoNothing({
       target: [contextSources.chatThreadId, contextSources.slug],

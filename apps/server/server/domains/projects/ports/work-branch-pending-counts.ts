@@ -1,9 +1,22 @@
 /**
- * The collab-owned pending membership rule, counted per Work: what the Works boundary
- * reconciles each Work's stored count (the badge) against. One SQL aggregate per call.
+ * The collab-owned pending membership rule, counted per branch: what the Works boundary
+ * reconciles each branch's stored count against, and each Work's total (the badge). One SQL
+ * aggregate per call.
  */
-import type { WorkId } from "@meridian/contracts/runtime";
+
+/** An active branch of a named owner and its pending documents (zero when none). */
+export type BranchPendingCount = {
+  branchId: string;
+  projectId: string;
+  /** Exactly one of these two is set. */
+  workId: string | null;
+  rootThreadId: string | null;
+  count: number;
+};
 
 export type WorkBranchPendingCounts = {
-  countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
+  countPendingByOwners(input: {
+    workIds: readonly string[];
+    rootThreadIds: readonly string[];
+  }): Promise<readonly BranchPendingCount[]>;
 };

@@ -16,11 +16,11 @@
  * a visible extension (`outline.json`) states its type.
  */
 import { classifyFiletype, filetypeForPath } from "@meridian/contracts/protocol";
-import { type ContextTab, workReviewOwner } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import type { ContextUri } from "@/lib/context-uri";
 
 export function contextTabFromDraftGroup(group: {
-  workId: string;
+  ownerKey: string;
   documentId: string;
   itemKey: string;
   contextLocation?: Pick<ContextUri, "scheme" | "path"> | null;
@@ -56,10 +56,7 @@ export function contextTabFromDraftGroup(group: {
     ...(group.draftOnly
       ? {
           reviews: {
-            [workReviewOwner(group.workId)]: {
-              itemKey: group.itemKey,
-              tabInstanceToken: crypto.randomUUID(),
-            },
+            [group.ownerKey]: { itemKey: group.itemKey, tabInstanceToken: crypto.randomUUID() },
           },
         }
       : {}),

@@ -12,6 +12,7 @@ import type { ContextCatalogLifecyclePort } from "../ports/context-catalog-lifec
 export const noOpProjectCatalogLifecycle: ContextCatalogLifecyclePort = {
   async refreshProject() {},
   async upsertWorkAuthorities() {},
+  publishDraftOwnerHints() {},
 };
 
 export function createProjectRepositoryForTest(

@@ -24,6 +24,9 @@ export function isPermissionDenial(denial: FileAccessDenied): denial is Permissi
 
 const UPLOADS_READ_ONLY_MESSAGE = "Files in uploads:// are read-only, so this change wasn't made.";
 
+const CHAT_FROZEN_MESSAGE =
+  "The chat that owns these drafts is in the trash, so they are frozen and this change wasn't made. Ask the user to restore the chat.";
+
 /** Matches the read agent's permission line (D54). */
 const AGENT_READ_ONLY_MESSAGE = "Your permission is read, so you can change only scratch://.";
 
@@ -52,6 +55,8 @@ export function permissionDeniedMessage(denial: PermissionDenial): string {
   switch (denial.reason) {
     case "work_archived":
       return workArchivedMessage(denial);
+    case "chat_frozen":
+      return CHAT_FROZEN_MESSAGE;
     case "uploads_read_only":
       return UPLOADS_READ_ONLY_MESSAGE;
     case "agent_read_only":

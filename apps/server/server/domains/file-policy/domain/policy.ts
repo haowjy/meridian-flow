@@ -8,12 +8,15 @@
  * Skill files (`skills://`, D52) have their own rule, `skillLevel`.
  */
 
+import { draftOwnerKey } from "@meridian/contracts";
 import { type ContextUriScheme, isDraftedScheme } from "@meridian/contracts/context-uri";
 import { matchAncestors } from "./ancestors.js";
 import {
   type AgentChain,
+  type BranchOwnerRef,
   type FileAccessDenial,
   type FileAccessLevel,
+  type FileBranchOwnerFacts,
   type FileDecision,
   type FileDestination,
   type FileFacts,
@@ -49,10 +52,10 @@ export function isDrafted(scheme: ContextUriScheme): boolean {
  */
 export function sourceDestination(
   scheme: ContextUriScheme,
-  branchWork: WorkRef | null,
+  branchOwner: BranchOwnerRef | null,
 ): FileDestination {
-  return branchWork && isDrafted(scheme)
-    ? { kind: "draft", workId: branchWork.id, workHandle: branchWork.handle }
+  return branchOwner && isDrafted(scheme)
+    ? { kind: "draft", owner: branchOwner.owner, ownerHandle: branchOwner.handle }
     : { kind: "live" };
 }
 
@@ -70,11 +73,11 @@ export interface NodeGrant {
 function destinationFor(principal: Principal, facts: FileFacts): FileDestination {
   const target = facts.target;
   if (target.kind === "draft") {
-    return { kind: "draft", workId: target.workId, workHandle: facts.branchWork?.handle ?? null };
+    return { kind: "draft", owner: target.owner, ownerHandle: facts.branchOwner?.handle ?? null };
   }
   // A deleted document comes back live, where it was.
   if (target.kind === "restore") return { kind: "live" };
-  return sourceDestination(facts.contentScheme, principal.agent?.branchWork ?? null);
+  return sourceDestination(facts.contentScheme, principal.agent?.branchOwner ?? null);
 }
 
 /** The whole decision: the destination, then the level there. */
@@ -106,7 +109,11 @@ export function levelAt(
   ];
   const level = terms.reduce<FileAccessLevel>((min, term) => lowerLevel(min, term.cap), "edit");
   const limiting = level === "edit" ? undefined : terms.find((term) => term.cap === level);
+  const discard = terms
+    .filter((term) => term.limit !== "chat_frozen")
+    .every((term) => term.cap === "edit");
   return {
+    discard,
     level,
     limitedBy: limiting?.limit ?? null,
     archivedWork: limiting?.limit === "work_archived" ? (limiting.work ?? null) : null,
@@ -127,7 +134,7 @@ export function personLevel(facts: FileFacts, grants: readonly NodeGrant[]): Fil
  * draft outlived the document's own delete (`survivingDraft`, keyed on the
  * destination, never on which view supplied the facts: a writer's review list
  * reads branch views for a live destination). Its owning Work archived: read.
- * A draft also takes its own Work's lifecycle (§2).
+ * A draft also takes its own owner's lifecycle (§2).
  */
 function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
   const terms: Term[] = [];
@@ -137,12 +144,20 @@ function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
   }
   if (facts.ownerWork) terms.push(...workTerms(facts.ownerWork));
   if (at.kind === "draft") {
-    if (!facts.branchWork || facts.branchWork.id !== at.workId) {
-      throw new Error(`File facts lack the branch Work ${at.workId}`);
+    if (!facts.branchOwner || draftOwnerKey(facts.branchOwner.owner) !== draftOwnerKey(at.owner)) {
+      throw new Error(`File facts lack the branch owner ${draftOwnerKey(at.owner)}`);
     }
-    terms.push(...workTerms(facts.branchWork));
+    terms.push(...branchOwnerTerms(facts.branchOwner));
   }
   return terms;
+}
+
+/** A lineage with no live member is read-only until a chat in it is restored. */
+function branchOwnerTerms(owner: FileBranchOwnerFacts): Term[] {
+  if (owner.owner.kind === "lineage") {
+    return owner.frozen ? [{ cap: "read", limit: "chat_frozen" }] : [];
+  }
+  return workTerms({ id: owner.owner.workId, ...owner });
 }
 
 function workTerms(work: FileWorkFacts): Term[] {

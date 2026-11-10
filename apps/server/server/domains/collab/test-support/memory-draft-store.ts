@@ -23,6 +23,8 @@ export function testDraftRow(
     upstreamDraftId: null,
     branchId: "branch-1" as DraftSnapshot["branchId"],
     workId: null,
+    rootThreadId: null,
+    projectId: "project-1" as DraftSnapshot["projectId"],
     threadId: null,
     status: "active",
     closedCause: null,

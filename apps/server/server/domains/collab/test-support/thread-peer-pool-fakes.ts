@@ -135,7 +135,7 @@ export const fakeWorkDrafts = {
 /** The Work branch the pool pins a drafted write to. */
 export function createFakeBranches() {
   return {
-    viewForWork: vi.fn(async (_workId: unknown) => ({
+    viewForOwner: vi.fn(async (_workId: unknown) => ({
       kind: "branch" as const,
       branchId: FAKE_BRANCH_ID,
     })),
@@ -240,9 +240,9 @@ export function fakeEditGrant(
       ancestors: [],
       ...(destination.kind === "draft"
         ? {
-            branchWork: {
-              id: destination.workId,
-              handle: destination.workHandle,
+            branchOwner: {
+              owner: destination.owner,
+              handle: destination.ownerHandle,
               isNoWork: false,
               archived: false,
               deleted: false,

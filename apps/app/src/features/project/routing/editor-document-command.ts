@@ -1,3 +1,4 @@
+import { draftOwnerKey, parseDraftOwnerKey } from "@meridian/contracts/branches";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import {
   type ContextTab,
@@ -7,6 +8,7 @@ import {
   matchesReviewItem,
   matchesTabInstance,
   reviewEntryOf,
+  reviewOwnerOfTab,
   selectedDocumentIdOf,
   useContextTabsStore,
 } from "@/client/stores";
@@ -14,6 +16,7 @@ import { armEditorFocus } from "@/features/editor/focus-on-open";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import type { RouteBindingProof } from "../context/context-removal-protocol";
 import { contextTabMatchesRoute } from "../context/context-tab-identity";
+import { addressReviewOwner } from "./document-address-review";
 import { resolveLaunchLocator } from "./launch-locator";
 import {
   canonicalDocumentPath,
@@ -47,7 +50,7 @@ export function createEditorDocumentCommand({
   accountId: string;
   read: () => EditorCommandSnapshot;
   lookup: Parameters<typeof resolveLaunchLocator>[0]["lookup"];
-  admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>, workId: string) => void;
+  admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>, ownerKey: string) => void;
   /** Binds the route about to be shown to the document the navigation named. */
   enterRoute: (locator: ContextRouteTarget, documentId: string, by: RouteBindingProof) => void;
 }): OpenContextRoute {
@@ -94,15 +97,24 @@ export function createEditorDocumentCommand({
       // that tab's review the same way a click on it does.
       const addressedTab =
         options?.tab ?? openDraftOnlyTabFor(getContextTabs(projectId).tabs, requested);
+      const reviewOwner =
+        options?.reviewOwner ??
+        (addressedTab ? reviewOwnerOfTab(addressedTab, requested.workId) : undefined) ??
+        (sameDocument
+          ? (addressReviewOwner(current.address, requested.workId ?? null) ?? undefined)
+          : undefined);
       const itemKey =
         options?.itemKey ??
-        (addressedTab ? reviewItemKeyOf(addressedTab, requested.workId) : undefined) ??
+        (addressedTab && reviewOwner
+          ? reviewEntryOf(addressedTab, reviewOwner)?.itemKey
+          : undefined) ??
         (sameDocument ? current.address.itemKey : undefined);
       const next = prepareEditorDestination(
         { projectId, accountId, address: current.address, noWorkId: current.noWorkId },
         target,
         preparedTab,
         itemKey,
+        reviewOwner,
         options?.changeId ??
           (sameDocument && (!itemKey || itemKey === current.address.itemKey)
             ? current.address.changeId
@@ -119,7 +131,10 @@ export function createEditorDocumentCommand({
             .openTab(projectId, preparedTab, undefined, resolvedWorkId ?? undefined);
           if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
           if (installed.tab.kind === "tracked" && resolvedWorkId)
-            admitDraftReview(installed.tab, resolvedWorkId);
+            admitDraftReview(
+              installed.tab,
+              reviewOwner ?? draftOwnerKey({ kind: "work", workId: resolvedWorkId }),
+            );
           selected = installed.tab;
           installedTab = installed.tab;
           if (options?.focus && installed.tab.tabInstanceId)
@@ -202,6 +217,7 @@ export function prepareEditorDestination(
   target: ContextRouteRequest,
   preparedTab?: ContextTab,
   itemKey?: string,
+  reviewOwner?: string,
   changeId?: string,
 ) {
   let state: Record<string, unknown> | undefined;
@@ -217,7 +233,7 @@ export function prepareEditorDestination(
     itemKey && documentId && resolvedWorkId
       ? eligible.find((tab) =>
           matchesReviewItem(tab, {
-            reviewWorkId: resolvedWorkId,
+            reviewOwner: reviewOwner ?? draftOwnerKey({ kind: "work", workId: resolvedWorkId }),
             reviewItemKey: itemKey,
           }),
         )
@@ -280,6 +296,10 @@ export function prepareEditorDestination(
         ? { kind: "absent" }
         : workSelectionFor(destination, target.workId, noWorkId),
       ...(target.rootThreadId ? { lineage: parseRequestId(target.rootThreadId) } : {}),
+      // A review of a lineage's draft names that lineage beside its item.
+      ...(itemKey && reviewOwner && parseDraftOwnerKey(reviewOwner)?.kind === "lineage"
+        ? { lineage: parseRequestId(parseDraftOwnerKey(reviewOwner)?.id ?? "") }
+        : {}),
       itemKey,
       changeId: itemKey ? changeId : undefined,
     } as ProjectAddress,
@@ -298,9 +318,6 @@ function openDraftOnlyTabFor(
       (request.documentId === undefined || tab.documentId === request.documentId) &&
       contextTabMatchesRoute(tab, { ...request, workId }),
   );
-}
-function reviewItemKeyOf(tab: ContextTab, workId: string | undefined): string | undefined {
-  return workId ? reviewEntryOf(tab, workId)?.itemKey : undefined;
 }
 
 /** A prepared tab states the locator the route will use, not the one it was built from. */

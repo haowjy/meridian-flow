@@ -21,8 +21,9 @@ import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
 import {
   applyDraftClick,
-  discardCreatedDraft,
-  discardWorkDrafts,
+  branchOf,
+  discardBranchDrafts,
+  discardDraftItem,
   observeDraftClick,
   unapplyDraftClick,
 } from "@/client/api/branches-api";
@@ -159,7 +160,7 @@ export class DraftCommandOwner {
   private readonly identities = new Map<string, string>();
   private readonly records = new Map<string, DraftCommandState>();
   private readonly listeners = new Set<() => void>();
-  private readonly closingWorks = new Set<string>();
+  private readonly closingBranches = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
   private readonly reconciling = new Map<string, Promise<boolean>>();
   /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
@@ -825,33 +826,55 @@ export class DraftCommandOwner {
     if (this.items.get(itemKey)?.queue.stalled) this.setState(itemKey, { failure: null });
     this.items.get(itemKey)?.queue.retry();
   }
-  /** Server-only lifecycle commands share this account owner, never the Apply-all route. */
-  async removeCreated(ref: DraftRef, item: ThreadDraftListItem): Promise<CommandOutcome> {
-    if (!this.active || !item.isNew) return { kind: "blocked" };
-    const settleOwn = this.lifecycle.markOwnRemoval?.(ref);
-    this.setState(ref.itemKey, { hidden: true, failure: null });
-    this.lifecycle.closeCreated?.(ref);
+  /**
+   * Discards a whole item on the server: a created document, which the draft alone holds, or
+   * a frozen owner's draft, whose room refuses the writer's text. No Undo. A created document
+   * leaves at once; a frozen draft stays in review, discarding, until the server answers, so
+   * a refusal shows on it. A Discard decided on the frozen reading names the draft the writer
+   * saw, so the server refuses it if the chat came back and the draft moved on. Server-only
+   * lifecycle commands share this account owner, never the Apply-all route.
+   */
+  async discardOnServer(
+    ref: DraftRef,
+    item: ThreadDraftListItem,
+    frozen: boolean,
+  ): Promise<CommandOutcome> {
+    if (!this.active) return { kind: "blocked" };
+    const settleOwn = item.isNew ? this.lifecycle.markOwnRemoval?.(ref) : undefined;
+    this.setState(
+      ref.itemKey,
+      item.isNew ? { hidden: true, failure: null } : { discarding: () => true, failure: null },
+    );
+    if (item.isNew) this.lifecycle.closeCreated?.(ref);
     try {
-      const result = await discardCreatedDraft(ref, {
+      const result = await discardDraftItem(ref, {
         branchId: item.branchId,
         itemKey: item.itemKey,
         commandId: crypto.randomUUID(),
+        ends: "item",
+        ...(frozen ? { draftSeenAt: item.hasDraft ? item.updatedAt : null } : {}),
       });
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") {
         settleOwn?.("removed");
+        this.setState(ref.itemKey, { hidden: true, discarding: null });
         return { kind: "done" };
       }
       settleOwn?.("kept");
       this.setState(ref.itemKey, {
         hidden: false,
+        discarding: null,
         failure: shownRefusal({ code: "discard-refused", serverCode: result.status }),
       });
       return { kind: "change-refused", code: result.status };
     } catch {
       settleOwn?.("kept");
       if (this.active)
-        this.setState(ref.itemKey, { hidden: false, failure: { code: "discard-unknown" } });
+        this.setState(ref.itemKey, {
+          hidden: false,
+          discarding: null,
+          failure: { code: "discard-unknown" },
+        });
       return { kind: "change-refused", code: "unknown" };
     }
   }
@@ -880,10 +903,11 @@ export class DraftCommandOwner {
   private async discardTree(ref: DraftRef, item: ThreadDraftListItem): Promise<CommandOutcome> {
     if (!this.active || !item.tree) return { kind: "blocked" };
     try {
-      const result = await discardCreatedDraft(ref, {
+      const result = await discardDraftItem(ref, {
         branchId: item.branchId,
         itemKey: item.itemKey,
         commandId: crypto.randomUUID(),
+        ends: "tree",
       });
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") return { kind: "done" };
@@ -898,16 +922,16 @@ export class DraftCommandOwner {
   }
   async discardAll(refs: readonly DraftRef[], branchId: string): Promise<CommandOutcome> {
     const ref = refs[0];
-    if (!this.active || !ref || this.closingWorks.has(ref.workId)) return { kind: "blocked" };
-    this.closingWorks.add(ref.workId);
+    if (!this.active || !ref || this.closingBranches.has(branchId)) return { kind: "blocked" };
+    this.closingBranches.add(branchId);
     const scope = new Map(refs.map((draft) => [draft.itemKey, draft]));
     for (const entry of this.entries.values())
-      if (entry.ref.projectId === ref.projectId && entry.ref.workId === ref.workId)
+      if (entry.ref.projectId === ref.projectId && branchOf(entry.ref.itemKey) === branchId)
         scope.set(entry.ref.itemKey, entry.ref);
     for (const draft of scope.values())
       this.setState(draft.itemKey, { hidden: true, failure: null });
     try {
-      const answer = await discardWorkDrafts(ref, { branchId, commandId: crypto.randomUUID() });
+      const answer = await discardBranchDrafts(ref, { branchId, commandId: crypto.randomUUID() });
       if (answer.status !== "discarded") throw new Error("Drafts no longer active");
       return { kind: "done" };
     } catch {
@@ -916,7 +940,7 @@ export class DraftCommandOwner {
           this.setState(draft.itemKey, { hidden: false, failure: { code: "discard-unknown" } });
       return { kind: "change-refused", code: "unknown" };
     } finally {
-      this.closingWorks.delete(ref.workId);
+      this.closingBranches.delete(branchId);
     }
   }
   close() {

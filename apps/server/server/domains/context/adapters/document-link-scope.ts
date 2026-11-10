@@ -9,6 +9,7 @@
  * hidden one, which branch it reads "in a draft" in and where that branch has it.
  * Readability comes from the file policy's list path.
  */
+
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { BranchId, CatalogFolder } from "@meridian/contracts";
 import {
@@ -36,6 +37,7 @@ import {
 } from "@meridian/markup/links";
 import { storedLinkKeys } from "@meridian/markup/stored-links";
 import { type SQL, sql } from "drizzle-orm";
+import { ownerKeyOfColumns } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import type {
@@ -715,13 +717,18 @@ function snapshotCatalog(
     const hidden = status.kind === "hidden" || (status.kind === "visible" && status.hidden);
     const branch =
       status.kind === "hidden" || status.kind === "visible" ? status.branch : undefined;
+    const branchOwner = branch
+      ? ownerKeyOfColumns({ workId: branch.originWorkId, rootThreadId: branch.originRootThreadId })
+      : null;
     return {
       documentId: row.id,
       owner: row.owner,
       projectId: row.projectId,
       uri: address?.uri ?? row.uri,
       presence: status.kind === "deleted" ? "deleted" : hidden ? "branch" : "live",
-      ...(branch ? { branch: { branchId: branch.branchId, workId: branch.originWorkId } } : {}),
+      ...(branchOwner
+        ? { branch: { branchId: branch?.branchId as string, owner: branchOwner } }
+        : {}),
       readable: snapshot.readable.get(row.id) ?? false,
       nameable:
         row.projectId === snapshot.projectId ||

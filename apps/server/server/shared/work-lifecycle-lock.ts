@@ -2,10 +2,21 @@
 import { works } from "@meridian/database/schema";
 import { asc, inArray } from "drizzle-orm";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
+import { LineageDraftsUnavailableError, lockLineageOwners } from "./draft-owner.js";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
-import { confirmScopedEdits, scopedEditWorkIds } from "./edit-confirmation.js";
+import {
+  confirmScopedEdits,
+  scopedEditLineageRoots,
+  scopedEditWorkIds,
+} from "./edit-confirmation.js";
 
 export type LockedWorkLifecycle = "active" | "archived" | "deleted" | "missing";
+
+/** What `lockSeamWorks` locked: each Work's lifecycle and each lineage's liveness, read under the locks. */
+export type LockedOwners = {
+  works: ReadonlyMap<string, LockedWork>;
+  lineages: ReadonlyMap<string, "active" | "frozen">;
+};
 
 export interface LockedWork {
   state: LockedWorkLifecycle;
@@ -61,28 +72,36 @@ export async function lockWorkLifecycle(
 
 /**
  * A write seam's first locks (file-access §5): its own Works and the bound
- * edit grants' Works in one id order, then the grants' confirmation. The seam
- * takes its advisory locks after this. Returns every locked Work's lifecycle.
+ * edit grants' Works in one id order, then the lineages' draft-owner locks,
+ * then the grants' confirmation. The seam takes its advisory locks after this.
  */
 export async function lockSeamWorks(
   db: DrizzleDb,
   workIds: readonly string[],
-): Promise<ReadonlyMap<string, LockedWork>> {
-  const locked = await lockWorksInIdOrder(db, [...workIds, ...scopedEditWorkIds()]);
+  lineageRootIds: readonly string[] = [],
+): Promise<LockedOwners> {
+  const works = await lockWorksInIdOrder(db, [...workIds, ...scopedEditWorkIds()]);
+  const lineages = await lockLineageOwners(db, [...lineageRootIds, ...scopedEditLineageRoots()]);
   await confirmScopedEdits();
-  return locked;
+  return { works, lineages };
 }
 
-/** Seam Work locks, then each of the seam's own Works must still be active. */
+/** Seam locks, then each of the seam's own Works and lineages must still be active. */
 export async function requireLockedActiveWorks(
   db: DrizzleDb,
   workIds: readonly string[],
+  lineageRootIds: readonly string[] = [],
 ): Promise<void> {
-  const locked = await lockSeamWorks(db, workIds);
+  const locked = await lockSeamWorks(db, workIds, lineageRootIds);
   for (const workId of [...new Set(workIds)].sort()) {
-    const work = locked.get(workId);
+    const work = locked.works.get(workId);
     if (work && work.state !== "active") {
       throw new WorkLifecycleUnavailableError(workId, work.state, work.handle);
+    }
+  }
+  for (const root of [...new Set(lineageRootIds)].sort()) {
+    if (locked.lineages.get(root) !== "active") {
+      throw new LineageDraftsUnavailableError(root);
     }
   }
 }

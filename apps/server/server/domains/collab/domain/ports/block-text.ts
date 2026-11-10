@@ -3,18 +3,19 @@
  * whose derived outputs are current; a document left out is unknown here and its caller reads
  * the document itself. The writer side is `DocumentDerivationStore`.
  */
-import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
+import type { DraftOwner } from "@meridian/contracts";
+import type { DocumentId } from "@meridian/contracts/runtime";
 
 export type BlockText = {
   /**
    * Stored grep text of the documents whose derived outputs are current: the blocks' text
    * joined with `\n` in block order, in one statement with the freshness check. A reader whose
-   * Work (`draftWorkId`) holds an active draft of a document sees the draft, not the live text,
+   * Work (`draftOwner`) holds an active draft of a document sees the draft, not the live text,
    * so that document is left out.
    */
   grepTexts(
     ids: DocumentId[],
-    reader: { draftWorkId: WorkId | null },
+    reader: { draftOwner: DraftOwner | null },
   ): Promise<Map<DocumentId, string>>;
   /**
    * Words per document, as the current derivation counted them. A document whose derivation is

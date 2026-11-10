@@ -23,6 +23,7 @@
     "@meridian/contracts": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
     "drizzle-orm": "catalog:",
+    "fractional-indexing": "^4.0.0",
     "postgres": "catalog:",
     "yjs": "13.6.31"
   },
