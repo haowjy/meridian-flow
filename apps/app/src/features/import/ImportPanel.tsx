@@ -143,7 +143,6 @@ function ImportCard({
         {local.error ? (
           <InlineErrorRow
             message={local.error}
-            wrap
             className="p-0"
             onRetry={
               local.stopLost || (summary.state === "finished" && detail?.state !== "finished")

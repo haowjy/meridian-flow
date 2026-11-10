@@ -51,7 +51,6 @@ export function ReviewChangeBar({
   const failure = draftFailure ? (
     <InlineErrorRow
       message={<ReviewMessageText failure={draftFailure} />}
-      wrap
       onRetry={
         draftFailure.code === "unapply-refused" && state.stalled
           ? () => owner.retry(itemKey)

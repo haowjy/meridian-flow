@@ -33,12 +33,7 @@ export function WorkCommandFailureRow({
   const refusal = failure.operation === "restore" ? restoreRefusal(failure.error) : null;
   if (refusal)
     return (
-      <InlineErrorRow
-        message={refusal}
-        wrap
-        onDismiss={failure.dismiss}
-        className="px-0 pt-0 pb-2"
-      />
+      <InlineErrorRow message={refusal} onDismiss={failure.dismiss} className="px-0 pt-0 pb-2" />
     );
   return (
     <InlineErrorRow

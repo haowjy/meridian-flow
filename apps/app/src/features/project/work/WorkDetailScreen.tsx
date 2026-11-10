@@ -143,9 +143,7 @@ function DirtyDecision({ controller }: { controller: WorkMetadataController }) {
         <p className="text-sm text-muted-foreground">
           <Trans>Choose what to do before continuing.</Trans>
         </p>
-        {controller.error ? (
-          <InlineErrorRow message={controller.error} wrap className="p-0" />
-        ) : null}
+        {controller.error ? <InlineErrorRow message={controller.error} className="p-0" /> : null}
         <DialogFooter>
           <Button variant="ghost" disabled={controller.saving} onClick={controller.keepEditing}>
             <Trans>Keep editing</Trans>

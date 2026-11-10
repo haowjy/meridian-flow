@@ -167,7 +167,7 @@ export function ExportProjectDialog({
               </>
             ) : null}
           </div>
-          {result?.refusal ? <InlineErrorRow message={result.refusal} wrap /> : null}
+          {result?.refusal ? <InlineErrorRow message={result.refusal} /> : null}
           {failed ? (
             <InlineErrorRow
               message={t`Couldn't load the preview.`}

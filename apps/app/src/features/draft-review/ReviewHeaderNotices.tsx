@@ -34,7 +34,6 @@ export function ReviewFailureNotices({
       {commandError ? (
         <InlineErrorRow
           message={<ReviewMessageText failure={commandError} />}
-          wrap
           onRetry={
             commandError.code === "unapply-refused" && command.stalled
               ? () => owner.retry(itemKey)
@@ -53,7 +52,6 @@ export function ReviewFailureNotices({
               <ReviewMessageText failure={failure} />
             </>
           }
-          wrap
           onRetry={() => onOpenNext(row)}
           actionLabel={<Trans>Open</Trans>}
           className={className}

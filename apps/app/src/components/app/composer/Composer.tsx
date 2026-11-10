@@ -651,7 +651,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         hidden={takeover ? true : undefined}
         className={cn(
           "border border-border bg-card px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-card-pad-y)] focus-within:border-focus",
-          variant === "hero" ? "rounded-xl" : "rounded-xl",
+          "rounded-xl",
           (fileDrop.over || fileDropActive) && "border-focus bg-ink-fill-strong",
         )}
         aria-busy={busy || uploadsHeld === "sending" || undefined}

@@ -338,7 +338,7 @@ export function TrashRow({
         </OverflowMenu>
       </div>
       {state?.kind === "failed" ? (
-        <InlineErrorRow message={state.message} wrap className="pt-0 pr-2 pb-1 pl-3.5" />
+        <InlineErrorRow message={state.message} className="pt-0 pr-2 pb-1 pl-3.5" />
       ) : null}
     </div>
   );
@@ -457,7 +457,7 @@ function TrashNotice({
         {retention}
       </DocumentNotice>
       {state?.kind === "failed" ? (
-        <InlineErrorRow message={state.message} wrap className="px-0 pt-2 pb-0" />
+        <InlineErrorRow message={state.message} className="px-0 pt-2 pb-0" />
       ) : null}
     </div>
   );

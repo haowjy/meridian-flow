@@ -319,7 +319,6 @@ function LinkFields({
       {refused ? (
         <InlineErrorRow
           message={t`This link can no longer be edited. Close the form and try again.`}
-          wrap
           className="p-0"
         />
       ) : null}
@@ -327,7 +326,6 @@ function LinkFields({
         <InlineErrorRow
           id={`${fieldId}-error`}
           message={t`Choose a document or enter a web address or document path.`}
-          wrap
           className="p-0"
         />
       ) : null}

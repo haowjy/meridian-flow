@@ -321,7 +321,7 @@ function GoalEditor({ controller: c }: { controller: WorkMetadataController }) {
         }}
         className={bodyText}
       />
-      {c.error ? <InlineErrorRow id={errorId} message={c.error} wrap className="mt-2 p-0" /> : null}
+      {c.error ? <InlineErrorRow id={errorId} message={c.error} className="mt-2 p-0" /> : null}
       <div className="mt-3 flex items-center gap-2">
         <Button size="sm" variant="ghost" disabled={c.saving} onClick={c.cancel}>
           <Trans>Cancel</Trans>

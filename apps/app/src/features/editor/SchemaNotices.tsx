@@ -276,7 +276,6 @@ function RemovedFragment({ repair }: { repair: SchemaRepairEvent }) {
           {copy === "blocked" ? (
             <InlineErrorRow
               message={<Trans>Couldn't copy. Select the text to copy it.</Trans>}
-              wrap
               className="p-0"
             />
           ) : null}

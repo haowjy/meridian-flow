@@ -130,7 +130,7 @@ export function TitleEditSlot({
             failureClassName,
           )}
         >
-          <InlineErrorRow id={failureId} message={refusal} wrap />
+          <InlineErrorRow id={failureId} message={refusal} />
         </div>
       ) : null}
     </>

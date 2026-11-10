@@ -160,13 +160,6 @@ function HandoffPicker({
           event.preventDefault();
           contentRef.current?.focus();
         }}
-        // A focused row shows its tooltip, the top dismissable layer, which
-        // would swallow the first Escape. One Escape closes the picker.
-        onKeyDown={(event) => {
-          if (event.key !== "Escape") return;
-          event.preventDefault();
-          setOpen(false);
-        }}
       >
         <p className={dropdownGroupLabelClass}>{t`Hand off to`}</p>
         <AgentPickerPanel
