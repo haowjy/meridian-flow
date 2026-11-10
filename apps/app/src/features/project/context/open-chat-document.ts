@@ -25,8 +25,6 @@ export const BesideChatContext = createContext<BesideCommit | null>(null);
 export type ChatDocumentRequest = OpenProjectDocumentRequest & {
   /** A claim the caller took when its intent began (a URI door claims before its lookup). */
   claim?: number;
-  /** Keep a normal tab instead of filling the preview slot. */
-  keep?: true;
 };
 
 /**
@@ -56,12 +54,12 @@ export function useOpenChatDocument(
   const open = useOpenProjectDocument(projectId);
   const beside = useContext(BesideChatContext);
   return useCallback(
-    ({ claim, keep, ...request }) => {
+    ({ claim, ...request }) => {
       if (request.disposition === "background" || !beside) return open(request);
       const attempt = claim ?? claimOpenIntent();
       return open({
         ...request,
-        beside: (tab, focus) => beside(tab, attempt, focus, undefined, keep ? "open" : "peek"),
+        beside: (tab, focus) => beside(tab, attempt, focus),
       });
     },
     [beside, open],
