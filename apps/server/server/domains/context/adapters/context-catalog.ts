@@ -13,6 +13,8 @@ import type {
   CatalogLookupResult,
   CatalogScope,
   CatalogSnapshot,
+  CatalogWakeHint,
+  DraftOwnerHint,
 } from "@meridian/contracts/protocol";
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { decodeWorkHandle } from "@meridian/contracts/works";
@@ -195,7 +197,6 @@ async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
       workHandle: works.handle,
       chatThreadId: contextSources.chatThreadId,
       ownerThreadRef: threads.ref,
-      orderPolicy: contextSources.orderPolicy,
     })
     .from(contextSources)
     .leftJoin(projects, eq(contextSources.projectId, projects.id))
@@ -258,7 +259,6 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
             description: vf.description,
             rank: vf.rank,
             locationVersion: vf.locationVersion,
-            orderPolicy: vf.orderPolicy,
             createdAt: vf.createdAt,
             updatedAt: vf.updatedAt,
           })
@@ -363,7 +363,6 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       scheme,
       name: source.name,
       uri: canonicalContextUri(scheme, "", authority),
-      orderPolicy: source.orderPolicy,
     });
     for (const folder of folderRows.filter((item) => item.contextSourceId === source.id)) {
       const path = pathForFolder(folder.id, source.id);
@@ -381,7 +380,6 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
         uri: canonicalContextUri(scheme, path.join("/"), authority),
         hasChildren: (childCounts.get(folder.id) ?? 0) > 0,
         rank: folder.rank,
-        orderPolicy: folder.orderPolicy,
       });
     }
     for (const document of documentRows.filter((item) => item.contextSourceId === source.id)) {
@@ -466,6 +464,19 @@ export function createDrizzleContextCatalog(
   ContextCatalogFileMutationPort &
   ProjectCatalogLifecyclePort &
   WorkAuthorityCatalogMutationPort {
+  /** Wake hints are explicitly lossy: pull-on-focus and polling repair a missed one. */
+  function publishLossy(hints: readonly (CatalogWakeHint | DraftOwnerHint)[]) {
+    if (!wakePort || hints.length === 0) return;
+    runAfterDrizzleCommit(async () => {
+      for (const hint of hints) {
+        try {
+          await wakePort.publish(hint);
+        } catch {
+          // Lossy by design.
+        }
+      }
+    });
+  }
   const availabilityMutations =
     options.availabilityMutations ?? createDrizzleProjectContextAvailability(db);
   const retainedCommitsPerScope = Math.max(
@@ -588,18 +599,7 @@ export function createDrizzleContextCatalog(
           lt(contextCatalogCommits.lastRevision, oldestRevision),
         ),
       );
-    runAfterDrizzleCommit(async () => {
-      if (!wakePort) return;
-      try {
-        await wakePort.publish({
-          type: "context-catalog-hint",
-          scope,
-          headRevision: String(revision),
-        });
-      } catch {
-        // Wake hints are explicitly lossy. Pull-on-focus/poll repairs delivery.
-      }
-    });
+    publishLossy([{ type: "context-catalog-hint", scope, headRevision: String(revision) }]);
   }
 
   /**
@@ -843,6 +843,9 @@ export function createDrizzleContextCatalog(
         userIds: project?.isPersonal ? [project.userId] : [],
       });
     },
+    publishDraftOwnerHints(hints) {
+      publishLossy(hints);
+    },
     async upsertWorkAuthorities(workIds) {
       const unique = [...new Set(workIds)].sort();
       if (unique.length === 0) return;
@@ -947,18 +950,7 @@ export function createDrizzleContextCatalog(
                 lt(contextCatalogCommits.lastRevision, oldestRevision),
               ),
             );
-          runAfterDrizzleCommit(async () => {
-            if (!wakePort) return;
-            try {
-              await wakePort.publish({
-                type: "context-catalog-hint",
-                scope,
-                headRevision: String(revision),
-              });
-            } catch {
-              // Wake hints are explicitly lossy. Pull-on-focus/poll repairs delivery.
-            }
-          });
+          publishLossy([{ type: "context-catalog-hint", scope, headRevision: String(revision) }]);
         }
       });
     },

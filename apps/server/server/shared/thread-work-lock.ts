@@ -7,6 +7,7 @@ import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { asks, threads, threadWorks } from "@meridian/database/schema";
 import { and, asc, eq, inArray, or } from "drizzle-orm";
 import { continuationOwedSql } from "./ask-continuation-owed.js";
+import { lockLineagesOfThreads } from "./draft-owner.js";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 import {
   type LockedWorkLifecycle,
@@ -139,6 +140,9 @@ export async function lockWorkThreadTree(
   for (const threadId of initial.threadIds) await lockThreadForMutation(db, threadId);
   const lifecycle = await lockWorkLifecycle(db, workId);
   const current = await findWorkThreadTree(db, workId, options.includeMarked ?? false);
+  // Trashing or restoring the tree changes whether its lineages are live (draft writes decide that
+  // under this lock), and it comes before the context namespaces the caller then takes.
+  await lockLineagesOfThreads(db, current.threadIds);
   const initialIds = new Set(initial.threadIds);
   return {
     lifecycle,

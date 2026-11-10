@@ -320,12 +320,12 @@ describe("live document session authority contracts", () => {
 it("serializes the Work and item selector without changing the manuscript owner", () => {
   const address = apiProjectDocumentAddressPath("project", "manuscript", "chapters/one", {
     workId: null,
-    review: { workId: "review-work", itemKey: "branch:document" },
+    review: { owner: "work:review-work", itemKey: "branch:document" },
   });
   const query = new URL(address, "https://example.test").searchParams;
   expect(Object.fromEntries(query)).toEqual({
     path: "chapters/one",
-    reviewWorkId: "review-work",
+    reviewOwner: "work:review-work",
     itemKey: "branch:document",
   });
   expect(

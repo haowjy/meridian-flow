@@ -11,7 +11,6 @@ import type {
 } from "@meridian/agent-edit/integration";
 import {
   documentNotFoundMessage,
-  formatDocumentFile,
   modelResult,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
@@ -219,7 +218,7 @@ export async function copyBinary(
   if (copied.value.documentId) recordTouchInBackground(deps, copied.value.documentId, ctx);
   // The port's placement decided where the copy landed; only the Work's handle is ours to add.
   const destination = copied.value.placement;
-  const branchWork = context.resolution.primaryBranchWork;
+  const branchOwner = context.resolution.primaryBranchOwner;
   return {
     output: modelResult({
       command: "copy",
@@ -228,7 +227,7 @@ export async function copyBinary(
       payload: {
         path: copied.value.uri,
         destination,
-        ...(destination === "draft" ? { draftWork: branchWork?.handle ?? "/" } : {}),
+        ...(destination === "draft" ? { draftWork: branchOwner?.handle ?? "/" } : {}),
         copied: { from: source.uri },
       },
     }),

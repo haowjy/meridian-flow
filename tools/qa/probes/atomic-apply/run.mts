@@ -252,7 +252,7 @@ async function fixture(
       return handleApplyClickRequest(routeServices, {
         userId: h.ids.user,
         projectId: h.ids.project,
-        workId: work.workId,
+        branchId: work.branchId,
         documentId: document.documentId,
         request: changedDigest ? { ...click.request, groupIds: ["changed-digest"] } : click.request,
       });
@@ -261,7 +261,7 @@ async function fixture(
       return handleUnapplyClickRequest(routeServices, {
         userId: h.ids.user,
         projectId: h.ids.project,
-        workId: work.workId,
+        branchId: work.branchId,
         documentId: document.documentId,
         request: { commandId, applyCommandId: click.request.commandId },
       });
@@ -370,7 +370,7 @@ try {
     await applied(f, c);
     assert.equal(
       (
-        await h.raw`select count(*)::int as n from push_lineage where idempotency_key=${c.request.commandId}`
+        await h.raw`select count(*)::int as n from branch_commands where id=${c.request.commandId}`
       )[0].n,
       1,
     );
@@ -456,7 +456,7 @@ try {
     }
     assert.equal(
       (
-        await h.raw`select count(*)::int as n from push_lineage where idempotency_key=${c.request.commandId}`
+        await h.raw`select count(*)::int as n from branch_commands where id=${c.request.commandId}`
       )[0].n,
       1,
     );
@@ -504,12 +504,11 @@ try {
       catalog: { refreshSources: async () => "0" },
     });
     await discard.discardLocked({
-      workId: a.workId,
       kernel: { branchId: a.branchId, userId: h.ids.user, selection: { kind: "whole" } },
     });
     const branch = await h.projection.mutate({ works: [a.workId] }, () =>
       h.branches.ensureActiveLocked({
-        workId: a.workId,
+        owner: { kind: "work", workId: a.workId },
         projectId: h.ids.project,
         createdBy: h.ids.user,
         originThreadId: a.threadId,

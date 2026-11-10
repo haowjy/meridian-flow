@@ -95,6 +95,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         ensureNoWork: async (id) => workRepository().ensureNoWork(id),
         catalogLifecycle: {
+          publishDraftOwnerHints() {},
           async refreshProject(id) {
             projectId = id;
             throw new Error("catalog initialization failed");

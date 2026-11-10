@@ -4,7 +4,6 @@ import type {
   CatalogFileClassification,
   CatalogScope,
   ContextOperationReceipt,
-  ContextParentOrderPolicy,
   ContextSiblingPosition,
   CopyContextEntriesRequest,
   CopyContextEntryView,
@@ -207,7 +206,7 @@ export type ResourceDescriptor = ResourceKey & {
   canonical: ResourceLocation | null;
   /** Parent identity from the same canonical observation; absent until observed. */
   canonicalParent?: ParentRef;
-  /** Sibling rank from the same canonical observation; meaningful when its parent is manual. */
+  /** Sibling rank from the same canonical observation. */
   canonicalRank?: string | null;
   /** Per-entry namespace mutation revision from the same canonical observation. */
   canonicalLocationVersion?: string;
@@ -435,10 +434,9 @@ export type FolderNamespaceRecord = ResourceKey & {
   canonical: ResourceLocation | null;
   /** Parent identity installed atomically with the canonical location. */
   canonicalParent?: ParentRef;
-  /** This folder's rank and child-order policy from the same canonical observation. */
+  /** This folder's rank from the same canonical observation. */
   canonicalRank?: string | null;
   canonicalLocationVersion?: string;
-  canonicalOrderPolicy?: ContextParentOrderPolicy;
   /** Server namespace watermark of the canonical observation; absent for local identities. */
   observationVersion?: string;
   canonicalRefresh?: { operationId: string; observationVersion?: string };
@@ -580,7 +578,6 @@ export type NamespaceIdentityAvailability =
       observationVersion: string;
       locationVersion?: string;
       rank?: string | null;
-      orderPolicy?: ContextParentOrderPolicy;
     }
   | { kind: "deleted"; generation: string; observationVersion: string }
   | { kind: "unavailable" };

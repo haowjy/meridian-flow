@@ -6,7 +6,7 @@
  * (`survivingDraftDocuments`).
  */
 import { DocumentNotFoundError } from "@meridian/agent-edit/integration";
-import type { BranchId, DocumentId, WorkId } from "@meridian/contracts";
+import type { BranchId, DocumentId, DraftOwner } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documents } from "@meridian/database/schema";
 import { type AnyColumn, eq, type SQL, sql } from "drizzle-orm";
@@ -75,7 +75,7 @@ export async function requireLivingDocument(
  */
 export async function survivingDraftDocuments(
   db: DrizzleDb,
-  branch: { branchId: BranchId } | { workId: WorkId },
+  branch: { branchId: BranchId } | { owner: DraftOwner },
   documentIds: readonly DocumentId[],
 ): Promise<ReadonlySet<DocumentId>> {
   if (documentIds.length === 0) return new Set();
@@ -83,7 +83,13 @@ export async function survivingDraftDocuments(
     SELECT DISTINCT d.id::text AS id FROM documents d
     JOIN context_sources s ON s.id = d.context_source_id AND s.deleted_at IS NULL
     JOIN branches b ON b.status = 'active'
-      AND ${"branchId" in branch ? sql`b.id = ${branch.branchId}::uuid` : sql`b.origin_work_id = ${branch.workId}::uuid`}
+      AND ${
+        "branchId" in branch
+          ? sql`b.id = ${branch.branchId}::uuid`
+          : branch.owner.kind === "work"
+            ? sql`b.origin_work_id = ${branch.owner.workId}::uuid`
+            : sql`b.origin_root_thread_id = ${branch.owner.rootThreadId}::uuid`
+      }
     WHERE d.id IN (${sql.join(
       documentIds.map((id) => sql`${id}::uuid`),
       sql`, `,

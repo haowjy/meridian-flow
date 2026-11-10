@@ -525,7 +525,11 @@ export async function createProductionAppPorts(input: {
   const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, { eventSink });
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const organizeWake = createOrganizeWakeHub();
-  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals);
+  const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
+  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals, {
+    fileAccessChanges,
+    draftOwnerHints: contextCatalog,
+  });
   const threadRepos = createDrizzleRepositories(
     db,
     workProjectionMutation,
@@ -667,7 +671,6 @@ export async function createProductionAppPorts(input: {
     documents: documentSync,
     catalogLifecycle: contextCatalog,
   });
-  const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
   workRepo = createDrizzleProjectWorkRepository({
     db,
     removal: documentRemoval,
@@ -1185,14 +1188,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     projectExport: createProjectExport({
       snapshot: ports.exportSnapshot,
       pendingDrafts: {
-        async count(projectId) {
-          const works = await ports.workRepo.listByProject(projectId, { lifecycle: "all" });
-          const noWork = await ports.workRepo.findNoWork(projectId);
-          return [...works, ...(noWork ? [noWork] : [])].reduce(
-            (sum, work) => sum + work.pendingDocumentCount,
-            0,
-          );
-        },
+        count: (projectId) => ports.documentSync.draftReview.pendingDocumentCount(projectId),
       },
       documents: exportDocumentsFrom(ports.documentSync),
       files: ports.fileAccess,

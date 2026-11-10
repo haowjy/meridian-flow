@@ -35,7 +35,7 @@ describeBranchTreeDb("review address identity", (start, db) => {
       workId: null,
       path: "Withern",
     };
-    const review = { workId: work.id, itemKey: row.itemKey };
+    const review = { owner: `work:${work.id}`, itemKey: row.itemKey };
     const deps = { ...runtime.app, draftReview: runtime.app.documentSync.draftReview };
     await expect(handleDocumentAddressRequest(deps, input, review)).resolves.toMatchObject({
       kind: "current",
@@ -53,7 +53,7 @@ describeBranchTreeDb("review address identity", (start, db) => {
     });
     for (const selector of [
       { ...review, itemKey: "bad" },
-      { ...review, workId: rival.id },
+      { ...review, owner: `work:${rival.id}` },
       { ...review, itemKey: draftId },
       { ...review, itemKey: row.branchId },
       { ...review, itemKey: rivalItem?.itemKey ?? "missing" },
@@ -80,7 +80,7 @@ describeBranchTreeDb("review address identity", (start, db) => {
       deps.fileAccess.authorizeAt(
         { accountId: s.project.userId },
         { kind: "document", documentId: hidden },
-        { kind: "draft", workId: work.id, workHandle: work.handle },
+        { kind: "draft", owner: { kind: "work", workId: work.id }, ownerHandle: work.handle },
         "edit",
       ),
     ).resolves.toMatchObject({ denied: true, reason: "work_archived" });

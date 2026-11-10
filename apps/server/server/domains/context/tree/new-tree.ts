@@ -29,8 +29,7 @@ export type NewTreeNode =
       kind: "folder";
       id: FolderId;
       name: string;
-      /** The children's ordering; a manual folder's children take ranks in the order given. */
-      orderPolicy: "default" | "manual";
+      /** Children take ranks in the order given. */
       children: readonly NewTreeNode[];
     }
   | {
@@ -102,7 +101,7 @@ export async function insertNewTree(
           folderRows.push({
             ...folderRowValues(
               { contextSourceId: sourceId, parentId: run.parentId, name: node.name },
-              { hidden: false, id: node.id, orderPolicy: node.orderPolicy },
+              { hidden: false, id: node.id },
             ),
             rank,
           });
@@ -110,10 +109,7 @@ export async function insertNewTree(
             next.push({
               parentId: node.id,
               nodes: node.children,
-              ranks:
-                node.orderPolicy === "manual"
-                  ? generateNKeysBetween(null, null, node.children.length)
-                  : [],
+              ranks: generateNKeysBetween(null, null, node.children.length),
             });
           }
           return;

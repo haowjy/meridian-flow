@@ -244,7 +244,7 @@ async function harness(
     storeRegistry: registry,
   }).forWork({ workId: crypto.randomUUID(), workHandle: null } as never, PROJECT, USER, new Map(), {
     threadId: crypto.randomUUID(),
-    branchWork: null,
+    branchOwner: null,
   });
   call.context = { port, resolution: { thread: { projectId: PROJECT } } as never };
   const registrations = createModelToolRegistrations(deps).map(

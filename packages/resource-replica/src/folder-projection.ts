@@ -21,7 +21,7 @@ import {
   resourceContextAuthority,
   resourceContextUri,
 } from "./resource-work-authority";
-import { compareCatalogSiblings, isManualParent } from "./sibling-order";
+import { compareCatalogSiblings } from "./sibling-order";
 
 type CatalogChild = Extract<CatalogEntry, { kind: "file" | "folder" }>;
 
@@ -215,7 +215,6 @@ export function createResourcePlacement(
         uri: namespaceUri(location)!,
         hasChildren: false,
         rank: folder.canonicalRank,
-        orderPolicy: folder.canonicalOrderPolicy,
       });
     }
     // Suppression is a result of the identity walk, before navigation gap completion.
@@ -405,19 +404,14 @@ export function createResourcePlacement(
     if (!index) {
       const byParent = new Map<string, CatalogChild[]>();
       const sources: Extract<CatalogEntry, { kind: "source" }>[] = [];
-      const parents = new Map<string, CatalogEntry>();
       for (const row of projectCatalog(entries, records)) {
-        parents.set(row.entryId, row);
         if (row.kind === "source") sources.push(row);
         if (row.kind !== "file" && row.kind !== "folder") continue;
         const siblings = byParent.get(row.parentId);
         if (siblings) siblings.push(row);
         else byParent.set(row.parentId, [row]);
       }
-      for (const [parentId, siblings] of byParent) {
-        const manual = isManualParent(parents.get(parentId));
-        siblings.sort((left, right) => compareCatalogSiblings(manual, left, right));
-      }
+      for (const siblings of byParent.values()) siblings.sort(compareCatalogSiblings);
       index = { byParent, sources };
       placedRows.set(records, index);
     }

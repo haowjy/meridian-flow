@@ -67,7 +67,7 @@ export class AccountFeatureLifetime {
         this.removedRooms.add(stop);
       },
       closeCreated: (ref) => {
-        this.removal.discardDraft(ref.projectId, ref.workId, ref.itemKey);
+        this.removal.discardDraft(ref.projectId, ref.ownerKey, ref.itemKey);
       },
       markOwnRemoval: (ref) => this.notices.markOwnRemoval(ref.projectId, [ref.documentId]),
     });

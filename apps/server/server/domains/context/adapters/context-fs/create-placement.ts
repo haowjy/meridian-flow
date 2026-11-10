@@ -7,7 +7,7 @@
  * deletes, which are facts in the Work's branch (D26).
  */
 
-import type { DocumentId, ThreadId, UserId, WorkId } from "@meridian/contracts";
+import type { DocumentId, DraftOwner, ThreadId, UserId } from "@meridian/contracts";
 import type { RetractionCause } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { Branches } from "../../../collab/domain/branches.js";
@@ -35,10 +35,10 @@ import type { LiveCreate } from "./live-create.js";
  * creates make hidden rows in that branch, which the command transaction ensures.
  */
 export interface BranchPlacement {
-  workId: WorkId;
+  owner: DraftOwner;
   threadId: ThreadId;
   userId: UserId;
-  branches: Pick<Branches, "viewForWork">;
+  branches: Pick<Branches, "viewForOwner">;
   tree: BranchTreePort;
 }
 
@@ -123,7 +123,7 @@ function livePlacement(
     kind: "live",
     readView: (version) =>
       version !== "live" && placement.branch
-        ? placement.branch.branches.viewForWork(placement.branch.workId)
+        ? placement.branch.branches.viewForOwner(placement.branch.owner)
         : Promise.resolve(LIVE_TREE),
     refuse: () => null,
     ensureTracked(path, options) {
@@ -186,18 +186,18 @@ function draftPlacement(
   deps: CreatePlacementDeps,
 ): CreatePlacement {
   const { executor } = deps;
-  const work = branchWork(placement);
+  const owner = branchOwnerOf(placement);
   /** A command in the drafting Work's branch, which the transaction ensures and locks. */
   const inBranch = <T>(operation: (branch: EnsuredBranch) => Promise<Result<T, AdapterFault>>) =>
-    executor.runInBranch({ ...work, mode: "ensure" }, (branch) =>
-      operation({ id: branch.id, workId: placement.workId }),
+    executor.runInBranch({ ...owner, mode: "ensure" }, (branch) =>
+      operation({ id: branch.id, owner: placement.owner }),
     );
   return {
     kind: "draft",
     readView: (version) =>
       version === "live"
         ? Promise.resolve(LIVE_TREE)
-        : placement.branches.viewForWork(placement.workId),
+        : placement.branches.viewForOwner(placement.owner),
     refuse: (operation) => ({
       code: "invalid_operation",
       message: `In draft mode, you can't ${operation}; create the file empty and write into it`,
@@ -271,7 +271,7 @@ function draftPlacement(
           // No active branch: a whole Discard already ended every use.
           if (branch) {
             await placement.tree.retractCreate({
-              branch: { id: branch.id, workId: placement.workId },
+              branch: { id: branch.id, owner: placement.owner },
               documentId,
               cause,
             });
@@ -279,15 +279,15 @@ function draftPlacement(
           return Ok({ placement: "draft" as const });
         },
         undefined,
-        { branch: { ...work, mode: "existing" } },
+        { branch: { ...owner, mode: "existing" } },
       );
     },
   };
 }
 
-function branchWork(placement: BranchPlacement) {
+function branchOwnerOf(placement: BranchPlacement) {
   return {
-    workId: placement.workId,
+    owner: placement.owner,
     threadId: placement.threadId,
     userId: placement.userId,
   };
@@ -298,15 +298,15 @@ function branchTreeCommands(
   placement: BranchPlacement,
   executor: ResultAwareCommandExecutor<AdapterFault>,
 ): BranchTreeCommands {
-  const work = branchWork(placement);
+  const owner = branchOwnerOf(placement);
   return {
     move(target, command) {
       return executor.runInBranch(
-        { ...work, mode: "ensure" },
+        { ...owner, mode: "ensure" },
         async (
           active,
         ): Promise<Result<{ moved: boolean; name?: string; extension?: string }, AdapterFault>> => {
-          const branch = { id: active.id, workId: placement.workId };
+          const branch = { id: active.id, owner: placement.owner };
           const moved = await placement.tree.moveInBranch({
             branch,
             documentId: command.documentId,
@@ -329,8 +329,8 @@ function branchTreeCommands(
       );
     },
     delete(command) {
-      return executor.runInBranch({ ...work, mode: "ensure" }, async (active) => {
-        const branch = { id: active.id, workId: placement.workId };
+      return executor.runInBranch({ ...owner, mode: "ensure" }, async (active) => {
+        const branch = { id: active.id, owner: placement.owner };
         const deleted = await placement.tree.deleteInBranch({
           branch,
           documentId: command.documentId,

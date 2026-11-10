@@ -166,7 +166,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           "/api/projects/:projectId/documents/:documentId/figure/signed-url",
           createFigureSignedUrlHandler(async () => ({ app: ports, user: { userId: principal } })),
         );
-        const query = workId === undefined ? "" : `?workId=${workId}`;
+        const query = workId === undefined ? "" : `?owner=work:${workId}`;
         const before = signing.mock.calls.length;
         const response = await toWebHandler(route)(
           new Request(
@@ -481,7 +481,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
               ? [identity.inBranch, identity.document.branch, identity.document.uri]
               : identity.kind;
           },
-          expected: [true, { branchId: s.branch.id, workId: s.ascension.id }, HARBOR_URI],
+          expected: [true, { branchId: s.branch.id, owner: `work:${s.ascension.id}` }, HARBOR_URI],
         },
         {
           // Owner amendment 12a: an unbound ref at a branch's hidden path reads "in a draft".
@@ -561,7 +561,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
               s.tombstones.map((documentId) =>
                 s.facts.load({
                   target: { kind: "document", documentId },
-                  branchWorkId: s.ascension.id,
+                  branchOwner: { kind: "work", workId: s.ascension.id },
                 }),
               ),
             ),
@@ -569,7 +569,11 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         },
         {
           surface: "hidden tombstone facts list in D",
-          run: async () => [...(await s.facts.loadList(s.tombstones, s.ascension.id)).keys()],
+          run: async () => [
+            ...(
+              await s.facts.loadList(s.tombstones, { kind: "work", workId: s.ascension.id })
+            ).keys(),
+          ],
           expected: [],
         },
         {
@@ -589,7 +593,10 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         },
         {
           surface: "file facts list in D",
-          run: async () => (await s.facts.loadList([s.harbor], s.ascension.id)).has(s.harbor),
+          run: async () =>
+            (await s.facts.loadList([s.harbor], { kind: "work", workId: s.ascension.id })).has(
+              s.harbor,
+            ),
           expected: true,
         },
         {
@@ -597,7 +604,11 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           run: async () =>
             (
               await s.facts.load({
-                target: { kind: "draft", documentId: s.relocated, workId: s.ascension.id },
+                target: {
+                  kind: "draft",
+                  documentId: s.relocated,
+                  owner: { kind: "work", workId: s.ascension.id },
+                },
               })
             )?.ancestors[0],
           expected: { kind: "folder", id: s.relocatedFolder },
@@ -674,7 +685,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
               ? [identity.inBranch, identity.document.branch, identity.document.uri]
               : identity.kind;
           },
-          expected: [true, { branchId: s.branch.id, workId: s.ascension.id }, HARBOR_URI],
+          expected: [true, { branchId: s.branch.id, owner: `work:${s.ascension.id}` }, HARBOR_URI],
         },
         {
           surface: "ahead ref in D's text at the path",

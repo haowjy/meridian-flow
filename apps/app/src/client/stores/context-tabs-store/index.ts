@@ -6,6 +6,7 @@ export {
   commitPlannedContextRemoval,
   DEFAULT_TAB_VIEW,
   type DraftWorkspaceSettlementReceipt,
+  editorHasReview,
   editorTabsForWork,
   getContextTabs,
   isDraftOnly,
@@ -18,14 +19,14 @@ export {
   type ProjectTabsSlice,
   type ReviewEntries,
   type ReviewItemTabIdentity,
-  type ReviewOwner,
   type ReviewPin,
   reconcileEditorWorkspaceBootstrap,
   rehydrateEditorWorkspace,
   replaceOwner,
   reviewEntriesOf,
   reviewEntryOf,
-  reviewWorkIds,
+  reviewOwnerOfTab,
+  reviewOwners,
   type ServerContextTab,
   selectedDocumentIdOf,
   selectedTabOf,
@@ -40,8 +41,6 @@ export {
   useSelectedContextTab,
   useSelectedDocumentId,
   withoutReviewEntry,
-  workIdOfReviewOwner,
-  workReviewOwner,
 } from "./context-tabs-store";
 
 export { durableContextTab, parseContextTab } from "./editor-workspace-state";

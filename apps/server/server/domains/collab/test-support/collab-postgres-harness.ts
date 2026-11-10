@@ -197,7 +197,6 @@ export async function seedDatabase(
     name: "Manuscript",
     slug: "manuscript",
     scope: "project",
-    isPrimary: true,
   });
   await db.insert(schema.documents).values([
     {
@@ -287,8 +286,8 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     documentId === ALPHA_ID ? "alpha" : documentId === GAMMA_ID ? "third" : "beta";
   const DRAFT_DESTINATION = {
     kind: "draft",
-    workId: (options.ids ?? DEFAULT_SCENARIO_IDS).WORK_ID,
-    workHandle: "atomicity-work",
+    owner: { kind: "work", workId: (options.ids ?? DEFAULT_SCENARIO_IDS).WORK_ID },
+    ownerHandle: "atomicity-work",
   } as const;
   const persistence = createDrizzleCollabPersistence(db);
   const testJournal = grantedJournal(persistence.journal);
@@ -451,7 +450,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       branches: workBranches,
       fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
       removals: createRemovalRecords(db),
-      lockWorks: async () => {},
+      lockOwners: async () => {},
       lockLiveDocuments: async () => {},
       liveUtilityCore: runtime.liveUtilityCore,
       journal: persistence.journal,
@@ -630,7 +629,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     );
     const scenario = options.ids ?? DEFAULT_SCENARIO_IDS;
     const branch = await workBranches.ensureActiveForWrite({
-      workId: scenario.WORK_ID,
+      owner: { kind: "work", workId: scenario.WORK_ID },
       projectId: scenario.PROJECT_ID as never,
       threadId: THREAD_ID,
       userId: USER_ID as never,
@@ -1471,7 +1470,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       }),
     liveMarkdown: (documentId: DocumentId) =>
       liveCoordinator.withDocument(documentId, async (doc) => serializeMarkdown(doc)),
-    pushRows: () => db.select().from(schema.pushLineage),
     liveUpdateCount: async () => (await db.select().from(schema.documentYjsUpdates)).length,
     activePushJournalCount: async () =>
       (

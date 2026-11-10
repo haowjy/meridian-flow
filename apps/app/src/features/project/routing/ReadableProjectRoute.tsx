@@ -1,6 +1,6 @@
 /** Browser address resolution and navigation over one authorized, ID-backed project shell. */
 
-import { parseDraftItemKey } from "@meridian/contracts";
+import { draftOwnerKey, parseDraftItemKey } from "@meridian/contracts";
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -25,8 +25,8 @@ import type { ContextOwner } from "@/client/query/context-request-options";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { fetchCurrentDraftMetadata, useDraftMetadata } from "@/client/query/useDraftMetadata";
+import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
-import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import { projectWorkBranchFiles } from "@/client/query/work-branch-files";
 import {
   type ContextTab,
@@ -60,6 +60,7 @@ import {
 } from "./chat-navigation";
 import { applyContextRemovalSearchUpdate } from "./context-removal-route-repair";
 import {
+  addressReviewOwner,
   addressRouteBinding,
   bindDocumentAddressReview,
   documentAddressQueryOptions,
@@ -397,7 +398,8 @@ function ReadableProjectDestination({
         isError: false,
         refetch: () => undefined,
       };
-  const addressBinding = bindDocumentAddressReview(address.itemKey, addressWorkId);
+  const reviewOwner = addressReviewOwner(address, addressWorkId);
+  const addressBinding = bindDocumentAddressReview(address.itemKey, reviewOwner);
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
   const documentLookup = useQuery(
     documentAddressQueryOptions(
@@ -415,10 +417,10 @@ function ReadableProjectDestination({
   // unmount the editor before its terminal room frame arrives.
   const closingDocumentId = address.itemKey ? parseDraftItemKey(address.itemKey)?.documentId : null;
   const closingRef =
-    closingDocumentId && address.itemKey && addressWorkId
+    closingDocumentId && address.itemKey && reviewOwner
       ? {
           projectId,
-          workId: addressWorkId,
+          ownerKey: reviewOwner,
           documentId: closingDocumentId,
           itemKey: address.itemKey,
         }
@@ -520,7 +522,12 @@ function ReadableProjectDestination({
       });
     }
   }, [addressedTree, projectId, queryClient]);
-  const listedDrafts = useWorkBranchDrafts(projectId, documentDestination ? workId : null);
+  const listedDrafts = useOwnerDrafts(
+    projectId,
+    documentDestination
+      ? (reviewOwner ?? (workId ? draftOwnerKey({ kind: "work", workId }) : null))
+      : null,
+  );
   // The list omits an active draft with no effect; the addressed item's own metadata still
   // says whether live holds its document, so a held no-effect draft keeps its draft-only host.
   const addressedItem = closeMetadata?.data?.status === "active" ? closeMetadata.data.item : null;
@@ -550,8 +557,8 @@ function ReadableProjectDestination({
             (result) => result.resolutions[0] ?? { kind: "failed" as const },
             () => ({ kind: "failed" as const }),
           ),
-        admitDraftReview: (installed, reviewWorkId) =>
-          contextRemoval.admitDraftReview(projectId, installed, reviewWorkId),
+        admitDraftReview: (installed, reviewOwner) =>
+          contextRemoval.admitDraftReview(projectId, installed, reviewOwner),
         enterRoute: (locator, documentId, by) =>
           contextRemoval.enterRoute(projectId, locator, documentId, by),
       }),
@@ -634,6 +641,7 @@ function ReadableProjectDestination({
     documentDestination,
     workId,
     address.lineage,
+    reviewOwner,
   );
   useLayoutEffect(() => {
     if (!routeBinding) return;
@@ -722,7 +730,7 @@ function ReadableProjectDestination({
                 (tab) =>
                   (address.itemKey && !isDraftOnly(tab) && tab.documentId === addressDocumentId) ||
                   matchesReviewItem(tab, {
-                    reviewWorkId: workId ?? "",
+                    reviewOwner: reviewOwner ?? "",
                     reviewItemKey,
                   }),
               )
@@ -1102,6 +1110,7 @@ function ReadableProjectDestination({
             activeContextPath={editorDocument.activeContextPath}
             activeContextChat={editorDocument.activeContextChat}
             reviewItemKey={address.itemKey}
+            reviewOwner={reviewOwner}
             reviewDocumentId={closingDocumentId ?? undefined}
             reviewChangeId={address.changeId}
             reviewAddressDocumentId={addressDocumentId}

@@ -16,7 +16,7 @@ import { LIVE_TREE } from "./tree/tree-view.js";
 
 export function createDocumentRevisions(deps: {
   documents: Pick<DraftPeerShadowAccess, "readEffectiveRevision">;
-  branches: Pick<Branches, "viewForWork">;
+  branches: Pick<Branches, "viewForOwner">;
   /** One snapshot serves every document asked about together. */
   links: Pick<DocumentLinkScopes, "within">;
   threads: Pick<ThreadRepository, "findById">;
@@ -40,9 +40,11 @@ export function createDocumentRevisions(deps: {
     // Archive restricts writes, not the revision reads used by summaries and compaction.
     const valid = thread && !thread.deletedAt && work && !work.deletedAt;
     const branchOwner =
-      work && thread ? threadExecutionContext(work, thread.aiWriteMode).branchOwner : null;
-    const branchWork = branchOwner && work ? { id: branchOwner.workId, handle: work.handle } : null;
-    const view = branchWork ? await deps.branches.viewForWork(branchWork.id) : LIVE_TREE;
+      work && thread
+        ? { owner: threadExecutionContext(work, thread).branchOwner, handle: work.handle }
+        : null;
+    const owner = branchOwner?.owner ?? null;
+    const view = owner ? await deps.branches.viewForOwner(owner) : LIVE_TREE;
     for (const documentId of new Set(documentIds)) {
       let revision: string | null = null;
       if (valid) {
@@ -55,14 +57,18 @@ export function createDocumentRevisions(deps: {
           source?.kind === "available" ? parseUnifiedContextUri(source.entry.uri) : null;
         if (parsed?.ok) {
           // The revision of the version this thread's writes change, per document (D14, D20).
-          const drafted = sourceDestination(parsed.value.scheme, branchWork).kind === "draft";
+          const drafted =
+            sourceDestination(
+              parsed.value.scheme,
+              owner ? { owner, handle: branchOwner?.handle ?? null } : null,
+            ).kind === "draft";
           revision = await deps.documents.readEffectiveRevision(
-            drafted && branchWork
+            drafted && owner
               ? {
                   documentId: documentId as DocumentId,
                   threadId,
                   destination: "draft",
-                  workId: branchWork.id,
+                  owner,
                 }
               : { documentId: documentId as DocumentId, threadId: null, destination: "live" },
           );

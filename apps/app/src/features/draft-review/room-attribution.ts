@@ -1,8 +1,9 @@
 /** One evidence reader per retained room, shared by editor, dock and Work surfaces. */
 import { APPLY_RECORD_ROOT, type ItemRange, RESTORED_ROOT } from "@meridian/agent-edit/diff";
 import type { DraftProvenanceResponse } from "@meridian/contracts/branches";
-import { apiProjectWorkDocumentDraftPath } from "@meridian/contracts/protocol";
+import { apiProjectBranchDocumentDraftPath } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
+import { branchOf } from "@/client/api/branches-api";
 import { postJson } from "@/client/api/http-client";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { classifyRoom } from "./review-attribution";
@@ -68,7 +69,7 @@ function install(room: DocumentSession, runtime: ReviewRuntime, draft: DraftRef)
       const revision = roots;
       const controller = new AbortController();
       request = controller;
-      const url = `${apiProjectWorkDocumentDraftPath(draft.projectId, draft.workId, draft.documentId)}/provenance`;
+      const url = `${apiProjectBranchDocumentDraftPath(draft.projectId, branchOf(draft.itemKey), draft.documentId)}/provenance`;
       void postJson<DraftProvenanceResponse>(
         url,
         {
