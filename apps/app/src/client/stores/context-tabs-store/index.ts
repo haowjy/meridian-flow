@@ -6,6 +6,7 @@ export {
   commitPlannedContextRemoval,
   DEFAULT_TAB_VIEW,
   type DraftWorkspaceSettlementReceipt,
+  editorHasReview,
   getContextTabs,
   isDraftOnly,
   isEditorContextTab,

@@ -260,7 +260,7 @@ it("persists and admits the real New action without an empty working-set route",
       expect(search).toMatchObject({ scheme: "unfiled", path: "" });
       expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
         selection: { status: "bound", identity: { kind: "local", documentId: local?.documentId } },
-        admitted: { scheme: "unfiled", path: "", workId: "work-a" },
+        admitted: { scheme: "unfiled", path: "" },
       });
       const workspaceWrites = writes
         .filter((write) => write.key === "meridian:editor-workspace:v2")
@@ -297,7 +297,7 @@ it("persists and admits the real New action without an empty working-set route",
 });
 
 it("does not admit an old bound document while its retained controller is inactive", async () => {
-  const locator = { scheme: "manuscript" as const, path: "/a.md", workId: "work-1" };
+  const locator = { scheme: "manuscript" as const, path: "/a.md" };
   function Harness() {
     return (
       <AccountFeatureTestProvider accountId="parked-account">
@@ -331,7 +331,6 @@ it("does not admit an old bound document while its retained controller is inacti
         transition: acceptContextTransition,
         readSearch: () => ({
           screen: "context",
-          work: "work-1",
           scheme: "manuscript",
           path: "/a.md",
         }),
@@ -358,4 +357,50 @@ it("does not admit an old bound document while its retained controller is inacti
       lease.disposeIfSuspended();
     }
   });
+});
+
+it("a plain path settles on another Work's hidden draft-created document never", async () => {
+  useContextTabsStore.setState({
+    byProject: {
+      project: {
+        tabs: [
+          {
+            kind: "tracked",
+            documentId: "a",
+            tabInstanceId: "instance-a",
+            scheme: "manuscript",
+            path: "/a.md",
+            name: "a.md",
+            editable: true,
+            filetype: "markdown",
+            schemaType: "document",
+            reviews: { "work:work-1": { itemKey: "draft-1", tabInstanceToken: "token" } },
+          },
+        ],
+        selectedTabKey: "instance-a",
+      },
+    },
+    _workspaceHydrated: false,
+  });
+  queryState.isFetching = true;
+  await withReactRoot(
+    <AccountFeatureTestProvider accountId="account-a">
+      <ContextViewerSurfaceController
+        {...shellProps}
+        projectId="project"
+        editorWorkId="work-2"
+        activeContextScheme="manuscript"
+        activeContextPath="/a.md"
+        active
+      />
+    </AccountFeatureTestProvider>,
+    async () => {
+      // Work 1's draft-created page is not reached by a plain path under Work 2: only an address
+      // with its owner and item names it.
+      expect(viewerProps?.paneState).toMatchObject({
+        kind: "optimistic-loading",
+        settledTab: null,
+      });
+    },
+  );
 });

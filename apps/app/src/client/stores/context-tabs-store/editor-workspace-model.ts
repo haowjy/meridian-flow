@@ -218,6 +218,16 @@ export function reviewEntriesOf(tab: ContextTab | EditorTabCandidate): ReviewEnt
   return (tab as { reviews?: ReviewEntries }).reviews ?? {};
 }
 
+/**
+ * Whether the Editor of `workId` may settle a plain path on this draft-only tab: its own Work's
+ * entry, or a chat lineage's (a lineage belongs to no Work). Another Work's draft is reached only
+ * by an address that names its owner and item.
+ */
+export function editorHasReview(tab: EditorTabCandidate, workId: string | null): boolean {
+  if (workId && reviewEntryOf(tab, draftOwnerKey({ kind: "work", workId }))) return true;
+  return Object.keys(reviewEntriesOf(tab)).some((key) => key.startsWith("lineage:"));
+}
+
 /** The owner a draft-only tab is reviewed under: the Work's entry, else a lineage's, else any. */
 export function reviewOwnerOfTab(
   tab: ContextTab | EditorTabCandidate,

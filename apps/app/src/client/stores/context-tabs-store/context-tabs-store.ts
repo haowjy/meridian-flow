@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { browserRecord } from "@/client/storage/browser-record";
 import {
   type ContextTab,
+  editorHasReview,
   isDraftOnly,
   isEditorContextTab,
   matchesTabInstance,
@@ -35,6 +36,7 @@ export type TrackedTabPatch = Partial<
 export {
   type ContextTab,
   DEFAULT_TAB_VIEW,
+  editorHasReview,
   isDraftOnly,
   isEditorContextTab,
   isEditorScheme,

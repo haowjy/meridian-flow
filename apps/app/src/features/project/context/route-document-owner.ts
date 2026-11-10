@@ -49,6 +49,7 @@ export function resolveRouteDocumentOwner(input: {
   catalog: Pick<CatalogContextView, "findDocument" | "findPath"> | null;
   /** The Editor workspace's tabs; only draft-only review tabs of the locator's Work count. */
   workspaceTabs?: readonly ContextTab[];
+  scope: string | null;
 }): RouteDocumentOwner {
   const live = resolveLiveRouteDocument({
     path: input.locator.path,
@@ -64,16 +65,19 @@ function draftOnlyOwner({
   locator,
   boundDocumentId,
   workspaceTabs,
+  scope,
 }: {
   locator: ContextRouteTarget;
   boundDocumentId?: string | null;
   workspaceTabs?: readonly ContextTab[];
+  scope: string | null;
 }): ServerContextTab | null {
   const owner = resolveWorkspaceRoute({
     tabs: (workspaceTabs ?? []).filter((tab) => tab.kind !== "new" && isDraftOnly(tab)),
     selectedDocumentId: undefined,
     locator,
     boundDocumentId,
+    scope,
   });
   return owner.kind === "owner" && owner.tab.kind !== "new" ? owner.tab : null;
 }

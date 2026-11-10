@@ -49,6 +49,8 @@ export function resolveMobileDocumentRoute(input: {
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
   workId: string | null;
+  /** The Work scope. */
+  scope: string | null;
   rootThreadId?: string | null;
   /**
    * The document this route is bound to. A rename of it or a folder above it (or that
@@ -99,6 +101,7 @@ export function resolveMobileDocumentRoute(input: {
     boundDocumentId: input.boundDocumentId,
     catalog: input.catalog,
     workspaceTabs: input.workspaceTabs,
+    scope: input.scope,
   });
   const resolved =
     owner.kind === "live"
@@ -143,6 +146,8 @@ export function useMobileDocumentRoute(input: {
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
   workId: string | null;
+  /** The Work scope. */
+  scope: string | null;
   rootThreadId?: string | null;
   addressState?: AddressState;
 }): MobileDocumentRoute {
@@ -172,6 +177,7 @@ export function useMobileDocumentRoute(input: {
         scheme: input.scheme,
         path: input.path,
         workId: input.workId,
+        scope: input.scope,
         rootThreadId: input.rootThreadId,
         boundDocumentId,
         workspaceTabs,
