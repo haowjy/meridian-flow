@@ -116,6 +116,8 @@ function TooltipContent({
         // the press is sent again for that surface.
         onEscapeKeyDown={(event) => {
           onEscapeKeyDown?.(event);
+          // Already handled by something else: sending it again would act twice.
+          if (event.defaultPrevented) return;
           const target = event.target;
           setTimeout(() => {
             target?.dispatchEvent(

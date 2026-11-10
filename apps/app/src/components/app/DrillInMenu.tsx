@@ -222,7 +222,7 @@ export function DrillInMenuBody({
           <ChevronLeft aria-hidden />
           <span className="min-w-0 flex-1 truncate">{choosing.label}</span>
         </DropdownMenuItem>
-        {status ? <InlineErrorRow message={status} wrap /> : null}
+        {status ? <InlineErrorRow message={status} /> : null}
         <div className="min-h-0 overflow-y-auto">{choosing.choices.map(actionItem)}</div>
       </DropdownMenuContent>
     );
@@ -273,7 +273,7 @@ export function DrillInMenuBody({
           </DropdownMenuItem>
         ))}
       </div>
-      {status ? <InlineErrorRow message={status} wrap /> : null}
+      {status ? <InlineErrorRow message={status} /> : null}
       {currentActions.length > 0 ? <DropdownMenuSeparator /> : null}
       {currentActions.map(actionItem)}
     </DropdownMenuContent>

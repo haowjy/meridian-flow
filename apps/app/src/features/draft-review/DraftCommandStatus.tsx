@@ -45,7 +45,6 @@ export function DraftCommandStatus({
     ) : (
       <InlineErrorRow
         message={<ReviewMessageText failure={state.failure} />}
-        wrap
         className="min-w-0 flex-1 p-0"
       />
     )

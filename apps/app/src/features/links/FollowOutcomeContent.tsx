@@ -160,7 +160,6 @@ export function FollowOutcomeContent({
       {failedToCreate ? (
         <InlineErrorRow
           message={<Trans>The document could not be created. Try again.</Trans>}
-          wrap
           className="p-0"
         />
       ) : null}

@@ -286,7 +286,6 @@ function WorkSection({
                 <InlineErrorRow
                   id={errorId}
                   message={failureCopy(error)}
-                  wrap
                   className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-0"
                 />
               ) : null}

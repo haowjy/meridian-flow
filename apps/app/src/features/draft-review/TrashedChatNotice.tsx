@@ -64,7 +64,6 @@ export function TrashedChatNotice({
       {state === "failed" ? (
         <InlineErrorRow
           message={<Trans>Couldn't restore the chat. Try again.</Trans>}
-          wrap
           className="px-0 pt-2 pb-0"
         />
       ) : null}

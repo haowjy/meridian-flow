@@ -167,7 +167,6 @@ export function ContextViewer({
           message={
             <Trans>Couldn't save the Editor tab layout. Reload may not restore your tabs.</Trans>
           }
-          wrap
           className="px-4 py-2"
         />
       ) : null}
