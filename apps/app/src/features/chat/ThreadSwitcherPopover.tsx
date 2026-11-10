@@ -9,7 +9,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { ChevronsUpDown, Pencil, Plus, Search } from "lucide-react";
-import { type KeyboardEvent, type RefObject, useRef, useState } from "react";
+import { type RefObject, useRef, useState } from "react";
 import { useThreadStore } from "@/client/stores";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
+import { handleListKeys } from "@/components/ui/list-keys";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { role } from "@/components/ui/roles";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
@@ -99,27 +100,6 @@ export function ThreadSwitcherPopover({
     onRename?.();
   };
 
-  const handleNavigationKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    if (event.target instanceof HTMLInputElement && ["Home", "End"].includes(event.key)) return;
-    const focusable = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>("[data-switcher-focus]"),
-    ).filter((element) => !element.hasAttribute("disabled"));
-    if (focusable.length === 0) return;
-
-    const currentIndex = focusable.indexOf(document.activeElement as HTMLElement);
-    const nextIndex =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? focusable.length - 1
-          : event.key === "ArrowDown"
-            ? (currentIndex + 1) % focusable.length
-            : (currentIndex <= 0 ? focusable.length : currentIndex) - 1;
-    event.preventDefault();
-    focusable[nextIndex]?.focus();
-  };
-
   return (
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
@@ -147,7 +127,7 @@ export function ThreadSwitcherPopover({
           (
             content?.querySelector<HTMLElement>("[data-switcher-search]") ??
             currentRow ??
-            content?.querySelector<HTMLElement>("[data-switcher-focus]")
+            content?.querySelector<HTMLElement>("[data-list-item]")
           )?.focus();
           currentRow?.scrollIntoView({ block: "nearest" });
         }}
@@ -155,10 +135,10 @@ export function ThreadSwitcherPopover({
           if (focusHandoff.current) event.preventDefault();
           focusHandoff.current = false;
         }}
-        onKeyDown={handleNavigationKeyDown}
+        onKeyDown={handleListKeys}
       >
         <button
-          data-switcher-focus
+          data-list-item
           type="button"
           className={cn(dropdownRowVariants(), "[&_svg]:text-muted-foreground")}
           onClick={() => {
@@ -178,7 +158,7 @@ export function ThreadSwitcherPopover({
                 aria-hidden
               />
               <Input
-                data-switcher-focus
+                data-list-item
                 data-switcher-search
                 type="search"
                 value={query}
@@ -267,9 +247,10 @@ function ThreadSwitchItem({
         "group flex min-w-0 items-center transition-colors hover:bg-ink-fill",
       )}
       data-selected={active}
+      data-list-row
     >
       <button
-        data-switcher-focus
+        data-list-item
         type="button"
         aria-current={active ? "page" : undefined}
         onClick={() => onSelect(thread.id)}
@@ -289,13 +270,7 @@ function ThreadSwitchItem({
         ) : null}
       </button>
       {active ? (
-        <IconButton
-          data-switcher-focus
-          size="xs"
-          label={t`Rename chat`}
-          onClick={onRename}
-          className="mr-1"
-        >
+        <IconButton size="xs" label={t`Rename chat`} onClick={onRename} className="mr-1">
           <Pencil className="size-3.5" aria-hidden />
         </IconButton>
       ) : null}
