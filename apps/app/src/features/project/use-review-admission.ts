@@ -1,45 +1,55 @@
 /**
- * Makes the review controller follow the selected tab: the tab says which review it paints
- * (`presented.review`, resolved from its view, the Work scope and an optional pin), and the
- * controller enters, keeps or leaves it to match. The focused change is kept in step both ways:
- * a change the writer focuses is recorded on the pin so a review link can name it, and a pin that
- * moves on its own (a reload, a shared link, Back) focuses the change it names.
+ * Makes a document host's review controller follow what the document paints: the paint says which
+ * draft it shows (`useDocumentPaint`), and the controller enters, keeps or leaves it to match. The
+ * focused change is kept in step both ways: a change the writer focuses is recorded on the view's
+ * pin so a review link can name it, and a pin that moves on its own (a reload, a shared link,
+ * Back, a launch that names a change) focuses the change it names.
  */
 import { useEffect, useRef } from "react";
+import type { DraftPin } from "@/client/project-shell/document-views";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
-import type {
-  PresentedDocument,
-  ReviewAddress,
-  ReviewAddressAdmission,
-} from "./presented-document";
 import type { AiDraftLaunchTarget } from "./review-launch";
 
-export type ReviewAddressPort = {
-  /** Records the focused change on the tab's pin. */
-  write(review: ReviewAddress): void;
+/** The route's verdict on a review the address names, asked of the server by owner and item. */
+export type ReviewAddressAdmission = "pending" | "admitted" | "unavailable" | "failed";
+
+export type ReviewAdmissionPort = {
+  /** Records the focused change on the view's pin. */
+  write(review: DraftPin): void;
   /** `false`: refused, because the item's known draft is closed and no newer one replaced it. */
   admit(target: AiDraftLaunchTarget): Promise<boolean>;
 };
 
-export function ReviewAddressOwner({
+export type ReviewedDocument = {
+  documentId: string;
+  scheme: AiDraftLaunchTarget["contextLocation"]["scheme"] | null;
+  path: string | null;
+  /** The draft the document paints; null on Live or while the paint is held. */
+  review: DraftPin | null;
+  /** The view asks for a draft: an open review of the document stays until the writer picks Live. */
+  draftView: boolean;
+  draftOnly: boolean;
+};
+
+export function useReviewAdmission({
   review,
   presented,
   admission,
   port,
 }: {
   review: DraftReviewContextValue;
-  presented: PresentedDocument | null;
-  /** The route's verdict on an explicit review selector in the address. */
+  presented: ReviewedDocument | null;
+  /** The route's verdict when the address names this review; "admitted" for every other review. */
   admission: ReviewAddressAdmission;
-  port: ReviewAddressPort;
+  port: ReviewAdmissionPort;
 }) {
   const restoring = useRef<string | null>(null);
   /**
    * The port that refused the request. Admitting the same item through it again would be
    * refused again; a new port (a newer draft generation) gets one try.
    */
-  const refused = useRef<{ itemKey: string; port: ReviewAddressPort } | null>(null);
+  const refused = useRef<{ itemKey: string; port: ReviewAdmissionPort } | null>(null);
   /** The focus and the pin's change as last reconciled: whichever differs from it is what moved. */
   const settled = useRef<{ focus?: string; pin?: string }>({});
   const { changes, status } = useOpenReviewChanges(review.controller);
@@ -127,6 +137,4 @@ export function ReviewAddressOwner({
         },
       );
   }, [presented, port, requested, review, admission, changes, status]);
-
-  return null;
 }

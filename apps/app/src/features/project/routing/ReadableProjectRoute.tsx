@@ -20,6 +20,7 @@ import {
   getProjectContextAvailability,
   getProjectDocumentAddress,
 } from "@/client/api/projects-api";
+import type { DraftPin } from "@/client/project-shell/document-views";
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
@@ -50,7 +51,6 @@ import { ProjectDocumentNavigationProvider } from "../context/open-project-docum
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useRemovalRecord } from "../context/use-removal-record";
 import { ProjectView } from "../ProjectView";
-import type { ReviewAddress } from "../presented-document";
 import type { ScreenKey } from "../shell/screens";
 import { useWorkScopeState } from "../use-work-scope";
 import { ChatNavigationProvider, useProjectChatNavigation } from "./chat-navigation";
@@ -742,7 +742,7 @@ function ReadableProjectDestination({
     );
   }, [departedLocalTab?.documentId, workId, openContext]);
   const setEditorReviewItemKey = useCallback(
-    (review: ReviewAddress | null) => {
+    (review: DraftPin | null) => {
       const current = latest.current;
       if (!current.navigation) return;
       const ticket = current.navigation.capture();

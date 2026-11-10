@@ -1,23 +1,22 @@
 /** ContextEditorMountHost — hosts the *active* TRACKED context document with a bounded "keep-warm" set of recently-viewed editors. */
-import { useEffect, useRef } from "react";
+import { Fragment, type ReactNode, useEffect, useRef } from "react";
 
-import { ContextDocumentHost, type EditableContextTab } from "./ContextDocumentHost";
+import type { EditableContextTab } from "./ContextDocumentHost";
 
 /** Concurrent-mount cap. The active tab is always counted; the remaining
  *  slots hold the LRU "warm" editors so a switch back stays instant. */
 export const MAX_MOUNTED_EDITORS = 6;
 
 export type ContextEditorMountHostProps = {
-  projectId: string;
-  editorWorkId: string | null;
   /** TRACKED tabs only — viewer tabs are routed elsewhere. */
   trackedTabs: EditableContextTab[];
   /** The currently visible tab id. Must reference a tab in `trackedTabs`. */
   activeTabId: string | null;
-  /** Whether the context destination is currently visible. */
-  active: boolean;
-  readOnly?: boolean;
-  onUntitledBecameNonEmpty?: (documentId: string) => Promise<void>;
+  /** One tab's frame: its own review, its chrome while shown, and its editor host. */
+  renderTab: (
+    tab: EditableContextTab,
+    placement: { mountEditor: boolean; shown: boolean },
+  ) => ReactNode;
 };
 
 export function pickMountedIds(
@@ -37,13 +36,9 @@ export function pickMountedIds(
 }
 
 export function ContextEditorMountHost({
-  projectId,
-  editorWorkId,
   trackedTabs,
   activeTabId,
-  active,
-  onUntitledBecameNonEmpty,
-  readOnly = false,
+  renderTab,
 }: ContextEditorMountHostProps) {
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
   // we never mutate state during render. The eviction policy reads from this
@@ -73,18 +68,12 @@ export function ContextEditorMountHost({
   return (
     <div className="relative min-h-0 flex-1">
       {trackedTabs.map((tab) => (
-        <ContextDocumentHost
-          container="editor"
-          editorWorkId={editorWorkId}
-          key={tab.tabInstanceId ?? tab.documentId}
-          projectId={projectId}
-          tab={tab}
-          mountEditor={mounted.has(tab.documentId)}
-          shown={tab.documentId === activeTabId}
-          active={active}
-          readOnly={readOnly}
-          onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
-        />
+        <Fragment key={tab.tabInstanceId ?? tab.documentId}>
+          {renderTab(tab, {
+            mountEditor: mounted.has(tab.documentId),
+            shown: tab.documentId === activeTabId,
+          })}
+        </Fragment>
       ))}
     </div>
   );

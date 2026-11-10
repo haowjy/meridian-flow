@@ -1,41 +1,26 @@
 /**
  * The one review-launch path. Every launcher (the composer strip, a change card, a link to a draft,
- * the Work page, a draft hint, the phone) calls `openAiDraft`; it opens the document's tab, selects
- * it and pins the review on it (`reviewPin`, `view.version = "draft"`). In Write the route command
- * does the opening and writes the URL; beside the chat the tab store does. Latest launch wins.
- * `EditorReviewIntentClaimant` then carries the clicked change's focus to the host that paints it.
+ * the Work page, the version menu, the phone) calls `openAiDraft`: it sets the document's view to
+ * that draft, with the clicked change as the pin's change, and opens the document. In Write the
+ * route command opens it and writes the address; beside the chat the tab store does. Whichever
+ * host holds the document then paints the draft and focuses the change. Latest launch wins.
  */
 
 import type { EventRecord } from "@meridian/contracts/observability";
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { createContext, type ReactNode, useCallback, useContext, useRef } from "react";
+import { setDocumentView } from "@/client/project-shell/document-views";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import {
-  getContextTabs,
-  tabKey,
-  useContextTabsActions,
-  useContextTabsStore,
-} from "@/client/stores";
+import { useContextTabsActions } from "@/client/stores";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
-import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { workOwnerKey } from "@/features/draft-review/draft-owner-key";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDestination } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
+import { useAccountId } from "./context/account-feature-context";
 import { contextTabFromDraftGroup } from "./context/context-tab-from-draft";
 import { BesideChatContext } from "./context/open-chat-document";
 import { claimOpenIntent } from "./context/open-intent";
 import { useProjectDocumentNavigationProjectId } from "./context/open-project-document";
-import { FocusOpenedReview, type ReviewFocusRequest } from "./dock/FocusOpenedReview";
-import { type PresentedDocument, usePresentedDocument } from "./presented-document";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
 
@@ -50,8 +35,6 @@ export type AiDraftLaunchTarget = {
   /** A projection-local change to focus, only if that projection still paints. */
   focus?: ReviewFocus;
 };
-
-type EditorReviewIntent = AiDraftLaunchTarget & { sequence: number };
 
 type EditorReviewCommand = (target: AiDraftLaunchTarget) => Promise<void>;
 
@@ -81,13 +64,8 @@ function reportRouteSettlement(
 }
 
 const EditorReviewCommandContext = createContext<EditorReviewCommand | null>(null);
-const EditorReviewIntentContext = createContext<{
-  intent: EditorReviewIntent | null;
-  routingItemKey: string | null;
-  claim: (sequence: number) => void;
-} | null>(null);
 
-export function EditorReviewHandoffProvider({
+export function ReviewLaunchProvider({
   projectId,
   openContextRoute,
   children,
@@ -96,101 +74,51 @@ export function EditorReviewHandoffProvider({
   openContextRoute: OpenContextRoute;
   children: ReactNode;
 }) {
-  const [intent, setIntent] = useState<EditorReviewIntent | null>(null);
-  const [routingItemKey, setRoutingItemKey] = useState<string | null>(null);
+  const accountId = useAccountId();
   const sequence = useRef(0);
-  const latest = useRef<EditorReviewIntent | null>(null);
-  const claimed = useRef<number | null>(null);
-
   const beside = useContext(BesideChatContext);
   const openEditorReview = useCallback<EditorReviewCommand>(
     async (target) => {
-      const tab = contextTabFromDraftGroup(target);
-      // Beside the chat the tab store opens, selects and pins; there is no address to route to.
-      if (beside && tab) {
-        beside(tab, claimOpenIntent(), undefined, {
+      setDocumentView(accountId, projectId, target.documentId, {
+        pin: {
           ownerKey: target.ownerKey,
           itemKey: target.itemKey,
-        });
+          ...(target.focus ? { changeId: target.focus.id } : {}),
+        },
+      });
+      const tab = contextTabFromDraftGroup(target);
+      // Beside the chat the tab store opens and selects; there is no address to route to.
+      if (beside && tab) {
+        beside(tab, claimOpenIntent());
         return;
       }
-      const staged = { ...target, sequence: ++sequence.current };
-      latest.current = staged;
-      claimed.current = null;
-      setRoutingItemKey(target.itemKey);
-      // A matching mounted Editor may claim immediately. This avoids making a
-      // same-route review command depend on an unrelated navigation settlement.
-      setIntent(staged);
-
-      try {
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-          const result = await openContextRoute(
-            contextRouteRequest({
-              ...target.contextLocation,
-              documentId: target.documentId,
-            }),
-            {
-              replaceIfSameDocument: true,
-              tab: tab ?? undefined,
-              itemKey: target.itemKey,
-              reviewOwner: target.ownerKey,
-              canCommit: () => latest.current?.sequence === staged.sequence,
-            },
-          );
-          reportRouteSettlement(projectId, target, result.kind, attempt + 1);
-          if (result.kind === "failed") throw result.error;
-          if (result.kind === "applied") {
-            const opened = getContextTabs(projectId).tabs.find(
-              (candidate) => candidate.documentId === target.documentId,
-            );
-            if (opened)
-              useContextTabsStore.getState().setTabState(projectId, tabKey(opened), {
-                reviewPin: { ownerKey: target.ownerKey, itemKey: target.itemKey },
-                view: { version: "draft" },
-              });
-            if (
-              latest.current?.sequence === staged.sequence &&
-              claimed.current === staged.sequence
-            ) {
-              latest.current = null;
-            }
-            return;
-          }
-          if (result.kind === "cancelled") {
-            if (latest.current?.sequence === staged.sequence) {
-              latest.current = null;
-              setIntent(null);
-            }
-            return;
-          }
-          if (latest.current?.sequence !== staged.sequence) return;
-        }
-        throw new Error("Editor review navigation did not settle after retry");
-      } catch (error) {
-        if (latest.current?.sequence === staged.sequence) {
-          latest.current = null;
-          setIntent(null);
-        }
-        throw error;
-      } finally {
-        if (latest.current?.sequence === staged.sequence || claimed.current === staged.sequence) {
-          setRoutingItemKey(null);
-        }
+      const launch = ++sequence.current;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const result = await openContextRoute(
+          contextRouteRequest({
+            ...target.contextLocation,
+            documentId: target.documentId,
+          }),
+          {
+            replaceIfSameDocument: true,
+            tab: tab ?? undefined,
+            itemKey: target.itemKey,
+            reviewOwner: target.ownerKey,
+            canCommit: () => sequence.current === launch,
+          },
+        );
+        reportRouteSettlement(projectId, target, result.kind, attempt + 1);
+        if (result.kind === "failed") throw result.error;
+        if (result.kind !== "superseded" || sequence.current !== launch) return;
       }
+      throw new Error("Editor review navigation did not settle after retry");
     },
-    [openContextRoute, projectId, beside],
+    [openContextRoute, projectId, accountId, beside],
   );
-  const claim = useCallback((claimedSequence: number) => {
-    if (latest.current?.sequence !== claimedSequence) return;
-    claimed.current = claimedSequence;
-    setIntent(null);
-  }, []);
 
   return (
     <EditorReviewCommandContext.Provider value={openEditorReview}>
-      <EditorReviewIntentContext.Provider value={{ intent, routingItemKey, claim }}>
-        {children}
-      </EditorReviewIntentContext.Provider>
+      {children}
     </EditorReviewCommandContext.Provider>
   );
 }
@@ -204,101 +132,6 @@ export function useOpenEditorReview(): EditorReviewCommand {
 /** For a surface that only sometimes launches a review (a link to a draft), and may mount without an owner. */
 export function useOptionalOpenEditorReview(): EditorReviewCommand | null {
   return useContext(EditorReviewCommandContext);
-}
-
-/**
- * Mount inside the Editor host’s draft-review boundary, beside the active viewer/editor. The
- * Work, document and draft decide the claim; the address path is only a label
- * that a rename can change between the launch and the claim.
- */
-export function EditorReviewIntentClaimant({
-  editorWorkId,
-  activeScheme,
-}: {
-  editorWorkId: string | null;
-  activeScheme: string | null;
-}) {
-  const handoff = useContext(EditorReviewIntentContext);
-  const intent = handoff?.intent ?? null;
-  const review = useDraftReview();
-  const [focus, setFocus] = useState<ReviewFocusRequest | null>(null);
-  const focusDone = useCallback(() => setFocus(null), []);
-
-  useEffect(() => {
-    if (
-      !intent ||
-      !admissible(intent, { editorWorkId, activeScheme, documentId: review.activeEditorDocumentId })
-    )
-      return;
-    review.controller.enterInlineReview(intent.documentId, intent.itemKey);
-    // The latest launch decides the focus: one without it clears an older request.
-    setFocus(
-      intent.focus
-        ? {
-            sequence: intent.sequence,
-            documentId: intent.documentId,
-            itemKey: intent.itemKey,
-            focus: intent.focus,
-          }
-        : null,
-    );
-    handoff?.claim(intent.sequence);
-  }, [activeScheme, editorWorkId, handoff, intent, review]);
-
-  return focus ? (
-    <FocusOpenedReview key={focus.sequence} request={focus} onDone={focusDone} />
-  ) : null;
-}
-
-/** The launch and its host agree on the destination before passive admission. */
-export function admissible(
-  intent: EditorReviewIntent,
-  host: { editorWorkId: string | null; activeScheme: string | null; documentId: string | null },
-) {
-  return (
-    (intent.ownerKey.startsWith("lineage:") ||
-      intent.ownerKey === workOwnerKey(host.editorWorkId ? { id: host.editorWorkId } : null)) &&
-    intent.documentId === host.documentId
-  );
-}
-export function useRequestedReview(host: {
-  container: PresentedDocument["container"];
-  editorWorkId: string | null;
-  activeScheme: string | null;
-  documentId: string | null;
-}) {
-  const { controller } = useDraftReview();
-  const intent = useContext(EditorReviewIntentContext)?.intent;
-  const presented = usePresentedDocument();
-  return requestedReviewItemKey(host, { inlineReview: controller.inlineReview, intent, presented });
-}
-
-/** Pending intent hides warm live paint; an admitted review survives route failure. */
-export function requestedReviewItemKey(
-  host: {
-    container: PresentedDocument["container"];
-    editorWorkId: string | null;
-    activeScheme: string | null;
-    documentId: string | null;
-  },
-  state: {
-    inlineReview: { documentId: string; itemKey: string } | null;
-    intent: EditorReviewIntent | null | undefined;
-    presented: PresentedDocument | null;
-  },
-): string | null {
-  const { inlineReview, intent, presented } = state;
-  const presenting =
-    presented?.container === host.container &&
-    (presented.documentId === host.documentId ||
-      (!presented.documentId && host.container === "editor"));
-  return presenting && inlineReview?.documentId === host.documentId
-    ? inlineReview.itemKey
-    : host.container === "editor" && intent && admissible(intent, host)
-      ? intent.itemKey
-      : presenting && presented?.documentId === host.documentId
-        ? (presented.review?.itemKey ?? null)
-        : null;
 }
 
 export function useAiDraftLauncher() {

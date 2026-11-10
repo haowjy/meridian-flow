@@ -70,39 +70,6 @@ export type ReviewEntry = { itemKey: string; tabInstanceToken: string };
 /** Owner key (`work:<id>` or `lineage:<root>`) to that owner's entry; one entry per owner whose branch creates the document. */
 export type ReviewEntries = Record<string, ReviewEntry>;
 
-/**
- * Which version of the document a tab paints. Per tab, persisted with the record; a Work
- * switch keeps it. "draft" means the scoped owner's draft when it has one, and is the default.
- */
-export type TabView = {
-  version: "draft" | "live";
-  showChanges: boolean;
-};
-
-export const DEFAULT_TAB_VIEW: TabView = { version: "draft", showChanges: true };
-
-/** An explicit review address (a review link, Back to a review), counted while its item is listed. */
-export type ReviewPin = { ownerKey: string; itemKey: string; changeId?: string };
-
-/** What the writer has done to a tab, kept with the record in the tab session. */
-export type TabState = {
-  view?: TabView;
-  reviewPin?: ReviewPin;
-};
-
-export function tabStateOf(tab: ContextTab): TabState {
-  const { view, reviewPin } = tab;
-  return {
-    ...(view ? { view } : {}),
-    ...(reviewPin ? { reviewPin } : {}),
-  };
-}
-
-/** A rebuilt record (from the catalog or the server) keeps what the writer did to the tab it replaces. */
-export function withTabState<T extends ContextTab>(next: T, from: ContextTab): T {
-  return { ...next, ...tabStateOf(from) };
-}
-
 export type ContextTab =
   | ({
       tabInstanceId?: string;
@@ -129,8 +96,7 @@ export type ContextTab =
        * names only held documents: one for this tab makes the server refuse the whole snapshot.
        */
       localOnly?: true;
-    } & TabOwner &
-      TabState)
+    } & TabOwner)
   | ({
       tabInstanceId?: string;
       kind: "viewer";
@@ -143,15 +109,14 @@ export type ContextTab =
       mimeType?: string;
       /** Stable resource identity for namespace operations and local cache lookup. */
       resourceHandle?: string;
-    } & TabOwner &
-      TabState)
-  | ({
+    } & TabOwner)
+  | {
       tabInstanceId?: string;
       kind: "new";
       documentId: string;
       name: string;
       resourceHandle: string;
-    } & TabState);
+    };
 
 export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" }>;
 

@@ -98,7 +98,7 @@ function MobileDraftOnlyDocumentHost({
         if (closing instanceof Promise) closing.catch((error: unknown) => reportError(error));
       }}
     >
-      <PhoneDocument projectId={projectId} editorWorkId={editorWorkId} tab={tab} />
+      <PhoneDocument projectId={projectId} tab={tab} />
     </MobileDocumentReview>
   );
 }
@@ -150,7 +150,7 @@ function MobileLocalDocumentHost({
   // other two: the frame below takes its height from a flex parent.
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PhoneDocument projectId={projectId} editorWorkId={workId} tab={tab} />
+      <PhoneDocument projectId={projectId} tab={tab} />
     </div>
   );
 }
@@ -163,12 +163,10 @@ function MobileLocalDocumentHost({
  */
 function PhoneDocument({
   projectId,
-  editorWorkId,
   tab,
   children,
 }: {
   projectId: string;
-  editorWorkId: string;
   tab: EditableContextTab;
   children?: React.ReactNode;
 }) {
@@ -193,8 +191,6 @@ function PhoneDocument({
       <div className="relative min-h-0 flex-1">
         {children}
         <ContextDocumentHost
-          container="editor"
-          editorWorkId={editorWorkId}
           projectId={projectId}
           tab={tab}
           active
@@ -360,7 +356,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   // resumes and a failed open can retry. The phone keeps its route and its review presentation.
   return (
     <MobileDocumentReview projectId={projectId} tab={activeTab}>
-      <PhoneDocument projectId={projectId} editorWorkId={workId} tab={activeTab}>
+      <PhoneDocument projectId={projectId} tab={activeTab}>
         <PassageNotice documentId={activeTab.documentId} />
       </PhoneDocument>
     </MobileDocumentReview>

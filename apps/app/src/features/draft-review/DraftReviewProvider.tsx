@@ -35,6 +35,8 @@ export type DraftReviewContextValue = {
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
   reviewRoomNameForDraft: (documentId: string, itemKey: string) => string | null;
   activeEditorDocumentId: string | null;
+  /** Returns the host's document to Live: its view, not the review, decides what paints. */
+  showLive: () => void;
   setActiveEditorDocumentId: (
     documentId: string | null,
     session?: DocumentSession | null,
@@ -55,41 +57,6 @@ export function DraftReviewBoundary({
   return <DraftReviewContext.Provider value={value}>{children}</DraftReviewContext.Provider>;
 }
 
-/**
- * The presented document's review, shared across Editor and dock hosts.
- * Surfaces outside the presenting host's boundary read this value for focus
- * and presentation. Work-bound commands remain independent of this review.
- */
-const PresentedReviewContext = createContext<DraftReviewContextValue | null>(null);
-
-export function PresentedReviewScope({
-  value,
-  children,
-}: {
-  value: DraftReviewContextValue;
-  children: ReactNode;
-}) {
-  return (
-    <PresentedReviewContext.Provider value={value}>{children}</PresentedReviewContext.Provider>
-  );
-}
-
-/**
- * The presented document's review; falls back to the ambient draft-review
- * scope when no presented scope is offered.
- */
-export function usePresentedDraftReview(): DraftReviewContextValue {
-  const presented = useContext(PresentedReviewContext);
-  const ambient = useContext(DraftReviewContext);
-  const value = presented ?? ambient;
-  if (!value) {
-    throw new Error(
-      "usePresentedDraftReview must be used within a presented or draft review scope",
-    );
-  }
-  return value;
-}
-
 export function useDraftReviewScopeValue({
   projectId,
   work,
@@ -97,6 +64,7 @@ export function useDraftReviewScopeValue({
   stateOwner,
   threadId = null,
   marks,
+  showLive,
 }: {
   projectId: string | null;
   /** The Work whose archived state freezes these drafts. */
@@ -106,8 +74,9 @@ export function useDraftReviewScopeValue({
   stateOwner?: DraftReviewStateOwner;
   /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
   threadId?: string | null;
-  /** The presented tab's Show changes. */
+  /** The host document's Show changes. */
   marks: { visible: boolean; set: (visible: boolean) => void };
+  showLive: () => void;
 }): DraftReviewContextValue {
   const queryClient = useQueryClient();
   const effectiveProjectId = projectId ?? "";
@@ -217,9 +186,11 @@ export function useDraftReviewScopeValue({
       fileForDocument,
       reviewRoomNameForDraft,
       activeEditorDocumentId,
+      showLive,
       setActiveEditorDocumentId,
     }),
     [
+      showLive,
       controller,
       roomOwner,
       files,

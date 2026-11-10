@@ -19,7 +19,6 @@ import { type ChangeAttribution, type ReviewChange, reviewChanges } from "./revi
 
 export const REVIEW_DEBOUNCE_MS = 120;
 export type ReviewRoom = Pick<DocumentSession, "document" | "subscribe" | "getSnapshot">;
-export type ReviewSurface = "editor" | "dock";
 /** The command owner folds its queue here. Called only after base/provider invalidation, never per keystroke. */
 export type ReviewBaseProvider = (room: ReviewRoom, schema: Schema) => readonly PMNode[];
 /** B3c supplies names and membership independently of text grouping. */
@@ -39,8 +38,9 @@ export interface ReviewRuntime {
   setBaseProvider(provider: ReviewBaseProvider): void;
   invalidateBase(): void;
   setAttributionProvider(provider: ReviewAttributionProvider): void;
-  attachEditor(editor: Editor, surface?: ReviewSurface): () => void;
-  editor(of?: Editor | ReviewSurface): Editor | null;
+  attachEditor(editor: Editor): () => void;
+  /** The editors painting this room, in attachment order. */
+  editors(): readonly Editor[];
   destroy(): void;
 }
 const committedBase: ReviewBaseProvider = (room, schema) => readBase(room.document, schema);
@@ -52,7 +52,7 @@ export function createReviewRuntime(
   const yDoc = room.document;
   const listeners = new Set<() => void>();
   const painted = new WeakMap<Editor, ReviewFrame | null>();
-  const attachments: { editor: Editor; surface: ReviewSurface }[] = [];
+  const attachments: { editor: Editor }[] = [];
   let state = EMPTY_REVIEW_STATE;
   let baseBlocks = new WeakMap<Schema, readonly PMNode[]>();
   let headlessSchema: Schema | undefined;
@@ -188,8 +188,8 @@ export function createReviewRuntime(
       attributionOf = provider;
       publish(state.frame);
     },
-    attachEditor(editor, surface = "editor") {
-      const attachment = { editor, surface };
+    attachEditor(editor) {
+      const attachment = { editor };
       attachments.push(attachment);
       dirty = true;
       editor.on("transaction", onTransaction);
@@ -208,13 +208,7 @@ export function createReviewRuntime(
         flushSoon();
       };
     },
-    editor: (of) =>
-      (of
-        ? attachments.find((entry) =>
-            typeof of === "string" ? entry.surface === of : entry.editor === of,
-          )
-        : attachments[0]
-      )?.editor ?? null,
+    editors: () => attachments.map(({ editor }) => editor),
     destroy() {
       destroyed = true;
       clearTimeout(timer);

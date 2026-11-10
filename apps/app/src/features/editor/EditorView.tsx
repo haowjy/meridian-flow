@@ -8,14 +8,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
-import type { LiveEditorContainer } from "@/core/editor/live-range-navigation-runtime";
 import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-editor";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { InlineDraftReview } from "@/features/draft-review/draft-review-session";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
-import type { ReviewSurface } from "@/features/draft-review/review-runtime";
 import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
-import { showDocumentLive } from "@/features/project/tab-view-commands";
 import { type EditorSurfaceOptions, PendingEditorShell, SessionEditor } from "./SessionEditor";
 import { useInlineReviewFocus } from "./useInlineReviewFocus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
@@ -36,9 +33,6 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   reviewItemKey?: string | null;
   /** The hosting tab instance, whose focus-on-open intent the live editor claims. */
   focusKey?: string;
-  /** Which host mounts this editor; the dock's is "dock". */
-  reviewSurface?: ReviewSurface;
-  container?: LiveEditorContainer;
 };
 
 const REVIEW_MARKS_WAIT_MS = 1500;
@@ -195,7 +189,6 @@ export function EditorView(props: EditorViewProps) {
               }}
               session={liveSession}
               focusKey={props.focusKey}
-              container={props.container ?? "editor"}
             />
           </div>
         </PaintScope>
@@ -210,7 +203,6 @@ export function EditorView(props: EditorViewProps) {
             <SessionEditor
               identity={identity}
               session={reviewSession}
-              container={props.container ?? "editor"}
               holderUri={reviewHolderUri}
               surfaceOptions={{
                 ...surfaceOptions,
@@ -232,7 +224,6 @@ export function EditorView(props: EditorViewProps) {
               review={review}
               session={reviewSession}
               editor={reviewEditor}
-              surface={props.reviewSurface}
               onModelAvailable={() => {
                 setConstructed((current) =>
                   current?.key === reviewKey && !current.modelReady
@@ -249,12 +240,10 @@ export function EditorView(props: EditorViewProps) {
 }
 
 function ReviewError({ props }: { props: EditorViewProps }) {
-  const { controller, roomOwner } = useDraftReview();
+  const { controller, roomOwner, showLive } = useDraftReview();
   // Desktop draft-only failures retain review until Close. Phone server documents
   // can return to live; phone draft-only destinations reuse the desktop close policy.
-  const closeUnavailable = props.draftOnly
-    ? props.onCloseDraftOnly
-    : () => showDocumentLive(controller.projectId, props.documentId);
+  const closeUnavailable = props.draftOnly ? props.onCloseDraftOnly : showLive;
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-6">
       <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-float">
@@ -308,19 +297,16 @@ function ReviewRuntime({
   review,
   session,
   editor,
-  surface,
   onModelAvailable,
 }: {
   review: InlineDraftReview;
   session: DocumentSession;
   editor: Editor | null;
-  surface?: ReviewSurface;
   onModelAvailable: () => void;
 }) {
   useInlineReviewSync({
     editor,
     session,
-    surface,
     onInlineModelAvailable: onModelAvailable,
   });
   useInlineReviewFocus({

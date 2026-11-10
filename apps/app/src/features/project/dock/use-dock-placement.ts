@@ -16,7 +16,6 @@ import { armEditorFocus } from "@/features/editor/focus-on-open";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { isCurrentOpenIntent } from "../context/open-intent";
 import { useProjectDocumentNavigationProjectId } from "../context/open-project-document";
-import type { ReviewAddress } from "../presented-document";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import type { ScreenKey } from "../shell/screens";
@@ -28,12 +27,7 @@ export function opensBesideChat(screen: ScreenKey, phone: boolean): boolean {
 
 export type DockCommit = { kind: "opened"; tab: ContextTab } | { kind: "cancelled" };
 
-export type BesideCommit = (
-  tab: ContextTab,
-  claim?: number,
-  focus?: true,
-  review?: ReviewAddress,
-) => DockCommit;
+export type BesideCommit = (tab: ContextTab, claim?: number, focus?: true) => DockCommit;
 
 export function useDockPlacement() {
   const screen = useProjectScreen();
@@ -41,17 +35,14 @@ export function useDockPlacement() {
   const projectId = useProjectDocumentNavigationProjectId();
   const { revealDock } = useChatNavigation();
   const commit = useCallback<BesideCommit>(
-    (tab, claim, focus, review) => {
+    (tab, claim, focus) => {
       if (!projectId || screen !== "chat") return { kind: "cancelled" };
       if (claim !== undefined && !isCurrentOpenIntent(claim)) return { kind: "cancelled" };
       const store = useContextTabsStore.getState();
       store.openTab(projectId, tab, undefined, { select: true });
       const opened = getContextTabs(projectId).tabs.find((t) => t.documentId === tab.documentId);
       if (!opened) return { kind: "cancelled" };
-      const key = tabKey(opened);
-      if (review)
-        store.setTabState(projectId, key, { reviewPin: review, view: { version: "draft" } });
-      if (focus) armEditorFocus(key);
+      if (focus) armEditorFocus(tabKey(opened));
       revealDock("document");
       return { kind: "opened", tab: opened };
     },

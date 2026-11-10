@@ -25,6 +25,7 @@
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
+import { DocumentReviewBoundary, useDocumentReview } from "../DocumentReview";
 
 import type { ScreenKey } from "../shell/screens";
 import { DockDocumentView } from "./DockDocumentView";
@@ -51,19 +52,23 @@ export function DockShell({
   children,
 }: DockShellProps) {
   const dockDocument = useDockedDocument(projectId, screen);
+  // The header's version and review controls and the document below them are one host.
+  const review = useDocumentReview(projectId, dockDocument?.tab ?? null);
   const inDock = placement === "dock";
   const overlay = inDock && dockDocument ? "document" : null;
   const showPrimary = overlay === null;
 
   return (
     <>
-      {inDock
-        ? renderHeader({
+      {inDock ? (
+        <DocumentReviewBoundary review={review}>
+          {renderHeader({
             projectId,
             screen,
             document: dockDocument,
-          })
-        : null}
+          })}
+        </DocumentReviewBoundary>
+      ) : null}
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div
           className={cn(
@@ -77,7 +82,9 @@ export function DockShell({
         </div>
         {overlay === "document" && dockDocument ? (
           <div className="absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden">
-            <DockDocumentView projectId={projectId} document={dockDocument} visible={visible} />
+            <DocumentReviewBoundary review={review}>
+              <DockDocumentView projectId={projectId} document={dockDocument} visible={visible} />
+            </DocumentReviewBoundary>
           </div>
         ) : null}
       </div>

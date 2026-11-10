@@ -8,26 +8,21 @@ import {
 import { isRecord } from "@/client/storage/browser-record";
 import {
   type ContextTab,
-  DEFAULT_TAB_VIEW,
   isDraftOnly,
   isEditorContextTab,
   matchesTabInstance,
   type ProjectTabsSlice,
   type ReviewEntries,
-  type ReviewPin,
   reviewEntriesOf,
   reviewEntryOf,
   selectedDocumentIdOf,
   selectingDocument,
-  type TabState,
   tabKey,
-  tabStateOf,
   withoutReviewEntry,
-  withTabState,
 } from "./editor-workspace-model";
 
 export const EDITOR_WORKSPACE_STORAGE_KEY = "meridian:editor-workspace:v2";
-export const EDITOR_WORKSPACE_VERSION = 3;
+export const EDITOR_WORKSPACE_VERSION = 4;
 const EMPTY_PROJECT: ProjectTabsSlice = { tabs: [], selectedTabKey: null };
 export type EditorWorkspaceSnapshot = Readonly<{
   version: typeof EDITOR_WORKSPACE_VERSION;
@@ -45,23 +40,6 @@ export type EditorWorkspaceCommand =
     }
   | { kind: "close"; projectId: string; tabInstanceId: string }
   | { kind: "select"; projectId: string; tabInstanceId: string | null }
-  | {
-      /** The writer's choices on one tab: its view and its review pin. `null` clears a field. */
-      kind: "set-tab-state";
-      projectId: string;
-      tabInstanceId: string;
-      patch: {
-        view?: Partial<NonNullable<TabState["view"]>>;
-        reviewPin?: ReviewPin | null;
-      };
-    }
-  | {
-      /** A scope switch or a settled review drops every pin of the project. */
-      kind: "clear-review-pins";
-      projectId: string;
-      ownerKey?: string;
-      itemKey?: string;
-    }
   | {
       kind: "reconcile-resource";
       projectId: string;
@@ -124,7 +102,6 @@ export function parseContextTab(value: unknown): ContextTab | null {
     return null;
   if (tab.kind === "new") {
     if (typeof tab.resourceHandle !== "string" || tab.resourceHandle.length === 0) return null;
-    if (!validTabState(tab)) return null;
     const { workId: _priorWork, ...local } = tab;
     return local as ContextTab;
   }
@@ -150,7 +127,7 @@ export function parseContextTab(value: unknown): ContextTab | null {
     (isWorkScopedScheme(tab.scheme) && !tab.workId && !tab.rootThreadId)
   )
     return null;
-  if (!validTabState(tab)) return null;
+  if (!validReviews(tab)) return null;
   if (tab.kind === "tracked" && tab.editable === true) {
     const classification = classifyFiletype(typeof tab.filetype === "string" ? tab.filetype : null);
     if (
@@ -178,28 +155,9 @@ export function parseContextTab(value: unknown): ContextTab | null {
 
 const isString = (value: unknown): value is string => typeof value === "string";
 
-/** What a tab session written by this build holds; anything else means the record is not ours. */
-function validTabState(tab: Record<string, unknown>): boolean {
-  const { view, reviewPin, reviews } = tab;
-  if (
-    view !== undefined &&
-    !(
-      isRecord(view) &&
-      (view.version === "draft" || view.version === "live") &&
-      typeof view.showChanges === "boolean"
-    )
-  )
-    return false;
-  if (
-    reviewPin !== undefined &&
-    !(
-      isRecord(reviewPin) &&
-      isString(reviewPin.ownerKey) &&
-      isString(reviewPin.itemKey) &&
-      (reviewPin.changeId === undefined || isString(reviewPin.changeId))
-    )
-  )
-    return false;
+/** A draft-only tab's entries as this build writes them; anything else means the record is not ours. */
+function validReviews(tab: Record<string, unknown>): boolean {
+  const { reviews } = tab;
   if (reviews !== undefined) {
     if (tab.kind !== "tracked" || !isRecord(reviews)) return false;
     for (const entry of Object.values(reviews))
@@ -290,12 +248,6 @@ function normalizeProject(workspace: ProjectTabsSlice): ProjectTabsSlice {
   };
 }
 
-function pinWithoutOwner(tab: ContextTab, ownerKey: string): ContextTab {
-  if (tab.reviewPin?.ownerKey !== ownerKey) return tab;
-  const { reviewPin: _pin, ...rest } = tab;
-  return rest as ContextTab;
-}
-
 /** The tab to select once `removed` is gone: it keeps the selection unless it was the selected one. */
 function selectionAfterRemoval(
   workspace: ProjectTabsSlice,
@@ -373,13 +325,10 @@ export function reduceEditorWorkspace(
         if (selectedTabKey === tabKey(live)) selectedTabKey = null;
         continue;
       }
-      const incoming = withTabState(
-        durableContextTab({
-          ...change.next,
-          tabInstanceId: live.tabInstanceId,
-        } as ContextTab),
-        live,
-      );
+      const incoming = durableContextTab({
+        ...change.next,
+        tabInstanceId: live.tabInstanceId,
+      } as ContextTab);
       const conflictIndex = tabs.findIndex(
         (tab, candidateIndex) =>
           candidateIndex !== index &&
@@ -408,13 +357,10 @@ export function reduceEditorWorkspace(
       const index = tabs.findIndex((tab) => sameTabIdentity(tab, update.prior));
       if (index < 0) continue;
       const prior = tabs[index] as ContextTab;
-      tabs[index] = withTabState(
-        durableContextTab({
-          ...update.next,
-          tabInstanceId: prior.tabInstanceId,
-        } as ContextTab),
-        prior,
-      );
+      tabs[index] = durableContextTab({
+        ...update.next,
+        tabInstanceId: prior.tabInstanceId,
+      } as ContextTab);
     }
     let next = normalizeProject({
       tabs: canonicalizeTabs(tabs),
@@ -437,7 +383,7 @@ export function reduceEditorWorkspace(
     return replaceProject(current, command.projectId, {
       ...workspace,
       tabs: workspace.tabs.map((tab, candidateIndex) =>
-        candidateIndex === index ? withTabState(durableContextTab(prior), prior) : tab,
+        candidateIndex === index ? durableContextTab(prior) : tab,
       ),
     });
   }
@@ -467,7 +413,7 @@ export function reduceEditorWorkspace(
     const after = withoutReviewEntry(tab, command.ownerKey);
     return replaceProject(current, command.projectId, {
       tabs: workspace.tabs.flatMap((candidate) =>
-        candidate !== tab ? [candidate] : after ? [pinWithoutOwner(after, command.ownerKey)] : [],
+        candidate !== tab ? [candidate] : after ? [after] : [],
       ),
       selectedTabKey: after ? workspace.selectedTabKey : selectionAfterRemoval(workspace, [tab]),
     });
@@ -494,13 +440,10 @@ export function reduceEditorWorkspace(
       (tab, candidateIndex) =>
         candidateIndex !== index && tab.documentId === command.tab.documentId,
     );
-    const next = withTabState(
-      durableContextTab({
-        ...command.tab,
-        tabInstanceId: prior.tabInstanceId,
-      } as ContextTab),
-      prior,
-    );
+    const next = durableContextTab({
+      ...command.tab,
+      tabInstanceId: prior.tabInstanceId,
+    } as ContextTab);
     if (absorbed.length === 0 && JSON.stringify(next) === JSON.stringify(prior))
       return outcome("already-committed", current);
     return replaceProject(current, command.projectId, {
@@ -542,9 +485,6 @@ export function reduceEditorWorkspace(
           ...existingWithoutResourceOwnership,
           ...tab,
           tabInstanceId: existing.tabInstanceId,
-          // What the writer did to the tab is not the opener's to undo.
-          ...tabStateOf(existing),
-          ...(tab.reviewPin ? { reviewPin: tab.reviewPin } : {}),
           // Each Work keeps the entry it first opened; another Work's draft adds its own.
           ...(existing.kind !== "new" && isDraftOnly(existing)
             ? {
@@ -595,40 +535,6 @@ export function reduceEditorWorkspace(
     return replaceProject(current, command.projectId, {
       ...workspace,
       selectedTabKey: command.tabInstanceId,
-    });
-  }
-  if (command.kind === "set-tab-state") {
-    const workspace = current.projects[command.projectId];
-    const tab = workspace?.tabs.find(
-      (candidate) => candidate.tabInstanceId === command.tabInstanceId,
-    );
-    if (!workspace || !tab) return outcome("stale", current);
-    const { patch } = command;
-    const next = { ...tab } as ContextTab;
-    if (patch.view) next.view = { ...DEFAULT_TAB_VIEW, ...tab.view, ...patch.view };
-    // Choosing Live ends an explicit review address: the pin would keep the review on screen.
-    if (patch.reviewPin === null || patch.view?.version === "live") delete next.reviewPin;
-    if (patch.reviewPin) next.reviewPin = patch.reviewPin;
-    const tabs = workspace.tabs.map((candidate) => (candidate === tab ? next : candidate));
-    if (JSON.stringify(tabs) === JSON.stringify(workspace.tabs))
-      return outcome("already-committed", current);
-    return replaceProject(current, command.projectId, { ...workspace, tabs });
-  }
-  if (command.kind === "clear-review-pins") {
-    const workspace = current.projects[command.projectId];
-    if (!workspace) return outcome("not-referenced", current);
-    const matches = (tab: ContextTab) =>
-      tab.reviewPin !== undefined &&
-      (command.ownerKey === undefined || tab.reviewPin.ownerKey === command.ownerKey) &&
-      (command.itemKey === undefined || tab.reviewPin.itemKey === command.itemKey);
-    if (!workspace.tabs.some(matches)) return outcome("already-committed", current);
-    return replaceProject(current, command.projectId, {
-      ...workspace,
-      tabs: workspace.tabs.map((tab) => {
-        if (!matches(tab)) return tab;
-        const { reviewPin: _pin, ...rest } = tab;
-        return rest as ContextTab;
-      }),
     });
   }
   return outcome("stale", current);

@@ -1,21 +1,26 @@
 /** Phone review chrome: version, stepper and list control in one row. Completion replaces stepping in that same row; whole commands live in the version menu. */
 import { t } from "@lingui/core/macro";
 import { List } from "lucide-react";
+import type { ContextTab } from "@/client/stores";
 import { changeListLabel } from "@/features/draft-review/DocumentChanges";
-import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import {
   ReviewFailureNotices,
   ReviewStateInline,
 } from "@/features/draft-review/ReviewHeaderNotices";
 import { ReviewStepper } from "@/features/draft-review/ReviewStepper";
 import type { ReviewHeaderModel } from "@/features/draft-review/useReviewHeader";
+import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
 import { type ManuscriptState, ManuscriptStateSlot } from "@/features/editor/ManuscriptStateNotice";
 
 export function MobileReviewHeader({
+  projectId,
+  tab,
   header,
   manuscriptState,
   onOpenList,
 }: {
+  projectId: string;
+  tab: ContextTab;
   header: ReviewHeaderModel;
   /** What live did to this document; it takes the row's free end. */
   manuscriptState: ManuscriptState | null;
@@ -39,22 +44,24 @@ export function MobileReviewHeader({
         }}
       >
         <div className="min-w-0">
-          <DraftSwitcher
-            draftOnly={header.draftOnly}
-            disabled={header.locked}
-            onShowLive={header.showLive}
+          <DocumentVersionMenu
+            projectId={projectId}
+            tab={tab}
             touch
-            draftCommands={
-              finished
+            review={{
+              draftOnly: header.draftOnly,
+              disabled: header.locked,
+              onShowLive: header.showLive,
+              draftCommands: finished
                 ? undefined
                 : {
                     canApply: header.canApply,
                     applying: header.completing === "apply",
                     onApply: header.applyDraft,
                     onDiscard: header.discardDraft,
-                  }
-            }
-            marks={{ visible: controller.marksVisible, onChange: controller.setMarksVisible }}
+                  },
+              marks: { visible: controller.marksVisible, onChange: controller.setMarksVisible },
+            }}
           />
         </div>
         <ManuscriptStateSlot state={manuscriptState} touch />

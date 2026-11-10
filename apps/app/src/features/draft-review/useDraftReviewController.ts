@@ -135,7 +135,7 @@ export function useDraftReviewController({
     work,
     ownerKey,
     threadId,
-    surface: "editor",
+    history: "editor",
     editorHistory: (draft) => {
       const runtime = inlineRuntimeRef.current;
       return runtime?.documentId === draft.documentId && runtime.itemKey === draft.itemKey

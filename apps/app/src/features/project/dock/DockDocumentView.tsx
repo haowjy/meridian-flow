@@ -16,11 +16,7 @@
 import { t } from "@lingui/core/macro";
 import { useCallback } from "react";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
-import {
-  DraftReviewBoundary,
-  useDraftReview,
-  usePresentedDraftReview,
-} from "@/features/draft-review/DraftReviewProvider";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { useAccountResourceReplica } from "../context/account-feature-context";
 import { ContextDocumentHost } from "../context/ContextDocumentHost";
 import { ContextViewerHost } from "../context/ContextViewerHost";
@@ -33,19 +29,16 @@ export function DockDocumentView(props: {
   document: OpenDocumentTab;
   visible: boolean;
 }) {
-  const review = usePresentedDraftReview();
   return (
-    <DraftReviewBoundary value={review}>
-      <PaintScope active={props.visible}>
-        <PaintHold
-          status={t`Opening ${props.document.tab.name}`}
-          className="relative flex min-h-0 flex-1 flex-col"
-        >
-          <PaintCapture surface={props.document.tab.documentId} />
-          <DockDocumentBody {...props} />
-        </PaintHold>
-      </PaintScope>
-    </DraftReviewBoundary>
+    <PaintScope active={props.visible}>
+      <PaintHold
+        status={t`Opening ${props.document.tab.name}`}
+        className="relative flex min-h-0 flex-1 flex-col"
+      >
+        <PaintCapture surface={props.document.tab.documentId} />
+        <DockDocumentBody {...props} />
+      </PaintHold>
+    </PaintScope>
   );
 }
 
@@ -79,7 +72,6 @@ function DockDocumentBody({
       {tab.kind !== "viewer" ? (
         <div className="relative min-h-0 flex-1">
           <ContextDocumentHost
-            container="dock"
             key={tab.documentId}
             projectId={projectId}
             tab={tab}

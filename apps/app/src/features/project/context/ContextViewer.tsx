@@ -19,6 +19,7 @@ import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold"
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { DocumentStateSlotProvider } from "@/features/editor/document-state-slot";
+import { DocumentReviewProvider } from "../DocumentReview";
 import {
   isProjectRouteMasked,
   ProjectRouteBoundary,
@@ -26,6 +27,7 @@ import {
 } from "../routing/ProjectRouteBoundary";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleSpacer } from "../shell/PanelToggleButton";
+import { ContextDocumentHost, type EditableContextTab } from "./ContextDocumentHost";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
@@ -132,30 +134,7 @@ export function ContextViewer({
   const masked = isProjectRouteMasked(mask);
   const name = activeTab?.name;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
-  // A chat's Scratch belongs to no Work, so archiving the Editor's Work never freezes it.
-  const activeFileInWork =
-    activeTab &&
-    activeTab.kind !== "new" &&
-    isWorkScopedScheme(activeTab.scheme) &&
-    activeTab.rootThreadId === undefined;
-
-  // Draft review state: the review's controls live in the identity bar.
-  const { controller } = useDraftReview();
-  const activeReviewItemKey =
-    activeTab &&
-    controller.inlineReview?.documentId === activeTab.documentId &&
-    controller.inlineReview.shown
-      ? controller.inlineReview.itemKey
-      : null;
-  // One freeze source with the dock and the phone: an archived Work freezes its own files and
-  // its drafts' reviews; a trashed chat freezes its drafts' reviews. The reviewed file
-  // itself may be project-owned, so only its own Work's archive freezes its identity bar.
-  const freeze = useDocumentFreeze(
-    projectId,
-    activeTab,
-    activeReviewItemKey ? controller.ownerKey : null,
-  );
-  const fileFrozen = Boolean(activeFileInWork && freeze?.kind === "work");
+  const chrome = { projectId, editorWorkId, onCloseTab, onCommitted, onOpenExisting };
 
   return (
     <div
@@ -201,28 +180,6 @@ export function ContextViewer({
         >
           <PaintCapture surface={`${paneState.kind}:${activeTabId ?? optimisticTab?.id ?? ""}`} />
           <DocumentStateSlotProvider>
-            {activeTab ? (
-              // Keyed by tab so edit state never crosses tabs.
-              <DocumentIdentityBar
-                key={activeTab.tabInstanceId ?? activeTab.documentId}
-                variant="state"
-                projectId={projectId}
-                editorWorkId={editorWorkId}
-                tab={activeTab}
-                readOnly={fileFrozen}
-                onCloseDraftOnly={isDraftOnly(activeTab) ? () => onCloseTab(activeTab) : undefined}
-                onCommitted={onCommitted}
-                onOpenExisting={onOpenExisting}
-              />
-            ) : null}
-            {activeTab ? (
-              <DocumentPaneChrome
-                projectId={projectId}
-                tab={activeTab}
-                freeze={freeze}
-                reviewNotices
-              />
-            ) : null}
             {/* The TRACKED editor host stays mounted while ANY tracked tab is
             open — even when the active tab is a viewer — so the warm-set
             editors aren't torn down on a quick image/PDF detour. We just
@@ -235,22 +192,31 @@ export function ContextViewer({
                   }
                 >
                   <ContextEditorMountHost
-                    projectId={projectId}
-                    editorWorkId={editorWorkId}
                     trackedTabs={trackedTabs}
                     activeTabId={activeIsEditable ? activeTabId : null}
-                    active={active}
-                    // Warm editors are hidden, so following the front tab is enough.
-                    readOnly={freeze !== null}
-                    onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
+                    renderTab={(tab, { mountEditor, shown }) => (
+                      <DocumentReviewProvider projectId={projectId} tab={tab}>
+                        <EditorTabFrame
+                          {...chrome}
+                          tab={tab}
+                          mountEditor={mountEditor}
+                          shown={shown}
+                          active={active}
+                          onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
+                        />
+                      </DocumentReviewProvider>
+                    )}
                   />
                 </div>
               </PaintScope>
             ) : null}
             {activeTab?.kind === "viewer" ? (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <ContextViewerHost projectId={projectId} tab={activeTab} />
-              </div>
+              <DocumentReviewProvider projectId={projectId} tab={activeTab}>
+                <DocumentChrome {...chrome} tab={activeTab} />
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <ContextViewerHost projectId={projectId} tab={activeTab} />
+                </div>
+              </DocumentReviewProvider>
             ) : null}
             {optimisticTab ? (
               <div className="relative min-h-0 flex-1" aria-busy>
@@ -268,13 +234,102 @@ export function ContextViewer({
                 holdsRemovedNotice={tabs.length === 0}
               />
             ) : null}
-            {controller.toast ? (
-              <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
-            ) : null}
           </DocumentStateSlotProvider>
         </PaintHold>
       </ProjectRouteBoundary>
     </div>
+  );
+}
+
+type ChromeProps = Pick<
+  ContextViewerProps,
+  "projectId" | "editorWorkId" | "onCloseTab" | "onCommitted" | "onOpenExisting"
+>;
+
+/**
+ * One Editor tab inside its own review: while shown, its identity row and notices above the
+ * editor; always, its host, warm or painted. A file of an archived Work, and a review of its
+ * draft, freeze read-only; a trashed chat's draft under review freezes too.
+ */
+function EditorTabFrame({
+  tab,
+  mountEditor,
+  shown,
+  active,
+  onUntitledBecameNonEmpty,
+  ...chrome
+}: ChromeProps & {
+  tab: EditableContextTab;
+  mountEditor: boolean;
+  shown: boolean;
+  active: boolean;
+  onUntitledBecameNonEmpty: (documentId: string) => Promise<void>;
+}) {
+  const freeze = useTabFreeze(chrome.projectId, tab);
+  return (
+    <div className={shown ? "absolute inset-0 flex min-h-0 flex-col" : "hidden"}>
+      {shown ? <DocumentChrome {...chrome} tab={tab} /> : null}
+      <div className="relative min-h-0 flex-1">
+        <ContextDocumentHost
+          projectId={chrome.projectId}
+          tab={tab}
+          mountEditor={mountEditor}
+          shown={shown}
+          active={active}
+          readOnly={freeze !== null}
+          onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One freeze source with the dock and the phone: an archived Work freezes its own files and
+ * its drafts' reviews; a trashed chat freezes its drafts' reviews.
+ */
+function useTabFreeze(projectId: string, tab: ContextTab) {
+  const { controller } = useDraftReview();
+  const review = controller.inlineReview;
+  const reviewing = review?.documentId === tab.documentId && review.shown;
+  return useDocumentFreeze(projectId, tab, reviewing ? controller.ownerKey : null);
+}
+
+/** The document's identity row, its notices and its review's toast. */
+function DocumentChrome({
+  projectId,
+  editorWorkId,
+  tab,
+  onCloseTab,
+  onCommitted,
+  onOpenExisting,
+}: ChromeProps & { tab: ContextTab }) {
+  const { controller } = useDraftReview();
+  const freeze = useTabFreeze(projectId, tab);
+  // A chat's Scratch belongs to no Work, so archiving the Editor's Work never freezes it. The
+  // reviewed file itself may be project-owned, so only its own Work's archive freezes its
+  // identity row.
+  const fileInWork =
+    tab.kind !== "new" && isWorkScopedScheme(tab.scheme) && tab.rootThreadId === undefined;
+  return (
+    <>
+      {/* Keyed by tab so edit state never crosses tabs. */}
+      <DocumentIdentityBar
+        key={tab.tabInstanceId ?? tab.documentId}
+        variant="state"
+        projectId={projectId}
+        editorWorkId={editorWorkId}
+        tab={tab}
+        readOnly={Boolean(fileInWork && freeze?.kind === "work")}
+        onCloseDraftOnly={isDraftOnly(tab) ? () => onCloseTab(tab) : undefined}
+        onCommitted={onCommitted}
+        onOpenExisting={onOpenExisting}
+      />
+      <DocumentPaneChrome projectId={projectId} tab={tab} freeze={freeze} reviewNotices />
+      {controller.toast ? (
+        <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
+      ) : null}
+    </>
   );
 }
 

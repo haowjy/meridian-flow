@@ -7,7 +7,6 @@ import { type ContextTab, useContextTabs } from "@/client/stores";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
-import { DraftReviewBoundary } from "@/features/draft-review/DraftReviewProvider";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { ChatSurface } from "../chat/ChatSurface";
 import { ChatIndex } from "../chat-index/ChatIndex";
@@ -15,8 +14,8 @@ import { RecentDocumentsLanding } from "../context/RecentDocumentsLanding";
 import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useFollowOpenDocumentPlacement } from "../context/use-follow-open-document-placement";
+import { DocumentReviewProvider } from "../DocumentReview";
 import type { ReviewScopedProjectProps } from "../ProjectView";
-import { EditorReviewIntentClaimant } from "../review-launch";
 import {
   chatSurfaceThreadId,
   displayedChatThreadId,
@@ -180,29 +179,32 @@ function renderActiveView(
           />
         </WorkBranchCommandsBoundary>
       );
-    case "context":
+    case "context": {
       if (!props.contextLive || props.editorScope.status !== "ready") return null;
       // A masked cold address must not mount a host that repairs it to Files.
       // A warm pending address still owns its retained document presentation.
       if (props.routeIssues?.editor && !props.retainEditorWhileLoading) return null;
+      if (!props.activeContextPath && !localTab)
+        return (
+          <RecentDocumentsLanding projectId={props.projectId} editorWorkId={props.editorWorkId} />
+        );
+      // The phone's one document host reviews the document its own route names.
+      const document = localTab ?? props.mobileDocumentRoute.tab;
       return (
-        <DraftReviewBoundary value={props.presentedReview}>
-          <EditorReviewIntentClaimant
+        <DocumentReviewProvider
+          key={document?.documentId ?? ""}
+          projectId={props.projectId}
+          tab={document}
+        >
+          <MobileDocumentHost
+            projectId={props.projectId}
             editorWorkId={props.editorScope.workId}
-            activeScheme={props.activeContextScheme}
+            route={props.mobileDocumentRoute}
+            localTab={localTab}
           />
-          {props.activeContextPath || localTab ? (
-            <MobileDocumentHost
-              projectId={props.projectId}
-              editorWorkId={props.editorScope.workId}
-              route={props.mobileDocumentRoute}
-              localTab={localTab}
-            />
-          ) : (
-            <RecentDocumentsLanding projectId={props.projectId} editorWorkId={props.editorWorkId} />
-          )}
-        </DraftReviewBoundary>
+        </DocumentReviewProvider>
       );
+    }
   }
 }
 

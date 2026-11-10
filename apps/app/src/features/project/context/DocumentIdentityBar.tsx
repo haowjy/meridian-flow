@@ -325,6 +325,8 @@ export function DocumentIdentityBar({
   );
   return (
     <DraftReviewBand
+      projectId={projectId}
+      tab={tab}
       documentId={tab.documentId}
       itemKey={reviewItemKey ?? ""}
       onOpenDraft={openDraft}
