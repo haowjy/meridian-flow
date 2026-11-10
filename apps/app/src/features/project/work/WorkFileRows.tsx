@@ -1,5 +1,6 @@
 /** A new Scratch note awaiting creation, or refused with retry and dismiss actions. */
 import { Trans } from "@lingui/react/macro";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { fileKindIcon } from "../context/context-file-icon";
 import { RowIcon } from "../RuledList";
 import type { NoteAttempt } from "./use-work-note-intake";
@@ -20,23 +21,16 @@ export function NoteAttemptRow({
         {attempt.name}
       </span>
       {attempt.state === "pending" ? (
-        <span role="status" className="shrink-0 text-xs text-ink-subtle">
+        <span role="status" className="shrink-0 text-xs text-muted-foreground">
           <Trans>Creating…</Trans>
         </span>
       ) : (
-        <>
-          <span role="alert" className="shrink-0 text-xs text-destructive">
-            <Trans>Couldn’t create note</Trans>
-          </span>
-          {onRetry ? (
-            <button type="button" className="text-button shrink-0 text-xs" onClick={onRetry}>
-              <Trans>Retry</Trans>
-            </button>
-          ) : null}
-          <button type="button" className="text-button shrink-0 text-xs" onClick={onDismiss}>
-            <Trans>Dismiss</Trans>
-          </button>
-        </>
+        <InlineErrorRow
+          message={<Trans>Couldn’t create note</Trans>}
+          onRetry={onRetry}
+          onDismiss={onDismiss}
+          className="shrink-0 p-0"
+        />
       )}
     </div>
   );

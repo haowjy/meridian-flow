@@ -118,7 +118,7 @@ export function ReferenceSuggestionMenu({
             <>
               <ReferenceIcon row={row} />
               <span className="truncate">{row.label}</span>
-              <span className="ml-auto shrink-0 pl-4 text-ink-subtle text-xs">
+              <span className="ml-auto shrink-0 pl-4 text-muted-foreground text-xs">
                 {rowLocation(row)}
               </span>
               {row.kind !== "file" ? <ChevronRight aria-hidden /> : null}

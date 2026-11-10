@@ -406,14 +406,11 @@ function ActiveSessionEditorView({
       rootThreadId={scope.rootThreadId}
     >
       <section
-        className={cn(
-          "meridian-editor-shell relative flex h-full min-h-0 flex-col bg-background",
-          className,
-        )}
+        className={cn("meridian-editor-shell relative flex h-full min-h-0 flex-col", className)}
       >
         {/* One status pill: the word count, and sync only when there is something
           to act on (offline / closed), see SyncStatus. Hidden while both are empty. */}
-        <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex items-center gap-3 rounded-full border border-border-subtle bg-muted px-2.5 py-1 text-meta text-muted-foreground shadow-card empty:hidden">
+        <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex items-center gap-3 rounded-full border border-border-subtle bg-card px-2.5 py-1 text-xs text-muted-foreground shadow-float empty:hidden">
           <SyncStatus session={session} onReopen={onReopen} removal={removal} />
           {!evidenceDegraded && editor ? <WordCount editor={editor} /> : null}
         </div>
@@ -464,10 +461,7 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
   usePaintPending();
   return (
     <section
-      className={cn(
-        "meridian-editor-shell relative flex h-full min-h-0 flex-col bg-background",
-        className,
-      )}
+      className={cn("meridian-editor-shell relative flex h-full min-h-0 flex-col", className)}
     >
       {/* The toolbar is persistent chrome: it holds its place while the
           document opens, greyed and saying so, rather than popping in. */}

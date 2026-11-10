@@ -34,6 +34,7 @@ import {
 } from "@/features/draft-review/CommandNotice";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import { workOwnerKey } from "@/features/draft-review/draft-owner-key";
+import { reviewActionLabel } from "@/features/draft-review/ReviewActions";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { hasTreeLine } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
@@ -202,15 +203,14 @@ export function WorkChanges({
                   }
                   onSelect={startApplyAll}
                 >
-                  <Trans>Apply all changes</Trans>
+                  {reviewActionLabel("apply", "all")}
                 </DropdownMenuItem>
               ) : null}
               <DropdownMenuItem
-                variant="destructive"
                 disabled={controller.dispositionLocked}
                 onSelect={() => setConfirmingDiscard(true)}
               >
-                <Trans>Discard all changes</Trans>
+                {reviewActionLabel("discard", "all")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

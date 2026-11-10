@@ -3,6 +3,7 @@
  * and New chat (disabled in place while the Work is archived, which takes no
  * new chats).
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
@@ -12,6 +13,7 @@ import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
+import { role } from "@/components/ui/roles";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { NextPage } from "../chat-index/ChatIndex";
 import { ChatIndexList, type ChatIndexRowProps } from "../chat-index/ChatIndexList";
@@ -53,7 +55,6 @@ export function WorkChatsTab({
           disabled={isWorkArchived(work)}
           onClick={() => void openNewChat(work.id)}
           aria-label={t`New chat`}
-          className="[@media(pointer:coarse)]:min-h-11"
         >
           <MessageSquarePlus aria-hidden />
           <span className="max-sm:hidden" aria-hidden>
@@ -71,7 +72,7 @@ export function WorkChatsTab({
       ) : !feed.items.length && !feed.hasNextPage && !feed.isPlaceholderData ? (
         <div className="py-4">
           {search ? (
-            <p className="text-sm text-muted-foreground">
+            <p className={role.emptyLine}>
               <Trans>No chats match “{search}”.</Trans>
             </p>
           ) : (

@@ -9,6 +9,7 @@
  * opens documents (`useOpenDocumentInDock`). Renaming and moving belong to the
  * lists. The identity row owns collapse priority; parent crumbs yield before controls.
  */
+
 import { t } from "@lingui/core/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useCallback, useMemo } from "react";
@@ -16,6 +17,7 @@ import { useProject } from "@/client/query/useProjectList";
 import { type ContextTab, isDraftOnly, tabContextOwner } from "@/client/stores";
 import { DrillInMenuBody, DrillInMenuRoot, type DrillNode } from "@/components/app/DrillInMenu";
 import { DropdownMenuContent } from "@/components/ui/dropdown-menu";
+import { role } from "@/components/ui/roles";
 import { useReviewCopy } from "@/features/draft-review/copy-view";
 import { cn } from "@/lib/utils";
 import { useDockBrowseScratch } from "../dock/use-dock-browse-scratch";
@@ -41,10 +43,7 @@ export function DocumentPath({
   trailing?: ReactNode;
 }) {
   return (
-    <span
-      data-identity-path
-      className="flex min-w-16 items-center gap-1 [@media(pointer:coarse)]:min-w-0"
-    >
+    <span data-identity-path className="flex min-w-16 items-center gap-1 coarse:min-w-0">
       <CrumbRow location={location} browse={{ projectId, tab }} />
       {trailing}
     </span>
@@ -102,7 +101,7 @@ function CrumbRow({ location, browse }: { location: TabLocation; browse: Browse 
           {location.leaf}
         </span>,
         folders.length + 1,
-        "min-w-16 flex-1 text-ink-muted [@media(pointer:coarse)]:min-w-0",
+        "min-w-16 flex-1 text-muted-foreground coarse:min-w-0",
         subjects.leaf,
       )}
     </span>
@@ -171,7 +170,7 @@ function Crumb({
       {...drag}
       className={cn(
         classes,
-        "focus-ring hover:bg-sidebar-accent/50 hover:text-foreground popup-open:bg-dropdown-hover popup-open:text-foreground",
+        "focus-ring hover:bg-ink-fill hover:text-foreground popup-open:bg-ink-fill-strong popup-open:text-foreground",
       )}
     >
       {children}
@@ -190,7 +189,7 @@ function OpenCrumbMenu({ browse, depth }: { browse: Browse; depth: number }) {
   if (!menu)
     return (
       <DropdownMenuContent align="start" className="w-64 max-w-[calc(100vw-1rem)]">
-        <p className="px-2 py-1.5 text-sm text-muted-foreground">{t`Loading…`}</p>
+        <p className={cn("px-2", role.emptyLine)}>{t`Loading…`}</p>
       </DropdownMenuContent>
     );
   return <DrillInMenuBody {...menu} />;

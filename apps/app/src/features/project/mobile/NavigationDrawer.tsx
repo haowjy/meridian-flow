@@ -93,13 +93,13 @@ export function NavigationDrawer({
         <SheetDescription className="visually-hidden">
           <Trans>Switch screens or manage your account.</Trans>
         </SheetDescription>
-        {/* Chrome wrapper — rounded-r-xl + shadow-rail-left carry the desktop
+        {/* Chrome wrapper — rounded-r-xl + shadow-modal carry the desktop
             rail chrome (desktop-layout.ts) instead of a hairline border. It is
             NOT the animated element (see WebKit note above), so it can safely
             clip; safe-area paddings live here so the drawer background still
             fills under the notch/home-indicator regions. */}
         <div
-          className="flex h-full min-h-0 flex-col overflow-hidden rounded-r-xl bg-sidebar shadow-rail-left"
+          className="flex h-full min-h-0 flex-col overflow-hidden rounded-r-xl bg-chrome shadow-modal"
           style={{
             paddingTop: "env(safe-area-inset-top)",
             paddingLeft: "env(safe-area-inset-left)",
@@ -112,7 +112,7 @@ export function NavigationDrawer({
                 title={projectTitle}
                 {...titleEdit}
                 showRenameHint
-                className="focus-ring flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-semibold hover:bg-sidebar-accent"
+                className="focus-ring flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-semibold hover:bg-ink-fill"
                 inputClassName="min-h-11 px-2 text-sm font-semibold"
               />
             </div>

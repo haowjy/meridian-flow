@@ -20,6 +20,8 @@
 /* A trigger whose menu, popover or listbox is open. Keyed on aria-expanded, which
    a wrapping Tooltip can't overwrite the way it does data-state; aria-haspopup
    (implicit on a combobox) keeps plain disclosures (expanded sections) out. */
+/* Under a finger: the phone shell's 44px touch targets key off this. */
+@custom-variant coarse (@media (pointer: coarse));
 @custom-variant popup-open (&:is([aria-haspopup]:not([aria-haspopup="false"]), [role="combobox"])[aria-expanded="true"]);
 
 @theme {
@@ -52,7 +54,6 @@
   /* Chat layout tokens are global because some chat chrome and portaled menus
      intentionally render outside the text-tier-chat subtree. */
   --chat-space-inline: 4px;
-  --chat-space-row: 4px;
   --chat-space-block: 8px;
   --chat-space-turn: 12px;
   --chat-space-exchange: 6px;
@@ -60,11 +61,7 @@
   --chat-card-pad-y: 8px;
   --chat-row-status-center-offset: 7px;
   --chat-tool-list-indent: 13px;
-  --chat-geometry-hit-area-x: 4px;
-  --chat-geometry-draft-indent: 28px;
-  --chat-geometry-draft-inset: 10px;
   --chat-geometry-receipt-indent: 36px;
-  --chat-geometry-fold-icon-offset: 6px;
   /* Chat rhythm is intentionally an app-only scale: each boundary has one
      owner, and virtual-row spacing stays inside the measured row. */
   /* Prose rhythm defaults stay independent from chat and preserve non-chat surfaces. */
@@ -118,7 +115,7 @@
 @utility text-tier-chat {
   --text-scale: var(--text-scale-chat);
   --prose-space-inline: var(--chat-space-inline);
-  --prose-space-row: var(--chat-space-row);
+  --prose-space-row: var(--chat-space-inline);
   --prose-space-block: var(--chat-space-block);
   --prose-space-heading-large-top: 24px;
   --prose-space-h1-bottom: 8px;
@@ -174,7 +171,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-focus;
     /* Thin scrollbars everywhere — the default chunky track fights the paper
        calm. Firefox honours scrollbar-width/color; Chromium uses the webkit
        pseudos below. Thumb fades from the shared foreground ink so it tracks
@@ -192,7 +189,7 @@
   }
   *::-webkit-scrollbar-thumb {
     background: color-mix(in oklab, var(--color-foreground) 15%, transparent);
-    border-radius: 3px;
+    border-radius: calc(infinity * 1px);
   }
   *::-webkit-scrollbar-thumb:hover {
     background: color-mix(in oklab, var(--color-foreground) 30%, transparent);
@@ -245,7 +242,7 @@
     text-underline-offset: 0.15em;
   }
   :root[data-focus-keys] [data-composer-skill]:focus-visible {
-    outline: 2px solid var(--color-border-focus);
+    outline: 2px solid var(--color-focus);
     outline-offset: 2px;
   }
   /* Focus the app moves for continuity paints no ring. A screen heading
@@ -282,12 +279,35 @@
   @apply border border-border bg-card;
 }
 
-/* Calm "this thread is live" pulse. Uses --motion-pulse-duration for the
-   cycle and --status-streaming-ring for the halo so the dot, its glow, and
-   its cadence are all token-driven. */
+/* The state layer for controls that paint their own fill (a primary button, a chip): hover
+   lays `ink-fill` over the fill, and pressed, current, selected and open lay
+   `ink-fill-strong`. A transparent row uses `bg-ink-fill` directly; this is the same rule
+   for elements whose background colour is taken. Not inherited, so a nested control
+   starts clear. */
+@property --state-layer {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+@utility interactive {
+  background-image: linear-gradient(var(--state-layer), var(--state-layer));
+  @media (hover: hover) {
+    &:hover:not(:disabled, [aria-disabled="true"]) {
+      --state-layer: var(--color-ink-fill);
+    }
+  }
+  &:active:not(:disabled, [aria-disabled="true"]),
+  &:is([aria-current]:not([aria-current="false"]), [aria-selected="true"], [aria-pressed="true"]),
+  &:is([aria-haspopup]:not([aria-haspopup="false"]), [role="combobox"])[aria-expanded="true"] {
+    --state-layer: var(--color-ink-fill-strong);
+  }
+}
+
+/* Calm "this thread is live" pulse. */
 @utility streaming-dot {
-  @apply size-1.5 shrink-0 rounded-full bg-status-streaming;
-  box-shadow: 0 0 0 3px var(--color-status-streaming-ring);
+  @apply size-1.5 shrink-0 rounded-full bg-primary;
+  --streaming-halo: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  box-shadow: 0 0 0 3px var(--streaming-halo);
 }
 @media (prefers-reduced-motion: no-preference) {
   .streaming-dot {
@@ -323,11 +343,11 @@
 @keyframes streaming-pulse {
   0%, 100% {
     opacity: 1;
-    box-shadow: 0 0 0 3px var(--color-status-streaming-ring);
+    box-shadow: 0 0 0 3px var(--streaming-halo);
   }
   50% {
     opacity: 0.55;
-    box-shadow: 0 0 0 5px var(--color-status-streaming-ring);
+    box-shadow: 0 0 0 5px var(--streaming-halo);
   }
 }
 
@@ -340,7 +360,7 @@
   border-radius: 50%;
   background: radial-gradient(
     circle at 42% 38%,
-    var(--color-ink-muted) 0%,
+    var(--color-muted-foreground) 0%,
     var(--color-ink-deep) 58%,
     transparent 76%
   );
@@ -415,7 +435,7 @@
 }
 
 @utility main-pane {
-  @apply min-w-0 max-w-full overflow-x-hidden;
+  @apply min-w-0 max-w-full overflow-x-clip;
 }
 
 @utility chat-column {
@@ -501,11 +521,7 @@
    auto-zooming the viewport on focus; tightens to 15px on desktop where
    zoom isn't a concern. Any focusable composer input must use this. */
 @utility composer-input {
-  @apply text-base leading-relaxed md:text-[15px];
-  /* The composer is a raised, page-toned surface wherever it sits, so its
-     reference chips keep the page's fill (`link-chip.css`). */
-  --link-chip-fill: var(--color-muted);
-  --link-chip-fill-hover: var(--color-sidebar-accent);
+  @apply text-base leading-relaxed md:text-body;
 }
 
 @utility user-turn {
@@ -582,7 +598,7 @@
 }
 
 @utility user-message-bubble {
-  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-chat-interactive px-4 py-3 text-prose-foreground;
+  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-card px-4 py-3 text-foreground;
 }
 
 /* A queued message is not live yet: the draft link chip's outline (`link-chip.css`), dotted, with
@@ -591,43 +607,25 @@
   border-style: dotted;
   border-color: var(--color-muted-foreground);
   background-color: transparent;
-  color: var(--color-ink-muted);
-  --prose-color: var(--color-ink-muted);
+  color: var(--color-muted-foreground);
+  --prose-color: var(--color-muted-foreground);
 }
 
-/* Context-dependent interactive lift for chat elements (user bubble, composer,
-   turn-edit cards). The page-sheet placement (centered chat) lifts above the
-   warm page with --color-card; the dock placement lifts above the chrome with
-   --color-background. Both resolve to the same visual role ("raised interactive
-   surface") without per-component forks. */
-@utility bg-chat-interactive {
-  background-color: var(--color-chat-interactive, var(--color-background));
-  /* A raised surface is page-toned again, so a link chip on it takes the
-     page's fill back from the dock (`link-chip.css`). */
-  --link-chip-fill: var(--color-muted);
-  --link-chip-fill-hover: var(--color-sidebar-accent);
-}
-/* Single source of truth for the green-tinted focus ring.
-   Every interactive element opts in via `focus-ring` instead of re-deriving
-   focus styles. Consumes --border-focus + --ring tokens. */
+/* The one keyboard focus ring. Every interactive element opts in with `focus-ring`. */
 @utility focus-ring {
   @apply outline-none;
   :root[data-focus-keys] &:focus-visible:not([data-focus-quiet]) {
-    /* Outer glow derives from the ring token so surfaces that re-point the
-       ring (shelf → ink) don't leak a jade halo from a hardcoded literal. */
-    box-shadow:
-      0 0 0 2px var(--color-border-focus),
-      0 0 0 4px color-mix(in oklab, var(--color-ring) 12%, transparent);
+    box-shadow: 0 0 0 2px var(--color-focus);
   }
 }
 
 /* Menu rows sit inside the surface gutter. Keep keyboard focus on the
-   rounded row, including composite rows that own a focused child. */
+   rounded-sm row, including composite rows that own a focused child. */
 @utility dropdown-focus-ring {
   @apply outline-none;
   :root[data-focus-keys] &:focus-visible,
   :root[data-focus-keys] &:has(> :focus-visible) {
-    box-shadow: inset 0 0 0 2px var(--color-dropdown-focus-indicator) !important;
+    box-shadow: inset 0 0 0 2px var(--color-focus) !important;
   }
 }
 
@@ -663,7 +661,7 @@
   background-color: var(--inline-edit-surface, var(--color-card));
   box-shadow:
     0 0 0 var(--inline-edit-bleed, 4px) var(--inline-edit-surface, var(--color-card)),
-    0 0 0 calc(var(--inline-edit-bleed, 4px) + 1px) var(--color-border-focus);
+    0 0 0 calc(var(--inline-edit-bleed, 4px) + 1px) var(--color-focus);
 }
 
 @utility inline-edit-trigger {
@@ -674,8 +672,8 @@
     box-shadow var(--default-transition-duration);
   @media (hover: hover) {
     &:hover {
-      background-color: var(--color-dropdown-hover);
-      box-shadow: 0 0 0 var(--inline-edit-bleed, 4px) var(--color-dropdown-hover);
+      background-color: var(--color-ink-fill);
+      box-shadow: 0 0 0 var(--inline-edit-bleed, 4px) var(--color-ink-fill);
     }
   }
 }
@@ -684,17 +682,6 @@
   @apply text-sm font-medium text-foreground;
 }
 
-/*
- * Shelf surface — the left rail: the chrome's grey-gold one shade darker
- * (see the palette story in design-tokens/ink-jade.css). Paints the shelf
- * material as one flat tone and locally RE-POINTS the semantic tokens, so rail
- * content written against the normal grammar (bg-sidebar-accent rows, text-foreground,
- * text-ink-muted, border-border-subtle, focus-ring) reads correctly without
- * per-component forks. Portalled content (menus, popovers, dialogs) mounts
- * on <body> and keeps page styling — only what literally sits on the shelf
- * re-themes. Border/muted voices are mixed from the shelf's own pigments
- * (colored greys — one light source).
- */
 /*
  * Page sheet — the lit paper rising out of the chrome. Every center pane
  * wears this below its h-10 chrome band (PaneHeader or the document tab
@@ -706,8 +693,6 @@
  * sheet is the ONE sanctioned surface paint on top of it.
  */
 @utility page-sheet {
-  /* Chat interactive surfaces lift above the warm page (card = brighter). */
-  --color-chat-interactive: var(--color-card);
   @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-tr-md bg-background;
 }
 
@@ -727,53 +712,7 @@
      otherwise the matched backdrop shows through the notch at the screen edge. */
   overflow: hidden;
   border-top-left-radius: var(--chrome-corner, var(--radius-md));
-  background-color: var(--color-sidebar);
-}
-
-/*
- * Dock surface — the chrome material (≡ the tab band) with airlight pooling
- * at its floor. One utility (not `bg-sidebar` + a gradient class) because
- * tailwind-merge can't tell a custom bg-image utility from a bg-color and
- * would drop one of the pair.
- */
-@utility dock-surface {
-  /* Chat interactive surfaces lift above the chrome (background = page tone). */
-  --color-chat-interactive: var(--color-background);
-  /* The dock's own tone is the recess, so a link chip on it would vanish; it
-     takes the next step, and hovers one further toward the ink. */
-  --link-chip-fill: var(--color-sidebar-accent);
-  --link-chip-fill-hover: color-mix(in oklab, var(--color-sidebar-accent) 90%, var(--color-foreground));
-  background-color: var(--color-sidebar);
-  background-image: var(--background-image-dock-airlight);
-}
-
-@utility shelf-surface {
-  /* The rail keeps the app's ONE black ink (rule: text is consistent
-     app-wide in light mode) — body text is untouched. Only what fails on the
-     tinted ground remaps through shelf role tokens from design-tokens: surface
-     tones, hairlines, muted/hint inks, error ink, and the focus border. The
-     outer ring follows the rail's shared black ink instead of page-tuned jade. */
-  background-color: var(--color-shelf);
-  --color-sidebar: var(--color-shelf);
-  --color-sidebar-accent: var(--color-shelf-active);
-  --color-ink-subtle: var(--color-shelf-ink-subtle);
-  --color-muted-foreground: var(--color-shelf-ink-muted);
-  --color-border-subtle: var(--color-shelf-border);
-  --color-border: var(--color-shelf-border-strong);
-  --color-accent: var(--color-shelf-hover);
-  --color-muted: var(--color-shelf-muted);
-  --color-destructive: var(--color-shelf-destructive);
-  /* An open trigger on the rail wears the rail's hover, not the page's. */
-  --color-dropdown-hover: var(--color-shelf-hover);
-}
-
-/*
- * Shelf hover overrides — chrome `sidebar-accent` (/50 especially) reads
- * near-white on the darker shelf. Descendant rules win over Tailwind utilities
- * so shelf rows keep the shared class names without per-component forks.
- */
-.shelf-surface .hover\:bg-sidebar-accent\/50:hover {
-  background-color: var(--color-shelf-hover);
+  background-color: var(--color-chrome);
 }
 
 /*
@@ -843,21 +782,21 @@
       var(--default-transition-timing-function);
   }
   /* Same hover gate Tailwind applies to `hover:` utilities — no sticky
-     hover pills on touch. */
+     hover pills on touch. Hover darkens like every chrome row. */
   @media (hover: hover) {
     &:hover::before {
-      background-color: color-mix(in oklab, var(--tab-chip-surface) 50%, transparent);
+      background-color: var(--color-ink-fill);
     }
   }
-  /* A chip that opens a switcher holds its hover pill while the switcher is open. */
+  /* A chip that opens a switcher wears the open fill while the switcher is open. */
   &[aria-haspopup][aria-expanded="true"]::before {
-    background-color: color-mix(in oklab, var(--tab-chip-surface) 50%, transparent);
+    background-color: var(--color-ink-fill-strong);
   }
 }
 
 /** Link-style control — always reads as clickable (not hover-only). */
 @utility text-button {
-  @apply focus-ring text-sm font-medium text-primary underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline;
+  @apply focus-ring text-sm font-medium text-jade-text underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline;
 }
 
 /** Plain collapsible row (reasoning / activity toggles) — text, not a card. */
@@ -912,7 +851,7 @@
    (its h-14 row plus the standalone status-bar inset) and over the content. */
 @keyframes block-reveal {
   0%, 100% { outline-color: transparent; background-color: transparent; }
-  20%, 70% { outline-color: color-mix(in srgb, var(--color-primary) 58%, transparent); background-color: color-mix(in srgb, var(--color-primary) 9%, transparent); }
+  20%, 70% { outline-color: color-mix(in oklab, var(--color-primary) 40%, transparent); background-color: color-mix(in oklab, var(--color-primary) 12%, transparent); }
 }
 
 .block-reveal-flash {
@@ -924,7 +863,7 @@
 @media (prefers-reduced-motion: reduce) {
   .block-reveal-flash {
     outline-color: var(--color-primary);
-    background-color: color-mix(in srgb, var(--color-primary) 9%, transparent);
+    background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
     animation: none;
   }
 }
@@ -933,7 +872,7 @@
    Changes list lights up once and settles. Its marks pulse in inline-review.css. */
 @keyframes review-row-arrive {
   from {
-    background-color: var(--color-review-added-ring);
+    background-color: color-mix(in oklab, var(--color-primary) 22%, transparent);
   }
 }
 

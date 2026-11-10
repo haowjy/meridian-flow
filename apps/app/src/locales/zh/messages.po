@@ -1159,23 +1159,21 @@ msgid "Applied to the manuscript"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/draft-review/DraftedDeleteNotice.tsx
-#: src/features/draft-review/ReviewChangeBar.tsx
-#: src/features/draft-review/ReviewChangeRow.tsx
-#: src/features/editor/DraftReviewBand.tsx
+#: src/features/draft-review/ReviewActions.tsx
 msgid "Apply"
 msgstr ""
 
+#: src/features/draft-review/ReviewActions.tsx
 #: src/features/project/work/WorkChanges.tsx
 msgid "Apply all"
 msgstr ""
 
 #: src/features/project/work/WorkChanges.tsx
-msgid "Apply all changes"
-msgstr ""
+#~ msgid "Apply all changes"
+#~ msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/DraftReviewBand.tsx
+#: src/features/draft-review/ReviewActions.tsx
 msgid "Apply draft"
 msgstr ""
 
@@ -1718,6 +1716,8 @@ msgstr "清除目标"
 msgid "Clear the status"
 msgstr "清除状态"
 
+#: src/components/ui/dialog.tsx
+#: src/components/ui/sheet.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
@@ -2274,7 +2274,7 @@ msgstr ""
 msgid "Couldn't load Work."
 msgstr ""
 
-#: src/components/app/QueryErrorRow.tsx
+#: src/features/project/chat/ChatScreen.tsx
 msgid "Couldn't load. Check your connection."
 msgstr ""
 
@@ -2790,19 +2790,20 @@ msgid "Diagram"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/draft-review/DraftedDeleteNotice.tsx
-#: src/features/draft-review/ReviewChangeBar.tsx
-#: src/features/draft-review/ReviewChangeParts.tsx
-#: src/features/editor/DraftReviewBand.tsx
+#: src/features/draft-review/ReviewActions.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkChanges.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Discard"
 msgstr ""
 
-#: src/features/project/work/WorkChanges.tsx
-msgid "Discard all changes"
+#: src/features/draft-review/ReviewActions.tsx
+msgid "Discard all"
 msgstr ""
+
+#: src/features/project/work/WorkChanges.tsx
+#~ msgid "Discard all changes"
+#~ msgstr ""
 
 #: src/features/project/work/WorkChanges.tsx
 msgid "Discard all changes?"
@@ -2813,8 +2814,7 @@ msgid "Discard changes"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/DraftReviewBand.tsx
-#: src/features/editor/EditorView.tsx
+#: src/features/draft-review/ReviewActions.tsx
 msgid "Discard draft"
 msgstr ""
 
@@ -2839,8 +2839,6 @@ msgstr ""
 #: src/features/editor/SchemaNotices.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
-#: src/features/project/work/WorkCommandFailureRow.tsx
-#: src/features/project/work/WorkFileRows.tsx
 msgid "Dismiss"
 msgstr ""
 
@@ -3865,7 +3863,7 @@ msgstr ""
 msgid "missing kind"
 msgstr ""
 
-#: src/features/project/shell/sidebar/ModeSwitch.tsx
+#: src/features/project/shell/LeftSidebar.tsx
 msgid "Mode"
 msgstr ""
 
@@ -4071,8 +4069,8 @@ msgid "Needs you"
 msgstr ""
 
 #: src/components/app/NewBadge.tsx
-msgid "New"
-msgstr ""
+#~ msgid "New"
+#~ msgstr ""
 
 #: src/features/chat/ChatThreadTitle.tsx
 #: src/features/chat/ChatView.tsx
@@ -5004,10 +5002,7 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/DraftCommandStatus.tsx
-#: src/features/draft-review/ReviewChangeBar.tsx
-#: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
@@ -5017,7 +5012,6 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
-#: src/features/project/work/WorkFileRows.tsx
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "Retry"
 msgstr "重试"
@@ -5143,6 +5137,10 @@ msgstr ""
 
 #: src/features/project/chat/use-chat-scratch-source.ts
 msgid "Scratch for this chat"
+msgstr ""
+
+#: src/features/chat/TurnList.tsx
+msgid "Scroll to latest"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx

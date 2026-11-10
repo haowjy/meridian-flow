@@ -10,6 +10,7 @@
  * gates this writer's own openings. The top margin holds the notice for
  * documents that closed under the writer, so the list never moves for it.
  */
+
 import { Trans } from "@lingui/react/macro";
 import { useRouter } from "@tanstack/react-router";
 import { FilePlus } from "lucide-react";
@@ -19,6 +20,7 @@ import type { AccountRecentItem } from "@/client/recents";
 import { readableRecentPath } from "@/client/recents";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
+import { role } from "@/components/ui/roles";
 import { Skeleton } from "@/components/ui/skeleton";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
@@ -84,16 +86,11 @@ export function RecentDocumentsLanding({
         </div>
         <div className="flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-headline-section text-foreground">
+            <h2 className={role.sectionHeading}>
               <Trans>Recently opened</Trans>
             </h2>
           </div>
-          <Button
-            size="sm"
-            className="[@media(pointer:coarse)]:min-h-11"
-            onClick={onNewDocument}
-            disabled={!onNewDocument}
-          >
+          <Button size="sm" onClick={onNewDocument} disabled={!onNewDocument}>
             <FilePlus aria-hidden />
             <Trans>New document</Trans>
           </Button>
@@ -228,7 +225,7 @@ function RecentDocumentContent({ item, now }: { item: AccountRecentItem; now: nu
           </span>
         ) : null}
       </span>
-      <span aria-hidden className="mt-0.5 shrink-0 text-xs tabular-nums text-ink-subtle">
+      <span aria-hidden className="mt-0.5 shrink-0 text-xs tabular-nums text-muted-foreground">
         {age}
       </span>
     </>
@@ -308,12 +305,7 @@ function LandingEmpty({ onNewDocument }: { onNewDocument?: () => void }) {
       <p className="mt-1 text-xs text-muted-foreground">
         <Trans>Open a document from the project tree, or start a new one.</Trans>
       </p>
-      <Button
-        size="sm"
-        className="mt-5 [@media(pointer:coarse)]:min-h-11"
-        onClick={onNewDocument}
-        disabled={!onNewDocument}
-      >
+      <Button size="sm" className="mt-5" onClick={onNewDocument} disabled={!onNewDocument}>
         <FilePlus aria-hidden />
         <Trans>New document</Trans>
       </Button>

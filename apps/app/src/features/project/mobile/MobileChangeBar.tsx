@@ -23,7 +23,7 @@ export function MobileChangeBar({
   return (
     <div
       data-phone-change-bar
-      className="shrink-0 bg-background px-2 pt-1.5 animate-in fade-in-0 slide-in-from-bottom-2 duration-150 motion-reduce:animate-none"
+      className="shrink-0 bg-background px-2 pt-1.5 animate-in fade-in-0 slide-in-from-bottom-2 motion-reduce:animate-none"
       style={{
         paddingBottom:
           "max(0.5rem, env(safe-area-inset-bottom), var(--mobile-keyboard-height, 0px))",

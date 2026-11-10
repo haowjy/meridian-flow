@@ -1,27 +1,22 @@
 /** Routed Trash popup: a desktop list and preview, or a phone list/detail flow. */
+
 import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
-import { ArchiveRestore, ChevronLeft, X } from "lucide-react";
-import { Dialog as DialogPrimitive } from "radix-ui";
+import { ArchiveRestore, ChevronLeft } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { useDocumentTrash, useTrashedDocument } from "@/client/query/useDocumentTrash";
+import { DocumentNotice } from "@/components/app/DocumentNotice";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogOverlay,
-  DialogPortal,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
-import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { PhoneTakeover } from "@/components/ui/phone-shell";
+import { role } from "@/components/ui/roles";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
@@ -36,7 +31,6 @@ import { fileKindIcon } from "./context-file-icon";
 import {
   contextTreeFileRowClassName,
   contextTreeOverflowTriggerClassName,
-  sidebarRole,
 } from "./context-row-geometry";
 import { schemeLabel } from "./context-schemes";
 import { type TrashRestoreState, useDocumentTrashRestore } from "./DocumentTrashRestoreProvider";
@@ -95,7 +89,7 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
               restore(entry, afterRestore);
             }}
             showHeading
-            className="w-72 shrink-0 border-r border-border-subtle bg-muted pt-4"
+            className="w-72 shrink-0 border-r border-border-subtle bg-ink-fill pt-4"
           />
           <section className="min-h-0 min-w-0 flex-1 bg-background [&>section>header]:pr-12">
             {selectedId ? (
@@ -108,7 +102,7 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
                 showHeader
               />
             ) : query.isPending ? (
-              <p role="status" className="p-4 text-sm text-muted-foreground">
+              <p role="status" className={cn("px-4", role.emptyLine)}>
                 <Trans>Loading Trash…</Trans>
               </p>
             ) : null}
@@ -170,77 +164,47 @@ function PhoneTrashContent({
 }) {
   const detail = typeof destination === "string";
   return (
-    <DialogPortal>
-      <DialogOverlay />
-      <DialogPrimitive.Content
-        data-slot="dialog-content"
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          (event.target as HTMLElement | null)?.focus({ preventScroll: true });
-        }}
-        className="fixed inset-0 z-50 flex flex-col bg-background outline-none duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
-      >
-        <header
-          className="shrink-0 border-b border-border-subtle bg-background"
-          style={{ paddingTop: "env(safe-area-inset-top)" }}
-        >
-          <div
-            className="flex h-12 items-center gap-1"
-            style={{
-              paddingLeft: "calc(0.5rem + env(safe-area-inset-left))",
-              paddingRight: "calc(0.5rem + env(safe-area-inset-right))",
-            }}
-          >
-            {detail ? (
-              <PhoneIconButton aria-label={t`Back to Trash`} onClick={onBack}>
-                <ChevronLeft className="size-5" aria-hidden />
-              </PhoneIconButton>
-            ) : (
-              <span className="size-11 shrink-0" aria-hidden />
-            )}
-            <DialogTitle className="min-w-0 flex-1 truncate text-center text-sm font-semibold text-foreground">
-              {detail
-                ? entries.find((entry) => entry.documentId === selectedId)?.name || t`Trash`
-                : t`Trash`}
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              {detail ? (
-                <Trans>Read-only document in Trash.</Trans>
-              ) : (
-                <Trans>Deleted documents.</Trans>
-              )}
-            </DialogDescription>
-            <DialogClose asChild>
-              <PhoneIconButton aria-label={t`Close Trash`}>
-                <X className="size-5" aria-hidden />
-              </PhoneIconButton>
-            </DialogClose>
-          </div>
-        </header>
-        <div className="min-h-0 flex-1">
-          {detail && selectedId ? (
-            <TrashedDocumentView
-              key={selectedId}
-              projectId={projectId}
-              documentId={selectedId}
-              state={states.get(selectedId)}
-              onRestore={onRestore}
-              showHeader={false}
-            />
-          ) : (
-            <TrashListPane
-              entries={entries}
-              query={query}
-              selectedId={undefined}
-              states={states}
-              onSelect={onSelect}
-              onRestore={onRestore}
-              className="h-full overflow-y-auto overscroll-contain py-2"
-            />
-          )}
-        </div>
-      </DialogPrimitive.Content>
-    </DialogPortal>
+    <PhoneTakeover
+      title={
+        detail
+          ? entries.find((entry) => entry.documentId === selectedId)?.name || t`Trash`
+          : t`Trash`
+      }
+      description={
+        detail ? <Trans>Read-only document in Trash.</Trans> : <Trans>Deleted documents.</Trans>
+      }
+      closeLabel={t`Close Trash`}
+      leading={
+        detail ? (
+          <IconButton size="sm" label={t`Back to Trash`} onClick={onBack}>
+            <ChevronLeft className="size-5" aria-hidden />
+          </IconButton>
+        ) : undefined
+      }
+    >
+      <div className="min-h-0 flex-1">
+        {detail && selectedId ? (
+          <TrashedDocumentView
+            key={selectedId}
+            projectId={projectId}
+            documentId={selectedId}
+            state={states.get(selectedId)}
+            onRestore={onRestore}
+            showHeader={false}
+          />
+        ) : (
+          <TrashListPane
+            entries={entries}
+            query={query}
+            selectedId={undefined}
+            states={states}
+            onSelect={onSelect}
+            onRestore={onRestore}
+            className="h-full overflow-y-auto overscroll-contain py-2"
+          />
+        )}
+      </div>
+    </PhoneTakeover>
   );
 }
 
@@ -268,7 +232,7 @@ function TrashListPane({
     <aside className={cn("min-h-0 overflow-y-auto", className)}>
       {showHeading ? (
         <div className="px-5 pb-3">
-          <DialogTitle className="text-lg font-semibold tracking-tight">
+          <DialogTitle>
             <Trans>Trash</Trans>
           </DialogTitle>
           <DialogDescription className="sr-only">
@@ -297,11 +261,11 @@ function TrashListPane({
           ))}
         </div>
       ) : query.isPending ? (
-        <p role="status" className="px-5 py-3 text-sm text-muted-foreground">
+        <p role="status" className={cn("px-4", role.emptyLine)}>
           <Trans>Loading Trash…</Trans>
         </p>
       ) : (
-        <p className="px-5 py-3 text-sm text-muted-foreground">
+        <p className={cn("px-4", role.emptyLine)}>
           <Trans>Nothing in the trash.</Trans>
         </p>
       )}
@@ -351,12 +315,12 @@ export function TrashRow({
         <span className="ml-0.5 min-w-0 flex-1">
           <span className="flex min-w-0 items-baseline gap-2">
             <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-            <span className={cn("shrink-0 font-normal tabular-nums", sidebarRole.rowSecondary)}>
+            <span className={cn("shrink-0 font-normal tabular-nums", role.rowSecondary)}>
               {restoring ? <Trans>Restoring</Trans> : age}
             </span>
           </span>
           <span
-            className={cn("block truncate leading-snug font-normal", sidebarRole.rowSecondary)}
+            className={cn("block truncate leading-snug font-normal", role.rowSecondary)}
             title={location}
           >
             {location}
@@ -374,9 +338,7 @@ export function TrashRow({
         </OverflowMenu>
       </div>
       {state?.kind === "failed" ? (
-        <p role="alert" className="pr-2 pb-1 pl-3.5 text-xs text-destructive">
-          {state.message}
-        </p>
+        <InlineErrorRow message={state.message} className="pt-0 pr-2 pb-1 pl-3.5" />
       ) : null}
     </div>
   );
@@ -435,7 +397,7 @@ function TrashedDocumentView({
   }
   if (query.isPending || !document) {
     return (
-      <p role="status" className="p-4 text-sm text-muted-foreground">
+      <p role="status" className={cn("px-4", role.emptyLine)}>
         <Trans>Loading document…</Trans>
       </p>
     );
@@ -476,31 +438,26 @@ function TrashNotice({
   const retention = retentionSentence(entry, locale);
   return (
     <div className="shrink-0 px-4 pt-3">
-      <div
-        role="status"
-        className="flex min-w-0 items-center gap-3 rounded-lg border border-border-subtle bg-card py-1.5 pr-1.5 pl-3 text-sm"
+      <DocumentNotice
+        icon={<ArchiveRestore className="size-4" aria-hidden />}
+        action={
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={state?.kind === "restoring"}
+            onClick={onRestore}
+          >
+            {state?.kind === "restoring" ? <Trans>Restoring</Trans> : <Trans>Restore</Trans>}
+          </Button>
+        }
       >
-        <ArchiveRestore className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <p className="min-w-0 flex-1 text-muted-foreground">
-          <Trans>
-            In the trash. Deleted by {actor} on {deleted}.
-          </Trans>{" "}
-          {retention}
-        </p>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={state?.kind === "restoring"}
-          onClick={onRestore}
-          className="shrink-0 [@media(pointer:coarse)]:min-h-11"
-        >
-          {state?.kind === "restoring" ? <Trans>Restoring</Trans> : <Trans>Restore</Trans>}
-        </Button>
-      </div>
+        <Trans>
+          In the trash. Deleted by {actor} on {deleted}.
+        </Trans>{" "}
+        {retention}
+      </DocumentNotice>
       {state?.kind === "failed" ? (
-        <p role="alert" className="pt-2 text-xs text-destructive">
-          {state.message}
-        </p>
+        <InlineErrorRow message={state.message} className="px-0 pt-2 pb-0" />
       ) : null}
     </div>
   );

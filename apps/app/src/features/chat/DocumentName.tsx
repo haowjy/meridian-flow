@@ -37,7 +37,7 @@ export function DocumentName({
   const name = <span className="min-w-0 truncate">{label === "open" ? openLabel : title}</span>;
 
   if (!isDoor) {
-    return <span className="flex min-w-0 items-baseline text-prose-foreground">{name}</span>;
+    return <span className="flex min-w-0 items-baseline text-foreground">{name}</span>;
   }
 
   return (

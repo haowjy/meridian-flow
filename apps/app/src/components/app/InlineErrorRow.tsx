@@ -1,6 +1,8 @@
 /**
- * InlineErrorRow — compact failed-load or failed-command row for rail, popover,
- * header, and list surfaces.
+ * InlineErrorRow — the one error line: a red icon, the message in body ink, and at most
+ * one text action. Rails, popovers, headers, lists, dialogs and fields all use it; a
+ * caller sets only the inset (`className`). The message wraps: an error cut off with an
+ * ellipsis can't be read.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -15,7 +17,8 @@ export function InlineErrorRow({
   actionLabel,
   retryRef,
   onDismiss,
-  wrap = false,
+  id,
+  className,
 }: {
   message: ReactNode;
   onRetry?: () => void;
@@ -23,33 +26,27 @@ export function InlineErrorRow({
   retryRef?: RefObject<HTMLButtonElement | null>;
   /** A failed command the writer may leave as it is. */
   onDismiss?: () => void;
-  /** Let a long message wrap, for dialogs where the words are the point. */
-  wrap?: boolean;
+  /** For a field's `aria-describedby`. */
+  id?: string;
+  /** The host's inset, replacing the default `px-2 py-1.5`. */
+  className?: string;
 }) {
   return (
-    <div role="alert" className="flex items-center gap-2 px-2 py-1.5">
-      <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />
-      <span
-        className={cn("min-w-0 flex-1 text-xs text-foreground", wrap ? "break-words" : "truncate")}
-      >
-        {message}
-      </span>
+    <div id={id} role="alert" className={cn("flex items-start gap-2 px-2 py-1.5", className)}>
+      <AlertCircle className="mt-px size-3.5 shrink-0 text-destructive" aria-hidden />
+      <span className="min-w-0 flex-1 break-words text-xs text-foreground">{message}</span>
       {onRetry ? (
         <button
           ref={retryRef}
           type="button"
           onClick={onRetry}
-          className="text-button shrink-0 text-xs [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+          className="text-button shrink-0 text-xs coarse:min-h-11 coarse:min-w-11"
         >
           {actionLabel ?? <Trans>Retry</Trans>}
         </button>
       ) : null}
       {onDismiss ? (
-        <IconButton
-          className="shrink-0 [@media(pointer:coarse)]:size-11"
-          aria-label={t`Dismiss`}
-          onClick={onDismiss}
-        >
+        <IconButton className="shrink-0" label={t`Dismiss`} onClick={onDismiss}>
           <X aria-hidden className="size-3.5" />
         </IconButton>
       ) : null}

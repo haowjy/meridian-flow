@@ -57,7 +57,6 @@ export function WorkFilesActions({ files }: { files: WorkFiles }) {
       disabled={!files.editable || files.intake.note?.state === "pending" || !files.scratch.catalog}
       onClick={files.createNote}
       aria-label={t`New note`}
-      className="[@media(pointer:coarse)]:min-h-11"
     >
       <FilePlus aria-hidden />
       <span className="max-sm:hidden" aria-hidden>

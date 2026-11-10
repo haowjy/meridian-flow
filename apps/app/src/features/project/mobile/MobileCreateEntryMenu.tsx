@@ -2,10 +2,10 @@
  * MobileCreateEntryMenu — phone `+` top-bar action for creating a context
  * file or folder where you are (current scheme + folder).
  *
- * This is the phone sibling of the desktop `CreateContextEntryMenu`: same
- * two-option vocabulary (New file / New folder, FilePlus / FolderPlus, the
- * shared `ContextCreateKind`), but phone chrome — a 44px `PhoneIconButton`
- * trigger in the top bar's trailing slot and 44px menu items. A separate
+ * The desktop creates from the source header's actions; this is the phone's: the
+ * same vocabulary (New file / New folder, FilePlus / FolderPlus, the shared
+ * `ContextCreateKind`), but phone chrome — an `IconButton` trigger in the top
+ * bar's trailing slot and 44px menu items. A separate
  * component (rather than presentation flags on the desktop menu) keeps the
  * shared component free of phone branches; only the create *kind* contract
  * is shared because the server mutation owns the payload.
@@ -23,7 +23,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { IconButton } from "@/components/ui/icon-button";
 import { ImportMenuItems } from "@/features/import/ImportMenuItems";
 import type { PickKind } from "@/features/import/ImportProvider";
 import type { ImportStatus } from "@/features/import/import-presentation";
@@ -56,7 +56,7 @@ export function MobileCreateEntryMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <PhoneIconButton aria-label={triggerLabel(importStatus)} className="relative">
+        <IconButton size="sm" label={triggerLabel(importStatus)} className="relative">
           <Plus className="size-5" aria-hidden />
           {importStatus === "running" ? (
             <LoaderCircle
@@ -66,7 +66,7 @@ export function MobileCreateEntryMenu({
           ) : importStatus === "needs-writer" ? (
             <span aria-hidden className="absolute top-2 right-2 size-2 rounded-full bg-primary" />
           ) : null}
-        </PhoneIconButton>
+        </IconButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"

@@ -117,7 +117,7 @@ export function ExportProjectDialog({
               <span className="block text-sm font-medium">
                 <Trans>Include Scratch</Trans>
               </span>
-              <span className="block text-caption text-ink-muted">
+              <span className="block text-caption text-muted-foreground">
                 <Trans>Notes the AI kept, grouped by Work.</Trans>
               </span>
             </span>
@@ -133,13 +133,13 @@ export function ExportProjectDialog({
               <span className="block text-sm font-medium">
                 <Trans>Include Uploads</Trans>
               </span>
-              <span className="block text-caption text-ink-muted">
+              <span className="block text-caption text-muted-foreground">
                 <Trans>Files attached in chat, grouped by Work.</Trans>
               </span>
             </span>
             <Switch id={`${id}-uploads`} checked={uploads} onCheckedChange={setUploads} />
           </label>
-          <div role="status" aria-live="polite" className="space-y-3 text-sm text-ink-muted">
+          <div role="status" aria-live="polite" className="space-y-3 text-sm text-muted-foreground">
             {loading ? (
               <p className="text-caption">
                 <Trans>Checking links…</Trans>
@@ -167,7 +167,7 @@ export function ExportProjectDialog({
               </>
             ) : null}
           </div>
-          {result?.refusal ? <InlineErrorRow message={result.refusal} wrap /> : null}
+          {result?.refusal ? <InlineErrorRow message={result.refusal} /> : null}
           {failed ? (
             <InlineErrorRow
               message={t`Couldn't load the preview.`}

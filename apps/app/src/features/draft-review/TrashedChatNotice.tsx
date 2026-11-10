@@ -15,6 +15,7 @@ import { restoreThread } from "@/client/api/threads-api";
 import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { DocumentNotice } from "@/components/app/DocumentNotice";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -53,13 +54,7 @@ export function TrashedChatNotice({
       <DocumentNotice
         icon={<ArchiveRestore className="size-4" aria-hidden />}
         action={
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={state === "restoring"}
-            onClick={restore}
-            className="[@media(pointer:coarse)]:min-h-11"
-          >
+          <Button size="sm" variant="outline" disabled={state === "restoring"} onClick={restore}>
             <Trans>Restore</Trans>
           </Button>
         }
@@ -67,9 +62,10 @@ export function TrashedChatNotice({
         <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>
       </DocumentNotice>
       {state === "failed" ? (
-        <p role="alert" className="pt-2 text-destructive text-sm">
-          <Trans>Couldn't restore the chat. Try again.</Trans>
-        </p>
+        <InlineErrorRow
+          message={<Trans>Couldn't restore the chat. Try again.</Trans>}
+          className="px-0 pt-2 pb-0"
+        />
       ) : null}
     </div>
   );

@@ -22,7 +22,7 @@ export function ValidationNote({
     <div
       role={severity.level === "error" ? "alert" : "status"}
       className={cn(
-        "rounded-sm border bg-background px-1.5 py-1 text-meta leading-snug",
+        "rounded-sm border bg-background px-1.5 py-1 text-xs leading-snug",
         severity.level === "error"
           ? "border-destructive text-destructive"
           : "border-destructive-border text-foreground",

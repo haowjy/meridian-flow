@@ -197,7 +197,7 @@ export function AssistantTurnActions({
       {DEBUG_FEATURE_ALLOWED && enabled ? (
         <IconButton
           type="button"
-          tooltip="Inspect model calls"
+          label="Inspect model calls"
           tooltipSide={TURN_ACTION_TOOLTIP_SIDE}
           onClick={() =>
             openLlmCalls(

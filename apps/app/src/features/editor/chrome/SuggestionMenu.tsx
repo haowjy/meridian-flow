@@ -163,7 +163,7 @@ export function SuggestionMenu({
       className={cn(dropdownPanelClass, "meridian-suggestion-menu-shell min-w-64 p-0", className)}
     >
       {note ? (
-        <div className="border-border-subtle border-b px-2 py-1.5 text-ink-subtle text-xs">
+        <div className="border-border-subtle border-b px-2 py-1.5 text-muted-foreground text-xs">
           {note}
         </div>
       ) : null}
@@ -190,7 +190,9 @@ export function SuggestionMenu({
                 ref={active ? activeRef : undefined}
                 tabIndex={-1}
                 className={cn(
-                  dropdownRowVariants({ interactive: false, selected: active }),
+                  dropdownRowVariants({ interactive: false }),
+                  // The highlighted option is the pointer's or keyboard's place: the hover step.
+                  active && "bg-ink-fill",
                   "cursor-default [&_svg]:text-muted-foreground",
                   row.blocked && "text-muted-foreground",
                 )}

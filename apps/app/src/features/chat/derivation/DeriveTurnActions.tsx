@@ -90,7 +90,7 @@ export function ForkTurnAction({ turnId }: { turnId: string }) {
   return (
     <IconButton
       type="button"
-      tooltip={t`Fork from here`}
+      label={t`Fork from here`}
       tooltipSide={TURN_ACTION_TOOLTIP_SIDE}
       onClick={() => derivation.fork(turnId)}
     >
@@ -146,7 +146,7 @@ function HandoffPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <IconButton type="button" tooltip={label} tooltipSide={TURN_ACTION_TOOLTIP_SIDE}>
+        <IconButton type="button" label={label} tooltipSide={TURN_ACTION_TOOLTIP_SIDE}>
           <Forward aria-hidden />
         </IconButton>
       </PopoverTrigger>
@@ -159,13 +159,6 @@ function HandoffPicker({
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           contentRef.current?.focus();
-        }}
-        // A focused row shows its tooltip, the top dismissable layer, which
-        // would swallow the first Escape. One Escape closes the picker.
-        onKeyDown={(event) => {
-          if (event.key !== "Escape") return;
-          event.preventDefault();
-          setOpen(false);
         }}
       >
         <p className={dropdownGroupLabelClass}>{t`Hand off to`}</p>

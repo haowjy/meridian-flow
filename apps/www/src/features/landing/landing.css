@@ -329,7 +329,7 @@ h1 span {
   padding: 14px 16px;
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  background: var(--color-shelf);
+  background: var(--color-chrome);
 }
 
 .ag .name {
@@ -428,7 +428,7 @@ h1 span {
 
 .c-o:hover,
 .c-o[aria-pressed="true"] {
-  background: var(--color-secondary);
+  background: var(--color-ink-fill);
 }
 
 .c-o[aria-pressed="true"] {
@@ -448,7 +448,7 @@ h1 span {
 .c-r {
   font-size: 12px;
   font-weight: 500;
-  background: var(--color-secondary);
+  background: var(--color-ink-fill);
   border-radius: 999px;
   padding: 1px 8px;
   align-self: center;
@@ -661,9 +661,9 @@ header.sect-head {
 .book-comp {
   width: 100%;
   padding: 12px 12px 10px;
-  background: var(--color-composer-surface);
-  border: 1px solid var(--color-composer-border);
-  border-radius: var(--radius-composer);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
   box-shadow: 0 10px 40px var(--mkt-shadow);
   text-align: left;
   transition: border-color 0.15s ease-out;

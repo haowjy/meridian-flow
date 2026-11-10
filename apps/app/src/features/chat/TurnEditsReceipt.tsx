@@ -18,6 +18,7 @@ import { type ReversalDirection, successfulWorkReversals } from "@/client/api/re
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
@@ -192,7 +193,7 @@ export function TurnEditsReceipt({
   }
   return (
     <div
-      className="overflow-hidden rounded-lg border border-border bg-chat-interactive text-caption text-ink-muted"
+      className="overflow-hidden rounded-lg border border-border bg-card text-caption text-muted-foreground"
       data-turn-receipt
     >
       {/* The WHOLE header row is the expand/collapse target — hover washes the
@@ -201,7 +202,7 @@ export function TurnEditsReceipt({
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. slop-lint: allow suppression the reason is stated in this comment */}
       <div
         onClick={() => setExpanded((value) => !value)}
-        className="flex cursor-pointer items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] transition-colors hover:bg-muted"
+        className="flex cursor-pointer items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] transition-colors hover:bg-ink-fill"
       >
         <button
           type="button"
@@ -215,16 +216,16 @@ export function TurnEditsReceipt({
         >
           <ChevronDown
             className={cn(
-              "size-3.5 shrink-0 text-ink-subtle transition-transform",
+              "size-3.5 shrink-0 text-muted-foreground transition-transform",
               expanded && "rotate-180",
             )}
             aria-hidden
           />
-          <span aria-hidden className="text-ink-subtle">
+          <span aria-hidden className="text-muted-foreground">
             ✎
           </span>
           <span className="flex min-w-0 flex-1 items-baseline">
-            <span className="min-w-0 truncate font-medium text-prose-foreground">
+            <span className="min-w-0 truncate font-medium text-foreground">
               {headerDocumentCount > 0
                 ? documentCountLabel(
                     headerDocumentCount,
@@ -235,12 +236,9 @@ export function TurnEditsReceipt({
           </span>
         </button>
         {undoUnavailable ? (
-          <span
-            className="shrink-0 rounded-full border border-border-subtle px-[var(--chat-space-block)] py-0.5 font-medium text-ink-muted"
-            data-undo-unavailable
-          >
+          <Chip kind="label" className="shrink-0" data-undo-unavailable>
             <Trans>Can't undo</Trans>
-          </span>
+          </Chip>
         ) : (
           <Button
             type="button"
@@ -285,7 +283,7 @@ export function TurnEditsReceipt({
           {outcomeNotices?.map((notice) => (
             <p
               key={notice}
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-foreground"
               data-reversal-outcome
               role="status"
             >
@@ -294,7 +292,7 @@ export function TurnEditsReceipt({
           ))}
           {guardCopy ? (
             <p
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-ink-muted"
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-muted-foreground"
               data-undo-unavailable-reason
               role="status"
             >
@@ -318,7 +316,7 @@ export function TurnEditsReceipt({
             <ul className="flex flex-col">
               {reversibleWorkReceipts.map((workRow, index) => (
                 <li key={`${index}:${workRow.operation}:${workRow.workId}`}>
-                  <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
+                  <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground">
                     {workReceiptLine(workRow)}
                   </span>
                 </li>
@@ -364,7 +362,7 @@ function DocumentRow({
     return (
       <span
         {...drag}
-        className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
+        className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground"
       >
         <DocumentRowLabel document={document} />
       </span>
@@ -375,7 +373,7 @@ function DocumentRow({
       type="button"
       {...drag}
       onClick={() => onOpenContextUri(document.uri)}
-      className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-muted"
+      className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-ink-fill"
     >
       <DocumentRowLabel document={document} />
     </button>
@@ -411,12 +409,12 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
     const { kind, place } = describeModelMove(tree.from, tree.to, names);
     if (kind === "reorder")
       return (
-        <span className="min-w-0 truncate text-prose-foreground" data-turn-tree-line="move">
+        <span className="min-w-0 truncate text-foreground" data-turn-tree-line="move">
           <Trans>Changed the position of {source}</Trans>
         </span>
       );
     return (
-      <span className="min-w-0 truncate text-prose-foreground" data-turn-tree-line="move">
+      <span className="min-w-0 truncate text-foreground" data-turn-tree-line="move">
         <Trans>
           Moved {source} to {place}
         </Trans>
@@ -427,7 +425,7 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
     const source = documentDisplayName(tree.from);
     const { place } = describeModelMove(tree.from, tree.to, names);
     return (
-      <span className="min-w-0 truncate text-prose-foreground" data-turn-tree-line="copy">
+      <span className="min-w-0 truncate text-foreground" data-turn-tree-line="copy">
         <Trans>
           Copied {source} to {place}
         </Trans>
@@ -437,7 +435,7 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
   if (tree?.op === "delete") {
     const name = documentDisplayName(tree.from);
     return (
-      <span className="min-w-0 truncate text-prose-foreground" data-turn-tree-line="delete">
+      <span className="min-w-0 truncate text-foreground" data-turn-tree-line="delete">
         <Trans>Deleted {name}</Trans>
       </span>
     );
