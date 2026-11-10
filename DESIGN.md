@@ -45,7 +45,7 @@ Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 - `background` — warm paper `oklch(0.977 0.007 95)`, always the brightest shell field.
 - `foreground` — the one black ink, `oklch(0.24 0.009 100)`, for primary text throughout light mode.
 - `primary` / `jade-text` — jade for actions, links, focus, send, and save; never a wall or routine selection.
-- `cinnabar` — scarce seal punctuation for brand and rare favorite/pin semantics; never routine actions or active rows.
+- `cinnabar` — scarce seal punctuation for the brand; never routine actions or active rows. Favourites are gold (chosen, not built yet: `main` paints the favourite star jade).
 - `card` / `muted` — local raised and recessed steps inside a region.
 - `border` / `border-subtle` / `border-focus` — in-pane controls and hairlines, never shell-region seams.
 - `prose-foreground` / `ink-muted` / `ink-subtle` — editorial hierarchy inside dense UI and prose-adjacent surfaces.

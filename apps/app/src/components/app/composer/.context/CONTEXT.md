@@ -14,6 +14,10 @@
   verb sends as a message. Server refusal stays on its row.
 - A Stop with nothing queued is moot once its reply ends (`failedStopIsMoot`), so
   its card goes and the button is no longer failed.
+- A per-tab record keeps unsent text and ready reference atoms through reload;
+  in-flight bytes are not draft state. A submission snapshot carries the draft's
+  revision and exact selection, so an older response clears or restores only the
+  draft it accepted.
 - Apply an initial draft snapshot once. A successful catalog acquisition removes
   restored document atoms whose resources are gone; offline or unavailable
   catalogs don't, and folder atoms stay so a deleted folder shows on its chip's

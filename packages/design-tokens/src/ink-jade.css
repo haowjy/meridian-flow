@@ -77,12 +77,12 @@
   --color-accent: var(--ink-jade-recess);
   --color-accent-foreground: var(--color-foreground);
 
-  /* Cinnabar — the scarce seal. Reserve for favorite/pinned, brand mark, and
-     destructive deletions ONLY; never routine selection (red reads as "error"). */
+  /* Cinnabar — the scarce seal. Reserve for the brand mark and destructive
+     deletions ONLY; never routine selection (red reads as "error"). */
   --color-cinnabar: oklch(0.521 0.158 29);
 
-  /* Gold — almost never; reserve for rare emphasis (anchors the review
-     writer-edit tints below). */
+  /* Gold — favourites, and the review writer-edit tints below; nothing
+     else. */
   --color-gold: oklch(0.729 0.115 84);
 
   /* Ink-deep + cream — login hero ground and its text. */

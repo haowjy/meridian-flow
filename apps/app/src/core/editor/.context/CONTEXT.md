@@ -146,6 +146,9 @@ identity in anchors or holds.
   selection, and a moved range has just been removed. Redo and a caret keep
   y-tiptap's mapped selection. Destroying the editor is terminal and
   discards only that mounted navigation history. Dock, Work, tree-only Apply, and title changes never enter it.
+  Known limit: the dock and Editor views of one document share a collaborative
+  origin, so one view's Undo can take back the other's edits, and two views
+  uploading at once can overwrite each other's upload tokens.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks

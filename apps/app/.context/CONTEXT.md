@@ -74,7 +74,12 @@ ports, not adapter internals:
   durable transport owners remain separate.
 - React Query owns project/thread/Work lists and HTTP snapshots. Passive readers
   share the host query options with `enabled: false`; never replace a live
-  query function with `skipToken`. Any transition that affects Chat index
+  query function with `skipToken`. `prefetchQuery` and `fetchQuery` ignore
+  `enabled`, so a read that must wait is gated by leaving its key out of what
+  the reader prefetches. A query-cache subscription that sets React state
+  listens to `updated` and `removed` only: `added` and `observerResultsUpdated`
+  fire inside another component's render, and `updated` alone misses
+  `removeQueries` (account close). Any transition that affects Chat index
   invalidates its feed through the project/work projection seams. Favorite
   commands share one normalized project/thread authority across index and Work
   rows. The project store keeps the account clock and inserts confirmed creations
@@ -166,7 +171,7 @@ Account replacement fences the old lifetime and stale Query responses.
 ## Client-led creation and navigation
 
 Project creation mints its public UUID, journals creation inputs, and navigates to
-`/p/<uuid>/works` before POST settles. The destination owns pending, failure,
+`/p/<uuid>/chats` before POST settles. The destination owns pending, failure,
 same-identity Retry, and Discard; it never bounces to the library.
 
 New-chat Send journals the message, mints local turns, selects the destination in

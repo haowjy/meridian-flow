@@ -652,16 +652,11 @@ the extractor bumps its version, and no second post-write writer exists.
 
 ## Selective disposition and response retirement
 
-Apply and Discard parse required-field selection variants and thread them
-through revision-fenced attempts. Only an absent
-selection chooses whole Discard; a present but incomplete or malformed selection
-is HTTP 400, never a whole Discard. Class IDs,
-immutable part keys, live revisions, and admission tokens are evidence for the
-clicked class only; they never admit a replacement class. A missing selected
-class is `stale` if a listed immutable member survives, and `gone` only when
-none does and the request says its member list is complete
-(`memberPartKeysComplete`): a client sends at most 500 members, an even sample
-of a longer selection, and a sample cannot prove that no member survives.
+Discard takes a selection: the whole branch, or items each naming a document,
+its origin, what it ends, and optionally `draftSeenAt`. What the kernel ended
+decides the answer: nothing left to end is `gone`, an applicable state that
+changed since the writer looked is `stale`, and a text draft that moved on is
+`draft_changed` (`work-branch-review-service.ts`).
 
 A reply's save applies ordered per-segment journal rows to a provisional Work-draft
 clone and never regenerates durable rows from a raw state-vector diff, which

@@ -3,6 +3,15 @@
 Work lifecycle is in the [archive and delete][archive], [lifecycle
 fence][fence] and [pending count][count] rules.
 
+## New-account bootstrap
+
+A new account's default project, its locked No Work and its first `Chapter 1`
+commit together with a durable readiness flag. Authenticated entry reads that
+flag lock-free (`ensureDefaultBootstrapReady`), and only an incomplete workspace
+re-enters the locked bootstrap: running it on every request made the warm path
+pay for work it no longer needed. A failed seed leaves the flag unset for a
+later repair and doesn't fail the request that found it.
+
 ## Work operations
 
 Archive only changes `archivedAt`; it never changes the AI-owned status text.
