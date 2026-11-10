@@ -311,6 +311,7 @@
     "apps/server/server/domains/runtime/summary/conversation-summarizer.test.ts": 12,
     "apps/server/server/domains/runtime/tools/tool-executor.test.ts": 3,
     "apps/server/server/domains/threads/adapters/drizzle/chat-feed.adapter-contract.db.test.ts": 3,
+    "apps/server/server/domains/threads/adapters/drizzle/document-related-reader.db.test.ts": 6,
     "apps/server/server/domains/threads/adapters/drizzle/execution-report-repository.db.test.ts": 14,
     "apps/server/server/domains/threads/adapters/drizzle/model-response-cache-prediction.db.test.ts": 2,
     "apps/server/server/domains/threads/adapters/drizzle/thread-activity.db.test.ts": 1,
