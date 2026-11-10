@@ -1,8 +1,6 @@
-# domains/collab — server-side draft collaboration
+# domains/collab
 
 Durable Yjs coordination and persistence for live documents and Work drafts.
-
-## Rules
 
 - Seed a Work draft content-only: client 1 writes live's blocks into `prosemirror`
   and `review_base`. Don't merge live's Yjs identity into a draft; the draft/live
@@ -28,9 +26,4 @@ Durable Yjs coordination and persistence for live documents and Work drafts.
 
 ## Depth
 
-[`.context/CONTEXT.md`](.context/CONTEXT.md) holds the contracts. Focused pages:
-[Apply](.context/apply.md), [draft records](.context/draft-model-and-records.md),
-[document authority](.context/document-authority-and-schema.md),
-[reversal](.context/reversal.md),
-[WebSocket concurrency](.context/websocket-concurrency.md). Deferred work:
-[TODO](.context/TODO.md), [FUTURE](.context/FUTURE.md).
+[`.context/CONTEXT.md`](.context/CONTEXT.md) holds the contracts and links its focused pages.

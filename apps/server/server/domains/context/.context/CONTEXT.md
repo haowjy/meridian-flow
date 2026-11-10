@@ -2,8 +2,8 @@
 
 This page holds the cross-module contracts for URI resolution, ContextFS,
 tree views, arrivals, and catalog publication. It deliberately omits adapter
-inventories; code owns those details, while [the parent entry page](../AGENTS.md)
-provides the cold-start mental model.
+inventories; code owns those details. The [entry page](../AGENTS.md) lists the rules to
+know before editing.
 
 ## URI and ownership
 
