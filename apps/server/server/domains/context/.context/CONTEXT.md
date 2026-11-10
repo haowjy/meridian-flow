@@ -438,7 +438,7 @@ selected branch and path. Holder binding is stable by document identity, and
 relative spelling uses only a holder the reader may name and read.
 
 Browser addresses normally resolve in the live tree. A review address may
-supply `reviewWorkId` and an item key `${branchId}:${documentId}`; the server
+supply `reviewOwner` (a draft owner key) and an item key `${branchId}:${documentId}`; the server
 checks that item against active review items, then reads the branch tree, except
 for a drafted delete whose identity is intentionally absent there, which reads
 the live tree by the validated document identity. The item's own draft admits its document the way it admits writes

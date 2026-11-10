@@ -697,7 +697,6 @@ export class ContextRemovalCoordinator {
         }
         this.notices?.presentedRemoved(
           projectId,
-          "editor",
           committed.flatMap((command) => {
             if (command.kind !== "terminal-remove") return [];
             const id = command.documentId;
@@ -946,7 +945,7 @@ export class ContextRemovalCoordinator {
     if (this.unavailable()) return { kind: "noop" };
     if (this.holdDraftTabs(projectId, [tab.documentId]).has(tab.documentId))
       return { kind: "noop" };
-    this.notices?.presentedRemoved(projectId, "editor", [tab]);
+    this.notices?.presentedRemoved(projectId, [tab]);
     return this.writerClose(projectId, tab);
   }
 
