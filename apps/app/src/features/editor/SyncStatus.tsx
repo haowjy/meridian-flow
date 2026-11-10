@@ -130,7 +130,7 @@ export function SyncStatus({ session, onReopen, removal }: SyncStatusProps) {
   if (updatesRefused(snapshot.connectionState)) {
     return (
       <div
-        className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-border-subtle bg-muted py-1 pr-1 pl-2 text-meta font-medium text-foreground shadow-card"
+        className="pointer-events-auto -mr-1.5 inline-flex items-center gap-2 font-medium text-foreground"
         role="alert"
         data-sync-refused
       >
@@ -147,7 +147,7 @@ export function SyncStatus({ session, onReopen, removal }: SyncStatusProps) {
 
   // Autosync is assumed, so the healthy and transient states say nothing:
   // "no news is good news." Terminal states win over any outage phase. Rendered
-  // as a quiet floating pill by EditorView. A removed room says nothing while
+  // inside the editor's status pill (SessionEditor). A removed room says nothing while
   // availability is asked or has said it is still there (a restart follows);
   // a tab that stays open says why in place.
   const removed =
@@ -171,11 +171,7 @@ export function SyncStatus({ session, onReopen, removal }: SyncStatusProps) {
   if (!label) return null;
 
   return (
-    <div
-      className="inline-flex items-center gap-1.5 rounded-full border border-border-subtle bg-muted px-2 py-1 text-meta font-medium text-muted-foreground shadow-card"
-      role="status"
-      aria-live="polite"
-    >
+    <div className="inline-flex items-center gap-1.5 font-medium" role="status" aria-live="polite">
       <span aria-hidden className="size-1.5 rounded-full bg-current" />
       {label}
     </div>
