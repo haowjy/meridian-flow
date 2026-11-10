@@ -78,14 +78,12 @@ export class DraftRoomPool {
       if (this.rooms.get(roomKey) !== session) return;
       if (updatesRefused(snapshot.connectionState)) {
         if (!this.isRetained(roomKey)) this.retire(roomKey, session);
-      } else if (
-        snapshot.connectionState?.kind === "reset" ||
-        snapshot.connectionState?.kind === "unauthorized" ||
-        snapshot.connectionState?.kind === "terminal" ||
-        snapshot.status === "destroyed"
-      ) {
+      } else if (session.isRoomEnded()) {
         this.retire(roomKey, session);
-      } else if (this.draining.has(roomKey) && !session.hasUnacknowledgedEdits()) {
+      } else if (
+        this.draining.has(roomKey) &&
+        (!session.hasUnacknowledgedEdits() || !session.canDeliverUnsentEdits())
+      ) {
         this.retire(roomKey, session);
       }
     });
@@ -128,10 +126,7 @@ export class DraftRoomPool {
       this.teardownTimers.delete(roomKey);
       const session = this.rooms.get(roomKey);
       if (!session || this.isRetained(roomKey)) return;
-      if (
-        session.hasUnacknowledgedEdits() &&
-        !updatesRefused(session.getSnapshot().connectionState)
-      ) {
+      if (session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits()) {
         this.draining.add(roomKey);
         return;
       }

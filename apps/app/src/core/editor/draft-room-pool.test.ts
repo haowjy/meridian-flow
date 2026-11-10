@@ -27,6 +27,8 @@ describe("DraftRoomPool.release", () => {
           resetDisposition: "removed",
           unacknowledgedUpdates: () => null,
           hasUnacknowledgedEdits: () => false,
+          isRoomEnded: () => true,
+          canDeliverUnsentEdits: () => false,
           subscribe: (listener: (snapshot: unknown) => void) => {
             if (first) resetListener = listener;
             return () => {};
