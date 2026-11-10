@@ -43,6 +43,7 @@ poppable stack prefix and writes forward reverts for its other text parts, inclu
 parts. Both kinds share one action identity, so the card's Redo reverses exactly the parts its
 Undo accepted. The card names and skips a part whose draft was discarded (`expired`) or that a
 later writer edit depends on (`cant_undo_dependent`), and inverts the rest.
+A later item depends on an edit when its parent or left neighbour is the edit's text; an item merely placed ahead of it (a concurrent draft's block that Apply put before it) does not.
 A turn's edit targets include its create transition even when the document is empty. A create
 that Undo removed stays addressable through that immutable target, so Redo can restore it. A draft-scoped
 edit of a document deleted live stays one (D79): each draft-scoped target names
