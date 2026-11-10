@@ -136,7 +136,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await edit(c.id, { kind });
       }
       await edit(c.id, { actor: "human" });
+      await edit(c.id, { treeChange: { kind: "move" } as never });
       expect(await list()).toMatchObject([{ chatId: c.id, edited: false }]);
+      expect(await repos.documentTouches.listByThread(c.id)).toMatchObject([{ edited: false }]);
     });
 
     it("leaves out a trashed chat, another account's chat and another project's chat", async () => {
@@ -155,6 +157,60 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await edit(foreign.id);
       expect(await list()).toEqual([]);
+    });
+
+    it("lists a document on the chat's recent documents when it only has an edit", async () => {
+      const parent = await chat("Parent");
+      const sub = await subagentOf(parent.id);
+      await edit(sub);
+      expect(await repos.documentTouches.listByThread(parent.id)).toMatchObject([
+        { documentId: ids.documentId, threadId: parent.id, edited: true },
+      ]);
+    });
+
+    it("lists mentions of documents that existed, or settled later, when the link was written", async () => {
+      const direct = crypto.randomUUID();
+      const settled = crypto.randomUUID();
+      const unsettled = crypto.randomUUID();
+      for (const id of [direct, settled]) {
+        await db
+          .insert(schema.documents)
+          .values({ id: id as never, contextSourceId: ids.contextId, name: id });
+      }
+      await db.insert(schema.linkAheadRefs).values([
+        {
+          aheadId: settled,
+          projectId: ids.projectId,
+          scheme: "manuscript",
+          path: "a",
+          settledDocumentId: settled as never,
+        },
+        { aheadId: unsettled, projectId: ids.projectId, scheme: "manuscript", path: "b" },
+      ]);
+      await db.insert(schema.documentLinks).values([
+        {
+          sourceDocumentId: ids.documentId,
+          linkKey: `doc:${direct}`,
+          targetDocumentId: direct as never,
+          occurrences: 2,
+        },
+        {
+          sourceDocumentId: ids.documentId,
+          linkKey: `ahead:${settled}`,
+          aheadId: settled,
+          occurrences: 3,
+        },
+        {
+          sourceDocumentId: ids.documentId,
+          linkKey: `ahead:${unsettled}`,
+          aheadId: unsettled,
+          occurrences: 5,
+        },
+      ]);
+      expect(await reader.listMentions(ids.documentId)).toEqual([
+        { documentId: settled, occurrences: 3 },
+        { documentId: direct, occurrences: 2 },
+      ]);
     });
 
     it("reports a subagent's touch and edit on the chat's recent documents", async () => {

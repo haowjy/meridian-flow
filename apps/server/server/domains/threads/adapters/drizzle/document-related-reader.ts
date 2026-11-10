@@ -1,6 +1,5 @@
 /** Drizzle DocumentRelatedReader: touches and agent edits credited to the chat, plus links. */
-import * as schema from "@meridian/database/schema";
-import { and, desc, eq, like, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { DocumentRelatedReader } from "../../ports/document-related.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 
@@ -11,7 +10,7 @@ export function createDrizzleDocumentRelatedReader(db: DrizzleDatabase): Documen
       // its nearest `primary` ancestor (a subagent to its chat); a fork has no parent, so it is
       // its own chat. `edited` reads document_edits, which is written in the edit's transaction;
       // a touch can come from a read, and is best-effort. Undo, redo, revert and rollback rows
-      // are not edits. The depth cap keeps a corrupt cycle from running away.
+      // and moves or deletes (rows with a tree_change) are not edits. The depth cap keeps a corrupt cycle from running away.
       const rows = await currentDrizzleDb(db).execute<{
         chat_id: string;
         title: string;
@@ -27,7 +26,7 @@ export function createDrizzleDocumentRelatedReader(db: DrizzleDatabase): Documen
             SELECT thread_id, created_at AS at, true AS edited
             FROM document_edits
             WHERE document_id = ${documentId} AND thread_id IS NOT NULL
-              AND actor = 'agent' AND kind = 'write'
+              AND actor = 'agent' AND kind = 'write' AND tree_change IS NULL
           ) seen GROUP BY thread_id
         ), chain AS (
           SELECT a.thread_id AS origin_id, t.id, t.kind, t.parent_thread_id, 0 AS depth
@@ -60,23 +59,22 @@ export function createDrizzleDocumentRelatedReader(db: DrizzleDatabase): Documen
       }));
     },
     async listMentions(documentId) {
-      const occurrences = sql<number>`sum(${schema.documentLinks.occurrences})::int`;
-      const rows = await currentDrizzleDb(db)
-        .select({ targetDocumentId: schema.documentLinks.targetDocumentId, occurrences })
-        .from(schema.documentLinks)
-        .where(
-          and(
-            eq(schema.documentLinks.sourceDocumentId, documentId),
-            like(schema.documentLinks.linkKey, "doc:%"),
-          ),
-        )
-        .groupBy(schema.documentLinks.targetDocumentId)
-        .orderBy(desc(occurrences), schema.documentLinks.targetDocumentId);
-      return rows.flatMap((row) =>
-        row.targetDocumentId
-          ? [{ documentId: row.targetDocumentId, occurrences: row.occurrences }]
-          : [],
-      );
+      // A link written before its target existed is keyed `ahead:`; once the target exists,
+      // link_ahead_refs says which document it settled to.
+      const rows = await currentDrizzleDb(db).execute<{
+        target_id: string;
+        occurrences: number;
+      }>(sql`
+        SELECT COALESCE(l.target_document_id, r.settled_document_id)::text AS target_id,
+               sum(l.occurrences)::int AS occurrences
+        FROM document_links l
+        LEFT JOIN link_ahead_refs r ON r.ahead_id = l.ahead_id
+        WHERE l.source_document_id = ${documentId}
+          AND (l.link_key LIKE 'doc:%' OR (l.link_key LIKE 'ahead:%' AND r.settled_document_id IS NOT NULL))
+        GROUP BY 1
+        ORDER BY 2 DESC, 1
+      `);
+      return rows.map((row) => ({ documentId: row.target_id, occurrences: row.occurrences }));
     },
   };
 }
