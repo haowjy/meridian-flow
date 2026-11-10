@@ -74,7 +74,7 @@ export function WorkScopePicker({
           {pending > 0 ? (
             <span
               className={cn(
-                "rounded-full bg-primary/12 px-1.5 font-medium text-primary tabular-nums",
+                "rounded-full bg-primary/12 px-1.5 font-medium text-jade-text tabular-nums",
                 role.rowSecondary,
               )}
               title={t`${pending} documents to review`}
@@ -162,7 +162,7 @@ function WorkState({ work, needsYou }: { work: Work; needsYou: number }) {
   const toReview = work.pendingDocumentCount;
   if (toReview === 0 && needsYou === 0) return null;
   return (
-    <span className="flex shrink-0 gap-2 text-xs text-primary tabular-nums">
+    <span className="flex shrink-0 gap-2 text-xs text-jade-text tabular-nums">
       {toReview > 0 ? <Trans>{toReview} to review</Trans> : null}
       {needsYou > 0 ? (
         <span>

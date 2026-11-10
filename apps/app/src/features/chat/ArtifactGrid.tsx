@@ -5,11 +5,11 @@
  * context navigation, image arms as thumbnails in a responsive grid, and the
  * reserved `liveView` arm gets a full-width isolated iframe slot.
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import { FileText } from "lucide-react";
-
 import {
   Dialog,
   DialogClose,
@@ -17,6 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { role } from "@/components/ui/roles";
 import { DocumentName } from "./DocumentName";
 
 export function ArtifactGrid({ artifacts }: { artifacts: ArtifactRef[] }) {
@@ -119,7 +120,7 @@ function LiveViewSlot({ artifact }: { artifact: Extract<ArtifactRef, { type: "li
   return (
     <div className="overflow-hidden rounded-md border border-border-subtle bg-ink-fill">
       <div className="flex items-center justify-between border-border-subtle border-b px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]">
-        <span className="font-medium text-foreground text-xs uppercase tracking-caps">
+        <span className={role.groupLabel}>
           <Trans>Live view</Trans>
         </span>
         {artifact.expiresAt ? (

@@ -26,6 +26,7 @@
  * `h-full overflow-y-auto`. Using `app-scroll` (which assumes a flex parent)
  * here would clip content with no scrollbar.
  */
+
 import { Trans } from "@lingui/react/macro";
 import type {
   BillingCatalogEntry,
@@ -35,7 +36,6 @@ import type {
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useCallback } from "react";
-
 import { getBillingBalance, getBillingTransactions } from "@/client/api/billing-api";
 import {
   useBillingProducts,
@@ -44,6 +44,7 @@ import {
 } from "@/client/query/useBilling";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
+import { role } from "@/components/ui/roles";
 import { CheckoutReturnNotice } from "./CheckoutReturnNotice";
 import {
   type CheckoutBaseline,
@@ -152,10 +153,10 @@ export function BillingPage() {
         </Link>
 
         <header className="space-y-2">
-          <p className="text-xs font-medium tracking-caps text-muted-foreground">
+          <p className={role.groupLabel}>
             <Trans>Settings</Trans>
           </p>
-          <h1 className="text-headline-section">
+          <h1 className={role.pageHeading}>
             <Trans>Billing</Trans>
           </h1>
           <p className="text-muted-foreground">
@@ -172,7 +173,7 @@ export function BillingPage() {
 
         <section className="space-y-3">
           <div className="flex items-baseline justify-between gap-3">
-            <h2 className="text-lg font-semibold">
+            <h2 className={role.sectionHeading}>
               <Trans>Plans</Trans>
             </h2>
             {products.data && !stripeConfigured ? (
@@ -193,7 +194,7 @@ export function BillingPage() {
               />
             ))}
             {products.data && planEntries.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
+              <p className={role.emptyLine}>
                 <Trans>No plans available.</Trans>
               </p>
             ) : null}
@@ -203,7 +204,7 @@ export function BillingPage() {
         {extraEntry ? (
           <section className="space-y-3">
             <div className="space-y-1">
-              <h2 className="text-lg font-semibold">
+              <h2 className={role.sectionHeading}>
                 <Trans>Extra usage</Trans>
               </h2>
               <p className="text-sm text-muted-foreground">
@@ -226,7 +227,7 @@ export function BillingPage() {
         ) : null}
 
         <section className="surface-card p-5">
-          <h2 className="text-lg font-semibold">
+          <h2 className={role.sectionHeading}>
             <Trans>Recent activity</Trans>
           </h2>
           <div className="mt-3 divide-y divide-border-subtle">
@@ -245,7 +246,7 @@ export function BillingPage() {
               );
             })}
             {transactions.data && transactions.data.transactions.length === 0 ? (
-              <p className="py-3 text-sm text-muted-foreground">
+              <p className={role.emptyLine}>
                 <Trans>No billing activity yet.</Trans>
               </p>
             ) : null}

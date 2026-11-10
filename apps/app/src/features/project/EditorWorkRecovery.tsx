@@ -1,6 +1,8 @@
 /** Truthful loading, failure, and unavailable recovery for Editor Work scope. */
+
 import { Trans } from "@lingui/react/macro";
 import { Button } from "@/components/ui/button";
+import { role } from "@/components/ui/roles";
 import type { EditorWorkScope } from "./editor-work-scope";
 
 export function EditorWorkRecovery({
@@ -13,7 +15,7 @@ export function EditorWorkRecovery({
   if (scope.status === "loading") {
     return (
       <div className="grid h-full place-items-center px-6 text-center">
-        <p className="text-sm text-muted-foreground">
+        <p className={role.emptyLine}>
           <Trans>Loading Work…</Trans>
         </p>
       </div>

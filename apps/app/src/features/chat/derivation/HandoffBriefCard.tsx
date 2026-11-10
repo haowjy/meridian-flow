@@ -123,7 +123,7 @@ export function HandoffBriefCard({
                 // keyboard focus follows it there even while the chat is busy,
                 // where the wait note it is described by is read with it.
                 aria-disabled={destinationBusy || undefined}
-                className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted-foreground"
+                className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:text-muted-foreground"
                 aria-describedby={destinationBusy ? retryWaitId : undefined}
                 data-focus-landing
                 onClick={() => {

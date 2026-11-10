@@ -85,7 +85,7 @@ export function SegmentedTabs<T extends string>({
                 <span
                   data-segmented-tab-close
                   aria-hidden="true"
-                  className="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-ink-fill-strong hover:text-foreground [@media(pointer:coarse)]:size-8"
+                  className="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-ink-fill hover:text-foreground [@media(pointer:coarse)]:size-8"
                 >
                   {option.closeAction.icon}
                 </span>

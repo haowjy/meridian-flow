@@ -134,7 +134,7 @@ export function ChatsBody({
                     className={cn(
                       "shrink-0 pr-1",
                       role.rowSecondary,
-                      other.needsYou > 0 && "text-primary",
+                      other.needsYou > 0 && "text-jade-text",
                     )}
                   >
                     {other.needsYou > 0 ? (
@@ -169,7 +169,7 @@ function Group({
   if (hidden) return null;
   return (
     <section aria-label={label} className="pt-2">
-      <h3 className={cn("pr-2 pb-1 pl-3.5", role.rowSecondary)}>{label}</h3>
+      <h3 className={cn("pr-2 pb-1 pl-3.5", role.groupLabel)}>{label}</h3>
       {children}
     </section>
   );

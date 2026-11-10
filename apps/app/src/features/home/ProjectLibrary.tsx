@@ -1,4 +1,5 @@
 /** Authenticated project library: select an existing body of work or begin another. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
@@ -7,10 +8,12 @@ import { useProjectListStatus } from "@/client/query/useProjectList";
 import { useProjectStore } from "@/client/stores";
 import { MeridianMark } from "@/components/app/MeridianMark";
 import { Button } from "@/components/ui/button";
+import { role } from "@/components/ui/roles";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { preloadProjectWorkspace } from "@/features/project/preload-project-workspace";
 import { formatRelativeTime } from "@/lib/date-groups";
 import { displayProjectTitle } from "@/lib/project-title";
+import { cn } from "@/lib/utils";
 
 export function ProjectLibrary() {
   const { projects, isError, refetch } = useProjectListStatus();
@@ -34,7 +37,7 @@ export function ProjectLibrary() {
 
         <div className="mx-auto max-w-4xl pt-4 sm:pt-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+            <h1 className={cn(role.pageHeading, "text-balance")}>
               <Trans>Your projects</Trans>
             </h1>
             <Button asChild size="sm" className="[@media(pointer:coarse)]:min-h-11">
@@ -54,12 +57,12 @@ export function ProjectLibrary() {
               </Button>
             </div>
           ) : projects === null ? (
-            <p className="mt-10 text-sm text-muted-foreground" role="status">
+            <p className={cn("mt-10", role.emptyLine)} role="status">
               <Trans>Loading projects…</Trans>
             </p>
           ) : projects.length === 0 ? (
             <div className="mt-10 border-t border-border py-9">
-              <h2 className="text-xl font-semibold">
+              <h2 className={role.sectionHeading}>
                 <Trans>No projects yet</Trans>
               </h2>
               <p className="mt-2 text-sm text-muted-foreground">
@@ -94,7 +97,7 @@ export function ProjectLibrary() {
                         <div className="flex aspect-[4/5] items-center justify-center rounded-xl border border-border bg-card p-4 text-center transition-transform ease-out group-hover:-translate-y-1 motion-reduce:transition-none motion-reduce:transform-none">
                           <span
                             aria-hidden
-                            className="max-w-full select-none text-balance break-words text-base font-semibold leading-snug sm:text-lg"
+                            className="max-w-full select-none text-balance break-words text-base font-semibold leading-snug"
                           >
                             {title}
                           </span>

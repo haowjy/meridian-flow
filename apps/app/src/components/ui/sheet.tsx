@@ -2,9 +2,11 @@
  * Sheet — shadcn/Radix dialog-based slide-over primitive (used for mobile
  * drawers via the Sidebar). Upstream-managed wrapper; customize at call sites.
  */
+
 import { XIcon } from "lucide-react";
 import { Dialog as SheetPrimitive } from "radix-ui";
 import type * as React from "react";
+import { role } from "@/components/ui/roles";
 
 import { cn } from "@/lib/utils";
 
@@ -78,7 +80,7 @@ function SheetContent({
       >
         {children}
         {showCloseButton && (
-          <SheetPrimitive.Close className="focus-ring absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 disabled:pointer-events-none data-[state=open]:bg-ink-fill-strong">
+          <SheetPrimitive.Close className="focus-ring absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 disabled:pointer-events-none">
             <XIcon className="size-4" />
             <span className="sr-only">Close</span>
           </SheetPrimitive.Close>
@@ -112,7 +114,7 @@ function SheetTitle({ className, ...props }: React.ComponentProps<typeof SheetPr
   return (
     <SheetPrimitive.Title
       data-slot="sheet-title"
-      className={cn("font-semibold text-foreground", className)}
+      className={cn(role.sectionHeading, className)}
       {...props}
     />
   );

@@ -4,6 +4,7 @@
  * bindings, so it is not offered (a chat already in one still shows it as
  * its current Work on the trigger).
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
@@ -18,6 +19,7 @@ import {
   dropdownSearchClass,
 } from "@/components/ui/dropdown-presentation";
 import { Input } from "@/components/ui/input";
+import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 
 export type WorkPickerFailure =
@@ -215,7 +217,7 @@ export function WorkPickerPanel({
           />
         ) : null}
         {view.status === "ready" && view.query.trim() !== "" && !view.works.length ? (
-          <p className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-center text-sm text-muted-foreground">
+          <p className={cn("px-2", role.emptyLine)}>
             <Trans>No Work matches your search.</Trans>
           </p>
         ) : null}
@@ -225,11 +227,7 @@ export function WorkPickerPanel({
 }
 
 function PickerState({ children }: { children: ReactNode }) {
-  return (
-    <p className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-center text-sm text-muted-foreground">
-      {children}
-    </p>
-  );
+  return <p className={cn("px-2", role.emptyLine)}>{children}</p>;
 }
 
 function WorkSection({

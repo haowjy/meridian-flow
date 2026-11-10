@@ -116,7 +116,7 @@ export function RailFolderRow({
 export function RailEmptyHint({ children }: { children: ReactNode }) {
   return (
     <p
-      className={cn("py-1.5 pr-2 leading-snug", role.hint)}
+      className={cn("pr-2 leading-snug", role.emptyLine)}
       style={{ paddingLeft: ROW_INSET_PX + rowPaddingLeft(1) }}
     >
       {children}

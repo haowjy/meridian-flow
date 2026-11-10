@@ -21,6 +21,7 @@ import { useDraftView } from "@/features/draft-review/useDraftView";
 import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { cn } from "@/lib/utils";
 import { useReferenceDrag } from "../context/entry-drag/reference-source";
+import { ruledRowClassName } from "../RuledList";
 import { useAiDraftLauncher } from "../review-launch";
 
 export function WorkChangeFile({
@@ -102,7 +103,8 @@ export function WorkChangeFile({
             type="button"
             {...drag}
             className={cn(
-              "focus-ring flex min-h-10 w-full min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors motion-reduce:transition-none hover:bg-ink-fill",
+              ruledRowClassName,
+              "focus-ring flex min-h-10 w-full items-center gap-3 text-left text-sm text-foreground",
               "w-auto flex-1 pl-1",
               touch && "min-h-11",
             )}

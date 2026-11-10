@@ -211,10 +211,7 @@
   touch-action: none;
   cursor: grab;
   background-color: var(--color-background);
-  background-image: radial-gradient(
-    color-mix(in oklab, var(--color-foreground) 8%, transparent) 1px,
-    transparent 1px
-  );
+  background-image: radial-gradient(var(--color-border-subtle) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
@@ -325,5 +322,4 @@
 .meridian-object-field-input:focus {
   border-color: var(--color-focus);
   outline: none;
-  box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--color-focus) 24%, transparent);
 }

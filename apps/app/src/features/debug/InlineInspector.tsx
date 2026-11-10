@@ -38,7 +38,7 @@ import {
   getThreadTurnContextPreview,
 } from "@/client/api/threads-api";
 import { useThreadStore } from "@/client/stores";
-import { sectionLabelVariants } from "@/components/ui/section-label";
+import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 
 import { JsonTree } from "./JsonTree";
@@ -329,7 +329,7 @@ export function InlineInspector() {
       >
         <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
           <div className="flex min-w-0 items-baseline gap-2">
-            <span className={sectionLabelVariants({ variant: "group" })}>{hit.kind}</span>
+            <span className={role.groupLabel}>{hit.kind}</span>
             <span className="truncate font-mono text-meta text-foreground">{hit.label}</span>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -378,7 +378,7 @@ export function InlineInspector() {
               {turnContextPreview.status === "loaded" ? (
                 <>
                   <div className="space-y-1">
-                    <p className={sectionLabelVariants({ variant: "group" })}>
+                    <p className={role.groupLabel}>
                       {turnContextPreview.preview.baked
                         ? "system prompt (frozen)"
                         : "system prompt (will be baked at the first turn attempt)"}
@@ -388,7 +388,7 @@ export function InlineInspector() {
                     </pre>
                   </div>
                   <details className="rounded-sm border border-border-subtle bg-ink-fill p-2">
-                    <summary className={cn(sectionLabelVariants({ variant: "group" }), "")}>
+                    <summary className={role.groupLabel}>
                       tools ({turnContextPreview.preview.tools.length})
                     </summary>
                     <JsonTree
@@ -397,9 +397,7 @@ export function InlineInspector() {
                     />
                   </details>
                   <details className="rounded-sm border border-border-subtle bg-ink-fill p-2">
-                    <summary className={cn(sectionLabelVariants({ variant: "group" }), "")}>
-                      gateway params
-                    </summary>
+                    <summary className={role.groupLabel}>gateway params</summary>
                     <JsonTree
                       value={turnContextPreview.preview.gatewayParams}
                       className="mt-2 max-h-none border-0 bg-transparent p-0"
@@ -422,7 +420,7 @@ export function InlineInspector() {
           ) : null}
           {modelRequests.status === "loaded" ? (
             <div className="mb-3 space-y-2 border-b border-border pb-3">
-              <p className={sectionLabelVariants({ variant: "group" })}>
+              <p className={role.groupLabel}>
                 model requests ({modelRequests.response.records.length})
               </p>
               {modelRequests.response.records.length === 0 ? (

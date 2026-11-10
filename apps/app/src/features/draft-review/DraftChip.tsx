@@ -19,7 +19,7 @@ export type DraftChipState = "live" | "pending" | "reviewing" | "failed";
 
 const TONE: Record<DraftChipState, string> = {
   live: "border-border-subtle text-muted-foreground group-hover/chip:bg-ink-fill group-hover/chip:text-foreground group-popup-open/chip:bg-ink-fill-strong group-popup-open/chip:text-foreground",
-  pending: "border-primary/40 bg-primary/12 text-jade-text group-hover/chip:bg-primary/12",
+  pending: "border-primary/40 bg-primary/12 text-jade-text group-hover/chip:bg-primary/22",
   reviewing:
     "border-primary/40 bg-primary/12 text-jade-text group-hover/chip:bg-primary/22 group-popup-open/chip:bg-primary/22",
   failed: "border-destructive/40 bg-destructive/12 text-destructive",

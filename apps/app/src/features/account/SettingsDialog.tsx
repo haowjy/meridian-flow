@@ -11,6 +11,7 @@
  *   `PhoneSettingsContent` — WebKit blanks transform-animated content under
  *   overflow clipping + radius.
  */
+
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
@@ -23,6 +24,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { role } from "@/components/ui/roles";
 import { SectionLabel as UiSectionLabel } from "@/components/ui/section-label";
 import {
   Select,
@@ -169,7 +171,7 @@ export function SettingsDialog() {
           {/* A container can't query itself, so the direction switch lives one level in. */}
           <div className="flex min-w-0 flex-1 flex-col @[40rem]/settings:flex-row">
             <aside className="flex shrink-0 flex-col gap-3 border-b border-border-subtle bg-ink-fill px-3 pt-4 pb-2 @[40rem]/settings:w-52 @[40rem]/settings:gap-4 @[40rem]/settings:border-r @[40rem]/settings:border-b-0 @[40rem]/settings:py-4">
-              <DialogTitle className="px-2 text-lg font-semibold tracking-tight">
+              <DialogTitle className="px-2">
                 <Trans>Settings</Trans>
               </DialogTitle>
               <DialogDescription className="sr-only">
@@ -201,9 +203,7 @@ export function SettingsDialog() {
 function SectionGroup({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <UiSectionLabel variant="group" className="hidden px-2 @[40rem]/settings:block">
-        {label}
-      </UiSectionLabel>
+      <UiSectionLabel className="hidden px-2 @[40rem]/settings:block">{label}</UiSectionLabel>
       <div className="-mx-1 flex gap-1 overflow-x-auto px-1 py-1 @[40rem]/settings:mx-0 @[40rem]/settings:flex-col @[40rem]/settings:overflow-visible @[40rem]/settings:p-0">
         {children}
       </div>
@@ -263,7 +263,7 @@ function UiThemeLabel({ theme }: { theme: UiTheme }) {
 function SectionHeading({ title, description }: { title: ReactNode; description: ReactNode }) {
   return (
     <header className="mb-5">
-      <h2 className="text-base font-semibold text-foreground">{title}</h2>
+      <h2 className={role.sectionHeading}>{title}</h2>
       <p className="mt-1 text-sm text-muted-foreground">{description}</p>
     </header>
   );

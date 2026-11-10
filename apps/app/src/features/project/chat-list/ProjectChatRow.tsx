@@ -14,6 +14,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { ruledRowClassName } from "../RuledList";
 import {
   formatFullProjectChatActivity,
   formatProjectChatActivity,
@@ -87,9 +88,7 @@ export const ProjectChatRow = memo(function ProjectChatRow({
   return (
     <div
       data-project-chat-row={item.id}
-      // The shared inset list-row recipe: rounded hover paint inside the gutter,
-      // the same ground as the chat switcher's rows.
-      className="group relative min-w-0 rounded-md px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-ink-fill"
+      className={ruledRowClassName}
       onFocusCapture={() => setFocusWithin(true)}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setFocusWithin(false);

@@ -40,9 +40,9 @@ export function toolbarControlClass({
   blocked?: boolean;
 }): string {
   return cn(
-    active && "bg-ink-fill-strong text-foreground hover:text-foreground",
-    blocked &&
-      "cursor-not-allowed opacity-50 hover:bg-transparent hover:text-current active:scale-100",
+    // The pressed fill comes from `aria-pressed` through the button's state layer.
+    active && "text-foreground hover:text-foreground",
+    blocked && "cursor-not-allowed opacity-50 hover:text-current active:scale-100",
   );
 }
 

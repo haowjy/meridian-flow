@@ -4,12 +4,12 @@
  * Keeps switching primary, with recency visible at a glance; rename stays
  * attached only to the active row and creation sits above the list.
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { ChevronsUpDown, Pencil, Plus, Search } from "lucide-react";
 import { type KeyboardEvent, type RefObject, useRef, useState } from "react";
-
 import { useThreadStore } from "@/client/stores";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
@@ -24,6 +24,7 @@ import {
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { role } from "@/components/ui/roles";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { PaneTitle } from "@/features/project/PaneTitle";
 import { relativeTime } from "@/features/project/relative-time";
@@ -193,7 +194,7 @@ export function ThreadSwitcherPopover({
         <div className={dropdownMenuSeparatorClass} />
         <div className={cn(dropdownResultsClass, "max-h-72")}>
           {filteredThreads.length === 0 ? (
-            <p className="px-2 py-1.5 text-center text-sm text-muted-foreground">
+            <p className={cn("px-2", role.emptyLine)}>
               <Trans>No matching chats</Trans>
             </p>
           ) : (

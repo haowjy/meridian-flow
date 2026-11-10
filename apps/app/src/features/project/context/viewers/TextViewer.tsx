@@ -1,6 +1,8 @@
 /** TextViewer — constrained read-only text preview for text and Markdown files. */
+
 import { Trans } from "@lingui/react/macro";
 import { type TextPreviewSource, useTextPreview } from "@/client/query/useTextPreview";
+import { role } from "@/components/ui/roles";
 import { Markdown } from "@/rich-content/Markdown";
 
 export function TextViewer({
@@ -23,7 +25,7 @@ export function TextViewer({
           <Trans>Couldn't load this file.</Trans>
         </p>
       ) : preview.status === "loading" ? (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className={role.emptyLine}>
           <Trans>Loading preview…</Trans>
         </p>
       ) : preview.text.length === 0 && emptyMessage ? (

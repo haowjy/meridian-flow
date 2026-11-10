@@ -109,7 +109,7 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
                 showHeader
               />
             ) : query.isPending ? (
-              <p role="status" className="p-4 text-sm text-muted-foreground">
+              <p role="status" className={cn("px-4", role.emptyLine)}>
                 <Trans>Loading Trash…</Trans>
               </p>
             ) : null}
@@ -269,7 +269,7 @@ function TrashListPane({
     <aside className={cn("min-h-0 overflow-y-auto", className)}>
       {showHeading ? (
         <div className="px-5 pb-3">
-          <DialogTitle className="text-lg font-semibold tracking-tight">
+          <DialogTitle>
             <Trans>Trash</Trans>
           </DialogTitle>
           <DialogDescription className="sr-only">
@@ -298,11 +298,11 @@ function TrashListPane({
           ))}
         </div>
       ) : query.isPending ? (
-        <p role="status" className="px-5 py-3 text-sm text-muted-foreground">
+        <p role="status" className={cn("px-4", role.emptyLine)}>
           <Trans>Loading Trash…</Trans>
         </p>
       ) : (
-        <p className="px-5 py-3 text-sm text-muted-foreground">
+        <p className={cn("px-4", role.emptyLine)}>
           <Trans>Nothing in the trash.</Trans>
         </p>
       )}
@@ -436,7 +436,7 @@ function TrashedDocumentView({
   }
   if (query.isPending || !document) {
     return (
-      <p role="status" className="p-4 text-sm text-muted-foreground">
+      <p role="status" className={cn("px-4", role.emptyLine)}>
         <Trans>Loading document…</Trans>
       </p>
     );

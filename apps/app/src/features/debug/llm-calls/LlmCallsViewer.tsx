@@ -225,7 +225,7 @@ function LlmCallsContent({
               </p>
               <button
                 type="button"
-                className="focus-ring rounded-sm text-meta text-primary underline"
+                className="focus-ring rounded-sm text-meta text-jade-text underline"
                 onClick={onShowAll}
               >
                 Show all

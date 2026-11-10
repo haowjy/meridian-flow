@@ -9,6 +9,7 @@
  * opens documents (`useOpenDocumentInDock`). Renaming and moving belong to the
  * lists. The identity row owns collapse priority; parent crumbs yield before controls.
  */
+
 import { t } from "@lingui/core/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useCallback, useMemo } from "react";
@@ -16,6 +17,7 @@ import { useProject } from "@/client/query/useProjectList";
 import { type ContextTab, isDraftOnly, tabContextOwner } from "@/client/stores";
 import { DrillInMenuBody, DrillInMenuRoot, type DrillNode } from "@/components/app/DrillInMenu";
 import { DropdownMenuContent } from "@/components/ui/dropdown-menu";
+import { role } from "@/components/ui/roles";
 import { useReviewCopy } from "@/features/draft-review/copy-view";
 import { cn } from "@/lib/utils";
 import { useDockBrowseScratch } from "../dock/use-dock-browse-scratch";
@@ -190,7 +192,7 @@ function OpenCrumbMenu({ browse, depth }: { browse: Browse; depth: number }) {
   if (!menu)
     return (
       <DropdownMenuContent align="start" className="w-64 max-w-[calc(100vw-1rem)]">
-        <p className="px-2 py-1.5 text-sm text-muted-foreground">{t`Loading…`}</p>
+        <p className={cn("px-2", role.emptyLine)}>{t`Loading…`}</p>
       </DropdownMenuContent>
     );
   return <DrillInMenuBody {...menu} />;
