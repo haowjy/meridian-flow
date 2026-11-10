@@ -240,7 +240,7 @@ describe("draft tab settlement", () => {
     // The refused draft is still pending: Review installs its overlay again.
     const opened = useContextTabsStore.getState().openTab("project-a", draftTab("reopened"));
     if (opened.kind !== "opened" || opened.tab.kind !== "tracked") throw new Error("not opened");
-    coordinator.admitDraftReview("project-a", opened.tab, "work-a");
+    coordinator.admitDraftReview("project-a", opened.tab, "work:work-a");
     select();
 
     // The removal guard no longer repairs the address away from the draft.

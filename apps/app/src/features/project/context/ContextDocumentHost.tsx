@@ -11,6 +11,7 @@
  */
 
 import { Trans } from "@lingui/react/macro";
+import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -85,7 +86,7 @@ export function ContextDocumentHost({
   const availabilityRevision = resourceAvailabilityRevision(resourceProjection, tab.documentId);
   const requestedReview = useRequestedReview({
     container,
-    editorWorkId: controller.ownerKey,
+    editorWorkId: workIdOfDraftOwnerKey(controller.ownerKey),
     activeScheme: tab.kind === "tracked" ? tab.scheme : null,
     documentId: shown ? tab.documentId : null,
   });
