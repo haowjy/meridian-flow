@@ -1,8 +1,7 @@
 /**
- * One Work inside the Manage Works dialog: its name and the AI's status, its goal, and the
- * changes to review with Apply all and Discard all. An archived Work is view-only: one notice
- * with Unarchive under the title, and no inline edits offered. Its chats and files are the
- * sidebar's, under that Work's scope.
+ * One Work inside the Manage Works dialog: its name and the AI's status, and its goal. An archived
+ * Work is view-only: one notice with Unarchive under the title, and no inline edits offered. Its
+ * chats and files are the sidebar's, under that Work's scope.
  */
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
@@ -21,7 +20,6 @@ import { ArchivedWorkNotice } from "./ArchivedWorkNotice";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
 import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
-import { WorkChanges } from "./WorkChanges";
 import { useWorkMetadataController, WorkGoal, type WorkMetadataController } from "./WorkMetadata";
 import { WorkTitleLine } from "./WorkTitleLine";
 import { WorkHeading } from "./WorkTitles";
@@ -89,7 +87,6 @@ export function WorkDetail({
         ) : null}
         <WorkGoal work={work} controller={controller} />
       </header>
-      <WorkChanges projectId={projectId} work={work} />
       <DirtyDecision controller={controller} />
     </article>
   );

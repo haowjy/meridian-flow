@@ -170,7 +170,7 @@ export function useDraftDock({
     /** Unread previews keep the controls visible but disabled until their scope is known. */
     showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
     canApply:
-      !controller.frozen &&
+      controller.canApply &&
       applicable.some(
         (file) =>
           (!file.row.draft.hasDraft && file.row.draft.isNew) ||
