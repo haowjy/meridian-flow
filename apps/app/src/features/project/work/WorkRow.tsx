@@ -58,14 +58,9 @@ export function WorkRow({
           </span>
         ) : null}
       </a>
-      <span
-        className={cn(
-          "shrink-0 text-xs tabular-nums",
-          liveState ? "text-muted-foreground" : "text-muted-foreground",
-        )}
-      >
+      <div className="shrink-0 text-xs tabular-nums text-muted-foreground">
         {liveState ?? relativeTime(work.lastActivityAt, now)}
-      </span>
+      </div>
       {actions ? <div className="relative z-10 -my-1 shrink-0">{actions}</div> : null}
     </div>
   );

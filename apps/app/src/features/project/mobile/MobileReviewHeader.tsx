@@ -88,7 +88,6 @@ export function MobileReviewHeader({
         </button>
       </div>
       <ReviewFailureNotices
-        touch
         itemKey={view.itemKey ?? ""}
         commandError={header.commandError}
         failedElsewhere={header.failedElsewhere}

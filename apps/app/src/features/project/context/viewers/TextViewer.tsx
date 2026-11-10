@@ -2,6 +2,7 @@
 
 import { Trans } from "@lingui/react/macro";
 import { type TextPreviewSource, useTextPreview } from "@/client/query/useTextPreview";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { role } from "@/components/ui/roles";
 import { Markdown } from "@/rich-content/Markdown";
 
@@ -21,9 +22,7 @@ export function TextViewer({
   return (
     <div className="h-full min-h-0 overflow-auto px-4 py-4">
       {preview.status === "error" ? (
-        <p role="alert" className="text-sm text-destructive">
-          <Trans>Couldn't load this file.</Trans>
-        </p>
+        <InlineErrorRow message={<Trans>Couldn't load this file.</Trans>} className="p-0" />
       ) : preview.status === "loading" ? (
         <p role="status" className={role.emptyLine}>
           <Trans>Loading preview…</Trans>

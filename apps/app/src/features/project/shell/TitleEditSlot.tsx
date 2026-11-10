@@ -18,6 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { cn } from "@/lib/utils";
 import { TabTitleField } from "./TabTitleField";
 
@@ -123,16 +124,14 @@ export function TitleEditSlot({
         onCancel={close}
       />
       {refusal ? (
-        <p
-          id={failureId}
-          role="alert"
+        <div
           className={cn(
-            "absolute top-full z-20 mt-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs font-normal text-destructive shadow-float",
+            "absolute top-full z-20 mt-1 rounded-md border border-border bg-card font-normal shadow-float",
             failureClassName,
           )}
         >
-          {refusal}
-        </p>
+          <InlineErrorRow id={failureId} message={refusal} wrap />
+        </div>
       ) : null}
     </>
   );

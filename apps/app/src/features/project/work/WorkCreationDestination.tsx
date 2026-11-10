@@ -1,6 +1,7 @@
 /** Pending and failed UI for a newly addressable Work. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { WorkScreenHeader } from "./WorkDetailScreen";
@@ -61,9 +62,7 @@ export function WorkCreationDestination({
         />
         {failed ? (
           <>
-            <p className="text-sm text-destructive" role="alert">
-              <Trans>Couldn’t create this Work.</Trans>
-            </p>
+            <InlineErrorRow message={<Trans>Couldn’t create this Work.</Trans>} className="p-0" />
             <div className="flex items-center gap-2">
               <Button size="sm" onClick={onRetry}>
                 <Trans>Retry</Trans>

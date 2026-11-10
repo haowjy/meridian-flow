@@ -4,6 +4,7 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import {
   ApplyAllQuestion,
   CommandNotice,
@@ -13,6 +14,7 @@ import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
+import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { treeLineSentence } from "@/features/draft-review/tree-line";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
@@ -94,19 +96,13 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       onClick={(event) => event.stopPropagation()}
     >
       {confirming || askingApply ? null : dock.showCommands ? (
-        <>
-          <QuietButton
-            onClick={() => (multi ? setConfirmingDiscard(true) : dock.discard())}
-            disabled={!dock.canCommand}
-          >
-            <Trans>Discard</Trans>
-          </QuietButton>
-          {dock.canApply ? (
-            <QuietButton onClick={startApply} disabled={!dock.canCommand}>
-              <Trans>Apply</Trans>
-            </QuietButton>
-          ) : null}
-        </>
+        <ReviewActions
+          scope="all"
+          density="short"
+          disabled={!dock.canCommand}
+          onDiscard={() => (multi ? setConfirmingDiscard(true) : dock.discard())}
+          onApply={dock.canApply ? startApply : undefined}
+        />
       ) : null}
     </div>
   );
@@ -253,31 +249,14 @@ function DockFileLine({
   );
 }
 
-/** A preview that did not load, in the strip's error voice, with Retry beside it. */
+/** A preview that did not load, with Retry beside it. */
 function FileTrouble({ file, row = false }: { file: DockFile; row?: boolean }) {
-  const message = t`Changes couldn't load.`;
   return (
-    <p
-      className={cn(
-        "flex min-w-0 items-center gap-[var(--chat-space-inline)] text-destructive text-caption",
-        row ? "max-w-[50%]" : "flex-1",
-      )}
-      role="alert"
-      {...{ [row ? "data-draft-dock-row-error" : "data-draft-dock-strip-error"]: "unreadable" }}
-    >
-      <span className="min-w-0 flex-1 truncate" title={message}>
-        {message}
-      </span>
-      {file.retry ? (
-        <button
-          type="button"
-          onClick={file.retry}
-          className="text-button shrink-0 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
-        >
-          <Trans>Retry</Trans>
-        </button>
-      ) : null}
-    </p>
+    <InlineErrorRow
+      message={t`Changes couldn't load.`}
+      onRetry={file.retry ?? undefined}
+      className={cn("min-w-0 p-0", row ? "max-w-[50%]" : "flex-1")}
+    />
   );
 }
 
@@ -299,28 +278,6 @@ function DockFileName({ file, onReview }: { file: DockFile; onReview: () => void
       }}
     >
       {label}
-    </button>
-  );
-}
-
-/** Quiet text verb — never destructive-colored. */
-function QuietButton({
-  onClick,
-  disabled,
-  children,
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="focus-ring shrink-0 whitespace-nowrap rounded-sm px-[var(--chat-space-block)] py-0.5 @max-[25rem]/dock:px-1 @max-[20rem]/dock:px-0 text-muted-foreground hover:text-foreground disabled:opacity-50 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
-    >
-      {children}
     </button>
   );
 }

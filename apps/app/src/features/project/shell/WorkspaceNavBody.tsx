@@ -8,8 +8,8 @@ import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { role } from "@/components/ui/roles";
-
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
 import { sidebarIcon } from "../context/context-row-geometry";
@@ -39,9 +39,7 @@ export function WorkspaceNavBody({
               onClick={() => onSelectScreen(screen.key)}
             />
             {failed === screen.key && (
-              <p role="alert" className="px-2 py-1 text-xs text-destructive">
-                <Trans>This view couldn’t open.</Trans>
-              </p>
+              <InlineErrorRow message={<Trans>This view couldn’t open.</Trans>} className="py-1" />
             )}
           </div>
         ))}

@@ -5,12 +5,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { DELETION_RETENTION_DAYS as WORK_DELETE_RETENTION_DAYS } from "@meridian/contracts/retention";
-import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { HttpResponseError } from "@/client/api/http-client";
 import type { WorkCommandFailure } from "@/client/query/work-command-selectors";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { IconButton } from "@/components/ui/icon-button";
 
 /** The commands whose failure stays on the Work until the writer acts on it. */
 export const WORK_ROW_OPERATIONS = ["archive", "unarchive", "delete", "restore"] as const;
@@ -35,16 +33,12 @@ export function WorkCommandFailureRow({
   const refusal = failure.operation === "restore" ? restoreRefusal(failure.error) : null;
   if (refusal)
     return (
-      <div role="alert" className="flex items-start gap-2 pb-2">
-        <p className="min-w-0 flex-1 text-sm text-destructive">{refusal}</p>
-        <IconButton
-          className="shrink-0 [@media(pointer:coarse)]:size-11"
-          aria-label={t`Dismiss`}
-          onClick={failure.dismiss}
-        >
-          <X aria-hidden className="size-3.5" />
-        </IconButton>
-      </div>
+      <InlineErrorRow
+        message={refusal}
+        wrap
+        onDismiss={failure.dismiss}
+        className="px-0 pt-0 pb-2"
+      />
     );
   return (
     <InlineErrorRow

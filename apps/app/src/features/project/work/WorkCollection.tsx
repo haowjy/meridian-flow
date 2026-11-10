@@ -105,11 +105,7 @@ export function WorkCollection({
         return (
           <WorkRow
             {...shared}
-            liveState={
-              <span role="alert" className="text-destructive">
-                <Trans>Not created</Trans>
-              </span>
-            }
+            liveState={<InlineErrorRow message={<Trans>Not created</Trans>} className="p-0" />}
           />
         );
       case "restoring":

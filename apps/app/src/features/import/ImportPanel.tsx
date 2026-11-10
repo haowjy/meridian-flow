@@ -6,6 +6,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Files, Folder, type LucideIcon, X } from "lucide-react";
 import { type ReactNode, useRef } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
   dropdownGroupLabelClass,
@@ -141,12 +142,16 @@ function ImportCard({
           </p>
         ) : null}
         {local.error ? (
-          <div role="alert" className="text-destructive">
-            {local.error}
-            {local.stopLost || (summary.state === "finished" && detail?.state !== "finished")
-              ? button(t`Retry`, () => void coordinator.loadDetail(importId))
-              : null}
-          </div>
+          <InlineErrorRow
+            message={local.error}
+            wrap
+            className="p-0"
+            onRetry={
+              local.stopLost || (summary.state === "finished" && detail?.state !== "finished")
+                ? () => void coordinator.loadDetail(importId)
+                : undefined
+            }
+          />
         ) : null}
         {state === "needs-look" ? (
           <details>

@@ -7,7 +7,6 @@
 
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { RowIcon, rowPaddingLeft } from "../context/ContextTreeRows";
@@ -126,8 +125,3 @@ export function RailEmptyHint({ children }: { children: ReactNode }) {
 
 /** The `mx-2` a row sits inside its list with. */
 const ROW_INSET_PX = 8;
-
-/** Error row with a retry link, shown when a rail section fails to load. */
-export function RailErrorRow({ onRetry, label }: { onRetry: () => void; label: ReactNode }) {
-  return <InlineErrorRow message={label} onRetry={onRetry} />;
-}

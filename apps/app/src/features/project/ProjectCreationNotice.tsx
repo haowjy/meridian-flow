@@ -2,6 +2,7 @@
 import { Trans } from "@lingui/react/macro";
 import { useRouter } from "@tanstack/react-router";
 import type { ProjectCreationState } from "@/client/query/useProjectCreation";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 
 export function ProjectCreationNotice({ creation }: { creation: ProjectCreationState }) {
@@ -11,11 +12,15 @@ export function ProjectCreationNotice({ creation }: { creation: ProjectCreationS
   return (
     <div
       className="flex shrink-0 items-center justify-between gap-3 border-b border-border-subtle px-4 py-2"
-      role={failed ? "alert" : "status"}
+      role={failed ? undefined : "status"}
     >
-      <p className={failed ? "text-sm text-destructive" : "text-sm text-muted-foreground"}>
-        {failed ? <Trans>Project creation failed.</Trans> : <Trans>Creating project…</Trans>}
-      </p>
+      {failed ? (
+        <InlineErrorRow message={<Trans>Project creation failed.</Trans>} className="p-0" />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          <Trans>Creating project…</Trans>
+        </p>
+      )}
       {failed ? (
         <div className="flex shrink-0 gap-2">
           <Button size="sm" variant="outline" onClick={creation.retry}>

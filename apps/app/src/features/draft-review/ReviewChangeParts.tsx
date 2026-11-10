@@ -277,8 +277,3 @@ function openChat(chat: ChatRef, openThread: (threadId: string) => void) {
       ...(chat.reveal.subagentThreadId ? { subagentBlock: "card" } : {}),
     });
 }
-
-/** The Discard button's name. */
-export function discardLabel(): string {
-  return t`Discard`;
-}

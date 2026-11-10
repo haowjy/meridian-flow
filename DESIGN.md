@@ -131,6 +131,14 @@ Core shell expectations:
   primary action (Save, Create, Delete). Inline edits anchored to text (the Work
   goal) instead left-align Cancel then Save directly under the field, so the
   dismiss lands where the edit trigger was.
+- Pending changes are settled with `ReviewActions` (`features/draft-review`): Discard
+  in quiet ink, then Apply as the filled jade button, as words or as ×/✓. Discard is
+  never red and never a trash icon; those mean Delete. One name per scope: Apply and
+  Discard for a change, Apply draft and Discard draft for a document, Apply all and
+  Discard all for everything.
+- An error is a line: `InlineErrorRow`, a red icon with body-ink text and at most one
+  text action. A floating editor message is `EditorNoticePill`; a standing note above a
+  document is `DocumentNotice`. None of them push content down when they appear.
 - Respect reduced motion; motion should clarify location or state, not perform for its own sake.
 - Show model/thread/process depth only when it helps the writer understand or recover from a situation.
 

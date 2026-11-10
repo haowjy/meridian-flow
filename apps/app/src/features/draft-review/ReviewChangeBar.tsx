@@ -7,12 +7,12 @@
  * tall enough for two lines.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
-import { Button } from "@/components/ui/button";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { cn } from "@/lib/utils";
 import { useDraftCommandState } from "./draft-changes";
-import { ChangeAuthor, discardLabel } from "./ReviewChangeParts";
+import { ReviewActions } from "./ReviewActions";
+import { ChangeAuthor } from "./ReviewChangeParts";
 import { ReviewMessageText } from "./ReviewMessageText";
 import type { BranchCommandFailure } from "./review-command-types";
 import type { ReviewChange } from "./review-model";
@@ -48,21 +48,17 @@ export function ReviewChangeBar({
 }: ReviewChangeBarProps) {
   const owner = useDraftCommandOwner();
   const state = useDraftCommandState(itemKey);
-  const label = discardLabel();
   const failure = draftFailure ? (
-    <p
-      role="status"
-      className="flex min-w-0 items-center gap-2 break-words pr-2 text-xs text-destructive"
-    >
-      <span>
-        <ReviewMessageText failure={draftFailure} />
-      </span>
-      {draftFailure.code === "unapply-refused" && state.stalled ? (
-        <button type="button" className="shrink-0 text-button" onClick={() => owner.retry(itemKey)}>
-          <Trans>Retry</Trans>
-        </button>
-      ) : null}
-    </p>
+    <InlineErrorRow
+      message={<ReviewMessageText failure={draftFailure} />}
+      wrap
+      onRetry={
+        draftFailure.code === "unapply-refused" && state.stalled
+          ? () => owner.retry(itemKey)
+          : undefined
+      }
+      className="min-w-0 py-0 pr-2 pl-0"
+    />
   ) : null;
   const failureInRow = inFlow && failure;
   return (
@@ -95,34 +91,12 @@ export function ReviewChangeBar({
           )}
         </div>
         {!disabled ? (
-          <span
-            className={
-              touch
-                ? "flex shrink-0 items-center gap-3"
-                : "ml-auto flex items-center gap-1.5 whitespace-nowrap"
-            }
-          >
-            <Button
-              variant="quiet"
-              size="xs"
-              className={touch ? "h-11 px-4 text-sm" : undefined}
-              aria-label={touch ? label : undefined}
-              disabled={disabled}
-              onClick={onDiscard}
-            >
-              {touch ? <Trans>Discard</Trans> : label}
-            </Button>
-            {canApply ? (
-              <Button
-                size="xs"
-                className={touch ? "h-11 min-w-20 px-5 text-sm" : undefined}
-                disabled={disabled}
-                onClick={onApply}
-              >
-                <Trans>Apply</Trans>
-              </Button>
-            ) : null}
-          </span>
+          <ReviewActions
+            scope="change"
+            touch={touch}
+            onDiscard={onDiscard}
+            onApply={canApply ? onApply : undefined}
+          />
         ) : null}
       </div>
       {failureInRow ? null : failure}

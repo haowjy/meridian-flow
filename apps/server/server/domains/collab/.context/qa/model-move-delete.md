@@ -66,8 +66,8 @@ the text it found or a block hash from that read.
    identity row reads "Ascension is renaming this to ch1-old." (at 390 px, "Pending rename",
    its popover the sentence); ch3 reads "Ascension is deleting this.". The prose doesn't move.
 7. **Apply, Discard, Apply all.** ch1's Draft view, Apply draft: the tab becomes ch1-old with
-   the text change. Work page, Apply all changes: the footer asks "Applying deletes ch3."
-   (Cancel). ch3's Discard: its row goes at once, ch3 stays live. Apply all changes: ch4 → ch5
+   the text change. Work page, Apply all: the footer asks "Applying deletes ch3."
+   (Cancel). ch3's Discard: its row goes at once, ch3 stays live. Apply all: ch4 → ch5
    and ch5 → ch6 both land in dependency order from either row. Repeat with a swap: both land
    in one Apply transaction. Apply a drafted move after a new live document takes its target:
    the move lands at the next free name and the footer says "Added as <name>."

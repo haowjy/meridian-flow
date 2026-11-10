@@ -11,6 +11,7 @@ import { isWorkArchived } from "@meridian/contracts/works";
 import { useRef, useState } from "react";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { useWorkMutations } from "@/client/query/work-command-store";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -143,9 +144,7 @@ function DirtyDecision({ controller }: { controller: WorkMetadataController }) {
           <Trans>Choose what to do before continuing.</Trans>
         </p>
         {controller.error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {controller.error}
-          </p>
+          <InlineErrorRow message={controller.error} wrap className="p-0" />
         ) : null}
         <DialogFooter>
           <Button

@@ -9,6 +9,7 @@ import { Dialog as DialogPrimitive } from "radix-ui";
 import { useCallback, useEffect, useRef } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { useDocumentTrash, useTrashedDocument } from "@/client/query/useDocumentTrash";
+import { DocumentNotice } from "@/components/app/DocumentNotice";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -375,9 +376,7 @@ export function TrashRow({
         </OverflowMenu>
       </div>
       {state?.kind === "failed" ? (
-        <p role="alert" className="pr-2 pb-1 pl-3.5 text-xs text-destructive">
-          {state.message}
-        </p>
+        <InlineErrorRow message={state.message} wrap className="pt-0 pr-2 pb-1 pl-3.5" />
       ) : null}
     </div>
   );
@@ -477,31 +476,27 @@ function TrashNotice({
   const retention = retentionSentence(entry, locale);
   return (
     <div className="shrink-0 px-4 pt-3">
-      <div
-        role="status"
-        className="flex min-w-0 items-center gap-3 rounded-lg border border-border-subtle bg-card py-1.5 pr-1.5 pl-3 text-sm"
+      <DocumentNotice
+        icon={<ArchiveRestore className="size-4" aria-hidden />}
+        action={
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={state?.kind === "restoring"}
+            onClick={onRestore}
+            className="[@media(pointer:coarse)]:min-h-11"
+          >
+            {state?.kind === "restoring" ? <Trans>Restoring</Trans> : <Trans>Restore</Trans>}
+          </Button>
+        }
       >
-        <ArchiveRestore className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <p className="min-w-0 flex-1 text-muted-foreground">
-          <Trans>
-            In the trash. Deleted by {actor} on {deleted}.
-          </Trans>{" "}
-          {retention}
-        </p>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={state?.kind === "restoring"}
-          onClick={onRestore}
-          className="shrink-0 [@media(pointer:coarse)]:min-h-11"
-        >
-          {state?.kind === "restoring" ? <Trans>Restoring</Trans> : <Trans>Restore</Trans>}
-        </Button>
-      </div>
+        <Trans>
+          In the trash. Deleted by {actor} on {deleted}.
+        </Trans>{" "}
+        {retention}
+      </DocumentNotice>
       {state?.kind === "failed" ? (
-        <p role="alert" className="pt-2 text-xs text-destructive">
-          {state.message}
-        </p>
+        <InlineErrorRow message={state.message} wrap className="px-0 pt-2 pb-0" />
       ) : null}
     </div>
   );
