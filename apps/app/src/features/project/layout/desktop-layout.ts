@@ -22,12 +22,11 @@ import type { DesktopProjectSlotId, SlotDefinition } from "./types";
 export type { DesktopProjectSlotId } from "./types";
 
 export const DESKTOP_PROJECT_SLOTS: SlotDefinition[] = [
-  // The two side panels share the chrome tone; a hairline, not a tone step, separates them
-  // from the centre.
-  { id: "rail-l", className: "relative border-r border-border-subtle bg-chrome" },
-  // Center: the tab band sits on chrome and the pane body rises as a `page-sheet`.
+  // The side panels and the centre's band are one chrome surface with no lines between
+  // them; the page is the `page-sheet` set into it.
+  { id: "rail-l", className: "relative bg-chrome" },
   { id: "center", className: "chrome-field" },
-  { id: "dock", className: "relative border-l border-border-subtle bg-chrome" },
+  { id: "dock", className: "relative bg-chrome" },
 ];
 
 /**

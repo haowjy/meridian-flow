@@ -63,7 +63,7 @@ export function ContextTabBar({
       role="tablist"
       aria-label={t`Open context files`}
       // Chips surface the canvas tone — see the tab-chip grammar in globals.css.
-      className="flex h-10 shrink-0 items-stretch [--tab-chip-surface:var(--color-background)]"
+      className="tab-band flex h-10 shrink-0 items-stretch [--tab-chip-surface:var(--color-background)]"
     >
       {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
       {onShowRecents ? (
