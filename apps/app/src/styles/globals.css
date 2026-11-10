@@ -693,7 +693,7 @@
  * sheet is the ONE sanctioned surface paint on top of it.
  */
 @utility page-sheet {
-  @apply mb-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-border-subtle bg-background;
+  @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-md border border-b-0 border-border-subtle bg-background;
 }
 
 /*
@@ -720,7 +720,8 @@
  * chrome: the document tab strip (`ContextTabBar`) and the centered chat
  * header's title chip (`ThreadSwitcherPopover` variant="tab"). A chip sits in
  * the chrome band; the ACTIVE chip surfaces the field tone below it as a
- * folder tab: rounded top, the sheet's hairline around it, open at the base. An INACTIVE chip carries an inset rounded hover pill covering
+ * folder tab: rounded top, the sheet's hairline around it, open at the base,
+ * which flares outward into the sheet's top edge. An INACTIVE chip carries an inset rounded hover pill covering
  * its full hit target. (The dock's Chat|Changes switcher is deliberately NOT
  * this grammar — the dock is one uniform surface; its view switch is a
  * contained segmented track that presses into the chrome.)
@@ -728,8 +729,8 @@
  * The variation point is the surfacing color: consumers set
  * `--tab-chip-surface` on the strip (canvas for document tabs). These
  * utilities own geometry and surface paint only — DOM, text color, and a11y
- * stay local to each consumer. Chips must be `relative` (the hover pill is an
- * absolutely-positioned pseudo).
+ * stay local to each consumer. Chips must be `relative` (the flares and hover
+ * pill are absolutely-positioned pseudos).
  *
  * No transition on the active chip: activation swaps geometry instantly, so
  * a background fade would flash the outgoing chip as a full-height rectangle
@@ -746,6 +747,29 @@
     inset 1px 0 0 var(--color-border-subtle),
     inset -1px 0 0 var(--color-border-subtle),
     inset 0 1px 0 var(--color-border-subtle);
+  /* The base flares outward into the sheet's top edge. Each flare is one hairline wider
+     than the radius and overlaps the chip by that hairline, so its arc starts on the
+     chip's side line and ends on the sheet's top edge, and its fill hides both beneath. */
+  &::before,
+  &::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    bottom: 0;
+    width: calc(var(--radius-md) + 1px);
+    height: calc(var(--radius-md) + 1px);
+    --flare: transparent calc(var(--radius-md) - 0.5px), var(--color-border-subtle) var(--radius-md),
+      var(--color-border-subtle) calc(var(--radius-md) + 0.5px),
+      var(--tab-chip-surface) calc(var(--radius-md) + 1px);
+  }
+  &::before {
+    left: calc(-1 * var(--radius-md));
+    background: radial-gradient(circle at 0 0, var(--flare));
+  }
+  &::after {
+    right: calc(-1 * var(--radius-md));
+    background: radial-gradient(circle at 100% 0, var(--flare));
+  }
 }
 /* A band whose active chip joins the `page-sheet` below it. */
 @utility tab-band {
