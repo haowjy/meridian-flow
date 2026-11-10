@@ -19,13 +19,14 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { role } from "@/components/ui/roles";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { cn } from "@/lib/utils";
 import { ScratchSource, useChatScratch } from "../../chat/ChatScratch";
 import { type CatalogState, ContextTreePanel } from "../../context/ContextTreePanel";
-import { sidebarIcon, sidebarRole } from "../../context/context-row-geometry";
+import { sidebarIcon } from "../../context/context-row-geometry";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../../context/context-schemes";
 import type { MoveArea } from "../../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../../context/entry-drag/use-entry-list";
@@ -274,9 +275,9 @@ function SourceTabs({
               aria-label={t`Choose tabs`}
               className={cn(
                 TAB_BUTTON,
-                sidebarRole.secondary,
-                sidebarRole.hover,
-                sidebarRole.open,
+                role.secondary,
+                role.hover,
+                role.open,
                 "hover:text-foreground",
               )}
             >
@@ -317,7 +318,7 @@ function SourceTabs({
  * The default five tabs and + still fit a default-width sidebar without scrolling the strip.
  */
 const TAB_BUTTON =
-  "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors [@media(hover:none)]:size-9 [@media(pointer:coarse)]:size-9";
+  "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors [@media(hover:none)]:size-9 coarse:size-9";
 
 /** A source's tab: a drop on it lands at the source's root, and a drag that rests opens it. */
 function SourceTab({
@@ -350,10 +351,10 @@ function SourceTab({
           className={cn(
             TAB_BUTTON,
             drop.dropState === "over"
-              ? sidebarRole.dropTarget
+              ? role.dropTarget
               : active
-                ? sidebarRole.selected
-                : cn(sidebarRole.secondary, sidebarRole.hover, "hover:text-foreground"),
+                ? role.selected
+                : cn(role.secondary, role.hover, "hover:text-foreground"),
           )}
         >
           <Icon className={sidebarIcon.tab} aria-hidden />

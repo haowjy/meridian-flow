@@ -3,18 +3,18 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { entryNeedsLook, type ImportEntryStatus } from "@meridian/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { Files, Folder, type LucideIcon, X } from "lucide-react";
+import { Files, Folder, type LucideIcon } from "lucide-react";
 import { type ReactNode, useRef } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
   dropdownGroupLabelClass,
   dropdownPageClass,
   dropdownRowVariants,
 } from "@/components/ui/dropdown-presentation";
-import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { PhoneSheet } from "@/components/ui/phone-shell";
 import { Progress } from "@/components/ui/progress";
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { projectAddressHref } from "@/features/project/routing/project-address";
 import { cn } from "@/lib/utils";
 import { type PickKind, useOptionalImports } from "./ImportProvider";
@@ -114,14 +114,14 @@ function ImportCard({
     <li className="px-3 py-2.5">
       <div className="break-words text-sm font-medium text-foreground">{title}</div>
       {presentation.detail ? (
-        <div className="mt-0.5 text-caption text-ink-muted">{presentation.detail}</div>
+        <div className="mt-0.5 text-caption text-muted-foreground">{presentation.detail}</div>
       ) : null}
       {progress === undefined ? null : progress === "indeterminate" ? (
         <Progress indeterminate label={title} className="mt-2 h-1" />
       ) : (
         <Progress value={progress} label={title} className="mt-2 h-1" />
       )}
-      <div className="mt-2 space-y-2 text-caption text-ink-muted empty:hidden">
+      <div className="mt-2 space-y-2 text-caption text-muted-foreground empty:hidden">
         {presentation.note ? <p>{presentation.note}</p> : null}
         {presentation.fallback ? <p>{presentation.fallback}</p> : null}
         {local.stopLost ? (
@@ -130,12 +130,15 @@ function ImportCard({
           </p>
         ) : null}
         {local.error ? (
-          <div role="alert" className="text-destructive">
-            {local.error}
-            {local.stopLost || (summary.state === "finished" && detail?.state !== "finished")
-              ? button(t`Retry`, () => void coordinator.loadDetail(importId))
-              : null}
-          </div>
+          <InlineErrorRow
+            message={local.error}
+            className="p-0"
+            onRetry={
+              local.stopLost || (summary.state === "finished" && detail?.state !== "finished")
+                ? () => void coordinator.loadDetail(importId)
+                : undefined
+            }
+          />
         ) : null}
         {state === "needs-look" ? (
           <details>
@@ -240,27 +243,14 @@ export function ImportSheet({
   onPick: (kind: PickKind) => void;
 }) {
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        showCloseButton={false}
-        className="max-h-[78svh] gap-0 rounded-t-2xl border-border-subtle p-0"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-      >
-        <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-border" />
-        <div className="flex shrink-0 items-center gap-2 pl-4 pr-1">
-          <SheetTitle className="min-w-0 flex-1 truncate text-sm">
-            <Trans>Imports</Trans>
-          </SheetTitle>
-          <PhoneIconButton aria-label={t`Close`} onClick={() => onOpenChange(false)}>
-            <X className="size-5" aria-hidden />
-          </PhoneIconButton>
-        </div>
-        <SheetDescription className="sr-only">
-          <Trans>Your imports in this project, with their controls.</Trans>
-        </SheetDescription>
-        <ImportPanelBody items={items} touch onPick={onPick} onClose={() => onOpenChange(false)} />
-      </SheetContent>
-    </Sheet>
+    <PhoneSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={<Trans>Imports</Trans>}
+      description={<Trans>Your imports in this project, with their controls.</Trans>}
+      closeLabel={t`Close`}
+    >
+      <ImportPanelBody items={items} touch onPick={onPick} onClose={() => onOpenChange(false)} />
+    </PhoneSheet>
   );
 }

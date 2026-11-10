@@ -37,7 +37,7 @@ Nothing on a divider reverses the compaction. A complete divider's actions are F
 and Info, the same `ForkTurnAction` and `TurnInfoButton` a reply uses, with no Copy
 or Hand off.
 
-The divider is one line at every width, in `text-meta`; only the opened summary
+The divider is one line at every width, at the 12px label size (`text-xs`); only the opened summary
 reads at chat body size. Its section is a container: below `@lg` the state label
 switches to a short form and truncates last.
 

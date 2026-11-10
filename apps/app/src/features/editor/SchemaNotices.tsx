@@ -27,19 +27,18 @@ import {
   useRef,
   useState,
 } from "react";
-
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { SchemaFence } from "@/core/editor/schema-fence";
 import type { SchemaRepairEvent } from "@/core/editor/schema-repair-witness";
 import { cn } from "@/lib/utils";
-
 import { writeClipboardText } from "./clipboard";
 
 const COPIED_RESET_MS = 1500;
 
 /** A 44px touch target under a coarse pointer, without making the bar taller. */
-const BAR_ACTION = "shrink-0 [@media(pointer:coarse)]:-my-2.5 [@media(pointer:coarse)]:h-11";
+const BAR_ACTION = "shrink-0 coarse:-my-2.5 coarse:h-11";
 
 export function SchemaNotices({
   fence,
@@ -89,10 +88,13 @@ function NoticeBar({
         "flex min-h-8 items-center gap-2 rounded-md border py-1 pr-1 pl-2.5 text-xs",
         tone === "error"
           ? "border-destructive-border bg-destructive-tint text-destructive"
-          : "border-border bg-muted text-ink-muted",
+          : "border-border bg-ink-fill text-muted-foreground",
       )}
     >
-      <Icon aria-hidden className={cn("size-3.5 shrink-0", tone === "info" && "text-ink-subtle")} />
+      <Icon
+        aria-hidden
+        className={cn("size-3.5 shrink-0", tone === "info" && "text-muted-foreground")}
+      />
       {/* Wraps rather than truncates on a phone: the reason is the point. */}
       <p id={labelId} className="min-w-0 flex-1">
         {children}
@@ -197,14 +199,14 @@ function SchemaRepairNotice({
           ))}
         </ol>
         <div className="flex items-center gap-3">
-          <p className="min-w-0 flex-1 text-ink-muted">
+          <p className="min-w-0 flex-1 text-muted-foreground">
             <Trans>This version of Meridian can't display it.</Trans>
           </p>
           <Button
             type="button"
             variant="outline"
             size="xs"
-            className="shrink-0 [@media(pointer:coarse)]:h-11"
+            className="shrink-0 coarse:h-11"
             onClick={() => {
               dismissing.current = true;
               setDismissedCount(repairs.length);
@@ -251,7 +253,7 @@ function RemovedFragment({ repair }: { repair: SchemaRepairEvent }) {
               type="button"
               variant="ghost"
               size="xs"
-              className="shrink-0 [@media(pointer:coarse)]:h-11"
+              className="shrink-0 coarse:h-11"
               data-copy-schema-repair
               onClick={() => {
                 void writeClipboardText(text).then((write) => {
@@ -272,16 +274,17 @@ function RemovedFragment({ repair }: { repair: SchemaRepairEvent }) {
             </Button>
           </div>
           {copy === "blocked" ? (
-            <p role="status" data-schema-repair-copy-blocked className="text-destructive">
-              <Trans>Couldn't copy. Select the text to copy it.</Trans>
-            </p>
+            <InlineErrorRow
+              message={<Trans>Couldn't copy. Select the text to copy it.</Trans>}
+              className="p-0"
+            />
           ) : null}
         </>
       ) : (
         // The same box as a rescued passage, so it reads as its own item.
         <p
           data-schema-repair-no-text
-          className="rounded-md border border-border-subtle bg-background py-2 pr-1.5 pl-3 text-ink-muted"
+          className="rounded-md border border-border-subtle bg-background py-2 pr-1.5 pl-3 text-muted-foreground"
         >
           <Trans>This passage couldn't be recovered.</Trans>
         </p>

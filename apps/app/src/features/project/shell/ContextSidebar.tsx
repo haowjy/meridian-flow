@@ -10,12 +10,13 @@ import { Clock } from "lucide-react";
 import { useMemo } from "react";
 import { recentDocumentIdentityIndex } from "@/client/query/recent-document-identity";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { fileKindIcon } from "../context/context-file-icon";
 import { useOpenChatDocument } from "../context/open-chat-document";
 import { DockHeader } from "../dock/DockHeader";
 import { DockShell } from "../dock/DockShell";
-import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailFileRow } from "./RailSection";
+import { CollapsibleRailSection, RailEmptyHint, RailFileRow } from "./RailSection";
 
 /** Thread-context rail (Chat destination, right edge). */
 export type ContextSidebarProps = {
@@ -55,7 +56,10 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
               {recent.status === "loading" ? (
                 <RailEmptyHint>{t`Loading recent documents…`}</RailEmptyHint>
               ) : recent.status === "error" ? (
-                <RailErrorRow onRetry={recent.refetch} label={t`Couldn't load recent documents.`} />
+                <InlineErrorRow
+                  message={t`Couldn't load recent documents.`}
+                  onRetry={recent.refetch}
+                />
               ) : (
                 <ul>
                   {recent.documents?.map((document) => {

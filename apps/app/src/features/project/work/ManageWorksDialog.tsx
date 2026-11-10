@@ -19,7 +19,6 @@ import {
   useState,
 } from "react";
 import { useWorks } from "@/client/query/useWorks";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -27,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { IconButton } from "@/components/ui/icon-button";
 import { CreationDialog } from "@/features/creation/CreationDialog";
 import { useWorkScope } from "../use-work-scope";
 import { useCreateWork, useWorkCreationRecovery } from "./useWorkCreation";
@@ -106,14 +106,13 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
         <DialogHeader>
           <div className="flex items-center gap-2">
             {view.kind === "work" ? (
-              <Button
-                size="icon"
+              <IconButton
                 variant="ghost"
-                aria-label={t`Back to all Work`}
+                label={t`Back to all Work`}
                 onClick={() => leaveVia(toList)}
               >
                 <ArrowLeft aria-hidden />
-              </Button>
+              </IconButton>
             ) : null}
             <DialogTitle>
               <Trans>Manage Works</Trans>

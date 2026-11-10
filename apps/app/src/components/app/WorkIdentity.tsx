@@ -20,7 +20,7 @@ export function WorkIdentity({
       )}
       {...props}
     >
-      <Layers aria-hidden className="size-3.5 shrink-0 text-ink-muted" />
+      <Layers aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="min-w-0 truncate">{name || unavailableLabel}</span>
     </span>
   );

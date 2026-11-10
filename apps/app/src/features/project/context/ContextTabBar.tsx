@@ -130,7 +130,7 @@ export function ContextTabBar({
               disabled={!onNewDocument}
               title={!onNewDocument ? t`Open a Work to create an Untitled document` : undefined}
               aria-label={t`New tab`}
-              className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-background/50"
+              className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
             >
               {/* Same divider grammar as between tabs: a line sets the New-tab
                   control apart from the working set, except when the active
@@ -226,9 +226,9 @@ function TabChip({
         onClick={onClose}
         aria-label={t`Close ${tab.name}`}
         className={cn(
-          "focus-ring relative grid size-4 shrink-0 place-items-center rounded text-muted-foreground transition-opacity",
+          "focus-ring relative grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground transition-opacity",
           // Works on both fields: the active tab's canvas and the recessed strip.
-          "hover:bg-foreground/10 hover:text-foreground",
+          "hover:bg-ink-fill hover:text-foreground",
           // Hide on inactive tabs unless hovered, like VS Code / Cursor.
           active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
         )}
@@ -276,7 +276,7 @@ function TabChipFrame({
           : "tab-chip-inactive text-muted-foreground hover:text-foreground",
         // Under review the chip surfaces the review strip's tone so tab and
         // banner read as one continuous surface.
-        reviewing && "[--tab-chip-surface:var(--color-dock-surface)]",
+        reviewing && "[--tab-chip-surface:var(--color-review)]",
       )}
     >
       {divider ? (

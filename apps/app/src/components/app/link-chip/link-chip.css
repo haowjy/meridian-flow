@@ -11,11 +11,8 @@
  * `--link-chip-icon` from `family-icons.ts`, injected once into the document
  * head, so the shapes are defined in one place.
  *
- * The fill follows the surface: `--link-chip-fill` and `--link-chip-fill-hover`
- * default to the recess and one step deeper, and a surface whose own tone is
- * the recess (the chat dock) re-points them, the way `--color-chat-interactive`
- * lifts bubbles. A surface never restyles the chip; it only says what its
- * fill is.
+ * The fill is an ink overlay (a well at rest, the strong step on hover), so it
+ * reads on every surface without a per-surface value.
  *
  * External links keep their underline and wear the outbound arrow, the one
  * thing that tells a writer a link leaves the app before they press it.
@@ -28,7 +25,7 @@
   appearance: none;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  background-color: var(--link-chip-fill, var(--color-muted));
+  background-color: var(--color-ink-fill);
   color: inherit;
   font: inherit;
   padding: 0.0625em 0.375em;
@@ -36,7 +33,7 @@
   /* A long name wraps as prose does, and every line fragment is a chip. */
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
-  transition: background-color 150ms ease;
+  transition: background-color var(--default-transition-duration) ease;
 }
 
 /* Drawn in the mask rather than as an element, so it is never in a copy, in
@@ -89,7 +86,7 @@
 :is([data-link-chip][role="link"], [data-link-chip][aria-haspopup="menu"], a[data-link-chip]):not(
   [aria-disabled="true"]
 ):hover {
-  background-color: var(--link-chip-fill-hover, var(--color-sidebar-accent));
+  background-color: var(--color-ink-fill-strong);
 }
 
 :is(
@@ -97,7 +94,7 @@
   [data-link-chip="dashed"][aria-haspopup="menu"],
   a[data-link-chip="dashed"]
 ):not([aria-disabled="true"]):hover {
-  background-color: var(--link-chip-fill, var(--color-muted));
+  background-color: var(--color-ink-fill);
 }
 
 /* A stored file says its type and size after its name, and how its upload stands
@@ -114,7 +111,7 @@
 [data-link-upload="uploading"] {
   background-image: linear-gradient(
     to right,
-    var(--color-sidebar-accent) var(--link-upload-progress, 0%),
+    var(--color-ink-fill-strong) var(--link-upload-progress, 0%),
     transparent var(--link-upload-progress, 0%)
   );
 }
@@ -129,7 +126,7 @@
 
 /* The outline replaces prose links' focus glow, which would ring the box twice. */
 :root[data-focus-keys] [data-link-chip]:focus-visible {
-  outline: 2px solid var(--color-border-focus);
+  outline: 2px solid var(--color-focus);
   outline-offset: 2px;
   box-shadow: none;
 }

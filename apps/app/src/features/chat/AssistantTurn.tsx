@@ -227,7 +227,7 @@ const TurnItemView = memo(function TurnItemView({
   if (item.kind === "report") {
     return (
       <div
-        className="space-y-[var(--chat-space-block)] text-prose-foreground"
+        className="space-y-[var(--chat-space-block)] text-foreground"
         data-turn-item-kind="report"
       >
         <ReportContent
@@ -243,7 +243,7 @@ const TurnItemView = memo(function TurnItemView({
     // Text is the assistant's voice: full prose, no icon, no rail — and it is
     // only ever rendered here, outside the Thinking fold.
     return (
-      <div className="space-y-[var(--chat-space-row)]" data-turn-item-kind="text">
+      <div className="space-y-[var(--chat-space-inline)]" data-turn-item-kind="text">
         <StreamingText
           streamId={blockRenderKey(item.block)}
           text={item.text}
@@ -254,7 +254,7 @@ const TurnItemView = memo(function TurnItemView({
   }
 
   return (
-    <div className="space-y-[var(--chat-space-row)]" data-turn-item-kind="artifact">
+    <div className="space-y-[var(--chat-space-inline)]" data-turn-item-kind="artifact">
       <ArtifactItem item={item} threadId={threadId} />
     </div>
   );
@@ -283,7 +283,7 @@ const FoldRun = memo(function FoldRun({ run }: { run: ViewRun }) {
   // collapsing into a grouping disclosure. With text-altitude rows the
   // visual weight is low enough that grouping reads as extra chrome.
   return (
-    <div className="space-y-[var(--chat-space-row)]" data-activity-block data-fold-activity-run>
+    <div className="space-y-[var(--chat-space-inline)]" data-activity-block data-fold-activity-run>
       {run.tools.map((tool) => (
         <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} />
       ))}

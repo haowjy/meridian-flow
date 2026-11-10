@@ -275,13 +275,13 @@ export function IdentityPlacementField({
           )}
         >
           {destination ? (
-            <span aria-hidden className="shrink-0 select-none whitespace-pre text-ink-subtle">
+            <span aria-hidden className="shrink-0 select-none whitespace-pre text-muted-foreground">
               {prefix}
             </span>
           ) : null}
           <input
             ref={inputRef}
-            className="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-ink-subtle/70"
+            className="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
             aria-label={t`Document name and location`}
             value={value}
             placeholder={ghost || location.leaf}
@@ -328,7 +328,7 @@ export function IdentityPlacementField({
         </div>
       </PopoverAnchor>
       <IconButton
-        aria-label={t`Save name and location`}
+        label={t`Save name and location`}
         className="size-5.5"
         disabled={saving}
         onPointerDown={(event) => event.preventDefault()}
@@ -337,7 +337,7 @@ export function IdentityPlacementField({
         <Check aria-hidden />
       </IconButton>
       <IconButton
-        aria-label={t`Cancel editing`}
+        label={t`Cancel editing`}
         className="size-5.5"
         disabled={saving}
         onPointerDown={(event) => event.preventDefault()}

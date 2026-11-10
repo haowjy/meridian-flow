@@ -31,7 +31,7 @@ export function TransportSection() {
   const state = useConnectionState();
 
   if (!state) {
-    return <p className="text-meta text-muted-foreground">No connection state received yet.</p>;
+    return <p className="text-xs text-muted-foreground">No connection state received yet.</p>;
   }
 
   return (

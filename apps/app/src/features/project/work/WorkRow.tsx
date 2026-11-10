@@ -7,6 +7,7 @@ import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { ruledRowClassName } from "../RuledList";
 import { relativeTime } from "../relative-time";
 import { WorkTitleLine } from "./WorkTitleLine";
 
@@ -27,7 +28,7 @@ export function WorkRow({
   liveState?: ReactNode;
 }) {
   return (
-    <div className="group relative flex min-h-12 min-w-0 items-center gap-3 rounded-md px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-dropdown-hover">
+    <div className={cn(ruledRowClassName, "flex min-h-12 items-center gap-3")}>
       <button
         type="button"
         onClick={onOpen}
@@ -50,14 +51,9 @@ export function WorkRow({
           </span>
         ) : null}
       </button>
-      <span
-        className={cn(
-          "shrink-0 text-xs tabular-nums",
-          liveState ? "text-muted-foreground" : "text-ink-subtle",
-        )}
-      >
+      <div className="shrink-0 text-xs tabular-nums text-muted-foreground">
         {liveState ?? relativeTime(work.lastActivityAt, now)}
-      </span>
+      </div>
       {actions ? <div className="relative z-10 -my-1 shrink-0">{actions}</div> : null}
     </div>
   );

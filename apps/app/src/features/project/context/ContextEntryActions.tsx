@@ -232,7 +232,7 @@ function ContextActionItems({
                 className={cn(
                   dropdownRowVariants(),
                   dropdownMenuItemClass,
-                  "data-[state=open]:bg-dropdown-hover",
+                  "data-[state=open]:bg-ink-fill-strong",
                 )}
               >
                 <ImportIcon className="size-3.5 text-muted-foreground" aria-hidden />

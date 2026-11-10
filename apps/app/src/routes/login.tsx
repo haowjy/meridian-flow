@@ -27,7 +27,7 @@ function LoginPage() {
     <main className="flex min-h-svh bg-background">
       <LoginHero />
       <section className="flex flex-1 items-center justify-center px-6 py-12">
-        <div className="w-full max-w-sm rounded-lg border border-border bg-card p-9 shadow-card">
+        <div className="w-full max-w-sm rounded-lg border border-border bg-card p-9 shadow-float">
           <h1 className="mb-2 text-4xl font-semibold text-foreground">Welcome back</h1>
           <p className="mb-7 text-sm text-muted-foreground">
             Sign in to keep writing where you left off.

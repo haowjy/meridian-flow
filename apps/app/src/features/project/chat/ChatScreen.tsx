@@ -14,7 +14,7 @@ import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { topChatOf } from "@/client/query/useTopChat";
 import { useThreadActions } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { QueryErrorRow } from "@/components/app/QueryErrorRow";
+
 import { ChatSurface as ChatFrame } from "@/features/chat/ChatSurface";
 import { ChatView } from "@/features/chat/ChatView";
 import { CreationComposer } from "@/features/chat/CreationComposer";
@@ -165,7 +165,7 @@ function ChatScreenLoaded({
       ) : null}
 
       {derivation?.state === "failed" ? (
-        <div className="border-b border-destructive/30 bg-card px-4 py-2" data-derivation-failed>
+        <div className="border-b border-destructive/40 bg-card px-4 py-2" data-derivation-failed>
           <div className="mx-auto max-w-3xl">
             <InlineErrorRow
               message={derivation.failure?.message ?? derivationFailureCopy(derivation.intent.kind)}
@@ -180,9 +180,9 @@ function ChatScreenLoaded({
       ) : null}
 
       {isError ? (
-        <div className="border-b border-destructive/30 bg-card px-4 py-2">
+        <div className="border-b border-destructive/40 bg-card px-4 py-2">
           <div className="mx-auto max-w-3xl">
-            <QueryErrorRow onRetry={refetch} />
+            <InlineErrorRow message={t`Couldn't load. Check your connection.`} onRetry={refetch} />
           </div>
         </div>
       ) : null}

@@ -118,7 +118,7 @@ function ActiveNote({
       <span
         aria-hidden
         className={cn(
-          "grid transition-[grid-template-rows,opacity] duration-200",
+          "grid transition-[grid-template-rows,opacity]",
           open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
           "motion-reduce:grid-rows-[1fr] motion-reduce:opacity-100 motion-reduce:transition-none",
           className,
@@ -134,7 +134,7 @@ function ActiveNote({
     <span
       aria-hidden
       className={cn(
-        "ml-2 shrink-0 text-xs text-muted-foreground transition-opacity duration-300",
+        "ml-2 shrink-0 text-xs text-muted-foreground transition-opacity duration-(--motion-duration-panel)",
         phase === "fading" && "opacity-0",
         "motion-reduce:opacity-100 motion-reduce:transition-none",
         className,

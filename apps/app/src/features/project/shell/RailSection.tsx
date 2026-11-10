@@ -4,12 +4,13 @@
  * `RailPaneHeader`, rows wear `contextTreeFileRowClassName` with the tree's
  * `RowIcon`, and the hint takes the sidebar's hint role.
  */
+
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { RowIcon, rowPaddingLeft } from "../context/ContextTreeRows";
-import { contextTreeFileRowClassName, sidebarRole } from "../context/context-row-geometry";
+import { contextTreeFileRowClassName } from "../context/context-row-geometry";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { type RailSectionId, useProjectSurfacePrefsStore } from "../layout/surface-prefs-store";
 
@@ -114,7 +115,7 @@ export function RailFolderRow({
 export function RailEmptyHint({ children }: { children: ReactNode }) {
   return (
     <p
-      className={cn("py-1.5 pr-2 leading-snug", sidebarRole.hint)}
+      className={cn("pr-2 leading-snug", role.emptyLine)}
       style={{ paddingLeft: ROW_INSET_PX + rowPaddingLeft(1) }}
     >
       {children}
@@ -124,8 +125,3 @@ export function RailEmptyHint({ children }: { children: ReactNode }) {
 
 /** The `mx-2` a row sits inside its list with. */
 const ROW_INSET_PX = 8;
-
-/** Error row with a retry link, shown when a rail section fails to load. */
-export function RailErrorRow({ onRetry, label }: { onRetry: () => void; label: ReactNode }) {
-  return <InlineErrorRow message={label} onRetry={onRetry} />;
-}

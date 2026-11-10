@@ -10,9 +10,11 @@ import { useWorkMutations } from "@/client/query/work-command-store";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { role } from "@/components/ui/roles";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
+import { cn } from "@/lib/utils";
 import { RuledList } from "../RuledList";
 import { DeletedWorkList } from "./DeletedWorkList";
 import { useArchiveFocusFollow } from "./useArchiveFocusFollow";
@@ -93,11 +95,7 @@ export function WorkCollection({
         return (
           <WorkRow
             {...shared}
-            liveState={
-              <span role="alert" className="text-destructive">
-                <Trans>Not created</Trans>
-              </span>
-            }
+            liveState={<InlineErrorRow message={<Trans>Not created</Trans>} className="p-0" />}
           />
         );
       case "restoring":
@@ -225,7 +223,7 @@ function NewWorkButton({ onNew, variant }: { onNew: () => void; variant?: "outli
 function StartWork({ onNew }: { onNew: () => void }) {
   return (
     <div className="flex flex-col items-center px-2 py-16 text-center sm:py-20">
-      <h2 className="text-base font-semibold text-foreground">
+      <h2 className={role.sectionHeading}>
         <Trans>Start a Work</Trans>
       </h2>
       <p className="mt-2 max-w-sm text-sm text-muted-foreground">
@@ -261,12 +259,7 @@ function DeletedWorkRow({
       <button type="button" className="text-button shrink-0 text-sm" onClick={onUndo}>
         <Trans>Undo</Trans>
       </button>
-      <IconButton
-        size="sm"
-        className="ml-auto shrink-0 [@media(pointer:coarse)]:size-11"
-        aria-label={t`Dismiss`}
-        onClick={onDismiss}
-      >
+      <IconButton size="sm" className="ml-auto shrink-0" label={t`Dismiss`} onClick={onDismiss}>
         <X aria-hidden className="size-4" />
       </IconButton>
     </div>

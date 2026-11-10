@@ -38,12 +38,11 @@ export function CommandNotice({
     if (asking) footer.current?.scrollIntoView?.({ block: "nearest" });
   }, [asking]);
   if (!question && !notice) return null;
-  const button =
-    "text-button shrink-0 disabled:opacity-50 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11";
+  const button = "text-button shrink-0 disabled:opacity-50 coarse:min-h-11 coarse:min-w-11";
   return (
     <div
       ref={footer}
-      className="flex min-h-7 [@media(pointer:coarse)]:min-h-11 flex-wrap items-center gap-x-2 gap-y-0.5 px-2 py-0.5 text-caption text-ink-muted"
+      className="flex min-h-7 coarse:min-h-11 flex-wrap items-center gap-x-2 gap-y-0.5 px-2 py-0.5 text-caption text-muted-foreground"
       role="status"
       data-command-notice={question ? undefined : notice?.kind}
       data-command-question={question?.kind}
@@ -82,7 +81,7 @@ export function CommandNotice({
               {notice.undo ? (
                 <button
                   type="button"
-                  className="text-button [@media(pointer:coarse)]:min-h-11"
+                  className="text-button coarse:min-h-11"
                   onClick={commands.undoNotice}
                 >
                   <Trans>Undo</Trans>
