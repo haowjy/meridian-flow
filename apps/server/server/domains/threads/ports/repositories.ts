@@ -581,7 +581,6 @@ export interface ThreadDocumentRepository {
   ): Promise<ThreadDocument>;
   detach(threadId: ThreadId, documentId: string): Promise<void>;
   listByThread(threadId: ThreadId): Promise<ThreadDocument[]>;
-  listThreadIdsByDocument(documentId: string): Promise<ThreadId[]>;
 }
 
 export interface ThreadWorksRepository {
@@ -622,10 +621,18 @@ export interface TurnDocumentTouch {
   touchedAt: string;
 }
 
+/** A document a chat or one of its subagents touched or wrote to; `edited` when one of them wrote text to it. */
+export type ThreadTouchedDocument = Pick<
+  TurnDocumentTouch,
+  "documentId" | "threadId" | "touchedAt"
+> & {
+  edited: boolean;
+};
+
 export interface TurnDocumentTouchRepository {
   recordTouch(turnId: TurnId, documentId: string): Promise<TurnDocumentTouch>;
-  listByThread(threadId: ThreadId, limit?: number): Promise<TurnDocumentTouch[]>;
-  listThreadIdsByDocument(documentId: string): Promise<ThreadId[]>;
+  /** The thread's own touches and its subagents', one row per document, newest first. */
+  listByThread(threadId: ThreadId, limit?: number): Promise<ThreadTouchedDocument[]>;
 }
 
 export type ThreadRepositories = {

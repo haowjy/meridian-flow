@@ -60,6 +60,10 @@ export function apiProjectRecentDocumentsPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/recent-documents`;
 }
 
+export function apiProjectDocumentRelatedPath(projectId: string, documentId: string): string {
+  return `${apiProjectPath(projectId)}/documents/${documentId}/related`;
+}
+
 export function apiProjectDocumentAddressPath(
   projectId: string,
   scheme: ProjectContextTreeScheme,

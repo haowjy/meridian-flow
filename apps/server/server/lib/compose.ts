@@ -255,13 +255,13 @@ import { createDrizzleRepositories } from "../domains/threads/adapters/drizzle/i
 import { createInMemoryRepositories } from "../domains/threads/adapters/in-memory/index.js";
 import { readThreadActivity } from "../domains/threads/domain/thread-activity.js";
 import {
-  type ActiveDocumentResolver,
-  createActiveDocumentResolver,
+  createDrizzleDocumentRelatedReader,
   createDrizzleTopPrimaryChatResolver,
   createInMemoryEventJournalWriter,
   requireThreadOwner,
 } from "../domains/threads/index.js";
 import type {
+  DocumentRelatedReader,
   EventJournalReader,
   EventJournalWriter,
   InternalThreadRepositories,
@@ -367,6 +367,7 @@ export type AppServices = {
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
   documentProperties: DocumentPropertiesReader;
+  documentRelated: DocumentRelatedReader;
   /** The file policy every route and model call asks (file-access §1). */
   fileAccess: FileAccess;
   /** Work lifecycle changes that re-decide live rooms' access, on every instance (§7). */
@@ -443,7 +444,7 @@ export type ProductionAppPorts = {
   documentProperties: DocumentPropertiesReader;
   promotionService: PromotionService;
   notices: NoticePort;
-  activeDocuments: ActiveDocumentResolver;
+  documentRelated: DocumentRelatedReader;
   runClaim: RunClaim;
   statusReader: ThreadStatusReader;
   /** Links shown to the model per thread and document (contract §7). */
@@ -536,7 +537,6 @@ export async function createProductionAppPorts(input: {
     lineageScratch,
     statusReader,
   );
-  const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
@@ -776,7 +776,7 @@ export async function createProductionAppPorts(input: {
     documentProperties: createDrizzleDocumentPropertiesReader(db),
     promotionService,
     notices,
-    activeDocuments,
+    documentRelated: createDrizzleDocumentRelatedReader(db),
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
     shownLinks: createDrizzleShownLinkStore(db),
@@ -1162,7 +1162,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     delivery,
     runClaim: runClaim,
     handoffBriefs: handoffBriefStopper,
-    activeDocuments: ports.activeDocuments,
     imageAssets,
   };
   const orchestrator = createOrchestrator(orchestratorDeps);
@@ -1273,6 +1272,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     uploadIdentity: ports.uploadIdentity,
     figureAssets: ports.figureAssets,
     documentProperties: ports.documentProperties,
+    documentRelated: ports.documentRelated,
     fileAccess: ports.fileAccess,
     fileAccessChanges: ports.fileAccessChanges,
     notices: ports.notices,
@@ -1879,6 +1879,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentProperties: { findStored: async () => null },
+    documentRelated: { listChats: async () => [], listMentions: async () => [] },
     fileAccess: createAllowAllFileAccess(),
     fileAccessChanges: createLocalFileAccessChanges(),
     notices,
