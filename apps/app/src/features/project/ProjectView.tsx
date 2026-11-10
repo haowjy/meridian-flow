@@ -463,14 +463,17 @@ function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentity
   const { openChat } = useChatNavigation();
   return (
     <ChatThreadNavigationProvider onOpenThread={openChat}>
-      <EditorReviewHandoffProvider
-        projectId={props.projectId}
-        openContextRoute={props.onOpenContextTarget}
-      >
-        <HydratedReviewScopes {...props} />
-        {/* Every row drop in the view (rail, Work Files) labels the pointer here. */}
-        <DragHint />
-      </EditorReviewHandoffProvider>
+      {/* Above the review handoff: a review launched beside the chat opens in the dock. */}
+      <ChatDocumentsBesideProvider>
+        <EditorReviewHandoffProvider
+          projectId={props.projectId}
+          openContextRoute={props.onOpenContextTarget}
+        >
+          <HydratedReviewScopes {...props} />
+          {/* Every row drop in the view (rail, Work Files) labels the pointer here. */}
+          <DragHint />
+        </EditorReviewHandoffProvider>
+      </ChatDocumentsBesideProvider>
     </ChatThreadNavigationProvider>
   );
 }
@@ -921,22 +924,20 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
 
   return (
     <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
-      <ChatDocumentsBesideProvider>
-        <ProjectShell
-          layout={layout}
-          surfaces={stableSurfaces}
-          onSetSlotWidth={setSlotWidth}
-          onSetSlotOpen={setSlotOpenHere}
-          mainMinWidth={MAIN_MIN_WIDTH}
+      <ProjectShell
+        layout={layout}
+        surfaces={stableSurfaces}
+        onSetSlotWidth={setSlotWidth}
+        onSetSlotOpen={setSlotOpenHere}
+        mainMinWidth={MAIN_MIN_WIDTH}
+      >
+        <ProjectRouteBoundary
+          issue={props.routeIssues?.main}
+          destinationKey={props.routeLocationKey}
         >
-          <ProjectRouteBoundary
-            issue={props.routeIssues?.main}
-            destinationKey={props.routeLocationKey}
-          >
-            {renderDesktopPane(props, surfaceToggle)}
-          </ProjectRouteBoundary>
-        </ProjectShell>
-      </ChatDocumentsBesideProvider>
+          {renderDesktopPane(props, surfaceToggle)}
+        </ProjectRouteBoundary>
+      </ProjectShell>
     </TreeCreationProvider>
   );
 }
