@@ -19,13 +19,13 @@ import {
 import { DESKTOP_PROJECT_SLOTS, getDesktopGridTemplate } from "../layout/desktop-layout";
 
 export type ProjectShellProps = {
-  /** Merged mode placement + the mode's panel prefs for every stable surface. */
+  /** Merged placement + the panel prefs for every stable surface. */
   layout: SurfaceLayoutMap;
   /** Stable surfaces rendered once as direct children of the grid container. */
   surfaces: readonly SlotGridSurface[];
   /** Commit a panel slot's width. */
   onSetSlotWidth: (slot: PanelSlotId, widthPx: number) => void;
-  /** Open or close a panel slot in the current mode. */
+  /** Open or close a panel slot. */
   onSetSlotOpen: (slot: PanelSlotId, open: boolean) => void;
   /** A running agent while the dock is closed: the dock toggle carries a spinner. */
   dockActivity?: boolean;

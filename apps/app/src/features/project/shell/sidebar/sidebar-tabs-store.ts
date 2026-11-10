@@ -36,7 +36,7 @@ export const useSidebarTabs = create<SidebarTabs>()(
     }),
     {
       name: "meridian.sidebar-tabs.v1",
-      // v1 strips could include Chats, which now lives in Chat mode's sidebar.
+      // v1 strips could include Chats, which now lives in the Chat list.
       version: 2,
       migrate: (stored) => {
         const shown = (stored as { shown?: readonly string[] }).shown ?? [];
