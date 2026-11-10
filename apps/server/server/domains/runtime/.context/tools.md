@@ -128,7 +128,7 @@ text. File destinations and grants come from file-policy, and all document
 results use the typed agent-edit contract. `ls`, `grep`, and `work` return
 contract-shaped values with model-facing renderers that omit internal IDs and
 add detail only for explicit `verbose` requests. A Work has no write mode of its
-own: the chat's mode is in its work context (D62).
+own: the chat's mode is in its work context.
 
 Document inverse commands use `write undo/redo` and `write revert`; model-only
 handles select edits, and the command is all-or-nothing. `write move` and
@@ -139,7 +139,7 @@ mutation's own transaction, and mark the reply's scope as having writes
 through the live port. In a draft-mode chat their placement goes through the
 chat's branch (`ContextPort.changeInBranch`): facts live on the Work's branch
 row, never the mover, and live placement is untouched until the user applies
-them (D26). Content destination is independent: Scratch and upload content stays
+them. Content destination is independent: Scratch and upload content stays
 live while its placement can be drafted. The user applies or discards drafted
 placement like any pending change (`collab/.context/apply.md`). A path no
 visible document holds names, for undo/redo/revert only, the document this

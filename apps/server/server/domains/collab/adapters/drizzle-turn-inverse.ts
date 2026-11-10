@@ -308,7 +308,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         for (const documentId of ids) {
           const removal = removals.get(documentId) ?? null;
           // A discard released the document's bytes; a delete kept them, and its drafts that
-          // outlived it (D79) plan their inverse over the retained live history.
+          // outlived it plan their inverse over the retained live history.
           const released = removal?.reason === "discarded";
           const { doc: live, room: liveRoomName } = released
             ? { doc: new Y.Doc({ gc: false }), room: null }

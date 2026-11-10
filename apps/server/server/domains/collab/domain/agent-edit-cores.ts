@@ -22,13 +22,13 @@ import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-po
 export type RoutedWriteContext = WriteContext & { grant: FileGrant<"edit"> };
 
 /**
- * A read's context. `liveVersion` marks a `version: "live"` read (D3): it reads
+ * A read's context. `liveVersion` marks a `version: "live"` read: it reads
  * the live document even when this reply already drafted it, where a default
  * read follows the reply's pinned destination.
  */
 export type RoutedReadContext = WriteContext & { grant: FileGrant; liveVersion?: boolean };
 
-/** Why the save step left a document out of a reply (D29). */
+/** Why the save step left a document out of a reply. */
 export type RefusedResponseDocument =
   | {
       documentId: DocumentId;
@@ -58,7 +58,7 @@ export type RoutedWriteOutcome = WriteOutcome & {
   refusedWrites?: { writeIds: string[]; denial: FileAccessDenied }[];
 };
 
-/** One reply's save across every destination it wrote (D42). */
+/** One reply's save across every destination it wrote. */
 export type ResponseSaveResult = ResponseCommitSuccessResult & {
   refused: RefusedResponseDocument[];
 };

@@ -189,7 +189,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     transactions: { inTransaction: isInDrizzleTransaction, afterCommit: deferUntilDrizzleCommit },
     diagnostics: createRoomDeliveryDiagnostics(deps.eventSink),
   });
-  // Every bounded draft-store attempt's rollback boundary (decision D13).
+  // Every bounded draft-store attempt's rollback boundary.
   const attemptScope: AttemptScope = (operation) => runInDrizzleSavepoint(deps.db, operation);
   // Removal records for the reply save that answers with them.
   const removalRecords = createRemovalRecords(deps.db);

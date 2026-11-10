@@ -62,7 +62,7 @@ function toolsFromBakedJson(value: PromptBake["bakedTools"]): Tool[] | null {
 }
 
 /**
- * A `/skill` after the bake offers `skill` (D64), which the frozen list can't
+ * A `/skill` after the bake offers `skill`, which the frozen list can't
  * know. Live policy adds it once the binding records an invocation, and
  * invocations are never removed, so the list changes once and stays stable.
  */

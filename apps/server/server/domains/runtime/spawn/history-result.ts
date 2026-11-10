@@ -1,6 +1,6 @@
 /**
- * `thread_history`'s structured result (D8) and the pure text rendering the
- * model reads (D10), each tool call written as the call itself (D48). Code mode would return `HistoryResult` itself.
+ * `thread_history`'s structured result and the pure text rendering the
+ * model reads, each tool call written as the call itself. Code mode would return `HistoryResult` itself.
  */
 import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import type { ExecutionReportSource, SavedOutcome } from "@meridian/contracts/spawn";
@@ -41,8 +41,8 @@ export type HistoryItem =
       index?: number;
       tool: string;
       /**
-       * The arguments as the model sent them, long strings shortened (D48);
-       * null when history withholds them (`return_result`, D6) or the call is missing.
+       * The arguments as the model sent them, long strings shortened;
+       * null when history withholds them (`return_result`) or the call is missing.
        */
       args: JsonObject | null;
       /** `running` only in the live tail; a settled call with no result was cancelled. */

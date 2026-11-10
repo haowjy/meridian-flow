@@ -2,7 +2,7 @@
 
 Recovery repairs pending runs, placeholders, and child reports after ownership
 is proven dead. A handoff brief uses the destination's ordinary run claim, not a
-separate recovery owner. See the [process-death decision][kb-process-death].
+separate recovery owner. See the [process death][kb-process-death].
 
 ## Placeholder and run repair
 

@@ -1,5 +1,5 @@
 /**
- * The file and action policies at the production-composed model tools (file-access §4, §6, §9; D34, D35): `ls` reports each file's real access, and a `read` agent has `write` but edits only its own scratch and changes no Work.
+ * The file and action policies at the production-composed model tools (file-access §4, §6, §9): `ls` reports each file's real access, and a `read` agent has `write` but edits only its own scratch and changes no Work.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - lifecycle-aware file access projection and target resolution before refusal (kb/wiki/architecture/documents/access.md)
@@ -167,7 +167,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(missing.output).toContain("path: manuscript://missing.md");
     });
 
-    // D51: a switch that couldn't happen says why before action policy or mutation.
+    // a switch that couldn't happen says why before action policy or mutation.
     it("resolves a switch's target, then moves the running chat", async () => {
       await db.insert(schema.works).values([
         { projectId: PROJECT_ID, createdByUserId: USER_ID, name: "Other", handle: "w2" },
@@ -184,7 +184,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const switchTo = async (work: string) =>
         (await call("work", { command: "switch", work })).output;
 
-      // D65: a refusal reaches the model as its message and code.
+      // a refusal reaches the model as its message and code.
       expect(await switchTo("ghost")).toBe("Unknown Work ghost. Use work list. (work_not_found)");
       expect(await switchTo("w3")).toBe(
         "Work w3 is archived. Ask the user to unarchive it before switching. (work_archived)",

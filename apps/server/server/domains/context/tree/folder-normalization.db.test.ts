@@ -174,7 +174,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("splits a nested hidden document off a folder moved out of user:// or into a Work's Scratch (F-3)", async () => {
-      // Out of user:// into a project narrows which branches may hold it (§8.3, D20); a
+      // Out of user:// into a project narrows which branches may hold it (§8.3); a
       // Work's Scratch is held by none.
       for (const into of ["project", "scratch"] as const) {
         const scenario = await start();

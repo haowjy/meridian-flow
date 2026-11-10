@@ -1,6 +1,6 @@
 /**
  * The model `work` tool: list, show and change the project's Works. The action
- * policy decides each command (D39). A direct call's Work rebinding and queued
+ * policy decides each command. A direct call's Work rebinding and queued
  * write-mode changes run under the calling execution's claim; under an Allow they run
  * under the answer's thread lock, with no claim (an open ask blocks run selection).
  */
@@ -49,7 +49,7 @@ import {
 /**
  * A Work as the handler returns it; `renderWorkResult` decides what the model
  * reads. Pending changes use the writer's words. A Work has no write mode of
- * its own: the chat's mode is in its work context (D62).
+ * its own: the chat's mode is in its work context.
  */
 function modelWork(work: Work): ModelWork {
   const {
@@ -134,7 +134,7 @@ async function workByHandle(
 }
 
 /**
- * A `switch`'s target, or why it can't happen. An unknown Work points to `work list` (D51),
+ * A `switch`'s target, or why it can't happen. An unknown Work points to `work list`,
  * an archived one can't be switched to by anyone, and the chat's current Work needs no switch.
  */
 async function resolveSwitch(

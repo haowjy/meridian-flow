@@ -2,7 +2,7 @@
 
 Delete an entry when it ships.
 
-- **The AI sort (ruling I5).** Choosing a destination and sorting are separate:
+- **The AI sort .** Choosing a destination and sorting are separate:
   the import lands where the writer chose, and the sort waits for folder moves.
   Follow-up, in order: the model tool surface's folder move
   (P6, model-tool-surface PR 3), then the `sort-import` skill (P7) that

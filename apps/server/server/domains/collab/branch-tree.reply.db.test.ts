@@ -197,7 +197,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         )
         .toEqual(["closed", "closed"]);
       const scratch = await scenario.view(closedFirst).read("scratch://notes.md");
-      expect.soft(scratch.ok, "the reply's other document saved (D29, D42)").toBe(true);
+      expect.soft(scratch.ok, "the reply's other document saved").toBe(true);
 
       // V2-H2, one order: the close commits first; the save then finds its branch closed.
       const closeFirst = await scenario.work("Close commits first", "draft");

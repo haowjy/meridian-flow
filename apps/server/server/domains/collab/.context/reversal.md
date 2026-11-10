@@ -47,7 +47,7 @@ A later item depends on an edit when its parent or left neighbour is the edit's 
 A right origin that points at text the edit deleted does not count either: if an edit deletes a paragraph and the writer then places a paragraph in its place, Undo restores the deleted paragraph after the writer's, losing nothing. Counting those pointers would block "chat A replaces a paragraph, chat B places a block before it".
 A turn's edit targets include its create transition even when the document is empty. A create
 that Undo removed stays addressable through that immutable target, so Redo can restore it. A draft-scoped
-edit of a document deleted live stays one (D79): each draft-scoped target names
+edit of a document deleted live stays one: each draft-scoped target names
 the Work its draft row's branch belongs to, and the card's lineage and Undo
 authorize it at that Work's draft destination (`turnEditDestination`), where
 `survivingDraft` admits it while the draft is active. Its lineage address is the
@@ -69,7 +69,7 @@ revision mismatch between evidence and planning recaptures the bounded attempt.
 Closed origins are gone and never stand in for a destination.
 Live destinations carry the captured physical source owner's lifecycle and the document's removal;
 the chat's query draft never decides availability for live text or tree entries. A surviving draft
-still ignores live removal and accepts its own inverse (D79).
+still ignores live removal and accepts its own inverse.
 
 Applied text is not a refusal. Model Undo and the card write its inverse as a forward
 `revert` in the active origin draft, leaving live untouched and making a pending change against

@@ -1,7 +1,7 @@
 # domains/observability — EventSink
 
 The event model is in the [event record][records] and [bounded
-consumption][consumption] decisions.
+consumption][consumption] pages.
 
 ## Contract
 

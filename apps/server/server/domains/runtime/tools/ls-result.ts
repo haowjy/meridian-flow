@@ -1,5 +1,5 @@
 /**
- * The `ls` result (D61): the typed listing the handler returns, and the plain
+ * The `ls` result: the typed listing the handler returns, and the plain
  * text the model reads of it. The app's tool row and code mode read the
  * fields; nothing parses the text back.
  */
@@ -45,7 +45,7 @@ export function sortLsEntries<T extends Pick<LsEntry, "uri" | "kind">>(entries: 
   );
 }
 
-/** The model's text for an `ls` result; the executor renders refusals (D65). */
+/** The model's text for an `ls` result; the executor renders refusals. */
 export function renderLsResult(value: JsonValue): string {
   if (!isLsResult(value)) return JSON.stringify(value);
   if (value.uri === null) {

@@ -1,9 +1,8 @@
 /**
- * The model's `move` and `delete` through the production-composed `write` tool (PR 3, D66,
- * D76, D77): each runs at the call and records a tree entry on the document's own stack, so
+ * The model's `move` and `delete` through the production-composed `write` tool (PR 3): each runs at the call and records a tree entry on the document's own stack, so
  * `undo`, `redo` and `revert` walk it with text, a reply's rollback reverses it, and the turn
  * card's Undo brings a deleted document back. In a draft-mode chat they are facts in the
- * Work's branch and live is untouched (D26).
+ * Work's branch and live is untouched.
  */
 
 import { randomUUID } from "node:crypto";
@@ -307,7 +306,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("rolls a reply's move and delete back at a free name and keeps another Work's draft", async () => {
       const script = await start();
-      // w2's draft-mode chat drafts a change to ch2: a live delete leaves it alone (D79).
+      // w2's draft-mode chat drafts a change to ch2: a live delete leaves it alone.
       await runtimes.script(script.runtime, OTHER).reply(async (call) => {
         await call("write", { command: "replace", path: "ch2", find: "two", content: "2" });
       });

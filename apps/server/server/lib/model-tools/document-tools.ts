@@ -1,7 +1,7 @@
 /**
- * The `read` and `write` tools (D1): a path resolves to its tracked document,
+ * The `read` and `write` tools: a path resolves to its tracked document,
  * the file policy grants the call, and the collab pool reads or writes under
- * that grant. `skills://` paths go to the skill files (D52).
+ * that grant. `skills://` paths go to the skill files.
  */
 
 import type {

@@ -2,7 +2,7 @@
 
 `UploadIntake` owns upload identity from idempotency reservation through
 finalization or deletion. Ownership and addressing are in the [upload
-decision][uploads].
+design][uploads].
 
 ## Contract
 
@@ -110,7 +110,7 @@ the file itself, so two uploads of one name started before either finishes both 
 and the one that finishes second lands as `notes (2).zip` under a chip labelled `notes.zip` (its
 link still finds it). A guess that the bytes overrule (text past the text cap kept as a file) can
 differ the same way. The label is never rewritten after the file lands: a chip's words are the
-writer's once it stands (link identity decision). `assets/` is created by that write wherever it has gone missing. Chat-only paths
+writer's once it stands (see the link identity design). `assets/` is created by that write wherever it has gone missing. Chat-only paths
 (`lockForDelete`, `consume`, `lookupUpload`) skip these rows.
 
 The server does not say whether a source upload is still being sent: a `doc:` ref that names

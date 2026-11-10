@@ -6,7 +6,7 @@
  * two processes judging one draft at one revision write the same value twice.
  *
  * The stored value converges within the max wait once typing pauses, and eventually while typing
- * (D34): a write guarded by the revision it judged misses whenever a key commits during the run,
+ *: a write guarded by the revision it judged misses whenever a key commits during the run,
  * so a `moved` write re-judges at once rather than on the debounce. Only errors back off.
  */
 import { blocksEqual, REVIEW_BASE_FRAGMENT, readBlocks } from "@meridian/agent-edit/diff";

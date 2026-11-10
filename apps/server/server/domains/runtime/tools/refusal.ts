@@ -1,5 +1,5 @@
 /**
- * A tool refusal as the model reads it (D65): the `MeridianError`'s message,
+ * A tool refusal as the model reads it: the `MeridianError`'s message,
  * then its code when the message doesn't already carry it. `details` stays on
  * the typed result for the app; every message names what the model needs.
  */

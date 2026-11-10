@@ -23,7 +23,7 @@ import { acquireTreeScope } from "../context/tree/mutation-scope.js";
 import { type RemovalIdentity, restoreDocument } from "../context/tree/removal.js";
 
 describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
-  /** The restore Apply runs for a deleted document, in a transaction of its own (D79). */
+  /** The restore Apply runs for a deleted document, in a transaction of its own. */
   async function restore(
     runtime: Awaited<ReturnType<typeof start>>["runtime"],
     documentId: DocumentId,

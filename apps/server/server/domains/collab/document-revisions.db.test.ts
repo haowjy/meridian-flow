@@ -290,7 +290,7 @@ describe("document revisions (postgres and collab)", () => {
     await f.read();
     await f.stage("00000000-0000-4000-8000-000000000893");
     let injected = false;
-    // The live apply runs on a private copy inside the save transaction (D42);
+    // The live apply runs on a private copy inside the save transaction;
     // a writer edit after it and before commit must not move the receipt.
     const committed = await f.core.commitResponse("00000000-0000-4000-8000-000000000893", {
       beforeTransactionCommit: async () => {

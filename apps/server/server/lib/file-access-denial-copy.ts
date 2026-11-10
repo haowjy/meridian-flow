@@ -1,5 +1,5 @@
 /**
- * Model-facing copy for file-policy refusals (file-access §9, D31, D53, D54).
+ * Model-facing copy for file-policy refusals (file-access §9).
  * A refusal that suggests a call writes it exactly, and only when the agent
  * may make it; otherwise it says to ask the user.
  */
@@ -27,7 +27,7 @@ const UPLOADS_READ_ONLY_MESSAGE = "Files in uploads:// are read-only, so this ch
 const CHAT_FROZEN_MESSAGE =
   "The chat that owns these drafts is in the trash, so they are frozen and this change wasn't made. Ask the user to restore the chat.";
 
-/** Matches the read agent's permission line (D54). */
+/** Matches the read agent's permission line. */
 const AGENT_READ_ONLY_MESSAGE = "Your permission is read, so you can change only scratch://.";
 
 /** A read agent's own scratch is always writable, so a refused scratch file is another Work's. */
@@ -67,9 +67,9 @@ export function permissionDeniedMessage(denial: PermissionDenial): string {
 }
 
 /**
- * An archived Work's own files are read-only (D29); a draft-mode chat's write
- * that would land in this Work's drafts meets frozen drafts (D30, D31), and switching
- * the chat to auto-apply is the writer's way out (D62). Only an agent the
+ * An archived Work's own files are read-only; a draft-mode chat's write
+ * that would land in this Work's drafts meets frozen drafts, and switching
+ * the chat to auto-apply is the writer's way out. Only an agent the
  * action policy lets unarchive is offered the call.
  */
 function workArchivedMessage(denial: FileAccessDenied): string {

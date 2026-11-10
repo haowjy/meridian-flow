@@ -2,7 +2,7 @@
 
 This domain parses and retains Mars packages, publishes immutable Agent
 definitions, and resolves skills and execution configuration. The model is in
-the [Agent definition][definitions] and [package][packages] decisions.
+the [Agent definition][definitions] and [package][packages] pages.
 
 ## Contracts
 

@@ -1,5 +1,5 @@
 /**
- * One tool call as `thread_history` writes it (D48):
+ * One tool call as `thread_history` writes it:
  * `name({json args}) → summary`.
  *
  * The arguments are the model's own, as compact JSON in the key order it sent.
