@@ -50,7 +50,7 @@ vocabulary][schemes]. Implementation rules:
 
 ## Stored links
 
-The model is the [link identity decision][links]. In the code:
+Link identity is in the [Links KB page][links]. In the code:
 
 - Build ref-bearing hrefs with `storedHref({ kind, uri }, suffix)`, not string concatenation:
   `#`, `?` and `%` in filenames are data. Addresses are decoded canonical URIs; stored `href`
@@ -62,6 +62,6 @@ The model is the [link identity decision][links]. In the code:
 - Href classification is shared: raw `%` is a literal manuscript path and protocol-relative
   `//host/x` is external. Callers do not reimplement relative resolution.
 
-[handles]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/owner-handles.md
-[schemes]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/context-uri-scheme-vocab.md
-[links]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-identity.md
+[handles]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/addresses.md#handles-name-owners-names-are-labels
+[schemes]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/addresses.md#schemes
+[links]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/links.md#stored-identity-and-spelling

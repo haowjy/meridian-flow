@@ -2,7 +2,7 @@
  * The file and action policies at the production-composed model tools (file-access §4, §6, §9; D34, D35): `ls` reports each file's real access, and a `read` agent has `write` but edits only its own scratch and changes no Work.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - lifecycle-aware file access projection and target resolution before refusal (kb/decisions/documents/access/file-access-policy.md)
+ * - lifecycle-aware file access projection and target resolution before refusal (kb/wiki/architecture/documents/access.md)
  */
 
 import { eq } from "drizzle-orm";

@@ -2,7 +2,7 @@
  * Tests policy behavior.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - File lifecycle and scheme access exceptions (kb/decisions/documents/access/file-access-policy.md)
+ * - File lifecycle and scheme access exceptions (kb/wiki/architecture/documents/access.md)
  * - Draft routing and Work caps
  * - Skill admission channels (kb/wiki/architecture/agents/definitions.md)
  */

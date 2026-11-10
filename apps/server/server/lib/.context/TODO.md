@@ -2,7 +2,7 @@
 
 - `yjs-ws-handler.ts` (`classifyYjsConnectionAdmission`, `refuseSchemaAdmission` and
   the `onLoadDocument` backstop): `4407` has no automatic repair, which the
-  [repair-first decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/schema/repair-first-never-disable.md)
+  [repair-first rule](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/overview.md#document-schema)
   tolerates only while major bumps stay out of ordinary operation. If a major schema
   bump becomes real, build the migration path (load under compat, transform, restamp)
   and route this refusal into it.

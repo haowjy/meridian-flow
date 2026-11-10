@@ -1,7 +1,7 @@
 # domains/projects — project and Work contracts
 
 Work lifecycle is in the [archive and delete][archive], [lifecycle
-fence][fence] and [pending count][count] decisions.
+fence][fence] and [pending count][count] rules.
 
 ## Work operations
 
@@ -39,5 +39,5 @@ membership set; a concurrent join retries. Restore locks the threads carrying
 that Work's deletion marker and clears exactly that set.
 
 [archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/work/lifecycle.md#archive-freezes-the-works-own-material
-[fence]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/work-lifecycle-fences-drafts.md
-[count]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/works-notice-follows-pending-count.md
+[fence]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/draft-store-concurrency.md#an-owners-lifecycle-fences-its-drafts-through-one-boundary
+[count]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/draft-store-concurrency.md#pending-counts-announce-only-when-they-move

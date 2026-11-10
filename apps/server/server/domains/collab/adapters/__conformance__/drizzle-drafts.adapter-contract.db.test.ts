@@ -2,7 +2,7 @@
  * Adapter-contract tests for Drizzle draft peers against local Postgres.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - peer replacement on Work rebind, batched journal appends, checkpoint-only seeding, and unfenced revision appends (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - peer replacement on Work rebind, batched journal appends, checkpoint-only seeding, and unfenced revision appends (kb/wiki/architecture/collaboration/draft-store-concurrency.md)
  */
 
 import { eq } from "drizzle-orm";

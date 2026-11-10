@@ -2,7 +2,7 @@
  * PostgreSQL proof for catalog transaction, replay, exclusion, and wake semantics.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - lossy post-commit wakes, durable catalog replay, namespace-only revisions, and persisted classification (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ * - lossy post-commit wakes, durable catalog replay, namespace-only revisions, and persisted classification (kb/wiki/architecture/collaboration/drafts-and-branches.md#a-branchs-tree-is-an-sql-change-set-over-live)
  */
 
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
