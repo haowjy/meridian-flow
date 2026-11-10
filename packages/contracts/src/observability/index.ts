@@ -70,7 +70,7 @@ export interface TraceStreamRef {
    * yjs: `sync.step1` | `sync.step2` | `sync.update` | `sync.status` | `awareness` |
    *   `stateless` | `auth` | `close` | `ping` | `pong` | `unknown`
    * gateway: `start` | `text.delta` | `reasoning.delta` | `tool_call.delta` |
-   *   `custom.delta` | `usage` | `end` | `error`
+   *   `usage` | `end` | `error`
    */
   messageClass?: string;
   bytes?: number;
