@@ -12,7 +12,6 @@ import {
   type DraftWorkspaceSettlementReceipt,
   getContextTabs,
   isDraftOnly,
-  isEditorTab,
   matchesReviewItem,
   matchesTabInstance,
   type ProjectTabsSlice,
@@ -50,12 +49,9 @@ import {
 import {
   type ContextRemovalOutcome,
   type ContextRouteIdentity,
-  chooseAdmittedFallback,
   planCandidateRejection,
   planContextRemoval,
-  type RouteContinuityVerdict,
   routeTargetForTab,
-  tabForTarget,
   workingSetRouteForTab,
   workingSetRouteForTarget,
 } from "./context-removal-planner";
@@ -870,35 +866,36 @@ export class ContextRemovalCoordinator {
       route: { cleanup: transition.planning.cleanup, current: transition.planning.current },
       intent: transition.planning.intent,
     });
-    const target =
-      plan.routeRepairTarget ??
-      (plan.outcome.kind === "active-fallback" && state.activeWorkId
-        ? routeTargetForTab(plan.outcome.fallback, state.activeWorkId)
-        : plan.outcome.kind === "empty-workspace"
-          ? { kind: "clear" as const }
-          : null);
-    if (!target || !route || route.readSearch(projectId).screen !== "context")
+    // Closing the shown tab leaves nothing chosen in its place.
+    const closesShownDocument =
+      plan.outcome.kind === "removal" &&
+      (plan.outcome.workspaceSelectedRemoved || plan.outcome.routedDocumentRemoved);
+    if (!closesShownDocument || !route || route.readSearch(projectId).screen !== "context")
       return this.commitWriterClose(projectId, tab);
     const capturedSelection = state.selection;
     const capturedWork = state.activeWorkId;
-    return route.transition(projectId, target, {
-      isCurrent: () => {
-        const current = this.workspace.read(projectId);
-        const member = current.tabs.find((candidate) => matchesTabInstance(candidate, tab));
-        if (
-          this.unavailable() ||
-          member?.tabInstanceId !== tab.tabInstanceId ||
-          state.selection !== capturedSelection ||
-          state.activeWorkId !== capturedWork ||
-          current !== slice
-        )
-          return false;
-        return true;
+    return route.transition(
+      projectId,
+      { kind: "clear" },
+      {
+        isCurrent: () => {
+          const current = this.workspace.read(projectId);
+          const member = current.tabs.find((candidate) => matchesTabInstance(candidate, tab));
+          if (
+            this.unavailable() ||
+            member?.tabInstanceId !== tab.tabInstanceId ||
+            state.selection !== capturedSelection ||
+            state.activeWorkId !== capturedWork ||
+            current !== slice
+          )
+            return false;
+          return true;
+        },
+        commit: () => {
+          this.commitWriterClose(projectId, tab);
+        },
       },
-      commit: () => {
-        this.commitWriterClose(projectId, tab, "never");
-      },
-    });
+    );
   }
 
   /** Closing a draft-only tab drops the active Work's entry; another Work's review keeps the tab. */
@@ -910,11 +907,7 @@ export class ContextRemovalCoordinator {
     return reviewOwner ? { reviewOwner } : {};
   }
 
-  private commitWriterClose(
-    projectId: string,
-    addressed: ContextTab,
-    repair: "allow" | "never" = "allow",
-  ): ContextRemovalOutcome {
+  private commitWriterClose(projectId: string, addressed: ContextTab): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     const slice = this.workspace.read(projectId);
     const tab = slice.tabs.find((candidate) => matchesTabInstance(candidate, addressed));
@@ -928,25 +921,22 @@ export class ContextRemovalCoordinator {
       ...this.closingReview(state, tab),
     });
     state.selection = transition.selection;
-    const outcome = this.executePlanning(projectId, { ...transition.planning, repair });
+    const outcome = this.executePlanning(projectId, transition.planning);
     this.publish(state);
     return outcome;
   }
 
   /**
-   * The catalog no longer places this tab's document. Its tab closes as the
-   * writer's own close would; the notice says why once availability proves
-   * a removal.
+   * The catalog no longer places this tab's document. The tab leaves the store and the
+   * notice says why once availability proves a removal; the address stays where it is, so
+   * the view shows the removal in place.
    */
-  closeVanished(
-    projectId: string,
-    tab: ContextTab,
-  ): ContextRemovalOutcome | Promise<NavigationSettlement> {
+  closeVanished(projectId: string, tab: ContextTab): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     if (this.holdDraftTabs(projectId, [tab.documentId]).has(tab.documentId))
       return { kind: "noop" };
     this.notices?.presentedRemoved(projectId, [tab]);
-    return this.writerClose(projectId, tab);
+    return this.commitWriterClose(projectId, tab);
   }
 
   /** Owns the synchronous old-Work prune and next-Work route transition. */
@@ -968,25 +958,14 @@ export class ContextRemovalCoordinator {
       activeWorkId,
       previousSelection,
     );
-    const recentRoutes = this.workingSet.readRecentRoutes(projectId);
     const remainingTabs = tabs.filter((tab) => !documentIds.includes(tab.documentId));
-    const targetSelection = selectedDocumentIdOf(this.workspace.read(projectId));
-    const fallback = chooseAdmittedFallback({
-      activeWorkId,
-      tabs: remainingTabs,
-      selectedTabId: null,
-      admitted: state.admitted,
-      recentRoutes,
-      excluded: null,
-      allowWorkspaceFallback: false,
-    });
     const transition = supersedeSelectionForWorkChange(
       previousSelection,
       locator,
       locator ? (state.terminalRemovals.get(locatorKey(locator)) ?? null) : null,
     );
     state.selection = transition.selection;
-    state.admitted = fallback;
+    state.admitted = null;
 
     if (documentIds.length > 0) {
       const represented = reduceRepresentedRemoval(previousSelection, tabs, {
@@ -995,29 +974,18 @@ export class ContextRemovalCoordinator {
       });
       this.executePlanning(
         projectId,
-        { ...represented.planning, current: { kind: "none" }, repair: "never" },
+        { ...represented.planning, current: { kind: "none" } },
         obsoleteRoutes,
       );
     } else {
-      const selectedTab =
-        remainingTabs.find(
-          (tab) => tab.documentId === targetSelection && isEditorTab(tab, activeWorkId),
-        ) ?? null;
-      const _compatibleSelected =
-        selectedTab && targetInEditorOf(routeTargetForTab(selectedTab, activeWorkId), activeWorkId)
-          ? selectedTab
-          : null;
-      const fallbackTab = fallback ? tabForTarget(remainingTabs, fallback, activeWorkId) : null;
-      const promotedRoute = fallbackTab ? workingSetRouteForTab(fallbackTab) : null;
       this.workingSet.reconcileContextRoutes(projectId, {
         removedLocators: obsoleteRoutes,
-        survivingOwnedLocators: [
-          ...remainingTabs.flatMap((tab) => workingSetRouteForTab(tab) ?? []),
-          ...(promotedRoute ? [promotedRoute] : []),
-        ].filter(
-          (route) => !obsoleteRoutes.some((removed) => workingSetRouteEquals(route, removed)),
-        ),
-        promote: promotedRoute,
+        survivingOwnedLocators: remainingTabs
+          .flatMap((tab) => workingSetRouteForTab(tab) ?? [])
+          .filter(
+            (route) => !obsoleteRoutes.some((removed) => workingSetRouteEquals(route, removed)),
+          ),
+        promote: null,
         clearAll: false,
       });
     }
@@ -1153,7 +1121,7 @@ export class ContextRemovalCoordinator {
     effect: RemovalPlanningEffect,
     additionalRemovedLocators: readonly WorkingSetRoute[] = [],
   ): ContextRemovalOutcome {
-    const { intent, current, cleanup, repair } = effect;
+    const { intent, current, cleanup } = effect;
     if (intent.documentIds.length === 0) return { kind: "noop" };
     const slice = this.workspace.read(projectId);
     const state = this.project(projectId);
@@ -1189,7 +1157,6 @@ export class ContextRemovalCoordinator {
     this.workspace.commit(projectId, {
       documentIds: plan.outcome.removed.map((tab) => tab.documentId),
       ...(intent.reviewOwner ? { dropReviewOf: intent.reviewOwner } : {}),
-      ...(state.activeWorkId ? { workspaceSelection: { documentId: plan.nextSelectedTabId } } : {}),
     });
     this.workingSet.reconcileContextRoutes(projectId, {
       ...plan.workingSet,
@@ -1221,57 +1188,7 @@ export class ContextRemovalCoordinator {
     }
     this.publish(state);
 
-    if (repair === "allow" && plan.routeRepairTarget && current.kind === "proven-removed") {
-      const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
-      const search = route?.readSearch(projectId);
-      if (
-        route &&
-        search &&
-        contextRouteMatchesSearch(search, current.locator, state.activeWorkId)
-      ) {
-        const repairPlan: ContextRouteRepair = {
-          expectedSearch: {
-            screen: "context",
-            work: search.work,
-            chat: search.chat,
-            scheme: current.locator.scheme,
-            path: current.locator.path,
-          },
-          expectedSelection: {
-            kind: "removed-binding",
-            revision: current.revision,
-            documentId: current.identity.documentId,
-          },
-          next: plan.routeRepairTarget,
-        };
-        route.updateSearch(projectId, (latest) =>
-          this.removalStillCurrent(projectId, current)
-            ? applyContextRepairIfCurrent(repairPlan, latest)
-            : latest,
-        );
-      }
-    }
     return plan.outcome;
-  }
-
-  private removalStillCurrent(
-    projectId: string,
-    removal: Extract<RouteContinuityVerdict, { kind: "proven-removed" }>,
-  ): boolean {
-    const selection = this.project(projectId).selection;
-    if (
-      selection.status === "none" ||
-      selection.revision !== removal.revision ||
-      !sameLocator(selection.locator, removal.locator)
-    ) {
-      return false;
-    }
-    return (
-      selection.status === "rejected" ||
-      (selection.status === "bound" &&
-        selection.identity.kind === removal.identity.kind &&
-        selection.identity.documentId === removal.identity.documentId)
-    );
   }
 
   private applySelectionTransition(projectId: string, transition: SelectionTransition): void {
@@ -1298,52 +1215,16 @@ export class ContextRemovalCoordinator {
       return;
     }
     if (!state.activeWorkId) return;
-    const slice = this.workspace.read(projectId);
-    const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
-    const search = route?.readSearch(projectId);
     const plan = planCandidateRejection({
-      rawRouteWork: search?.work,
-      revision: rejection.revision,
       rejected: rejection.locator,
-      activeWorkId: state.activeWorkId,
-      tabs: slice.tabs,
-      selectedTabId: state.activeWorkId ? selectedDocumentIdOf(slice) : null,
+      tabs: this.workspace.read(projectId).tabs,
       admitted: state.admitted,
       recentRoutes: this.workingSet.readRecentRoutes(projectId),
     });
-    if (plan.workspaceSelection.kind === "select") {
-      if (state.activeWorkId) {
-        this.workspace.commit(projectId, {
-          documentIds: [],
-          workspaceSelection: { documentId: plan.workspaceSelection.documentId },
-        });
-      }
-    }
     this.workingSet.reconcileContextRoutes(projectId, plan.workingSet);
     state.transitionRevision += 1;
-    state.admitted = plan.fallback;
+    state.admitted = plan.admitted;
     this.publish(state);
-
-    if (!route || !contextRouteMatchesSearch(search, rejection.locator, state.activeWorkId)) {
-      return;
-    }
-    route.updateSearch(projectId, (latest) =>
-      this.candidateStillRejected(projectId, rejection)
-        ? applyContextRepairIfCurrent(plan.repair, latest)
-        : latest,
-    );
-  }
-
-  private candidateStillRejected(
-    projectId: string,
-    rejection: Extract<ContextRouteSelection, { status: "rejected" }>,
-  ): boolean {
-    const selection = this.project(projectId).selection;
-    return (
-      selection.status === "rejected" &&
-      selection.revision === rejection.revision &&
-      sameLocator(selection.locator, rejection.locator)
-    );
   }
 
   private leaveSelection(projectId: string): void {

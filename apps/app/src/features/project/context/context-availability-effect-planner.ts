@@ -9,7 +9,6 @@ import {
   workingSetRouteIdentityEquals,
 } from "@/client/working-set";
 import {
-  applyContextRepairIfCurrent,
   type ContextRouteTarget,
   contextRouteMatchesSearch,
   openContextRouteSearch,
@@ -20,10 +19,8 @@ import type {
   AppliedAvailabilityCommand,
   ContextRemovalProjectSnapshot,
 } from "./context-removal-coordinator";
-import { planContextRemoval, routeTargetForTab, tabForTarget } from "./context-removal-planner";
+import { planContextRemoval, routeTargetForTab } from "./context-removal-planner";
 import {
-  beginSelection,
-  bindSelection,
   type ContextRouteSelection,
   leaveSelection,
   reduceRepresentedRemoval,
@@ -236,9 +233,6 @@ export function planContextAvailabilityBatch(
     });
     if (removal.outcome.kind !== "noop") tabs = [...removal.outcome.remaining];
     if (selectedDocumentId === id) selectedDocumentId = null;
-    if (removal.nextSelectedTabId && input.project.activeWorkId) {
-      selectedDocumentId = removal.nextSelectedTabId;
-    }
     const exactRecentRoutes = recentRoutes.filter((route) => route.documentId === id);
     const workingSet = {
       ...removal.workingSet,
@@ -264,49 +258,6 @@ export function planContextAvailabilityBatch(
         removedDocumentIds: [...new Set([...(removalFence?.removedDocumentIds ?? []), id])],
       };
     }
-    const repairTarget = removal.routeRepairTarget;
-    if (routeSearch && repairTarget && transition.planning.current.kind === "proven-removed") {
-      const current = transition.planning.current;
-      routeSearch = applyContextRepairIfCurrent(
-        {
-          expectedSearch: {
-            screen: "context",
-            work: routeSearch.work,
-            chat: routeSearch.chat,
-            scheme: current.locator.scheme,
-            path: current.locator.path,
-          },
-          expectedSelection: {
-            kind: "removed-binding",
-            revision: current.revision,
-            documentId: current.identity.documentId,
-          },
-          next: repairTarget,
-        },
-        routeSearch,
-      );
-    }
-    if (repairTarget && transition.planning.current.kind === "proven-removed") {
-      if ("kind" in repairTarget) {
-        selection = leaveSelection(selection).selection;
-      } else {
-        const candidate = beginSelection(selection, repairTarget).selection;
-        const activeWorkId = input.project.activeWorkId;
-        const fallback = activeWorkId ? tabForTarget(tabs, repairTarget, activeWorkId) : null;
-        const bound = fallback
-          ? bindSelection(
-              candidate,
-              candidate.revision,
-              {
-                kind: fallback.kind === "new" ? "local" : "server",
-                documentId: fallback.documentId,
-              },
-              "answer",
-            )
-          : null;
-        selection = bound?.selection ?? candidate;
-      }
-    }
     sessionEffects.push({
       commandId: command.commandId,
       operation: command.kind === "terminal-remove" ? "revoke-document" : "revoke-access",
@@ -327,17 +278,6 @@ export function planContextAvailabilityBatch(
         selection = leaveSelection(selection).selection;
       }
       if (admitted?.workId === activeWorkId) admitted = null;
-      if (input.routeSearch?.work === activeWorkId && routeSearch) {
-        routeSearch = {
-          ...routeSearch,
-          screen: "work",
-          work: undefined,
-          chat: undefined,
-          scheme: undefined,
-          folder: undefined,
-          path: undefined,
-        };
-      }
     }
   }
 
