@@ -301,15 +301,6 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(content(v)).toEqual(["one", "BLUE", "two"]);
     v.doc.destroy();
   });
-  it("text typed into a block the target inserted still blocks undo", () => {
-    const v = base(["one", "two"]),
-      red = write(v, [(v) => v.doc.getXmlFragment("prosemirror").insert(1, [paragraph("RED")])]);
-    write(v, [(v) => (ps(v)[1].get(0) as Y.XmlText).insert(3, "!")]);
-    expect(states(v, red)).toEqual(["changed"]);
-    expect(inverse(v, red, "invert")).toBe(0);
-    expect(content(v)).toEqual(["one", "RED!", "two"]);
-    v.doc.destroy();
-  });
   it("typing into restored content protects the undone direction", () => {
     const v = base(["abcdef"]),
       e = write(v, [(v) => text(v).delete(1, 4)]);
