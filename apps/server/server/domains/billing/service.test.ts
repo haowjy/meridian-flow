@@ -2,7 +2,7 @@
  * Tests service behavior.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Free-tier, checkout, and credit-admission policy (kb/decisions/auth-billing/usage-based-billing-no-feature-paywalls.md)
+ * - Free-tier, checkout, and credit-admission policy (kb/wiki/product/billing.md)
  */
 import { describe, expect, it, vi } from "vitest";
 import type { StripeBillingGateway, StripeWebhookEvent } from "./adapters/stripe/stripe-gateway.js";

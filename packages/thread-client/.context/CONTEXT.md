@@ -289,5 +289,5 @@ open, then one resolution), so their arrival order doesn't matter. A resolved as
   winning resolution from the reply when it has one. Without one, the attempt goes `settling` until a read says how the ask
   ended; a failed read leaves it `unsettled`, and the takeover offers only to read again (`settleAsk`).
 
-[view-decision]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/client/transcript-view-model.md
-[socket-decision]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/client/socket-delivery-contract.md
+[view-decision]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/chat-sync.md#one-pure-transcript-view-model
+[socket-decision]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/chat-sync.md#each-socket-handler-gets-its-events-exactly-once

@@ -37,7 +37,7 @@ Depth: [architecture and contracts](.context/CONTEXT.md),
 [deferred work](.context/TODO.md).
 
 [state-tiers]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/state-tier-contract.md
-[commands]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/client/optimistic-interaction-contract.md
+[commands]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/optimistic-commands.md
 [copy-separation]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/copy-and-feedback.md
 [offer-only]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/copy-and-feedback.md
 [trust-the-user]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/copy-and-feedback.md

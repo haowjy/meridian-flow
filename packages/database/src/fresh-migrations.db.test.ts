@@ -2,7 +2,7 @@
  * Fresh-baseline catalog and bootstrap contracts on runner-owned PostgreSQL.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - baseline journal hashes and database-enforced locked No Work bootstrap constraints (kb/decisions/platform/stack/drizzle-migration-integrity.md)
+ * - baseline journal hashes and database-enforced locked No Work bootstrap constraints (kb/wiki/conventions/practice/database-migrations.md#merged-migration-history-never-changes)
  */
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
