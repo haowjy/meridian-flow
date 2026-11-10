@@ -1,11 +1,13 @@
 /**
- * Main's address and main's document view, kept in step. An address arriving by push or pop (a
- * link, a reload, Back) is a command: it sets the view's pin to the draft it names, or drops the
- * pin when it names none. The shell's own replace is not a command (`locationKey` is the history
- * entry's). After that the view is the owner and the address follows it by replace, so a draft
- * the writer picks, leaves or focuses a change in rewrites the address in place and never adds a
- * Back step.
+ * Main's address and main's document view, kept in step. An address arriving by push, pop or load
+ * (a link, a reload, Back) is a command: it sets the view's pin to the draft it names, or drops the
+ * pin when it names none. A replace is not, unless it changes main's document: it rewrites its
+ * entry in place (`arrivalOf`). After that the view is the owner and the address follows it by
+ * replace, so a draft the writer picks, leaves or focuses a change in rewrites the address in place
+ * and never adds a Back step.
  */
+import type { RouterHistory } from "@tanstack/react-router";
+import { useRouter } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import {
   type DraftPin,
@@ -21,10 +23,34 @@ function samePin(a: DraftPin | null | undefined, b: DraftPin | null | undefined)
   return a?.ownerKey === b?.ownerKey && a?.itemKey === b?.itemKey && a?.changeId === b?.changeId;
 }
 
+const inheritedArrivals = new WeakMap<RouterHistory, Map<string, string>>();
+
+/**
+ * The arrival a history entry belongs to: its own key, or for an entry a replace made, the
+ * arrival of the entry it replaced. `@tanstack/history` mints a new key on every replace, so the
+ * key alone would read the view's own address writes as commands, and an older write landing
+ * after a newer pin would reset the pin to it.
+ */
+function arrivalOf(history: RouterHistory, key: string): string {
+  let inherited = inheritedArrivals.get(history);
+  if (!inherited) {
+    const map = new Map<string, string>();
+    let last = history.location.state.__TSR_key;
+    history.subscribe(({ location, action }) => {
+      const next = location.state.__TSR_key;
+      if (action.type === "REPLACE" && last && next) map.set(next, map.get(last) ?? last);
+      last = next;
+    });
+    inheritedArrivals.set(history, map);
+    inherited = map;
+  }
+  return inherited.get(key) ?? key;
+}
+
 export function useReviewAddressSync({
   projectId,
   selectsTab,
-  locationKey,
+  locationKey: entryKey,
   reviewOwner,
   address,
   writeItemKey,
@@ -32,6 +58,7 @@ export function useReviewAddressSync({
   projectId: string;
   /** The desktop's Write shows the selected tab: an arriving address selects the one it names. */
   selectsTab: boolean;
+  /** The rendered history entry's key. */
   locationKey: string | undefined;
   /** Whose draft the address's item reviews (`addressReviewOwner`); null while unresolved. */
   reviewOwner: string | null;
@@ -47,9 +74,14 @@ export function useReviewAddressSync({
   writeItemKey: (review: DraftPin | null) => void;
 }) {
   const accountId = useAccountId();
-  /** The history entry whose address main's view has taken in. */
-  const arrived = useRef<string | undefined>(undefined);
+  const { history } = useRouter();
   const { documentId } = address;
+  const locationKey =
+    entryKey === undefined || !documentId
+      ? undefined
+      : JSON.stringify([arrivalOf(history, entryKey), documentId]);
+  /** The arrival, and main's document in it, whose address main's view has taken in. */
+  const arrived = useRef<string | undefined>(undefined);
   const pin = useDocumentView(accountId, projectId, documentId ?? null).pin;
   const selectedDocumentId = useSelectedDocumentId(projectId);
 

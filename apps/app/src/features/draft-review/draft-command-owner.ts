@@ -18,6 +18,7 @@ import type {
   ThreadDraftListItem,
 } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
+import type { Editor } from "@tiptap/core";
 import * as Y from "yjs";
 import {
   applyDraftClick,
@@ -797,11 +798,11 @@ export class DraftCommandOwner {
     return outcomes;
   }
 
-  /** The caller selects history ownership, never whether an editor happens to be mounted. */
+  /** The caller names whose history takes it back: its own editor, or its notice. */
   discard(
     ref: DraftRef,
     target: TextTarget,
-    history: "editor" | "notice",
+    history: Editor | "notice" | null,
     onNoticeEnd?: () => void,
   ): { notice: DiscardNotice; outcome: Promise<CommandOutcome> } | null {
     const entry = this.byItem.get(ref.itemKey);
@@ -889,7 +890,7 @@ export class DraftCommandOwner {
     ref: DraftRef,
     item: ThreadDraftListItem,
     target: ChangeTarget,
-    history: "editor" | "notice",
+    history: Editor | "notice" | null,
   ): Promise<CommandOutcome> {
     if (!this.active || !item.tree) return Promise.resolve({ kind: "blocked" });
     const text =

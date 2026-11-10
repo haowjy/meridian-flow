@@ -6,6 +6,7 @@ import {
   recordRestorations,
   writeDiscardBlocks,
 } from "@meridian/agent-edit/diff";
+import type { Editor } from "@tiptap/core";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import type { DocumentSession } from "@/core/editor/document-session";
@@ -32,8 +33,12 @@ type Entry = {
 export function startDraftDiscardSession(input: {
   ref: DraftRef;
   target: TextTarget;
-  /** `editor`: the reviewing editor's own Undo takes it back. `notice`: no editor; the notice's Undo does. */
-  history: "editor" | "notice";
+  /**
+   * The issuing host's editor, whose own Undo takes it back; `notice`: the surface has no editor,
+   * and the notice's Undo does. Null: the surface's editor is not reviewing this draft, so nothing
+   * is written.
+   */
+  history: Editor | "notice" | null;
   onNoticeEnd?: () => void;
   entry: Entry | undefined;
   registry: DraftRoomRegistry;
@@ -44,10 +49,17 @@ export function startDraftDiscardSession(input: {
   releaseIdle(): void;
 }): { notice: DiscardNotice; outcome: Promise<CommandOutcome> } | null {
   const { ref, target, history: owner, onNoticeEnd, entry } = input;
+  const editor = owner === "notice" ? null : owner;
   const binding = entry?.binding;
-  if (!input.active() || !entry || !binding?.runtime.state().ready || input.state().discarding)
+  if (
+    owner === null ||
+    !input.active() ||
+    !entry ||
+    !binding?.runtime.state().ready ||
+    input.state().discarding
+  )
     return null;
-  const frame = owner === "editor" ? binding.runtime.projectNow() : binding.runtime.state().frame;
+  const frame = editor ? binding.runtime.projectNow() : binding.runtime.state().frame;
   if (!frame) return null;
   if (
     target.kind === "groups" &&
@@ -59,8 +71,6 @@ export function startDraftDiscardSession(input: {
   }
   const ids = target.kind === "draft" ? frame.groups.map((group) => group.id) : target.groupIds;
   if (!ids.length || ids.some((id) => !frame.groups.some((group) => group.id === id))) return null;
-  const editor = owner === "editor" ? (binding.runtime.editors()[0] ?? null) : null;
-  if (owner === "editor" && !editor) return null;
   const doc = binding.session.document;
   const fragment = doc.getXmlFragment("prosemirror");
   const wholeClick = !editor && target.kind === "draft";

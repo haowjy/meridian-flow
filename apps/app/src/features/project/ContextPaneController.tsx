@@ -329,6 +329,7 @@ export function ContextViewerSurfaceController({
       sidebarToggle={sidebarToggle}
       dockToggle={dockToggle}
       active={active}
+      routeDisplayed={routeDisplayed}
       onNewDocument={async () => {
         const isCurrent = captureNavigation?.();
         const reservation = await resources.reserveDocument(projectId);

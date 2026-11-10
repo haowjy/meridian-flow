@@ -148,9 +148,11 @@ occurrence suffix.
 
 ## Discard
 
-`discard(ref, target, surface)` composes against the optimistic base and calls
-`writeDiscardBlocks` in one transaction. Editor Discard is synchronous. Dock and Work
-Discard publish their notice and a projection-scoped `discarding` target first, so the row
+`discard(ref, target, history)` composes against the optimistic base and calls
+`writeDiscardBlocks` in one transaction. `history` is the issuing host's own editor (the
+controller's `reviewEditor`), whose Undo takes it back, or `notice` for a surface with no
+editor; the room's runtime may list more than one attached editor, so the session never picks
+one. Editor Discard is synchronous. Chat-strip and Work Discard publish their notice and a projection-scoped `discarding` target first, so the row
 and notice paint before the indivisible write-back. Hidden pages drain on visibility
 change rather than waiting for animation frames. Changed base or prose refuses the stale
 write and restores the row.

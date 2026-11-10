@@ -104,6 +104,15 @@ export function ContextDocumentHost({
     selectedReviewFile?.draft.itemKey === selectedReviewItemKey &&
     reviewHasNoRoom(selectedReviewFile.draft);
   const reviewItemKey = reviewRoomName || treeOnlyReview ? selectedReviewItemKey : null;
+  // The pinned draft's list could not be read: say so here rather than paint Live under the pin.
+  const queryClient = useQueryClient();
+  const pinnedOwner = paint?.showing === "failed" ? (paint.view.pin?.ownerKey ?? null) : null;
+  const retryDraftList = pinnedOwner
+    ? () =>
+        void queryClient.refetchQueries({
+          queryKey: projectQueryKeys.ownerDrafts(projectId, pinnedOwner),
+        })
+    : null;
   // A draft-only document has no live room until Apply promotes it, and
   // the server refuses one. Review hosts the draft room alone.
   const draftOnly = isDraftOnly(tab);
@@ -112,12 +121,15 @@ export function ContextDocumentHost({
   const editable = presentation.editable && !readOnly;
   const renderEditor = (
     session: DocumentSession | null,
-    failed = false,
+    sessionFailed = false,
     localContentReady = false,
-    retry?: () => void,
-    failureReason: Extract<LiveDocumentBindingState, { kind: "failed" }>["reason"] | null = null,
+    retrySession?: () => void,
+    sessionFailure: Extract<LiveDocumentBindingState, { kind: "failed" }>["reason"] | null = null,
   ): ReactNode => {
     if (!mountEditor) return null;
+    const failed = sessionFailed || retryDraftList !== null;
+    const retry = retryDraftList ?? retrySession;
+    const failureReason = retryDraftList ? null : sessionFailure;
     const hosted = session !== null || draftOnly || Boolean(selectedReviewItemKey);
     const surface = failed ? "failed" : hosted ? "painted" : "pending";
     let bindingKey: string | undefined;
@@ -150,6 +162,8 @@ export function ContextDocumentHost({
                   message={
                     failureReason === "not-visible" ? (
                       <Trans>Access lost (not saving to the server)</Trans>
+                    ) : retryDraftList ? (
+                      <Trans>Couldn't load this draft.</Trans>
                     ) : (
                       <Trans>Couldn't open this document.</Trans>
                     )

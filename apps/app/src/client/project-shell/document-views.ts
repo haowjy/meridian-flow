@@ -164,14 +164,26 @@ export function returnDraftsToLive(
   if (changed) write(accountId, projectId, next);
 }
 
+/**
+ * A draft has ended (Applied, Discarded, or closed elsewhere): every view pinned to it drops the
+ * pin. The version stays: an open review of the ended draft keeps its editor until Live.
+ */
+export function endPin(accountId: string, projectId: string, pin: DraftPin): void {
+  const views = read(accountId, projectId);
+  const next: Record<string, DocumentView> = {};
+  let changed = false;
+  for (const [documentId, view] of Object.entries(views)) {
+    if (view.pin?.ownerKey === pin.ownerKey && view.pin.itemKey === pin.itemKey) {
+      changed = true;
+      next[documentId] = { version: view.version, showChanges: view.showChanges };
+    } else next[documentId] = view;
+  }
+  if (changed) write(accountId, projectId, next);
+}
+
 const verifying = new Map<string, Promise<void>>();
 const verifyKey = (projectId: string, ownerKey: string, itemKey: string) =>
   JSON.stringify([projectId, ownerKey, itemKey]);
-
-/** Whether a pin's draft is being checked against a fresh read of its owner's list. */
-export function isVerifyingPin(projectId: string, pin: DraftPin): boolean {
-  return verifying.has(verifyKey(projectId, pin.ownerKey, pin.itemKey));
-}
 
 /**
  * A pin whose item a cached owner list lacks. The list may only be stale (the draft was made a
@@ -188,9 +200,6 @@ export function verifyPin(
   const key = verifyKey(projectId, pin.ownerKey, pin.itemKey);
   if (verifying.has(key)) return;
   const queryKey = projectQueryKeys.ownerDrafts(projectId, pin.ownerKey);
-  const notify = () => {
-    for (const listener of listeners.get(recordKey(accountId, projectId)) ?? []) listener();
-  };
   const check = queryClient.refetchQueries({ queryKey }).then(() => {
     // A failed refetch keeps the old rows and sets status "error": it proves nothing.
     if (queryClient.getQueryState(queryKey)?.status !== "success") return;
@@ -200,24 +209,10 @@ export function verifyPin(
       )
     )
       return;
-    const views = read(accountId, projectId);
-    const next: Record<string, DocumentView> = {};
-    let changed = false;
-    for (const [documentId, view] of Object.entries(views)) {
-      if (view.pin?.ownerKey === pin.ownerKey && view.pin.itemKey === pin.itemKey) {
-        changed = true;
-        // The version stays: an open review of the ended draft keeps its editor until Live.
-        next[documentId] = { version: view.version, showChanges: view.showChanges };
-      } else next[documentId] = view;
-    }
-    if (changed) write(accountId, projectId, next);
+    endPin(accountId, projectId, pin);
   });
   verifying.set(key, check);
-  notify();
-  void check.finally(() => {
-    verifying.delete(key);
-    notify();
-  });
+  void check.finally(() => verifying.delete(key));
 }
 
 function subscribe(accountId: string, projectId: string, listener: () => void) {
@@ -239,18 +234,5 @@ export function useDocumentView(
     (listener) => subscribe(accountId, projectId, listener),
     () => (documentId ? readDocumentView(accountId, projectId, documentId) : DEFAULT_DOCUMENT_VIEW),
     () => DEFAULT_DOCUMENT_VIEW,
-  );
-}
-
-/** Re-renders when a pin check starts or ends, for a paint that holds while it runs. */
-export function useVerifyingPin(
-  accountId: string,
-  projectId: string,
-  pin: DraftPin | undefined,
-): boolean {
-  return useSyncExternalStore(
-    (listener) => subscribe(accountId, projectId, listener),
-    () => (pin ? isVerifyingPin(projectId, pin) : false),
-    () => false,
   );
 }

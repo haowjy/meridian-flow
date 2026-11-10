@@ -3,11 +3,13 @@
  * the pinned owner's draft list, and the Work scope's list for the version chip.
  *
  * ```text
- * the pinned owner's list not loaded, or a pin being checked → pending (never Live first)
- * pin set and its item is listed                              → that draft
- * pin set and a fresh read lacks it                           → the pin goes; continue
- * a draft-created document                                    → its owner's draft
- * otherwise                                                   → Live
+ * pin set, its owner's list not loaded        → pending (never Live first)
+ * pin set, the list read failed               → failed (shown on the document, the pin kept)
+ * pin set and its item is listed              → that draft
+ * pin set and the list lacks its item         → pending, until a fresh read also lacks it and
+ *                                               the pin goes (`verifyPin`); then continue
+ * a draft-created document                    → its owner's draft
+ * otherwise                                   → Live
  * ```
  *
  * The scope never chooses a draft: a document opens on Live, and `scopeDraft` only lets the chip
@@ -21,7 +23,6 @@ import {
   type DocumentView,
   type DraftPin,
   useDocumentView,
-  useVerifyingPin,
   verifyPin,
 } from "@/client/project-shell/document-views";
 import { unwrapListQuery } from "@/client/query/list-query";
@@ -31,8 +32,8 @@ import { useAccountId } from "./context/account-feature-context";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
 
 export type DocumentPaint = {
-  showing: "pending" | "draft" | "live";
-  /** The draft painted; null while pending or on Live. */
+  showing: "pending" | "failed" | "draft" | "live";
+  /** The draft painted; null unless `showing` is "draft". */
   draft: DraftPin | null;
   /** The painted draft's owner is not the scope's. */
   outOfScope: boolean;
@@ -80,7 +81,6 @@ export function useDocumentPaint(projectId: string, document: ContextTab | null)
     pin && pin.ownerKey !== scopeOwnerKey ? pin.ownerKey : null,
   );
   const pinList = pin && pin.ownerKey === scopeOwnerKey ? scopeRows : pinRows;
-  const checking = useVerifyingPin(accountId, projectId, pin);
   const pinListed = pin ? pinList.rows.some((row) => row.itemKey === pin.itemKey) : false;
   const pinMissing = pin !== undefined && pinList.status === "ready" && !pinListed;
 
@@ -104,9 +104,13 @@ export function useDocumentPaint(projectId: string, document: ContextTab | null)
       outOfScope: draft.ownerKey !== scopeOwnerKey,
     });
     if (pin) {
-      if (pinList.status === "loading" || (checking && !pinListed))
-        return { ...base, showing: "pending", draft: null, outOfScope: false };
       if (pinListed) return painted(pin);
+      return {
+        ...base,
+        showing: pinList.status === "failed" ? "failed" : "pending",
+        draft: null,
+        outOfScope: false,
+      };
     }
     if (document && isDraftOnly(document)) {
       const ownerKey =
@@ -117,15 +121,5 @@ export function useDocumentPaint(projectId: string, document: ContextTab | null)
       if (ownerKey && entry) return painted({ ownerKey, itemKey: entry.itemKey });
     }
     return { ...base, showing: "live", draft: null, outOfScope: false };
-  }, [
-    scopeOwnerKey,
-    scopeRow,
-    view,
-    pin,
-    pinList.status,
-    checking,
-    pinListed,
-    document,
-    activeWorkId,
-  ]);
+  }, [scopeOwnerKey, scopeRow, view, pin, pinList.status, pinListed, document, activeWorkId]);
 }
