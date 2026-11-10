@@ -11,7 +11,6 @@
  */
 
 import { Trans } from "@lingui/react/macro";
-import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -47,6 +46,8 @@ export type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }
 export type ContextDocumentHostProps = {
   projectId: string;
   container: "editor" | "dock";
+  /** The Editor's own Work (not the shown review's): a launch into it is matched against this. */
+  editorWorkId?: string | null;
   tab: EditableContextTab;
   /** False binds the session but paints no editor: a warm tab evicted from the mounted set. */
   mountEditor?: boolean;
@@ -69,6 +70,7 @@ export type ContextDocumentHostProps = {
 export function ContextDocumentHost({
   projectId,
   container,
+  editorWorkId = null,
   tab,
   mountEditor = true,
   shown = true,
@@ -86,7 +88,7 @@ export function ContextDocumentHost({
   const availabilityRevision = resourceAvailabilityRevision(resourceProjection, tab.documentId);
   const requestedReview = useRequestedReview({
     container,
-    editorWorkId: workIdOfDraftOwnerKey(controller.ownerKey),
+    editorWorkId,
     activeScheme: tab.kind === "tracked" ? tab.scheme : null,
     documentId: shown ? tab.documentId : null,
   });

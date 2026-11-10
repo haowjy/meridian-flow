@@ -37,6 +37,7 @@ import {
 } from "./routing/ProjectNavigationContext";
 import type { ProjectRouteMask } from "./routing/ProjectRouteBoundary";
 import type { NavigationOptions } from "./routing/project-route";
+import { openDocumentInEditor } from "./routing/use-open-document-in-editor";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ContextViewerSurfaceControllerProps = {
@@ -277,6 +278,11 @@ export function ContextViewerSurfaceController({
         rootThreadId: tab.rootThreadId,
         documentId,
       });
+      return;
+    }
+    // A pinned review is part of the tab's address: selecting the tab must write it back.
+    if (tab.reviewPin) {
+      void openDocumentInEditor(onOpenContextTarget, tab, { review: tab.reviewPin });
       return;
     }
     void onOpenContextTarget(

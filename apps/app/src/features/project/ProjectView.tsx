@@ -233,7 +233,7 @@ export function ProjectView(props: ProjectViewProps) {
   useContextCatalogWake(props.projectId, repairColdWork);
   // The removed-documents notice sits in Write's tab strip and in Chat's dock header.
   const selectedDocumentId = useSelectedDocumentId(props.projectId);
-  useRemovedNoticeLifetime(props.projectId, "editor", {
+  useRemovedNoticeLifetime(props.projectId, {
     key: JSON.stringify([
       props.activeScreen,
       props.activeContextScheme,

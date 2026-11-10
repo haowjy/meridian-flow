@@ -59,7 +59,7 @@ export function DockHeader({
             </PaneTitle>
             {/* The header's free end holds the notice for a document the dock closed. */}
             <RemovedNoticeSlot>
-              <RemovedDocumentChip projectId={projectId} surface="editor" />
+              <RemovedDocumentChip projectId={projectId} />
             </RemovedNoticeSlot>
           </>
         ) : null}
