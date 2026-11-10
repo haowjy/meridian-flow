@@ -1,9 +1,5 @@
 # Meridian Flow — Agent Instructions
 
-> **v3 full-stack rebuild.** TypeScript with Yjs + TipTap, Drizzle over Postgres,
-> WorkOS AuthKit, and credits-only billing. There are no real users or data yet:
-> change schemas freely, delete unused code, add no compatibility shims.
-
 ## Mission
 
 **Writers should spend their time writing, not fighting their tools.** The
@@ -23,8 +19,9 @@ no longer serves writers, propose the change to the owner as its own step, never
 side effect of getting a task to pass. How the code keeps each one, what checks it and
 where it falls short: [.context/invariants.md](.context/invariants.md).
 
-- **Migrations lose no data.** Every migration is safe on a populated database and none
-  relies on empty tables: a writer's manuscript is the product.
+- **Writer data survives.** Nothing a writer saved is lost or broken in production, by a
+  release, a migration or a deploy: a writer's manuscript is the product. Work as if
+  production is full of it.
 - **Text converges.** Every copy of a document's text converges, and no accepted edit is
   lost in the merge: the writer and the model edit the same document at once.
 - **Writer text stays out of logs and diagnostics:** it is unpublished, private work.
