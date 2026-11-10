@@ -1,5 +1,6 @@
 /** Publish an authorized address into the workspace; the document host owns live-session binding. */
 import { contextOwner, type DocumentAddressResult } from "@meridian/contracts/protocol";
+import { resourceForDocumentIdentity } from "@meridian/resource-replica";
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
@@ -10,8 +11,10 @@ import {
   useContextTabs,
   useContextTabsActions,
 } from "@/client/stores";
+import { useAccountResourceProjection } from "../context/account-feature-context";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { contextTabFromFile } from "../context/context-tab-from-file";
+import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { canonicalDocumentAddress, canonicalReviewTabPatch } from "./document-address-canonical";
 import { addressReviewOwner } from "./document-address-review";
 import { mergeLocalResourceState } from "./local-document-address";
@@ -25,6 +28,36 @@ export type AddressAdmission = {
   href: string;
   issue: ProjectRouteIssue | undefined;
 };
+
+/**
+ * The address stays on a removed document, and its lookup may still hold the answer from
+ * before the removal. Admission must not install the tab again from that answer: the removal
+ * closes it at once, in a loop. Two things show the answer is stale. The removal fence names
+ * the document until a read taken after the removal arrives (a restore invalidates the
+ * lookup). Then the replica's terminal record, which outlives the restore
+ * until the catalog republishes the document.
+ *
+ * A document the workspace still holds a tab for is exempt: admission does nothing for it, and
+ * a draft held over a document deleted live keeps painting.
+ */
+export function useAddressResultAfterRemoval(
+  projectId: string,
+  result: DocumentAddressResult | undefined,
+  updatedAt: number,
+  held: (documentId: string) => boolean,
+): DocumentAddressResult | undefined {
+  const { removalFence } = useContextRemovalProject(projectId);
+  const { records } = useAccountResourceProjection(projectId);
+  const fencedAt = useRef<number | null>(null);
+  const documentId = result && result.kind !== "unavailable" ? result.document.documentId : null;
+  const fenced = documentId !== null && removalFence?.removedDocumentIds.includes(documentId);
+  if (!fenced) fencedAt.current = null;
+  else fencedAt.current ??= Date.now();
+  if (documentId === null || held(documentId)) return result;
+  const terminal =
+    resourceForDocumentIdentity(records, documentId)?.resource.lifecycle.kind === "terminal";
+  return terminal || (fenced && updatedAt <= (fencedAt.current ?? 0)) ? undefined : result;
+}
 
 export function ProjectAddressDocument({
   projectId,

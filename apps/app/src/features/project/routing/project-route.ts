@@ -96,10 +96,7 @@ export type ContextRouteRepair = {
     scheme: ProjectContextTreeScheme;
     path: string;
   };
-  expectedSelection:
-    | { kind: "removed-binding"; revision: number; documentId: string }
-    | { kind: "rejected-candidate"; revision: number }
-    | { kind: "materialized-local"; revision: number; documentId: string };
+  expectedSelection: { kind: "materialized-local"; revision: number; documentId: string };
   next: ContextRouteRequest | { kind: "clear" };
 };
 

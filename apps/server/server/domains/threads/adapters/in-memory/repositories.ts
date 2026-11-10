@@ -1355,11 +1355,6 @@ export function createInMemoryRepositories(
         .sort((a, b) => b.lastTouchedAt.localeCompare(a.lastTouchedAt))
         .map((row) => ({ ...row }));
     },
-    async listThreadIdsByDocument(documentId) {
-      return [...threadDocuments.values()]
-        .filter((row) => row.documentId === documentId)
-        .map(({ threadId }) => threadId);
-    },
   };
 
   const documentTouchRepo: TurnDocumentTouchRepository = {
@@ -1378,9 +1373,24 @@ export function createInMemoryRepositories(
       return { ...row };
     },
     async listByThread(threadId, limit) {
+      const family = new Set<ThreadId>([threadId]);
+      for (let grew = true; grew; ) {
+        grew = false;
+        for (const thread of threads.values()) {
+          if (
+            thread.kind !== "primary" &&
+            thread.parentThreadId &&
+            family.has(thread.parentThreadId as ThreadId) &&
+            !family.has(thread.id as ThreadId)
+          ) {
+            family.add(thread.id as ThreadId);
+            grew = true;
+          }
+        }
+      }
       const latestByDocument = new Map<string, TurnDocumentTouch>();
       for (const row of documentTouches.values()) {
-        if (row.threadId !== threadId) continue;
+        if (!family.has(row.threadId)) continue;
         const existing = latestByDocument.get(row.documentId);
         if (!existing || row.touchedAt >= existing.touchedAt) {
           latestByDocument.set(row.documentId, row);
@@ -1389,16 +1399,11 @@ export function createInMemoryRepositories(
       const rows = [...latestByDocument.values()].sort((a, b) =>
         b.touchedAt.localeCompare(a.touchedAt),
       );
-      return (typeof limit === "number" ? rows.slice(0, limit) : rows).map((row) => ({ ...row }));
-    },
-    async listThreadIdsByDocument(documentId) {
-      return [
-        ...new Set(
-          [...documentTouches.values()]
-            .filter((row) => row.documentId === documentId)
-            .map(({ threadId }) => threadId),
-        ),
-      ];
+      return (typeof limit === "number" ? rows.slice(0, limit) : rows).map((row) => ({
+        ...row,
+        threadId,
+        edited: false,
+      }));
     },
   };
 

@@ -104,6 +104,7 @@ const expectedSuites = [
   "apps/server/server/domains/threads/adapters/drizzle/thread-liveness.db.test.ts",
   "apps/server/server/domains/threads/thread-event-hub.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/thread-activity.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/document-related-reader.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/thread-work-membership-races.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/execution-report-repository.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/model-response-cache-prediction.db.test.ts",

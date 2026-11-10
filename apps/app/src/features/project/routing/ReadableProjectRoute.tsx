@@ -77,7 +77,11 @@ import {
   reconcileDocumentAddress,
   resolveLocalDocumentAddress,
 } from "./local-document-address";
-import { type AddressAdmission, ProjectAddressDocument } from "./ProjectAddressDocument";
+import {
+  type AddressAdmission,
+  ProjectAddressDocument,
+  useAddressResultAfterRemoval,
+} from "./ProjectAddressDocument";
 import { ProjectNavigationProvider } from "./ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import {
@@ -530,6 +534,12 @@ function ReadableProjectDestination({
     reconciledDocumentAddress.view,
   );
   const documentResult = gated.result;
+  const admissibleResult = useAddressResultAfterRemoval(
+    projectId,
+    documentResult,
+    documentLookup.dataUpdatedAt,
+    (documentId) => workspaceTabs.some((tab) => tab.documentId === documentId),
+  );
   const routeBinding = addressRouteBinding(
     addressBinding,
     documentResult,
@@ -578,7 +588,10 @@ function ReadableProjectDestination({
             closeState.closed)
           ? "loading"
           : "unavailable"
-        : undefined;
+        : // An answer the removal state outlives says the document is gone, without a re-read.
+          admissibleResult === undefined
+          ? "unavailable"
+          : undefined;
   // A review address names its document: when it is unavailable because the
   // document was removed, it says so instead. A plain path names no document
   // once nothing lives there, so it stays "unavailable".
@@ -917,7 +930,7 @@ function ReadableProjectDestination({
               entryKey={location.state.__TSR_key ?? ""}
               address={address}
               // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
-              result={documentResult}
+              result={admissibleResult}
               localFile={reconciledDocumentAddress.localFile}
               reviewItemKey={reviewItemKey}
               draftOnly={draftOnly}
@@ -958,7 +971,6 @@ function ReadableProjectDestination({
                   update,
                   relocated,
                   openContext,
-                  goEditor: () => void go(toDestination({ kind: "editor" }), { replace: true }),
                 }),
             }}
             activeLocalDocumentId={editorDocument.localDocumentId}
