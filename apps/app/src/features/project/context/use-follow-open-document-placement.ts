@@ -67,7 +67,7 @@ export function useFollowOpenDocumentPlacement(input: {
         // A terminal resource has already disappeared from the live catalog. Close its
         // represented tab through the same removal path as an optimistic disappearance;
         // closeVanished keeps live drafts open while ordinary tabs leave silently.
-        settleWriterClose(contextRemoval.closeVanished(input.projectId, tab));
+        contextRemoval.closeVanished(input.projectId, tab);
         void availability
           .acceptCommittedDelete({
             projectId: input.projectId,
@@ -79,7 +79,7 @@ export function useFollowOpenDocumentPlacement(input: {
         continue;
       }
       if (projection.kind === "removed") {
-        settleWriterClose(contextRemoval.closeVanished(input.projectId, tab));
+        contextRemoval.closeVanished(input.projectId, tab);
         continue;
       }
       // A route is the tab's only while the selection is bound to it there; a URL the writer

@@ -9,7 +9,6 @@ import {
   workingSetRouteIdentityEquals,
 } from "@/client/working-set";
 import {
-  applyContextRepairIfCurrent,
   type ContextRouteRequest,
   contextRouteMatchesSearch,
   openContextRouteSearch,
@@ -20,10 +19,8 @@ import type {
   AppliedAvailabilityCommand,
   ContextRemovalProjectSnapshot,
 } from "./context-removal-coordinator";
-import { planContextRemoval, routeTargetForTab, tabForTarget } from "./context-removal-planner";
+import { planContextRemoval, routeTargetForTab } from "./context-removal-planner";
 import {
-  beginSelection,
-  bindSelection,
   type ContextRouteSelection,
   leaveSelection,
   reduceRepresentedRemoval,
@@ -228,9 +225,6 @@ export function planContextAvailabilityBatch(
     });
     if (removal.outcome.kind !== "noop") tabs = [...removal.outcome.remaining];
     if (selectedDocumentId === id) selectedDocumentId = null;
-    if (removal.nextSelectedTabId && input.project.activeWorkId) {
-      selectedDocumentId = removal.nextSelectedTabId;
-    }
     const exactRecentRoutes = recentRoutes.filter((route) => route.documentId === id);
     const workingSet = {
       ...removal.workingSet,
@@ -255,48 +249,6 @@ export function planContextAvailabilityBatch(
         locator: routedContinuity ? routedContinuity.locator : (removalFence?.locator ?? null),
         removedDocumentIds: [...new Set([...(removalFence?.removedDocumentIds ?? []), id])],
       };
-    }
-    const repairTarget = removal.routeRepairTarget;
-    if (routeSearch && repairTarget && transition.planning.current.kind === "proven-removed") {
-      const current = transition.planning.current;
-      routeSearch = applyContextRepairIfCurrent(
-        {
-          expectedSearch: {
-            screen: "context",
-            work: routeSearch.work,
-            chat: routeSearch.chat,
-            scheme: current.locator.scheme,
-            path: current.locator.path,
-          },
-          expectedSelection: {
-            kind: "removed-binding",
-            revision: current.revision,
-            documentId: current.identity.documentId,
-          },
-          next: repairTarget,
-        },
-        routeSearch,
-      );
-    }
-    if (repairTarget && transition.planning.current.kind === "proven-removed") {
-      if ("kind" in repairTarget) {
-        selection = leaveSelection(selection).selection;
-      } else {
-        const candidate = beginSelection(selection, repairTarget).selection;
-        const fallback = tabForTarget(tabs, repairTarget);
-        const bound = fallback
-          ? bindSelection(
-              candidate,
-              candidate.revision,
-              {
-                kind: fallback.kind === "new" ? "local" : "server",
-                documentId: fallback.documentId,
-              },
-              "answer",
-            )
-          : null;
-        selection = bound?.selection ?? candidate;
-      }
     }
     sessionEffects.push({
       commandId: command.commandId,

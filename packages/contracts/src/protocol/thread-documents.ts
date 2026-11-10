@@ -24,10 +24,30 @@ export interface ThreadRecentDocumentItem {
   kind: ThreadDocumentKind;
   touchedAt: string;
   updatedAt: string;
+  /** The chat or one of its subagents made an agent write to this document (not a read). */
+  edited: boolean;
 }
 
 export interface ListThreadRecentDocumentsResponse {
   documents: ThreadRecentDocumentItem[];
+}
+
+/**
+ * The chats that worked on a document, and the pages it links to. `chats` are top-level chats of
+ * the project the reader owns, newest first, at most 20; a subagent's work is credited to the
+ * chat that spawned it, a fork's to the fork.
+ */
+export interface DocumentRelated {
+  chats: {
+    chatId: string;
+    title: string;
+    workId: string | null;
+    touchedAt: string;
+    /** An agent write by this chat or its subagents is recorded; undo and revert do not count. */
+    edited: boolean;
+  }[];
+  /** Pages this document's Live text links to, with how often. */
+  mentions: { documentId: string; occurrences: number }[];
 }
 
 /**

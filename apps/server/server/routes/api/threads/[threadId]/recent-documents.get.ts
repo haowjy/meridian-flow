@@ -56,6 +56,7 @@ export default defineEventHandler(async (event): Promise<ListThreadRecentDocumen
           mimeType: row.mimeType,
           kind: classification.kind === "tracked" ? "tracked" : "binary",
           touchedAt: touch.touchedAt,
+          edited: touch.edited,
           updatedAt: row.updatedAt,
         },
       ];

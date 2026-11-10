@@ -4,7 +4,6 @@ import "fake-indexeddb/auto";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
-import { applyContextRemovalSearchUpdate } from "./context-removal-route-repair";
 import { createEditorDocumentCommand } from "./editor-document-command";
 import { parseProjectAddress } from "./project-address";
 import { createProjectNavigation } from "./project-navigation";
@@ -120,55 +119,5 @@ describe("review launch navigation", () => {
     );
     expect(result.kind).toBe("applied");
     expect(history.location.href).toContain("item=branch-1");
-  });
-
-  describe("Editor address repair", () => {
-    const itemUrl = (path: string) =>
-      `/p/${projectId}/editor/manuscript/${path}?owner=work:${workId}&item=draft-1&change=c1`;
-    const repair = (
-      path: string,
-      next: string,
-      relocated: { documentId: string } | undefined,
-      addressDocumentId?: string,
-    ) => {
-      const { open, history } = setup(
-        vi.fn(async () => ({ kind: "failed" as const })),
-        itemUrl(path),
-        addressDocumentId,
-      );
-      applyContextRemovalSearchUpdate({
-        search: { screen: "context", scheme: "manuscript", path, work: workId },
-        update: (latest) => ({ ...latest, path: next }),
-        relocated,
-        openContext: open,
-        goEditor: () => undefined,
-      });
-      return history;
-    };
-
-    it("a fallback document opens without the item, even one the draft list still holds", async () => {
-      const history = repair("gone.md", "fallback.md", undefined, "doc-1");
-      await vi.waitFor(() => expect(history.location.href).toContain("fallback.md"));
-      expect(history.location.href).not.toContain("item=");
-    });
-
-    it("a fallback to a draft-only tab opens that tab's own review item, not the removed one's", async () => {
-      const tab = {
-        kind: "tracked" as const,
-        documentId: "doc-c",
-        scheme: "manuscript" as const,
-        path: "fallback.md",
-        name: "fallback.md",
-        editable: true,
-        filetype: "markdown" as const,
-        schemaType: "document" as const,
-        reviews: { [`work:${workId}`]: { itemKey: "branch-c:doc-c", tabInstanceToken: "token" } },
-      } as never;
-      useContextTabsStore.getState().openTab(projectId, tab);
-      const history = repair("gone.md", "fallback.md", undefined);
-      await vi.waitFor(() => expect(history.location.href).toContain("fallback.md"));
-      expect(history.location.href).toContain("item=branch-c");
-      expect(history.location.href).not.toContain("item=branch-1");
-    });
   });
 });
