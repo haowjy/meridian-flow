@@ -23,4 +23,4 @@ Gestures, ref assignment and folder follow:
 
 [link-identity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-identity.md
 [link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-following.md
-[link-chips]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/link-chips.md
+[link-chips]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/links.md

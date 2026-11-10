@@ -75,4 +75,4 @@ forks/subagents at the first-chat handle. Named-Work Scratch remains the
 Work's. A writer rebind writes a Work-switch notice and never moves notes or
 rebakes the prompt.
 
-[kb-frozen-prefix]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/frozen-request-prefix.md
+[kb-frozen-prefix]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/agents/request-prefix.md

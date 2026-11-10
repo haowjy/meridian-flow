@@ -147,5 +147,5 @@ in this repository.
 
 [meridian-flow-docs]: https://github.com/haowjy/meridian-flow-docs
 [trust-llm]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/trust-the-llm-mission.md
-[trust-user]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/trust-the-user.md
+[trust-user]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/copy-and-feedback.md
 [work-decisions]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/work/index.md

@@ -4,7 +4,7 @@ Nothing retries a failed reply in the background, so the writer retries it from 
 reply itself. Card copy and lifetimes are in the
 [Chat Failures catalog](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/chat-failures.md#chat-cards);
 what forgetting does is in
-[A Failed Attempt Is Forgotten](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/turns/forgotten-failed-attempt.md).
+[A Failed Attempt Is Forgotten](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/turns.md).
 
 ## Who decides
 

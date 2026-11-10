@@ -147,6 +147,6 @@ bytes or inclusion state.
 [kb-run-prep]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/run-preparation-protocol.md
 [kb-run-identity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/run-identity.md
 [kb-run-state]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/client/run-state-record.md
-[kb-stop]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/composer/stop-hands-back-waiting-messages.md
-[kb-graph]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/turns/conversation-and-graph-reads.md
-[kb-forget]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/turns/forgotten-failed-attempt.md
+[kb-stop]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/composer-and-queue.md
+[kb-graph]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/turns.md
+[kb-forget]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/turns.md

@@ -1,9 +1,9 @@
 # Turn rhythm and settled actions
 
 The decisions are
-[Chat Thread Rhythm](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/chat-thread-rhythm.md)
+[Chat Thread Rhythm](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/transcript.md)
 and
-[Finished Turns Carry Actions](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/turns/finished-turn-actions.md).
+[Finished Turns Carry Actions](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/turns.md).
 
 ## Spacing
 

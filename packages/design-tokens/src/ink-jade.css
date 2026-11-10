@@ -8,7 +8,7 @@
  * own material in shadow, not a second color. Light mode uses one warm ink;
  * color identity lives in accents, never in walls. Canonical values are the
  * roles below, with shipped dark overrides in `themes.css`. Design rationale:
- * https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/earthen-value-ladder-shell.md
+ * https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/design-language-foundations.md
  *
  * Accent semantics: jade = "do/go" (actions, links, focus, send/save);
  * cinnabar = the scarce seal for favorite/pinned punctuation and the brand

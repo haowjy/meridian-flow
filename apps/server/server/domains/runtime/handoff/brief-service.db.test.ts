@@ -2,7 +2,7 @@
  * PostgreSQL contract for an independent brief settling outside the source run.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - destination-claim-gated seed settlement, Retry, and orphan repair (kb/decisions/agents/conversations/handoff-seed.md)
+ * - destination-claim-gated seed settlement, Retry, and orphan repair (kb/wiki/architecture/agents/conversations.md)
  */
 
 import { eq } from "drizzle-orm";
