@@ -49,6 +49,8 @@ export async function restoreTrashedDocuments(
         queryKey: projectQueryKeys.trashedDocument(projectId, documentId),
         exact: true,
       });
+    // An address left on the document while it was trashed answers "unavailable" until re-read.
+    void queryClient.invalidateQueries({ queryKey: projectQueryKeys.documentAddresses(projectId) });
   }
   if ([...outcomes.values()].some(({ kind }) => kind === "superseded"))
     await queryClient.invalidateQueries({ queryKey: projectQueryKeys.documentTrash(projectId) });
