@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type LucideIcon, Plus, Trash2 } from "lucide-react";
+import { ListChecks, type LucideIcon, Plus, Trash2 } from "lucide-react";
 import {
   type ComponentType,
   createContext,
@@ -12,6 +12,7 @@ import {
 } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
+import { Chip } from "@/components/ui/chip";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -21,6 +22,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { role } from "@/components/ui/roles";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  useWorkBranchCommands,
+  type WorkBranchCommands,
+} from "@/features/draft-review/useWorkBranchCommands";
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { cn } from "@/lib/utils";
@@ -32,6 +37,7 @@ import type { MoveArea } from "../../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../../context/entry-drag/use-entry-list";
 import { useOptionalTreeCreation } from "../../context/TreeCreationProvider";
 import { type FilesRoute, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
+import { type ChangesScope, ChangesSource, useChangesScope } from "./ChangesSource";
 import type { SourceDrop } from "./SourcePane";
 import { ALL_SOURCES, type SourceKey, useSidebarTabs } from "./sidebar-tabs-store";
 import { TrashSource } from "./TrashSource";
@@ -54,6 +60,9 @@ type WriteSources = {
   onPicked?: () => void;
   catalogs: Record<TreeKey, CatalogState>;
   scratch: ReturnType<typeof useChatScratch>;
+  changes: ChangesScope;
+  /** Held here, not in the pane, so a Discard's Undo outlives a look at another tab. */
+  changesCommands: WorkBranchCommands;
 };
 
 const WriteSourcesContext = createContext<WriteSources | null>(null);
@@ -70,6 +79,10 @@ function useWriteSources(): WriteSources {
  */
 type Source = {
   label: () => string;
+  /** The tab's name when it says more than the label (whose changes). */
+  title?: (sources: WriteSources) => string;
+  /** A count on the tab of what waits on the writer; 0 shows none. */
+  badge?: (sources: WriteSources) => number;
   icon: LucideIcon;
   useDrop: (reveal?: () => void) => SourceDrop;
   Body: ComponentType<{ drop: SourceDrop }>;
@@ -136,7 +149,35 @@ const SOURCES: Record<SourceKey, Source> = {
       return <TrashSource projectId={projectId} onPicked={onPicked} drop={drop} />;
     },
   },
+  changes: {
+    label: () => t`Changes`,
+    title: ({ changes }) => changes.heading,
+    badge: ({ changes }) => changes.count,
+    icon: ListChecks,
+    useDrop: () => IDLE_DROP,
+    Body: () => {
+      const { projectId, changes, changesCommands, activeScheme, activePath, onPicked } =
+        useWriteSources();
+      return (
+        <ChangesSource
+          // A question asked of one Work must not be answered for the next one picked.
+          key={changes.ownerKey}
+          projectId={projectId}
+          scope={changes}
+          controller={changesCommands}
+          isOpen={(file) =>
+            file.contextLocation?.scheme === activeScheme &&
+            file.contextLocation?.path === activePath
+          }
+          onPicked={onPicked}
+        />
+      );
+    },
+  },
 };
+
+/** A source nothing is dropped on. */
+const IDLE_DROP: SourceDrop = { dropProps: {}, dropState: "idle" };
 
 function isSourceKey(key: string): key is SourceKey {
   return Object.hasOwn(SOURCES, key);
@@ -146,7 +187,7 @@ function isSourceKey(key: string): key is SourceKey {
  * Write mode's sidebar, and the phone drawer's: one source at a time behind a
  * strip of tabs, so each list gets the full height. Tabs are icons named on
  * hover; the list names its source. + picks which tabs the strip shows. The
- * open document's source becomes the shown one when it changes. The strip and
+ * open document's source becomes the shown one when it changes, unless Changes is shown. The strip and
  * every source are one list: one selection, and a row dragged anywhere in the
  * sidebar drops on any tab or pane.
  */
@@ -159,25 +200,41 @@ export function SourcesBody({
   activePath,
   onSelectFile,
   onPicked,
-}: Omit<WriteSources, "catalogs" | "scratch"> & {
+}: Omit<WriteSources, "catalogs" | "scratch" | "changes" | "changesCommands"> & {
   chatThreadId: string | null;
   contextLive: boolean;
 }) {
-  const shown = useSidebarTabs((state) => state.shown);
+  const chosen = useSidebarTabs((state) => state.shown);
   useEffect(() => {
     void useSidebarTabs.persist.rehydrate();
   }, []);
   const [picked, setPicked] = useState<SourceKey>("manuscript");
+  // Changes stays while it is on show: it is the list the writer opens drafts from, whatever
+  // tree they live in. `picked` is Changes only while it is shown (see below).
   useEffect(() => {
-    if (activeScheme && isSourceKey(activeScheme)) setPicked(activeScheme);
+    if (activeScheme && isSourceKey(activeScheme))
+      setPicked((current) => (current === "changes" ? current : activeScheme));
   }, [activeScheme]);
   // A new file or folder asked for elsewhere (the empty Editor) appears in its source.
   const creatingScheme = useOptionalTreeCreation()?.request?.scheme;
   useEffect(() => {
     if (creatingScheme && isSourceKey(creatingScheme)) setPicked(creatingScheme);
   }, [creatingScheme]);
-  // A tab the writer hid can't stay selected: the strip's first tab shows instead.
+  const changes = useChangesScope(projectId, chatThreadId);
+  // Under None, Changes is offered only while the chat on screen has drafts, but it stays
+  // while it is the pane on show, so emptying it keeps the last command's Undo in view.
+  const shown = useMemo(
+    () => chosen.filter((key) => key !== "changes" || changes.offered || picked === "changes"),
+    [chosen, changes.offered, picked],
+  );
+  // A tab that left the strip can't stay selected: the strip's first tab shows, and is picked.
   const source = shown.includes(picked) ? picked : (shown[0] ?? "manuscript");
+  if (source !== picked) setPicked(source);
+  const changesCommands = useWorkBranchCommands({
+    projectId,
+    work: changes.work,
+    ownerKey: changes.ownerKey,
+  });
 
   const catalogs = useContextCatalogViews(projectId, EDITOR_CONTEXT_SCHEMES, {
     workId: editorWorkId,
@@ -219,15 +276,28 @@ export function SourcesBody({
       onPicked,
       catalogs,
       scratch,
+      changes,
+      changesCommands,
     }),
-    [projectId, editorWorkId, activeScheme, activePath, onSelectFile, onPicked, catalogs, scratch],
+    [
+      projectId,
+      editorWorkId,
+      activeScheme,
+      activePath,
+      onSelectFile,
+      onPicked,
+      catalogs,
+      scratch,
+      changes,
+      changesCommands,
+    ],
   );
 
   return (
     <WriteSourcesContext.Provider value={value}>
       <EntryList list={list} files={files}>
         <div className="flex min-h-0 flex-1 flex-col">
-          <SourceTabs shown={shown} source={source} onSelect={setPicked} />
+          <SourceTabs chosen={chosen} shown={shown} source={source} onSelect={setPicked} />
           <SourceView key={source} source={source} />
         </div>
       </EntryList>
@@ -243,10 +313,14 @@ function SourceView({ source }: { source: SourceKey }) {
 }
 
 function SourceTabs({
+  chosen,
   shown,
   source,
   onSelect,
 }: {
+  /** The writer's choice, which the + menu shows and changes. */
+  chosen: readonly SourceKey[];
+  /** The tabs offered now: the choice, less Changes when it has nothing to offer. */
   shown: readonly SourceKey[];
   source: SourceKey;
   onSelect: (key: SourceKey) => void;
@@ -289,14 +363,16 @@ function SourceTabs({
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuLabel>{t`Tabs`}</DropdownMenuLabel>
           {ALL_SOURCES.map((key) => {
-            const on = shown.includes(key);
+            const on = chosen.includes(key);
             const Icon = SOURCES[key].icon;
             return (
               <DropdownMenuCheckboxItem
                 key={key}
                 checked={on}
-                // The last tab stays: the sidebar always shows a list.
-                disabled={on && shown.length === 1}
+                // The last tab stays: the sidebar always shows a list, and Changes may be hidden.
+                disabled={
+                  on && key !== "changes" && chosen.every((k) => k === key || k === "changes")
+                }
                 onSelect={(event) => {
                   event.preventDefault();
                   toggle(key);
@@ -315,7 +391,7 @@ function SourceTabs({
 
 /**
  * A tab and the strip's + button: 28px, 36px where the pointer is a finger.
- * The default five tabs and + still fit a default-width sidebar without scrolling the strip.
+ * The default six tabs and + still fit a default-width sidebar without scrolling the strip.
  */
 const TAB_BUTTON =
   "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors [@media(hover:none)]:size-9 coarse:size-9";
@@ -330,7 +406,10 @@ function SourceTab({
   active: boolean;
   onSelect: () => void;
 }) {
-  const { label, icon: Icon, useDrop } = SOURCES[source];
+  const { label, title, badge, icon: Icon, useDrop } = SOURCES[source];
+  const sources = useWriteSources();
+  const name = title?.(sources) ?? label();
+  const count = badge?.(sources) ?? 0;
   const drop = useDrop(onSelect);
   const self = useRef<HTMLButtonElement>(null);
   // The strip scrolls when its tabs outgrow the sidebar: keep the selected one in view.
@@ -345,11 +424,12 @@ function SourceTab({
           type="button"
           role="tab"
           aria-selected={active}
-          aria-label={label()}
+          aria-label={count > 0 ? t`${name}, ${count} to review` : name}
           onClick={onSelect}
           {...drop.dropProps}
           className={cn(
             TAB_BUTTON,
+            "relative",
             drop.dropState === "over"
               ? role.dropTarget
               : active
@@ -358,9 +438,14 @@ function SourceTab({
           )}
         >
           <Icon className={sidebarIcon.tab} aria-hidden />
+          {count > 0 ? (
+            <Chip kind="badge" aria-hidden className="-top-1 -right-1 absolute">
+              {count}
+            </Chip>
+          ) : null}
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">{label()}</TooltipContent>
+      <TooltipContent side="bottom">{name}</TooltipContent>
     </Tooltip>
   );
 }

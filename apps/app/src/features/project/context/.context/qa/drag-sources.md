@@ -47,7 +47,7 @@ tree's own drag is [Row selection and drag](../../../../../../../../docs/qa/row-
 7. **Draft tab, receipt and change row.** Open `Draftdoc` and press Review: the tab now shows the draft.
    Drag the tab to Templates, Copy: `./mf doc read user://Templates/Draftdoc` reads the draft text, and the
    live document is unchanged. The leaf crumb (the filename) does the same. A receipt row ("Edited 1
-   document" › Draftdoc, in the chat) and the Work page's Changes to review row copy that Work's draft
+   document" › Draftdoc, in the chat) and the sidebar's Changes row copy that Work's draft
    too. Then rebind the chat to another Work (`./mf api PUT /api/threads/<chat>/work --data
    '{"workId":"<other>"}'`) and copy all three again: each still holds the first Work's draft, never the
    chat's current Work's or the live text. With the ask menu open on the change row, Discard the Work's

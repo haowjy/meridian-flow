@@ -6,7 +6,7 @@
  * The identity row's controls and the phone header are two layouts over this one
  * model, so Apply draft, Discard draft, "No changes left" and the refusal line
  * cannot drift between them. Work-wide Apply all and Discard all belong to the
- * Work page's Changes to review (`WorkChanges`), not here.
+ * sidebar's Changes tab (`ChangesSource`), not here.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -105,7 +105,7 @@ export function useReviewHeader({
   onCloseDraftOnly,
   onOpenDraft,
 }: ReviewHeaderOptions): ReviewHeaderModel {
-  const { controller, files, drafts } = useDraftReview();
+  const { controller, files } = useDraftReview();
   const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
 
   // Only a file with text has a review to move to: a move or delete alone has no draft room.
@@ -160,7 +160,7 @@ export function useReviewHeader({
     next,
     locked,
     // A trashed chat's drafts take no Apply; its notice says how to bring it back.
-    canApply: ready && view.items.length > 0 && !drafts.frozen,
+    canApply: ready && view.items.length > 0 && controller.canApply,
     finished,
     completing,
     commandError,

@@ -380,7 +380,7 @@ document drags as itself and a gone one answers "Some of these items are no long
 | Recent row | the document by id, never the path it was opened at | live |
 | Transcript chip (`TranscriptReference`) | an exact reference the host still resolves; syntax links name no entry | live |
 | Composer chip (`ComposerReferenceMenu`) | its document or folder | live |
-| Receipt row (`TurnEditsReceipt`), Work change row (`WorkChangeFile`) | the document the row represents | `draft` for a draft row: the Work the turn wrote in (the receipt's lineage names it) or the Work the row lists (`draftCopyView`); a row the turn deleted, or a change with no draft text, doesn't drag |
+| Receipt row (`TurnEditsReceipt`), Changes row (`ChangesSource`) | the document the row represents | `draft` for a draft row: the Work the turn wrote in (the receipt's lineage names it) or the Work the row lists (`draftCopyView`); a row the turn deleted, or a change with no draft text, doesn't drag |
 | Uploads entry (`ChatFilesMenu`) | the upload's document | live; the section is a drop target that refuses |
 | Editor link (`LinkSurfaceExtension`) | the entry a link names, once the link's text is the selection | live |
 
