@@ -2261,6 +2261,7 @@ msgid "Couldn't load this file."
 msgstr "Couldn't load this file."
 
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Couldn't load Trash."
 msgstr "Couldn't load Trash."
 
@@ -3403,7 +3404,7 @@ msgid "Import in progress. Show activity"
 msgstr "Import in progress. Show activity"
 
 #. placeholder {0}: destination.name
-#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Import into {0}"
 msgstr "Import into {0}"
 
@@ -3746,6 +3747,7 @@ msgid "Loading signed image URL…"
 msgstr "Loading signed image URL…"
 
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Loading Trash…"
 msgstr "Loading Trash…"
 
@@ -3765,8 +3767,10 @@ msgid "Loading Works…"
 msgstr "Loading Works…"
 
 #: src/features/billing/UsageCard.tsx
+#: src/features/project/chat/ChatScratch.tsx
 #: src/features/project/context/DocumentPath.tsx
 #: src/features/project/context/FolderMenu.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Loading…"
 msgstr "Loading…"
 
@@ -4170,6 +4174,10 @@ msgstr "No files attached in this chat yet."
 msgid "No files in {containerLabel}."
 msgstr "No files in {containerLabel}."
 
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "No files yet."
+msgstr "No files yet."
+
 #: src/core/editor/asset-image-render-state.ts
 msgid "No image has been uploaded to {path} yet."
 msgstr "No image has been uploaded to {path} yet."
@@ -4312,6 +4320,7 @@ msgstr "Nothing here yet"
 #~ msgstr "Nothing here yet."
 
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Nothing in the trash."
 msgstr "Nothing in the trash."
 
@@ -6405,7 +6414,6 @@ msgstr "Top up any time. Extra usage carries over month to month."
 #: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 #: src/features/project/shell/sidebar/TrashSource.tsx
-#: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "Trash"
 msgstr "Trash"
 
