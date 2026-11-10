@@ -9,6 +9,7 @@ export const MAX_MOUNTED_EDITORS = 6;
 
 export type ContextEditorMountHostProps = {
   projectId: string;
+  editorWorkId: string | null;
   /** TRACKED tabs only — viewer tabs are routed elsewhere. */
   trackedTabs: EditableContextTab[];
   /** The currently visible tab id. Must reference a tab in `trackedTabs`. */
@@ -37,6 +38,7 @@ export function pickMountedIds(
 
 export function ContextEditorMountHost({
   projectId,
+  editorWorkId,
   trackedTabs,
   activeTabId,
   active,
@@ -73,6 +75,7 @@ export function ContextEditorMountHost({
       {trackedTabs.map((tab) => (
         <ContextDocumentHost
           container="editor"
+          editorWorkId={editorWorkId}
           key={tab.tabInstanceId ?? tab.documentId}
           projectId={projectId}
           tab={tab}
