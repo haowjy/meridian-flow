@@ -4,7 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import { X } from "lucide-react";
 import { useEffect } from "react";
 
-import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { DocumentChanges } from "@/features/draft-review/DocumentChanges";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
@@ -42,9 +42,9 @@ export function MobileChangeSheet({
           <SheetTitle className="min-w-0 flex-1 truncate text-sm">
             <Trans>Changes</Trans>
           </SheetTitle>
-          <PhoneIconButton aria-label={t`Close the list`} onClick={() => onOpenChange(false)}>
+          <IconButton size="sm" label={t`Close the list`} onClick={() => onOpenChange(false)}>
             <X className="size-5" aria-hidden />
-          </PhoneIconButton>
+          </IconButton>
         </div>
         <SheetDescription className="sr-only">
           <Trans>Tap a change to go to it in the manuscript.</Trans>

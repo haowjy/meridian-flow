@@ -181,7 +181,7 @@ function FilesDropdown({
           aria-label={t`Files`}
           aria-expanded={open}
           aria-haspopup="dialog"
-          className="focus-ring inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-ink-fill hover:text-foreground popup-open:bg-ink-fill-strong popup-open:text-foreground [@media(pointer:coarse)]:min-h-11"
+          className="focus-ring inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-ink-fill hover:text-foreground popup-open:bg-ink-fill-strong popup-open:text-foreground coarse:min-h-11"
         >
           <Paperclip className="size-3.5" aria-hidden />
           <span aria-hidden="true">
@@ -323,24 +323,12 @@ function UploadRow({
           </span>
         </button>
         {canDelete ? (
-          <IconButton
-            size="xs"
-            aria-label={t`Delete ${name}`}
-            title={t`Delete ${name}`}
-            onClick={onDelete}
-            className="[@media(pointer:coarse)]:size-11"
-          >
+          <IconButton size="xs" label={t`Delete ${name}`} onClick={onDelete}>
             <Trash2 className="size-3.5" aria-hidden />
           </IconButton>
         ) : null}
         {onOpen ? (
-          <IconButton
-            size="xs"
-            aria-label={t`Open ${name}`}
-            title={t`Open ${name}`}
-            onClick={onOpen}
-            className="mr-1 [@media(pointer:coarse)]:size-11"
-          >
+          <IconButton size="xs" label={t`Open ${name}`} onClick={onOpen} className="mr-1">
             <PanelRightOpen className="size-3.5" aria-hidden />
           </IconButton>
         ) : null}

@@ -78,8 +78,8 @@ export function FailureCard({
           {onDismiss ? (
             <IconButton
               // At the row's end even when the card is wider than its sentence.
-              className="ml-auto shrink-0 [@media(pointer:coarse)]:-my-2.5 [@media(pointer:coarse)]:size-11"
-              aria-label={t`Dismiss`}
+              className="ml-auto shrink-0 coarse:-my-2.5"
+              label={t`Dismiss`}
               onClick={onDismiss}
             >
               <X aria-hidden className="size-3.5" />

@@ -20,7 +20,7 @@ import {
   useState,
 } from "react";
 import { FailureCard } from "@/components/app/FailureCard";
-import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import type {
   DocumentReference,
   ReferenceTerminalRow,
@@ -679,26 +679,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   event.target.value = "";
                 }}
               />
-              <Button
+              <IconButton
                 type="button"
                 variant="ghost"
-                size="icon-sm"
-                aria-label={t`Attach file`}
+                size="sm"
+                label={t`Attach file`}
                 onClick={() => fileRef.current?.click()}
               >
                 <Paperclip className="size-4" />
-              </Button>
+              </IconButton>
             </>
           ) : null}
 
           {showStop ? (
-            <Button
+            <IconButton
               type="button"
-              size="icon-sm"
+              variant="default"
+              size="sm"
               data-composer-stop=""
               onClick={() => onStop?.()}
               disabled={stopInProgress}
-              aria-label={
+              label={
                 stopInProgress
                   ? t`Stopping`
                   : stopStatus === "failed"
@@ -714,15 +715,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/40 border-t-primary motion-safe:animate-spin"
                 />
               ) : null}
-            </Button>
+            </IconButton>
           ) : null}
           {!showStop ? (
-            <Button
+            <IconButton
               type="button"
-              size="icon-sm"
+              variant="default"
+              size="sm"
               onClick={() => void submit()}
               disabled={!hasContent || submitDisabled || uploadsHeld !== null}
-              aria-label={t`Send message`}
+              label={t`Send message`}
               aria-describedby={submitDisabledReason ? disabledReasonId : undefined}
               className={running ? "relative rounded-full" : "rounded-lg"}
             >
@@ -733,7 +735,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/40 border-t-primary motion-safe:animate-spin"
                 />
               ) : null}
-            </Button>
+            </IconButton>
           ) : null}
           {submitDisabledReason ? (
             <span id={disabledReasonId} className="sr-only">

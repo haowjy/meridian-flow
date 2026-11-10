@@ -186,9 +186,8 @@ function CornerToggle({
   return (
     <IconButton
       size="sm"
-      aria-label={label}
+      label={label}
       aria-expanded={open}
-      title={label}
       onClick={onClick}
       data-panel-toggle={side}
       className={cn(

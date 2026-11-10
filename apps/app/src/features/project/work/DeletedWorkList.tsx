@@ -66,7 +66,7 @@ function DeletedRow({ work, now, onRestore }: { work: Work; now: number; onResto
         type="button"
         onClick={onRestore}
         aria-label={t`Restore ${work.name}`}
-        className="text-button shrink-0 text-sm [@media(pointer:coarse)]:min-h-11"
+        className="text-button shrink-0 text-sm coarse:min-h-11"
       >
         <Trans>Restore</Trans>
       </button>

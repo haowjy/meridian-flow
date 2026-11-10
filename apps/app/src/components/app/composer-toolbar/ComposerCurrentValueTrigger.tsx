@@ -7,7 +7,7 @@ import type { ComposerToolbarTriggerBinding } from "./types";
 
 const currentValueChrome = cn(
   buttonVariants({ variant: "outline", size: null }),
-  "h-8 min-h-8 max-w-[11rem] min-w-0 shrink gap-1.5 px-2.5 font-medium transition-[color,background-color,border-color,box-shadow,opacity,transform] [@media(pointer:coarse)]:min-h-11",
+  "h-8 min-h-8 max-w-[11rem] min-w-0 shrink gap-1.5 px-2.5 font-medium transition-[color,background-color,border-color,box-shadow,opacity,transform] coarse:min-h-11",
 );
 
 const CurrentValueChrome = forwardRef<

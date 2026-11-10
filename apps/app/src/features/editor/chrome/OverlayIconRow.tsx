@@ -29,7 +29,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { IconButton } from "@/components/ui/icon-button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { editorChromeAttributes } from "@/core/editor/chrome";
 
@@ -136,16 +136,18 @@ function OverlayIconChip({
   chromeAttributes: Record<string, string>;
   children: ReactNode;
 }) {
-  const chip = (
-    // The rest props are the menu's: a lane hands this chip to Radix as its
-    // trigger, and Radix opens on the `onPointerDown` it injects here. Dropping
-    // them leaves a ⋯ that cannot be pressed.
+  // The rest props are the menu's: a lane hands this chip to Radix as its trigger,
+  // and Radix opens on the `onPointerDown` it injects here. Dropping them leaves a ⋯
+  // that cannot be pressed.
+  return (
     <IconButton
       {...rest}
       type="button"
       variant="ghost"
       size="xs"
-      aria-label={label}
+      label={label}
+      tooltipSide="top"
+      tooltipContentProps={chromeAttributes}
       className="meridian-overlay-icon-chip"
       onClick={asTrigger ? rest.onClick : onSelect}
       // A press on the chrome must not move the caret out from under the
@@ -157,16 +159,5 @@ function OverlayIconChip({
     >
       {children}
     </IconButton>
-  );
-
-  if (asTrigger) return chip;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{chip}</TooltipTrigger>
-      <TooltipContent side="top" {...chromeAttributes}>
-        {label}
-      </TooltipContent>
-    </Tooltip>
   );
 }

@@ -15,11 +15,11 @@ import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 // Straight at the primitive: the chrome barrel also carries the surface
 // registry this lane is listed in, and the round trip is a module cycle.
-import { ReasonTooltip } from "../../chrome/ReasonTooltip";
+import { ReasonLines, ReasonTooltip } from "../../chrome/ReasonTooltip";
 
 export type ToolbarButtonProps = Omit<
   ComponentProps<typeof IconButton>,
-  "variant" | "size" | "aria-label" | "aria-pressed" | "aria-disabled"
+  "variant" | "size" | "label" | "tooltip" | "aria-pressed" | "aria-disabled"
 > & {
   label: string;
   /** Writer-facing reason the control cannot apply; greys it when present. */
@@ -28,9 +28,6 @@ export type ToolbarButtonProps = Omit<
   onPress?: () => void;
   children: ReactNode;
 };
-
-/** Under a finger the dense icon row grows to the phone shell's 44px target. */
-export const TOUCH_TARGET = "[@media(pointer:coarse)]:size-11";
 
 export function toolbarControlClass({
   active = false,
@@ -76,27 +73,28 @@ export function ToolbarButton({
   const blocked = Boolean(blockedReason);
 
   return (
-    <ToolbarControlTooltip label={label} blockedReason={blockedReason}>
-      <IconButton
-        {...rest}
-        type="button"
-        variant="ghost"
-        size="xs"
-        aria-label={label}
-        aria-pressed={active || undefined}
-        aria-disabled={blocked || undefined}
-        className={cn(toolbarControlClass({ active, blocked }), TOUCH_TARGET, className)}
-        onClick={(event) => {
-          if (blocked) {
-            event.preventDefault();
-            return;
-          }
-          onClick?.(event);
-          onPress?.();
-        }}
-      >
-        {children}
-      </IconButton>
-    </ToolbarControlTooltip>
+    <IconButton
+      {...rest}
+      type="button"
+      variant="ghost"
+      size="xs"
+      label={label}
+      tooltip={<ReasonLines name={label} reason={blockedReason} />}
+      tooltipSide="bottom"
+      tooltipContentProps={{ className: "max-w-56" }}
+      aria-pressed={active || undefined}
+      aria-disabled={blocked || undefined}
+      className={cn(toolbarControlClass({ active, blocked }), className)}
+      onClick={(event) => {
+        if (blocked) {
+          event.preventDefault();
+          return;
+        }
+        onClick?.(event);
+        onPress?.();
+      }}
+    >
+      {children}
+    </IconButton>
   );
 }

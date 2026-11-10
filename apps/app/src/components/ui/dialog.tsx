@@ -3,11 +3,12 @@
  * call sites. Added for proto command palette; promote via shadcn CLI for prod.
  */
 
+import { t } from "@lingui/core/macro";
 import { XIcon } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import type * as React from "react";
+import { IconButton } from "@/components/ui/icon-button";
 import { role } from "@/components/ui/roles";
-
 import { cn } from "@/lib/utils";
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -63,9 +64,10 @@ function DialogContent({
       >
         {children}
         {showCloseButton ? (
-          <DialogPrimitive.Close className="focus-ring absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 disabled:pointer-events-none">
-            <XIcon className="size-4" />
-            <span className="sr-only">Close</span>
+          <DialogPrimitive.Close asChild>
+            <IconButton size="sm" label={t`Close`} className="absolute top-3 right-3">
+              <XIcon aria-hidden className="size-4" />
+            </IconButton>
           </DialogPrimitive.Close>
         ) : null}
       </DialogPrimitive.Content>

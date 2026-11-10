@@ -40,7 +40,7 @@ export function ProjectLibrary() {
             <h1 className={cn(role.pageHeading, "text-balance")}>
               <Trans>Your projects</Trans>
             </h1>
-            <Button asChild size="sm" className="[@media(pointer:coarse)]:min-h-11">
+            <Button asChild size="sm">
               <Link to="/projects/new" preload="render">
                 <Plus aria-hidden /> <Trans>Create project</Trans>
               </Link>

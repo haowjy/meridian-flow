@@ -48,7 +48,7 @@ export function TurnInfoButton({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <IconButton type="button" tooltip={label} tooltipSide={TURN_ACTION_TOOLTIP_SIDE}>
+        <IconButton type="button" label={label} tooltipSide={TURN_ACTION_TOOLTIP_SIDE}>
           <Info aria-hidden />
         </IconButton>
       </PopoverTrigger>

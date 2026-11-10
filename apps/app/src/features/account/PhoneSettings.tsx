@@ -19,7 +19,7 @@ import {
   DialogPortal,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import type { SettingsSection } from "./settings-sections";
 
@@ -76,9 +76,9 @@ export function PhoneSettingsContent({
               <Trans>Account settings.</Trans>
             </DialogDescription>
             <DialogClose asChild>
-              <PhoneIconButton aria-label={t`Close settings`}>
+              <IconButton size="sm" label={t`Close settings`}>
                 <X className="size-5" aria-hidden />
-              </PhoneIconButton>
+              </IconButton>
             </DialogClose>
           </div>
           <nav

@@ -228,7 +228,7 @@ function WorkRows({
 
 function NewWorkButton({ projectId, variant }: { projectId: string; variant?: "outline" }) {
   return (
-    <Button asChild size="sm" variant={variant} className="[@media(pointer:coarse)]:min-h-11">
+    <Button asChild size="sm" variant={variant}>
       <Link to="/p/$projectId/$" params={{ projectId, _splat: "works/new" }}>
         <Plus aria-hidden />
         <Trans>New Work</Trans>
@@ -277,12 +277,7 @@ function DeletedWorkRow({
       <button type="button" className="text-button shrink-0 text-sm" onClick={onUndo}>
         <Trans>Undo</Trans>
       </button>
-      <IconButton
-        size="sm"
-        className="ml-auto shrink-0 [@media(pointer:coarse)]:size-11"
-        aria-label={t`Dismiss`}
-        onClick={onDismiss}
-      >
+      <IconButton size="sm" className="ml-auto shrink-0" label={t`Dismiss`} onClick={onDismiss}>
         <X aria-hidden className="size-4" />
       </IconButton>
     </div>

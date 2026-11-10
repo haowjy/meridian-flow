@@ -124,7 +124,7 @@ function RunningSubagentRow({
             <IconButton
               type="button"
               size="sm"
-              tooltip={stopping ? t`Stopping "${name}"` : t`Stop "${name}"`}
+              label={stopping ? t`Stopping "${name}"` : t`Stop "${name}"`}
               // aria-disabled, not disabled: disabling the focused button would drop focus.
               aria-disabled={stopping || undefined}
               data-subagent-stop={status}

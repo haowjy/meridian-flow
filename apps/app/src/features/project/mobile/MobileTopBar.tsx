@@ -19,7 +19,7 @@ import { t } from "@lingui/core/macro";
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import type { ProjectViewProps } from "../ProjectView";
 import { screenLabel } from "../shell/screens";
@@ -60,9 +60,9 @@ export function MobileTopBar({
           paddingRight: "calc(0.5rem + env(safe-area-inset-right))",
         }}
       >
-        <PhoneIconButton onClick={onOpenDrawer} aria-label={t`Open navigation`}>
+        <IconButton size="sm" onClick={onOpenDrawer} label={t`Open navigation`}>
           <Menu className="size-5" aria-hidden />
-        </PhoneIconButton>
+        </IconButton>
         {balance ? <div aria-hidden className="size-11 shrink-0" /> : null}
         <div className="flex min-w-0 flex-1 flex-col items-center justify-center px-1">
           <div

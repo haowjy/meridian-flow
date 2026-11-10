@@ -20,6 +20,8 @@
 /* A trigger whose menu, popover or listbox is open. Keyed on aria-expanded, which
    a wrapping Tooltip can't overwrite the way it does data-state; aria-haspopup
    (implicit on a combobox) keeps plain disclosures (expanded sections) out. */
+/* Under a finger: the phone shell's 44px touch targets key off this. */
+@custom-variant coarse (@media (pointer: coarse));
 @custom-variant popup-open (&:is([aria-haspopup]:not([aria-haspopup="false"]), [role="combobox"])[aria-expanded="true"]);
 
 @theme {

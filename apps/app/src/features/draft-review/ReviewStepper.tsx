@@ -30,14 +30,14 @@ export function ReviewStepper({
 }) {
   if (count <= 1) return null;
   const position = focusedIndex + 1;
-  const arrow = touch ? "size-11" : compact ? "size-5.5" : undefined;
+  const arrow = compact && !touch ? "size-5.5" : undefined;
   return (
     <div className="flex items-center gap-0.5">
       <IconButton
         size="xs"
         variant={touch || compact ? "quiet" : "outline"}
         className={arrow}
-        tooltip={t`Previous change`}
+        label={t`Previous change`}
         disabled={disabled}
         onClick={() => onStep(-1)}
       >
@@ -87,7 +87,7 @@ export function ReviewStepper({
         size="xs"
         variant={touch || compact ? "quiet" : "outline"}
         className={arrow}
-        tooltip={t`Next change`}
+        label={t`Next change`}
         disabled={disabled}
         onClick={() => onStep(1)}
       >

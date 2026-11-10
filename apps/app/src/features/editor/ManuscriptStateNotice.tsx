@@ -131,7 +131,7 @@ function ManuscriptStateChip({ state, touch }: { state: ManuscriptState; touch: 
           title={state.sentence}
           className={cn(
             "focus-ring flex min-w-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-ink-fill hover:text-foreground",
-            touch ? "h-11" : "h-6 [@media(pointer:coarse)]:h-11",
+            touch ? "h-11" : "h-6 coarse:h-11",
           )}
         >
           <Info aria-hidden className="size-3.5 shrink-0" />
@@ -147,11 +147,7 @@ function ManuscriptStateChip({ state, touch }: { state: ManuscriptState; touch: 
         </PopoverContent>
       </Popover>
       {state.dismiss ? (
-        <IconButton
-          aria-label={t`Dismiss`}
-          className={cn("shrink-0", touch ? "size-11" : "size-6 [@media(pointer:coarse)]:size-11")}
-          onClick={state.dismiss}
-        >
+        <IconButton label={t`Dismiss`} className="shrink-0" onClick={state.dismiss}>
           <X aria-hidden className="size-3" />
         </IconButton>
       ) : null}

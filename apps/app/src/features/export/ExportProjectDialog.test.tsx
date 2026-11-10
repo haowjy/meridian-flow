@@ -4,6 +4,7 @@ import { setupI18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { act } from "react";
 import { afterEach, expect, it, vi } from "vitest";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ExportProjectDialog } from "./ExportProjectDialog";
 
@@ -38,12 +39,14 @@ it("debounces preview options, hides stale counts and downloads directly before 
   const downloads: string[] = [];
   await withReactRoot(
     <I18nProvider i18n={i18n}>
-      <ExportProjectDialog
-        accountSignal={new AbortController().signal}
-        projectId="project"
-        project="Ashfall"
-        onClose={close}
-      />
+      <TooltipProvider>
+        <ExportProjectDialog
+          accountSignal={new AbortController().signal}
+          projectId="project"
+          project="Ashfall"
+          onClose={close}
+        />
+      </TooltipProvider>
     </I18nProvider>,
     fakeTimersWhile(async () => {
       vi.spyOn(window.HTMLAnchorElement.prototype, "click").mockImplementation(function (
@@ -118,12 +121,14 @@ it("ignores a late preview from a retired account and cannot download for it", a
   );
   await withReactRoot(
     <I18nProvider i18n={i18n}>
-      <ExportProjectDialog
-        accountSignal={account.signal}
-        projectId="project"
-        project="Ashfall"
-        onClose={() => {}}
-      />
+      <TooltipProvider>
+        <ExportProjectDialog
+          accountSignal={account.signal}
+          projectId="project"
+          project="Ashfall"
+          onClose={() => {}}
+        />
+      </TooltipProvider>
     </I18nProvider>,
     fakeTimersWhile(async () => {
       const download = vi

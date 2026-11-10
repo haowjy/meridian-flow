@@ -193,7 +193,7 @@ function DiagramFace({
             onOpenChange={setMenuOpen}
             align="end"
             trigger={
-              <IconButton type="button" size="sm" variant="ghost" aria-label={t`More`}>
+              <IconButton type="button" size="sm" variant="ghost" label={t`More`}>
                 <Ellipsis aria-hidden />
               </IconButton>
             }

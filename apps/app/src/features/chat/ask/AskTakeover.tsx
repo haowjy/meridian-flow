@@ -12,6 +12,7 @@ import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { FailureCard } from "@/components/app/FailureCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { permissionRequestText } from "./permission-request";
 
@@ -291,16 +292,17 @@ function QuestionTakeover({
           className="field-sizing-content max-h-40 min-h-8 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-compact outline-none placeholder:text-muted-foreground"
         />
         {several ? null : (
-          <Button
+          <IconButton
             type="button"
-            size="icon-sm"
+            variant="default"
+            size="sm"
             className="rounded-lg"
-            aria-label={t`Send answer`}
+            label={t`Send answer`}
             disabled={entry.choice?.kind !== "text"}
             onClick={forward}
           >
             <ArrowUp className="size-4" />
-          </Button>
+          </IconButton>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)]">

@@ -2,14 +2,14 @@
  * MobileChatSheetHeader — the phone chat sheet's own dock header.
  *
  * Built from the same status-bar-aware chrome primitives as `MobileTopBar`
- * (`PhoneIconButton`, safe-area padding), independent of the desktop
+ * (`IconButton`, safe-area padding), independent of the desktop
  * `DockHeader`. `ChatSurface` passes this as `DockShell`'s header slot for the
  * phone chat sheet; `DockHeader` itself stays desktop-only.
  */
 import { t } from "@lingui/core/macro";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
-import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { IconButton } from "@/components/ui/icon-button";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 
 export type MobileChatSheetHeaderProps = {
@@ -41,9 +41,9 @@ export function MobileChatSheetHeader({
           className="flex shrink-0 items-center pl-1"
           style={{ paddingRight: "calc(0.5rem + env(safe-area-inset-right))" }}
         >
-          <PhoneIconButton onClick={onClose} aria-label={t`Close chat`}>
+          <IconButton size="sm" onClick={onClose} label={t`Close chat`}>
             <X className="size-5" aria-hidden />
-          </PhoneIconButton>
+          </IconButton>
         </div>
       ) : null}
     </header>

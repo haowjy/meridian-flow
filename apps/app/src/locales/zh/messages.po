@@ -1716,6 +1716,8 @@ msgstr "清除目标"
 msgid "Clear the status"
 msgstr "清除状态"
 
+#: src/components/ui/dialog.tsx
+#: src/components/ui/sheet.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
@@ -5135,6 +5137,10 @@ msgstr ""
 
 #: src/features/project/chat/use-chat-scratch-source.ts
 msgid "Scratch for this chat"
+msgstr ""
+
+#: src/features/chat/TurnList.tsx
+msgid "Scroll to latest"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx

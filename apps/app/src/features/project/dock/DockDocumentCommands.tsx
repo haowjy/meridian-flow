@@ -18,23 +18,13 @@ export function DockDocumentCommands({
 }) {
   const showEditor = useScreenCommands()?.showEditor;
   const { close } = useOpenDocumentActions(projectId);
-  const coarse = "[@media(pointer:coarse)]:size-11";
+
   return (
     <>
-      <IconButton
-        size="sm"
-        tooltip={t`Close document`}
-        className={coarse}
-        onClick={() => close(document.key)}
-      >
+      <IconButton size="sm" label={t`Close document`} onClick={() => close(document.key)}>
         <X aria-hidden className="size-4" />
       </IconButton>
-      <IconButton
-        size="sm"
-        tooltip={t`Open in Editor`}
-        className={coarse}
-        onClick={() => void showEditor?.()}
-      >
+      <IconButton size="sm" label={t`Open in Editor`} onClick={() => void showEditor?.()}>
         <Maximize2 aria-hidden className="size-4" />
       </IconButton>
     </>

@@ -55,7 +55,6 @@ export function WorkChatsTab({
           disabled={isWorkArchived(work)}
           onClick={() => void openNewChat(work.id)}
           aria-label={t`New chat`}
-          className="[@media(pointer:coarse)]:min-h-11"
         >
           <MessageSquarePlus aria-hidden />
           <span className="max-sm:hidden" aria-hidden>

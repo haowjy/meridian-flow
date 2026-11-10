@@ -3,11 +3,12 @@
  * drawers via the Sidebar). Upstream-managed wrapper; customize at call sites.
  */
 
+import { t } from "@lingui/core/macro";
 import { XIcon } from "lucide-react";
 import { Dialog as SheetPrimitive } from "radix-ui";
 import type * as React from "react";
+import { IconButton } from "@/components/ui/icon-button";
 import { role } from "@/components/ui/roles";
-
 import { cn } from "@/lib/utils";
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
@@ -80,9 +81,10 @@ function SheetContent({
       >
         {children}
         {showCloseButton && (
-          <SheetPrimitive.Close className="focus-ring absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 disabled:pointer-events-none">
-            <XIcon className="size-4" />
-            <span className="sr-only">Close</span>
+          <SheetPrimitive.Close asChild>
+            <IconButton size="sm" label={t`Close`} className="absolute top-3 right-3">
+              <XIcon aria-hidden className="size-4" />
+            </IconButton>
           </SheetPrimitive.Close>
         )}
       </SheetPrimitive.Content>

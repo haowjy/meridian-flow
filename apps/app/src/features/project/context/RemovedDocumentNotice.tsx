@@ -255,12 +255,21 @@ export function useRemovedNoticeLifetime(
 const trimSlashes = (path: string) => path.replace(/^\/+|\/+$/g, "");
 
 /** The notice's dismiss control, shared by every placement. */
-function DismissNotice({ projectId, className }: { projectId: string; className?: string }) {
+function DismissNotice({
+  projectId,
+  className,
+  dense,
+}: {
+  projectId: string;
+  className?: string;
+  dense?: boolean;
+}) {
   const notices = useOptionalRemovedNotices();
   return (
     <IconButton
       className={className}
-      aria-label={t`Dismiss`}
+      dense={dense}
+      label={t`Dismiss`}
       onClick={() => notices?.dismiss(projectId)}
     >
       <X aria-hidden className="size-3" />
@@ -299,7 +308,7 @@ function Chip({ projectId, documents }: { projectId: string; documents: readonly
       <span aria-hidden className="hidden min-w-0 truncate @max-[13rem]:inline">
         {shortRemovalSentence(documents)}
       </span>
-      <DismissNotice projectId={projectId} className="size-5 shrink-0" />
+      <DismissNotice projectId={projectId} className="size-5 shrink-0" dense />
     </div>
   );
 }
@@ -375,7 +384,7 @@ function PhoneNotice({
   return (
     <div role="status" data-removed-document-notice className="flex items-start gap-2 py-1.5">
       <p className="min-w-0 flex-1 py-1 text-foreground text-sm">{removalSentence(documents)}</p>
-      <DismissNotice projectId={projectId} className="shrink-0 [@media(pointer:coarse)]:size-11" />
+      <DismissNotice projectId={projectId} className="shrink-0" />
     </div>
   );
 }

@@ -9,12 +9,10 @@ export const sidebarIcon = {
   action: "size-4",
 } as const;
 
-export const contextTreeRowClassName =
-  "h-7 [@media(hover:none)]:h-11 [@media(pointer:coarse)]:h-11";
+export const contextTreeRowClassName = "h-7 [@media(hover:none)]:h-11 coarse:h-11";
 
 /** A browsing row may grow past its resting height when it carries a second line. */
-export const contextTreeRowGrowClassName =
-  "min-h-7 [@media(hover:none)]:min-h-11 [@media(pointer:coarse)]:min-h-11";
+export const contextTreeRowGrowClassName = "min-h-7 [@media(hover:none)]:min-h-11 coarse:min-h-11";
 
 // Adjacent selected rows join into one block, rounded only at the run's ends
 // (`data-selection-run`, set by the list's selection).
@@ -40,4 +38,4 @@ export function contextTreeFileRowClassName(active: boolean, selected = false): 
 }
 
 export const contextTreeOverflowTriggerClassName =
-  "opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:size-11 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:size-11 [@media(pointer:coarse)]:opacity-100";
+  "opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:size-11 [@media(hover:none)]:opacity-100 coarse:size-11 coarse:opacity-100";

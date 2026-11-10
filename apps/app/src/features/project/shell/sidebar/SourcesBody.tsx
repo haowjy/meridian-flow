@@ -318,7 +318,7 @@ function SourceTabs({
  * The default five tabs and + still fit a default-width sidebar without scrolling the strip.
  */
 const TAB_BUTTON =
-  "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors [@media(hover:none)]:size-9 [@media(pointer:coarse)]:size-9";
+  "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors [@media(hover:none)]:size-9 coarse:size-9";
 
 /** A source's tab: a drop on it lands at the source's root, and a drag that rests opens it. */
 function SourceTab({

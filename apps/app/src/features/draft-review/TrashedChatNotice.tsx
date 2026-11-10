@@ -54,13 +54,7 @@ export function TrashedChatNotice({
       <DocumentNotice
         icon={<ArchiveRestore className="size-4" aria-hidden />}
         action={
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={state === "restoring"}
-            onClick={restore}
-            className="[@media(pointer:coarse)]:min-h-11"
-          >
+          <Button size="sm" variant="outline" disabled={state === "restoring"} onClick={restore}>
             <Trans>Restore</Trans>
           </Button>
         }

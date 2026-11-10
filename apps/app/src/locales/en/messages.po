@@ -1716,6 +1716,8 @@ msgstr "Clear the goal"
 msgid "Clear the status"
 msgstr "Clear the status"
 
+#: src/components/ui/dialog.tsx
+#: src/components/ui/sheet.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
@@ -5136,6 +5138,10 @@ msgstr "Scratch for {workName}"
 #: src/features/project/chat/use-chat-scratch-source.ts
 msgid "Scratch for this chat"
 msgstr "Scratch for this chat"
+
+#: src/features/chat/TurnList.tsx
+msgid "Scroll to latest"
+msgstr "Scroll to latest"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-index/ChatIndex.tsx

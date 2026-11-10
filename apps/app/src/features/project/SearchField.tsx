@@ -29,7 +29,7 @@ export function SearchField({
         aria-label={label}
         placeholder={label}
         onChange={(event) => onChange(event.target.value)}
-        className="h-8 pl-8 [@media(pointer:coarse)]:h-11"
+        className="h-8 pl-8 coarse:h-11"
       />
     </div>
   );

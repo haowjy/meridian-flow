@@ -27,20 +27,22 @@ const buttonVariants = cva(
         // Quiet chrome affordance: muted at rest. The default tone for dense icon-only
         // buttons (see IconButton).
         quiet: "interactive text-muted-foreground hover:text-foreground popup-open:text-foreground",
-        link: "text-jade-text underline-offset-4 hover:underline",
       },
+      // Under a coarse pointer every button reaches the 44px touch target, so callers
+      // never add touch sizing; a dense row that must not grow pulls it back with -my.
       size: {
-        default: "h-8 px-4 has-[>svg]:px-3",
-        xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
+        default: "h-8 px-4 has-[>svg]:px-3 coarse:min-h-11",
+        xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3 coarse:min-h-11",
         // Dense inline toolbar action (history/restore/meta actions) — text-xs,
         // no fixed height so it hugs its label. Pair with variant="quiet".
-        meta: "gap-1 rounded-md px-2 py-1 text-xs [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5",
-        lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
-        icon: "size-8",
-        "icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm": "size-8",
-        "icon-lg": "size-10",
+        meta: "gap-1 rounded-md px-2 py-1 text-xs [&_svg:not([class*='size-'])]:size-3 coarse:min-h-11",
+        sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5 coarse:min-h-11",
+        lg: "h-10 rounded-md px-6 has-[>svg]:px-4 coarse:min-h-11",
+        // Icon-only sizes: use IconButton, which names the button. A dense one keeps
+        // its box and grows only its hit area (IconButton's `dense`).
+        "icon-xs":
+          "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3 coarse:not-data-[touch=dense]:size-11",
+        "icon-sm": "size-8 coarse:not-data-[touch=dense]:size-11",
       },
     },
     defaultVariants: {
