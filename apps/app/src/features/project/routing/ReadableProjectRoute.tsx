@@ -610,13 +610,11 @@ function ReadableProjectDestination({
     reconciledDocumentAddress.view,
   );
   const documentResult = gated.result;
-  const afterRemoval = useAddressResultAfterRemoval(
+  const admissibleResult = useAddressResultAfterRemoval(
     projectId,
     documentResult,
     documentLookup.dataUpdatedAt,
   );
-  // A review address names its draft, which outlives the live document's removal.
-  const admissibleResult = address.itemKey ? documentResult : afterRemoval;
   const routeBinding = addressRouteBinding(
     addressBinding,
     documentResult,
@@ -669,7 +667,10 @@ function ReadableProjectDestination({
               closeState.closed)
             ? "loading"
             : "unavailable"
-          : undefined));
+          : // An answer the removal state outlives says the document is gone, without a re-read.
+            admissibleResult === undefined
+            ? "unavailable"
+            : undefined));
   // A review address names its document: when it is unavailable because the
   // document was removed, it says so instead. A plain path names no document
   // once nothing lives there, so it stays "unavailable".

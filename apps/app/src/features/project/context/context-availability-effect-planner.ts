@@ -278,17 +278,6 @@ export function planContextAvailabilityBatch(
         selection = leaveSelection(selection).selection;
       }
       if (admitted?.workId === activeWorkId) admitted = null;
-      if (input.routeSearch?.work === activeWorkId && routeSearch) {
-        routeSearch = {
-          ...routeSearch,
-          screen: "work",
-          work: undefined,
-          chat: undefined,
-          scheme: undefined,
-          folder: undefined,
-          path: undefined,
-        };
-      }
     }
   }
 

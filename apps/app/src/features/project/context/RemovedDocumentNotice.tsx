@@ -211,10 +211,10 @@ export function useRemovedNotice(projectId: string): RemovedNoticeSnapshot {
 /**
  * The notice lasts until the writer's next navigation, counted from when its
  * placement is first on screen: a removal noticed while the writer is
- * elsewhere waits for them. It anchors once the place no longer shows a
- * removed document (the removal's own navigation is not the writer's), and a
- * later change of place clears it, documents still waiting included. A
- * removal that joins the notice re-anchors it.
+ * elsewhere waits for them. It anchors where it first shows, which for a
+ * removal of the shown document is that document's own address (a removal
+ * moves nothing), and a later change of place clears it, documents still
+ * waiting included. A removal that joins the notice re-anchors it.
  */
 export function useRemovedNoticeLifetime(
   projectId: string,
@@ -222,15 +222,12 @@ export function useRemovedNoticeLifetime(
     /** Changes with every navigation the writer makes in the Editor. */
     key: string;
     onScreen: boolean;
-    /** The document the place shows, by route (Editor) or id (dock). */
-    showing: Readonly<{ scheme: string | null; path: string | null }> | string | null;
   }>,
 ): void {
   const notices = useOptionalRemovedNotices();
   const notice = useRemovedNotice(projectId);
   const anchor = useRef<{ version: number; key: string } | null>(null);
   const { key, onScreen } = place;
-  const showing = JSON.stringify(place.showing);
   useEffect(() => {
     if (anchor.current?.version !== notice.version) anchor.current = null;
     if (notice.version === 0) return;
@@ -240,19 +237,9 @@ export function useRemovedNoticeLifetime(
       notices?.dismiss(projectId);
       return;
     }
-    const shows: Readonly<{ scheme: string | null; path: string | null }> | string | null =
-      JSON.parse(showing);
-    const onRemovedDocument = [...notice.shown, ...notice.waiting].some((document) =>
-      typeof shows === "string"
-        ? document.documentId === shows
-        : document.route.scheme === shows?.scheme &&
-          trimSlashes(document.route.path) === trimSlashes(shows?.path ?? ""),
-    );
-    if (onScreen && !onRemovedDocument) anchor.current = { version: notice.version, key };
-  }, [key, notice, notices, onScreen, projectId, showing]);
+    if (onScreen) anchor.current = { version: notice.version, key };
+  }, [key, notice, notices, onScreen, projectId]);
 }
-
-const trimSlashes = (path: string) => path.replace(/^\/+|\/+$/g, "");
 
 /** The notice's dismiss control, shared by every placement. */
 function DismissNotice({ projectId, className }: { projectId: string; className?: string }) {
