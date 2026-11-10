@@ -132,6 +132,13 @@ export function ProjectAddressDocument({
     }
     const document = result.document.entry;
     const scope = document.scope;
+    // A removal leaves the address in place with nothing selected. The document that returns
+    // under it (a restore, with or without its draft open) takes the selection back; a selection
+    // elsewhere (the dock) stays.
+    const selectIfNone = () =>
+      selectedDocumentIdOf(getContextTabs(projectId)) === null
+        ? { select: true as const }
+        : undefined;
     const liveTab = () =>
       contextTabFromFile(
         canonical.destination.scheme,
@@ -158,7 +165,7 @@ export function ProjectAddressDocument({
                 draftOnly: true,
               })
             : null;
-        if (tab) openTab(projectId, tab, () => navigation.isCurrent(ticket));
+        if (tab) openTab(projectId, tab, () => navigation.isCurrent(ticket), selectIfNone());
       } else if (reviewTab) {
         const patch = canonicalReviewTabPatch(
           reviewTab,
@@ -179,14 +186,7 @@ export function ProjectAddressDocument({
     const publish = (issue: ProjectRouteIssue | undefined) => onAdmission({ ...identity, issue });
     publish("loading");
     void (async () => {
-      // A removal leaves the address in place with nothing selected. The document that returns
-      // under it (a restore) takes the selection back; a selection elsewhere (the dock) stays.
-      const installed = openTab(
-        projectId,
-        liveTab(),
-        isCurrent,
-        selectedDocumentIdOf(getContextTabs(projectId)) === null ? { select: true } : undefined,
-      );
+      const installed = openTab(projectId, liveTab(), isCurrent, selectIfNone());
       if (controller.signal.aborted || !navigation.isCurrent(ticket)) return;
       if (installed.kind !== "opened") {
         publish("unavailable");
