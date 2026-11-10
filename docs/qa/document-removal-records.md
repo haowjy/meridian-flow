@@ -259,7 +259,7 @@ otherwise, A's tabs are live tabs.
   once, with no toast and no Work explanation. The chat dock row and the Work page's Changes to
   review row keep the file with "Deleted from the manuscript" on its status
   line; an open draft tab stays open. A dock with
-  several files, or Work Files' "Apply all changes", asks first: "Applying
+  several files, or Work Files' "Apply all", asks first: "Applying
   brings back <title>, which was deleted from the manuscript." with Cancel and
   Apply, in the footer below the rows (as Discard all's question does): no row
   moves when it opens. Applying leaves "<title> is back in the manuscript." in the surface's

@@ -128,7 +128,7 @@ function LightboxHeader({
 }) {
   return (
     <div className="meridian-lightbox-header">
-      <span className="font-medium text-ink-muted text-sm">{title}</span>
+      <span className="font-medium text-muted-foreground text-sm">{title}</span>
       <span className="flex-1" />
       {/* Inside the dialog, because the page's own notices are behind the
           scrim and a writer who just pressed something is looking here. */}
@@ -193,7 +193,7 @@ function DiagramFace({
             onOpenChange={setMenuOpen}
             align="end"
             trigger={
-              <IconButton type="button" size="sm" variant="ghost" aria-label={t`More`}>
+              <IconButton type="button" size="sm" variant="ghost" label={t`More`}>
                 <Ellipsis aria-hidden />
               </IconButton>
             }

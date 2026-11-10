@@ -14,7 +14,7 @@ export function DocumentNotice({
   children,
 }: {
   icon: ReactNode;
-  /** One small `outline` button. */
+  /** One small action: an `outline` button, or a Discard · Apply pair. */
   action?: ReactNode;
   className?: string;
   children: ReactNode;

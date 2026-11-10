@@ -33,7 +33,7 @@ export function ProjectMenu({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <IconButton size="xs" tooltip={t`Project actions`}>
+          <IconButton size="xs" label={t`Project actions`}>
             <MoreHorizontal aria-hidden />
           </IconButton>
         </DropdownMenuTrigger>

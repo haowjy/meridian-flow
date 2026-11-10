@@ -6,8 +6,10 @@
 
 import type { Editor } from "@tiptap/core";
 import { useSyncExternalStore } from "react";
+import { role } from "@/components/ui/roles";
 import { closedSuggestionMenu } from "@/core/completion";
 import { SuggestionMenu } from "@/features/editor/chrome";
+import { cn } from "@/lib/utils";
 
 import { type ComposerCommandMenuMeta, getComposerCommandMenu } from "./ComposerCommandExtension";
 import type { ComposerCommandItem } from "./command-catalog";
@@ -49,7 +51,12 @@ export function ComposerCommandMenu({ editor }: { editor: Editor }) {
         key: item.id,
         before:
           grouped && groupLabels && item.group !== snapshot.items[index - 1]?.group ? (
-            <div className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-space-inline)] font-semibold text-ink-subtle text-xs uppercase tracking-wider">
+            <div
+              className={cn(
+                "px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-space-inline)]",
+                role.groupLabel,
+              )}
+            >
               {groupLabels[item.group]}
             </div>
           ) : undefined,
@@ -64,7 +71,10 @@ function CommandRow({ item }: { item: ComposerCommandItem }) {
     <span className="flex min-w-0 flex-1 items-baseline gap-[var(--chat-space-inline)]">
       <span className="shrink-0">{item.slug}</span>
       {item.description ? (
-        <span className="min-w-0 flex-1 truncate text-ink-subtle text-xs" title={item.description}>
+        <span
+          className="min-w-0 flex-1 truncate text-muted-foreground text-xs"
+          title={item.description}
+        >
           {item.description}
         </span>
       ) : null}

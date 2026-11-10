@@ -297,7 +297,7 @@ function ReferenceDisplayText({
           onSave({ ...reference, displayText: text === reference.label ? undefined : text });
       }}
     >
-      <label className="text-meta text-muted-foreground" htmlFor={id}>{t`Display text`}</label>
+      <label className="text-xs text-muted-foreground" htmlFor={id}>{t`Display text`}</label>
       <Input id={id} value={text} onChange={(event) => setText(event.target.value)} />
       <Button type="submit" disabled={!text.trim()}>{t`Save changes`}</Button>
     </form>

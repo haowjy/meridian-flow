@@ -1159,23 +1159,21 @@ msgid "Applied to the manuscript"
 msgstr "Applied to the manuscript"
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/draft-review/DraftedDeleteNotice.tsx
-#: src/features/draft-review/ReviewChangeBar.tsx
-#: src/features/draft-review/ReviewChangeRow.tsx
-#: src/features/editor/DraftReviewBand.tsx
+#: src/features/draft-review/ReviewActions.tsx
 msgid "Apply"
 msgstr "Apply"
 
+#: src/features/draft-review/ReviewActions.tsx
 #: src/features/project/work/WorkChanges.tsx
 msgid "Apply all"
 msgstr "Apply all"
 
 #: src/features/project/work/WorkChanges.tsx
-msgid "Apply all changes"
-msgstr "Apply all changes"
+#~ msgid "Apply all changes"
+#~ msgstr "Apply all changes"
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/DraftReviewBand.tsx
+#: src/features/draft-review/ReviewActions.tsx
 msgid "Apply draft"
 msgstr "Apply draft"
 
@@ -1721,6 +1719,8 @@ msgstr "Clear the goal"
 msgid "Clear the status"
 msgstr "Clear the status"
 
+#: src/components/ui/dialog.tsx
+#: src/components/ui/sheet.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
@@ -2277,7 +2277,7 @@ msgstr "Couldn't load Trash."
 msgid "Couldn't load Work."
 msgstr "Couldn't load Work."
 
-#: src/components/app/QueryErrorRow.tsx
+#: src/features/project/chat/ChatScreen.tsx
 msgid "Couldn't load. Check your connection."
 msgstr "Couldn't load. Check your connection."
 
@@ -2797,19 +2797,20 @@ msgid "Diagram"
 msgstr "Diagram"
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/draft-review/DraftedDeleteNotice.tsx
-#: src/features/draft-review/ReviewChangeBar.tsx
-#: src/features/draft-review/ReviewChangeParts.tsx
-#: src/features/editor/DraftReviewBand.tsx
+#: src/features/draft-review/ReviewActions.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkChanges.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Discard"
 msgstr "Discard"
 
+#: src/features/draft-review/ReviewActions.tsx
+msgid "Discard all"
+msgstr "Discard all"
+
 #: src/features/project/work/WorkChanges.tsx
-msgid "Discard all changes"
-msgstr "Discard all changes"
+#~ msgid "Discard all changes"
+#~ msgstr "Discard all changes"
 
 #: src/features/project/work/WorkChanges.tsx
 msgid "Discard all changes?"
@@ -2820,8 +2821,7 @@ msgid "Discard changes"
 msgstr "Discard changes"
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/DraftReviewBand.tsx
-#: src/features/editor/EditorView.tsx
+#: src/features/draft-review/ReviewActions.tsx
 msgid "Discard draft"
 msgstr "Discard draft"
 
@@ -2846,7 +2846,6 @@ msgstr "Discarding"
 #: src/features/editor/SchemaNotices.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
-#: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
 
@@ -3778,7 +3777,6 @@ msgid "Loading Work"
 msgstr "Loading Work"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#: src/features/project/EditorWorkRecovery.tsx
 msgid "Loading Work…"
 msgstr "Loading Work…"
 
@@ -3871,7 +3869,7 @@ msgstr "Missing figure source"
 msgid "missing kind"
 msgstr "missing kind"
 
-#: src/features/project/shell/sidebar/ModeSwitch.tsx
+#: src/features/project/shell/LeftSidebar.tsx
 msgid "Mode"
 msgstr "Mode"
 
@@ -4077,8 +4075,8 @@ msgid "Needs you"
 msgstr "Needs you"
 
 #: src/components/app/NewBadge.tsx
-msgid "New"
-msgstr "New"
+#~ msgid "New"
+#~ msgstr "New"
 
 #: src/features/chat/ChatThreadTitle.tsx
 #: src/features/chat/ChatView.tsx
@@ -5004,16 +5002,12 @@ msgstr "Resume my documents on any device"
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/DraftCommandStatus.tsx
-#: src/features/draft-review/ReviewChangeBar.tsx
-#: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
-#: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
@@ -5140,6 +5134,10 @@ msgstr "Scratch for {workName}"
 #: src/features/project/chat/use-chat-scratch-source.ts
 msgid "Scratch for this chat"
 msgstr "Scratch for this chat"
+
+#: src/features/chat/TurnList.tsx
+msgid "Scroll to latest"
+msgstr "Scroll to latest"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
@@ -6795,7 +6793,6 @@ msgid "Work couldn’t be unarchived"
 msgstr "Work couldn’t be unarchived"
 
 #: src/features/chat/CreationComposer.tsx
-#: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Work couldn’t load"
 msgstr "Work couldn’t load"

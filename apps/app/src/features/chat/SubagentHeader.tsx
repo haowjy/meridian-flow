@@ -55,7 +55,7 @@ export function SubagentHeader({
           aria-label={t`Subagents, ${nodes.length}`}
           aria-expanded={open}
           aria-haspopup="dialog"
-          className="focus-ring inline-flex items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground popup-open:bg-dropdown-hover popup-open:text-foreground"
+          className="focus-ring inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-ink-fill hover:text-foreground popup-open:bg-ink-fill-strong popup-open:text-foreground"
         >
           <Network className="size-3.5" aria-hidden />
           <span aria-hidden="true">{nodes.length}</span>
@@ -76,7 +76,7 @@ export function SubagentHeader({
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
           placeholder={t`Filter subagents`}
-          className="focus-ring mb-2 w-full rounded border border-border bg-background px-2 py-1.5 text-sm"
+          className="focus-ring mb-2 w-full rounded-sm border border-border bg-background px-2 py-1.5 text-sm"
         />
         {active.length ? (
           <>
@@ -97,7 +97,7 @@ export function SubagentHeader({
         ) : null}
         {finished.length ? (
           <>
-            <h3 className={cn(dropdownGroupLabelClass, "mt-[var(--chat-space-row)]")}>
+            <h3 className={cn(dropdownGroupLabelClass, "mt-[var(--chat-space-inline)]")}>
               <Trans>Finished</Trans>
             </h3>
             <ul>

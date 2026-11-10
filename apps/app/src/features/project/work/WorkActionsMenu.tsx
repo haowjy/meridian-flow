@@ -19,10 +19,7 @@ export function WorkActionsMenu({
 }) {
   const archived = isWorkArchived(work);
   return (
-    <OverflowMenu
-      label={t`Actions for ${work.name}`}
-      triggerClassName={triggerClassName ?? "[@media(pointer:coarse)]:size-11"}
-    >
+    <OverflowMenu label={t`Actions for ${work.name}`} triggerClassName={triggerClassName}>
       <DropdownMenuItem onSelect={onToggleArchive}>
         {archived ? (
           <ArchiveRestore className="size-3.5 text-muted-foreground" aria-hidden />

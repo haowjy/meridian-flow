@@ -65,7 +65,7 @@ export function ActivityRow({
               glyph, not a signal of its own: whether the agent changed the book
               is carried by the verb and by the edits receipt, and jade in the
               timeline means one thing only, which is that something is a door. */}
-          <span className="grid size-[19px] shrink-0 place-items-center rounded-md bg-chip-muted-bg text-ink-subtle">
+          <span className="grid size-[19px] shrink-0 place-items-center rounded-md bg-ink-fill text-muted-foreground">
             <Icon className="size-3" aria-hidden />
           </span>
         </span>
@@ -96,7 +96,7 @@ export function ActivityRow({
   const dot =
     status === "running" ? (
       <span
-        className="bg-status-live-foreground mt-[var(--chat-row-status-center-offset)] size-1.5 shrink-0 rounded-full motion-safe:animate-pulse"
+        className="bg-muted-foreground mt-[var(--chat-row-status-center-offset)] size-1.5 shrink-0 rounded-full motion-safe:animate-pulse"
         aria-hidden
       />
     ) : status === "error" ? (
@@ -115,7 +115,7 @@ export function ActivityRow({
       className={cn(
         "relative -mx-1 flex items-start gap-[var(--chat-space-block)] rounded-md px-1",
         TITLE_ROW_PAD,
-        hasInlineFold && "transition-colors hover:bg-muted",
+        hasInlineFold && "transition-colors hover:bg-ink-fill",
       )}
     >
       {title ? (
@@ -131,7 +131,7 @@ export function ActivityRow({
       {hasInlineFold ? (
         <ChevronRight
           className={cn(
-            "mt-[var(--chat-space-inline)] size-3 shrink-0 text-ink-subtle transition-transform duration-200",
+            "mt-[var(--chat-space-inline)] size-3 shrink-0 text-muted-foreground transition-transform",
             open && "rotate-90",
           )}
           aria-hidden
@@ -176,7 +176,7 @@ export function ActivityRow({
           <div
             id={panelId}
             className={cn(
-              "grid transition-[grid-template-rows] duration-200 ease-out",
+              "grid transition-[grid-template-rows] ease-out",
               open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
             )}
           >

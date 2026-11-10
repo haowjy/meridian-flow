@@ -5,9 +5,10 @@
  * target stays unlit; the hint beside the pointer says why. An edge target
  * draws an `InsertionLine` instead of a fill.
  */
+
 import type { ReactNode } from "react";
+import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
-import { sidebarRole } from "../context-row-geometry";
 import type { DropEdge, TreeDropState } from "./tree-drop";
 
 export function DropRegion({
@@ -26,7 +27,7 @@ export function DropRegion({
           aria-hidden
           className={cn(
             "pointer-events-none absolute inset-x-2 inset-y-0 -z-10 rounded-md",
-            sidebarRole.dropTarget,
+            role.dropTarget,
           )}
         />
       ) : null}

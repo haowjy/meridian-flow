@@ -25,13 +25,13 @@ export function AccountMenu() {
       {/* One place for the account and Settings: the avatar, in every header that shows it. */}
       <DropdownMenuTrigger
         type="button"
-        className="focus-ring grid size-8 shrink-0 place-items-center rounded-md hover:bg-sidebar-accent/50 popup-open:bg-dropdown-hover"
+        className="focus-ring grid size-8 shrink-0 place-items-center rounded-md hover:bg-ink-fill popup-open:bg-ink-fill-strong"
         aria-label={t`Account: ${label}`}
         title={label}
         disabled={loading}
       >
         <span
-          className="grid size-6 place-items-center rounded-full bg-sidebar-accent text-[11px] font-medium text-foreground"
+          className="grid size-6 place-items-center rounded-full bg-ink-fill-strong text-xs font-medium text-foreground"
           aria-hidden
         >
           {initials}

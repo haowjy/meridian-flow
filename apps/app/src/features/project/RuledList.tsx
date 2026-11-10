@@ -10,6 +10,10 @@ import { cn } from "@/lib/utils";
 
 export type RuledRow = { key: string; node: ReactNode };
 
+/** A destination screen's row: inset in its gutter, the hover step painted inside it. */
+export const ruledRowClassName =
+  "group relative min-w-0 rounded-md px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-ink-fill";
+
 /** Rows with a hairline between each and the next; none under the last. */
 export function RuledList({ rows, className }: { rows: readonly RuledRow[]; className?: string }) {
   return (
@@ -26,7 +30,12 @@ export function RuledList({ rows, className }: { rows: readonly RuledRow[]; clas
 /** A row's leading icon, in the row's text rank. */
 export function RowIcon({ icon: Icon, className }: { icon: LucideIcon; className?: string }) {
   return (
-    <span className={cn("grid size-[18px] shrink-0 place-items-center text-ink-subtle", className)}>
+    <span
+      className={cn(
+        "grid size-[18px] shrink-0 place-items-center text-muted-foreground",
+        className,
+      )}
+    >
       <Icon className="size-4" aria-hidden />
     </span>
   );
@@ -44,7 +53,7 @@ export function GroupLabel({
 }) {
   return (
     <Tag className={cn("pb-2", className)}>
-      <SectionLabel variant="group">{children}</SectionLabel>
+      <SectionLabel>{children}</SectionLabel>
     </Tag>
   );
 }

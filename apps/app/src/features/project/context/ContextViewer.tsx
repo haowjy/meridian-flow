@@ -14,6 +14,7 @@ import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts
 import { type ReactNode, useEffect, useRef } from "react";
 import { type ContextTab, isDraftOnly } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
@@ -162,9 +163,12 @@ export function ContextViewer({
       role={active ? "main" : undefined}
     >
       {layoutSaveFailed ? (
-        <p role="alert" className="px-4 py-2 text-muted-foreground text-sm">
-          <Trans>Couldn't save the Editor tab layout. Reload may not restore your tabs.</Trans>
-        </p>
+        <InlineErrorRow
+          message={
+            <Trans>Couldn't save the Editor tab layout. Reload may not restore your tabs.</Trans>
+          }
+          className="px-4 py-2"
+        />
       ) : null}
       <ContextTabBar
         tabs={tabs}

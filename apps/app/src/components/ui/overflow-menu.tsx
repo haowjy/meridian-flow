@@ -14,7 +14,7 @@ type DropdownRootProps = React.ComponentProps<typeof DropdownMenu>;
 type DropdownContentProps = React.ComponentProps<typeof DropdownMenuContent>;
 type OverflowMenuTriggerAttributes = Omit<
   IconButtonProps,
-  "aria-label" | "children" | "className" | "onClick" | "onKeyDown" | "size" | "variant"
+  "label" | "children" | "className" | "onClick" | "onKeyDown" | "size" | "variant"
 > & { [key: `data-${string}`]: string | number | boolean | undefined };
 
 export type OverflowMenuProps = Pick<DropdownRootProps, "open" | "onOpenChange"> & {
@@ -66,7 +66,7 @@ export function OverflowMenu({
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
-        <OverflowMenuTrigger {...triggerProps} aria-label={label} className={triggerClassName} />
+        <OverflowMenuTrigger {...triggerProps} label={label} className={triggerClassName} />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align={align}

@@ -9,7 +9,7 @@
  * assistant's voice doesn't read like another process row. Tool delivery
  * blocks are paired upstream into `ToolView`s and routed to `ToolRow`.
  *
- * Reasoning rows pick up italic + `ink-subtle` so the assistant's "thoughts"
+ * Reasoning rows pick up italic + `muted-foreground` so the assistant's "thoughts"
  * recede next to the upright prose of the voice surfaces around them.
  */
 import type { Block } from "@meridian/contracts/protocol";
@@ -34,7 +34,7 @@ export function TurnBlockStep({ block, body }: TurnBlockStepProps) {
       <ActivityRow
         Icon={Icon}
         quietIcon={isReasoning}
-        proseClassName={isReasoning ? "italic text-ink-subtle" : undefined}
+        proseClassName={isReasoning ? "italic text-muted-foreground" : undefined}
       >
         {isReasoning ? (
           <Markdown variant="compact">{body}</Markdown>

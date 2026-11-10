@@ -126,7 +126,7 @@ function DropdownMenuRadioItem({
       className={cn(
         dropdownRowVariants(),
         dropdownMenuItemClass,
-        "data-[state=checked]:bg-dropdown-hover",
+        "data-[state=checked]:bg-ink-fill-strong",
         className,
       )}
       {...props}
@@ -168,7 +168,7 @@ function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<"spa
   return (
     <span
       data-slot="dropdown-menu-shortcut"
-      className={cn("ml-auto text-xs tracking-widest text-muted-foreground", className)}
+      className={cn("ml-auto text-xs text-muted-foreground", className)}
       {...props}
     />
   );
@@ -192,7 +192,7 @@ function DropdownMenuSubTrigger({
       data-inset={inset}
       className={cn(
         dropdownRowVariants(),
-        "cursor-default data-[inset]:pl-8 data-[state=open]:bg-dropdown-hover [&_svg:not([class*='text-'])]:text-muted-foreground",
+        "cursor-default data-[inset]:pl-8 data-[state=open]:bg-ink-fill-strong [&_svg:not([class*='text-'])]:text-muted-foreground",
         className,
       )}
       {...props}

@@ -10,14 +10,14 @@ function Switch({ className, ...props }: React.ComponentProps<typeof SwitchPrimi
     <SwitchPrimitive.Root
       data-slot="switch"
       className={cn(
-        "focus-ring inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent bg-input transition-colors disabled:pointer-events-none disabled:opacity-50 data-[state=checked]:bg-primary",
+        "focus-ring inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent bg-ink-fill-strong transition-colors disabled:pointer-events-none disabled:opacity-50 data-[state=checked]:bg-primary",
         className,
       )}
       {...props}
     >
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
-        className="pointer-events-none block size-4 translate-x-0 rounded-full bg-background shadow-xs transition-transform data-[state=checked]:translate-x-4"
+        className="pointer-events-none block size-4 translate-x-0 rounded-full bg-background shadow-raise transition-transform data-[state=checked]:translate-x-4"
       />
     </SwitchPrimitive.Root>
   );

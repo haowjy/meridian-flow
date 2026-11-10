@@ -48,18 +48,18 @@ export function TurnInfoButton({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <IconButton type="button" tooltip={label} tooltipSide={TURN_ACTION_TOOLTIP_SIDE}>
+        <IconButton type="button" label={label} tooltipSide={TURN_ACTION_TOOLTIP_SIDE}>
           <Info aria-hidden />
         </IconButton>
       </PopoverTrigger>
       <PopoverContent align="start" className="text-tier-chat chat-card w-64">
-        <dl className="grid grid-cols-[1fr_auto] gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-row)] text-xs">
+        <dl className="grid grid-cols-[1fr_auto] gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)] text-xs">
           {sections.map(({ title, rows }, index) => (
             <Fragment key={title}>
               <dt
                 className={`col-span-2 font-medium text-foreground ${
                   index > 0
-                    ? "mt-[var(--chat-space-row)] border-t border-border pt-[var(--chat-space-row)]"
+                    ? "mt-[var(--chat-space-inline)] border-t border-border pt-[var(--chat-space-inline)]"
                     : ""
                 }`}
               >

@@ -18,6 +18,7 @@ import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisitio
 import type { ContextTab } from "@/client/stores";
 import { isDraftOnly } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
 import type {
@@ -146,13 +147,16 @@ export function ContextDocumentHost({
           {failed ? (
             <div className="grid h-full place-items-center">
               <div className="space-y-3 text-center">
-                <p className="text-destructive text-sm">
-                  {failureReason === "not-visible" ? (
-                    <Trans>Access lost (not saving to the server)</Trans>
-                  ) : (
-                    <Trans>Couldn't open this document.</Trans>
-                  )}
-                </p>
+                <InlineErrorRow
+                  message={
+                    failureReason === "not-visible" ? (
+                      <Trans>Access lost (not saving to the server)</Trans>
+                    ) : (
+                      <Trans>Couldn't open this document.</Trans>
+                    )
+                  }
+                  className="justify-center p-0"
+                />
                 {retry && failureReason !== "not-visible" && failureReason !== "deleted" ? (
                   <Button type="button" size="sm" variant="secondary" onClick={retry}>
                     <Trans>Retry</Trans>

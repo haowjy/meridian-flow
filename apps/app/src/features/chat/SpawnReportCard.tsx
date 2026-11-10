@@ -105,7 +105,7 @@ export function SpawnReportCard({
 
   return (
     <div
-      className="min-w-0 chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] bg-background shadow-xs"
+      className="min-w-0 chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] bg-background shadow-raise"
       data-subagent-card
       data-subagent-thread-id={childThreadId ?? undefined}
       data-delivery-mode={deliveryMode}
@@ -126,7 +126,7 @@ export function SpawnReportCard({
       />
       {from ? <SpawnSourceLine source={from} /> : null}
       {expanded && expandable ? (
-        <div className="mt-[var(--chat-space-block)] pl-[calc(1.5rem+var(--chat-space-row))] text-sm">
+        <div className="mt-[var(--chat-space-block)] pl-[calc(1.5rem+var(--chat-space-inline))] text-sm">
           {foreground && directResult ? (
             <ReportBody report={directResult} message={directResult.message} />
           ) : savedReport ? (
@@ -176,7 +176,7 @@ function SpawnSourceLine({ source: { threadId, title } }: { source: SpawnSource 
   return (
     <p
       data-spawn-source={threadId}
-      className="mt-[var(--chat-space-inline)] flex min-w-0 items-baseline gap-1 pl-[calc(1.5rem+var(--chat-space-row))] text-xs text-muted-foreground"
+      className="mt-[var(--chat-space-inline)] flex min-w-0 items-baseline gap-1 pl-[calc(1.5rem+var(--chat-space-inline))] text-xs text-muted-foreground"
     >
       {/* One message, so a translation can put the source's name first. */}
       <Trans>

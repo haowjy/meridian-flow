@@ -6,31 +6,17 @@ import { type ClassValue, clsx } from "clsx";
 import { extendTailwindMerge } from "tailwind-merge";
 
 /**
- * Our design tokens add custom `--text-*` font-size roles (`text-meta`,
- * `text-body`, …). tailwind-merge doesn't know these are font sizes, so it
- * mis-classifies e.g. `text-meta` as a *color* and silently drops it when a
- * later `text-<color>` appears in the same `cn()` call — the element then
- * renders at the inherited 16px. Registering every custom size token in the
- * `font-size` class group makes `cn("text-meta text-foreground")` keep both
- * (size + color) and makes two roles collide correctly (last one wins).
- *
- * Keep this list in sync with the `--text-*` tokens in
- * `packages/design-tokens/src/ink-jade.css`.
+ * tailwind-merge only knows Tailwind's default theme. A custom `--text-*` size it
+ * doesn't know reads as a colour, so `cn("text-xs text-foreground")` would drop
+ * the size; a custom shadow reads as a shadow colour. Every custom size, shadow
+ * and tracking token in `packages/design-tokens/src/ink-jade.css` is listed here.
  */
-const CUSTOM_FONT_SIZE_TOKENS = [
-  "meta",
-  "menu",
-  "compact",
-  "caption",
-  "body",
-  "headline-hero",
-  "headline-section",
-] as const;
-
 const twMerge = extendTailwindMerge({
   extend: {
-    classGroups: {
-      "font-size": [{ text: [...CUSTOM_FONT_SIZE_TOKENS] }],
+    theme: {
+      text: ["caption", "compact", "body"],
+      shadow: ["raise", "float", "modal"],
+      tracking: ["caps"],
     },
   },
 });

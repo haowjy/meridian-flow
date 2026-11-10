@@ -153,7 +153,7 @@ export function DocumentIdentityBar({
   const renderState = (version: ReactNode, controls: ReactNode) => (
     <>
       {controls ? (
-        <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-x-2 border-b border-border-subtle bg-dock-surface px-4 text-[13px] text-ink-muted">
+        <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-2 border-b border-border-subtle bg-review px-4 text-sm text-muted-foreground">
           {controls}
         </div>
       ) : null}
@@ -161,7 +161,7 @@ export function DocumentIdentityBar({
         <div
           ref={rowRef}
           data-document-identity-row
-          className="flex min-w-0 shrink items-center gap-1 text-[13px] text-ink-muted"
+          className="flex min-w-0 shrink items-center gap-1 text-sm text-muted-foreground"
         >
           {placementOpen ? (
             <IdentityPlacementField
@@ -224,11 +224,11 @@ export function DocumentIdentityBar({
         ref={rowRef}
         data-document-identity-row
         className={cn(
-          "relative flex flex-wrap items-center gap-x-1 font-mono text-ink-subtle text-sm",
+          "relative flex flex-wrap items-center gap-x-1 font-mono text-muted-foreground text-sm",
           "min-h-10 gap-y-0.5 py-1 pl-2",
-          trailing && "pr-12 [@media(pointer:coarse)]:pr-14",
+          trailing && "pr-12 coarse:pr-14",
           // The row grows so every control can own a 44px target (document-identity-row.css).
-          "[@media(pointer:coarse)]:min-h-11",
+          "coarse:min-h-11",
         )}
       >
         {/* One unit for wrapping: the commands never part from the path. */}
@@ -262,7 +262,7 @@ export function DocumentIdentityBar({
                     projectId={projectId}
                     subject={{ kind: "file", id: tab.documentId }}
                     operationId={noteOperationId}
-                    className="ml-3 font-sans text-ink-muted"
+                    className="ml-3 font-sans text-muted-foreground"
                   />
                 }
               />
@@ -293,7 +293,7 @@ export function DocumentIdentityBar({
         </div>
         {/* Before the controls in DOM order: Tab follows the first line, then the second. */}
         {trailing ? (
-          <div className="absolute top-0 right-2 flex h-10 items-center gap-0.5 [@media(pointer:coarse)]:h-11">
+          <div className="absolute top-0 right-2 flex h-10 items-center gap-0.5 coarse:h-11">
             {trailing}
           </div>
         ) : null}
@@ -402,7 +402,8 @@ function focusEditorProse(documentId: string) {
 /**
  * Content-measured fit, after wrapping has done its work. The review controls
  * wrap to their own line before anything shortens; only a line too narrow for
- * them even alone gives up labels, in order (document-identity-row.css), and
+ * them even alone gives up labels, in order (`ACTIONS_DENSITY` and
+ * document-identity-row.css), and
  * the path drops its parent crumbs when the leaf would otherwise be cut.
  */
 function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
@@ -414,8 +415,10 @@ function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
       const style = getComputedStyle(row);
       const available =
         row.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-      for (let level = 0; level <= COLLAPSE_LEVELS; level++) {
+      const actions = controls?.querySelector<HTMLElement>("[data-review-actions]");
+      for (let level = 0; level < ACTIONS_DENSITY.length; level++) {
         row.dataset.collapse = String(level);
+        if (actions) actions.dataset.density = ACTIONS_DENSITY[level];
         if (!controls || controls.getBoundingClientRect().width <= available) break;
       }
       row.removeAttribute("data-path-short");
@@ -434,4 +437,5 @@ function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
   }, [ref]);
 }
 
-const COLLAPSE_LEVELS = 4;
+/** The review actions' form at each collapse level (document-identity-row.css has the rest). */
+const ACTIONS_DENSITY = ["full", "short", "short", "icon", "icon"] as const;

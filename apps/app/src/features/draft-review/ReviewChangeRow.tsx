@@ -4,12 +4,10 @@
  * The red and green text claims its width first: when the line is full the byline truncates before it, but only down
  * to its floor ("You", a few letters of the first chat, "+N"), and then the excerpt truncates.
  */
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { Check, X } from "lucide-react";
-import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
-import { ChangeAuthor, ChangeDot, discardLabel } from "./ReviewChangeParts";
+import { ReviewActions } from "./ReviewActions";
+import { ChangeAuthor, ChangeDot } from "./ReviewChangeParts";
 import { changeExcerpt, type ReviewChange } from "./review-model";
 import { treeLineSentence } from "./tree-line";
 
@@ -50,7 +48,6 @@ export function ReviewChangeRow({
   // The first line's height: the excerpt, the dot and the buttons share it, so
   // they stay centred on each other when the author wraps to a second line.
   const firstLine = touch ? "min-h-11" : "min-h-6";
-  const iconButton = touch ? "size-11 [&_svg:not([class*='size-'])]:size-5" : undefined;
   return (
     // Mouse convenience only: the keyboard reaches the same command through
     // the excerpt button, which is the row's one tab stop for focusing it.
@@ -62,7 +59,7 @@ export function ReviewChangeRow({
       onClick={onFocus}
       className={cn(
         "group flex cursor-pointer items-center rounded-md border border-transparent px-2 py-1 transition-colors",
-        focused ? "border-border-subtle bg-card" : "hover:bg-sidebar-accent/50",
+        focused ? "border-border-subtle bg-card" : "hover:bg-ink-fill",
         arrived && "meridian-review-row-arrived",
       )}
     >
@@ -100,8 +97,8 @@ export function ReviewChangeRow({
                       index < runs.length - 1 && "mr-1",
                       !sentence &&
                         (run.kind === "removed"
-                          ? "text-diff-removed line-through"
-                          : "text-diff-added"),
+                          ? "text-destructive line-through"
+                          : "text-jade-text"),
                     )}
                   >
                     {run.text}
@@ -117,34 +114,24 @@ export function ReviewChangeRow({
           ) : null}
         </div>
         {!disabled ? (
-          <span className="flex shrink-0 items-center">
-            <IconButton
-              size="xs"
-              tooltip={discardLabel()}
-              disabled={disabled}
-              className={iconButton}
-              onClick={(event) => {
-                event.stopPropagation();
-                onDiscard();
-              }}
-            >
-              <X aria-hidden />
-            </IconButton>
-            {canApply ? (
-              <IconButton
-                size="xs"
-                tooltip={t`Apply`}
-                disabled={disabled}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onApply();
-                }}
-                className={cn("text-primary hover:text-primary", iconButton)}
-              >
-                <Check aria-hidden />
-              </IconButton>
-            ) : null}
-          </span>
+          <ReviewActions
+            scope="change"
+            density="icon"
+            touch={touch}
+            className={touch ? undefined : "gap-0.5"}
+            onDiscard={(event) => {
+              event.stopPropagation();
+              onDiscard();
+            }}
+            onApply={
+              canApply
+                ? (event) => {
+                    event.stopPropagation();
+                    onApply();
+                  }
+                : undefined
+            }
+          />
         ) : null}
       </div>
     </li>
