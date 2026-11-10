@@ -38,7 +38,13 @@ import {
   readAccountRecents,
   subscribeAccountRecents,
 } from "@/client/recents";
-import { tabKey, useContextTabsStore, useSelectedDocumentId } from "@/client/stores";
+import {
+  getContextTabs,
+  isDraftOnly,
+  tabKey,
+  useContextTabsStore,
+  useSelectedDocumentId,
+} from "@/client/stores";
 import type { ContextTab } from "@/client/stores/context-tabs-store/context-tabs-store";
 import {
   readRecentRoutes,
@@ -592,14 +598,22 @@ function HydratedReviewControllers({
     threadId: null,
     marks,
   });
-  // An explicit review address is the scope's: a scope switch drops every pin, and each tab
-  // re-resolves from its view.
+  // A scope switch drops the pins of documents that live without their draft, and each such tab
+  // re-resolves from its view. A draft-created page exists only as its draft: its pin stays.
   const scopeWorkId = props.editorWorkId;
   const priorScope = useRef(scopeWorkId);
   useEffect(() => {
     if (priorScope.current === scopeWorkId) return;
-    if (priorScope.current !== null)
-      useContextTabsStore.getState().clearReviewPins(props.projectId);
+    if (priorScope.current !== null) {
+      const store = useContextTabsStore.getState();
+      for (const tab of getContextTabs(props.projectId).tabs) {
+        if (tab.kind === "tracked" && tab.reviewPin && !isDraftOnly(tab))
+          store.clearReviewPins(props.projectId, {
+            ownerKey: tab.reviewPin.ownerKey,
+            itemKey: tab.reviewPin.itemKey,
+          });
+      }
+    }
     priorScope.current = scopeWorkId;
   }, [props.projectId, scopeWorkId]);
   const draftCommands = useDraftCommandOwner();
