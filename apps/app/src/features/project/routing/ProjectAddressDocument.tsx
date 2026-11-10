@@ -141,7 +141,7 @@ export function ProjectAddressDocument({
       );
     if (reviewItemKey) {
       // An arriving review address is an open command: with no tab for the document it installs
-      // one, and the pin sync and ReviewAddressOwner take it from there. A hidden review has no
+      // one, and the address sync pins its view, which the host's review follows. A hidden review has no
       // live catalog to refresh its labels, so the server's canonical locator repairs its tab here.
       if (!opened) {
         const tab = !draftOnly

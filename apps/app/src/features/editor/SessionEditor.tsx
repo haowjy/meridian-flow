@@ -23,10 +23,7 @@ import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/doc
 import { editorReferenceNode } from "@/core/editor/extensions/at-reference";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
-import {
-  type LiveEditorContainer,
-  registerLiveRangeEditor,
-} from "@/core/editor/live-range-navigation-runtime";
+import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import { type EditorMountIdentity, useMountedEditor } from "@/core/editor/mounted-editor";
 import { holdPictureCapThroughKeyboard } from "@/core/editor/objects";
 import { useReadingPosition } from "@/core/editor/use-reading-position";
@@ -82,7 +79,6 @@ type SessionEditorProps = {
   focusKey?: string;
   /** Reopens the room after the server refused its updates (draft review only). */
   onReopen?: () => void;
-  container: LiveEditorContainer;
 };
 
 /** The Work an owner key names; a lineage names none. */
@@ -151,7 +147,6 @@ function ActiveSessionEditorView({
   holderUri: reviewHolderUri,
   snapshot,
   evidenceDegraded,
-  container,
 }: ActiveSessionEditorViewProps) {
   const {
     className,
@@ -370,9 +365,8 @@ function ActiveSessionEditorView({
       editor,
       session,
       localContentReady: surfaceOptions.localContentReady === true,
-      container,
     });
-  }, [active, container, documentId, editor, inReview, session, surfaceOptions.localContentReady]);
+  }, [active, documentId, editor, inReview, session, surfaceOptions.localContentReady]);
 
   const constructionCallback = useRef(onConstructed);
   constructionCallback.current = onConstructed;

@@ -1,7 +1,8 @@
 /** Desktop owns the Write pane's presentation of the selected tab and the rail's mode switch; routes own addresses. */
 import { useLayoutEffect, useRef } from "react";
+import { readDocumentView } from "@/client/project-shell/document-views";
 import { selectedDocumentIdOf, useContextTabs, useSelectedContextTab } from "@/client/stores";
-import { useAccountResourceProjection } from "./context/account-feature-context";
+import { useAccountId, useAccountResourceProjection } from "./context/account-feature-context";
 import { projectResourceTab } from "./context/context-tab-from-file";
 import { resolveEditorPresentation } from "./context/editor-presentation";
 import type { VisibleEditorRoute } from "./context/resolve-route-owner";
@@ -36,6 +37,7 @@ export function useDesktopProjectController<
   const isCurrent = useIsCurrentNavigation();
   const selectRailScreen = useRailScreenSwitch(screen, isCurrent);
   const selected = useSelectedContextTab(input.projectId);
+  const accountId = useAccountId();
   // The selection is the one open document: a mode switch moves the view, never the document.
   const selectScreen = (next: ScreenKey) => {
     if (!commands || !open) return;
@@ -43,7 +45,9 @@ export function useDesktopProjectController<
       next === "chat"
         ? chat.showChatScreen()
         : selected && selected.documentId !== editorPresentation.resolved.tab?.documentId
-          ? openDocumentInEditor(open, selected)
+          ? openDocumentInEditor(open, selected, {
+              review: readDocumentView(accountId, input.projectId, selected.documentId).pin,
+            })
           : commands.showEditor(),
     );
   };

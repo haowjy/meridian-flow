@@ -46,7 +46,7 @@ export function useWorkBranchCommands({
   work,
   ownerKey,
   threadId = null,
-  surface = "dock",
+  history = "notice",
   editorHistory,
 }: {
   projectId: string;
@@ -54,7 +54,8 @@ export function useWorkBranchCommands({
   /** Whose drafts the commands act on (`work:<id>` or `lineage:<root>`); "" acts on none. */
   ownerKey: string;
   threadId?: string | null;
-  surface?: "editor" | "dock";
+  /** Whose Undo takes a Discard back: the reviewing editor's, or the notice this surface shows. */
+  history?: "editor" | "notice";
   editorHistory?: (draft: DraftReviewSelection) => EditorHistoryHandle | null;
 }) {
   const owner = useDraftCommandOwner();
@@ -243,17 +244,17 @@ export function useWorkBranchCommands({
         if (!item?.tree) return blocked();
         // The line goes at once; the refetch after the answer restores it if the server refused.
         dropTreeLine(item);
-        const outcome = owner.discardItem(ref(draft), item, target, surface).then((answer) => {
+        const outcome = owner.discardItem(ref(draft), item, target, history).then((answer) => {
           refresh([draft.documentId]);
           return answer;
         });
         // No Undo: the server's settlement of the move or delete has none (`discardItem`).
-        if (surface === "dock") show({ kind: "discarded", itemKey: draft.itemKey, end() {} });
+        if (history === "notice") show({ kind: "discarded", itemKey: draft.itemKey, end() {} });
         return { sent: true, outcome };
       }
-      const discarded = owner.discard(ref(draft), target, surface, endNotice);
+      const discarded = owner.discard(ref(draft), target, history, endNotice);
       if (!discarded) return blocked();
-      if (surface === "dock")
+      if (history === "notice")
         show({
           ...discarded.notice,
           undo: discarded.notice.undo
@@ -374,7 +375,7 @@ export function useWorkBranchCommands({
     projectId,
     ownerKey,
     threadId,
-    surface,
+    history,
     editorHistory,
     queryClient,
     notice,

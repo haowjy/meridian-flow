@@ -10,11 +10,9 @@ import {
   matchesTabInstance,
   type ProjectTabsSlice,
   type ReviewEntries,
-  type ReviewPin,
   selectedDocumentIdOf,
   selectedTabOf,
   type TabOwner,
-  type TabView,
   tabKey,
 } from "./editor-workspace-model";
 import {
@@ -33,7 +31,6 @@ export type TrackedTabPatch = Partial<
 
 export {
   type ContextTab,
-  DEFAULT_TAB_VIEW,
   editorHasReview,
   isDraftOnly,
   isEditorContextTab,
@@ -42,7 +39,6 @@ export {
   matchesTabInstance,
   type ProjectTabsSlice,
   type ReviewEntries,
-  type ReviewPin,
   replaceOwner,
   reviewEntryOf,
   reviewOwnerOfTab,
@@ -52,7 +48,6 @@ export {
   selectedTabOf,
   selectingDocument,
   type TabOwner,
-  type TabView,
   tabContextOwner,
   tabKey,
   withoutReviewEntry,
@@ -91,14 +86,6 @@ type ContextTabsActions = {
     documentId: string | null,
     addressed?: ContextTab,
   ) => Promise<void>;
-  /** The writer's choices on one tab (view, review pin). */
-  setTabState: (
-    projectId: string,
-    key: string,
-    patch: { view?: Partial<TabView>; reviewPin?: ReviewPin | null },
-  ) => void;
-  /** Drops pins by owner and/or item (a scope switch, a settled or dropped review); no filter drops all. */
-  clearReviewPins: (projectId: string, filter?: { ownerKey?: string; itemKey?: string }) => void;
   reconcileBootstrap: (
     projectId: string,
     changes: readonly { prior: ContextTab; next: ContextTab | null }[],
@@ -219,19 +206,6 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
               ? null
               : { kind: "select", projectId, tabInstanceId: tabInstanceId ?? null };
           });
-        },
-
-        setTabState: (projectId, key, patch) => {
-          dispatchResult(() => ({
-            kind: "set-tab-state",
-            projectId,
-            tabInstanceId: key,
-            patch,
-          }));
-        },
-
-        clearReviewPins: (projectId, filter) => {
-          dispatchResult(() => ({ kind: "clear-review-pins", projectId, ...filter }));
         },
 
         reconcileBootstrap: async (projectId, changes) => {
@@ -417,12 +391,7 @@ export async function rehydrateEditorWorkspace(userId: string): Promise<void> {
 
 type PublicContextTabsActions = Pick<
   ContextTabsActions,
-  | "openTab"
-  | "reconcileResourceTab"
-  | "updateTrackedTab"
-  | "selectTab"
-  | "setTabState"
-  | "clearReviewPins"
+  "openTab" | "reconcileResourceTab" | "updateTrackedTab" | "selectTab"
 >;
 
 export function useContextTabsActions(): PublicContextTabsActions {
@@ -432,8 +401,6 @@ export function useContextTabsActions(): PublicContextTabsActions {
       reconcileResourceTab: s.reconcileResourceTab,
       updateTrackedTab: s.updateTrackedTab,
       selectTab: s.selectTab,
-      setTabState: s.setTabState,
-      clearReviewPins: s.clearReviewPins,
     })),
   );
 }

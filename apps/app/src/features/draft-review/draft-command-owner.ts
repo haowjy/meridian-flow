@@ -801,14 +801,14 @@ export class DraftCommandOwner {
   discard(
     ref: DraftRef,
     target: TextTarget,
-    surface: "editor" | "dock",
+    history: "editor" | "notice",
     onNoticeEnd?: () => void,
   ): { notice: DiscardNotice; outcome: Promise<CommandOutcome> } | null {
     const entry = this.byItem.get(ref.itemKey);
     return startDraftDiscardSession({
       ref,
       target,
-      surface,
+      history,
       onNoticeEnd,
       entry,
       registry: this.registry,
@@ -889,11 +889,11 @@ export class DraftCommandOwner {
     ref: DraftRef,
     item: ThreadDraftListItem,
     target: ChangeTarget,
-    surface: "editor" | "dock",
+    history: "editor" | "notice",
   ): Promise<CommandOutcome> {
     if (!this.active || !item.tree) return Promise.resolve({ kind: "blocked" });
     const text =
-      item.hasDraft && target.kind !== "tree" ? this.discard(ref, target, surface) : null;
+      item.hasDraft && target.kind !== "tree" ? this.discard(ref, target, history) : null;
     text?.notice.end();
     return Promise.all([this.discardTree(ref, item), text?.outcome]).then(([tree, discarded]) =>
       tree.kind === "done" && discarded ? discarded : tree,

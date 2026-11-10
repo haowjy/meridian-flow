@@ -14,7 +14,6 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { draftMetadataQueryOptions } from "@/client/query/useDraftMetadata";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
-import { showDocumentLive } from "@/features/project/tab-view-commands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useDraftReview } from "./DraftReviewProvider";
 import type { BranchCommandFailure } from "./review-command-types";
@@ -105,7 +104,7 @@ export function useReviewHeader({
   onCloseDraftOnly,
   onOpenDraft,
 }: ReviewHeaderOptions): ReviewHeaderModel {
-  const { controller, files, drafts } = useDraftReview();
+  const { controller, files, drafts, showLive: showDocumentLive } = useDraftReview();
   const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
 
   // Only a file with text has a review to move to: a move or delete alone has no draft room.
@@ -133,8 +132,7 @@ export function useReviewHeader({
   const locked = controller.dispositionLocked || view.status !== "ready";
   const { finished, completing } = view;
   const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey, view });
-  const showLive = () =>
-    (onCloseDraftOnly ?? (() => showDocumentLive(controller.projectId, documentId)))();
+  const showLive = () => (onCloseDraftOnly ?? showDocumentLive)();
 
   // The item this header shows while it is mounted; null once the writer has left it.
   const shown = useRef<string | null>(itemKey);
