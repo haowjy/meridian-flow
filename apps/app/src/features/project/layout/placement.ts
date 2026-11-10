@@ -1,16 +1,17 @@
 /**
- * Pure mode-to-surface placement for the project, merged with the mode's panel
- * prefs for render consumers. The centre slot is never collapsible. A transient
- * hold (`collapsedSlots`, a too-narrow window) collapses slots for as long as it
+ * Where the project's surfaces sit, merged with the two panel prefs for render consumers. The
+ * centre follows the kind of item the address names: a document fills it with the chat in the
+ * dock, a chat fills it with the document the dock holds. The centre slot is never collapsible.
+ * A transient hold (`collapsedSlots`, a too-narrow window) collapses slots for as long as it
  * lasts without touching prefs, so the writer's choice returns when it lifts.
  */
 import { useMemo } from "react";
 
-import type { ScreenKey } from "../shell/screens";
-import { MODES, type ModeKey, type ModePanels, modeMeta } from "./modes";
+import type { ScreenKey } from "../routing/project-route";
 import {
-  DEFAULT_MODE_PANELS,
+  DEFAULT_PANEL_PREFS,
   DEFAULT_SLOT_WIDTHS,
+  type PanelPrefs,
   type SlotWidths,
   useProjectSurfacePrefsStore,
 } from "./surface-prefs-store";
@@ -19,21 +20,26 @@ import {
   PROJECT_SURFACE_IDS,
   type SurfaceId,
   type SurfaceLayoutMap,
-  type SurfacePlacement,
   type SurfacePlacementMap,
 } from "./types";
-
-/** The mode a destination shows in. */
-export function modeOf(screen: ScreenKey): ModeKey {
-  return (MODES.find((mode) => mode.screen === screen) ?? modeMeta("chat")).key;
-}
 
 /** Stable "nothing held" argument, so the layout memo does not thrash. */
 export const NO_COLLAPSED_SLOTS: readonly DesktopProjectSlotId[] = [];
 
-function _placement(slot: SurfacePlacement["slot"]): SurfacePlacement {
-  return { slot };
-}
+const PLACEMENTS = {
+  context: {
+    threads: { slot: "rail-l" },
+    chat: { slot: "dock" },
+    "context-viewer": { slot: "center" },
+    "context-rail": { slot: null },
+  },
+  chat: {
+    threads: { slot: "rail-l" },
+    chat: { slot: "center" },
+    "context-viewer": { slot: null },
+    "context-rail": { slot: "dock" },
+  },
+} as const satisfies Record<ScreenKey, SurfacePlacementMap>;
 
 function assertOneActiveSurfacePerSlot(layout: SurfaceLayoutMap): void {
   const surfaceBySlot: Partial<Record<DesktopProjectSlotId, SurfaceId>> = {};
@@ -51,14 +57,10 @@ function assertOneActiveSurfacePerSlot(layout: SurfaceLayoutMap): void {
   }
 }
 
-export function placeSurfaces(screen: ScreenKey): SurfacePlacementMap {
-  return modeMeta(modeOf(screen)).placement;
-}
-
 export function mergeSurfaceLayout(
   placements: SurfacePlacementMap,
   widths: SlotWidths = DEFAULT_SLOT_WIDTHS,
-  panels: ModePanels = DEFAULT_MODE_PANELS.chat,
+  panels: PanelPrefs = DEFAULT_PANEL_PREFS,
   collapsedSlots: readonly DesktopProjectSlotId[] = NO_COLLAPSED_SLOTS,
 ): SurfaceLayoutMap {
   const layout = {} as SurfaceLayoutMap;
@@ -70,9 +72,9 @@ export function mergeSurfaceLayout(
       width: slot === "rail-l" || slot === "dock" ? widths[slot] : 0,
       collapsed:
         slot === "rail-l"
-          ? held || !panels.railOpen
+          ? held || !panels.sidebarOpen
           : slot === "dock"
-            ? held || !panels.dockOpen
+            ? held || !panels.sideOpen
             : slot === null,
     };
   }
@@ -86,11 +88,10 @@ export function useProjectLayout(
   screen: ScreenKey,
   collapsedSlots: readonly DesktopProjectSlotId[] = NO_COLLAPSED_SLOTS,
 ): SurfaceLayoutMap {
-  const mode = modeOf(screen);
   const widths = useProjectSurfacePrefsStore((state) => state.widths);
-  const panels = useProjectSurfacePrefsStore((state) => state.modes[mode]);
+  const panels = useProjectSurfacePrefsStore((state) => state.panels);
   return useMemo(
-    () => mergeSurfaceLayout(placeSurfaces(screen), widths, panels, collapsedSlots),
+    () => mergeSurfaceLayout(PLACEMENTS[screen], widths, panels, collapsedSlots),
     [collapsedSlots, panels, screen, widths],
   );
 }

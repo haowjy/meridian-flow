@@ -37,7 +37,7 @@ export function SegmentedTabs<T extends string>({
   value: T;
   options: readonly SegmentedTabOption<T>[];
   onChange: (value: T) => void;
-  /** Segments share the full width (the sidebar's mode switch). */
+  /** Segments share the full width (the sidebar's Write | Chat switch). */
   fill?: boolean;
   className?: string;
 }) {

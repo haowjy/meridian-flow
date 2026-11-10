@@ -1,9 +1,8 @@
 /** Route-owned command channel for project destination commands. */
 import { createContext, type ReactNode, useContext, useLayoutEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
-import type { ScreenKey } from "../shell/screens";
 import type { NavigationSettlement, ProjectLeaveGuard } from "./project-navigation";
-import type { ContextRouteRequest } from "./project-route";
+import type { ContextRouteRequest, ScreenKey } from "./project-route";
 
 export type OpenContextOptions = {
   replace?: boolean;

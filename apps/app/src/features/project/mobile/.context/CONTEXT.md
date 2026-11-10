@@ -13,7 +13,7 @@ desktop; a short landscape phone remains mobile.
 
 Mobile consumes typed `ProjectViewProps`. Leaves never parse or construct URLs.
 The route parent owns push/replace and invalid-address rendering. Primary
-screens are the `SCREENS` registry: Chats, Works, and Editor; Settings and
+screens are Chats, Works, and Editor; Settings and
 Trash are auxiliary query surfaces. The navigation drawer's fixed row opens the
 full-screen Trash list without changing the mounted primary screen. Selecting a
 row shows its read-only document in place; Back returns to the list. Context

@@ -1,8 +1,8 @@
 /**
  * LeftSidebar — the desktop project sidebar. The header holds the project menu,
- * then the Work scope, then the mode switch. Under the switch sits the mode's
- * own sidebar (`MODE_SIDEBARS`). The phone drawer has no mode switch: it
- * composes `WorkspaceNavBody` instead.
+ * then the Work scope, then the Write | Chat switch. Under the switch sits the
+ * list it picked (`SIDEBAR_LISTS`). The phone drawer composes the same switch
+ * and list inside `WorkspaceNavBody`.
  */
 
 import { t } from "@lingui/core/macro";
@@ -11,22 +11,19 @@ import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useSelectedContextTab } from "@/client/stores";
 import { role } from "@/components/ui/roles";
-import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { projectResourceTab } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import { MODES, modeLabel, modeMeta } from "../layout/modes";
-import { modeOf } from "../layout/placement";
+import type { ScreenKey } from "../routing/project-route";
 import { useWorkScope } from "../use-work-scope";
 import { useManageWorks } from "../work/ManageWorksDialog";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleSpacer } from "./PanelToggleButton";
 import { ProjectMenu } from "./ProjectMenu";
-import type { ScreenKey } from "./screens";
-
-import { MODE_SIDEBARS } from "./sidebar/mode-sidebars";
+import { ListSwitch } from "./sidebar/ListSwitch";
+import { SIDEBAR_LISTS, useSidebarListState } from "./sidebar/sidebar-lists";
 import { WorkScopePicker } from "./sidebar/WorkScopePicker";
 import type { TitleEditHandle } from "./TitleEditSlot";
 
@@ -41,7 +38,6 @@ type LeftSidebarProps = {
   contextLive: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
-  onSelectScreen: (screen: ScreenKey) => void;
 };
 
 export function LeftSidebar({
@@ -54,14 +50,13 @@ export function LeftSidebar({
   contextLive,
   activeContextScheme,
   activeContextPath,
-  onSelectScreen,
 }: LeftSidebarProps) {
   const manageWorks = useManageWorks();
   const titleEditor = useRef<TitleEditHandle>(null);
   const openDocument = useOpenProjectDocument(projectId);
   const scope = useWorkScope(projectId);
-  const mode = modeOf(activeScreen);
-  const Sidebar = MODE_SIDEBARS[mode];
+  const { list } = useSidebarListState(projectId);
+  const Sidebar = SIDEBAR_LISTS[list].Body;
 
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
@@ -133,20 +128,7 @@ export function LeftSidebar({
         onPick={scope.setWorkId}
         onManage={() => manageWorks?.open()}
       />
-      <SegmentedTabs
-        label={t`Mode`}
-        fill
-        className="mx-2"
-        value={mode}
-        options={MODES.map((entry) => ({
-          value: entry.key,
-          label: modeLabel(entry.key),
-          icon: entry.icon,
-        }))}
-        onChange={(next) => {
-          if (next !== mode) onSelectScreen(modeMeta(next).screen);
-        }}
-      />
+      <ListSwitch projectId={projectId} className="mx-2" />
       <Sidebar
         projectId={projectId}
         editorWorkId={editorWorkId}

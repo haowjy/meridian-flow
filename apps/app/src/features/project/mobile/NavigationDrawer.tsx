@@ -1,5 +1,5 @@
 /**
- * NavigationDrawer — the phone project drawer: destinations, Write's source tabs, and the account.
+ * NavigationDrawer — the phone project drawer: the Write | Chat switch, its list, and the account.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -9,8 +9,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { TreeCreationProvider } from "../context/TreeCreationProvider";
 import { InlineProjectTitle, type ProjectTitleEdit } from "../shell/InlineProjectTitle";
-import type { ScreenKey } from "../shell/screens";
-import { SourcesBody } from "../shell/sidebar/SourcesBody";
+import { SIDEBAR_LISTS, useSidebarListState } from "../shell/sidebar/sidebar-lists";
 import { WorkScopePicker } from "../shell/sidebar/WorkScopePicker";
 import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
 import { useWorkScope } from "../use-work-scope";
@@ -25,12 +24,10 @@ export type NavigationDrawerProps = {
   projectId: string;
   projectTitle: string;
   titleEdit: ProjectTitleEdit;
-  activeScreen: ScreenKey;
   editorWorkId: string | null;
   contextLive: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
-  onSelectScreen: (screen: ScreenKey) => void;
   /** The chat on screen, whose notes the Scratch tab lists. */
   chatThreadId: string | null;
 };
@@ -41,14 +38,14 @@ export function NavigationDrawer({
   projectId,
   projectTitle,
   titleEdit,
-  activeScreen,
   editorWorkId,
   contextLive,
   activeContextScheme,
   activeContextPath,
-  onSelectScreen,
   chatThreadId,
 }: NavigationDrawerProps) {
+  const { list } = useSidebarListState(projectId);
+  const Body = SIDEBAR_LISTS[list].Body;
   const openDocument = useOpenProjectDocument(projectId);
   const scope = useWorkScope(projectId);
   const manageWorks = useManageWorks();
@@ -122,15 +119,8 @@ export function NavigationDrawer({
               />
             </div>
 
-            {/* Selecting a destination also closes the drawer — a chrome
-                concern the shared body stays unaware of. */}
-            <WorkspaceNavBody
-              activeScreen={activeScreen}
-              onSelectScreen={(screen) => {
-                onSelectScreen(screen);
-                onOpenChange(false);
-              }}
-            >
+            {/* The switch only changes the list; a pick inside the list closes the drawer. */}
+            <WorkspaceNavBody projectId={projectId}>
               {/* The drawer's own creation seam: closing the drawer unmounts it, ending any inline create. */}
               <TreeCreationProvider expandSidebar={keepOpen}>
                 <div className="flex shrink-0 py-1">
@@ -144,7 +134,7 @@ export function NavigationDrawer({
                     }}
                   />
                 </div>
-                <SourcesBody
+                <Body
                   projectId={projectId}
                   editorWorkId={editorWorkId}
                   chatThreadId={chatThreadId}
@@ -152,6 +142,8 @@ export function NavigationDrawer({
                   activeScheme={activeContextScheme}
                   activePath={activeContextPath}
                   onSelectFile={handleSelectFile}
+                  scopeWorkId={scope.workId}
+                  onShowWork={scope.setWorkId}
                   onPicked={() => onOpenChange(false)}
                 />
               </TreeCreationProvider>
