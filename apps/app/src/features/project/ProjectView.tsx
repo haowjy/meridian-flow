@@ -147,7 +147,8 @@ import { ManageWorksDialogHost, ManageWorksProvider } from "./work/ManageWorksDi
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
 const MAIN_MIN_WIDTH = 360;
-const COMPACT_DESKTOP_QUERY = "(max-width: 899px)";
+/** Below sidebar (264) + side panel (360) + main's minimum, the side panel folds so main is never crushed. */
+const COMPACT_DESKTOP_QUERY = "(max-width: 983px)";
 const NARROW_DESKTOP_QUERY = "(max-width: 767px)";
 
 function availabilityWatchRecord(

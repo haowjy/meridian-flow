@@ -5,8 +5,8 @@
  * the Editor. Rows offer Rename, Move… and Delete like any list's while the
  * owner can still be edited; the AI makes the notes, so there is no New note.
  *
- * Three surfaces show it: Write's Scratch source (`ScratchSource`), Chat
- * mode's docked section (`RailScratchSection`), and a chat's Files menu
+ * Three surfaces show it: the Files list's Scratch source (`ScratchSource`), the
+ * Chat list's docked section (`RailScratchSection`), and a chat's Files menu
  * (`MenuScratchSection`). The wording "Scratch for this chat" / "Scratch for
  * <Work>" is the heading's tooltip and accessible name, not a line of text.
  */
@@ -148,15 +148,18 @@ export function ScratchSource({
   );
 }
 
-/** Chat mode's Scratch, docked under the chat list; it collapses and trades height with the list. */
+/** The Chat list's Scratch, docked under the chat list; it collapses and trades height with the list. */
 export function RailScratchSection({
   projectId,
   threadId,
   resizeAgainst,
+  onPicked,
 }: {
   projectId: string;
   /** The chat on screen. */
   threadId: string | null;
+  /** After a note opens elsewhere (the phone drawer closes). */
+  onPicked?: () => void;
   /** The pane above, which a handle on the divider trades height with when the section is expanded. */
   resizeAgainst?: RefObject<HTMLElement | null>;
 }) {
@@ -188,7 +191,12 @@ export function RailScratchSection({
             {expanded ? (
               <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
                 <TreeGroup depth={1}>
-                  <ChatScratchTree projectId={projectId} scratch={scratch} depth={1} />
+                  <ChatScratchTree
+                    projectId={projectId}
+                    scratch={scratch}
+                    depth={1}
+                    onPicked={onPicked}
+                  />
                 </TreeGroup>
                 <ChatScratchStatus scratch={scratch} />
               </div>

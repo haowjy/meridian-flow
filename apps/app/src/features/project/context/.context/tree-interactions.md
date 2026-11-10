@@ -229,9 +229,9 @@ and dialog serve all Scratch rows, retaining each target's owner. The actual own
 
 ## Selecting and dragging rows
 
-The Write sidebar, Chat mode's Scratch and a Work's Files are each one list:
+The Files list, the Chat list's Scratch and a Work's Files are each one list:
 `useEntryList` owns its selection, its entries route and, through `EntryList`,
-its drop scope. The Write sidebar (also the phone drawer) is one list over every
+its drop scope. The Files list (also the phone drawer) is one list over every
 source it can show: Manuscript, Knowledge Base, Your files, Unfiled and the chat's
 Scratch, each tree keeping its own expansion. Rows join through `EntrySelectionProvider`.
 Selection keys are `kind:id` and carry no scheme or place, so a moved row keeps
