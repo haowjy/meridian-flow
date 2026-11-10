@@ -16,7 +16,8 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { unwrapListQuery } from "@/client/query/list-query";
-import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { cachedOwnerDrafts, ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import {
   type ContextTab,
   DEFAULT_TAB_VIEW,
@@ -246,13 +247,15 @@ export function useOpenDocuments(projectId: string): {
   useEffect(() => {
     for (const key of new Set(missingPins)) {
       const [ownerKey, itemKey] = JSON.parse(key) as [string, string];
-      queryClient
-        .fetchQuery({ ...ownerDraftsQueryOptions(projectId, ownerKey), staleTime: 0 })
-        .then((fresh) => {
-          if (!fresh.items.some((row) => row.itemKey === itemKey))
-            useContextTabsStore.getState().clearReviewPins(projectId, { ownerKey, itemKey });
-        })
-        .catch(() => {});
+      const queryKey = projectQueryKeys.ownerDrafts(projectId, ownerKey);
+      void queryClient.refetchQueries({ queryKey }).then(() => {
+        // A failed refetch keeps the old rows and sets status "error": it proves nothing.
+        if (queryClient.getQueryState(queryKey)?.status !== "success") return;
+        if (
+          !cachedOwnerDrafts(queryClient, projectId, ownerKey)?.some((r) => r.itemKey === itemKey)
+        )
+          useContextTabsStore.getState().clearReviewPins(projectId, { ownerKey, itemKey });
+      });
     }
   }, [projectId, queryClient, missingKey]);
   return useMemo(() => {
