@@ -47,7 +47,7 @@ certificates are not written into journal metadata.
 
 Apply has one HTTP door per document: `draft/apply`. It compiles the frozen
 snapshot off-lock, then commits live, the prefix-authored review base and Apply
-record, lineage and terminal command outcome atomically. A stored result
+record and terminal command outcome atomically. A stored result
 wins over every fresh refusal, including a retry after close. See [Apply](apply.md)
 for the storage boundary and diagnostic timing contract. Work Apply all is a
 browser loop of per-document clicks; there is no settlement executor or recovery

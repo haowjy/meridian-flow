@@ -56,8 +56,9 @@ that proves it ran.
 A populated-upgrade proof (seed the old schema, run the new migration, check the
 data) runs once, before the migration merges into `main` or `staging`, as a
 recipe in `docs/qa/` such as `document-removal-records.md`. After that merge,
-`pnpm db:migration-history` refuses any edit to the migration, so no committed
-test replays it over populated data. The TypeScript that reads its rows is not
+`pnpm db:migration-history` refuses any edit to the migration, so no new
+test replays it over populated data. (`packages/database/src/fresh-migrations.db.test.ts`
+does this for a few migrations, such as 0113, 0114 and 0131.) The TypeScript that reads its rows is not
 frozen: when a migration leaves old rows in a state new rows never reach, keep a
 current-schema DB case that seeds such a row and asserts what the reader returns
 (`../domains/threads/adapters/drizzle/turn-position.db.test.ts`).

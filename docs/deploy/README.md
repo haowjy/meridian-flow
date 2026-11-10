@@ -85,8 +85,9 @@ drain, run both commands above, then start the new release. If a migration fails
 fix the cause and rerun it with writers still stopped; never restart the old
 release on a partly migrated schema. Current stop-the-writers ranges: 0075–0081
 (draft review conversion), 0082–0083 (owner handles), 0090–0092 (branch
-tree ownership), 0111–0112 (multi-question asks) and 0113–0114 (unused pricing fields:
-the old release reads and writes the dropped column), and 0125 (folder document alias).
+tree ownership), 0111–0112 (multi-question asks), 0113–0114 (unused pricing fields:
+the old release reads and writes the dropped column), 0125–0126 (folder document alias; upload intake columns), 0129 (`push_lineage` and
+connector columns), 0130 (ordered folders) and 0131 (No Work branches).
 
 ## Environment variables
 
