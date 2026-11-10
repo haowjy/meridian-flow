@@ -11,12 +11,13 @@ import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useSelectedContextTab } from "@/client/stores";
 import { role } from "@/components/ui/roles";
+import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { projectResourceTab } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import { modeMeta } from "../layout/modes";
+import { MODES, modeLabel, modeMeta } from "../layout/modes";
 import { modeOf } from "../layout/placement";
 import { useScreenCommands } from "../routing/ProjectNavigationContext";
 import { useWorkScope } from "../use-work-scope";
@@ -24,7 +25,7 @@ import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle"
 import { PanelToggleSpacer } from "./PanelToggleButton";
 import { ProjectMenu } from "./ProjectMenu";
 import type { ScreenKey } from "./screens";
-import { ModeSwitch } from "./sidebar/ModeSwitch";
+
 import { MODE_SIDEBARS } from "./sidebar/mode-sidebars";
 import { WorkScopePicker } from "./sidebar/WorkScopePicker";
 import type { TitleEditHandle } from "./TitleEditSlot";
@@ -132,9 +133,17 @@ export function LeftSidebar({
         onPick={scope.setWorkId}
         onManage={() => void screenCommands?.showWork()}
       />
-      <ModeSwitch
-        mode={mode}
-        onSelect={(next) => {
+      <SegmentedTabs
+        label={t`Mode`}
+        fill
+        className="mx-2"
+        value={mode}
+        options={MODES.map((entry) => ({
+          value: entry.key,
+          label: modeLabel(entry.key),
+          icon: entry.icon,
+        }))}
+        onChange={(next) => {
           if (next !== mode) onSelectScreen(modeMeta(next).screen);
         }}
       />

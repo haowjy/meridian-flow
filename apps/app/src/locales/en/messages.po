@@ -3863,7 +3863,7 @@ msgstr "Missing figure source"
 msgid "missing kind"
 msgstr "missing kind"
 
-#: src/features/project/shell/sidebar/ModeSwitch.tsx
+#: src/features/project/shell/LeftSidebar.tsx
 msgid "Mode"
 msgstr "Mode"
 
