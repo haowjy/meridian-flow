@@ -5,14 +5,12 @@ import { useShallow } from "zustand/react/shallow";
 import { browserRecord } from "@/client/storage/browser-record";
 import {
   type ContextTab,
-  editorHasReview,
   isDraftOnly,
   isEditorContextTab,
   matchesTabInstance,
   type ProjectTabsSlice,
   type ReviewEntries,
   type ReviewPin,
-  reviewEntryOf,
   selectedDocumentIdOf,
   selectedTabOf,
   selectingDocument,
@@ -37,12 +35,9 @@ export type TrackedTabPatch = Partial<
 export {
   type ContextTab,
   DEFAULT_TAB_VIEW,
-  editorHasReview,
-  editorTabsForWork,
   isDraftOnly,
   isEditorContextTab,
   isEditorScheme,
-  isEditorTab,
   matchesReviewItem,
   matchesTabInstance,
   type ProjectTabsSlice,
@@ -81,7 +76,6 @@ type ContextTabsActions = {
     projectId: string,
     tab: ContextTab,
     isCurrent?: () => boolean,
-    editorWorkId?: string,
     options?: { select?: true },
   ) => OpenEditorTabResult;
   reconcileResourceTab: (
@@ -187,7 +181,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         _workspaceHydrated: false,
         _layoutPersistenceError: null,
 
-        openTab: (projectId, input, isCurrent, editorWorkId, options) => {
+        openTab: (projectId, input, isCurrent, options) => {
           if (isCurrent?.() === false) return { kind: "superseded" };
           if (!isEditorContextTab(input)) return { kind: "ineligible" };
           const tab = { ...input, tabInstanceId: input.tabInstanceId ?? crypto.randomUUID() };
@@ -195,13 +189,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           const installed = sliceFor(get(), projectId).tabs.find(
             (member) => member.documentId === tab.documentId,
           );
-          // Another Work's draft-only tab is not this Editor's document.
-          return installed &&
-            (editorWorkId === undefined ||
-              !isDraftOnly(installed) ||
-              editorHasReview(installed, editorWorkId))
-            ? { kind: "opened", tab: installed }
-            : { kind: "not-opened" };
+          return installed ? { kind: "opened", tab: installed } : { kind: "not-opened" };
         },
 
         reconcileResourceTab: (projectId, resourceHandle, tab) =>

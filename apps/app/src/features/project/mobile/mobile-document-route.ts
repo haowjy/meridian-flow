@@ -6,7 +6,7 @@ import type { CatalogContextView } from "@/client/query/context-catalog-projecti
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
   type ContextTab,
-  editorTabsForWork,
+  isEditorContextTab,
   type ServerContextTab,
   useContextTabs,
 } from "@/client/stores";
@@ -112,9 +112,10 @@ export function resolveMobileDocumentRoute(input: {
       : owner.kind === "draft-only"
         ? owner.tab
         : owner.kind === "pending" && input.reviewing
-          ? (editorTabsForWork(input.workspaceTabs ?? [], input.workId).find(
-              (tab) => tab.kind !== "new" && tab.documentId === input.boundDocumentId,
-            ) ?? null)
+          ? ((input.workspaceTabs ?? [])
+              .filter(isEditorContextTab)
+              .find((tab) => tab.kind !== "new" && tab.documentId === input.boundDocumentId) ??
+            null)
           : null;
   return {
     requested: true,

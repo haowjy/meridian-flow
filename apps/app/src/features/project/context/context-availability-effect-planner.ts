@@ -330,11 +330,10 @@ export function planContextAvailabilityBatch(
       if (input.routeSearch?.work === activeWorkId && routeSearch) {
         routeSearch = {
           ...routeSearch,
-          screen: "work",
+          screen: "context",
           work: undefined,
           chat: undefined,
           scheme: undefined,
-          folder: undefined,
           path: undefined,
         };
       }

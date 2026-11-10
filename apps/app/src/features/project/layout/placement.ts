@@ -23,7 +23,7 @@ import {
   type SurfacePlacementMap,
 } from "./types";
 
-/** The mode a destination shows in; the Work page reads as Chat until it goes. */
+/** The mode a destination shows in. */
 export function modeOf(screen: ScreenKey): ModeKey {
   return (MODES.find((mode) => mode.screen === screen) ?? modeMeta("chat")).key;
 }
@@ -31,7 +31,7 @@ export function modeOf(screen: ScreenKey): ModeKey {
 /** Stable "nothing held" argument, so the layout memo does not thrash. */
 export const NO_COLLAPSED_SLOTS: readonly DesktopProjectSlotId[] = [];
 
-function placement(slot: SurfacePlacement["slot"]): SurfacePlacement {
+function _placement(slot: SurfacePlacement["slot"]): SurfacePlacement {
   return { slot };
 }
 
@@ -51,17 +51,7 @@ function assertOneActiveSurfacePerSlot(layout: SurfaceLayoutMap): void {
   }
 }
 
-const HIDDEN_PLACEMENT: SurfacePlacementMap = {
-  threads: placement(null),
-  chat: placement(null),
-  "context-viewer": placement(null),
-  "context-rail": placement(null),
-};
-
 export function placeSurfaces(screen: ScreenKey): SurfacePlacementMap {
-  if (screen === "work") {
-    return { ...HIDDEN_PLACEMENT, threads: placement("rail-l"), chat: placement("dock") };
-  }
   return modeMeta(modeOf(screen)).placement;
 }
 

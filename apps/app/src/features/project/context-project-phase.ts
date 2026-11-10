@@ -1,12 +1,12 @@
 /** Pure project-entry authority for one raw bootstrap operation and detachable live hosting. */
 
-import type { EditorWorkScope } from "./editor-work-scope";
+import type { WorkScope } from "./use-work-scope";
 
 export type BootstrapAttempt = { token: number; workId: string };
 
 export type ContextProjectReadiness =
   | { status: "waiting-for-workspace" }
-  | { status: "waiting-for-work"; work: Exclude<EditorWorkScope, { status: "ready" }> }
+  | { status: "waiting-for-work"; work: Exclude<WorkScope, { status: "ready" }> }
   | { status: "ready"; workId: string };
 
 export type ContextProjectAuthority = {
@@ -20,9 +20,9 @@ export type ContextProjectAuthority = {
 
 export type ContextProjectPhase =
   | { status: "waiting-for-workspace" }
-  | { status: "waiting-for-work"; work: Exclude<EditorWorkScope, { status: "ready" }> }
+  | { status: "waiting-for-work"; work: Exclude<WorkScope, { status: "ready" }> }
   | { status: "bootstrapping"; attempt: BootstrapAttempt }
-  | { status: "suspended"; work: Exclude<EditorWorkScope, { status: "ready" }> }
+  | { status: "suspended"; work: Exclude<WorkScope, { status: "ready" }> }
   | { status: "live"; workId: string };
 
 export type BootstrapAttemptEffect = {
@@ -57,7 +57,7 @@ export function contextProjectPhase(authority: ContextProjectAuthority): Context
 export function updateContextProjectReadiness(
   authority: ContextProjectAuthority,
   workspaceHydrated: boolean,
-  work: EditorWorkScope,
+  work: WorkScope,
 ): { authority: ContextProjectAuthority; effect: BootstrapAttemptEffect | null } {
   const readiness: ContextProjectReadiness = !workspaceHydrated
     ? { status: "waiting-for-workspace" }

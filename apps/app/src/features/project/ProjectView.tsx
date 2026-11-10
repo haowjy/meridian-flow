@@ -16,7 +16,6 @@ import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
-import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
@@ -32,7 +31,7 @@ import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useRenameProject } from "@/client/query/useRenameProject";
-import { type AddressableWork, useWorks, workFromSnapshot } from "@/client/query/useWorks";
+import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { observeWorksAvailability } from "@/client/query/works-availability-observer";
 import {
   patchAccountRecentsFromTabs,
@@ -92,7 +91,6 @@ import { WindowDropGuard } from "./context/tree-drop/WindowDropGuard";
 import { useDesktopProjectController } from "./DesktopProjectController";
 import { ChatDocumentsBesideProvider } from "./dock/ChatDocumentsBesideProvider";
 import { EditorWorkRecovery } from "./EditorWorkRecovery";
-import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
 import {
   modeOf,
   NO_COLLAPSED_SLOTS,
@@ -130,7 +128,7 @@ import {
   type ProjectRouteIssue,
   type ProjectRouteMask,
 } from "./routing/ProjectRouteBoundary";
-import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
+import type { ProjectRouteCommands } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { LeftSidebar } from "./shell/LeftSidebar";
@@ -139,7 +137,8 @@ import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
 import { useContextProjectAuthority } from "./use-context-project-authority";
 import { useReviewAddressSync } from "./use-review-address-sync";
-import { WorkPaneController } from "./WorkPaneController";
+import { useWorkScopeState, type WorkScope } from "./use-work-scope";
+import { ManageWorksProvider } from "./work/ManageWorksDialog";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
 const MAIN_MIN_WIDTH = 360;
@@ -165,11 +164,6 @@ export type ProjectViewProps = {
   activeScreen: ScreenKey;
   /** What the Chat screen or the dock currently shows for chat. */
   chatDisplay: ChatDisplay;
-  /** Explicit route Work state; loading/error never collapses into absence. */
-  routeWork: RouteWorkResolution;
-  /** Validated browser-local Work offered as the collection's return destination. */
-  rememberedWork: AddressableWork | null;
-  editorRouteWork: Exclude<RouteWorkResolution, { status: "new" | "absent" }>;
   activeLocalDocumentId?: string;
   entryHydration: WorkingSetHydrationPlan;
   routeLocationKey?: string;
@@ -181,15 +175,14 @@ export type ProjectViewProps = {
   };
   /** Re-read what a failed Editor address was waiting on. */
   onRetryEditorRoute?: () => void;
-  onDisplayedSelection?: (selection: { editorWorkId: ParsedRequestId | null }) => void;
   /** Awaitable route-owner commands used by future collection/detail leaves. */
   routeCommands: ProjectRouteCommands;
   /** Browser route adapter for atomic removal repairs. */
   contextRemovalRoute: ContextRemovalRoutePort;
   /** Active context scheme (manuscript/kb/user/work), when `screen=context`. */
   activeContextScheme: ProjectContextTreeScheme | null;
-  /** Active context folder, when `screen=context`. */
-  activeContextFolder: string | null;
+  /** The Work that owns the address's locator: a Scratch address's owner, else the scope's. */
+  activeContextWorkId: string | null;
   /** Active context file path, when `screen=context`. */
   activeContextPath: string | null;
   /** The lineage a chat's Scratch route names, in place of a Work. */
@@ -198,6 +191,8 @@ export type ProjectViewProps = {
   reviewItemKey?: string;
   /** Whose draft the address's item reviews (`addressReviewOwner`). */
   reviewOwner?: string | null;
+  /** The owner the address itself names (a Scratch document's or a draft's), if any. */
+  reviewAddressOwner?: string;
   /** The document that item names. */
   reviewDocumentId?: string;
   reviewChangeId?: string;
@@ -206,14 +201,11 @@ export type ProjectViewProps = {
   /** The route's verdict on an explicit review selector; the owner acts only when admitted. */
   reviewAddressAdmission?: ReviewAddressAdmission;
   onSelectScreen: (screen: ScreenKey) => void;
-  onSelectContextScheme: (scheme: ProjectContextTreeScheme) => void;
-  onExitContextScheme: () => void;
-  onSelectContextFolder: (folder: string) => void;
   /**
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
   onOpenContextTarget: OpenContextRoute;
-  onSetEditorReviewItemKey: (itemKey: string | null, changeId?: string) => void;
+  onSetEditorReviewItemKey: (itemKey: string | null, changeId?: string, ownerKey?: string) => void;
 };
 
 export function ProjectView(props: ProjectViewProps) {
@@ -237,7 +229,6 @@ export function ProjectView(props: ProjectViewProps) {
     key: JSON.stringify([
       props.activeScreen,
       props.activeContextScheme,
-      props.activeContextFolder,
       props.activeContextPath,
       props.activeLocalDocumentId,
       props.activeScreen === "chat" ? selectedDocumentId : null,
@@ -330,13 +321,11 @@ export function ProjectView(props: ProjectViewProps) {
     : null;
   const chatWorkId = chatWork?.id ?? null;
   const chatOwner = chatOwnerKey(chatWork, chatThread?.rootThreadId ?? null);
-  const editorRouteWork = props.editorRouteWork;
-  const editorScope = resolveEditorWorkScope(editorRouteWork);
-  const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
-  const editorWork = editorRouteWork.status === "present" ? editorRouteWork.work : null;
-  useLayoutEffect(() => {
-    props.onDisplayedSelection?.({ editorWorkId });
-  }, [props.onDisplayedSelection, editorWorkId]);
+  const editorScope = useWorkScopeState(props.projectId);
+  const editorWorkId = editorScope.workId;
+  const editorWork =
+    (editorWorkId === noWork?.id ? noWork : works?.find((work) => work.id === editorWorkId)) ??
+    null;
   const workspaceHydrated = useContextTabsStore((s) => s._workspaceHydrated);
 
   const contextPhase = useContextProjectAuthority({
@@ -381,40 +370,43 @@ export function ProjectView(props: ProjectViewProps) {
     editorScope,
     editorWorkId,
     editorWork,
-    retryEditorWork: worksQuery.refetch,
+    retryEditorWork: editorScope.retry,
     contextLive: contextPhase.status === "live" && editorScope.status === "ready",
   };
   return (
     <DocumentTrashRestoreProvider key={props.projectId} projectId={props.projectId}>
-      <RefusalToasts projectId={props.projectId} />
-      <div className="flex h-full min-h-0 w-full bg-background text-foreground">
-        <DocumentTrashDialog projectId={props.projectId} />
-        {hydrated ? (
-          <>
-            {resolvedProps.contextLive && editorScope.status === "ready" ? (
-              <ProjectContextRemovalController
-                projectId={props.projectId}
-                activeScreen={props.activeScreen}
-                activeContextScheme={props.activeContextScheme}
-                activeContextPath={props.activeContextPath}
-                activeContextChat={props.activeContextChat}
-                editorWorkId={editorScope.workId}
-                localDocumentId={props.activeLocalDocumentId}
-                reviewDocumentId={props.reviewDocumentId}
-                route={props.contextRemovalRoute}
-              />
-            ) : null}
-            <ImportProvider key={props.projectId} projectId={props.projectId}>
-              <WindowDropGuard />
-              <HydratedReviewProject
-                {...resolvedProps}
-                projectTitle={projectTitle}
-                titleEdit={{ projectId: props.projectId, onSave: renameProject }}
-              />
-            </ImportProvider>
-          </>
-        ) : null}
-      </div>
+      <ManageWorksProvider projectId={props.projectId}>
+        <RefusalToasts projectId={props.projectId} />
+        <div className="flex h-full min-h-0 w-full bg-background text-foreground">
+          <DocumentTrashDialog projectId={props.projectId} />
+          {hydrated ? (
+            <>
+              {resolvedProps.contextLive && editorScope.status === "ready" ? (
+                <ProjectContextRemovalController
+                  projectId={props.projectId}
+                  activeScreen={props.activeScreen}
+                  activeContextScheme={props.activeContextScheme}
+                  activeContextPath={props.activeContextPath}
+                  activeContextChat={props.activeContextChat}
+                  editorWorkId={editorScope.workId}
+                  routeWorkId={props.activeContextWorkId ?? editorScope.workId}
+                  localDocumentId={props.activeLocalDocumentId}
+                  reviewDocumentId={props.reviewDocumentId}
+                  route={props.contextRemovalRoute}
+                />
+              ) : null}
+              <ImportProvider key={props.projectId} projectId={props.projectId}>
+                <WindowDropGuard />
+                <HydratedReviewProject
+                  {...resolvedProps}
+                  projectTitle={projectTitle}
+                  titleEdit={{ projectId: props.projectId, onSave: renameProject }}
+                />
+              </ImportProvider>
+            </>
+          ) : null}
+        </div>
+      </ManageWorksProvider>
     </DocumentTrashRestoreProvider>
   );
 }
@@ -432,7 +424,7 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
   /** The draft review scope's thread: the displayed chat, null on the index. */
   chatThreadId: string | null;
   availableWorks: readonly Work[];
-  editorScope: EditorWorkScope;
+  editorScope: WorkScope;
   editorWorkId: string | null;
   /** The Editor's Work, when the route names one the project has. */
   editorWork: Work | null;
@@ -452,11 +444,7 @@ export type ReviewScopedProjectProps = ResolvedProjectViewProps &
 
 type MobileEditorPresentation = Pick<
   ResolvedProjectViewProps,
-  | "activeContextScheme"
-  | "activeContextPath"
-  | "activeContextChat"
-  | "activeContextFolder"
-  | "activeLocalDocumentId"
+  "activeContextScheme" | "activeContextPath" | "activeContextChat" | "activeLocalDocumentId"
 > & { mobileDocumentRoute: MobileDocumentRoute };
 
 function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentityProps) {
@@ -490,7 +478,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     projectId: props.projectId,
     scheme: props.activeContextScheme,
     path: props.activeContextPath,
-    workId: props.editorWorkId,
+    workId: props.activeContextWorkId,
     rootThreadId: props.activeContextChat,
     addressState: addressStateOf(props.routeIssues?.editor),
   });
@@ -505,7 +493,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     props.editorScope.status === "ready" &&
     props.routeIssues?.editor === "loading" &&
     priorMobile.current?.projectId === props.projectId &&
-    priorMobile.current.workId === props.editorWorkId;
+    priorMobile.current.workId === props.activeContextWorkId;
   const retainedPresentation = retainEditorWhileLoading ? priorMobile.current?.presentation : null;
   const displayedProps = retainedPresentation ? { ...props, ...retainedPresentation } : props;
   const mobileDocumentRoute =
@@ -520,12 +508,11 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     ) {
       priorMobile.current = {
         projectId: props.projectId,
-        workId: props.editorWorkId,
+        workId: props.activeContextWorkId,
         presentation: {
           activeContextScheme: props.activeContextScheme,
           activeContextPath: props.activeContextPath,
           activeContextChat: props.activeContextChat,
-          activeContextFolder: props.activeContextFolder,
           activeLocalDocumentId: props.activeLocalDocumentId,
           mobileDocumentRoute: requestedMobileDocumentRoute,
         },
@@ -672,6 +659,7 @@ function HydratedReviewControllers({
     locationKey: props.routeLocationKey,
     reviewOwner: props.reviewOwner ?? null,
     address: {
+      owner: props.reviewAddressOwner,
       itemKey: props.reviewItemKey,
       changeId: props.reviewChangeId,
       documentId: props.reviewAddressDocumentId,
@@ -715,11 +703,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
             activeContextPath: props.activeContextPath,
             activeContextChat: props.activeContextChat,
             activeLocalDocumentId: props.activeLocalDocumentId,
-            editorWorkId: props.editorScope.workId,
+            editorWorkId: props.activeContextWorkId ?? props.editorScope.workId,
             localDocumentId: props.activeLocalDocumentId,
           }
         : null,
-    requestedWorkId: props.editorWorkId,
+    requestedWorkId: props.activeContextWorkId,
     screen: props.activeScreen,
     contextLive: props.contextLive,
     issue: props.routeIssues?.editor,
@@ -731,7 +719,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const frameEditorRoute = resolveEditorFrame({
     screen: props.activeScreen,
     requested: {
-      editorWorkId: props.editorWorkId,
+      editorWorkId: props.activeContextWorkId,
       activeContextScheme: props.activeContextScheme,
       activeContextPath: props.activeContextPath,
       activeContextChat: props.activeContextChat,
@@ -755,7 +743,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     retainWhileLoading: editorPresentation.retainWhileLoading,
     recovery:
       props.editorScope.status !== "ready" ? (
-        <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />
+        <EditorWorkRecovery status={props.editorScope.status} onRetry={props.retryEditorWork} />
       ) : undefined,
   };
 
@@ -944,21 +932,10 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
 
 type SurfaceToggleFactory = (surfaceId: SurfaceId) => PaneHeaderRailToggle;
 
-function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: SurfaceToggleFactory) {
+function renderDesktopPane(props: ResolvedProjectViewProps, _surfaceToggle: SurfaceToggleFactory) {
   switch (props.activeScreen) {
     case "chat":
       return null;
-    case "work":
-      return (
-        <WorkPaneController
-          projectId={props.projectId}
-          routeWork={props.routeWork}
-          rememberedWork={props.rememberedWork}
-          routeCommands={props.routeCommands}
-          sidebarToggle={surfaceToggle("threads")}
-          chatToggle={surfaceToggle("chat")}
-        />
-      );
     case "context":
       // Context owns no destination header — the tab strip absorbs the
       // sidebar/dock expand toggles. See `ContextViewer`.

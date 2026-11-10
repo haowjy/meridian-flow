@@ -350,7 +350,7 @@ export function useOpenDocumentActions(projectId: string): {
       } else if (existing) {
         await store().selectTab(projectId, documentId, existing);
       } else if (stored) {
-        store().openTab(projectId, stored, undefined, undefined, { select: true });
+        store().openTab(projectId, stored, undefined, { select: true });
       } else {
         // Beside the chat: the door's placement commits the tab into the store and selects it.
         await openChatDocument({ documentId, workId: activeWorkId ?? undefined, keep: true });

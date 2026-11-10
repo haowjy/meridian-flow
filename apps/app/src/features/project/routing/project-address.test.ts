@@ -1,11 +1,6 @@
-/** Browser grammar contracts: screen-first paths, exact filenames, and lossless raw query parsing. */
+/** Browser grammar contracts: kind-first paths, exact filenames, owners only where the path is not enough. */
 import { describe, expect, it } from "vitest";
-import {
-  browsedFolder,
-  parseProjectAddress,
-  projectAddressHref,
-  projectAddressState,
-} from "./project-address";
+import { parseProjectAddress, projectAddressHref, withoutReview } from "./project-address";
 
 const P = "/p/550e8400-e29b-41d4-a716-446655440000";
 const WORK = "123e4567-e89b-42d3-a456-426614174000";
@@ -20,7 +15,7 @@ function parse(href: string) {
 
 describe("readable project addresses", () => {
   it("round trips a stable change only inside a review address", () => {
-    const href = `${P}/editor/manuscript/chapter.md?work=&item=draft-one&change=class%3Apart%2Ftwo`;
+    const href = `${P}/editor/manuscript/chapter.md?owner=work%3A${WORK}&item=draft-one&change=class%3Apart%2Ftwo`;
     const parsed = parse(href);
     expect(parsed).toMatchObject({ kind: "valid", href, address: { changeId: "class:part/two" } });
     if (parsed.kind !== "valid") throw new Error(parsed.reason);
@@ -36,9 +31,12 @@ describe("readable project addresses", () => {
 
   it.each([
     [`${P}/editor/manuscript/literal%252F.md`, { kind: "document" }],
-    // A chat's Scratch is named by its lineage in `?chat=`, never a Work.
-    [`${P}/editor/scratch/notes.md?chat=${ROOT}`, { kind: "document", scheme: "scratch" }],
-    [`${P}/editor/browse/scratch/duel?chat=${ROOT}`, { kind: "browse", scheme: "scratch" }],
+    // A Scratch document is named by its owner: a Work, or a No Work chat's lineage.
+    [
+      `${P}/editor/scratch/notes.md?owner=lineage%3A${ROOT}`,
+      { kind: "document", scheme: "scratch" },
+    ],
+    [`${P}/editor/scratch/notes.md?owner=work%3A${WORK}`, { kind: "document", scheme: "scratch" }],
   ])("round trips %s", (href, destination) => {
     const parsed = parse(href);
     if (parsed.kind !== "valid") throw new Error(parsed.reason);
@@ -51,24 +49,44 @@ describe("readable project addresses", () => {
     `${P}/editor/nope/leaf.md`,
     `${P}/editor/manuscript/a%2Fb.md`,
     `${P}/editor/manuscript/..`,
-    `${P}/editor/scratch/notes.md?chat=fight-scene`,
-    `${P}/editor/scratch/notes.md?work=${WORK}&chat=${ROOT}`,
+    `${P}/editor/scratch/notes.md?owner=lineage%3Afight-scene`,
+    // The Work page and the browse addresses are gone, and an old `?work=` names no Scratch owner.
+    `${P}/works`,
+    `${P}/works/${WORK}`,
+    `${P}/editor/browse/scratch`,
+    `${P}/editor/scratch/notes.md?work=${WORK}`,
   ])("rejects %s", (href) => {
     expect(parse(href).kind).toBe("invalid");
   });
 
-  it.each([
-    `${P}/editor/scratch/notes.md`,
-  ])("a Work-owned resource requires its Work: rejects %s", (href) => {
-    expect(parse(href)).toMatchObject({ kind: "invalid", reason: "work" });
+  it("a Scratch document requires its owner", () => {
+    expect(parse(`${P}/editor/scratch/notes.md`)).toMatchObject({
+      kind: "invalid",
+      reason: "owner",
+    });
+  });
+
+  it("a draft item requires its owner, and an owner is dropped where it names nothing", () => {
+    expect(parse(`${P}/editor/manuscript/chapter.md?item=draft-one`)).toMatchObject({
+      kind: "invalid",
+      reason: "owner",
+    });
+    expect(parse(`${P}/editor/manuscript/chapter.md?owner=work%3A${WORK}`)).toMatchObject({
+      kind: "valid",
+      href: `${P}/editor/manuscript/chapter.md`,
+    });
+    expect(parse(`${P}/editor/manuscript/chapter.md?owner=${WORK}`)).toMatchObject({
+      kind: "invalid",
+      reason: "owner",
+    });
   });
 
   it("round trips review identity only on an Editor document", () => {
-    const href = `${P}/editor/manuscript/chapter.md?work=${WORK}&item=draft%2Fone`;
+    const href = `${P}/editor/manuscript/chapter.md?owner=lineage%3A${ROOT}&item=draft%2Fone`;
     expect(parse(href)).toMatchObject({
       kind: "valid",
       href,
-      address: { itemKey: "draft/one" },
+      address: { itemKey: "draft/one", owner: `lineage:${ROOT}` },
     });
     const editor = parse(`${P}/editor?item=draft-one`);
     expect(editor).toMatchObject({ kind: "valid", href: `${P}/editor` });
@@ -81,59 +99,22 @@ describe("readable project addresses", () => {
     });
   });
 
-  it("states No Work on a review address so a copied link opens its own Work's draft", () => {
-    // A live No Work document keeps a clean URL (history state pins it); a review address is
-    // shared, so it names its Work itself. `?work=` reads back as No Work, never as absent.
-    const live = parse(`${P}/editor/manuscript/chapter.md?work=`);
-    if (live.kind !== "valid") throw new Error(live.reason);
-    const review = { ...live.address, itemKey: "draft-one" };
-    expect(projectAddressHref(review)).toBe(
-      `${P}/editor/manuscript/chapter.md?work=&item=draft-one`,
-    );
-    expect(parse(projectAddressHref(review))).toMatchObject({
-      kind: "valid",
-      address: { work: { kind: "none" }, itemKey: "draft-one" },
-    });
-    // The address already says No Work, so no history-state pin repeats it (and no write is needed).
-    expect(projectAddressState(review)).toMatchObject({ meridianProjectEmptySelection: undefined });
-    expect(projectAddressState(live.address).meridianProjectEmptySelection).toBeDefined();
-    expect(projectAddressHref({ ...live.address, work: { kind: "none" } })).toBe(
+  it("dropping a review drops a draft's owner but keeps a Scratch document's", () => {
+    const draft = parse(`${P}/editor/manuscript/chapter.md?owner=work%3A${WORK}&item=draft-one`);
+    const scratch = parse(`${P}/editor/scratch/notes.md?owner=work%3A${WORK}&item=draft-one`);
+    if (draft.kind !== "valid" || scratch.kind !== "valid") throw new Error("fixture");
+    expect(projectAddressHref(withoutReview(draft.address))).toBe(
       `${P}/editor/manuscript/chapter.md`,
     );
+    expect(projectAddressHref(withoutReview(scratch.address))).toBe(
+      `${P}/editor/scratch/notes.md?owner=work%3A${WORK}`,
+    );
   });
 
-  it("preserves absent, explicitly empty, and malformed editing contexts", () => {
-    expect(parse(`${P}/editor`)).toMatchObject({ address: { work: { kind: "absent" } } });
-    expect(parse(`${P}/editor?work=`)).toMatchObject({
-      href: `${P}/editor`,
-      address: { work: { kind: "none" } },
-    });
-    expect(parse(`${P}/editor/kb/a.md?work=`)).toMatchObject({
-      href: `${P}/editor/kb/a.md`,
-      address: { work: { kind: "none" } },
-    });
-    expect(parse(`${P}/editor?work=revision`)).toMatchObject({
-      address: { work: { kind: "malformed", value: "revision" } },
-    });
-    expect(parse(`${P}/editor?work=bad%2Fwork`)).toMatchObject({
-      address: { work: { kind: "malformed", value: "bad/work" } },
-    });
-  });
-
-  it.each([`?work=${WORK}&work=`, "?unknown=%FE"])("rejects raw query ambiguity %s", (search) => {
-    expect(parseProjectAddress(`${P}/editor`, search).kind).toBe("invalid");
-  });
-});
-
-describe("browsed folder", () => {
-  // A scheme root has no folder; "/" would read as a missing folder on the phone.
   it.each([
-    [`${P}/editor/browse/manuscript`, null],
-    [`${P}/editor/browse/manuscript/arc-1/branches`, "/arc-1/branches"],
-    [`${P}/editor/manuscript/chapter.md`, null],
-  ])("%s browses %s", (href, folder) => {
-    const parsed = parse(href);
-    if (parsed.kind !== "valid") throw new Error(parsed.reason);
-    expect(browsedFolder(parsed.address.destination)).toBe(folder);
+    `?owner=work%3A${WORK}&owner=`,
+    "?unknown=%FE",
+  ])("rejects raw query ambiguity %s", (search) => {
+    expect(parseProjectAddress(`${P}/editor`, search).kind).toBe("invalid");
   });
 });

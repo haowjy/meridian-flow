@@ -1,16 +1,15 @@
-/** Truthful loading, failure, and unavailable recovery for Editor Work scope. */
+/** Truthful loading and failure while the Work scope's catalog has not answered. */
 import { Trans } from "@lingui/react/macro";
 import { Button } from "@/components/ui/button";
-import type { EditorWorkScope } from "./editor-work-scope";
 
 export function EditorWorkRecovery({
-  scope,
+  status,
   onRetry,
 }: {
-  scope: Exclude<EditorWorkScope, { status: "ready" }>;
+  status: "loading" | "error";
   onRetry: () => void;
 }) {
-  if (scope.status === "loading") {
+  if (status === "loading") {
     return (
       <div className="grid h-full place-items-center px-6 text-center">
         <p className="text-sm text-muted-foreground">
@@ -24,11 +23,7 @@ export function EditorWorkRecovery({
     <div className="grid h-full place-items-center px-6 text-center">
       <div className="flex flex-col items-center gap-3">
         <p className="font-medium">
-          {scope.status === "unavailable" ? (
-            <Trans>This Work is unavailable.</Trans>
-          ) : (
-            <Trans>Work couldn’t load</Trans>
-          )}
+          <Trans>Work couldn’t load</Trans>
         </p>
         <Button size="sm" variant="outline" onClick={onRetry}>
           <Trans>Retry</Trans>

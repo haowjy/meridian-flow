@@ -1,18 +1,13 @@
 /** Stable-ID navigation commands and normalized context-removal CAS snapshots, not browser grammar. */
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { ParsedRequestId } from "@meridian/contracts/request-id";
-import type { AddressableWork } from "@/client/query/useWorks";
 import type { ScreenKey } from "../shell/screens";
-import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
-import type { WorksView, WorkView } from "./project-address";
 
 export type ProjectSearch = {
   screen?: ScreenKey;
   scheme?: ProjectContextTreeScheme;
-  folder?: string;
   path?: string;
-  /** The Editor's Work. */
+  /** The Work that owns the route's locator: a Scratch address's owner, else the scope's. */
   work?: string;
   /** A chat's Scratch note: its lineage, by the first chat's id. */
   chat?: string;
@@ -20,71 +15,23 @@ export type ProjectSearch = {
   filter?: "favorites";
   /** The chat index's settled search text; owned by `features/project/chat-index`. */
   q?: string;
-  /** Work detail view (chats default) or Work list tab (active default). */
-  view?: "files" | "archived" | "deleted";
 };
 
 export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): boolean {
   return (
     left.screen === right.screen &&
     left.scheme === right.scheme &&
-    left.folder === right.folder &&
     left.path === right.path &&
     left.work === right.work &&
     left.chat === right.chat &&
     left.filter === right.filter &&
-    left.q === right.q &&
-    left.view === right.view
+    left.q === right.q
   );
-}
-
-/**
- * The Work a route addresses. Ready Editors include the No Work row; screen
- * chrome collapses it to absent. Unresolved means identity is not ready.
- */
-export type RouteWorkResolution =
-  | { status: "new" }
-  | {
-      status: "unresolved";
-      reason: "loading" | "error" | "unavailable";
-      workId: ParsedRequestId | null;
-    }
-  | {
-      status: "creating";
-      workId: ParsedRequestId;
-      name: string;
-      goal: string | null;
-      phase: "pending" | "failed";
-    }
-  | { status: "absent" }
-  | { status: "present"; workId: ParsedRequestId; work: AddressableWork };
-
-/** The id of the Work a route addresses, whether it is present, being created, or unresolved. */
-export function routeWorkId(routeWork: RouteWorkResolution): ParsedRequestId | null {
-  return "workId" in routeWork ? routeWork.workId : null;
-}
-
-/**
- * What keeps a route's Work from showing its content yet. A Work being created
- * is still loading; one whose create failed never arrives, so it is an error.
- */
-export function routeWorkIssue(
-  routeWork: RouteWorkResolution,
-): Exclude<ProjectRouteIssue, "resource-viewing"> | undefined {
-  if (routeWork.status === "unresolved") return routeWork.reason;
-  if (routeWork.status === "creating") return routeWork.phase === "failed" ? "error" : "loading";
 }
 
 export type NavigationOptions = {
   afterCommit?: () => void;
   replace: boolean;
-};
-
-export type WorkDetailTarget = {
-  kind: "work-detail";
-  workId: ParsedRequestId;
-  /** The Work page's tab; absent opens its chats. */
-  view?: WorkView;
 };
 
 /**
@@ -147,15 +94,12 @@ export function openContextRouteSearch(
   search: ProjectSearch,
   target: ContextRouteTarget,
 ): ProjectSearch {
-  const segments = target.path.split("/").filter(Boolean);
-  segments.pop();
   return stripEmptySearch({
     ...search,
     screen: "context",
     work: target.workId,
     chat: target.rootThreadId,
     scheme: target.scheme,
-    folder: segments.length ? `/${segments.join("/")}` : undefined,
     path: target.path,
   });
 }
@@ -177,23 +121,7 @@ export function contextRouteMatchesSearch(
   );
 }
 
-export type WorkContextTarget = {
-  kind: "work-context";
-  workId: ParsedRequestId;
-  scheme: ProjectContextTreeScheme;
-  folder?: string;
-  path?: string;
-};
-
 export type ProjectRouteCommands = {
-  openWork: (target: WorkDetailTarget, options: NavigationOptions) => Promise<void>;
-  workHref: (target: WorkDetailTarget) => string;
-  workView: WorkView;
-  setWorkView: (view: WorkView) => Promise<void>;
-  worksView: WorksView;
-  setWorksView: (view: WorksView) => Promise<void>;
-  closeWork: (options: NavigationOptions) => Promise<void>;
-  openWorkContext: (target: WorkContextTarget, options: NavigationOptions) => Promise<void>;
   /** Editor destination with no document and no local history pointer. */
   showEditorRecents: (options: NavigationOptions) => Promise<void>;
 };
@@ -226,7 +154,6 @@ export function applyContextRepairIfCurrent(
       ...latest,
       chat: undefined,
       scheme: undefined,
-      folder: undefined,
       path: undefined,
     });
   }

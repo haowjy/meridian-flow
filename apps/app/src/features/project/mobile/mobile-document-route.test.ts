@@ -48,8 +48,8 @@ describe("phone draft-only review route", () => {
       ...overrides,
     });
 
-  it("is never another Work's draft, and never a live tab", () => {
-    expect(route({ workId: "work-b" }).tab).toBeNull();
+  it("is never a live tab, and a draft is its owner's whatever the scope", () => {
+    expect(route({ workId: "work-b" }).tab).toMatchObject({ documentId: "document-draft" });
     expect(route({ workspaceTabs: [{ ...draftTab, reviews: undefined }] }).tab).toBeNull();
   });
 
