@@ -1185,6 +1185,10 @@ msgstr "Apply all"
 msgid "Apply draft"
 msgstr "Apply draft"
 
+#: src/features/draft-review/ReviewActions.tsx
+msgid "Apply draft of {subject}"
+msgstr "Apply draft of {subject}"
+
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Apply is temporarily unavailable."
 msgstr "Apply is temporarily unavailable."
@@ -2840,10 +2844,17 @@ msgstr "Discard changes"
 msgid "Discard draft"
 msgstr "Discard draft"
 
+#: src/features/draft-review/ReviewActions.tsx
+msgid "Discard draft of {subject}"
+msgstr "Discard draft of {subject}"
+
 #: src/features/chat/DraftDock.tsx
-#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Discard this chat's changes?"
 msgstr "Discard this chat's changes?"
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Discard this chat’s changes?"
+msgstr "Discard this chat’s changes?"
 
 #: src/features/chat/turn-receipt-copy.ts
 #: src/features/draft-review/CommandNotice.tsx
@@ -6126,6 +6137,7 @@ msgid "This chat is in the trash, so its drafts are frozen. Restore the chat to 
 msgstr "This chat is in the trash, so its drafts are frozen. Restore the chat to apply them."
 
 #: src/features/draft-review/TrashedChatNotice.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "This chat is in Trash. Restore it to edit or apply its drafts."
 msgstr "This chat is in Trash. Restore it to edit or apply its drafts."
 
@@ -6427,6 +6439,10 @@ msgstr "This view couldn’t open."
 #: src/features/project/work/ArchivedWorkNotice.tsx
 msgid "This Work is archived."
 msgstr "This Work is archived."
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "This Work is archived. Unarchive it to apply or discard its changes."
+msgstr "This Work is archived. Unarchive it to apply or discard its changes."
 
 #: src/client/query/work-update-failure.ts
 msgid "This Work is archived. Unarchive it to edit."

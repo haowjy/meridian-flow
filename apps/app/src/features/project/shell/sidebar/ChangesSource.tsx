@@ -22,12 +22,11 @@ import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { hasTreeLine, reviewHasNoRoom, treeLineOf } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
-import {
-  useWorkBranchCommands,
-  type WorkBranchCommands,
-} from "@/features/draft-review/useWorkBranchCommands";
+import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
+import { RowIcon } from "../../context/ContextTreeRows";
+import { fileKindIcon } from "../../context/context-file-icon";
 import { contextTreeFileRowClassName } from "../../context/context-row-geometry";
 import { useReferenceDrag } from "../../context/entry-drag/reference-source";
 import { useAiDraftLauncher } from "../../review-launch";
@@ -94,21 +93,29 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
  * does an Apply all that would delete documents or bring back documents deleted from the
  * manuscript, naming each, and again for any a newer delete held back. A question takes the
  * place of the buttons that asked it; the latest command's notice sits below the rows.
+ *
+ * An archived Work's commands show disabled, with the reason above the rows. A frozen lineage
+ * (every chat in Trash) offers no Apply, only Discard.
  */
 export function ChangesSource({
   projectId,
   scope,
+  controller,
   isOpen,
   onPicked,
 }: {
   projectId: string;
   scope: ChangesScope;
+  /** The scope's commands, held by the sidebar so their notice outlives this pane. */
+  controller: WorkBranchCommands;
   /** Whether the file is the document open in the editor. */
   isOpen: (file: ReviewFileTarget) => boolean;
   onPicked?: () => void;
 }) {
   const { work, ownerKey } = scope;
-  const controller = useWorkBranchCommands({ projectId, work, ownerKey });
+  // Locked with rows to show means archived: no owner key or Work lists nothing.
+  const archived = controller.dispositionLocked;
+  const applyOffered = controller.canApply || archived;
   useSyncExternalStore(
     controller.owner.subscribe,
     controller.owner.snapshot,
@@ -200,7 +207,7 @@ export function ChangesSource({
       ? {
           kind: "discard",
           sentence: work?.isNoWork ? (
-            <Trans>Discard this chat's changes?</Trans>
+            <Trans>Discard this chat’s changes?</Trans>
           ) : (
             <>
               <Trans>Discard all changes?</Trans>{" "}
@@ -226,18 +233,28 @@ export function ChangesSource({
           <div className="min-w-0 flex-1">
             <CommandNotice commands={{ notice: null, undoNotice: () => {} }} question={question} />
           </div>
-        ) : hasFiles && !controller.dispositionLocked ? (
+        ) : hasFiles ? (
           <ReviewActions
             scope="all"
             density="full"
             touch={touch}
+            disabled={archived}
             onDiscard={() => setConfirmingDiscard(true)}
-            onApply={files.every(applicable) ? startApplyAll : undefined}
+            onApply={applyOffered && files.every(applicable) ? startApplyAll : undefined}
             applyDisabled={held.some((read) => read.status !== "ready")}
           />
         ) : null
       }
     >
+      {hasFiles && archived ? (
+        <SourceHint>
+          <Trans>This Work is archived. Unarchive it to apply or discard its changes.</Trans>
+        </SourceHint>
+      ) : hasFiles && controller.frozen ? (
+        <SourceHint>
+          <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>
+        </SourceHint>
+      ) : null}
       {hasFiles ? (
         <ul className="flex flex-col">
           {files.map((file) => (
@@ -250,7 +267,7 @@ export function ChangesSource({
                 readOf(file)?.status === "ready" ? readOf(file)?.listedChanges.length : undefined
               }
               active={isOpen(file)}
-              canApply={applicable(file)}
+              canApply={applyOffered && applicable(file)}
               controller={controller}
               touch={touch}
               onPicked={onPicked}
@@ -330,39 +347,37 @@ function ChangeRow({
       <div
         className={cn(
           contextTreeFileRowClassName(active),
-          "gap-1 py-0.5 pl-1",
+          "gap-0.5 py-0.5 pl-2",
           !opens && "text-muted-foreground",
         )}
       >
+        <RowIcon icon={fileKindIcon(file.contextLocation?.path ?? name)} />
         <button
           type="button"
           {...drag}
           aria-current={active ? "true" : undefined}
           disabled={!opens}
           onClick={review}
-          className="focus-ring flex min-w-0 flex-1 flex-col items-start justify-center rounded-sm px-1.5 py-0.5 text-left coarse:min-h-11"
+          className="focus-ring flex min-w-0 flex-1 flex-col items-start justify-center rounded-sm px-1 py-0.5 text-left coarse:min-h-11"
         >
           <span className={cn("w-full truncate", deleted && "line-through")}>{name}</span>
           <ChangeSummary file={file} textChanges={textChanges} />
         </button>
-        {controller.dispositionLocked ? null : (
-          <ReviewActions
-            scope="document"
-            density="icon"
-            touch={touch}
-            disabled={command.pending}
-            className={cn(
-              "gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 motion-reduce:transition-none [@media(hover:none)]:opacity-100",
-              touch && "gap-0 opacity-100",
-            )}
-            onDiscard={() => void controller.discard(file.documentId, file.draft.itemKey)}
-            onApply={
-              canApply
-                ? () => void controller.apply(file.documentId, file.draft.itemKey)
-                : undefined
-            }
-          />
-        )}
+        <ReviewActions
+          scope="document"
+          subject={name}
+          density="icon"
+          touch={touch}
+          disabled={command.pending || controller.dispositionLocked}
+          className={cn(
+            "gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 motion-reduce:transition-none [@media(hover:none)]:opacity-100",
+            touch && "gap-0 opacity-100",
+          )}
+          onDiscard={() => void controller.discard(file.documentId, file.draft.itemKey)}
+          onApply={
+            canApply ? () => void controller.apply(file.documentId, file.draft.itemKey) : undefined
+          }
+        />
       </div>
       <div className="mx-2 pl-1">
         <DraftCommandStatus itemKey={file.draft.itemKey} item={file.draft} />

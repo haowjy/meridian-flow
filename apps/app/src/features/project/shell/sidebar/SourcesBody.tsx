@@ -22,6 +22,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { role } from "@/components/ui/roles";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  useWorkBranchCommands,
+  type WorkBranchCommands,
+} from "@/features/draft-review/useWorkBranchCommands";
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { cn } from "@/lib/utils";
@@ -57,6 +61,8 @@ type WriteSources = {
   catalogs: Record<TreeKey, CatalogState>;
   scratch: ReturnType<typeof useChatScratch>;
   changes: ChangesScope;
+  /** Held here, not in the pane, so a Discard's Undo outlives a look at another tab. */
+  changesCommands: WorkBranchCommands;
 };
 
 const WriteSourcesContext = createContext<WriteSources | null>(null);
@@ -150,11 +156,13 @@ const SOURCES: Record<SourceKey, Source> = {
     icon: ListChecks,
     useDrop: () => IDLE_DROP,
     Body: () => {
-      const { projectId, changes, activeScheme, activePath, onPicked } = useWriteSources();
+      const { projectId, changes, changesCommands, activeScheme, activePath, onPicked } =
+        useWriteSources();
       return (
         <ChangesSource
           projectId={projectId}
           scope={changes}
+          controller={changesCommands}
           isOpen={(file) =>
             file.contextLocation?.scheme === activeScheme &&
             file.contextLocation?.path === activePath
@@ -190,7 +198,7 @@ export function SourcesBody({
   activePath,
   onSelectFile,
   onPicked,
-}: Omit<WriteSources, "catalogs" | "scratch" | "changes"> & {
+}: Omit<WriteSources, "catalogs" | "scratch" | "changes" | "changesCommands"> & {
   chatThreadId: string | null;
   contextLive: boolean;
 }) {
@@ -199,7 +207,8 @@ export function SourcesBody({
     void useSidebarTabs.persist.rehydrate();
   }, []);
   const [picked, setPicked] = useState<SourceKey>("manuscript");
-  // Changes stays: it is the list the writer opens drafts from, whatever tree they live in.
+  // Changes stays while it is on show: it is the list the writer opens drafts from, whatever
+  // tree they live in. `picked` is Changes only while it is shown (see below).
   useEffect(() => {
     if (activeScheme && isSourceKey(activeScheme))
       setPicked((current) => (current === "changes" ? current : activeScheme));
@@ -216,8 +225,14 @@ export function SourcesBody({
     () => chosen.filter((key) => key !== "changes" || changes.offered || picked === "changes"),
     [chosen, changes.offered, picked],
   );
-  // A tab the writer hid can't stay selected: the strip's first tab shows instead.
+  // A tab that left the strip can't stay selected: the strip's first tab shows, and is picked.
   const source = shown.includes(picked) ? picked : (shown[0] ?? "manuscript");
+  if (source !== picked) setPicked(source);
+  const changesCommands = useWorkBranchCommands({
+    projectId,
+    work: changes.work,
+    ownerKey: changes.ownerKey,
+  });
 
   const catalogs = useContextCatalogViews(projectId, EDITOR_CONTEXT_SCHEMES, {
     workId: editorWorkId,
@@ -260,6 +275,7 @@ export function SourcesBody({
       catalogs,
       scratch,
       changes,
+      changesCommands,
     }),
     [
       projectId,
@@ -271,6 +287,7 @@ export function SourcesBody({
       catalogs,
       scratch,
       changes,
+      changesCommands,
     ],
   );
 
@@ -278,7 +295,7 @@ export function SourcesBody({
     <WriteSourcesContext.Provider value={value}>
       <EntryList list={list} files={files}>
         <div className="flex min-h-0 flex-1 flex-col">
-          <SourceTabs shown={shown} source={source} onSelect={setPicked} />
+          <SourceTabs chosen={chosen} shown={shown} source={source} onSelect={setPicked} />
           <SourceView key={source} source={source} />
         </div>
       </EntryList>
@@ -294,10 +311,14 @@ function SourceView({ source }: { source: SourceKey }) {
 }
 
 function SourceTabs({
+  chosen,
   shown,
   source,
   onSelect,
 }: {
+  /** The writer's choice, which the + menu shows and changes. */
+  chosen: readonly SourceKey[];
+  /** The tabs offered now: the choice, less Changes when it has nothing to offer. */
   shown: readonly SourceKey[];
   source: SourceKey;
   onSelect: (key: SourceKey) => void;
@@ -340,14 +361,16 @@ function SourceTabs({
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuLabel>{t`Tabs`}</DropdownMenuLabel>
           {ALL_SOURCES.map((key) => {
-            const on = shown.includes(key);
+            const on = chosen.includes(key);
             const Icon = SOURCES[key].icon;
             return (
               <DropdownMenuCheckboxItem
                 key={key}
                 checked={on}
-                // The last tab stays: the sidebar always shows a list.
-                disabled={on && shown.length === 1}
+                // The last tab stays: the sidebar always shows a list, and Changes may be hidden.
+                disabled={
+                  on && key !== "changes" && chosen.every((k) => k === key || k === "changes")
+                }
                 onSelect={(event) => {
                   event.preventDefault();
                   toggle(key);
@@ -414,12 +437,7 @@ function SourceTab({
         >
           <Icon className={sidebarIcon.tab} aria-hidden />
           {count > 0 ? (
-            <Chip
-              kind="count"
-              tone="jade"
-              aria-hidden
-              className="-top-1 -right-1 absolute h-4 min-w-4 px-1"
-            >
+            <Chip kind="badge" aria-hidden className="-top-1 -right-1 absolute">
               {count}
             </Chip>
           ) : null}

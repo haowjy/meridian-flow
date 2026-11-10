@@ -7,6 +7,8 @@
  * - `count`: a pill holding a number, tabular, no border.
  * - `label`: a pill holding a read-only word (a Work's status, Recommended). It
  *   truncates when its parent caps its width.
+ * - `badge`: a solid jade count pinned to an icon (a tab's "waiting on you"). Its
+ *   fill is fixed; it takes no tone.
  *
  * Tones colour state chips and counts; a label is always neutral. All text is
  * `text-xs`. Call sites add layout (margins, max width), never type or colour; a
@@ -27,6 +29,8 @@ const chipVariants = cva(
         count: "min-w-5 justify-center rounded-full px-1.5 tabular-nums",
         label:
           "min-w-0 max-w-full shrink rounded-full border border-border-subtle bg-ink-fill px-2 py-px text-muted-foreground",
+        badge:
+          "h-4 min-w-4 justify-center rounded-full bg-primary px-1 text-primary-foreground tabular-nums leading-none",
       },
       tone: {
         neutral: "border-border-subtle text-muted-foreground",
@@ -50,7 +54,7 @@ export function Chip({ className, kind, tone, dashed, asChild = false, ...props 
     <Comp
       data-slot="chip"
       className={cn(
-        chipVariants({ kind, tone: kind === "label" ? null : tone, dashed }),
+        chipVariants({ kind, tone: kind === "label" || kind === "badge" ? null : tone, dashed }),
         className,
       )}
       {...props}

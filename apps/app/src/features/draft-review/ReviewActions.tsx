@@ -27,8 +27,15 @@ export function reviewActionLabel(action: "apply" | "discard", scope: ReviewScop
   return scope === "change" ? t`Discard` : scope === "document" ? t`Discard draft` : t`Discard all`;
 }
 
+/** A document's command named with the document, for a list where every row has the pair. */
+function documentLabel(action: "apply" | "discard", subject: string): string {
+  return action === "apply" ? t`Apply draft of ${subject}` : t`Discard draft of ${subject}`;
+}
+
 export type ReviewActionsProps = {
   scope: ReviewScope;
+  /** With `scope="document"`: the document's name, added to the accessible names. */
+  subject?: string;
   density?: ReviewDensity;
   onDiscard: MouseEventHandler<HTMLButtonElement>;
   /** Absent withdraws Apply; Discard still applies. */
@@ -44,6 +51,7 @@ export type ReviewActionsProps = {
 
 export function ReviewActions({
   scope,
+  subject,
   density,
   onDiscard,
   onApply,
@@ -66,6 +74,7 @@ export function ReviewActions({
       <ReviewActionButton
         density={density}
         name={reviewActionLabel("discard", scope)}
+        label={subject && scope === "document" ? documentLabel("discard", subject) : undefined}
         short={reviewActionLabel("discard", "change")}
         icon={<X aria-hidden />}
         variant="quiet"
@@ -77,6 +86,7 @@ export function ReviewActions({
         <ReviewActionButton
           density={density}
           name={reviewActionLabel("apply", scope)}
+          label={subject && scope === "document" ? documentLabel("apply", subject) : undefined}
           short={reviewActionLabel("apply", "change")}
           icon={applying ? <Loader2 aria-hidden className="animate-spin" /> : <Check aria-hidden />}
           busy={applying}
@@ -98,6 +108,7 @@ export function ReviewActions({
 function ReviewActionButton({
   density,
   name,
+  label,
   short,
   icon,
   busy = false,
@@ -108,6 +119,8 @@ function ReviewActionButton({
 }: {
   density: ReviewDensity | undefined;
   name: string;
+  /** The accessible name when it says more than `name`. */
+  label?: string;
   short: string;
   icon: ReactNode;
   /** Shows the icon in every form. */
@@ -131,7 +144,7 @@ function ReviewActionButton({
         <Button
           variant={variant === "row" ? "ghost" : variant}
           size="xs"
-          aria-label={name}
+          aria-label={label ?? name}
           disabled={disabled}
           onClick={onClick}
           className={cn(
