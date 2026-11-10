@@ -400,7 +400,7 @@
     "packages/agent-edit/src/tool/response-staging.test.ts": 10,
     "packages/agent-edit/src/tool/write-round-trip.test.ts": 14,
     "packages/agent-edit/src/tool/write.test.ts": 14,
-    "packages/agent-edit/src/undo/forward-inverse.test.ts": 27,
+    "packages/agent-edit/src/undo/forward-inverse.test.ts": 28,
     "packages/contracts/src/context-entry-validation.test.ts": 5,
     "packages/contracts/src/context-uri.test.ts": 19,
     "packages/contracts/src/contract-boundaries.test.ts": 2,

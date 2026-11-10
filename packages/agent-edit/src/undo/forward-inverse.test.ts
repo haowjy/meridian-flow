@@ -289,6 +289,18 @@ describe("forward inverse on cold Yjs replicas", () => {
       v.doc.destroy();
     }
   });
+  it("a block placed ahead of the target, as Apply places a concurrent draft, does not block undo", () => {
+    const v = base(["one", "two"]),
+      add = (body: string) => (v: View) =>
+        v.doc.getXmlFragment("prosemirror").insert(1, [paragraph(body)]);
+    const red = write(v, [add("RED")]);
+    write(v, [add("BLUE")]);
+    expect(content(v)).toEqual(["one", "BLUE", "RED", "two"]);
+    expect(states(v, red)).toEqual(["active"]);
+    expect(inverse(v, red, "invert")).toBe(1);
+    expect(content(v)).toEqual(["one", "BLUE", "two"]);
+    v.doc.destroy();
+  });
   it("typing into restored content protects the undone direction", () => {
     const v = base(["abcdef"]),
       e = write(v, [(v) => text(v).delete(1, 4)]);
