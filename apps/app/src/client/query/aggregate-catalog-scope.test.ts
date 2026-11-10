@@ -2,7 +2,7 @@
  * Aggregate catalog scope behavior.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Scratch catalog ownership (kb/decisions/work/model/lineage-scratch.md)
+ * - Scratch catalog ownership (kb/wiki/product/work/scratch.md)
  * - upload catalog ownership (kb/wiki/product/chat/uploads.md)
  */
 import { describe, expect, it } from "vitest";

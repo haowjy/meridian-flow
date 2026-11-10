@@ -58,4 +58,4 @@ authenticated.
   Sign in goes to `/login`, Start writing to `/signup`. Recipe:
   [signed-out redirects](.context/qa/signed-out-redirects.md).
 
-[target]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/public-site/landing-page-shows-the-target.md
+[target]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/public-site.md#the-landing-page-shows-the-target

@@ -1,7 +1,7 @@
 /** Behavioral tests for repository and database migration-history guards.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Hash-and-timestamp migration planning (kb/decisions/platform/stack/drizzle-migration-integrity.md)
+ * - Hash-and-timestamp migration planning (kb/wiki/conventions/practice/database-migrations.md#merged-migration-history-never-changes)
  */
 import { describe, expect, it } from "vitest";
 import {

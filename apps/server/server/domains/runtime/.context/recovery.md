@@ -74,4 +74,4 @@ through its worker runner, leaving repair to restart. Shutdown aborts live work
 with reason `shutdown` after paid rows settle, acknowledges receipts, and
 suppresses new starts and wakes.
 
-[kb-process-death]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/process-death-turn-recovery.md
+[kb-process-death]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/server-runtime.md#process-death-ends-in-flight-turns

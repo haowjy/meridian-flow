@@ -29,7 +29,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
 - **What `./mf`'s tests cover.** Shared rules are tested once, in their package. `./mf`'s
   tests cover CLI admission assembly, exit codes, replay safety, the deadline and never claiming
   more than it proved; everything else is a live probe or recipe
-  ([decision](https://github.com/haowjy/meridian-flow-docs/blob/f3da199a87/kb/decisions/engineering/dev-cli/mf-tests-script-the-wire.md)).
+  ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/mf-cli.md#few-tests-against-a-scripted-wire)).
 - **Imports.** Workspace libraries are `@meridian/contracts` and
   `@meridian/thread-client` only. Portless discovery uses the route contract
   `pnpm dev` registers (`../dev/portless-prefix.ts`, `portless-routes.ts`,
@@ -97,7 +97,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   kept even if a later read agrees. It sees client state, not paint: no tools, reasoning,
   ask receipts, rows, dividers or queued rows, so `matches` does not prove the screen was right,
   and it never changes the claim or exit code. Only the proving read decides those. The planned
-  rule ([claims are proofs](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md))
+  rule ([claims are proofs](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/mf-cli.md#every-exit-is-proven-a-failure-or-unproven))
   is that a true disagreement will fail with exit 6 once every `differs` has been classified;
   that is not true yet.
 - **Output contract.** Compact text by default; `--json` prints exactly one object,

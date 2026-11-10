@@ -1,7 +1,7 @@
 /** Missing document-revision evidence fails closed at a compaction boundary.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Missing versus empty compaction evidence (kb/decisions/engineering/runtime/compaction/compaction-document-reshow.md)
+ * - Missing versus empty compaction evidence (kb/wiki/architecture/compaction-memory.md#re-show-only-the-text-that-fits)
  */
 import type { Block, JsonObject, Turn } from "@meridian/contracts/threads";
 import { expect, it } from "vitest";

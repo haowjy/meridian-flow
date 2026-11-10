@@ -4,7 +4,7 @@
  * are the host's and are not here.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Read-floor subscription and end-of-turn revalidation (kb/decisions/platform/client/chat-sync-boundaries.md)
+ * - Read-floor subscription and end-of-turn revalidation (kb/wiki/architecture/chat-sync.md#four-positions-never-interchanged)
  */
 import {
   type AGUIEvent,
