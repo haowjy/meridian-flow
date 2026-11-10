@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 // Hover and keyboard highlight are 5% ink; the current value is 10% and keeps it under the
 // pointer, so the row the keyboard is on and the current value stay distinguishable.
 const dropdownRow = cva(
-  "flex w-full min-w-0 items-center justify-start gap-2 rounded-md px-2 text-left text-menu font-normal outline-hidden select-none active:scale-100 has-[>svg]:px-2 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 disabled:pointer-events-none disabled:opacity-50",
+  "flex w-full min-w-0 items-center justify-start gap-2 rounded-md px-2 text-left text-sm font-normal outline-hidden select-none active:scale-100 has-[>svg]:px-2 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       kind: {
@@ -59,7 +59,7 @@ export const dropdownSurfaceVariants = cva(
   },
 );
 
-export const dropdownSearchClass = "h-8 pl-8 pr-2 text-menu [@media(pointer:coarse)]:h-11";
+export const dropdownSearchClass = "h-8 pl-8 pr-2 text-sm [@media(pointer:coarse)]:h-11";
 
 export const dropdownResultsClass = "app-scroll max-h-64";
 

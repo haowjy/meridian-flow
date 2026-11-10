@@ -74,19 +74,19 @@ function TraceViewerContent() {
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border p-3">
         <div>
           <h1 className="text-sm font-semibold">Streams</h1>
-          <p className="text-meta text-muted-foreground">Live client observability events</p>
+          <p className="text-xs text-muted-foreground">Live client observability events</p>
         </div>
         <TraceCounters paused={paused} />
         <Button
           type="button"
           variant="outline"
           size="xs"
-          className="text-meta"
+          className="text-xs"
           onClick={togglePaused}
         >
           {paused ? "Resume live tail" : "Pause / freeze"}
         </Button>
-        <Button type="button" variant="outline" size="xs" className="text-meta" onClick={clear}>
+        <Button type="button" variant="outline" size="xs" className="text-xs" onClick={clear}>
           Clear
         </Button>
       </header>
@@ -114,7 +114,7 @@ function TraceViewerContent() {
 function TraceCounters({ paused }: { paused: boolean }) {
   const snapshot = useTraceStore();
   return (
-    <div className="flex flex-1 flex-wrap items-center gap-3 text-meta text-muted-foreground">
+    <div className="flex flex-1 flex-wrap items-center gap-3 text-xs text-muted-foreground">
       <span>captured {snapshot.entries.length + snapshot.ringDropped}</span>
       <span>ring dropped {snapshot.ringDropped}</span>
       <span>tap errors {snapshot.tapErrors}</span>
@@ -174,11 +174,11 @@ function TraceBody({
             {selectedInView ? (
               <JsonTree value={selected} className="max-h-none border-0 bg-transparent p-0" />
             ) : selected ? (
-              <p className="text-meta text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 The selected event is outside the active filters or is no longer retained.
               </p>
             ) : (
-              <p className="text-meta text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Select a row to inspect its full record.
               </p>
             )}

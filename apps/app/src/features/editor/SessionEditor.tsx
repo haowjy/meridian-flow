@@ -413,7 +413,7 @@ function ActiveSessionEditorView({
       >
         {/* One status pill: the word count, and sync only when there is something
           to act on (offline / closed), see SyncStatus. Hidden while both are empty. */}
-        <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex items-center gap-3 rounded-full border border-border-subtle bg-card px-2.5 py-1 text-meta text-muted-foreground shadow-float empty:hidden">
+        <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex items-center gap-3 rounded-full border border-border-subtle bg-card px-2.5 py-1 text-xs text-muted-foreground shadow-float empty:hidden">
           <SyncStatus session={session} onReopen={onReopen} removal={removal} />
           {!evidenceDegraded && editor ? <WordCount editor={editor} /> : null}
         </div>

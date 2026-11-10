@@ -330,14 +330,14 @@ export function InlineInspector() {
         <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
           <div className="flex min-w-0 items-baseline gap-2">
             <span className={role.groupLabel}>{hit.kind}</span>
-            <span className="truncate font-mono text-meta text-foreground">{hit.label}</span>
+            <span className="truncate font-mono text-xs text-foreground">{hit.label}</span>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {canLoadModelRequests ? (
               <button
                 type="button"
                 onClick={loadModelRequests}
-                className="focus-ring rounded-sm px-2 py-0.5 text-meta text-muted-foreground hover:text-foreground"
+                className="focus-ring rounded-sm px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground"
                 aria-label="Load model requests for this turn"
               >
                 {modelRequests.status === "loading" ? "loading…" : "model requests"}
@@ -346,7 +346,7 @@ export function InlineInspector() {
             <button
               type="button"
               onClick={copyRecord}
-              className="focus-ring rounded-sm px-2 py-0.5 text-meta text-muted-foreground hover:text-foreground"
+              className="focus-ring rounded-sm px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground"
               aria-label={hit.kind === "next-turn" ? "Copy system prompt" : "Copy record JSON"}
             >
               {copied ? "copied" : "copy"}
@@ -354,7 +354,7 @@ export function InlineInspector() {
             <button
               type="button"
               onClick={() => setHit(null)}
-              className="focus-ring rounded-sm px-2 py-0.5 text-meta text-muted-foreground hover:text-foreground"
+              className="focus-ring rounded-sm px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground"
               aria-label="Close inspector"
             >
               esc
@@ -365,15 +365,15 @@ export function InlineInspector() {
           {hit.kind === "next-turn" ? (
             <div className="space-y-3">
               {turnContextPreview.status === "disabled" ? (
-                <p className="text-meta text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Model-request capture is disabled on this server.
                 </p>
               ) : null}
               {turnContextPreview.status === "error" ? (
-                <p className="text-meta text-destructive">{turnContextPreview.message}</p>
+                <p className="text-xs text-destructive">{turnContextPreview.message}</p>
               ) : null}
               {turnContextPreview.status === "loading" ? (
-                <p className="text-meta text-muted-foreground">loading preview…</p>
+                <p className="text-xs text-muted-foreground">loading preview…</p>
               ) : null}
               {turnContextPreview.status === "loaded" ? (
                 <>
@@ -383,7 +383,7 @@ export function InlineInspector() {
                         ? "system prompt (frozen)"
                         : "system prompt (will be baked at the first turn attempt)"}
                     </p>
-                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-sm border border-border-subtle bg-ink-fill p-2 font-mono text-meta text-foreground">
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-sm border border-border-subtle bg-ink-fill p-2 font-mono text-xs text-foreground">
                       {turnContextPreview.preview.systemPrompt}
                     </pre>
                   </div>
@@ -403,7 +403,7 @@ export function InlineInspector() {
                       className="mt-2 max-h-none border-0 bg-transparent p-0"
                     />
                   </details>
-                  <p className="font-mono text-meta text-muted-foreground">
+                  <p className="font-mono text-xs text-muted-foreground">
                     agent: {turnContextPreview.preview.agentSlug ?? "none"}
                   </p>
                 </>
@@ -411,12 +411,12 @@ export function InlineInspector() {
             </div>
           ) : null}
           {modelRequests.status === "disabled" ? (
-            <p className="mb-2 text-meta text-muted-foreground">
+            <p className="mb-2 text-xs text-muted-foreground">
               Model-request capture is disabled on this server.
             </p>
           ) : null}
           {modelRequests.status === "error" ? (
-            <p className="mb-2 text-meta text-destructive">{modelRequests.message}</p>
+            <p className="mb-2 text-xs text-destructive">{modelRequests.message}</p>
           ) : null}
           {modelRequests.status === "loaded" ? (
             <div className="mb-3 space-y-2 border-b border-border pb-3">
@@ -424,9 +424,7 @@ export function InlineInspector() {
                 model requests ({modelRequests.response.records.length})
               </p>
               {modelRequests.response.records.length === 0 ? (
-                <p className="text-meta text-muted-foreground">
-                  No captured requests for this turn.
-                </p>
+                <p className="text-xs text-muted-foreground">No captured requests for this turn.</p>
               ) : (
                 <ModelRequestInspector
                   records={modelRequests.response.records}

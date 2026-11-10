@@ -7,14 +7,14 @@ import { extendTailwindMerge } from "tailwind-merge";
 
 /**
  * tailwind-merge only knows Tailwind's default theme. A custom `--text-*` size it
- * doesn't know reads as a colour, so `cn("text-meta text-foreground")` would drop
+ * doesn't know reads as a colour, so `cn("text-xs text-foreground")` would drop
  * the size; a custom shadow reads as a shadow colour. Every custom size, shadow
  * and tracking token in `packages/design-tokens/src/ink-jade.css` is listed here.
  */
 const twMerge = extendTailwindMerge({
   extend: {
     theme: {
-      text: ["meta", "caption", "compact", "menu", "body"],
+      text: ["caption", "compact", "body"],
       shadow: ["raise", "float", "modal"],
       tracking: ["caps"],
     },

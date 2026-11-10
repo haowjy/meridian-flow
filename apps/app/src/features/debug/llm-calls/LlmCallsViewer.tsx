@@ -212,12 +212,12 @@ function LlmCallsContent({
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border p-3">
         <div>
           <h1 className="text-sm font-semibold">LLM Calls</h1>
-          <p className="text-meta text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Gateway lifecycle and canonical model requests, refreshed while this window is open
           </p>
           {filter ? (
             <div className="mt-1 flex items-center gap-3">
-              <p className="font-mono text-meta text-muted-foreground">
+              <p className="font-mono text-xs text-muted-foreground">
                 Thread {filter.threadId},{" "}
                 {"turnId" in filter
                   ? `turn ${filter.turnId}`
@@ -225,7 +225,7 @@ function LlmCallsContent({
               </p>
               <button
                 type="button"
-                className="focus-ring rounded-sm text-meta text-jade-text underline"
+                className="focus-ring rounded-sm text-xs text-jade-text underline"
                 onClick={onShowAll}
               >
                 Show all
@@ -234,7 +234,7 @@ function LlmCallsContent({
           ) : null}
         </div>
         {state.status === "loaded" ? (
-          <div className="flex flex-1 flex-wrap items-center gap-3 text-meta text-muted-foreground">
+          <div className="flex flex-1 flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span>{calls.length} calls</span>
             <span>{state.events.length} records</span>
             <span>{state.dropped} ring evictions</span>
@@ -311,26 +311,26 @@ function CallCard({
               <span className="font-mono text-xs font-medium text-foreground">
                 {call.model ?? "unknown model"}
               </span>
-              <span className="text-meta text-muted-foreground">
+              <span className="text-xs text-muted-foreground">
                 {call.provider ?? "unknown provider"}
               </span>
               <span
                 className={cn(
-                  "rounded-full px-2 py-0.5 font-medium text-meta",
+                  "rounded-full px-2 py-0.5 font-medium text-xs",
                   OUTCOME_CLASS[call.outcome],
                 )}
               >
                 {call.outcome}
               </span>
               {call.errorCode ? (
-                <span className="font-mono text-meta text-muted-foreground">{call.errorCode}</span>
+                <span className="font-mono text-xs text-muted-foreground">{call.errorCode}</span>
               ) : null}
             </div>
-            <p className="mt-1 truncate font-mono text-meta text-muted-foreground">
+            <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
               {call.gatewayCallId}
             </p>
           </div>
-          <span className="shrink-0 text-meta text-muted-foreground">
+          <span className="shrink-0 text-xs text-muted-foreground">
             {new Date(call.startedAt).toLocaleString()}
           </span>
         </div>
@@ -377,7 +377,7 @@ function CallCard({
           ) : null}
         </dl>
         {correlation.length > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 break-all font-mono text-meta text-muted-foreground">
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 break-all font-mono text-xs text-muted-foreground">
             {correlation.map((item) => (
               <span key={item}>{item}</span>
             ))}
@@ -403,7 +403,7 @@ function Metric({
 }) {
   return (
     <div>
-      <dt className="text-meta text-muted-foreground">{label}</dt>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd
         className={cn(
           "font-mono text-xs text-foreground",
@@ -412,7 +412,7 @@ function Metric({
       >
         {value}
       </dd>
-      {detail ? <dd className="text-meta text-muted-foreground">{detail}</dd> : null}
+      {detail ? <dd className="text-xs text-muted-foreground">{detail}</dd> : null}
     </div>
   );
 }
@@ -457,10 +457,10 @@ function CallDetail({ call }: { call: LlmCallSummary }) {
                   key={event.eventId ?? `${event.stream?.observerSeq ?? index}:${event.name}`}
                   className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2 rounded-sm border border-border-subtle bg-ink-fill px-2 py-1.5"
                 >
-                  <span className="font-mono text-meta text-muted-foreground">
+                  <span className="font-mono text-xs text-muted-foreground">
                     +{relativeMilliseconds(startedAt, event.timestamp)} ms
                   </span>
-                  <span className="min-w-0 font-mono text-meta text-foreground">
+                  <span className="min-w-0 font-mono text-xs text-foreground">
                     {timelineLabel(event)}
                   </span>
                 </li>
@@ -477,10 +477,10 @@ function CallDetail({ call }: { call: LlmCallSummary }) {
                     key={chunk.messageClass}
                     className="flex justify-between gap-2 rounded-sm border border-border-subtle bg-ink-fill px-2 py-1.5"
                   >
-                    <dt className="truncate font-mono text-meta text-muted-foreground">
+                    <dt className="truncate font-mono text-xs text-muted-foreground">
                       {chunk.messageClass}
                     </dt>
-                    <dd className="font-mono text-meta text-foreground">{chunk.count}</dd>
+                    <dd className="font-mono text-xs text-foreground">{chunk.count}</dd>
                   </div>
                 ))}
               </dl>
@@ -543,29 +543,29 @@ function ModelRequestDetail({ call }: { call: LlmCallSummary }) {
 
   return (
     <section>
-      <Button type="button" variant="outline" size="xs" className="text-meta" onClick={toggle}>
+      <Button type="button" variant="outline" size="xs" className="text-xs" onClick={toggle}>
         {visible ? "Hide model request content" : "Show model request content"}
       </Button>
       {visible ? (
         <div className="mt-2">
           {state.status === "loading" ? (
-            <p className="text-meta text-muted-foreground">Loading model request content…</p>
+            <p className="text-xs text-muted-foreground">Loading model request content…</p>
           ) : null}
           {state.status === "disabled" ? (
-            <p className="text-meta text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Model-request capture is disabled on this server.
             </p>
           ) : null}
           {state.status === "error" ? (
             <div className="flex items-center gap-2">
-              <p className="text-meta text-destructive">{state.message}</p>
+              <p className="text-xs text-destructive">{state.message}</p>
               <Button type="button" variant="outline" size="xs" onClick={load}>
                 Retry request
               </Button>
             </div>
           ) : null}
           {state.status === "loaded" && state.response.records.length === 0 ? (
-            <p className="text-meta text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               No captured model request matches this call.
             </p>
           ) : null}

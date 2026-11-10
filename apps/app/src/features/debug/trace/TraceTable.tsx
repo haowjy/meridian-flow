@@ -39,7 +39,7 @@ export function TraceTable({
 
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto overscroll-contain">
-      <table className="w-full border-collapse text-left font-mono text-meta">
+      <table className="w-full border-collapse text-left font-mono text-xs">
         <thead className="sticky top-0 bg-background text-muted-foreground">
           <tr className="border-b border-border">
             <th className="px-2 py-1.5 font-medium">time</th>

@@ -22,7 +22,7 @@
   background: var(--color-ink-fill);
   padding: 0.625rem 0.75rem;
   color: var(--color-muted-foreground);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 /* The fallback box, and only for a slot with no measured frame. A file the
@@ -172,7 +172,7 @@
   border-radius: var(--radius-lg);
   background: color-mix(in oklab, var(--color-card) 88%, transparent);
   color: var(--color-jade-text);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   font-weight: 650;
   pointer-events: none;
 }

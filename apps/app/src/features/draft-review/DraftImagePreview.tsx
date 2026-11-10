@@ -61,7 +61,7 @@ function PreviewBody({ target }: { target: DraftImagePreviewTarget }) {
             className="max-h-[60svh] max-w-full rounded-md border border-border object-contain"
           />
         ) : (
-          <p className="text-meta text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {"message" in state && state.message ? state.message : t`Loading`}
           </p>
         )}

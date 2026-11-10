@@ -311,11 +311,11 @@ function UploadRow({
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="truncate">{upload.name}</span>
             {failure ? (
-              <span aria-hidden="true" className="truncate text-meta text-destructive">
+              <span aria-hidden="true" className="truncate text-xs text-destructive">
                 {failure}
               </span>
             ) : (
-              <span className="flex min-w-0 justify-between gap-3 text-meta text-muted-foreground">
+              <span className="flex min-w-0 justify-between gap-3 text-xs text-muted-foreground">
                 <span className="truncate">{uploadTypeLabel(upload.fileType)}</span>
                 <span className="shrink-0 tabular-nums">{attachedAgo(upload.attachedAt, now)}</span>
               </span>

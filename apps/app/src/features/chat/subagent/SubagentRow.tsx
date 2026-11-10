@@ -27,7 +27,7 @@ export function SubagentIdentity({
       <SubagentMark
         agentName={run.agentName}
         status={run.status}
-        className={size === "card" ? undefined : "size-5 text-meta"}
+        className={size === "card" ? undefined : "size-5 text-xs"}
       />
       {agentLabel ?? <SubagentIdentityName run={run} />}
       {showName && run.name ? (
