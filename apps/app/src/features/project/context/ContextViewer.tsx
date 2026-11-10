@@ -12,7 +12,7 @@ import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ReactNode, useEffect, useRef } from "react";
-import { type ContextTab, isDraftOnly } from "@/client/stores";
+import { type ContextTab, isDraftOnly, useSelectedDocumentId } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
@@ -107,6 +107,9 @@ export function ContextViewer({
   // mount their own viewer surface for the active one only (heavy
   // renderers + signed URLs don't benefit from pre-mounting).
   const trackedTabs = tabs.filter(isEditableTab);
+  // The host that reviews is the selected tab's, read from the tab store: the pane's front tab
+  // goes empty for a render while a removal settles, and a review left then is closed for good.
+  const selectedDocumentId = useSelectedDocumentId(projectId);
   const activeTab = paneState.kind === "document" ? paneState.tab : null;
   // Recency is recorded from the tab actually in front of the writer, not from
   // the intent to open. The device record is written in this effect, before the
@@ -201,7 +204,7 @@ export function ContextViewer({
                       <DocumentReviewProvider
                         projectId={projectId}
                         tab={tab}
-                        showing={routeDisplayed && shown}
+                        showing={routeDisplayed && tab.documentId === selectedDocumentId}
                       >
                         <EditorTabFrame
                           {...chrome}
