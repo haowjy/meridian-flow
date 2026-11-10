@@ -3,6 +3,9 @@
  * jade button; Discard is quiet ink, never red and never a trash icon (red and the trash
  * belong to Delete). Each scope has one name everywhere (`reviewActionLabel`).
  *
+ * A change's ✓ in a list row is jade ink, not a fill: the group's own Apply is the one
+ * filled button, and a column of filled squares would drown it.
+ *
  * `density` picks the form: the scope's name, the bare verb, or ×/✓. Leave it unset where
  * a container measures its own fit and sets `data-density` on `[data-review-actions]`
  * itself (the identity row's ladder); React then never resets that attribute.
@@ -77,7 +80,7 @@ export function ReviewActions({
           short={reviewActionLabel("apply", "change")}
           icon={applying ? <Loader2 aria-hidden className="animate-spin" /> : <Check aria-hidden />}
           busy={applying}
-          variant="default"
+          variant={scope === "change" && density === "icon" ? "row" : "default"}
           touch={touch}
           disabled={disabled || applyDisabled}
           onClick={onApply}
@@ -109,7 +112,7 @@ function ReviewActionButton({
   icon: ReactNode;
   /** Shows the icon in every form. */
   busy?: boolean;
-  variant: "quiet" | "default";
+  variant: "quiet" | "default" | "row";
   touch: boolean;
   disabled: boolean;
   onClick: MouseEventHandler<HTMLButtonElement>;
@@ -126,12 +129,13 @@ function ReviewActionButton({
     >
       <TooltipTrigger asChild>
         <Button
-          variant={variant}
+          variant={variant === "row" ? "ghost" : variant}
           size="xs"
           aria-label={name}
           disabled={disabled}
           onClick={onClick}
           className={cn(
+            variant === "row" && "text-jade-text",
             "[@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11",
             "group-data-[density=icon]/review:w-6 group-data-[density=icon]/review:px-0",
             touch &&
