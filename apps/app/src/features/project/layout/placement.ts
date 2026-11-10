@@ -1,7 +1,7 @@
 /**
  * Pure mode-to-surface placement for the project, merged with the mode's panel
  * prefs for render consumers. The centre slot is never collapsible. A transient
- * hold (`collapsedSlots`, review's prose focus) collapses slots for as long as it
+ * hold (`collapsedSlots`, a too-narrow window) collapses slots for as long as it
  * lasts without touching prefs, so the writer's choice returns when it lifts.
  */
 import { useMemo } from "react";
