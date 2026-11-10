@@ -1,7 +1,7 @@
 # rich-content
 
 `Markdown` renders through `DocumentMarkdown`: the shared markup codec and a React
-walker, with no editor instance ([decision][chat-rendering]).
+walker, with no editor instance ([chat transcript][chat-rendering]).
 
 - Static and streaming text use the same block components and one document snapshot
   owner. Don't add a second parser, a blank-line splitter or inferred fence state.

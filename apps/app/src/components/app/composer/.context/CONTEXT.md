@@ -25,3 +25,17 @@
   unseen in the chat's uploads (the uploads `.context` limit).
 - Send records the exact structured fingerprint before clearing unchanged words.
   If local recording fails, the live draft stays and Send again is the retry.
+- One button: Stop while the box is empty and a reply runs, Send once the
+  writer types (a send during a reply queues a steer). Stopping and sending at
+  once lives in the queue, not the composer.
+- Failures are `FailureCard`s from the chat's `chatCards`, drawn in one card
+  stack above attached strips, never between a strip and the box.
+- A host's `takeover` (an open ask) draws in the box's place; the editor stays
+  mounted and hidden so the draft comes back as it was. No Stop while it shows.
+- A context row drop resolves through the same live catalog as `@` and
+  inserts the same `composerReference` atom. The shared editor drop extension
+  owns word snapping, spacing, one-step Undo, and the drop caret.
+- A desktop file dropped on the composer or the chat's transcript attaches through
+  `attachFiles`, the paperclip's one door into the chat's Uploads (`useFileDrop`
+  claims `Files` drags only; tree entries stay with the reference drop above). A
+  dropped folder is a failed chip: the intake takes files only.
