@@ -243,10 +243,6 @@ export function ProjectView(props: ProjectViewProps) {
       props.activeScreen === "chat" ? selectedDocumentId : null,
     ]),
     onScreen: props.activeScreen === "context" || props.activeScreen === "chat",
-    showing:
-      props.activeScreen === "chat"
-        ? selectedDocumentId
-        : { scheme: props.activeContextScheme, path: props.activeContextPath },
   });
   useEffect(() => {
     const lease = availability.attachProject(props.projectId);

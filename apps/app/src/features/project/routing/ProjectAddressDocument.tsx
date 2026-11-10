@@ -34,8 +34,8 @@ export type AddressAdmission = {
  * before the removal. Admission must not install the tab again from that answer: the removal
  * closes it at once, in a loop. Two things show the answer is stale. The removal fence names
  * the document until a read taken after the removal arrives (a restore invalidates the
- * lookup). Then the replica's terminal record, which outlives the restore until the catalog
- * republishes the document.
+ * lookup). Then the replica's terminal record, which outlives the restore
+ * until the catalog republishes the document.
  */
 export function useAddressResultAfterRemoval(
   projectId: string,

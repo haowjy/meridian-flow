@@ -262,9 +262,9 @@ the notice loses its words.
 `useRemovedNoticeLifetime` (Editor: `ProjectView`, both shells; dock:
 `DesktopProject`) starts a notice's lifetime only when its placement is on
 screen (the Editor screen; Chat with its rail open and no dock document), so a
-removal noticed elsewhere waits for the writer. It anchors once the place no
-longer shows a removed document (a removal leaves the address on the
-removed document, which is not a navigation), and the next change of place clears the notice, documents still
+removal noticed elsewhere waits for the writer. It anchors where it first
+shows (a removal leaves the address on the removed document, so that address),
+and the next change of place clears the notice, documents still
 waiting for an answer included. A removal joining the notice re-anchors it.
 A dock removal on the Work screen has no placement there; it shows when the
 writer next sees Chat's rail.
