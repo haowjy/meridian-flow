@@ -10,7 +10,6 @@ import type {
   ThreadId,
   TurnId,
   UserId,
-  WorkId,
 } from "@meridian/contracts";
 import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
@@ -33,7 +32,7 @@ import {
 import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { modelResponses, threads, turns } from "./agent-threads";
 import { branches } from "./branches";
-import { documents, projects, works } from "./content";
+import { documents, projects } from "./content";
 import { documentEdits } from "./document-edits";
 import { users } from "./users";
 
@@ -347,10 +346,6 @@ export const branchCommands = pgTable(
   "branch_commands",
   {
     id: uuid("id").$type<BranchCommandId>().primaryKey(),
-    workId: uuid("work_id")
-      .$type<WorkId>()
-      .notNull()
-      .references(() => works.id, { onDelete: "cascade" }),
     branchId: uuid("branch_id")
       .$type<BranchId>()
       .references(() => branches.id, { onDelete: "cascade" }),
@@ -367,7 +362,6 @@ export const branchCommands = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
-    index("branch_commands_work").on(table.workId),
     check(
       "branch_commands_kind_valid",
       sql`${table.kind} IN ('apply_click', 'unapply_click', 'apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_branch')`,

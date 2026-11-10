@@ -21,8 +21,9 @@ export function canonicalDocumentAddress(
     path: document.path.join("/"),
   };
   const scope = document.scope;
-  // A chat's Scratch names its lineage; the Editor's selected Work stays implicit.
-  const { lineage: _previousLineage, ...previous } = address;
+  // A chat's Scratch names its lineage; the Editor's selected Work stays implicit. A review
+  // of a lineage's draft keeps the lineage the address names: it owns the draft, not the document.
+  const { lineage: reviewedLineage, ...previous } = address;
   return scope.kind === "lineage"
     ? {
         ...previous,
@@ -40,6 +41,7 @@ export function canonicalDocumentAddress(
           scope.kind === "work" && isWorkScopedScheme(uri.value.scheme) ? scope.workId : workId,
           noWorkId,
         ),
+        ...(address.itemKey && reviewedLineage ? { lineage: reviewedLineage } : {}),
       };
 }
 

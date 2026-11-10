@@ -8,6 +8,7 @@ import { AccountResourceReplica } from "@/core/resources/account-resource-replic
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
 import { createLinkSettlements } from "@/features/links/link-settlements";
+import { settleDockDraft } from "../dock/dock-document-store";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { IdentityContinuity } from "./identity-continuity";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
@@ -67,7 +68,8 @@ export class AccountFeatureLifetime {
         this.removedRooms.add(stop);
       },
       closeCreated: (ref) => {
-        this.removal.discardDraft(ref.projectId, ref.workId, ref.itemKey);
+        this.removal.discardDraft(ref.projectId, ref.ownerKey, ref.itemKey);
+        settleDockDraft(ref, false);
       },
       markOwnRemoval: (ref) => this.notices.markOwnRemoval(ref.projectId, [ref.documentId]),
     });

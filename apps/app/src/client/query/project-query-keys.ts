@@ -81,27 +81,19 @@ export const projectQueryKeys = {
   threadRenamePrefix: (projectId: string) => ["projects", projectId, "thread-rename"] as const,
   /** Client-only: this project's Work command records (`work-command-store`). */
   workCommands: (projectId: string) => ["projects", projectId, "work-commands"] as const,
-  workBranchDrafts: (projectId: string, workId: string) =>
-    ["projects", projectId, "works", workId, "branches"] as const,
+  /** One owner's draft list; `owner` is `work:<id>` or `lineage:<root>`. */
+  ownerDrafts: (projectId: string, owner: string) =>
+    ["projects", projectId, "drafts", owner] as const,
   /** The branches with changes to one document; invalidated with the Work draft lists. */
   documentDraftHints: (projectId: string, documentId: string) =>
     ["projects", projectId, "document-draft-hints", documentId] as const,
   documentDraftHintsOf: (projectId: string) =>
     ["projects", projectId, "document-draft-hints"] as const,
-  workDraftMetadata: (projectId: string, workId: string, documentId: string, itemKey?: string) =>
-    [
-      "projects",
-      projectId,
-      "works",
-      workId,
-      "documents",
-      documentId,
-      "draft",
-      itemKey ?? null,
-    ] as const,
-  /** Every item's draft metadata read of one document in a Work. */
-  workDraftMetadataOf: (projectId: string, workId: string, documentId: string) =>
-    ["projects", projectId, "works", workId, "documents", documentId, "draft"] as const,
+  ownerDraftMetadata: (projectId: string, owner: string, documentId: string, itemKey?: string) =>
+    ["projects", projectId, "draft-metadata", owner, documentId, itemKey ?? null] as const,
+  /** Every item's draft metadata read of one document of an owner. */
+  ownerDraftMetadataOf: (projectId: string, owner: string, documentId: string) =>
+    ["projects", projectId, "draft-metadata", owner, documentId] as const,
   contextCatalog: (projectId: string, scope: CatalogScope) =>
     ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const,
   contextCatalogView: (

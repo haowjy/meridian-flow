@@ -30,6 +30,10 @@ thread's run and subagent subtree, its open questions included, in the delete's
 own transaction (`stopThreads`), before `lockWorkThreadTree` locks the tree's
 rows parents first.
 
+A lineage lock (`pg_advisory_xact_lock` on `draft-owner:lineage:<root>`) follows the
+Work locks and precedes branch, namespace and document locks; the thread tree lock,
+trash and restore take it too, because they change whether a lineage is live. Purge
+also disposes the active branches of the lineages it deletes.
 Delete and purge lock the thread tree before the Work, then recheck the full
 membership set; a concurrent join retries. Restore locks the threads carrying
 that Work's deletion marker and clears exactly that set.

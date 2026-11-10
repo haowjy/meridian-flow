@@ -10,13 +10,14 @@ import type {
   SemanticEditIRV1,
 } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
-import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
   createCollabYDoc,
 } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import type { BranchOwnerLifecycle } from "../../../shared/draft-owner.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
 
 export type DraftKind = "work_draft" | "thread_peer";
@@ -45,8 +46,8 @@ export function blockOriginsFromDraftSeed(seed: DraftSeedRecord | null): BlockOr
   );
 }
 
-/** The branch's origin Work as the row was read: archived, deleted or missing freeze it. */
-export type DraftWorkLifecycle = "active" | "archived" | "deleted" | "missing";
+/** The branch's owner as the row was read: anything but active (archived, frozen, deleted, missing) freezes it. */
+export type DraftWorkLifecycle = BranchOwnerLifecycle;
 
 /** A draft row without its content: the content is read only through `readDraftAt`. */
 export type DraftSnapshot = {
@@ -56,8 +57,10 @@ export type DraftSnapshot = {
   upstreamDraftId: string | null;
   /** The branch this draft belongs to; a thread peer carries its upstream's. */
   branchId: BranchId;
-  /** Derived: the branch's origin Work (`branches.origin_work_id`), null when it has none. */
+  /** Derived: the branch's owner, a Work or a lineage (`branches.origin_*`); both null when closed with no owner. */
   workId: WorkId | null;
+  rootThreadId: ThreadId | null;
+  projectId: ProjectId;
   threadId: ThreadId | null;
   status: DraftStatus;
   /** Why a closed draft closed; null while active. A `document_removed` close outlives a restore. */
@@ -229,6 +232,7 @@ export type DraftStore = {
     revision: number;
     hasEffect: boolean;
     workId: WorkId | null;
+    rootThreadId: ThreadId | null;
   }): Promise<"written" | "moved" | "contended">;
   /** Active work drafts whose watermark is behind their revision, newest first, keyset paged. */
   staleEffectDrafts(input: {

@@ -1,11 +1,7 @@
 /** ContextPaneController — desktop SURFACE controller for the route-owned Context destination. */
 
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
-import {
-  contextOwner,
-  type ProjectContextTreeScheme,
-  type Work,
-} from "@meridian/contracts/protocol";
+import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback, useLayoutEffect } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
@@ -49,8 +45,6 @@ export type ContextViewerSurfaceControllerProps = {
   editorWorkId: string | null;
   /** What masks the document body; the tab strip and the address stay outside it. */
   mask: ProjectRouteMask;
-  /** The Editor's Work; its archived state makes its files read-only. */
-  editorWork: Work | null;
   localDocumentId?: string;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
@@ -81,7 +75,6 @@ export function ContextViewerSurfaceController({
   resolvedEditor,
   editorWorkId,
   mask,
-  editorWork,
   activeContextScheme,
   activeContextPath,
   activeContextChat,
@@ -325,7 +318,6 @@ export function ContextViewerSurfaceController({
       mask={mask}
       route={activeContextScheme ? { scheme: activeContextScheme, path: activeContextPath } : null}
       onSelectContextPath={onSelectContextPath}
-      editorWork={editorWork}
       tabs={visibleTabs}
       paneState={paneState}
       onSelectTab={handleSelectTab}

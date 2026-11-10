@@ -23,7 +23,7 @@ type ReviewLocator = { scheme: ProjectContextTreeScheme; path: string };
 /** The review the owner last confirmed on the address, kept to recognise its own Exit. */
 type OwnedReview = {
   container: PresentedDocument["container"];
-  workId: string;
+  ownerKey: string;
   itemKey: string;
   documentId: string;
   /** Confirmed by identity or the review's location, never a pending rename guess. */
@@ -39,7 +39,7 @@ export function exitedReviewOwnsAddress(
   owned: OwnedReview,
   address: {
     container: PresentedDocument["container"];
-    workId: string;
+    ownerKey: string;
     itemKey?: string;
     documentId?: string | null;
     locator: ReviewLocator | null;
@@ -48,7 +48,7 @@ export function exitedReviewOwnsAddress(
   if (
     !address.itemKey ||
     owned.container !== address.container ||
-    owned.workId !== address.workId ||
+    owned.ownerKey !== address.ownerKey ||
     owned.itemKey !== address.itemKey
   )
     return false;
@@ -142,7 +142,7 @@ export function ReviewAddressOwner({
         !presented ||
         match === "no" ||
         (presented.review &&
-          (presented.review.workId !== review.controller.workId ||
+          (presented.review.ownerKey !== review.controller.ownerKey ||
             presented.review.itemKey !== inline.itemKey))
       ) {
         review.controller.exitInlineReview();
@@ -154,7 +154,7 @@ export function ReviewAddressOwner({
       // of competing with itself through an address-owner replacement.
       ownedReview.current = {
         container: presented.container,
-        workId: review.controller.workId,
+        ownerKey: review.controller.ownerKey,
         itemKey: inline.itemKey,
         documentId: inline.documentId,
         locator: locatorOf(presented),
@@ -166,7 +166,7 @@ export function ReviewAddressOwner({
         ((changeId || !presented.review?.changeId) && presented.review?.changeId !== changeId)
       )
         write({
-          workId: review.controller.workId,
+          ownerKey: review.controller.ownerKey,
           itemKey: inline.itemKey,
           ...(changeId ? { changeId } : {}),
         });
@@ -180,7 +180,7 @@ export function ReviewAddressOwner({
         presented?.review &&
         exitedReviewOwnsAddress(owned, {
           container: presented.container,
-          workId: presented.review.workId,
+          ownerKey: presented.review.ownerKey,
           itemKey: presented.review.itemKey,
           documentId: presented.documentId,
           locator: locatorOf(presented),
@@ -201,12 +201,12 @@ export function ReviewAddressOwner({
         !presented.documentId ||
         !presented.path ||
         !presented.scheme ||
-        review.controller.workId !== presented.review.workId ||
+        review.controller.ownerKey !== presented.review.ownerKey ||
         attempted(requestedItemKey)
       )
         return;
       restore({
-        workId: presented.review.workId,
+        ownerKey: presented.review.ownerKey,
         documentId: presented.documentId,
         itemKey: requestedItemKey,
         contextLocation: { scheme: presented.scheme, path: presented.path },
@@ -222,13 +222,13 @@ export function ReviewAddressOwner({
       !presented.documentId ||
       !presented.scheme ||
       !presented.path ||
-      review.controller.workId !== presented.review.workId
+      review.controller.ownerKey !== presented.review.ownerKey
     )
       return;
     // The list, when loaded, supplies labels and whole-item state; it is never an authority.
     const file = review.files.find((candidate) => candidate.draft.itemKey === requestedItemKey);
     restore({
-      workId: presented.review.workId,
+      ownerKey: presented.review.ownerKey,
       documentId: presented.documentId,
       itemKey: requestedItemKey,
       contextLocation: { scheme: presented.scheme, path: presented.path },

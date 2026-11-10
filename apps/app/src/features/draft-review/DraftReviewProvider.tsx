@@ -14,7 +14,7 @@ import {
   useState,
 } from "react";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { useWorkBranchDrafts, type WorkDraftListStatus } from "@/client/query/useWorkBranchDrafts";
+import { type OwnerDraftListStatus, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { EMPTY_DRAFT_REVIEW_STATE } from "./draft-review-session";
@@ -31,7 +31,7 @@ export type DraftReviewContextValue = {
   controller: DraftReviewController;
   roomOwner: ReviewRoomOwner;
   files: ReviewFileTarget[];
-  drafts: WorkDraftListStatus;
+  drafts: OwnerDraftListStatus;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
   reviewRoomNameForDraft: (documentId: string, itemKey: string) => string | null;
   activeEditorDocumentId: string | null;
@@ -93,39 +93,40 @@ export function usePresentedDraftReview(): DraftReviewContextValue {
 export function useDraftReviewScopeValue({
   projectId,
   work,
+  ownerKey,
   stateOwner,
   threadId = null,
 }: {
   projectId: string | null;
-  /** The Work whose drafts this scope reviews; its archived state freezes them (D30). */
+  /** The Work whose archived state freezes these drafts. */
   work: Work | null;
+  /** Whose drafts this scope reviews: `work:<id>` or `lineage:<root>`; "" scopes nothing. */
+  ownerKey: string;
   stateOwner?: DraftReviewStateOwner;
   /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
   threadId?: string | null;
 }): DraftReviewContextValue {
-  const workId = work?.id ?? null;
   const queryClient = useQueryClient();
   const effectiveProjectId = projectId ?? "";
-  // Empty keys belong only to disabled queries; every ready Editor uses its Work row id.
-  const effectiveWorkId = workId ?? "";
-  const drafts = useWorkBranchDrafts(projectId, workId);
+  const drafts = useOwnerDrafts(projectId, ownerKey || null);
   const files = drafts.files ?? [];
   const localStateOwner = useDraftReviewStateOwner();
   const reviewState = stateOwner ?? localStateOwner;
-  const scope = useRef({ projectId: effectiveProjectId, workId: effectiveWorkId, queryClient });
+  const scope = useRef({ projectId: effectiveProjectId, ownerKey, queryClient });
   const scopeChanged =
     scope.current.projectId !== effectiveProjectId ||
-    scope.current.workId !== effectiveWorkId ||
+    scope.current.ownerKey !== ownerKey ||
     scope.current.queryClient !== queryClient;
   const controller = useDraftReviewController({
     projectId: effectiveProjectId,
     work,
+    ownerKey,
     threadId,
     stateOwner: scopeChanged ? { ...reviewState, state: EMPTY_DRAFT_REVIEW_STATE } : reviewState,
   });
   const roomOwner = useReviewRoomOwner({
     projectId: effectiveProjectId,
-    workId: effectiveWorkId,
+    ownerKey,
     review: controller.inlineReview,
     dispatch: reviewState.dispatch,
   });
@@ -156,9 +157,9 @@ export function useDraftReviewScopeValue({
   );
 
   useLayoutEffect(() => {
-    scope.current = { projectId: effectiveProjectId, workId: effectiveWorkId, queryClient };
+    scope.current = { projectId: effectiveProjectId, ownerKey, queryClient };
     controller.exitReview();
-  }, [effectiveProjectId, effectiveWorkId, queryClient, controller.exitReview]);
+  }, [effectiveProjectId, ownerKey, queryClient, controller.exitReview]);
 
   const fileForDocument = drafts.fileForDocument;
 
@@ -173,7 +174,7 @@ export function useDraftReviewScopeValue({
 
   useReviewRefresh({
     projectId,
-    workId,
+    ownerKey: ownerKey || null,
     review: controller.inlineReview,
     runtime: roomOwner.runtime,
     session: roomOwner.session,

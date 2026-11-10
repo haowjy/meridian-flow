@@ -92,7 +92,7 @@ export async function loadPreparedUnapply(
       and(
         eq(applyCommandEffects.commandId, command.request.applyCommandId),
         eq(applyCommandEffects.documentId, command.documentId),
-        eq(branchCommands.workId, command.workId),
+        eq(branchCommands.branchId, command.branchId),
         eq(branchCommands.accountId, command.envelope.accountId),
         eq(branchCommands.kind, "apply_click"),
         eq(branchCommands.state, "done"),

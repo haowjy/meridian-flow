@@ -4,6 +4,8 @@
  * every lifecycle on the way. The tree view supplies branch locations and
  * lineage (D56); hidden identities outside the caller's branch have no facts.
  */
+
+import type { DraftOwner } from "@meridian/contracts";
 import { type ContextUriScheme, isContextUriScheme } from "@meridian/contracts/context-uri";
 import type {
   ContextSourceId,
@@ -17,6 +19,7 @@ import type {
 import type { Database } from "@meridian/database";
 import { contextSources, projects, threads, works } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { lineageHasLiveMember } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import {
@@ -24,8 +27,11 @@ import {
   createDrizzleBranchWriteBoundary,
 } from "../../collab/adapters/drizzle-branches.js";
 import { createBranches } from "../../collab/domain/branches.js";
-import { lineageHasLiveMember } from "../../context/index.js";
-import { branchMayHold, type SourceOwner } from "../../context/tree/branch-ownership.js";
+import {
+  type BranchHolder,
+  branchMayHold,
+  type SourceOwner,
+} from "../../context/tree/branch-ownership.js";
 import { survivingDraftDocuments } from "../../context/tree/living-document.js";
 import { loadFolderChains } from "../../context/tree/tree-addresses.js";
 import {
@@ -36,7 +42,13 @@ import {
 } from "../../context/tree/tree-view.js";
 import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import type { FileFacts, FileNode, FileOwnerRef, FileWorkFacts } from "../domain/types.js";
+import type {
+  FileBranchOwnerFacts,
+  FileFacts,
+  FileNode,
+  FileOwnerRef,
+  FileWorkFacts,
+} from "../domain/types.js";
 import type { FileFactsPort, FileFactsRequest } from "../ports/file-facts.js";
 
 const effectiveProjectId = sql<ProjectId>`coalesce(${contextSources.projectId}, ${works.projectId})`;
@@ -62,12 +74,12 @@ export function createDrizzleFileFacts(
     store: createDrizzleBranchStore(db),
     boundary: createDrizzleBranchWriteBoundary(db, works),
   });
-  const viewForWork = (workId?: WorkId): Promise<TreeView> =>
-    branches.viewForWork(workId && isUuid(workId) ? workId : null);
+  const viewForOwner = (owner?: DraftOwner): Promise<TreeView> =>
+    branches.viewForOwner(owner ?? null);
   async function load(request: FileFactsRequest): Promise<FileFacts | null> {
     const target = request.target;
-    const branchWorkId = target.kind === "draft" ? target.workId : request.branchWorkId;
-    const view = await viewForWork(branchWorkId);
+    const branchOwnerId = target.kind === "draft" ? target.owner : request.branchOwner;
+    const view = await viewForOwner(branchOwnerId);
     const base =
       target.kind === "container"
         ? await loadContainer(db, target.scheme, target.owner)
@@ -75,7 +87,7 @@ export function createDrizzleFileFacts(
             includeTreeDeletion: target.kind !== "restore",
           })) ??
           (await loadBranchDeleted(db, target.documentId, view)) ??
-          (target.kind === "restore" && branchWorkId
+          (target.kind === "restore" && branchOwnerId
             ? await loadPhysicalDocument(db, target.documentId)
             : null));
     if (!base) return null;
@@ -84,28 +96,28 @@ export function createDrizzleFileFacts(
         ? undefined
         : (await loadPhysicalOwnership(db, [target.documentId])).get(target.documentId);
     const facts: FileFacts = { ...base, ...physical, target };
-    if (branchWorkId === undefined) return facts;
-    const branchWork = await readWork(db, branchWorkId);
-    // A Work's draft of a document it may not hold doesn't exist.
-    if (branchWork && !branchMayHold(branchWork, ownerOf(facts))) return null;
+    if (branchOwnerId === undefined) return facts;
+    const branchOwner = await readBranchOwner(db, branchOwnerId);
+    // An owner's draft of a document it may not hold doesn't exist.
+    if (branchOwner && !branchMayHold(branchOwner.holder, ownerOf(facts))) return null;
     const surviving =
-      branchWork && facts.deleted && target.kind !== "container"
-        ? await survivingDraftDocuments(db, { workId: branchWork.id }, [target.documentId])
+      branchOwner && facts.deleted && target.kind !== "container"
+        ? await survivingDraftDocuments(db, { owner: branchOwnerId }, [target.documentId])
         : null;
     return {
       ...facts,
-      branchWork: branchWork ? workFacts(branchWork) : missingWork(branchWorkId),
+      branchOwner: branchOwner?.facts ?? missingOwner(branchOwnerId),
       ...(surviving?.size ? { survivingDraft: true } : {}),
     };
   }
 
   return {
     load,
-    async loadList(documentIds, branchWorkId, branchViews) {
+    async loadList(documentIds, branchOwnerId, branchViews) {
       const ids = [...new Set(documentIds)].filter(isUuid);
       const out = new Map<DocumentId, FileFacts>();
       if (ids.length === 0) return out;
-      const defaultView = await viewForWork(branchWorkId);
+      const defaultView = await viewForOwner(branchOwnerId);
       const groups = new Map<string, { view: TreeView; ids: DocumentId[] }>();
       for (const id of ids) {
         const view = branchViews?.get(id) ?? defaultView;
@@ -114,8 +126,8 @@ export function createDrizzleFileFacts(
         if (group) group.ids.push(id);
         else groups.set(key, { view, ids: [id] });
       }
-      const branchWorkRow =
-        branchWorkId === undefined ? undefined : await readWork(db, branchWorkId);
+      const branchOwner =
+        branchOwnerId === undefined ? undefined : await readBranchOwner(db, branchOwnerId);
       const surviving = new Set<DocumentId>();
       const tree = createTreeReader(db);
       for (const { view, ids } of groups.values()) {
@@ -136,20 +148,20 @@ export function createDrizzleFileFacts(
             scheme: row.scheme,
             target,
           };
-          if (branchWorkId === undefined) {
+          if (branchOwnerId === undefined) {
             out.set(documentId, base);
             continue;
           }
-          if (branchWorkRow && !branchMayHold(branchWorkRow, ownerOf(base))) continue;
-          if (branchWorkRow && base.deleted) surviving.add(documentId);
+          if (branchOwner && !branchMayHold(branchOwner.holder, ownerOf(base))) continue;
+          if (branchOwner && base.deleted) surviving.add(documentId);
           out.set(documentId, {
             ...base,
-            branchWork: branchWorkRow ? workFacts(branchWorkRow) : missingWork(branchWorkId),
+            branchOwner: branchOwner?.facts ?? missingOwner(branchOwnerId),
           });
         }
       }
-      if (branchWorkRow && surviving.size)
-        for (const id of await survivingDraftDocuments(db, { workId: branchWorkRow.id }, [
+      if (branchOwnerId && branchOwner && surviving.size)
+        for (const id of await survivingDraftDocuments(db, { owner: branchOwnerId }, [
           ...surviving,
         ])) {
           const facts = out.get(id);
@@ -162,7 +174,7 @@ export function createDrizzleFileFacts(
   };
 }
 
-type BaseFacts = Omit<FileFacts, "target" | "branchWork">;
+type BaseFacts = Omit<FileFacts, "target" | "branchOwner">;
 
 function ownerOf(facts: BaseFacts): SourceOwner {
   return { projectId: facts.projectId, accountId: facts.ownerAccountId, scheme: facts.scheme };
@@ -511,7 +523,48 @@ function workFacts(
   };
 }
 
-/** A purged Work reads as deleted, never as a free pass. */
-function missingWork(id: WorkId): FileWorkFacts {
-  return { id, handle: null, isNoWork: false, archived: false, deleted: true };
+/** A branch owner's lifecycle and the project that holds its branch. */
+async function readBranchOwner(
+  db: Database,
+  owner: DraftOwner,
+): Promise<{ holder: BranchHolder; facts: FileBranchOwnerFacts } | null> {
+  if (owner.kind === "work") {
+    const work = await readWork(db, owner.workId);
+    return work
+      ? {
+          holder: work,
+          facts: { owner, ...workFacts(work), frozen: false },
+        }
+      : null;
+  }
+  if (!isUuid(owner.rootThreadId)) return null;
+  const [root] = await currentDrizzleDb(db)
+    .select({
+      ref: threads.ref,
+      projectId: threads.projectId,
+      accountId: projects.userId,
+      live: lineageHasLiveMember(owner.rootThreadId),
+    })
+    .from(threads)
+    .innerJoin(projects, eq(projects.id, threads.projectId))
+    .where(and(eq(threads.id, owner.rootThreadId), eq(threads.rootThreadId, threads.id)))
+    .limit(1);
+  return root
+    ? {
+        holder: { projectId: root.projectId, accountId: root.accountId },
+        facts: {
+          owner,
+          handle: root.ref,
+          isNoWork: false,
+          archived: false,
+          deleted: false,
+          frozen: !root.live,
+        },
+      }
+    : null;
+}
+
+/** A purged Work or lineage reads as deleted, never as a free pass. */
+function missingOwner(owner: DraftOwner): FileBranchOwnerFacts {
+  return { owner, handle: null, isNoWork: false, archived: false, deleted: true, frozen: false };
 }

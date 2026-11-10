@@ -38,7 +38,7 @@ export type LinkDocumentRef = {
   /** A document the writer just created: its editor takes the caret. */
   focus?: true;
   review?: {
-    workId: string;
+    ownerKey: string;
     itemKey: string;
     contextLocation: { scheme: ContextUriScheme; path: string };
     documentName: string;
@@ -176,12 +176,11 @@ export async function followProjectLink({
 
 function documentRef(found: DocumentEntry): LinkDocumentRef {
   const { document, branch } = found;
-  const workId = branch?.workId ?? document.workId;
-  if (!branch || !workId) return { documentId: document.documentId };
+  if (!branch) return { documentId: document.documentId };
   return {
     documentId: document.documentId,
     review: {
-      workId,
+      ownerKey: branch.owner,
       itemKey: draftItemKey(branch.branchId, document.documentId),
       // Draft list rows and review launches spell the path with a leading slash.
       contextLocation: {

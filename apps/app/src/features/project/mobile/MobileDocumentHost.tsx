@@ -26,10 +26,10 @@ import { ContextDocumentHost, type EditableContextTab } from "../context/Context
 import { ContextViewerHost } from "../context/ContextViewerHost";
 import { selectionAtRoute } from "../context/context-removal-protocol";
 import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
+import { DocumentFreezeNotice } from "../context/DocumentFreezeNotice";
 import { PHONE_DOCUMENT_PRESENTATION } from "../context/document-presentation";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
-import { useDockArchivedWork } from "../dock/DockDocumentIdentity";
-import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
+import { useDocumentFreeze } from "../context/use-document-freeze";
 import { MobileDocumentReview } from "./MobileDocumentReview";
 import { MobileRefusalNotice } from "./MobileRefusalNotice";
 import type { MobileDocumentRoute } from "./mobile-document-route";
@@ -173,13 +173,17 @@ function PhoneDocument({
   const { controller } = useDraftReview();
   const review = controller.inlineReview;
   const reviewing = review?.documentId === tab.documentId && review.shown;
-  const archived = useDockArchivedWork(projectId, tab, reviewing ? controller.workId : null);
+  const freeze = useDocumentFreeze(projectId, tab, reviewing ? controller.ownerKey : null);
   return (
     <>
-      {/* The archived Work's line, as above a desktop document: it also explains a review's
-          missing Apply and Discard. */}
-      {archived ? (
-        <ArchivedWorkNotice projectId={projectId} work={archived} className="shrink-0 px-2 pt-2" />
+      {/* The frozen document's line, as above a desktop document: it also explains a review's
+          missing controls. */}
+      {freeze ? (
+        <DocumentFreezeNotice
+          projectId={projectId}
+          freeze={freeze}
+          className="shrink-0 px-2 pt-2"
+        />
       ) : null}
       {/* There is no identity bar on a phone: a refused create or move is said here. */}
       <MobileRefusalNotice projectId={projectId} tab={tab} className="shrink-0 px-4" />
@@ -190,7 +194,7 @@ function PhoneDocument({
           projectId={projectId}
           tab={tab}
           active
-          readOnly={Boolean(archived)}
+          readOnly={freeze !== null}
           presentation={PHONE_DOCUMENT_PRESENTATION}
         />
       </div>

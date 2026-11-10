@@ -23,7 +23,11 @@ import { createThreadPeerCorePool } from "./thread-peer-core-pool.js";
 
 const THREAD_ID = "thread-1" as ThreadId;
 const live: FileDestination = { kind: "live" };
-const draftA: FileDestination = { kind: "draft", workId: "work-a" as WorkId, workHandle: "a" };
+const draftA: FileDestination = {
+  kind: "draft",
+  owner: { kind: "work", workId: "work-a" as WorkId },
+  ownerHandle: "a",
+};
 
 /** The branches and reply fences every pool takes, over fake branch and draft rows. */
 function poolPorts(liveUtilityCore: ReturnType<typeof asLiveAgentEditCore>) {
@@ -36,7 +40,7 @@ function poolPorts(liveUtilityCore: ReturnType<typeof asLiveAgentEditCore>) {
     branches,
     fileAccess,
     removals: { lookup: async () => new Map() },
-    lockWorks: async () => {},
+    lockOwners: async () => {},
     lockLiveDocuments: async () => {},
   });
   return { branches, drafts, fences, fileAccess };
@@ -59,7 +63,7 @@ function createPool() {
     attemptScope: (operation) => operation(),
     ...inProcessResponseTransactions,
     fileAccess: createFakeFileAccess(),
-    lockWorks: async () => {},
+    lockOwners: async () => {},
     lockLiveDocuments: async () => {},
   });
   return { pool, liveCore, threadCore, ensureThreadPeer, ...ports };
@@ -137,7 +141,7 @@ describe("thread-peer pool", () => {
         attemptScope: (operation) => operation(),
         ...inProcessResponseTransactions,
         fileAccess: createFakeFileAccess(),
-        lockWorks: async () => {},
+        lockOwners: async () => {},
         lockLiveDocuments: async () => {},
         maxThreadCores: 1,
       });

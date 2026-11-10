@@ -9,7 +9,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
+import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
@@ -50,11 +50,11 @@ export function useDraftDock({
     if (!active) dismiss.current();
     return () => dismiss.current();
   }, [active, threadId]);
-  const listedFiles = useWorkBranchDrafts(controller.projectId, controller.workId).files ?? [];
+  const listedFiles = useOwnerDrafts(controller.projectId, controller.ownerKey).files ?? [];
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
   const [imagePreview, setImagePreview] = useState<DraftImagePreviewTarget | null>(null);
-  const { projectId, workId } = controller;
+  const { projectId, ownerKey } = controller;
 
   const candidates = useMemo(
     () =>
@@ -69,11 +69,11 @@ export function useDraftDock({
         .filter((row) => row.draft.hasDraft && row.draft.tree?.deleted !== true)
         .map((row) => ({
           projectId,
-          workId,
+          ownerKey,
           documentId: row.documentId,
           itemKey: row.draft.itemKey,
         })),
-    [candidates, projectId, workId],
+    [candidates, projectId, ownerKey],
   );
   // The open review keeps its own refresh; the strip refreshes the rest.
   const reads = useRoomReviews(targets);
@@ -115,12 +115,17 @@ export function useDraftDock({
       // A draft-only picture has no review room: it opens as a preview.
       if (!file.row.draft.hasDraft && !reviewHasNoRoom(file.row.draft)) {
         if (file.row.draft.binary)
-          setImagePreview({ projectId, workId, documentId: file.row.documentId, name: file.name });
+          setImagePreview({
+            projectId,
+            ownerKey,
+            documentId: file.row.documentId,
+            name: file.name,
+          });
         return;
       }
-      openReviewFile(file.row, workId, change ?? file.changes[0]);
+      openReviewFile(file.row, ownerKey, change ?? file.changes[0]);
     },
-    [openReviewFile, projectId, workId],
+    [openReviewFile, projectId, ownerKey],
   );
 
   const applicable = actionableFiles.filter(
@@ -134,9 +139,11 @@ export function useDraftDock({
   const send = useCallback(
     (mode: "apply" | "discard", restore: ReadonlySet<string> = new Set()) => {
       const files = mode === "apply" ? applicable : actionableFiles;
+      // A frozen owner's draft takes only the whole draft's Discard, which the server ends.
+      const whole = mode === "discard" && controller.frozen;
       const items = files.map((file) => ({
         draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
-        target: targetOfChanges(file.actionable),
+        target: whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
       }));
       if (items.length === 0) return Promise.resolve([]);
       // The runner hides every file's selection at the click and returns each as
@@ -146,7 +153,7 @@ export function useDraftDock({
         () => [],
       );
     },
-    [actionableFiles, applicable, runner],
+    [actionableFiles, applicable, runner, controller.frozen],
   );
 
   const fileFailures = (file: DockFile): BranchCommandFailure[] => {
@@ -162,16 +169,18 @@ export function useDraftDock({
     changeCount: totalChanges(files),
     /** Unread previews keep the controls visible but disabled until their scope is known. */
     showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
-    canApply: applicable.some(
-      (file) =>
-        (!file.row.draft.hasDraft && file.row.draft.isNew) ||
-        hasTreeLine(file.row.draft) ||
-        (reads[targets.findIndex((target) => target.itemKey === file.row.draft.itemKey)]?.frame
-          ?.groups.length ?? 0) > 0,
-    ),
+    canApply:
+      !controller.frozen &&
+      applicable.some(
+        (file) =>
+          (!file.row.draft.hasDraft && file.row.draft.isNew) ||
+          hasTreeLine(file.row.draft) ||
+          (reads[targets.findIndex((target) => target.itemKey === file.row.draft.itemKey)]?.frame
+            ?.groups.length ?? 0) > 0,
+      ),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     projectId,
-    workId,
+    ownerKey,
     fileFailures,
     review,
     imagePreview,

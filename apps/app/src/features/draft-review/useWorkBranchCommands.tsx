@@ -12,6 +12,11 @@ import {
   useState,
 } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import {
+  cachedOwnerDrafts,
+  patchOwnerDrafts,
+  useOwnerDraftsFrozen,
+} from "@/client/query/useOwnerDrafts";
 import { documentBasename } from "@/client/query/work-branch-files";
 import type { EditorHistoryHandle } from "@/core/editor/editor-history";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
@@ -39,20 +44,25 @@ export type WorkBranchCommands = ReturnType<typeof useWorkBranchCommands>;
 export function useWorkBranchCommands({
   projectId,
   work,
+  ownerKey,
   threadId = null,
   surface = "dock",
   editorHistory,
 }: {
   projectId: string;
   work: Work | null;
+  /** Whose drafts the commands act on (`work:<id>` or `lineage:<root>`); "" acts on none. */
+  ownerKey: string;
   threadId?: string | null;
   surface?: "editor" | "dock";
   editorHistory?: (draft: DraftReviewSelection) => EditorHistoryHandle | null;
 }) {
   const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
-  const workId = work?.id ?? "";
-  const locked = !work || isWorkArchived(work);
+  const locked = !ownerKey || !work || isWorkArchived(work);
+  // The server's word: a lineage with every chat in Trash. Its draft rooms drop the writer's
+  // text, so a whole Discard goes to the server, which allows it, and nothing else is sent.
+  const frozen = useOwnerDraftsFrozen(projectId, ownerKey);
   const [notice, setNotice] = useState<SurfaceNotice | null>(null);
   const heldNotice = useRef<SurfaceNotice | null>(null);
   const endNotice = () => {
@@ -66,23 +76,23 @@ export function useWorkBranchCommands({
       heldNotice.current = null;
       setNotice(null);
     },
-    [owner, projectId, workId, threadId],
+    [owner, projectId, ownerKey, threadId],
   );
   return useMemo(() => {
-    const ref = (draft: DraftReviewSelection) => ({ projectId, workId, ...draft });
+    const ref = (draft: DraftReviewSelection) => ({ projectId, ownerKey, ...draft });
     const row = (draft: DraftReviewSelection) =>
-      queryClient
-        .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workBranchDrafts(projectId, workId))
-        ?.find((item) => item.itemKey === draft.itemKey);
+      cachedOwnerDrafts(queryClient, projectId, ownerKey)?.find(
+        (item) => item.itemKey === draft.itemKey,
+      );
     // The Work's list re-reads with the touched documents' own reads: the route reads a
     // discarded move from the item's metadata, and the document header reads its draft hints.
     const refresh = (documentIds: readonly string[]) => {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
+        queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
       });
       for (const documentId of documentIds) {
         void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workDraftMetadataOf(projectId, workId, documentId),
+          queryKey: projectQueryKeys.ownerDraftMetadataOf(projectId, ownerKey, documentId),
         });
         void queryClient.invalidateQueries({
           queryKey: projectQueryKeys.documentDraftHints(projectId, documentId),
@@ -91,12 +101,10 @@ export function useWorkBranchCommands({
     };
     /** The list without the item's move or delete, until the refetch confirms it. */
     const dropTreeLine = (item: ThreadDraftListItem) =>
-      queryClient.setQueryData<ThreadDraftListItem[]>(
-        projectQueryKeys.workBranchDrafts(projectId, workId),
-        (rows) =>
-          rows?.flatMap((row) =>
-            row.itemKey !== item.itemKey ? [row] : row.hasDraft ? [{ ...row, tree: null }] : [],
-          ),
+      patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
+        rows.flatMap((row) =>
+          row.itemKey !== item.itemKey ? [row] : row.hasDraft ? [{ ...row, tree: null }] : [],
+        ),
       );
     const blocked = (): CommandStart => ({
       sent: false,
@@ -152,10 +160,7 @@ export function useWorkBranchCommands({
     ): CapturedStart | null => {
       if (resetNotice) endNotice();
       if (locked) return null;
-      const rows =
-        queryClient.getQueryData<ThreadDraftListItem[]>(
-          projectQueryKeys.workBranchDrafts(projectId, workId),
-        ) ?? [];
+      const rows = cachedOwnerDrafts(queryClient, projectId, ownerKey) ?? [];
       const item = rows.find((candidate) => candidate.itemKey === draft.itemKey);
       const bringBack = restore ?? isDeletedFromManuscript(item);
       const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
@@ -221,16 +226,16 @@ export function useWorkBranchCommands({
       if (resetNotice) endNotice();
       if (locked) return blocked();
       const item = row(draft);
-      if (item?.isNew && target.kind === "draft") {
+      if (item && (item.isNew || frozen) && target.kind === "draft") {
         const removed: DiscardNotice = { kind: "removed", end() {} };
-        const outcome = owner.removeCreated(ref(draft), item).then((answer) => {
+        const outcome = owner.discardOnServer(ref(draft), item, frozen).then((answer) => {
           refresh([draft.documentId]);
-          if (answer.kind !== "done") {
-            if (heldNotice.current === removed) endNotice();
-          }
+          if (answer.kind === "done" && !item.isNew) show(removed);
+          else if (answer.kind !== "done" && heldNotice.current === removed) endNotice();
           return answer;
         });
-        show(removed);
+        // A created document leaves at once; a frozen draft says so once the server agrees.
+        if (item.isNew) show(removed);
         return { sent: true, outcome };
       }
       // A move or delete is discarded on the server, with the item's chosen text, as one command.
@@ -255,12 +260,8 @@ export function useWorkBranchCommands({
             ? () => {
                 const acknowledged = discarded.notice.undo?.() ?? Promise.resolve();
                 if (item)
-                  queryClient.setQueryData<ThreadDraftListItem[]>(
-                    projectQueryKeys.workBranchDrafts(projectId, workId),
-                    (rows) =>
-                      rows?.some((row) => row.itemKey === item.itemKey)
-                        ? rows
-                        : [...(rows ?? []), item],
+                  patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
+                    rows.some((row) => row.itemKey === item.itemKey) ? rows : [...rows, item],
                   );
                 const settle = () => refresh([draft.documentId]);
                 return acknowledged.then(settle, settle);
@@ -279,7 +280,7 @@ export function useWorkBranchCommands({
       start(mode, draft, { kind: "draft" });
     return {
       projectId,
-      workId,
+      ownerKey,
       threadId,
       owner,
       notice,
@@ -289,7 +290,10 @@ export function useWorkBranchCommands({
         endNotice();
       },
       dispositionLocked: locked,
-      changesLocked: locked,
+      /** A frozen owner's draft takes no single-change command: only the whole draft's Discard. */
+      changesLocked: locked || frozen,
+      /** The owner's drafts are frozen (`ThreadDraftListResponse.frozen`): read-only, no Apply. */
+      frozen,
       commandChange,
       startDraft,
       apply: (documentId: string, itemKey: string) =>
@@ -363,7 +367,18 @@ export function useWorkBranchCommands({
         });
       },
     };
-  }, [owner, locked, projectId, workId, threadId, surface, editorHistory, queryClient, notice]);
+  }, [
+    owner,
+    locked,
+    frozen,
+    projectId,
+    ownerKey,
+    threadId,
+    surface,
+    editorHistory,
+    queryClient,
+    notice,
+  ]);
 }
 
 const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);

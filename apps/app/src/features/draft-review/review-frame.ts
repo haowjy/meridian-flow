@@ -1,5 +1,6 @@
 /** One immutable text projection and room snapshot. Every position belongs to its exact PM document. */
 import {
+  blocksEqual,
   diffBlocks,
   projectReview,
   REVIEW_BASE_FRAGMENT,
@@ -54,7 +55,10 @@ export function buildFrame(yDoc: Y.Doc, base: readonly PMNode[], draft: PMNode):
   draft.forEach((node) => {
     blocks.push(node);
   });
-  const projection: ReviewProjection = projectReview(diffBlocks(base, blocks));
+  // The editor fills an emptied draft with one empty paragraph that an empty base lacks. It is no
+  // change: the writer did not make it.
+  const from = base.length === 0 && blocksEqual(base, blocks) ? blocks : base;
+  const projection: ReviewProjection = projectReview(diffBlocks(from, blocks));
   return { ...projection, doc: draft, snapshot: Y.snapshot(yDoc) };
 }
 

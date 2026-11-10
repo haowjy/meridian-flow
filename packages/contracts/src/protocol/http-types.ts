@@ -6,6 +6,7 @@
 
 import { z } from "zod";
 import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
+import type { DraftOwnerKey } from "../branches/owner.js";
 import {
   CONTEXT_URI_SCHEMES,
   type ContextUriScheme,
@@ -325,10 +326,10 @@ export type CopyContextEntryView =
   /** The live document; what a sidebar row shows. */
   | { kind: "live" }
   /**
-   * The Work's draft of the document, the one its active branch holds. A Work with no draft of
-   * it refuses the Copy; it never reads the live document instead.
+   * The owner's draft of the document, the one its active branch holds. An owner with no draft
+   * of it refuses the Copy; it never reads the live document instead.
    */
-  | { kind: "draft"; workId: WorkId };
+  | { kind: "draft"; owner: DraftOwnerKey };
 
 /** One selected root: what Copy copies, where it comes from, and how to read it. */
 export type CopyContextEntrySource = {

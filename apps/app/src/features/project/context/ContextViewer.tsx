@@ -3,14 +3,14 @@
  * archived Work, and a review of its draft, open read-only under the archived
  * notice. The Editor shows only its own Work's files and drafts, so the
  * Editor's Work is that file's Work. Archiving here freezes them at once; the
- * server's own read-only scope follows.
+ * server's own read-only scope follows. A review of a trashed chat's draft
+ * opens read-only under the trashed-chat notice, as the server reports it.
  */
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
@@ -34,6 +34,7 @@ import { PendingDocumentPath } from "./PendingDocumentPath";
 import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
 import { RemovedDocumentChip } from "./RemovedDocumentNotice";
 import { recentOpening } from "./recent-opening";
+import { useDocumentFreeze } from "./use-document-freeze";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 import { useRecordOpenedDocument } from "./use-record-opened-document";
 
@@ -50,8 +51,6 @@ export type ContextViewerProps = {
   /** The address the Editor was asked for, shown as the path while the body is masked. */
   route: { scheme: ProjectContextTreeScheme; path: string | null } | null;
   onSelectContextPath: (path: string, scheme: ProjectContextTreeScheme) => void;
-  /** The Editor's Work, when it has one. */
-  editorWork: Work | null;
   tabs: ContextTab[];
   paneState: ContextPaneState;
   onSelectTab: (tab: ContextTab) => void;
@@ -83,7 +82,6 @@ export function ContextViewer({
   mask,
   route,
   onSelectContextPath,
-  editorWork,
   tabs,
   paneState,
   onSelectTab,
@@ -147,12 +145,15 @@ export function ContextViewer({
     controller.inlineReview.shown
       ? controller.inlineReview.itemKey
       : null;
-  const archivedEditorWork = editorWork && isWorkArchived(editorWork) ? editorWork : null;
-  // Archiving freezes the Editor Work's own files and its drafts (D30). A
-  // review edits the draft, so its editor freezes and shows the notice; the
-  // reviewed file itself may be project-owned and keeps its identity bar.
-  const fileFrozen = Boolean(activeFileInWork && archivedEditorWork);
-  const editorFrozen = Boolean((activeFileInWork || activeReviewItemKey) && archivedEditorWork);
+  // One freeze source with the dock and the phone: an archived Work freezes its own files and
+  // its drafts' reviews; a trashed chat freezes its drafts' reviews. The reviewed file
+  // itself may be project-owned, so only its own Work's archive freezes its identity bar.
+  const freeze = useDocumentFreeze(
+    projectId,
+    activeTab,
+    activeReviewItemKey ? controller.ownerKey : null,
+  );
+  const fileFrozen = Boolean(activeFileInWork && freeze?.kind === "work");
 
   return (
     <div
@@ -200,7 +201,7 @@ export function ContextViewer({
             <DocumentPaneChrome
               projectId={projectId}
               tab={activeTab}
-              archivedWork={editorFrozen ? archivedEditorWork : null}
+              freeze={freeze}
               onCloseTab={onCloseTab}
               identity={{ editorWorkId, readOnly: fileFrozen, onCommitted, onOpenExisting }}
             />
@@ -222,7 +223,7 @@ export function ContextViewer({
                   activeTabId={activeIsEditable ? activeTabId : null}
                   active={active}
                   // Warm editors are hidden, so following the front tab is enough.
-                  readOnly={editorFrozen}
+                  readOnly={freeze !== null}
                   onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
                 />
               </div>

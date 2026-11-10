@@ -3,7 +3,7 @@
  * contract over context URI schemes plus file-entry, result, and error types.
  */
 
-import type { LinkView, StoredDocumentProperties } from "@meridian/contracts";
+import type { DraftOwner, LinkView, StoredDocumentProperties } from "@meridian/contracts";
 import type {
   ContextUriScheme,
   ProjectScopedContextUriScheme,
@@ -18,7 +18,6 @@ import type {
   ContextOperationReceipt,
   ContextSiblingPosition,
   CopyContextEntriesResult,
-  CopyContextEntryView,
   DeleteContextEntryResult,
   DocumentFileType,
   Filetype,
@@ -29,7 +28,7 @@ import type {
 import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
-import type { WorkRef } from "../../file-policy/index.js";
+import type { BranchOwnerRef } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 import type { AddressGlob } from "../grep/address-glob.js";
 import type { GrepMatcher } from "../grep/matcher.js";
@@ -57,8 +56,8 @@ export interface ThreadContextView {
   threadId: string;
   /** The reply in progress, whose own staged writes reads still see. */
   responseId?: string | null;
-  /** The Work whose branch this thread's drafted writes land in; null outside draft mode (D40). */
-  branchWork: WorkRef | null;
+  /** The owner whose branch this thread's drafted writes land in; null outside draft mode. */
+  branchOwner: BranchOwnerRef | null;
   version?: "draft" | "live";
 }
 
@@ -375,12 +374,15 @@ export interface GrepResult {
  * One Copy as a port takes it: canonical addresses the route resolved from the writer's
  * locators, one ordered root per selection entry, and the destination parent's address.
  */
+/** Which version of a source Copy reads, with the draft owner resolved inside the project. */
+export type CopySourceView = { kind: "live" } | { kind: "draft"; owner: DraftOwner };
+
 export interface ContextCopyRequest {
   operationId: string;
   sources: readonly {
     /** Canonical address of the root (a free path or a folder path). */
     uri: string;
-    view?: CopyContextEntryView;
+    view?: CopySourceView;
     expected: { kind: "file" | "folder"; nodeId: string };
     /** The device-minted identity for this root's copy; descendants are server-minted. */
     copyId?: string;

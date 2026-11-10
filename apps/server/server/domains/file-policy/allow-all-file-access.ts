@@ -3,7 +3,7 @@
  * the person asking, nothing is archived or deleted. For the in-memory app
  * and tests where access isn't the subject.
  */
-import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { FileFacts } from "./domain/types.js";
 import { createFileAccess, type FileAccess } from "./file-access.js";
 import type { FileFactsRequest } from "./ports/file-facts.js";
@@ -12,8 +12,7 @@ const OPEN_PROJECT = "00000000-0000-4000-8000-00000000a11a" as ProjectId;
 
 function openFacts(request: FileFactsRequest): FileFacts {
   const { target } = request;
-  const branchWorkId: WorkId | undefined =
-    target.kind === "draft" ? target.workId : request.branchWorkId;
+  const branchOwner = target.kind === "draft" ? target.owner : request.branchOwner;
   const scheme = target.kind === "container" ? target.scheme : "manuscript";
   return {
     target,
@@ -26,14 +25,15 @@ function openFacts(request: FileFactsRequest): FileFacts {
     contentScheme: scheme,
     self: target.kind === "container" ? null : { kind: "document", id: target.documentId },
     ancestors: [{ kind: "project", id: OPEN_PROJECT }],
-    ...(branchWorkId
+    ...(branchOwner
       ? {
-          branchWork: {
-            id: branchWorkId,
+          branchOwner: {
+            owner: branchOwner,
             handle: null,
             isNoWork: false,
             archived: false,
             deleted: false,
+            frozen: false,
           },
         }
       : {}),
@@ -46,13 +46,13 @@ export function createAllowAllFileAccess(): FileAccess {
       async load(request) {
         return openFacts(request);
       },
-      async loadList(documentIds, branchWorkId) {
+      async loadList(documentIds, branchOwner) {
         return new Map(
           documentIds.map((documentId: DocumentId) => [
             documentId,
             openFacts({
               target: { kind: "document", documentId },
-              ...(branchWorkId ? { branchWorkId } : {}),
+              ...(branchOwner ? { branchOwner } : {}),
             }),
           ]),
         );

@@ -9,7 +9,14 @@
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { describe, expect, it } from "vitest";
 import { decide, type NodeGrant, skillLevel } from "./policy.js";
-import type { AgentLink, FileFacts, FileWorkFacts, Principal, SkillFacts } from "./types.js";
+import type {
+  AgentLink,
+  FileBranchOwnerFacts,
+  FileFacts,
+  FileWorkFacts,
+  Principal,
+  SkillFacts,
+} from "./types.js";
 
 const OWNER = "owner";
 const PROJECT = "project";
@@ -20,6 +27,15 @@ const work = (id: string, over: Partial<FileWorkFacts> = {}): FileWorkFacts => (
   archived: false,
   deleted: false,
   ...over,
+});
+
+const ownerFacts = (facts: FileWorkFacts): FileBranchOwnerFacts => ({
+  owner: { kind: "work", workId: facts.id },
+  handle: facts.handle,
+  isNoWork: facts.isNoWork,
+  archived: facts.archived,
+  deleted: facts.deleted,
+  frozen: false,
 });
 
 function file(
@@ -56,7 +72,7 @@ const lineageLink = (rootThreadId: string): AgentLink => ({
 const person: Principal = { accountId: OWNER };
 const agent = (...chain: AgentLink[]): Principal => ({
   accountId: OWNER,
-  agent: { chain, branchWork: null },
+  agent: { chain, branchOwner: null },
 });
 
 describe("file policy", () => {
@@ -71,9 +87,9 @@ describe("file policy", () => {
     ["a deleted document is gone", person, file("manuscript", null, { deleted: true }), "none", "not_found"],
     ["a deleted project is gone", person, file("kb", null, { projectDeleted: true }), "none", "not_found"],
     // A draft that outlived its document's live delete opens its draft destination only (D79).
-    ["a surviving draft stays writable", person, file("manuscript", null, { deleted: true, survivingDraft: true, target: { kind: "draft", documentId: "doc", workId: "a" }, branchWork: A }), "edit", null],
-    ["a surviving draft opens nothing live", person, file("manuscript", null, { deleted: true, survivingDraft: true, branchWork: A }), "none", "not_found"],
-    ["a surviving draft of a deleted project is gone", person, file("manuscript", null, { deleted: true, survivingDraft: true, projectDeleted: true, target: { kind: "draft", documentId: "doc", workId: "a" }, branchWork: A }), "none", "not_found"],
+    ["a surviving draft stays writable", person, file("manuscript", null, { deleted: true, survivingDraft: true, target: { kind: "draft", documentId: "doc", owner: { kind: "work", workId: "a" } }, branchOwner: ownerFacts(A) }), "edit", null],
+    ["a surviving draft opens nothing live", person, file("manuscript", null, { deleted: true, survivingDraft: true, branchOwner: ownerFacts(A) }), "none", "not_found"],
+    ["a surviving draft of a deleted project is gone", person, file("manuscript", null, { deleted: true, survivingDraft: true, projectDeleted: true, target: { kind: "draft", documentId: "doc", owner: { kind: "work", workId: "a" } }, branchOwner: ownerFacts(A) }), "none", "not_found"],
     ["a deleted Work's scratch is gone", person, file("scratch", work("d", { deleted: true })), "none", "not_found"],
     ["an archived Work's scratch is read-only", person, file("scratch", archived), "read", "work_archived"],
     ["an archived Work's chat still edits manuscript", agent(link("edit", "old")), file("manuscript"), "edit", null],
@@ -105,11 +121,24 @@ describe("file policy", () => {
 
   it("routes drafted sources to the agent's Work branch and caps them by its Work", () => {
     const drafting = (branchWork: FileWorkFacts): [Principal, FileFacts] => [
-      { accountId: OWNER, agent: { chain: [link("edit", branchWork.id)], branchWork } },
-      file("manuscript", null, { branchWork }),
+      {
+        accountId: OWNER,
+        agent: {
+          chain: [link("edit", branchWork.id)],
+          branchOwner: {
+            owner: { kind: "work", workId: branchWork.id },
+            handle: branchWork.handle,
+          },
+        },
+      },
+      file("manuscript", null, { branchOwner: ownerFacts(branchWork) }),
     ];
     const live = decide(...drafting(A), ownerGrants);
-    expect(live.destination).toEqual({ kind: "draft", workId: "a", workHandle: "a" });
+    expect(live.destination).toEqual({
+      kind: "draft",
+      owner: { kind: "work", workId: "a" },
+      ownerHandle: "a",
+    });
     expect(live.level).toBe("edit");
     const frozen = decide(...drafting(archived), ownerGrants);
     expect([frozen.level, frozen.limitedBy]).toEqual(["read", "work_archived"]);

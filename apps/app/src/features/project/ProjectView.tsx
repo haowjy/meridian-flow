@@ -13,6 +13,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
@@ -39,7 +40,7 @@ import {
   readAccountRecents,
   subscribeAccountRecents,
 } from "@/client/recents";
-import { reviewEntryOf, useContextTabs, useContextTabsStore } from "@/client/stores";
+import { editorHasReview, useContextTabs, useContextTabsStore } from "@/client/stores";
 import type { ContextTab } from "@/client/stores/context-tabs-store/context-tabs-store";
 import {
   readRecentRoutes,
@@ -56,6 +57,7 @@ import {
   PresentedReviewScope,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
+import { chatOwnerKey, workOwnerKey } from "@/features/draft-review/draft-owner-key";
 import {
   type DraftReviewStateOwner,
   useDraftReviewStateOwner,
@@ -203,6 +205,8 @@ export type ProjectViewProps = {
   activeContextChat: string | null;
   /** Draft identity persisted by an Editor document address. */
   reviewItemKey?: string;
+  /** Whose draft the address's item reviews (`addressReviewOwner`). */
+  reviewOwner?: string | null;
   /** The document that item names. */
   reviewDocumentId?: string;
   reviewChangeId?: string;
@@ -334,6 +338,7 @@ export function ProjectView(props: ProjectViewProps) {
     ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId)
     : null;
   const chatWorkId = chatWork?.id ?? null;
+  const chatOwner = chatOwnerKey(chatWork, chatThread?.rootThreadId ?? null);
   const editorRouteWork = props.editorRouteWork;
   const editorScope = resolveEditorWorkScope(editorRouteWork);
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
@@ -378,6 +383,7 @@ export function ProjectView(props: ProjectViewProps) {
     ...props,
     onSelectContextPath: onSelectEditorContextPath,
     chatWork,
+    chatOwner,
     chatWorkId,
     // The review scope's thread: the displayed chat, null on the index.
     chatThreadId: displayedChatThread,
@@ -431,6 +437,7 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
   ) => void;
   chatWork: Work | null;
   /** The draft review scope's Work: the displayed chat's Work, null on the index. */
+  chatOwner: string;
   chatWorkId: string | null;
   /** The draft review scope's thread: the displayed chat, null on the index. */
   chatThreadId: string | null;
@@ -562,6 +569,7 @@ function HydratedReviewControllers({
   const chatCommands = useWorkBranchCommands({
     projectId: props.projectId,
     work: props.chatWork,
+    ownerKey: props.chatOwner,
     threadId: props.chatThreadId,
   });
   const dock = useDockDocument(props.activeScreen, props.projectId);
@@ -571,7 +579,7 @@ function HydratedReviewControllers({
     screen: props.activeScreen,
     dock,
     editor: {
-      workId: props.editorWorkId,
+      reviewOwner: props.reviewOwner ?? null,
       scheme: props.activeContextScheme,
       path: props.activeContextPath,
       documentId: props.reviewAddressDocumentId,
@@ -580,12 +588,16 @@ function HydratedReviewControllers({
       draftOnly: workspace.tabs.some(
         (tab) =>
           tab.documentId === props.reviewAddressDocumentId &&
-          Boolean(props.editorWorkId && reviewEntryOf(tab, props.editorWorkId)),
+          editorHasReview(tab, props.editorWorkId),
       ),
     },
   });
   const { works, noWork } = useWorks(props.projectId);
-  const reviewWorkId = presented?.review?.workId ?? props.editorWorkId;
+  const reviewOwner =
+    presented?.review?.ownerKey ??
+    workOwnerKey(props.editorWorkId ? { id: props.editorWorkId } : null);
+  // A lineage's drafts carry no Work: its review reads the Editor's own Work for archive state.
+  const reviewWorkId = workIdOfDraftOwnerKey(reviewOwner) ?? props.editorWorkId;
   const reviewWork =
     reviewWorkId === props.editorWork?.id
       ? props.editorWork
@@ -595,6 +607,7 @@ function HydratedReviewControllers({
   const presentedReview = useDraftReviewScopeValue({
     projectId: props.projectId,
     work: reviewWork,
+    ownerKey: reviewOwner,
     stateOwner: presentedReviewState,
     threadId: null,
   });
@@ -603,20 +616,25 @@ function HydratedReviewControllers({
   const queryClient = useQueryClient();
   const addressedItemKey = presented?.review?.itemKey ?? "";
   const generation = () => draftCommands.generation(addressedItemKey);
+  const hidden = () => draftCommands.state(addressedItemKey).hidden;
   // A new generation of the addressed item is a new port: the owner retries what it refused.
+  // So is the end of a command that hid it: a refused Discard leaves the draft pending.
   const addressedGeneration = useSyncExternalStore(draftCommands.subscribe, generation, generation);
+  const addressedHidden = useSyncExternalStore(draftCommands.subscribe, hidden, hidden);
   const port = useMemo<ReviewAddressPort>(() => {
-    // A closed draft (Discard, here or on another device) has already ended its review; a
-    // draft-only address keeps naming it until settlement closes the tab, and admitting it
-    // again would re-open what the room owner just closed, every render. The address names
-    // an item, not a draft: the server decides whether a newer draft replaced the closed one.
+    // A hidden draft (a Discard in flight) or a closed one (Discard, here or on another
+    // device) has already ended its review: the room owner exits it. The address keeps naming
+    // it until settlement closes the presentation, and admitting it again would re-open what
+    // the room owner just closed, every render. The address names an item, not a draft: the
+    // server decides whether a newer draft replaced the closed one.
     const open =
       (admit: (target: AiDraftLaunchTarget) => unknown): ReviewAddressPort["admit"] =>
       async (target) => {
+        if (draftCommands.state(target.itemKey).hidden) return false;
         if (draftCommands.state(target.itemKey).closed) {
           const ref = {
             projectId: props.projectId,
-            workId: target.workId,
+            ownerKey: target.ownerKey,
             documentId: target.documentId,
             itemKey: target.itemKey,
           };
@@ -649,12 +667,16 @@ function HydratedReviewControllers({
     draftCommands,
     queryClient,
     addressedGeneration,
+    addressedHidden,
   ]);
   const scopedProps = { ...props, chatCommands, presentedReview, mobileDocumentRoute };
   return (
     <PresentedDocumentContext.Provider value={presented}>
       <PresentedReviewScope value={presentedReview}>
-        <DraftOnlySettlement projectId={props.projectId} editorWorkId={props.editorWorkId} />
+        <DraftOnlySettlement
+          projectId={props.projectId}
+          editorOwnerKey={workOwnerKey(props.editorWorkId ? { id: props.editorWorkId } : null)}
+        />
         <ReviewAddressOwner
           review={presentedReview}
           presented={presented}
@@ -688,7 +710,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     current:
       props.editorScope.status === "ready"
         ? {
-            editorWork: props.editorWork,
             activeContextScheme: props.activeContextScheme,
             activeContextPath: props.activeContextPath,
             activeContextChat: props.activeContextChat,
@@ -840,11 +861,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               {...frameEditorRoute}
               mask={editorMask}
               resolvedEditor={editorPresentation.resolved}
-              editorWork={
-                props.activeScreen === "context"
-                  ? props.editorWork
-                  : (mountedEditor?.editorWork ?? null)
-              }
               routeDisplayed={props.activeScreen === "context"}
               active={editorActive}
               sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}

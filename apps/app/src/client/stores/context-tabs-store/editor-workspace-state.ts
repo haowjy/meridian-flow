@@ -1,4 +1,5 @@
 /** Pure Editor workspace transitions and browser-local restoration codec. */
+import { draftOwnerKey } from "@meridian/contracts/branches";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import {
   classifyFiletype,
@@ -63,10 +64,10 @@ export type EditorWorkspaceCommand =
       tab: ContextTab;
     }
   | {
-      /** Discard in one Work: drops that Work's entry; the tab closes only when no Work reviews it. */
+      /** Discard in one owner: drops that owner's entry; the tab closes only when no owner reviews it. */
       kind: "drop-review";
       projectId: string;
-      workId: string;
+      ownerKey: string;
       tabInstanceId: string;
     }
   | {
@@ -420,12 +421,14 @@ export function reduceEditorWorkspace(
     const tab = workspace?.tabs.find(
       (candidate) => candidate.tabInstanceId === command.tabInstanceId,
     );
-    if (!workspace || !tab || !reviewEntryOf(tab, command.workId)) return outcome("stale", current);
-    const after = withoutReviewEntry(tab, command.workId);
+    if (!workspace || !tab || !reviewEntryOf(tab, command.ownerKey))
+      return outcome("stale", current);
+    const after = withoutReviewEntry(tab, command.ownerKey);
     const selections = Object.fromEntries(
       Object.entries(workspace.selectedTabIdByWork).filter(
         ([workId, documentId]) =>
-          documentId !== tab.documentId || (after !== null && workId !== command.workId),
+          documentId !== tab.documentId ||
+          (after !== null && command.ownerKey !== draftOwnerKey({ kind: "work", workId })),
       ),
     );
     return replaceProject(current, command.projectId, {

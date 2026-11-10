@@ -28,20 +28,16 @@ import type {
   ApplyRenamedNote,
 } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
-import {
-  applyCommandEffects,
-  branchCommands,
-  branches,
-  documentDrafts,
-} from "@meridian/database/schema";
+import { applyCommandEffects, branches, documentDrafts } from "@meridian/database/schema";
 import {
   allocateDocumentClient,
   buildDocumentSchema,
   PROSEMIRROR_FRAGMENT_NAME,
 } from "@meridian/prosemirror-schema";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
+import { LineageDraftsUnavailableError } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -74,7 +70,11 @@ import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coor
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { storedDocument } from "../domain/stored-document.js";
 import { createApplyTreeOperations, liveLocation } from "./drizzle-apply-tree.js";
-import { claimCommandWithinTx, lookupCommand } from "./drizzle-branch-commands.js";
+import {
+  claimCommandWithinTx,
+  lookupCommand,
+  settleCommandWithinTx,
+} from "./drizzle-branch-commands.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
@@ -194,7 +194,7 @@ export function createDrizzleApplyClick(
             eq(documentDrafts.documentId, command.documentId),
             eq(documentDrafts.kind, "work_draft"),
             eq(documentDrafts.status, "active"),
-            eq(branches.originWorkId, command.workId),
+            eq(branches.id, command.branchId),
             eq(branches.status, "active"),
           ),
         );
@@ -220,7 +220,7 @@ export function createDrizzleApplyClick(
       });
       try {
         return await deps.workProjection.mutate(
-          { works: [command.workId] },
+          { branches: [prepared.branchId] },
           async (): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer> => {
             const tx = currentDrizzleDb(db);
             const found = await lookupCommand(tx, command.envelope);
@@ -239,10 +239,7 @@ export function createDrizzleApplyClick(
             const finish = async (
               result: import("@meridian/contracts/branches").UnapplyClickResult,
             ) => {
-              await tx
-                .update(branchCommands)
-                .set({ state: "done", result, completedAt: sql`clock_timestamp()` })
-                .where(eq(branchCommands.id, commandId));
+              await settleCommandWithinTx(tx, commandId, result);
               return result;
             };
             if (!(await deps.branches.lockActive(prepared.branchId))) return finish(closed());
@@ -412,6 +409,8 @@ export function createDrizzleApplyClick(
         );
       } catch (cause) {
         if (cause instanceof DraftStaleUpdateError) return closed();
+        if (cause instanceof LineageDraftsUnavailableError)
+          throw new ApplyClickRefused("chat_frozen");
         if (cause instanceof WorkLifecycleUnavailableError)
           throw new ApplyClickRefused(
             cause.state === "archived"
@@ -444,8 +443,8 @@ export function createDrizzleApplyClick(
               { commandId: command.envelope.commandId, measured: deps.measured },
               () =>
                 deps.workProjection.mutate(
-                  // A tree cut writes the branch's row: its branch too, as Discard holds it.
-                  { works: [command.workId], ...(cut ? { branches: [branchId] } : {}) },
+                  // The branch's owner enters the boundary as Discard's does.
+                  { branches: [branchId] },
                   async (): Promise<ApplyClickAnswer> => {
                     // mutate awaits post-commit delivery too; stop the boundary clock at
                     // root commit, before room recovery and document projections run.
@@ -468,10 +467,7 @@ export function createDrizzleApplyClick(
                     )
                       throw new BranchCommandExistsError(command.envelope.commandId);
                     const finish = async (result: ApplyClickResult) => {
-                      await tx
-                        .update(branchCommands)
-                        .set({ state: "done", result, completedAt: sql`clock_timestamp()` })
-                        .where(eq(branchCommands.id, command.envelope.commandId));
+                      await settleCommandWithinTx(tx, command.envelope.commandId, result);
                       return result;
                     };
                     if (!(await deps.branches.lockActive(branchId))) return finish(closed(command));
@@ -828,6 +824,8 @@ export function createDrizzleApplyClick(
         // The append door alone locks and rechecks the addressed draft. Closure rolls
         // back the claim and live half with it before the service reads a stored outcome.
         if (cause instanceof DraftStaleUpdateError) return closed(command);
+        if (cause instanceof LineageDraftsUnavailableError)
+          throw new ApplyClickRefused("chat_frozen");
         if (cause instanceof WorkLifecycleUnavailableError)
           throw new ApplyClickRefused(
             cause.state === "archived"

@@ -43,8 +43,8 @@ export function readDockSnapshot(
         if (
           review !== null &&
           (!isRecord(review) ||
-            typeof review.workId !== "string" ||
-            !review.workId ||
+            typeof review.ownerKey !== "string" ||
+            !review.ownerKey ||
             typeof review.itemKey !== "string" ||
             !review.itemKey ||
             (review.changeId !== undefined &&
@@ -64,7 +64,7 @@ export function readDockSnapshot(
                   review === null
                     ? null
                     : {
-                        workId: review.workId as string,
+                        ownerKey: review.ownerKey as string,
                         itemKey: review.itemKey as string,
                         ...(typeof review.changeId === "string"
                           ? { changeId: review.changeId }

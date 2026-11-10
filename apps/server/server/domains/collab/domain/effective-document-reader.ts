@@ -7,8 +7,8 @@ import {
   unwrapDoc,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
-import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DraftOwner, LinkView } from "@meridian/contracts";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { settledAheads } from "@meridian/markup/links";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -47,13 +47,13 @@ export function createEffectiveDocumentReader(input: {
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
-  branches: Pick<Branches, "viewForWork">;
+  branches: Pick<Branches, "viewForOwner">;
   resolveFiletype(documentId: DocumentId): Promise<string | null>;
 }): DraftPeerShadowAccess {
   /** The view a read spells in: the version it reads. */
   async function viewOf(command: EffectiveReadInput): Promise<LinkView> {
     return command.destination === "draft"
-      ? input.branches.viewForWork(command.workId)
+      ? input.branches.viewForOwner(command.owner)
       : { kind: "live" };
   }
 
@@ -99,11 +99,11 @@ export function createEffectiveDocumentReader(input: {
    * `draft_not_found`; the read never falls back to live.
    */
   async function readWorkDraft<T>(
-    command: { documentId: DocumentId; workId: WorkId },
+    command: { documentId: DocumentId; owner: DraftOwner },
     read: (doc: DocHandle) => Promise<T>,
   ): Promise<Result<T, WorkDraftMissing>> {
     await input.draftPulls.flushLivePull(command.documentId);
-    const draft = await input.drafts.findWorkDraft(command.documentId, command.workId);
+    const draft = await input.drafts.findOwnerDraft(command.documentId, command.owner);
     if (!draft) return Err({ code: "draft_not_found", documentId: command.documentId });
     const { doc } = await input.draftCoordinator.copyDraft(draft.draftId);
     try {
@@ -127,7 +127,7 @@ export function createEffectiveDocumentReader(input: {
     },
     async readStoredGrepTexts({ documentIds, responseId, ...version }) {
       const texts = await input.blockText.grepTexts(documentIds, {
-        draftWorkId: version.destination === "draft" ? version.workId : null,
+        draftOwner: version.destination === "draft" ? version.owner : null,
       });
       // A reply's writes to a document stay in its room until a commit and leave no draft row,
       // so the stored text can lag the reply's own view.

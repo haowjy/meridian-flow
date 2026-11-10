@@ -1,6 +1,7 @@
 /** Browser-tab-local, account-stamped document slot for the project dock. */
 import { create } from "zustand";
-import { type ContextTab, isDraftOnly } from "@/client/stores";
+import { type ContextTab, isDraftOnly, matchesReviewItem } from "@/client/stores";
+import type { DraftRef } from "@/features/draft-review/review-command-types";
 import type { ReviewAddress, ReviewAddressAdmission } from "../presented-document";
 import type { ScreenKey } from "../shell/screens";
 import {
@@ -125,7 +126,7 @@ export function createDockDocumentStore(
           const document = state.occupant;
           if (!document || (isDraftOnly(document.tab) && !review)) return state;
           if (
-            document.review?.workId === review?.workId &&
+            document.review?.ownerKey === review?.ownerKey &&
             document.review?.itemKey === review?.itemKey &&
             document.review?.changeId === review?.changeId
           )
@@ -134,7 +135,7 @@ export function createDockDocumentStore(
             occupant: {
               ...document,
               review,
-              ...(document.review?.workId !== review?.workId ||
+              ...(document.review?.ownerKey !== review?.ownerKey ||
               document.review?.itemKey !== review?.itemKey
                 ? { reviewAdmission: undefined }
                 : {}),
@@ -219,19 +220,44 @@ export function dockDocument(
 ): DockDocument {
   if (tab.kind !== "tracked" || !tab.reviews || !isDraftOnly(tab))
     return { projectId, screen, screenWorkId: null, tab, review };
-  const workId = review && tab.reviews[review.workId] ? review.workId : Object.keys(tab.reviews)[0];
-  const entry = tab.reviews[workId];
+  const ownerKey =
+    review && tab.reviews[review.ownerKey] ? review.ownerKey : Object.keys(tab.reviews)[0];
+  const entry = tab.reviews[ownerKey];
   return {
     projectId,
     screen,
     screenWorkId: null,
-    tab: { ...tab, reviews: { [workId]: entry } },
+    tab: { ...tab, reviews: { [ownerKey]: entry } },
     review: {
-      workId,
+      ownerKey,
       itemKey: entry.itemKey,
-      ...(review?.workId === workId && review.itemKey === entry.itemKey && review.changeId
+      ...(review?.ownerKey === ownerKey && review.itemKey === entry.itemKey && review.changeId
         ? { changeId: review.changeId }
         : {}),
     },
   };
+}
+
+/**
+ * The dock holds one review (its admission kept a single entry). Discard is that
+ * review's address alone; becoming live is document-wide and keeps the dock's
+ * chosen review. Exact occupant identity fences replacement instances. Returns
+ * the tab it settled, or null.
+ */
+export function settleDockDraft(draft: DraftRef, promote: boolean): ContextTab | null {
+  const occupant = useDockDocumentStore.getState().occupant;
+  if (!occupant || occupant.projectId !== draft.projectId || occupant.tab.kind !== "tracked")
+    return null;
+  const holds = promote
+    ? isDraftOnly(occupant.tab) && occupant.tab.documentId === draft.documentId
+    : matchesReviewItem(occupant.tab, {
+        reviewOwner: draft.ownerKey,
+        reviewItemKey: draft.itemKey,
+      });
+  if (!holds) return null;
+  const { reviews: _, ...tab } = occupant.tab;
+  useDockDocumentStore.setState((state) =>
+    state.occupant === occupant ? { occupant: promote ? { ...occupant, tab } : null } : state,
+  );
+  return occupant.tab;
 }

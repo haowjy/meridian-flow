@@ -132,9 +132,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const drafted = await facts.load({
         target: { kind: "document", documentId: chapter },
-        branchWorkId: a,
+        branchOwner: { kind: "work", workId: a },
       });
-      expect(drafted?.branchWork?.id).toBe(a);
+      expect(drafted?.branchOwner?.owner).toEqual({ kind: "work", workId: a });
 
       const container = await facts.load({
         target: { kind: "container", scheme: "scratch", owner: { scope: "work", workId: a } },

@@ -13,6 +13,7 @@ import {
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { workOwnerKey } from "@/features/draft-review/draft-owner-key";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { ContextUri } from "@/lib/context-uri";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
@@ -21,7 +22,7 @@ import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import { FocusOpenedReview, type ReviewFocusRequest } from "./FocusOpenedReview";
 
 export type AiDraftLaunchTarget = {
-  workId: string;
+  ownerKey: string;
   documentId: string;
   itemKey: string;
   contextLocation: Pick<ContextUri, "scheme" | "path">;
@@ -53,7 +54,7 @@ function reportRouteSettlement(
     payload: {
       kind,
       attempt,
-      workId: target.workId,
+      ownerKey: target.ownerKey,
       documentId: target.documentId,
       itemKey: target.itemKey,
     },
@@ -100,13 +101,13 @@ export function EditorReviewHandoffProvider({
           const result = await openContextRoute(
             {
               ...target.contextLocation,
-              workId: target.workId,
               documentId: target.documentId,
             },
             {
               replaceIfSameDocument: true,
               tab: tab ?? undefined,
               itemKey: target.itemKey,
+              reviewOwner: target.ownerKey,
               canCommit: () => latest.current?.sequence === staged.sequence,
             },
           );
@@ -232,7 +233,11 @@ export function admissible(
   intent: EditorReviewIntent,
   host: { editorWorkId: string | null; activeScheme: string | null; documentId: string | null },
 ) {
-  return intent.workId === host.editorWorkId && intent.documentId === host.documentId;
+  return (
+    (intent.ownerKey.startsWith("lineage:") ||
+      intent.ownerKey === workOwnerKey(host.editorWorkId ? { id: host.editorWorkId } : null)) &&
+    intent.documentId === host.documentId
+  );
 }
 export function useRequestedReview(host: {
   container: PresentedDocument["container"];

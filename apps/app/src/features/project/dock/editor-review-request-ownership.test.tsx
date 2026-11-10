@@ -16,7 +16,7 @@ it.each(["work", "item"])("a same-locator %s switch keeps the new request", asyn
     switchRequest = () => setNext(true);
     const review = {
       controller: {
-        workId: "a",
+        ownerKey: "work:a",
         inlineReview: { documentId: "document", itemKey: "item-a" },
         exitInlineReview: exit,
       },
@@ -24,7 +24,7 @@ it.each(["work", "item"])("a same-locator %s switch keeps the new request", asyn
       fileForDocument: () => undefined,
     } as unknown as DraftReviewContextValue;
     const address = {
-      workId: next && change === "work" ? "b" : "a",
+      ownerKey: next && change === "work" ? "work:b" : "work:a",
       itemKey: next && change === "item" ? "item-b" : "item-a",
     };
     return (
@@ -46,7 +46,7 @@ it.each(["work", "item"])("a same-locator %s switch keeps the new request", asyn
           port={{ write, admit: vi.fn() }}
         />
         <output>
-          {address.workId}:{address.itemKey}
+          {address.ownerKey}:{address.itemKey}
         </output>
       </EditorReviewHandoffProvider>
     );
@@ -57,14 +57,14 @@ it.each(["work", "item"])("a same-locator %s switch keeps the new request", asyn
     expect(exit).toHaveBeenCalled();
     expect(write).not.toHaveBeenCalled();
     expect(document.querySelector("output")?.textContent).toBe(
-      change === "work" ? "b:item-a" : "a:item-b",
+      change === "work" ? "work:b:item-a" : "work:a:item-b",
     );
   });
 });
 
 const owned = {
   container: "editor" as const,
-  workId: "a",
+  ownerKey: "work:a",
   itemKey: "item-a",
   documentId: "document",
   locator: { scheme: "kb" as const, path: "/Confirmed" },
@@ -95,7 +95,7 @@ it("Exit during unresolved identity clears only the owner's confirmed request", 
     leave = () => setExited(true);
     const review = {
       controller: {
-        workId: "a",
+        ownerKey: "work:a",
         inlineReview: exited ? null : { documentId: "document", itemKey: "item-a" },
         exitInlineReview: vi.fn(),
       },
@@ -115,7 +115,7 @@ it("Exit during unresolved identity clears only the owner's confirmed request", 
             documentId: exited ? null : "document",
             scheme: "kb",
             path: "/Confirmed",
-            review: { workId: "a", itemKey: "item-a" },
+            review: { ownerKey: "work:a", itemKey: "item-a" },
             draftOnly: false,
           }}
           port={{ write, admit: vi.fn() }}

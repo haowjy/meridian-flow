@@ -136,7 +136,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("writes a No Work draft onto a branch keyed by the locked Work", async () => {
+    it("writes a No Work draft onto a branch keyed by the chat's lineage", async () => {
       await db.insert(schema.works).values({
         id: NO_WORK_ID,
         projectId: PROJECT_ID,
@@ -214,6 +214,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .select({
           documentId: schema.documentDrafts.documentId,
           workId: schema.branches.originWorkId,
+          rootThreadId: schema.branches.originRootThreadId,
         })
         .from(schema.documentDrafts)
         .innerJoin(schema.branches, eq(schema.branches.id, schema.documentDrafts.branchId))
@@ -223,7 +224,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             eq(schema.documentDrafts.documentId, DOC_ID),
           ),
         );
-      expect(drafts).toEqual([{ documentId: DOC_ID, workId: NO_WORK_ID }]);
+      // A chat with no Work drafts per lineage, not on the shared No Work row.
+      expect(drafts).toEqual([{ documentId: DOC_ID, workId: null, rootThreadId: THREAD_ID }]);
       expect(await db.select().from(schema.threadWorks)).toEqual([
         expect.objectContaining({
           threadId: THREAD_ID,

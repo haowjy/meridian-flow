@@ -5,6 +5,7 @@
  * - catalog-backed canonical navigation under Work-specific readability (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
  */
 
+import type { DraftOwner } from "@meridian/contracts";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   branches,
@@ -105,7 +106,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
         listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
       };
-      const viewed: (string | null)[] = [];
+      const viewed: (DraftOwner | null)[] = [];
       const deps: DocumentLinkRouteDeps = {
         projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
         documentLinks: resolver(),
@@ -117,8 +118,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
         branches: {
-          viewForWork: async (workId) => {
-            viewed.push(workId);
+          viewForOwner: async (owner) => {
+            viewed.push(owner);
             return { kind: "live" };
           },
         },
@@ -147,8 +148,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           { state: "folder", folder: { id: act, name: "Act 1", uri: "manuscript://Act 1" } },
           { state: "folder", folder: { id: act, name: "Act 1", uri: "manuscript://Act 1" } },
         ]);
-        // The lineage owns Scratch, not the branch: links read No Work's branch view.
-        expect(viewed).toEqual([noWork]);
+        // A chat with no Work reads its own lineage's branch view.
+        expect(viewed).toEqual([{ kind: "lineage", projectId: p, rootThreadId: root }]);
       }
       await db.update(folders).set({ deletedAt: new Date() }).where(eq(folders.id, act));
       const gone = await handleDocumentLinkResolveRequest(deps, {
@@ -372,7 +373,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileAccess,
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
-        branches: { viewForWork: async () => ({ kind: "live" }) },
+        branches: { viewForOwner: async () => ({ kind: "live" }) },
         documentTrash: { retained: async () => new Set() },
         files: { lookupDocuments: async () => [] },
       };
@@ -453,7 +454,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileAccess,
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
-        branches: { viewForWork: async () => ({ kind: "live" }) },
+        branches: { viewForOwner: async () => ({ kind: "live" }) },
         documentTrash: { retained: async () => new Set() },
         files: { lookupDocuments: async () => [] },
       };
@@ -513,10 +514,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
         branches: {
-          viewForWork: async (workId) =>
-            workId === a
+          viewForOwner: async (owner) =>
+            owner?.kind === "work" && owner.workId === a
               ? { kind: "branch", branchId: branchA }
-              : workId === b
+              : owner?.kind === "work" && owner.workId === b
                 ? { kind: "branch", branchId: branchB }
                 : { kind: "live" },
         },
@@ -618,7 +619,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .set({ hidden: true, deletionReason: "discarded", deletedAt: new Date() })
         .where(eq(documents.id, discarded));
       // A discarded branch create is a tombstone, never an address occupant.
-      const provisioned: (string | null)[] = [];
+      const provisioned: (DraftOwner | null)[] = [];
       const deps: DocumentLinkRouteDeps = {
         projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
         documentLinks: resolver(),
@@ -632,8 +633,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
         branches: {
-          viewForWork: async (workId) => {
-            provisioned.push(workId);
+          viewForOwner: async (owner) => {
+            provisioned.push(owner);
             return { kind: "live" };
           },
         },
@@ -704,7 +705,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       for (const answer of response.answers)
         if (answer.state === "gone")
           expect(Object.keys(answer).filter((key) => key !== "settled")).toEqual(["state"]);
-      // A chat's lineage Scratch owner must not erase its No Work branch view.
+      // A chat's lineage owns its drafts, so its links read the lineage's branch view.
       const root = crypto.randomUUID();
       await db
         .insert(threads)
@@ -719,9 +720,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           links: [{ ref: `doc:${discarded}`, href: "manuscript://discarded" }],
         },
       });
-      // The tombstone stays gone; the chat's links still read No Work's branch view.
+      // The tombstone stays gone; the chat's links read its lineage's branch view.
       expect(noWorkBranch.answers).toMatchObject([{ state: "gone" }]);
-      expect(provisioned).toEqual([noWork]);
+      expect(provisioned).toEqual([{ kind: "lineage", projectId: p, rootThreadId: root }]);
       // A Work of another project never reaches branch membership provisioning.
       const foreignWork = crypto.randomUUID();
       await db.insert(works).values({

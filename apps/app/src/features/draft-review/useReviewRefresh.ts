@@ -15,14 +15,14 @@ const MAX_WAIT_MS = 2_000;
 
 export function useReviewRefresh({
   projectId,
-  workId,
+  ownerKey,
   review,
   runtime,
   session,
   liveSession,
 }: {
   projectId: string | null;
-  workId: string | null;
+  ownerKey: string | null;
   /** The open review's draft, or null when none is open. */
   review: { documentId: string; itemKey: string } | null;
   /** Text and attribution already computed for this review. */
@@ -42,7 +42,7 @@ export function useReviewRefresh({
   // editor re-binding its live room (its surface briefly inactive) must not
   // drop a change already seen, such as the pull that just reached the draft.
   useEffect(() => {
-    if (!projectId || !workId || !documentId || !itemKey) return;
+    if (!projectId || !ownerKey || !documentId || !itemKey) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let firstPendingAt = 0;
     let active = true;
@@ -59,13 +59,13 @@ export function useReviewRefresh({
       void Promise.all([
         queryClient.invalidateQueries(
           {
-            queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
+            queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
           },
           { cancelRefetch: false },
         ),
         queryClient.invalidateQueries(
           {
-            queryKey: projectQueryKeys.workDraftMetadata(projectId, workId, documentId, itemKey),
+            queryKey: projectQueryKeys.ownerDraftMetadata(projectId, ownerKey, documentId, itemKey),
           },
           { cancelRefetch: false },
         ),
@@ -91,7 +91,7 @@ export function useReviewRefresh({
       schedule.current = null;
       if (timer !== null) clearTimeout(timer);
     };
-  }, [projectId, workId, documentId, itemKey, queryClient]);
+  }, [projectId, ownerKey, documentId, itemKey, queryClient]);
 
   useEffect(() => {
     if (!runtime || !session) return;

@@ -217,14 +217,14 @@ export type AssetImageRenderActions = {
 export function useAssetImageRenderState(input: {
   projectId?: string;
   /** The Work the viewer is in, when they are in one. */
-  workId?: string;
+  owner?: string;
   src: string;
   /** The picture's stored `ref`, as the node holds it. */
   ref?: unknown;
   /** The editor's link cache, which answers the ref, and its requester. */
   links?: MountedLinks | null;
 }): [AssetImageRenderState, AssetImageRenderActions] {
-  const { projectId, workId, src } = input;
+  const { projectId, owner, src } = input;
   const resolution = input.links?.resolution ?? null;
   const requester = input.links?.requester ?? null;
   const stored = pictureKeyOfNode({ ref: input.ref, src });
@@ -273,7 +273,7 @@ export function useAssetImageRenderState(input: {
   // revalidates (a catalog change, a signed-URL refresh), and a node view
   // retargeted to another picture (a ref or source edit, undo, a peer's
   // update) never draws the previous one while the new one loads.
-  const picture = `${projectId ?? ""}\u0000${workId ?? ""}\u0000${key ? linkCacheKey(key) : src}`;
+  const picture = `${projectId ?? ""}\u0000${owner ?? ""}\u0000${key ? linkCacheKey(key) : src}`;
   const [shown, setShown] = useState<{ picture: string; state: AssetImageRenderState }>(() => ({
     picture,
     state: initialState(target),
@@ -376,7 +376,7 @@ export function useAssetImageRenderState(input: {
         const signed = await getFigureSignedUrl({
           projectId: routeProjectId,
           assetDocumentId: routeAssetDocumentId,
-          ...(workId ? { workId } : {}),
+          ...(owner ? { owner } : {}),
           skipCache,
         });
         if (cancelled) return;
@@ -385,7 +385,7 @@ export function useAssetImageRenderState(input: {
           mimeType: signed.mimeType,
           sizeBytes: signed.sizeBytes,
           // A picture still in a Work's branch is not in the live tree the download route reads.
-          downloadUrl: workId ? signed.signedUrl : documentDownloadUrl(routeAssetDocumentId),
+          downloadUrl: owner ? signed.signedUrl : documentDownloadUrl(routeAssetDocumentId),
         };
         fileFactsRef.current = file;
         if (signed.drawUrl && signed.drawUrl === failedUrlRef.current)
@@ -422,7 +422,7 @@ export function useAssetImageRenderState(input: {
       loadInFlightRef.current = false;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [targetIdentity, picture, projectId, workId, refreshToken]);
+  }, [targetIdentity, picture, projectId, owner, refreshToken]);
 
   return [state, { retry, imageLoadFailed, imageDisplayed }];
 }

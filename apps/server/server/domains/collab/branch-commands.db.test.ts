@@ -1,5 +1,6 @@
 /** A Discard retry that loses its grant after its twin commits still returns the stored outcome. */
 import { randomUUID } from "node:crypto";
+import type { BranchId } from "@meridian/contracts";
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
 import { expect, it } from "vitest";
@@ -21,11 +22,15 @@ async function twoChanges(start: BranchTreeStart) {
   await s.model(ascension).edit("chapter.md", "Opening.", "Opening, drafted.");
   await s.model(ascension).edit("chapter.md", "End.", "End, drafted.");
   const deps = selectBranchRouteServices(runtime.app);
-  const scope = { projectId: s.project.id, workId: ascension.id, userId: s.project.userId };
   const item = async () => {
     const found = (await s.items(ascension)).find((candidate) => candidate.documentId === chapter);
     if (!found) throw new Error("no chapter item");
     return found;
+  };
+  const scope = {
+    projectId: s.project.id,
+    branchId: (await item()).branchId as BranchId,
+    userId: s.project.userId,
   };
   return { runtime, s, ascension, chapter, deps, scope, item };
 }
