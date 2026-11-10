@@ -7,7 +7,9 @@ import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import {
   type ContextTab,
+  getContextTabs,
   matchesReviewItem,
+  selectedDocumentIdOf,
   useContextTabs,
   useContextTabsActions,
 } from "@/client/stores";
@@ -177,7 +179,14 @@ export function ProjectAddressDocument({
     const publish = (issue: ProjectRouteIssue | undefined) => onAdmission({ ...identity, issue });
     publish("loading");
     void (async () => {
-      const installed = openTab(projectId, liveTab(), isCurrent);
+      // A removal leaves the address in place with nothing selected. The document that returns
+      // under it (a restore) takes the selection back; a selection elsewhere (the dock) stays.
+      const installed = openTab(
+        projectId,
+        liveTab(),
+        isCurrent,
+        selectedDocumentIdOf(getContextTabs(projectId)) === null ? { select: true } : undefined,
+      );
       if (controller.signal.aborted || !navigation.isCurrent(ticket)) return;
       if (installed.kind !== "opened") {
         publish("unavailable");
