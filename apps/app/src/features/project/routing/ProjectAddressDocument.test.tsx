@@ -125,6 +125,8 @@ it("preserves a proven local resource handle during readable-route admission", a
           origin: "local-resource",
         }),
         expect.any(Function),
+        // Nothing is selected: the address's document takes the selection.
+        { select: true },
       );
     },
   );
