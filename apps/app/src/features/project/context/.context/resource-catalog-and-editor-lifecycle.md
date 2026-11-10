@@ -181,7 +181,9 @@ a lost access or a document that was never there leaves the address as written, 
 the route says "unavailable" there. `useAddressResultAfterRemoval` keeps the address
 lookup's stale "available" answer from installing the tab again (the removal would
 close it at once, in a loop) until a read after the removal and the replica's living
-record say it is back, so a restore returns the document at the same address.
+record say it is back, so a restore returns the document at the same address. A
+document some open tab still holds is exempt: a draft held over a document deleted live
+keeps painting, and admission has nothing to install for it.
 Closing a tab with its own control is still the one place that navigates, to the empty
 Editor.
 

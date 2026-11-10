@@ -36,11 +36,15 @@ export type AddressAdmission = {
  * the document until a read taken after the removal arrives (a restore invalidates the
  * lookup). Then the replica's terminal record, which outlives the restore
  * until the catalog republishes the document.
+ *
+ * A document the workspace still holds a tab for is exempt: admission does nothing for it, and
+ * a draft held over a document deleted live keeps painting.
  */
 export function useAddressResultAfterRemoval(
   projectId: string,
   result: DocumentAddressResult | undefined,
   updatedAt: number,
+  held: (documentId: string) => boolean,
 ): DocumentAddressResult | undefined {
   const { removalFence } = useContextRemovalProject(projectId);
   const { records } = useAccountResourceProjection(projectId);
@@ -49,7 +53,7 @@ export function useAddressResultAfterRemoval(
   const fenced = documentId !== null && removalFence?.removedDocumentIds.includes(documentId);
   if (!fenced) fencedAt.current = null;
   else fencedAt.current ??= Date.now();
-  if (documentId === null) return result;
+  if (documentId === null || held(documentId)) return result;
   const terminal =
     resourceForDocumentIdentity(records, documentId)?.resource.lifecycle.kind === "terminal";
   return terminal || (fenced && updatedAt <= (fencedAt.current ?? 0)) ? undefined : result;
