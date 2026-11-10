@@ -9,7 +9,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { LoaderCircle, Search } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, type RefObject, useId } from "react";
+import { type ReactNode, type RefObject, useId } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +19,7 @@ import {
   dropdownSearchClass,
 } from "@/components/ui/dropdown-presentation";
 import { Input } from "@/components/ui/input";
+import { handleListKeys } from "@/components/ui/list-keys";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 
@@ -119,30 +120,6 @@ export function WorkPickerPanel({
   };
 }) {
   const searchId = useId();
-  const navigate = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (
-      !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) ||
-      event.target instanceof HTMLInputElement
-    )
-      return;
-    const rows = [
-      ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
-        "[data-work-choice]:not(:disabled)",
-      ),
-    ];
-    const current = rows.indexOf(document.activeElement as HTMLButtonElement);
-    if (current < 0) return;
-    event.preventDefault();
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? rows.length - 1
-          : event.key === "ArrowDown"
-            ? Math.min(current + 1, rows.length - 1)
-            : Math.max(current - 1, 0);
-    rows[next]?.focus();
-  };
   return (
     // biome-ignore lint/a11y/useSemanticElements: fieldset intrinsic sizing breaks the bounded results scrollport.
     <div
@@ -150,7 +127,7 @@ export function WorkPickerPanel({
       aria-label={purposeLabel}
       aria-busy={(view.status === "ready" && view.refreshing) || operation.pending}
       className="flex min-h-0 min-w-0 flex-1 flex-col gap-[var(--chat-space-block)]"
-      onKeyDown={navigate}
+      onKeyDown={handleListKeys}
     >
       <label htmlFor={searchId} className="sr-only">
         <Trans>Search Work</Trans>
@@ -161,6 +138,7 @@ export function WorkPickerPanel({
           aria-hidden
         />
         <Input
+          data-list-item
           ref={searchRef}
           id={searchId}
           type="search"
@@ -182,7 +160,7 @@ export function WorkPickerPanel({
               dropdownRowVariants({ selected: operation.currentWorkId === view.noWork.id }),
               "w-full justify-start",
             )}
-            data-work-choice
+            data-list-item
             disabled={!view.enabled}
             onClick={() => onChoose(view.noWork)}
           >
@@ -269,7 +247,7 @@ function WorkSection({
                       ? focusRefs?.first
                       : undefined
                 }
-                data-work-choice
+                data-list-item
                 variant="ghost"
                 type="button"
                 disabled={!enabled}

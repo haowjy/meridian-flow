@@ -5,7 +5,7 @@ import { Trans } from "@lingui/react/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { isHandoffSeed, readHandoffSeed } from "@meridian/contracts/threads";
 import { FileImage, FileText, FileType, PanelRightOpen, Paperclip, Trash2 } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { deleteChatUpload } from "@/client/api/context-upload-api";
 import { type ChatUpload, useChatUploads } from "@/client/query/useChatUploads";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -20,6 +20,7 @@ import {
   dropdownSurfaceVariants,
 } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
+import { handleListKeys } from "@/components/ui/list-keys";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { role } from "@/components/ui/roles";
 import { MenuScratchSection } from "@/features/project/chat/ChatScratch";
@@ -137,42 +138,6 @@ function FilesDropdown({
     );
   };
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const rowKeys = ["ArrowDown", "ArrowUp", "Home", "End"];
-    const target = event.target as HTMLElement;
-    if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
-      // Within a row: the file's own button, then its actions.
-      const row = target.closest<HTMLElement>("[data-upload-item]");
-      const stops = Array.from(row?.querySelectorAll<HTMLElement>("button:not([disabled])") ?? []);
-      const index = stops.indexOf(target);
-      if (index < 0) return;
-      const next = stops[index + (event.key === "ArrowRight" ? 1 : -1)];
-      if (!next) return;
-      event.preventDefault();
-      next.focus();
-      return;
-    }
-    if (!rowKeys.includes(event.key)) return;
-    const primaries = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>("[data-upload-row]"),
-    );
-    if (primaries.length === 0) return;
-    const current = primaries.indexOf(
-      target.closest<HTMLElement>("[data-upload-item]")?.querySelector("[data-upload-row]") ??
-        target,
-    );
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? primaries.length - 1
-          : event.key === "ArrowDown"
-            ? (current + 1) % primaries.length
-            : (current <= 0 ? primaries.length : current) - 1;
-    event.preventDefault();
-    primaries[next]?.focus();
-  };
-
   return (
     <Popover open={open} onOpenChange={(next) => (next ? setOpen(true) : close(false))}>
       <PopoverTrigger asChild>
@@ -200,7 +165,7 @@ function FilesDropdown({
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           contentRef.current
-            ?.querySelector<HTMLElement>('[role="button"][tabindex="0"], [data-upload-row]')
+            ?.querySelector<HTMLElement>('[role="button"][tabindex="0"], [data-list-item]')
             ?.focus();
         }}
         onCloseAutoFocus={(event) => {
@@ -208,7 +173,8 @@ function FilesDropdown({
           focusHandoff.current = false;
         }}
         onKeyDown={(event) => {
-          if ((event.target as HTMLElement).closest("[data-upload-item]")) handleKeyDown(event);
+          // The Scratch tree above the uploads keeps its own keys.
+          if ((event.target as HTMLElement).closest("[data-list-row]")) handleListKeys(event);
         }}
       >
         {continuesFrom ? (
@@ -289,15 +255,16 @@ function UploadRow({
   const drag = useReferenceDrag({ ref: { kind: "file", id: upload.documentId }, name });
   const failure = failed ? t`Couldn’t delete this file. Try again.` : null;
   return (
-    <li data-upload-item className="relative flex flex-col">
+    <li className="relative flex flex-col">
       <div
         className={cn(
           dropdownRowContainerClass,
           "flex min-w-0 items-center transition-colors hover:bg-ink-fill",
         )}
+        data-list-row
       >
         <button
-          data-upload-row
+          data-list-item
           type="button"
           {...drag}
           onClick={onInsert}

@@ -3,7 +3,7 @@
  * future quick-open hosts. Hosts own the popover/input; this component owns
  * rows, roving keyboard focus, selection, and dismissal. A host `header`
  * (e.g. a validation note) renders inside the roving boundary: any focusable
- * it marks with `data-file-suggestion` joins the arrow-key walk in visual
+ * it marks with `data-list-item` joins the arrow-key walk in visual
  * order, so keyboard users can reach its actions.
  */
 
@@ -12,6 +12,7 @@ import { Trans } from "@lingui/react/macro";
 import { Folder } from "lucide-react";
 import { forwardRef, type KeyboardEvent, type ReactNode, useImperativeHandle, useRef } from "react";
 import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
+import { handleListKeys } from "@/components/ui/list-keys";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../context-file-icon";
@@ -46,9 +47,7 @@ export const FileSuggestionList = forwardRef<
 ) {
   const rootRef = useRef<HTMLDivElement>(null);
   const focusStops = () =>
-    Array.from(
-      rootRef.current?.querySelectorAll<HTMLButtonElement>("[data-file-suggestion]") ?? [],
-    );
+    Array.from(rootRef.current?.querySelectorAll<HTMLButtonElement>("[data-list-item]") ?? []);
   useImperativeHandle(ref, () => ({
     focusFirst: () => focusStops()[0]?.focus(),
     focusLast: () => focusStops().at(-1)?.focus(),
@@ -60,32 +59,10 @@ export const FileSuggestionList = forwardRef<
       onClose();
       return;
     }
-    if (!["ArrowDown", "ArrowUp", "Home", "End", "Enter"].includes(event.key)) return;
-    const rows = Array.from(
-      event.currentTarget.querySelectorAll<HTMLButtonElement>("[data-file-suggestion]"),
-    );
-    if (rows.length === 0) return;
-    const currentIndex = rows.indexOf(document.activeElement as HTMLButtonElement);
-    if (event.key === "Enter") {
-      if (currentIndex >= 0) {
-        event.preventDefault();
-        rows[currentIndex]?.click();
-      }
-      return;
-    }
-    const nextIndex =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? rows.length - 1
-          : event.key === "ArrowDown"
-            ? (currentIndex + 1) % rows.length
-            : (currentIndex <= 0 ? rows.length : currentIndex) - 1;
-    event.preventDefault();
-    rows[nextIndex]?.focus();
+    handleListKeys(event);
   };
 
-  const rowClass = `${dropdownRowVariants()} focus:bg-ink-fill`;
+  const rowClass = dropdownRowVariants();
 
   return (
     // The keydown boundary wraps header + rows so one arrow walk covers both;
@@ -98,7 +75,7 @@ export const FileSuggestionList = forwardRef<
           {onNavigateUp ? (
             <li>
               <button
-                data-file-suggestion
+                data-list-item
                 type="button"
                 role="option"
                 tabIndex={-1}
@@ -141,7 +118,7 @@ export const FileSuggestionList = forwardRef<
               return (
                 <li key={suggestion.entryId}>
                   <button
-                    data-file-suggestion
+                    data-list-item
                     type="button"
                     role="option"
                     tabIndex={-1}
