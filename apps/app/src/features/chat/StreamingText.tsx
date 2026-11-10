@@ -57,7 +57,7 @@ function StreamCaret() {
   return (
     <span
       aria-hidden
-      className="ml-0.5 inline-block h-[1.05em] w-2 translate-y-[2px] rounded-[1px] bg-primary motion-safe:animate-[blink_1.05s_step-end_infinite]"
+      className="ml-0.5 inline-block h-[1.05em] w-2 translate-y-[2px] rounded-sm bg-primary motion-safe:animate-[blink_1.05s_step-end_infinite]"
       style={{ animationName: "blink" }}
     />
   );

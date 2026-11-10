@@ -22,7 +22,7 @@ export function CheckoutReturnNotice({ status }: { status: CheckoutReturnStatus 
       aria-atomic="true"
       className={
         visible
-          ? "flex items-start gap-3 rounded-lg border border-border-subtle bg-muted px-4 py-3 text-sm text-foreground"
+          ? "flex items-start gap-3 rounded-lg border border-border-subtle bg-ink-fill px-4 py-3 text-sm text-foreground"
           : "sr-only"
       }
     >

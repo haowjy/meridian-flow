@@ -11,6 +11,7 @@ import { useLingui } from "@lingui/react";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { Info, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
+import { Chip } from "@/components/ui/chip";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { useOptionalRemovedNotices } from "./account-feature-context";
@@ -255,12 +256,21 @@ export function useRemovedNoticeLifetime(
 const trimSlashes = (path: string) => path.replace(/^\/+|\/+$/g, "");
 
 /** The notice's dismiss control, shared by every placement. */
-function DismissNotice({ projectId, className }: { projectId: string; className?: string }) {
+function DismissNotice({
+  projectId,
+  className,
+  dense,
+}: {
+  projectId: string;
+  className?: string;
+  dense?: boolean;
+}) {
   const notices = useOptionalRemovedNotices();
   return (
     <IconButton
       className={className}
-      aria-label={t`Dismiss`}
+      dense={dense}
+      label={t`Dismiss`}
       onClick={() => notices?.dismiss(projectId)}
     >
       <X aria-hidden className="size-3" />
@@ -278,18 +288,25 @@ function DismissNotice({ projectId, className }: { projectId: string; className?
 export function RemovedDocumentChip({ projectId }: { projectId: string }) {
   const { shown } = useRemovedNotice(projectId);
   if (shown.length === 0) return null;
-  return <Chip projectId={projectId} documents={shown} />;
+  return <RemovedChip projectId={projectId} documents={shown} />;
 }
 
-function Chip({ projectId, documents }: { projectId: string; documents: readonly ShownRemoval[] }) {
+function RemovedChip({
+  projectId,
+  documents,
+}: {
+  projectId: string;
+  documents: readonly ShownRemoval[];
+}) {
   useLingui();
   const sentence = removalSentence(documents);
   return (
-    <div
+    <Chip
+      dashed
       role="status"
       title={sentence}
       data-removed-document-notice
-      className="my-1.5 ml-1 flex min-w-0 max-w-[28rem] items-center gap-1.5 rounded-md border border-border border-dashed pr-0.5 pl-2 text-muted-foreground text-xs"
+      className="my-1.5 ml-1 min-w-0 max-w-[28rem] shrink pr-px font-normal"
     >
       <Info aria-hidden className="size-3.5 shrink-0" />
       <span className="sr-only">{sentence}</span>
@@ -299,8 +316,8 @@ function Chip({ projectId, documents }: { projectId: string; documents: readonly
       <span aria-hidden className="hidden min-w-0 truncate @max-[13rem]:inline">
         {shortRemovalSentence(documents)}
       </span>
-      <DismissNotice projectId={projectId} className="size-5 shrink-0" />
-    </div>
+      <DismissNotice projectId={projectId} className="size-5 shrink-0" dense />
+    </Chip>
   );
 }
 
@@ -375,7 +392,7 @@ function PhoneNotice({
   return (
     <div role="status" data-removed-document-notice className="flex items-start gap-2 py-1.5">
       <p className="min-w-0 flex-1 py-1 text-foreground text-sm">{removalSentence(documents)}</p>
-      <DismissNotice projectId={projectId} className="shrink-0 [@media(pointer:coarse)]:size-11" />
+      <DismissNotice projectId={projectId} className="shrink-0" />
     </div>
   );
 }

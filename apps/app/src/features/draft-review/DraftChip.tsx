@@ -12,17 +12,24 @@
 import { ChevronsUpDown } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { IDENTITY_BAR_BOX_CLASS } from "@/features/project/context/identity-bar-geometry";
+import { Chip } from "@/components/ui/chip";
 import { cn } from "@/lib/utils";
 
 export type DraftChipState = "live" | "pending" | "reviewing" | "failed";
 
-const TONE: Record<DraftChipState, string> = {
-  live: "border-border-subtle text-ink-muted group-hover/chip:bg-muted group-hover/chip:text-foreground group-popup-open/chip:bg-dropdown-hover group-popup-open/chip:text-foreground",
-  pending: "border-primary/30 bg-primary/10 text-jade-text group-hover/chip:bg-primary/15",
-  reviewing:
-    "border-primary/40 bg-primary/15 text-jade-text group-hover/chip:bg-primary/20 group-popup-open/chip:bg-primary/20",
-  failed: "border-destructive/40 bg-destructive/10 text-destructive",
+const TONE = {
+  live: "neutral",
+  pending: "jade",
+  reviewing: "jade",
+  failed: "destructive",
+} as const satisfies Record<DraftChipState, string>;
+
+/** The chip answers its wrapper's hover and open menu. */
+const RESPONSE: Record<DraftChipState, string> = {
+  live: "group-hover/chip:bg-ink-fill group-hover/chip:text-foreground group-popup-open/chip:bg-ink-fill-strong group-popup-open/chip:text-foreground",
+  pending: "group-hover/chip:bg-primary/22",
+  reviewing: "group-hover/chip:bg-primary/22 group-popup-open/chip:bg-primary/22",
+  failed: "",
 };
 
 /** The wrapper's hit area: the pill itself on desktop, a 44px target around it on a phone. */
@@ -47,13 +54,7 @@ export function DraftChipFace({
   children: ReactNode;
 }) {
   return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border px-1.5 font-medium font-sans text-xs transition-colors",
-        touch ? "h-8 px-2.5 text-sm" : IDENTITY_BAR_BOX_CLASS,
-        TONE[state],
-      )}
-    >
+    <Chip tone={TONE[state]} className={cn(RESPONSE[state], touch && "h-8 px-2.5 text-sm")}>
       {state === "live" ? null : (
         <span
           aria-hidden
@@ -65,6 +66,6 @@ export function DraftChipFace({
       )}
       <span>{children}</span>
       {menu ? <ChevronsUpDown aria-hidden className="-mr-0.5 size-3 shrink-0 opacity-70" /> : null}
-    </span>
+    </Chip>
   );
 }

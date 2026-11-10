@@ -48,37 +48,37 @@ export function SkillInstallSection() {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="flex flex-col gap-0.5 text-meta text-muted-foreground">
+      <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
         slug
         <input
           value={slug}
           onChange={(event) => setSlug(event.target.value)}
-          className="h-7 rounded border border-border bg-transparent px-2 text-xs text-foreground"
+          className="h-7 rounded-sm border border-border bg-transparent px-2 text-xs text-foreground"
         />
       </label>
-      <label className="flex flex-col gap-0.5 text-meta text-muted-foreground">
+      <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
         name
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
-          className="h-7 rounded border border-border bg-transparent px-2 text-xs text-foreground"
+          className="h-7 rounded-sm border border-border bg-transparent px-2 text-xs text-foreground"
         />
       </label>
-      <label className="flex flex-col gap-0.5 text-meta text-muted-foreground">
+      <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
         description
         <input
           value={description}
           onChange={(event) => setDescription(event.target.value)}
-          className="h-7 rounded border border-border bg-transparent px-2 text-xs text-foreground"
+          className="h-7 rounded-sm border border-border bg-transparent px-2 text-xs text-foreground"
         />
       </label>
-      <label className="flex flex-col gap-0.5 text-meta text-muted-foreground">
+      <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
         body
         <textarea
           value={body}
           onChange={(event) => setBody(event.target.value)}
           rows={3}
-          className="rounded border border-border bg-transparent px-2 py-1 text-xs text-foreground"
+          className="rounded-sm border border-border bg-transparent px-2 py-1 text-xs text-foreground"
         />
       </label>
       <div className="flex gap-2">
@@ -86,7 +86,7 @@ export function SkillInstallSection() {
           type="button"
           disabled={busy}
           onClick={() => void add()}
-          className="focus-ring min-w-0 flex-1 rounded border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+          className="focus-ring min-w-0 flex-1 rounded-sm border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-ink-fill disabled:opacity-50"
         >
           Add
         </button>
@@ -94,13 +94,13 @@ export function SkillInstallSection() {
           type="button"
           disabled={busy}
           onClick={() => void remove()}
-          className="focus-ring min-w-0 flex-1 rounded border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+          className="focus-ring min-w-0 flex-1 rounded-sm border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-ink-fill disabled:opacity-50"
         >
           Delete
         </button>
       </div>
       {status ? (
-        <p className="text-meta text-muted-foreground" role="status">
+        <p className="text-xs text-muted-foreground" role="status">
           {status}
         </p>
       ) : null}

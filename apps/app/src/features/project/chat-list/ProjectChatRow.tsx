@@ -14,6 +14,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { ruledRowClassName } from "../RuledList";
 import {
   formatFullProjectChatActivity,
   formatProjectChatActivity,
@@ -49,7 +50,7 @@ export function ProjectChatRowSkeleton({ ruled = false }: { ruled?: boolean }) {
         <Skeleton className="h-4 w-full motion-reduce:animate-none" />
       </div>
       <Skeleton className="col-start-1 row-start-2 mt-1 h-3 motion-reduce:animate-none" />
-      <div className="col-start-3 row-span-2 row-start-1 grid place-items-center [@media(hover:none)]:min-h-11 [@media(pointer:coarse)]:min-h-11">
+      <div className="col-start-3 row-span-2 row-start-1 grid place-items-center [@media(hover:none)]:min-h-11 coarse:min-h-11">
         <Skeleton className="h-3 w-12 motion-reduce:animate-none" />
       </div>
     </li>
@@ -87,9 +88,7 @@ export const ProjectChatRow = memo(function ProjectChatRow({
   return (
     <div
       data-project-chat-row={item.id}
-      // The shared inset list-row recipe: rounded hover paint inside the gutter,
-      // the same ground as the chat switcher's rows.
-      className="group relative min-w-0 rounded-md px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-dropdown-hover"
+      className={ruledRowClassName}
       onFocusCapture={() => setFocusWithin(true)}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setFocusWithin(false);
@@ -128,8 +127,10 @@ export const ProjectChatRow = memo(function ProjectChatRow({
         <div data-project-chat-row-work className="text-xs font-medium text-foreground">
           <IconButton
             size="sm"
+            // The Agent lane can't widen under a finger.
+            dense
             aria-pressed={item.isFavorite}
-            aria-label={
+            label={
               item.isFavorite ? t`Remove ${title} from favorites` : t`Add ${title} to favorites`
             }
             aria-disabled={favoriteSuppressed || undefined}
@@ -137,12 +138,10 @@ export const ProjectChatRow = memo(function ProjectChatRow({
               if (!favoriteSuppressed) onFavorite(item, favoriteValue);
             }}
             className={cn(
-              // Touch gets a 44px target without widening the Agent lane: the
-              // hit area extends past the 32px button instead of growing it.
-              "pointer-events-auto relative [@media(hover:none)]:after:absolute [@media(hover:none)]:after:-inset-1.5 [@media(hover:none)]:after:content-[''] [@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:-inset-1.5 [@media(pointer:coarse)]:after:content-['']",
+              "pointer-events-auto [@media(hover:none)]:after:absolute [@media(hover:none)]:after:-inset-1.5 [@media(hover:none)]:after:content-['']",
               item.isFavorite
                 ? "text-gold hover:text-gold"
-                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100",
+                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 coarse:opacity-100",
             )}
           >
             <Star aria-hidden className={cn("size-4", item.isFavorite && "fill-current")} />
@@ -166,7 +165,7 @@ export const ProjectChatRow = memo(function ProjectChatRow({
             {item.lastMessagePreview ?? t`No messages yet.`}
           </p>
           <time
-            className="hidden shrink-0 whitespace-nowrap text-xs tabular-nums [@media(hover:none)]:inline [@media(pointer:coarse)]:inline"
+            className="hidden shrink-0 whitespace-nowrap text-xs tabular-nums [@media(hover:none)]:inline coarse:inline"
             dateTime={item.lastActivityAt}
             title={fullActivity}
           >
@@ -180,7 +179,7 @@ export const ProjectChatRow = memo(function ProjectChatRow({
         >
           <time
             className={cn(
-              "col-start-1 row-start-1 max-w-full truncate text-center text-xs text-muted-foreground tabular-nums group-hover:invisible group-focus-within:invisible [@media(hover:none)]:hidden [@media(pointer:coarse)]:hidden",
+              "col-start-1 row-start-1 max-w-full truncate text-center text-xs text-muted-foreground tabular-nums group-hover:invisible group-focus-within:invisible [@media(hover:none)]:hidden coarse:hidden",
               menuOpen && "invisible",
             )}
             dateTime={item.lastActivityAt}
@@ -191,7 +190,7 @@ export const ProjectChatRow = memo(function ProjectChatRow({
 
           <div
             className={cn(
-              "pointer-events-none col-start-1 row-start-1 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:opacity-100",
+              "pointer-events-none col-start-1 row-start-1 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100 coarse:pointer-events-auto coarse:opacity-100",
               menuOpen && "pointer-events-auto opacity-100",
             )}
           >
@@ -199,7 +198,7 @@ export const ProjectChatRow = memo(function ProjectChatRow({
               open={menuOpen}
               onOpenChange={setMenuOpen}
               label={t`Actions for ${title}`}
-              triggerClassName="[@media(hover:none)]:size-11 [@media(pointer:coarse)]:size-11"
+              triggerClassName="[@media(hover:none)]:size-11"
               triggerProps={{
                 "data-project-chat-row-actions": item.id,
                 "aria-busy": favorite.pending || undefined,

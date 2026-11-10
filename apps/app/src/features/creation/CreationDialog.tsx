@@ -29,7 +29,6 @@ import { Textarea } from "@/components/ui/textarea";
 const textClass = "text-base md:text-sm";
 const labelClass = `${textClass} font-medium`;
 const fieldClass = `bg-card ${textClass}`;
-const buttonClass = "[@media(pointer:coarse)]:min-h-11";
 
 export type CreationValues = { name: string; details: string };
 
@@ -64,9 +63,7 @@ export function CreationDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-xl gap-5">
         <DialogHeader className="text-left sm:text-left">
-          <DialogTitle className="text-lg leading-tight font-semibold tracking-tight">
-            {title}
-          </DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription className="sr-only">{nameLabel}</DialogDescription>
         </DialogHeader>
         <form
@@ -113,7 +110,7 @@ export function CreationDialog({
           ) : null}
           <DialogFooter className="gap-2 sm:gap-2">
             <DialogClose asChild>
-              <Button type="button" variant="outline" className={buttonClass}>
+              <Button type="button" variant="outline">
                 <Trans>Cancel</Trans>
               </Button>
             </DialogClose>
@@ -121,7 +118,6 @@ export function CreationDialog({
               type="submit"
               disabled={!ready}
               aria-label={ready ? undefined : t`${submitLabel} (enter a name first)`}
-              className={buttonClass}
             >
               {submitLabel}
             </Button>

@@ -12,6 +12,7 @@ import type { LiveEditorContainer } from "@/core/editor/live-range-navigation-ru
 import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-editor";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { InlineDraftReview } from "@/features/draft-review/draft-review-session";
+import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import type { ReviewSurface } from "@/features/draft-review/review-runtime";
 import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { showDocumentLive } from "@/features/project/tab-view-commands";
@@ -256,7 +257,7 @@ function ReviewError({ props }: { props: EditorViewProps }) {
     : () => showDocumentLive(controller.projectId, props.documentId);
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-      <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
+      <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-float">
         <p className="font-medium text-foreground text-sm">
           <Trans>Couldn't open review mode.</Trans>
         </p>
@@ -267,11 +268,11 @@ function ReviewError({ props }: { props: EditorViewProps }) {
             <Trans>Try again, or return to the live document.</Trans>
           )}
         </p>
-        <div className="flex justify-center gap-2">
+        <div className="flex items-center justify-center gap-1.5">
           {props.reviewItemKey ? (
             <Button
               type="button"
-              size="sm"
+              size="xs"
               variant="secondary"
               onClick={() => {
                 roomOwner.reopen();
@@ -285,19 +286,15 @@ function ReviewError({ props }: { props: EditorViewProps }) {
           {props.reviewItemKey &&
           controller.inlineReview?.documentId === props.documentId &&
           controller.inlineReview.itemKey === props.reviewItemKey ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
+            <ReviewActions
+              scope="document"
               disabled={controller.dispositionLocked}
-              onClick={() =>
+              onDiscard={() =>
                 void controller.discard(props.documentId, props.reviewItemKey as string)
               }
-            >
-              <Trans>Discard draft</Trans>
-            </Button>
+            />
           ) : null}
-          <Button type="button" size="sm" variant="ghost" onClick={closeUnavailable}>
+          <Button type="button" size="xs" variant="ghost" onClick={closeUnavailable}>
             {props.draftOnly ? <Trans>Close</Trans> : <Trans>Back to live</Trans>}
           </Button>
         </div>
