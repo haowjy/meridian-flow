@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: Earthen Value Ladder
-summary: Meridian Flow writing project UI — one grey-gold chrome, warm paper, black ink, ink-overlay states, jade actions, and scarce cinnabar seals.
+summary: Meridian Flow writing project UI — one paper-grey chrome, near-white warm paper, black ink, ink-overlay states, jade actions, and scarce cinnabar seals.
 tokens:
   canonicalPackage: "@meridian/design-tokens"
   canonicalCss: "ink-jade.css"
@@ -21,8 +21,8 @@ Agent-facing visual identity for `@meridian/app`. Token values live in `@meridia
 ## Overview
 
 The writer workspace uses one warm, near-neutral value ladder so the manuscript
-remains the visual center. One warm grey-gold chrome is the sidebar, the
-document band and the dock, and warm paper is the brightest field. One black ink
+remains the visual center. One paper-grey chrome is the sidebar, the
+document band and the dock, and near-white warm paper is the brightest field. One black ink
 keeps reading consistent across those surfaces. Jade appears only where the
 writer acts; cinnabar is a scarce seal.
 
@@ -60,9 +60,8 @@ them here.
 
 ## Shell shape and atmosphere
 
-- The sidebar, the document band and the dock are one chrome. The dock uses `dock-surface`. It shows one document or its native occupant, never tabs or a view switch.
-- The page rises from chrome with the same top radius as its active document tab. The centered chat header's title chip is the same tab-chip grammar — the chat page continuing up into the band. Region separation stays tonal: no seam border or structural shadow.
-- Quiet floor atmosphere may lift the dock without creating another shell material.
+- The sidebar, the document band and the dock are one chrome. The dock shows one document or its native occupant, never tabs or a view switch.
+- The page rises from chrome with the same top radius as its active document tab. The centered chat header's title chip is the same tab-chip grammar — the chat page continuing up into the band. A hairline (`border-subtle`) separates each side panel from the page; no structural shadow.
 - Dark mode re-points surfaces, inks and accents only (`themes.css`); state fills and borders follow the foreground.
 - Headings, group labels, rows, hints, empty lines and fills come from `role` (`apps/app/src/components/ui/roles.ts`).
 
