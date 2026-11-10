@@ -9,7 +9,7 @@
  * and converge after a single resubscribe.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Replay-gap cursor recovery (kb/decisions/platform/client/chat-sync-boundaries.md)
+ * - Replay-gap cursor recovery (kb/wiki/architecture/chat-sync.md#four-positions-never-interchanged)
  */
 import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";

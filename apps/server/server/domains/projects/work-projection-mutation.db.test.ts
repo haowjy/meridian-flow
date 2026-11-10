@@ -2,7 +2,7 @@
  * PostgreSQL barriers for the production Works-changed notice owner.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - transactional Work revision aggregation and one project wake per commit (kb/decisions/work/management/work-archive-and-delete.md)
+ * - transactional Work revision aggregation and one project wake per commit (kb/wiki/product/work/lifecycle.md#archive-freezes-the-works-own-material)
  */
 
 import { catalogScopeKey } from "@meridian/contracts/protocol";

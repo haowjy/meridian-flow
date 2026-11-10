@@ -1,7 +1,7 @@
 /** Thread socket deadlines preserve delivered cursors through restart recovery.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Socket readiness, replay, and retry ownership (kb/decisions/platform/client/chat-sync-boundaries.md)
+ * - Socket readiness, replay, and retry ownership (kb/wiki/architecture/chat-sync.md#four-positions-never-interchanged)
  */
 import { EventType, type SequencedEvent, type WsServerMessage } from "@meridian/contracts/protocol";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";

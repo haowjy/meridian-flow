@@ -28,7 +28,7 @@ and that URL must be registered in WorkOS as a sign-out redirect. With no WorkOS
 live ([go-live order][signed-out]). Other signed-out paths still go to sign-in and back,
 and `/signup` opens WorkOS sign-up for the landing page's Start writing.
 
-[signed-out]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/public-site/signed-out-reach-the-landing-page.md
+[signed-out]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/public-site.md#signed-out-visitors-land-on-the-page
 
 `DEV_AUTH_BYPASS=1` skips all of that: `meridianAuthkitMiddleware` makes every
 request the dev user before it touches AuthKit or any `WORKOS_*` setting, and

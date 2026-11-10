@@ -59,7 +59,7 @@ server can assign the address, [apps/app](apps/app/AGENTS.md) says how to wait.
 
 **Writer primitives.** A **Project** is a body of work. A **Work** is a task-scoped
 editing context in it: it groups chats, owns shared drafts, and holds `scratch://`
-context. See the [Work decisions][work-decisions].
+context. See [Work][work-decisions].
 
 **Layering.** Apps are thin shells over `packages/` and
 `apps/server/server/domains/`. Domain logic depends on ports, never concrete
@@ -144,6 +144,6 @@ Use full GitHub URLs for the [docs repository][meridian-flow-docs], relative lin
 in this repository.
 
 [meridian-flow-docs]: https://github.com/haowjy/meridian-flow-docs
-[trust-llm]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/trust-the-llm-mission.md
-[trust-user]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/trust-the-user.md
-[work-decisions]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/work/index.md
+[trust-llm]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/trust-the-llm.md
+[trust-user]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/copy-and-feedback.md
+[work-decisions]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/work/index.md
