@@ -414,6 +414,10 @@ msgstr ""
 msgid "{count, plural, one {# question:} other {# questions:}}"
 msgstr "{count, plural, other {# 个问题：}}"
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "{count, plural, one {# text change} other {# text changes}}"
+msgstr ""
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{count, plural, one {Redo leaves # part as it is} other {Redo leaves # parts as they are}}"
 msgstr ""
@@ -605,6 +609,10 @@ msgstr ""
 #: src/features/project/context/use-rename-entry-form.ts
 #~ msgid "{name} will be renamed {as}"
 #~ msgstr ""
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "{name}, {count} to review"
+msgstr ""
 
 #: src/features/draft-review/tree-line.ts
 msgid "{name}: changing position"
@@ -1074,8 +1082,8 @@ msgid "All"
 msgstr ""
 
 #: src/features/project/work/WorkChanges.tsx
-msgid "All changes"
-msgstr ""
+#~ msgid "All changes"
+#~ msgstr ""
 
 #: src/features/project/chat-index/ChatIndexButton.tsx
 msgid "All chats"
@@ -1164,7 +1172,7 @@ msgid "Apply"
 msgstr ""
 
 #: src/features/draft-review/ReviewActions.tsx
-#: src/features/project/work/WorkChanges.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Apply all"
 msgstr ""
 
@@ -1175,6 +1183,10 @@ msgstr ""
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/draft-review/ReviewActions.tsx
 msgid "Apply draft"
+msgstr ""
+
+#: src/features/draft-review/ReviewActions.tsx
+msgid "Apply draft of {subject}"
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
@@ -1470,7 +1482,7 @@ msgstr ""
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/entry-drag/DropChoiceMenu.tsx
-#: src/features/project/work/WorkChanges.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Cancel"
 msgstr ""
@@ -1565,6 +1577,7 @@ msgid "Changed the position of {source}"
 msgstr ""
 
 #: src/features/project/mobile/MobileChangeSheet.tsx
+#: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Changes"
 msgstr ""
 
@@ -1576,12 +1589,24 @@ msgstr ""
 msgid "Changes couldn't load."
 msgstr ""
 
-#: src/features/project/work/WorkChangeFile.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Changes couldn’t load."
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Changes in {name}"
 msgstr ""
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Changes in this chat"
+msgstr ""
+
 #: src/features/project/work/WorkChanges.tsx
-msgid "Changes to review"
+#~ msgid "Changes to review"
+#~ msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Changing position"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -2696,6 +2721,7 @@ msgid "Delete Work"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted"
 msgstr ""
@@ -2792,7 +2818,7 @@ msgstr ""
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/ReviewActions.tsx
 #: src/features/project/ProjectCreationNotice.tsx
-#: src/features/project/work/WorkChanges.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Discard"
 msgstr ""
@@ -2805,7 +2831,7 @@ msgstr ""
 #~ msgid "Discard all changes"
 #~ msgstr ""
 
-#: src/features/project/work/WorkChanges.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Discard all changes?"
 msgstr ""
 
@@ -2818,8 +2844,16 @@ msgstr ""
 msgid "Discard draft"
 msgstr ""
 
+#: src/features/draft-review/ReviewActions.tsx
+msgid "Discard draft of {subject}"
+msgstr ""
+
 #: src/features/chat/DraftDock.tsx
 msgid "Discard this chat's changes?"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Discard this chat’s changes?"
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
@@ -3582,7 +3616,7 @@ msgid "Just now"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/project/work/WorkChanges.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Keep"
 msgstr ""
 
@@ -3707,6 +3741,10 @@ msgstr ""
 #: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Loading agents…"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Loading changes…"
 msgstr ""
 
 #: src/features/project/chat-index/ChatIndexLoading.tsx
@@ -4034,6 +4072,11 @@ msgstr ""
 msgid "Moving {source} to"
 msgstr ""
 
+#. placeholder {0}: line.place
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Moving to {0}"
+msgstr ""
+
 #: src/features/project/context/context-entry-name.ts
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Name is required"
@@ -4068,9 +4111,9 @@ msgstr ""
 msgid "Needs you"
 msgstr ""
 
-#: src/components/app/NewBadge.tsx
-#~ msgid "New"
-#~ msgstr ""
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "New"
+msgstr ""
 
 #: src/features/chat/ChatThreadTitle.tsx
 #: src/features/chat/ChatView.tsx
@@ -4348,6 +4391,14 @@ msgstr ""
 msgid "Nothing to redo yet."
 msgstr ""
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Nothing to review in {name}."
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Nothing to review in this chat."
+msgstr ""
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Nothing to undo yet."
 msgstr ""
@@ -4574,8 +4625,8 @@ msgid "Pending delete"
 msgstr ""
 
 #: src/features/project/work/WorkChanges.tsx
-msgid "Pending drafts couldn’t load"
-msgstr ""
+#~ msgid "Pending drafts couldn’t load"
+#~ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
 msgid "Pending move"
@@ -4878,6 +4929,11 @@ msgstr ""
 msgid "Renamed to {confirmed}"
 msgstr ""
 
+#. placeholder {0}: line.place
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+#~ msgid "Renaming to {0}"
+#~ msgstr ""
+
 #: src/core/editor/diagrams/DiagramBody.tsx
 msgid "Rendering diagram…"
 msgstr ""
@@ -5017,6 +5073,7 @@ msgid "Retry"
 msgstr "重试"
 
 #: src/features/draft-review/DocumentChangeRows.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Retry changes"
 msgstr ""
 
@@ -5025,8 +5082,8 @@ msgid "Retry loading"
 msgstr ""
 
 #: src/features/project/work/WorkChanges.tsx
-msgid "Retry Pending drafts"
-msgstr ""
+#~ msgid "Retry Pending drafts"
+#~ msgstr ""
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Retry save"
@@ -6080,6 +6137,7 @@ msgid "This chat is in the trash, so its drafts are frozen. Restore the chat to 
 msgstr ""
 
 #: src/features/draft-review/TrashedChatNotice.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "This chat is in Trash. Restore it to edit or apply its drafts."
 msgstr ""
 
@@ -6338,7 +6396,7 @@ msgstr ""
 msgid "This project was deleted."
 msgstr ""
 
-#: src/features/project/work/WorkChanges.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "This removes pending changes from every document in this Work."
 msgstr ""
 
@@ -6380,6 +6438,10 @@ msgstr ""
 
 #: src/features/project/work/ArchivedWorkNotice.tsx
 msgid "This Work is archived."
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "This Work is archived. Unarchive it to apply or discard its changes."
 msgstr ""
 
 #: src/client/query/work-update-failure.ts
@@ -6594,8 +6656,7 @@ msgstr ""
 
 #: src/features/chat/document-display-name.ts
 #: src/features/draft-review/tree-line.ts
-#: src/features/project/work/WorkChangeFile.tsx
-#: src/features/project/work/WorkChanges.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Untitled document"
 msgstr ""
 
@@ -6718,6 +6779,11 @@ msgstr ""
 
 #: src/features/import/import-presentation.ts
 msgid "Waiting to organize {name}"
+msgstr ""
+
+#. placeholder {0}: line.name
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Was {0}"
 msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx

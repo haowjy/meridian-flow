@@ -747,11 +747,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/features/project/work/WorkChanges.tsx",
-        "line": "* manuscript (D79), naming each, and again for any a newer delete held back.",
-        "count": 1
-      },
-      {
         "path": "apps/server/server/domains/collab/adapters/drizzle-apply-click.ts",
         "line": "* (`restoreDocument`, D79), then the text merges.",
         "count": 1
