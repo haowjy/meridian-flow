@@ -1,6 +1,6 @@
 /** One displayed-props decision for the mounted Editor, its boundary, and rail hand-offs. */
 import type { ProjectRouteIssue } from "../routing/ProjectRouteBoundary";
-import type { ScreenKey } from "../shell/screens";
+import type { ScreenKey } from "../routing/project-route";
 
 export function resolveEditorPresentation<T extends { editorWorkId: string }>({
   current,

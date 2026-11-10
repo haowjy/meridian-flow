@@ -3,7 +3,7 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createContext, useContext } from "react";
 import { isDraftOnly, type ReviewPin } from "@/client/stores";
 import type { OpenDocumentTab } from "./open-documents";
-import type { ScreenKey } from "./shell/screens";
+import type { ScreenKey } from "./routing/project-route";
 
 /** The route's verdict on an explicit review selector, asked of the server by `{ ownerKey, itemKey }`. */
 export type ReviewAddressAdmission = "pending" | "admitted" | "unavailable" | "failed";

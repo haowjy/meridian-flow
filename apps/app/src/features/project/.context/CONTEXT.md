@@ -17,8 +17,10 @@ A screen change changes `grid-area` or parks a surface; it doesn't portal, repar
 conditionally unmount stateful surfaces.
 
 Slot wrappers paint their material, and document shells stay transparent. Slot placement is
-derived from the mode (`modeOf(screen)`: Editor is Write; Chat and Work are Chat), not persisted.
-Widths are per slot; open/closed is per mode, so each mode restores its own panels. Preferences hydrate before the desktop component
+derived from the kind of item the address names (`PLACEMENTS` in `layout/placement.ts`: a document or a chat in the centre), not persisted. The Write | Chat switch is not a mode:
+it stores `sidebarList` (`client/project-shell/store.ts`, per browser tab) and `SIDEBAR_LISTS` picks the
+sidebar body, so flipping it never navigates. Widths are per slot; the sidebar and the side panel each have one open/closed
+preference for every kind of main. Preferences hydrate before the desktop component
 mounts, and `ProjectView` gates the mount rather than placing a conditional between hooks. One
 merged layout subscription is the only whole-preferences subscription.
 

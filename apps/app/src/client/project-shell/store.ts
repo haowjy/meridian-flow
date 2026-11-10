@@ -1,7 +1,7 @@
 /**
  * The project's stored shell state, per (account, project) in this browser tab and seeded once from
  * the device by `tab-first-remembered-id`, so two browser tabs on one project do not fight over it.
- * Today that is the Work scope; the sidebar list and the held pick join it in later phases.
+ * It holds the Work scope and the sidebar list; the held pick joins it in a later phase.
  */
 import { useSyncExternalStore } from "react";
 import { readRememberedId, writeRememberedId } from "../tab-first-remembered-id";
@@ -10,8 +10,16 @@ import { readRememberedId, writeRememberedId } from "../tab-first-remembered-id"
 export type ProjectScope = string;
 export const NO_SCOPE = "none";
 
+/** Which list the left sidebar shows. Only the Write | Chat switch writes it; no address follows it. */
+export type SidebarList = "files" | "chats";
+export const DEFAULT_SIDEBAR_LIST: SidebarList = "files";
+
 const listeners = new Map<string, Set<() => void>>();
 const recordKey = (accountId: string, projectId: string) => `${accountId}:${projectId}`;
+
+function notify(accountId: string, projectId: string) {
+  for (const listener of listeners.get(recordKey(accountId, projectId)) ?? []) listener();
+}
 
 export function readProjectScope(accountId: string, projectId: string): ProjectScope {
   return readRememberedId("work", accountId, projectId) ?? NO_SCOPE;
@@ -20,7 +28,18 @@ export function readProjectScope(accountId: string, projectId: string): ProjectS
 export function writeProjectScope(accountId: string, projectId: string, scope: ProjectScope): void {
   if (readProjectScope(accountId, projectId) === scope) return;
   writeRememberedId("work", accountId, projectId, scope);
-  for (const listener of listeners.get(recordKey(accountId, projectId)) ?? []) listener();
+  notify(accountId, projectId);
+}
+
+export function readSidebarList(accountId: string, projectId: string): SidebarList {
+  const stored = readRememberedId("sidebar-list", accountId, projectId);
+  return stored === "files" || stored === "chats" ? stored : DEFAULT_SIDEBAR_LIST;
+}
+
+export function writeSidebarList(accountId: string, projectId: string, list: SidebarList): void {
+  if (readSidebarList(accountId, projectId) === list) return;
+  writeRememberedId("sidebar-list", accountId, projectId, list);
+  notify(accountId, projectId);
 }
 
 function subscribe(accountId: string, projectId: string, listener: () => void) {
@@ -39,5 +58,14 @@ export function useProjectScope(accountId: string, projectId: string): ProjectSc
     (listener) => subscribe(accountId, projectId, listener),
     () => readProjectScope(accountId, projectId),
     () => NO_SCOPE,
+  );
+}
+
+/** The stored sidebar list, re-read when this tab's list changes. */
+export function useSidebarList(accountId: string, projectId: string): SidebarList {
+  return useSyncExternalStore(
+    (listener) => subscribe(accountId, projectId, listener),
+    () => readSidebarList(accountId, projectId),
+    () => DEFAULT_SIDEBAR_LIST,
   );
 }

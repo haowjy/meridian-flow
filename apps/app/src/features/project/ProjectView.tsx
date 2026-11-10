@@ -94,10 +94,9 @@ import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { DragHint } from "./context/tree-drop/drag-hint";
 import { WindowDropGuard } from "./context/tree-drop/WindowDropGuard";
-import { useDesktopProjectController } from "./DesktopProjectController";
+import { useDesktopEditorPresentation } from "./DesktopProjectController";
 import { ChatDocumentsBesideProvider } from "./dock/ChatDocumentsBesideProvider";
 import {
-  modeOf,
   NO_COLLAPSED_SLOTS,
   type PanelSlotId,
   type SlotGridSurface,
@@ -134,13 +133,13 @@ import {
   type ProjectRouteIssue,
   type ProjectRouteMask,
 } from "./routing/ProjectRouteBoundary";
+import type { ScreenKey } from "./routing/project-route";
 import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
-import type { ScreenKey } from "./shell/screens";
 import { useContextProjectAuthority } from "./use-context-project-authority";
 import { useReviewAddressSync } from "./use-review-address-sync";
 import { useWorkScopeState, type WorkScope } from "./use-work-scope";
@@ -206,7 +205,6 @@ export type ProjectViewProps = {
   reviewAddressDocumentId?: string;
   /** The route's verdict on an explicit review selector; the owner acts only when admitted. */
   reviewAddressAdmission?: ReviewAddressAdmission;
-  onSelectScreen: (screen: ScreenKey) => void;
   /**
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
@@ -704,7 +702,7 @@ function HydratedReviewControllers({
 
 /** Desktop layout for every destination. */
 export function DesktopProject(props: ReviewScopedProjectProps) {
-  const screenSwitch = useDesktopProjectController({
+  const editorPresentation = useDesktopEditorPresentation({
     projectId: props.projectId,
     current:
       props.editorScope.status === "ready"
@@ -723,7 +721,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     contextLive: props.contextLive,
     issue: props.routeIssues?.editor,
   });
-  const { editorPresentation } = screenSwitch;
   const { active: editorActive, mounted: mountedEditor } = editorPresentation;
   // The Editor's navigation frame names where the writer is going; only the document body
   // keeps the previous destination beneath the mask (see `resolveEditorFrame`).
@@ -756,23 +753,22 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     retainWhileLoading: editorPresentation.retainWhileLoading,
   };
 
-  // useProjectLayout subscribes to the slot widths and this mode's panels and
+  // useProjectLayout subscribes to the slot widths and the two panel prefs and
   // returns the merged SurfaceLayoutMap; no other whole-prefs subscription exists.
   const narrowHold = useNarrowWindowHold();
   const layout = useProjectLayout(props.activeScreen, narrowHold.collapsedSlots);
-  const mode = modeOf(props.activeScreen);
 
   const { setSlotOpen, setSlotWidth } = useProjectSurfacePrefsActions();
 
-  useDockReveal(() => setSlotOpen(mode, "dock", true));
+  useDockReveal(() => setSlotOpen("dock", true));
 
   const isOpen = (surfaceId: SurfaceId) => !layout[surfaceId].collapsed;
-  // The single writer-driven open/close entry, for this mode's panel. Opening a
+  // The single writer-driven open/close entry for a panel. Opening a
   // panel also releases the narrow-window hold on it, so the control can never
   // write a pref that changes nothing on screen.
   const setSlotOpenHere = (slot: PanelSlotId, open: boolean) => {
     if (open) narrowHold.release(slot);
-    setSlotOpen(mode, slot, open);
+    setSlotOpen(slot, open);
   };
   const setCollapsedFor = (surfaceId: SurfaceId, collapsed: boolean) => {
     const { slot } = layout[surfaceId];
@@ -809,7 +805,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           contextLive={props.contextLive}
           activeContextScheme={props.activeContextScheme}
           activeContextPath={props.activeContextPath}
-          onSelectScreen={screenSwitch.selectScreen}
         />
       ),
     },

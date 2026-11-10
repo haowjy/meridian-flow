@@ -19,7 +19,7 @@ import { useProjectDocumentNavigationProjectId } from "../context/open-project-d
 import type { ReviewAddress } from "../presented-document";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
-import type { ScreenKey } from "../shell/screens";
+import type { ScreenKey } from "../routing/project-route";
 
 /** A chat/Scratch pick opens beside the chat: only when the chat is in the middle. */
 export function opensBesideChat(screen: ScreenKey, phone: boolean): boolean {
