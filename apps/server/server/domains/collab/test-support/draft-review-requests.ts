@@ -118,6 +118,7 @@ export function reviewDriver(
       return body(
         await review.discardItem({
           item,
+          ends: "item",
           userId,
           envelope: testEnvelope({ kind: "discard_items", branchId, userId }),
         }),

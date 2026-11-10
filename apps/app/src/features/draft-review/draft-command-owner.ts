@@ -23,7 +23,7 @@ import {
   applyDraftClick,
   branchOf,
   discardBranchDrafts,
-  discardCreatedDraft,
+  discardDraftItem,
   observeDraftClick,
   unapplyDraftClick,
 } from "@/client/api/branches-api";
@@ -830,10 +830,15 @@ export class DraftCommandOwner {
    * Discards a whole item on the server: a created document, which the draft alone holds, or
    * a frozen owner's draft, whose room refuses the writer's text. No Undo. A created document
    * leaves at once; a frozen draft stays in review, discarding, until the server answers, so
-   * a refusal shows on it. Server-only lifecycle commands share this account owner, never
-   * the Apply-all route.
+   * a refusal shows on it. A Discard decided on the frozen reading names the draft the writer
+   * saw, so the server refuses it if the chat came back and the draft moved on. Server-only
+   * lifecycle commands share this account owner, never the Apply-all route.
    */
-  async discardOnServer(ref: DraftRef, item: ThreadDraftListItem): Promise<CommandOutcome> {
+  async discardOnServer(
+    ref: DraftRef,
+    item: ThreadDraftListItem,
+    frozen: boolean,
+  ): Promise<CommandOutcome> {
     if (!this.active) return { kind: "blocked" };
     const settleOwn = item.isNew ? this.lifecycle.markOwnRemoval?.(ref) : undefined;
     this.setState(
@@ -842,10 +847,12 @@ export class DraftCommandOwner {
     );
     if (item.isNew) this.lifecycle.closeCreated?.(ref);
     try {
-      const result = await discardCreatedDraft(ref, {
+      const result = await discardDraftItem(ref, {
         branchId: item.branchId,
         itemKey: item.itemKey,
         commandId: crypto.randomUUID(),
+        ends: "item",
+        ...(frozen ? { draftSeenAt: item.hasDraft ? item.updatedAt : null } : {}),
       });
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") {
@@ -896,10 +903,11 @@ export class DraftCommandOwner {
   private async discardTree(ref: DraftRef, item: ThreadDraftListItem): Promise<CommandOutcome> {
     if (!this.active || !item.tree) return { kind: "blocked" };
     try {
-      const result = await discardCreatedDraft(ref, {
+      const result = await discardDraftItem(ref, {
         branchId: item.branchId,
         itemKey: item.itemKey,
         commandId: crypto.randomUUID(),
+        ends: "tree",
       });
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") return { kind: "done" };

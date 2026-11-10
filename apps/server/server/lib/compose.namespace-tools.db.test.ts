@@ -645,13 +645,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               ...extra,
             },
           } as never),
-        discard: async (documentId: string) => {
+        discard: async (documentId: string, ends: Record<string, unknown> = { ends: "tree" }) => {
           const row = await item(documentId);
           return handleDiscardWorkDraftRequest(routes, {
             ...scope,
             branchId: row?.branchId,
             documentId: documentId as never,
-            request: { branchId: row?.branchId, itemKey: row?.itemKey, commandId: randomUUID() },
+            request: {
+              branchId: row?.branchId,
+              itemKey: row?.itemKey,
+              commandId: randomUUID(),
+              ...ends,
+            },
           } as never);
         },
       };
@@ -806,6 +811,48 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(part1).toEqual([]);
     });
 
+    // A trashed chat's Discard draft ends the whole item on the server, where the writer can't
+    // revert the text in the room: a move with text must not leave the text draft behind.
+    it("a whole-item Discard of a moved, edited document closes its text draft too", async () => {
+      const script = await start();
+      const drafting = runtimes.script(script.runtime, OTHER);
+      const writer = review(script);
+      await drafting.reply(async (edit) => {
+        await edit("write", { command: "replace", path: "ch1", find: "one", content: "ONE" });
+        await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1-moved" });
+      });
+      const seen = await writer.item(CH1);
+      expect(seen).toMatchObject({ hasDraft: true, tree: { movedFrom: { path: "/ch1" } } });
+      const textDrafts = () =>
+        db
+          .select({ status: schema.documentDrafts.status })
+          .from(schema.documentDrafts)
+          .where(
+            and(
+              eq(schema.documentDrafts.documentId, CH1),
+              eq(schema.documentDrafts.kind, "work_draft"),
+            ),
+          );
+
+      // Decided on a draft that moved on since: refused, and nothing ends.
+      expect(
+        await writer.discard(CH1, { ends: "item", draftSeenAt: "2000-01-01T00:00:00.000Z" }),
+      ).toMatchObject({ body: { status: "draft_changed" } });
+      expect(await writer.item(CH1)).toMatchObject({
+        hasDraft: true,
+        tree: { revision: seen?.tree?.revision },
+      });
+
+      expect(
+        await writer.discard(CH1, { ends: "item", draftSeenAt: seen?.updatedAt }),
+      ).toMatchObject({
+        body: { status: "discarded", itemClosed: true, itemDisposition: "discarded" },
+      });
+      expect(await writer.item(CH1)).toBeUndefined();
+      expect(await textDrafts()).toEqual([{ status: "closed" }]);
+      expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
+    });
+
     it("Apply restores a moved document at the Work's place; Discard drops a move and keeps its text", async () => {
       const script = await start();
       const drafting = runtimes.script(script.runtime, OTHER);
@@ -841,7 +888,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // Discard of a move keeps the text change; the model's undo then says discarded.
       await draft({ command: "replace", path: "part1/ch1-moved", find: "one", content: "ONE" });
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-final" });
-      expect(await writer.discard(CH1)).toMatchObject({ body: { status: "discarded" } });
+      expect(await writer.discard(CH1)).toMatchObject({
+        body: { status: "discarded", itemClosed: false },
+      });
       expect(await writer.item(CH1)).toMatchObject({ hasDraft: true, tree: null });
       expect(await drafting.text("part1/ch1-moved")).toContain("Chapter ONE.");
       const { call } = await drafting.begin();

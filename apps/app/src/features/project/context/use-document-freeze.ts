@@ -18,13 +18,13 @@ export type DocumentFreeze = { kind: "work"; work: Work } | { kind: "chat"; owne
  */
 export function useDocumentFreeze(
   projectId: string,
-  tab: ContextTab,
+  tab: ContextTab | null,
   reviewOwner: string | null,
 ): DocumentFreeze | null {
   const { works } = useWorks(projectId);
   const chatFrozen = useOwnerDraftsFrozen(projectId, reviewOwner ?? "");
   const workId =
-    tab.kind !== "new" && tab.workId && isWorkScopedScheme(tab.scheme)
+    tab && tab.kind !== "new" && tab.workId && isWorkScopedScheme(tab.scheme)
       ? tab.workId
       : reviewOwner && workIdOfDraftOwnerKey(reviewOwner);
   const work = workId ? works?.find((candidate) => candidate.id === workId) : undefined;

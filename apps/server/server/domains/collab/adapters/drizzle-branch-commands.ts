@@ -58,7 +58,6 @@ export async function lookupCommand(
 export async function claimCommandWithinTx(
   db: DrizzleDb,
   envelope: BranchCommandEnvelope,
-  settled?: StoredBranchCommandResult,
 ): Promise<boolean> {
   const [claimed] = await db
     .insert(branchCommands)
@@ -68,11 +67,20 @@ export async function claimCommandWithinTx(
       accountId: envelope.accountId,
       kind: envelope.kind,
       requestDigest: envelope.digest,
-      ...(settled
-        ? { state: "done" as const, result: settled, completedAt: sql`clock_timestamp()` }
-        : {}),
     })
     .onConflictDoNothing()
     .returning({ id: branchCommands.id });
   return Boolean(claimed);
+}
+
+/** Settles a claim this transaction holds pending with its result. */
+export async function settleCommandWithinTx(
+  db: DrizzleDb,
+  commandId: string,
+  result: StoredBranchCommandResult,
+): Promise<void> {
+  await db
+    .update(branchCommands)
+    .set({ state: "done", result, completedAt: sql`clock_timestamp()` })
+    .where(eq(branchCommands.id, commandId));
 }

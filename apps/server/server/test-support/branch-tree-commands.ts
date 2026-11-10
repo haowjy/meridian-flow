@@ -554,7 +554,7 @@ export function branchTreeCommands(
   async function discard(
     work: ScenarioWork,
     items: "all" | readonly DocumentId[],
-    options: { branchId?: string } = {},
+    options: { branchId?: string; ends?: "tree" | "item" } = {},
   ) {
     if (items === "all") {
       const branchId =
@@ -579,7 +579,7 @@ export function branchTreeCommands(
             branchId: branchId as BranchId,
             documentId,
             userId,
-            request: { branchId, itemKey, commandId: randomUUID() },
+            request: { branchId, itemKey, commandId: randomUUID(), ends: options.ends ?? "item" },
           })
         ).body,
       );
