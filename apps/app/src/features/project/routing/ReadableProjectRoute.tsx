@@ -477,34 +477,6 @@ function ReadableProjectDestination({
       boundDocumentId,
     ],
   );
-  // The server not having a path rejects a route candidate only when this device holds no
-  // document there either: a document the server never accepted is listed here and opens.
-  useLayoutEffect(() => {
-    if (
-      documentLookup.data?.kind !== "unavailable" ||
-      localDocumentAddress ||
-      destination.kind !== "document" ||
-      !workId ||
-      selection.status !== "candidate" ||
-      !selectionAtRoute(selection, {
-        scheme: destination.scheme,
-        path: destination.path,
-        workId,
-        rootThreadId: address.lineage,
-      })
-    )
-      return;
-    contextRemoval.rejectRouteCandidate(projectId, selection.revision);
-  }, [
-    address.lineage,
-    contextRemoval,
-    destination,
-    documentLookup.data,
-    localDocumentAddress,
-    projectId,
-    selection,
-    workId,
-  ]);
   // Discarding a draft's move leaves the review address cached at the destination it named;
   // the server answers the live path once the metadata shows the move is gone. Review answers
   // are dropped with their key (`documentAddressQueryOptions`), so only the visible one is stale.
@@ -693,6 +665,52 @@ function ReadableProjectDestination({
   const removedDocumentId =
     documentIssue === "unavailable" && address.itemKey ? (closingDocumentId ?? null) : null;
   const removedDestination = useRemovalRecord(projectId, removedDocumentId);
+  const reviewGone =
+    documentLookup.data?.kind === "unavailable" &&
+    !!address.itemKey &&
+    (closingDocumentId == null || removedDestination?.kind === "available");
+  // The server not having a path rejects a route candidate only when this device holds no
+  // document there either: a document the server never accepted is listed here and opens.
+  // An item that names no draft (or a draft that has ended) is not the document missing: the
+  // address names the document, so only the review goes (below) and the selection stays.
+  useLayoutEffect(() => {
+    if (
+      documentLookup.data?.kind !== "unavailable" ||
+      reviewGone ||
+      localDocumentAddress ||
+      destination.kind !== "document" ||
+      !workId ||
+      selection.status !== "candidate" ||
+      !selectionAtRoute(selection, {
+        scheme: destination.scheme,
+        path: destination.path,
+        workId,
+        rootThreadId: address.lineage,
+      })
+    )
+      return;
+    contextRemoval.rejectRouteCandidate(projectId, selection.revision);
+  }, [
+    address.lineage,
+    contextRemoval,
+    destination,
+    documentLookup.data,
+    reviewGone,
+    localDocumentAddress,
+    projectId,
+    selection,
+    workId,
+  ]);
+  useLayoutEffect(() => {
+    if (!reviewGone || !navigation) return;
+    const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
+    if (ticket)
+      void navigation.replaceIfCurrent(ticket, {
+        ...address,
+        itemKey: undefined,
+        changeId: undefined,
+      });
+  }, [reviewGone, navigation, location, address]);
   const removedTitle = documentDestination?.path.split("/").filter(Boolean).at(-1) ?? null;
   const switchFailure = useDocumentSwitchFailures();
   const failedDestination = destinationFailure(
