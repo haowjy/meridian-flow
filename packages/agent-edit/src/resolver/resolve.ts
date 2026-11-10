@@ -43,7 +43,7 @@ export interface ResolveWriteParams {
   /** Already-parsed content, with the original source retained in `content` for semantic IR. */
   parsedContent?: ParsedContent;
   /**
-   * Blocks copied from another document (D23). They take the place of
+   * Blocks copied from another document. They take the place of
    * `content` and are inserted as nodes, never through markup.
    */
   blocks?: readonly Block[];

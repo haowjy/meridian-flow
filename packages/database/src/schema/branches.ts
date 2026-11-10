@@ -44,7 +44,7 @@ export const branches = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     status: text("status").$type<BranchStatus>().notNull().default("active"),
-    /** Provenance, not ownership (decision 3). */
+    /** Provenance, not ownership. */
     originThreadId: uuid("origin_thread_id")
       .$type<ThreadId>()
       .references(() => threads.id, { onDelete: "set null" }),
@@ -67,8 +67,8 @@ export const branches = pgTable(
     closedAt: timestamp("closed_at", { withTimezone: true }),
   },
   (table) => [
-    // "One active branch per Work" is an application rule under the Work row lock
-    // (decision 3), so this is not unique.
+    // "One active branch per Work" is an application rule under the Work row lock,
+    // so this is not unique.
     index("branches_active_origin_work")
       .on(table.originWorkId, table.createdAt)
       .where(sql`${table.status} = 'active'`),

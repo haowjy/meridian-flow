@@ -1,5 +1,5 @@
 // The bounded receipt of a copy: never the copied text, so a copied chapter
-// doesn't come back into the model's context (D23, D24).
+// doesn't come back into the model's context.
 import type { BlockSnapshot } from "../apply/echo.js";
 import { truncateSerializedBlock } from "../apply/echo.js";
 import { splitHashline, toHashline } from "../model/hashline.js";
