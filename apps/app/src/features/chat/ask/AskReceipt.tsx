@@ -49,7 +49,7 @@ function ReceiptLine({ receipt, children }: { receipt: AskReceiptFacts; children
       data-ask-receipt=""
       data-ask-pending={receipt.pending ? "" : undefined}
     >
-      <Icon className="mt-1 size-3.5 shrink-0 text-ink-subtle" aria-hidden />
+      <Icon className="mt-1 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
       {children}
     </div>
   );
@@ -68,7 +68,7 @@ function Sending({ pending }: { pending: boolean }) {
       <span className="sr-only">{t`Sending`}</span>
       <span
         aria-hidden
-        className="ml-[var(--chat-space-inline)] inline-block size-1.5 -translate-y-px rounded-full bg-status-live-foreground align-middle motion-safe:animate-pulse"
+        className="ml-[var(--chat-space-inline)] inline-block size-1.5 -translate-y-px rounded-full bg-muted-foreground align-middle motion-safe:animate-pulse"
       />
     </>
   );
@@ -96,7 +96,7 @@ function QuestionsReceipt({
           aria-expanded={open}
           aria-controls={panelId}
           onClick={() => setOpen((value) => !value)}
-          className="focus-ring -mx-1 flex max-w-full items-start gap-[var(--chat-space-inline)] rounded-md px-1 text-left transition-colors hover:bg-muted"
+          className="focus-ring -mx-1 flex max-w-full items-start gap-[var(--chat-space-inline)] rounded-md px-1 text-left transition-colors hover:bg-ink-fill"
         >
           <span className="min-w-0">
             <span className="text-muted-foreground">
@@ -109,7 +109,7 @@ function QuestionsReceipt({
           </span>
           <ChevronRight
             className={cn(
-              "mt-1 size-3 shrink-0 text-ink-subtle transition-transform duration-200",
+              "mt-1 size-3 shrink-0 text-muted-foreground transition-transform",
               open && "rotate-90",
             )}
             aria-hidden

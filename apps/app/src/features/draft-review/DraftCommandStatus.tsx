@@ -5,6 +5,7 @@
 
 import { Trans } from "@lingui/react/macro";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import { useDraftCommandState } from "./draft-changes";
@@ -28,7 +29,7 @@ export function DraftCommandStatus({
       )}
       <button
         type="button"
-        className="text-button [@media(pointer:coarse)]:min-h-11"
+        className="text-button coarse:min-h-11"
         onClick={() => owner.retry(itemKey)}
       >
         <Trans>Retry</Trans>
@@ -39,9 +40,14 @@ export function DraftCommandStatus({
   ) : state.applying ? (
     <Trans>Applying</Trans>
   ) : state.failure ? (
-    <span className={state.failure.serverCode === "needs_restore" ? undefined : "text-destructive"}>
+    state.failure.serverCode === "needs_restore" ? (
       <ReviewMessageText failure={state.failure} />
-    </span>
+    ) : (
+      <InlineErrorRow
+        message={<ReviewMessageText failure={state.failure} />}
+        className="min-w-0 flex-1 p-0"
+      />
+    )
   ) : isDeletedFromManuscript(item) ? (
     <Trans>Deleted from the manuscript</Trans>
   ) : null;
@@ -49,7 +55,7 @@ export function DraftCommandStatus({
   return (
     <div
       role="status"
-      className="flex min-h-7 [@media(pointer:coarse)]:min-h-11 items-center gap-2 px-2 text-caption text-ink-muted"
+      className="flex min-h-7 coarse:min-h-11 items-center gap-2 px-2 text-caption text-muted-foreground"
     >
       {content}
     </div>

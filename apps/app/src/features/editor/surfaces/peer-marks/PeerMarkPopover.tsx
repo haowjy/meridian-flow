@@ -84,9 +84,9 @@ export function PeerMarkPopover({
             style={{ background: collaborationColorFor(colorIdentity) }}
             aria-hidden
           />
-          <p className="min-w-0 flex-1 truncate font-medium text-prose-foreground">{title}</p>
+          <p className="min-w-0 flex-1 truncate font-medium text-foreground">{title}</p>
           <time
-            className="shrink-0 text-ink-muted"
+            className="shrink-0 text-muted-foreground"
             role="timer"
             aria-label={t`Changed ${relativeTime}`}
             dateTime={new Date(marker.receivedAt).toISOString()}

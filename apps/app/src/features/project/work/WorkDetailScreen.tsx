@@ -11,6 +11,7 @@ import { isWorkArchived } from "@meridian/contracts/works";
 import { useRef, useState } from "react";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { useWorkMutations } from "@/client/query/work-command-store";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -142,33 +143,19 @@ function DirtyDecision({ controller }: { controller: WorkMetadataController }) {
         <p className="text-sm text-muted-foreground">
           <Trans>Choose what to do before continuing.</Trans>
         </p>
-        {controller.error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {controller.error}
-          </p>
-        ) : null}
+        {controller.error ? <InlineErrorRow message={controller.error} className="p-0" /> : null}
         <DialogFooter>
-          <Button
-            variant="ghost"
-            disabled={controller.saving}
-            onClick={controller.keepEditing}
-            className="[@media(pointer:coarse)]:min-h-11"
-          >
+          <Button variant="ghost" disabled={controller.saving} onClick={controller.keepEditing}>
             <Trans>Keep editing</Trans>
           </Button>
           <Button
             variant="outline"
             disabled={controller.saving}
             onClick={controller.discardAndResume}
-            className="[@media(pointer:coarse)]:min-h-11"
           >
             <Trans>Discard changes</Trans>
           </Button>
-          <Button
-            disabled={controller.saving}
-            onClick={() => void controller.saveAndResume()}
-            className="[@media(pointer:coarse)]:min-h-11"
-          >
+          <Button disabled={controller.saving} onClick={() => void controller.saveAndResume()}>
             {controller.saving ? <Trans>Saving…</Trans> : <Trans>Save changes</Trans>}
           </Button>
         </DialogFooter>

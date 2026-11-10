@@ -33,7 +33,7 @@ function UnknownComponentFallback({ block, kind }: { block: Block; kind: string 
   const kindLabel = kind ?? t`missing kind`;
   return (
     <div
-      className="chat-card [--chat-card-radius:var(--radius-lg)] [--chat-card-border:var(--color-border-subtle)] bg-muted text-xs text-muted-foreground"
+      className="chat-card [--chat-card-radius:var(--radius-lg)] [--chat-card-border:var(--color-border-subtle)] bg-ink-fill text-xs text-muted-foreground"
       data-block-id={block.id}
       data-block-type={block.blockType}
       data-block-seq={block.sequence}

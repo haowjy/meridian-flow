@@ -54,7 +54,7 @@ export function InlineValidationOverlay({
         zIndex: 50,
       }}
     >
-      <ValidationNote severity={severity} className="shadow-md" />
+      <ValidationNote severity={severity} className="shadow-float" />
     </div>,
     document.body,
   );

@@ -51,7 +51,7 @@ export function ArchivedWorkNotice({
             size="xs"
             variant="quiet"
             onClick={() => void toggleArchive(work)}
-            className="shrink-0 [@media(pointer:coarse)]:min-h-11"
+            className="shrink-0"
           >
             <Trans>Unarchive</Trans>
           </Button>
@@ -60,12 +60,7 @@ export function ArchivedWorkNotice({
         <DocumentNotice
           icon={<Archive className="size-4" aria-hidden />}
           action={
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void toggleArchive(work)}
-              className="[@media(pointer:coarse)]:min-h-11"
-            >
+            <Button size="sm" variant="outline" onClick={() => void toggleArchive(work)}>
               <Trans>Unarchive</Trans>
             </Button>
           }

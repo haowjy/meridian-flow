@@ -1,10 +1,11 @@
 /** Shared header for project context rail panes. */
+
 import { ChevronRight, type LucideIcon } from "lucide-react";
 import type React from "react";
-
 import { IconButton } from "@/components/ui/icon-button";
+import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
-import { sidebarIcon, sidebarRole } from "./context-row-geometry";
+import { sidebarIcon } from "./context-row-geometry";
 
 export function RailPaneHeader({
   label,
@@ -36,7 +37,7 @@ export function RailPaneHeader({
     <div
       {...dropProps}
       data-rail-pane-header
-      className={cn("relative mx-2 flex h-7 items-center rounded-md", sidebarRole.hover)}
+      className={cn("relative mx-2 flex h-7 items-center rounded-md", role.hover)}
     >
       <button
         type="button"
@@ -51,20 +52,16 @@ export function RailPaneHeader({
         }}
         className="focus-ring flex h-full min-w-0 flex-1 items-center rounded-md pr-1 text-left"
       >
-        <span
-          className={cn("flex w-4 shrink-0 items-center justify-center", sidebarRole.secondary)}
-        >
+        <span className={cn("flex w-4 shrink-0 items-center justify-center", role.secondary)}>
           <ChevronRight
             aria-hidden
             className={cn("size-3 transition-transform", expanded && "rotate-90")}
           />
         </span>
-        <span
-          className={cn("flex h-7 w-4 shrink-0 items-center justify-center", sidebarRole.secondary)}
-        >
+        <span className={cn("flex h-7 w-4 shrink-0 items-center justify-center", role.secondary)}>
           <Icon aria-hidden className={sidebarIcon.row} />
         </span>
-        <span className={cn("ml-1 min-w-0 flex-1 truncate", sidebarRole.heading)}>{label}</span>
+        <span className={cn("ml-1 min-w-0 flex-1 truncate", role.groupLabel)}>{label}</span>
       </button>
       <PaneHeaderActions actions={actions} />
     </div>
@@ -100,14 +97,13 @@ export function PaneHeaderActionButton({
   return (
     <IconButton
       size="xs"
-      title={label}
-      aria-label={label}
+      label={label}
       {...props}
       onClick={(event) => {
         event.stopPropagation();
         props.onClick?.(event);
       }}
-      className="relative size-5 rounded"
+      className="relative size-5 rounded-sm"
     >
       <Icon aria-hidden className={cn(sidebarIcon.action, iconClassName)} />
       {children}

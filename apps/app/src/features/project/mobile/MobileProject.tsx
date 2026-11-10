@@ -4,7 +4,7 @@ import { t } from "@lingui/core/macro";
 import { MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ContextTab, useContextTabs } from "@/client/stores";
-import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { DraftReviewBoundary } from "@/features/draft-review/DraftReviewProvider";
@@ -123,9 +123,9 @@ export function MobileProject(props: MobileProjectProps) {
         }
         chatAction={
           props.activeScreen !== "chat" ? (
-            <PhoneIconButton aria-label={t`Open chat`} onClick={() => openChatSheet()}>
+            <IconButton size="sm" label={t`Open chat`} onClick={() => openChatSheet()}>
               <MessageSquare className="size-5" aria-hidden />
-            </PhoneIconButton>
+            </IconButton>
           ) : undefined
         }
         actions={

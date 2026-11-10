@@ -46,7 +46,7 @@ export function EditorSurfaceFrame({
       {toolbar ? (
         // Equal gutters keep the toolbar on the prose column; the state sits at the pane's right
         // edge, in the right gutter, and takes room from the column only when the pane is narrow.
-        <div className="flex h-9 shrink-0 items-center [@media(pointer:coarse)]:h-11">
+        <div className="flex h-8 shrink-0 items-center coarse:h-11">
           <div className="min-w-0 flex-1 basis-0" />
           {/* The toolbar's geometry is fixed (ten controls, one order), so a
               pane too narrow for it scrolls the row rather than dropping controls. */}

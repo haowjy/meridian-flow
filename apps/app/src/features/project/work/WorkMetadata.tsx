@@ -11,6 +11,7 @@ import { isWorkArchived, type UpdateWorkRequest, type Work } from "@meridian/con
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useFailure } from "@/client/failures/useFailure";
 import { workUpdateFailure } from "@/client/query/work-update-failure";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { InlineEditTextarea } from "@/components/ui/inline-edit";
 import { cn } from "@/lib/utils";
@@ -163,7 +164,7 @@ export type WorkMetadataController = ReturnType<typeof useWorkMetadataController
 const bodyText = "max-w-3xl whitespace-pre-wrap break-words";
 // Quiet text actions that sit under the goal and read as part of it.
 const goalAction =
-  "focus-ring min-h-6 rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11";
+  "focus-ring min-h-6 rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground coarse:min-h-11";
 
 /** Blank-line runs become paragraph breaks, so a clamp never ends on a blank line. */
 function goalParagraphs(goal: string): string[] {
@@ -237,7 +238,7 @@ export function WorkGoal({
           onClick={c.activate}
           className={cn(
             bodyText,
-            "inline-edit-trigger focus-ring block text-left text-muted-foreground [@media(pointer:coarse)]:min-h-11",
+            "inline-edit-trigger focus-ring block text-left text-muted-foreground coarse:min-h-11",
           )}
         >
           {t`Add a goal for this Work`}
@@ -320,11 +321,7 @@ function GoalEditor({ controller: c }: { controller: WorkMetadataController }) {
         }}
         className={bodyText}
       />
-      {c.error ? (
-        <p id={errorId} role="alert" className="mt-2 text-sm text-destructive">
-          {c.error}
-        </p>
-      ) : null}
+      {c.error ? <InlineErrorRow id={errorId} message={c.error} className="mt-2 p-0" /> : null}
       <div className="mt-3 flex items-center gap-2">
         <Button size="sm" variant="ghost" disabled={c.saving} onClick={c.cancel}>
           <Trans>Cancel</Trans>

@@ -154,7 +154,7 @@ function MarkButton({
       aria-label={label}
       aria-pressed={state.active || undefined}
       blockedReason={formattingBlockedMessage("mark", state.blockedBy)}
-      className={cn("size-8 justify-center rounded-sm p-0", state.active && "bg-sidebar-accent")}
+      className={cn("size-8 justify-center rounded-sm p-0", state.active && "bg-ink-fill-strong")}
       onSelect={() => toggleTextMark(editor, FORMATTING_MARKS[id])}
     >
       {/* An explicit text colour every time: the menu's own rule mutes any

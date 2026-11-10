@@ -7,6 +7,7 @@ import { useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
+import { Chip } from "@/components/ui/chip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,8 +18,9 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
-import { sidebarIcon, sidebarRole } from "../../context/context-row-geometry";
+import { sidebarIcon } from "../../context/context-row-geometry";
 
 /**
  * The Work scope under the project name: which Work's drafts the documents show
@@ -55,38 +57,29 @@ export function WorkScopePicker({
           type="button"
           className={cn(
             "group focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md px-2 text-left",
-            sidebarRole.row,
-            sidebarRole.selected,
+            role.row,
+            role.selected,
           )}
         >
           {scoped || noWorkScoped ? (
             <WorkIdentity
               name={scoped ? scoped.name : t`None`}
               unavailableLabel={t`None`}
-              className={cn("flex-1", sidebarRole.row)}
+              className={cn("flex-1", role.row)}
             />
           ) : (
-            <span className={cn("min-w-0 flex-1 truncate", sidebarRole.secondary)}>
+            <span className={cn("min-w-0 flex-1 truncate", role.secondary)}>
               <Trans>Loading Works…</Trans>
             </span>
           )}
           {pending > 0 ? (
-            <span
-              className={cn(
-                "rounded-full bg-primary/12 px-1.5 font-medium text-primary tabular-nums",
-                sidebarRole.rowSecondary,
-              )}
-              title={t`${pending} documents to review`}
-            >
-              {pending}
-            </span>
+            <Chip kind="count" tone="jade">
+              <span aria-hidden>{pending}</span>
+              <span className="sr-only">{t`${pending} documents to review`}</span>
+            </Chip>
           ) : null}
           <ChevronsUpDown
-            className={cn(
-              sidebarIcon.row,
-              "shrink-0 group-hover:text-foreground",
-              sidebarRole.secondary,
-            )}
+            className={cn(sidebarIcon.row, "shrink-0 group-hover:text-foreground", role.secondary)}
             aria-hidden
           />
         </button>
@@ -165,7 +158,7 @@ function WorkState({ work, needsYou }: { work: Work; needsYou: number }) {
   const toReview = work.pendingDocumentCount;
   if (toReview === 0 && needsYou === 0) return null;
   return (
-    <span className="flex shrink-0 gap-2 text-xs text-primary tabular-nums">
+    <span className="flex shrink-0 gap-2 text-xs text-jade-text tabular-nums">
       {toReview > 0 ? <Trans>{toReview} to review</Trans> : null}
       {needsYou > 0 ? (
         <span>

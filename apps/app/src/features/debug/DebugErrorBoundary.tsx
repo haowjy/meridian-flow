@@ -31,7 +31,7 @@ export class DebugErrorBoundary extends Component<Props, State> {
   render(): ReactNode {
     const { title, showTitle, children } = this.props;
     const fallback = (
-      <p className="text-meta text-muted-foreground">not available — {this.state.error}</p>
+      <p className="text-xs text-muted-foreground">not available — {this.state.error}</p>
     );
     if (this.state.error) {
       if (showTitle) {

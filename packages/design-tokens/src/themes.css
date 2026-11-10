@@ -1,87 +1,45 @@
 /**
- * UI themes — alternate palettes for the Ink & Jade token surface.
+ * UI themes: a `[data-ui-theme="<name>"]` block re-points the `--color-*` names that
+ * `ink-jade.css` defines. The default light palette is the absence of the attribute.
+ * The app sets the attribute on the root pre-paint (`apps/app/src/lib/ui-theme.ts`);
+ * apps/www sets it on the night regions of the landing page.
  *
- * Contract: `ink-jade.css` defines the token vocabulary (the `--color-*`
- * names); a theme is a `[data-ui-theme="<name>"]` block that re-points those
- * same names. The app sets the attribute on the root; apps/www sets it on the
- * night regions of the landing page, whose paper surfaces keep the light root. The default Ink & Jade light palette is the ABSENCE of
- * the attribute — never define an `[data-ui-theme="ink-jade"]` block, so the
- * default path stays the plain `@theme` values.
- *
- * The attribute is set pre-paint by the app's boot script (see
- * `apps/app/src/lib/ui-theme.ts`) and switched at runtime from Preferences.
- *
- * ── Dark — the Ink & Jade night palette. Re-derived from the light ladder
- * with the same ordering: the page stays the BRIGHTEST surface, the rail the
- * deepest, and the whole shell keeps the one warm grey-gold family (hue 84)
- * so night mode reads as the same room with the lamps low — never a neutral
- * gray app. Inks flip to warm cream (hue ~90); actives LIGHTEN instead of
- * darken; jade brightens to keep its voice on dark ground. The dock atmosphere
- * thins to moonlight (~×0.25 alpha) per the light-file's note.
+ * Dark keeps the light ladder's order (chrome < page < raised) in one warm family, with
+ * cream ink. A theme re-points surfaces, inks and accents only: state fills and borders
+ * are overlays of `foreground`, so they lighten here on their own.
  */
 :root[data-ui-theme="dark"],
 [data-ui-theme="dark"] {
-  /* Surface ladder (dark): shelf .215 < dock-surface .235 < chrome .25 <
-     page .285 — page brightest, one warm family. */
   --color-background: oklch(0.285 0.012 84);
-  --ink-jade-lift: oklch(0.325 0.012 84);
-  --ink-jade-recess: oklch(0.245 0.012 84);
+  --color-card: oklch(0.325 0.012 84);
+  --color-chrome: oklch(0.245 0.012 84);
+  --color-review: oklch(0.235 0.016 150);
+
   --color-foreground: oklch(0.9 0.012 90);
-  --color-muted-foreground: oklch(0.7 0.014 88);
-  --color-prose-foreground: oklch(0.86 0.012 88);
-  --color-ink-muted: oklch(0.76 0.012 88);
-  --color-ink-subtle: oklch(0.64 0.012 88);
-  --color-diff-added: oklch(0.74 0.09 160);
-  --color-diff-removed: oklch(0.72 0.12 27);
+  --color-muted-foreground: oklch(0.78 0.012 88);
+  /* Derived tokens resolve where they are declared: a nested night region must restate
+     them, or it inherits the light root's values. */
+  --color-ink-fill: color-mix(in oklab, var(--color-foreground) 5%, transparent);
+  --color-ink-fill-strong: color-mix(in oklab, var(--color-foreground) 10%, transparent);
+  --color-border: color-mix(in oklab, var(--color-foreground) 15%, transparent);
+  --color-border-subtle: color-mix(in oklab, var(--color-foreground) 9%, transparent);
+  --color-focus: oklch(0.75 0.08 176);
 
-  --color-border: oklch(0.38 0.014 84);
-  /* Aliases resolve where they're declared: a nested night region must re-point them, or it
-     inherits the light root's values. */
-  --color-composer-surface: var(--color-chat-interactive, var(--color-background));
-  --color-composer-border: var(--color-border);
-  --color-border-subtle: oklch(0.335 0.012 84);
-  --color-border-focus: oklch(0.55 0.07 175);
-  --color-dropdown-focus-indicator: oklch(0.75 0.08 176);
-  --color-dropdown-hover: oklch(0.365 0.013 84);
-
-  --color-sidebar: oklch(0.25 0.012 84);
-  --color-sidebar-accent: oklch(0.31 0.014 84);
-  --color-dock-surface: oklch(0.235 0.012 84);
-
-  --color-shelf: oklch(0.215 0.012 84);
-  --color-shelf-active: oklch(0.29 0.016 84);
-  --color-shelf-hover: color-mix(in oklab, var(--color-foreground) 6%, var(--color-shelf));
-  --color-shelf-ink-subtle: oklch(0.78 0.02 84);
-  --color-shelf-ink-muted: oklch(0.74 0.012 84);
-  --color-shelf-destructive: oklch(0.68 0.14 17);
-
-  /* Jade brightens for dark ground; primary text stays dark ink so the
-     filled pill reads as lit jade, not a hole. */
-  --color-primary: oklch(0.68 0.09 175);
+  /* Jade brightens on dark ground; text on a jade fill stays dark ink. */
   --color-brand-jade: oklch(0.68 0.09 175);
+  --color-primary: var(--color-brand-jade);
   --color-primary-foreground: oklch(0.2 0.02 175);
-  --color-jade-text: oklch(0.75 0.08 176);
-  --color-mark-to: oklch(0.78 0.08 176);
-  --color-chip-primary-bg: oklch(0.34 0.05 175);
-  --color-status-done-bg: oklch(0.34 0.05 175);
-  --color-status-done-foreground: oklch(0.82 0.08 176);
+  --color-jade-text: oklch(0.8 0.08 176);
 
-  --color-cinnabar: oklch(0.64 0.16 29);
-  --color-destructive: oklch(0.66 0.16 17);
+  --color-destructive: oklch(0.72 0.16 17);
   --color-destructive-tint: oklch(0.3 0.06 22);
   --color-destructive-border: oklch(0.44 0.1 20);
+  --color-warning-ink: oklch(0.86 0.09 70);
+  --color-warning-tint: oklch(0.3 0.045 80);
+  --color-gold: oklch(0.729 0.115 84);
+  --color-cinnabar: oklch(0.64 0.16 29);
 
-  --color-warning-bg: oklch(0.3 0.045 80);
-  --color-warning-border: oklch(0.44 0.07 80);
-  --color-warning-foreground: oklch(0.86 0.09 70);
-
-  /* Code tablet: recessed below the dark page, light glyphs. */
-  --color-code-surface: oklch(0.24 0.012 85);
-  --color-code-foreground: oklch(0.87 0.01 90);
-  --color-code-border: oklch(0.35 0.014 85);
-
-  /* Syntax — the light palette's dark inks are illegible here; same hue
-     story, lifted to L ~.7 for >=4.5:1 on the code tablet. */
+  /* The light syntax inks are illegible here: same hues, lifted for >= 4.5:1. */
   --color-syntax-keyword: oklch(0.72 0.1 175);
   --color-syntax-string: oklch(0.76 0.1 55);
   --color-syntax-comment: oklch(0.58 0.012 100);
@@ -91,12 +49,4 @@
   --color-syntax-builtin: oklch(0.72 0.09 195);
   --color-syntax-punctuation: oklch(0.68 0.008 100);
 
-  /* Atmosphere thins to moonlight: airlight at ~×0.25 alpha. */
-  --background-image-dock-airlight: linear-gradient(
-    to top,
-    oklch(0.99 0.003 84 / 0.04) 0%,
-    oklch(0.99 0.003 84 / 0.02) 26%,
-    oklch(0.99 0.002 84 / 0.007) 46%,
-    transparent 68%
-  );
 }

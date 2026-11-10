@@ -1,4 +1,5 @@
 /** Phone area navigation around the same nested catalog rows used by the desktop tree. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -6,6 +7,8 @@ import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { role } from "@/components/ui/roles";
+import { cn } from "@/lib/utils";
 import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
@@ -45,7 +48,7 @@ export function MobileContextBrowser(props: MobileContextBrowserProps) {
             key={scheme}
             type="button"
             onClick={() => props.onSelectContextScheme(scheme)}
-            className="focus-ring flex min-h-11 items-center gap-2.5 px-4 text-left text-sm text-foreground hover:bg-sidebar-accent/50"
+            className="focus-ring flex min-h-11 items-center gap-2.5 px-4 text-left text-sm text-foreground hover:bg-ink-fill"
           >
             <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
             <span className="flex-1">{schemeLabel(scheme)}</span>
@@ -123,7 +126,7 @@ function MobileFolderTree({
           <div aria-busy className="min-h-24" />
         )
       ) : !dir ? (
-        <p className="p-4 text-sm text-muted-foreground">
+        <p className={cn("px-4", role.emptyLine)}>
           <Trans>This folder no longer exists.</Trans>
         </p>
       ) : (
@@ -166,7 +169,7 @@ function MobileFolderTree({
             depth={0}
           />
           {!pending && catalog.children(dir.entryId).length === 0 ? (
-            <p className="p-4 text-sm text-muted-foreground">
+            <p className={cn("px-4", role.emptyLine)}>
               <Trans>This folder is empty.</Trans>
             </p>
           ) : null}

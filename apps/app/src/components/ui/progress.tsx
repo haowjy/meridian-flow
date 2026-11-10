@@ -17,7 +17,7 @@ export function Progress({
   /** Names the bar for assistive technology. */
   label?: string;
   indeterminate?: boolean;
-  /** Height and margin; the track is `bg-muted` and rounded. */
+  /** Height and margin; the track is `bg-ink-fill` and rounded. */
   className?: string;
   fillClassName?: string;
 }) {
@@ -29,14 +29,14 @@ export function Progress({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={indeterminate ? undefined : Math.round(percent)}
-      className={cn("h-1.5 overflow-hidden rounded-full bg-muted", className)}
+      className={cn("h-1.5 overflow-hidden rounded-full bg-ink-fill", className)}
     >
       <div
         className={cn(
           "h-full rounded-full bg-primary",
           indeterminate
             ? "w-[30%] animate-progress-slide motion-reduce:animate-none"
-            : "transition-[width] duration-300 ease-out",
+            : "transition-[width] duration-(--motion-duration-panel) ease-out",
           fillClassName,
         )}
         style={indeterminate ? undefined : { width: `${percent}%` }}
