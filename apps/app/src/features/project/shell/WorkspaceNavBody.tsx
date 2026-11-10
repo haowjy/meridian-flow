@@ -1,5 +1,5 @@
 /**
- * WorkspaceNavBody — the phone drawer's body: destination links, the sources
+ * WorkspaceNavBody — the phone drawer's body: the Write | Chat switch, the list it picked
  * (`children`), and the account row. `NavigationDrawer` owns the Sheet and
  * closes it on select; this body never needs to know it lives in one.
  */
@@ -8,41 +8,24 @@ import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { role } from "@/components/ui/roles";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
 import { sidebarIcon } from "../context/context-row-geometry";
-import { useRailSwitchFailed } from "../routing/document-switch-failure";
-import { SCREENS, type ScreenKey, type ScreenMeta, screenLabel } from "./screens";
+import { ListSwitch } from "./sidebar/ListSwitch";
 
 export function WorkspaceNavBody({
-  activeScreen,
-  onSelectScreen,
+  projectId,
   children,
 }: {
-  activeScreen: ScreenKey;
-  onSelectScreen: (screen: ScreenKey) => void;
-  /** The sources, between the destinations and the account row. */
+  projectId: string;
+  /** The picked list, between the switch and the account row. */
   children?: ReactNode;
 }) {
-  const failed = useRailSwitchFailed();
-
   return (
     <>
-      <div className="flex shrink-0 flex-col gap-1 px-3 py-3">
-        {SCREENS.map((screen) => (
-          <div key={screen.key}>
-            <ScreenNavItem
-              screen={screen}
-              active={screen.key === activeScreen}
-              onClick={() => onSelectScreen(screen.key)}
-            />
-            {failed === screen.key && (
-              <InlineErrorRow message={<Trans>This view couldn’t open.</Trans>} className="py-1" />
-            )}
-          </div>
-        ))}
+      <div className="shrink-0 px-3 py-3">
+        <ListSwitch projectId={projectId} />
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-border-subtle pt-1">
@@ -69,36 +52,5 @@ export function WorkspaceNavBody({
         </Link>
       </div>
     </>
-  );
-}
-
-function ScreenNavItem({
-  screen,
-  active,
-  onClick,
-}: {
-  screen: ScreenMeta;
-  active: boolean;
-  onClick: () => void;
-}) {
-  const Icon = screen.icon;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "focus-ring flex min-h-11 w-full items-center gap-2.5 rounded-md px-2 text-left transition-colors active:scale-[0.98]",
-        role.row,
-        active
-          ? cn(role.selected, "font-medium text-foreground")
-          : cn(role.secondary, role.hover, "hover:text-foreground"),
-      )}
-    >
-      <span className="grid size-5 place-items-center">
-        <Icon className={sidebarIcon.action} aria-hidden />
-      </span>
-      <span className="min-w-0 flex-1 truncate">{screenLabel(screen.key)}</span>
-    </button>
   );
 }

@@ -22,8 +22,7 @@ import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
 import { cn } from "@/lib/utils";
 import { DockHeader, type DockHeaderProps } from "../dock/DockHeader";
 import { DockShell } from "../dock/DockShell";
-import type { ContextRouteRequest } from "../routing/project-route";
-import type { ScreenKey } from "../shell/screens";
+import type { ContextRouteRequest, ScreenKey } from "../routing/project-route";
 import { ChatScreen } from "./ChatScreen";
 
 /** `center` = the wide main column (Chat screen); `dock` = right rail (Work, Editor). */

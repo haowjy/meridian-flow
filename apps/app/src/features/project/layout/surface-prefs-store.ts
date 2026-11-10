@@ -2,15 +2,14 @@
  * Device-local project chrome preferences.
  *
  * Widths belong to slots (the left rail and the dock), so whatever surface sits in
- * a slot reads one width. Open/closed belongs to the mode: Write and Chat each
- * remember their own rail and dock, and restore them as a unit on a mode switch.
- * Placement is not stored here: it is a pure function of the mode.
+ * a slot reads one width. Whether the sidebar and the side panel are open is one
+ * choice for the device, whatever main shows. Placement is not stored here: it follows the kind
+ * of item the address names.
  */
 import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { createJSONStorage, devtools, persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 
-import { MODE_KEYS, MODES, type ModeKey, type ModePanels, modeMeta } from "./modes";
 import type { PanelSlotId } from "./types";
 
 function clamp(value: number, min: number, max: number): number {
@@ -18,7 +17,8 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export type SlotWidths = Record<PanelSlotId, number>;
-export type ModePanelsMap = Record<ModeKey, ModePanels>;
+/** Whether the left sidebar and the side panel (the dock until phase 8) are open. */
+export type PanelPrefs = { sidebarOpen: boolean; sideOpen: boolean };
 
 export const SLOT_WIDTH_BOUNDS: Record<PanelSlotId, { min: number; max: number }> = {
   "rail-l": { min: 220, max: 380 },
@@ -28,9 +28,7 @@ export const SLOT_WIDTH_BOUNDS: Record<PanelSlotId, { min: number; max: number }
 
 export const DEFAULT_SLOT_WIDTHS: SlotWidths = { "rail-l": 264, dock: 360 };
 
-export const DEFAULT_MODE_PANELS = Object.fromEntries(
-  MODES.map((mode) => [mode.key, mode.defaultPanels]),
-) as ModePanelsMap;
+export const DEFAULT_PANEL_PREFS: PanelPrefs = { sidebarOpen: true, sideOpen: true };
 
 function savedWidth(slot: PanelSlotId, width: unknown): number {
   if (typeof width !== "number" || !Number.isFinite(width)) return DEFAULT_SLOT_WIDTHS[slot];
@@ -45,22 +43,20 @@ export function normalizeSlotWidths(widths?: Partial<SlotWidths> | null): SlotWi
   };
 }
 
-export function normalizeModePanels(modes?: Partial<Record<ModeKey, Partial<ModePanels>>> | null) {
-  const normalized = {} as ModePanelsMap;
-  for (const mode of MODE_KEYS) {
-    const saved = modes?.[mode];
-    const defaults = modeMeta(mode).defaultPanels;
-    normalized[mode] = {
-      railOpen: typeof saved?.railOpen === "boolean" ? saved.railOpen : defaults.railOpen,
-      dockOpen: typeof saved?.dockOpen === "boolean" ? saved.dockOpen : defaults.dockOpen,
-    };
-  }
-  return normalized;
+export function normalizePanelPrefs(panels?: Partial<PanelPrefs> | null): PanelPrefs {
+  return {
+    sidebarOpen:
+      typeof panels?.sidebarOpen === "boolean"
+        ? panels.sidebarOpen
+        : DEFAULT_PANEL_PREFS.sidebarOpen,
+    sideOpen:
+      typeof panels?.sideOpen === "boolean" ? panels.sideOpen : DEFAULT_PANEL_PREFS.sideOpen,
+  };
 }
 
 type PersistedSurfacePrefsBlob = {
   widths?: Partial<SlotWidths> | null;
-  modes?: Partial<Record<ModeKey, Partial<ModePanels>>> | null;
+  panels?: Partial<PanelPrefs> | null;
   railPrefs?: Partial<RailPrefs> | null;
   documentPrefs?: Partial<DocumentPrefs> | null;
 };
@@ -108,14 +104,14 @@ export function normalizeRailPrefs(prefs?: Partial<RailPrefs> | null): RailPrefs
 
 export type SurfacePrefsState = {
   widths: SlotWidths;
-  modes: ModePanelsMap;
+  panels: PanelPrefs;
   railPrefs: RailPrefs;
   documentPrefs: DocumentPrefs;
 };
 
 export type SurfacePrefsActions = {
   setSlotWidth: (slot: PanelSlotId, widthPx: number) => void;
-  setSlotOpen: (mode: ModeKey, slot: PanelSlotId, open: boolean) => void;
+  setSlotOpen: (slot: PanelSlotId, open: boolean) => void;
   setRailExpanded: (id: RailSectionId, expanded: boolean) => void;
   setRailHeight: (id: DockedRailSectionId, height: number | null) => void;
   setPropertiesOpen: (open: boolean) => void;
@@ -135,8 +131,8 @@ type SurfacePrefsPersistApi = {
 
 export type SurfacePrefsStore = UseBoundStore<StoreApi<SurfacePrefsSlice> & SurfacePrefsPersistApi>;
 
-function openKey(slot: PanelSlotId): keyof ModePanels {
-  return slot === "rail-l" ? "railOpen" : "dockOpen";
+function openKey(slot: PanelSlotId): keyof PanelPrefs {
+  return slot === "rail-l" ? "sidebarOpen" : "sideOpen";
 }
 
 export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePrefsSlice>()(
@@ -144,17 +140,15 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
     persist(
       (set) => ({
         widths: DEFAULT_SLOT_WIDTHS,
-        modes: DEFAULT_MODE_PANELS,
+        panels: DEFAULT_PANEL_PREFS,
         railPrefs: DEFAULT_RAIL_PREFS,
         documentPrefs: DEFAULT_DOCUMENT_PREFS,
         _hydrated: false,
 
         setSlotWidth: (slot, width) =>
           set((state) => ({ widths: { ...state.widths, [slot]: savedWidth(slot, width) } })),
-        setSlotOpen: (mode, slot, open) =>
-          set((state) => ({
-            modes: { ...state.modes, [mode]: { ...state.modes[mode], [openKey(slot)]: open } },
-          })),
+        setSlotOpen: (slot, open) =>
+          set((state) => ({ panels: { ...state.panels, [openKey(slot)]: open } })),
         setRailExpanded: (id, expanded) =>
           set((state) => ({ railPrefs: { ...state.railPrefs, [`${id}Expanded`]: expanded } })),
         setRailHeight: (id, height) =>
@@ -167,8 +161,8 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
       }),
       {
         name: "meridian:project-surface-layout",
-        version: 5,
-        // Version 4 kept open/closed per surface; nothing of it carries over.
+        version: 6,
+        // Version 5 kept open/closed per mode; nothing of it carries over.
         migrate: () => ({}),
         storage: createJSONStorage(() => ({
           getItem: (key) => {
@@ -198,14 +192,14 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
           return {
             ...current,
             widths: normalizeSlotWidths(blob.widths),
-            modes: normalizeModePanels(blob.modes),
+            panels: normalizePanelPrefs(blob.panels),
             railPrefs: normalizeRailPrefs(blob.railPrefs),
             documentPrefs: normalizeDocumentPrefs(blob.documentPrefs),
           };
         },
         partialize: (state) => ({
           widths: state.widths,
-          modes: state.modes,
+          panels: state.panels,
           railPrefs: state.railPrefs,
           documentPrefs: state.documentPrefs,
         }),

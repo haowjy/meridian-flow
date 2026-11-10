@@ -1,6 +1,8 @@
 /** Stable-ID navigation commands and normalized context-removal CAS snapshots, not browser grammar. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { ScreenKey } from "../shell/screens";
+
+/** The kind of item the address names in main: a chat, or a document. The centre follows it. */
+export type ScreenKey = "chat" | "context";
 
 export type ProjectSearch = {
   screen?: ScreenKey;

@@ -52,16 +52,17 @@ Run these against an owned worktree and stack. Discover URLs with
 
 ## Project shell and dock
 
-15. Retained document A with B pending, switch to Chat: the **retained A** moves to
-    Chat, not the pending B.
+15. Retained document A with B pending, flip the sidebar's Write | Chat switch: the
+    **address, main and the dock do not change**, and the sidebar shows the other list.
 16. Hide a pane. It **carries nothing** with it.
-17. From Work Files, follow the rail to Chat. The document follows.
-18. Collapse an occupant, then switch screens. The collapsed occupant **carries
-    nothing**.
+17. From Work Files, pick a chat row in the Chat list. **Main goes to that chat**; the
+    document it replaced is one Back away.
+18. Collapse an occupant, then flip the switch. The collapsed occupant stays collapsed
+    and **carries nothing**.
 19. Cancel a dock intent, and separately supersede one. In both cases the document
     stays and **no failure appears**.
-20. Force admission to fail. The screen **stays on Editor**, the dock stays, and
-    **Retry clears the failure**.
+20. Force Open in Editor from the dock to fail. Main **stays where it was**, the dock
+    stays, and **Retry clears the failure**.
     - The dock header has no `…` "Document actions" menu: **Open in Editor** is a
       direct button, and **Collapse** is pinned to the right with the review controls
       wrapping or shrinking beside it.

@@ -22,7 +22,6 @@ import type { ReactNode } from "react";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import type { ProjectViewProps } from "../ProjectView";
-import { screenLabel } from "../shell/screens";
 
 export type MobileTopBarProps = Pick<ProjectViewProps, "activeScreen"> & {
   projectTitle: string;
@@ -77,7 +76,9 @@ export function MobileTopBar({
               breadcrumb ? "justify-start self-stretch" : "justify-center",
             )}
           >
-            {breadcrumb ?? <div className="truncate">{screenLabel(activeScreen)}</div>}
+            {breadcrumb ?? (
+              <div className="truncate">{activeScreen === "chat" ? t`Chat` : t`Editor`}</div>
+            )}
           </div>
         </div>
         <div className="flex min-w-11 shrink-0 items-center justify-end">

@@ -1,58 +1,14 @@
-/** Desktop owns the Write pane's presentation of the selected tab and the rail's mode switch; routes own addresses. */
+/** Desktop owns the Write pane's presentation of the selected tab; routes own addresses. */
 import { useLayoutEffect, useRef } from "react";
-import { readDocumentView } from "@/client/project-shell/document-views";
-import { selectedDocumentIdOf, useContextTabs, useSelectedContextTab } from "@/client/stores";
-import { useAccountId, useAccountResourceProjection } from "./context/account-feature-context";
+import { selectedDocumentIdOf, useContextTabs } from "@/client/stores";
+import { useAccountResourceProjection } from "./context/account-feature-context";
 import { projectResourceTab } from "./context/context-tab-from-file";
 import { resolveEditorPresentation } from "./context/editor-presentation";
 import type { VisibleEditorRoute } from "./context/resolve-route-owner";
 import { resolveRouteOwner } from "./context/resolve-route-owner";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
-import { useChatNavigation } from "./routing/chat-navigation";
-import { useRailScreenSwitch } from "./routing/document-switch-failure";
-import {
-  useIsCurrentNavigation,
-  useOpenContextRoute,
-  useScreenCommands,
-} from "./routing/ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
-import { openDocumentInEditor } from "./routing/use-open-document-in-editor";
-import type { ScreenKey } from "./shell/screens";
-
-export function useDesktopProjectController<
-  T extends VisibleEditorRoute & { editorWorkId: string },
->(input: {
-  projectId: string;
-  screen: ScreenKey;
-  current: T | null;
-  requestedWorkId: string | null;
-  contextLive: boolean;
-  issue?: ProjectRouteIssue;
-}) {
-  const { screen } = input;
-  const editorPresentation = useDesktopEditorPresentation(input);
-  const chat = useChatNavigation();
-  const commands = useScreenCommands();
-  const open = useOpenContextRoute();
-  const isCurrent = useIsCurrentNavigation();
-  const selectRailScreen = useRailScreenSwitch(screen, isCurrent);
-  const selected = useSelectedContextTab(input.projectId);
-  const accountId = useAccountId();
-  // The selection is the one open document: a mode switch moves the view, never the document.
-  const selectScreen = (next: ScreenKey) => {
-    if (!commands || !open) return;
-    selectRailScreen(next, () =>
-      next === "chat"
-        ? chat.showChatScreen()
-        : selected && selected.documentId !== editorPresentation.resolved.tab?.documentId
-          ? openDocumentInEditor(open, selected, {
-              review: readDocumentView(accountId, input.projectId, selected.documentId).pin,
-            })
-          : commands.showEditor(),
-    );
-  };
-  return { editorPresentation, selectScreen };
-}
+import type { ScreenKey } from "./routing/project-route";
 
 /** What the Write pane shows: the selected tab, as the resource projection now places it. */
 export function useDesktopEditorPresentation<
