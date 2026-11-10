@@ -6,7 +6,7 @@ import type { CatalogContextView } from "@/client/query/context-catalog-projecti
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
   type ContextTab,
-  editorTabsForWork,
+  isEditorContextTab,
   type ServerContextTab,
   useContextTabs,
 } from "@/client/stores";
@@ -15,6 +15,7 @@ import { contextTabFromFile } from "../context/context-tab-from-file";
 import { resolveRouteDocumentOwner } from "../context/route-document-owner";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import type { ProjectRouteIssue } from "../routing/ProjectRouteBoundary";
+import { contextRouteRequest } from "../routing/project-route";
 
 export type AddressState = "pending" | "failed" | "settled";
 
@@ -27,6 +28,8 @@ export type MobileDocumentRoute = Readonly<{
   requested: boolean;
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
+  /** A Work's Scratch route names its owning Work here. */
+  workId?: string | null;
   /** A chat's Scratch route names its lineage here, in place of a Work. */
   rootThreadId?: string | null;
   tab: ServerContextTab | null;
@@ -47,6 +50,8 @@ export function resolveMobileDocumentRoute(input: {
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
   workId: string | null;
+  /** The Work scope. */
+  scope: string | null;
   rootThreadId?: string | null;
   /**
    * The document this route is bound to. A rename of it or a folder above it (or that
@@ -76,6 +81,7 @@ export function resolveMobileDocumentRoute(input: {
       requested: false,
       scheme: input.scheme,
       path: input.path,
+      workId: input.workId ?? null,
       rootThreadId: input.rootThreadId ?? null,
       tab: null,
       catalogResolved: false,
@@ -86,16 +92,20 @@ export function resolveMobileDocumentRoute(input: {
   }
   // Identity before path, exactly as the desktop's route owner reads it.
   const rootThreadId = input.rootThreadId ?? undefined;
-  const owner = input.workId
-    ? resolveRouteDocumentOwner({
-        locator: { scheme: input.scheme, path: input.path, workId: input.workId, rootThreadId },
-        boundDocumentId: input.boundDocumentId,
-        catalog: input.catalog,
-        workspaceTabs: input.workspaceTabs,
-      })
-    : { kind: "absent" as const };
+  const owner = resolveRouteDocumentOwner({
+    locator: contextRouteRequest({
+      scheme: input.scheme,
+      path: input.path,
+      workId: input.workId,
+      rootThreadId,
+    }),
+    boundDocumentId: input.boundDocumentId,
+    catalog: input.catalog,
+    workspaceTabs: input.workspaceTabs,
+    scope: input.scope,
+  });
   const resolved =
-    owner.kind === "live" && input.workId
+    owner.kind === "live"
       ? (() => {
           const projected = contextTabFromFile(
             input.scheme,
@@ -112,14 +122,16 @@ export function resolveMobileDocumentRoute(input: {
       : owner.kind === "draft-only"
         ? owner.tab
         : owner.kind === "pending" && input.reviewing
-          ? (editorTabsForWork(input.workspaceTabs ?? [], input.workId).find(
-              (tab) => tab.kind !== "new" && tab.documentId === input.boundDocumentId,
-            ) ?? null)
+          ? ((input.workspaceTabs ?? [])
+              .filter(isEditorContextTab)
+              .find((tab) => tab.kind !== "new" && tab.documentId === input.boundDocumentId) ??
+            null)
           : null;
   return {
     requested: true,
     scheme: input.scheme,
     path: input.path,
+    workId: input.workId ?? null,
     rootThreadId: input.rootThreadId ?? null,
     tab: resolved?.kind === "new" ? null : resolved,
     catalogResolved: input.catalog !== null,
@@ -135,6 +147,8 @@ export function useMobileDocumentRoute(input: {
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
   workId: string | null;
+  /** The Work scope. */
+  scope: string | null;
   rootThreadId?: string | null;
   addressState?: AddressState;
 }): MobileDocumentRoute {
@@ -142,11 +156,11 @@ export function useMobileDocumentRoute(input: {
   const { tabs: workspaceTabs } = useContextTabs(input.projectId);
   const { selection } = useContextRemovalProject(input.projectId);
   const boundDocumentId =
-    input.scheme !== null && input.path !== null && input.workId !== null
+    input.scheme !== null && input.path !== null
       ? routeSelectionDocumentId(selection, {
           scheme: input.scheme,
           path: input.path,
-          workId: input.workId,
+          workId: input.workId ?? undefined,
           rootThreadId: input.rootThreadId ?? undefined,
         })
       : null;
@@ -164,6 +178,7 @@ export function useMobileDocumentRoute(input: {
         scheme: input.scheme,
         path: input.path,
         workId: input.workId,
+        scope: input.scope,
         rootThreadId: input.rootThreadId,
         boundDocumentId,
         workspaceTabs,

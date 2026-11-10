@@ -2,10 +2,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type ContextTab,
-  editorTabsForWork,
   getContextTabs,
   isDraftOnly,
   rehydrateEditorWorkspace,
+  reviewEntryOf,
   selectedDocumentIdOf,
   useContextTabsStore,
 } from "@/client/stores";
@@ -125,8 +125,11 @@ describe("draft tab settlement", () => {
     const coordinator = new ContextRemovalCoordinator("account-a", { route });
     coordinator.registerRoutePort("project-a", route, "work-b");
     const store = useContextTabsStore.getState();
+    // What a Work's review shows: a live tab, or a draft-only tab holding that Work's entry.
     const inWork = (workId: string) =>
-      editorTabsForWork(getContextTabs("project-a").tabs, workId).map((tab) => tab.documentId);
+      getContextTabs("project-a")
+        .tabs.filter((tab) => !isDraftOnly(tab) || reviewEntryOf(tab, `work:${workId}`))
+        .map((tab) => tab.documentId);
     store.openTab("project-a", draftTab("tab-b", "work-b", "draft-b"));
     const tabs = getContextTabs("project-a").tabs;
     expect(tabs).toHaveLength(1);
@@ -143,7 +146,6 @@ describe("draft tab settlement", () => {
     const revision = coordinator.beginRouteSelection("project-a", {
       scheme: "manuscript",
       path: "/chapter.md",
-      workId: "work-b",
     });
     coordinator.bindRouteSelection(
       "project-a",
@@ -164,7 +166,7 @@ describe("draft tab settlement", () => {
     expect(selectedDocumentIdOf(getContextTabs("project-a"))).toBe("document-a");
     // A writer's close in A drops A's entry the same way.
     store.openTab("project-a", draftTab());
-    coordinator.changeWorkSelection("project-a", "work-a", null);
+    coordinator.setActiveWork("project-a", "work-a");
     coordinator.writerClose("project-a", getContextTabs("project-a").tabs[0] as never);
     expect(inWork("work-a")).toEqual([]);
     expect(inWork("work-b")).toEqual(["document-a"]);
@@ -219,7 +221,7 @@ describe("draft tab settlement", () => {
     };
     const coordinator = new ContextRemovalCoordinator("account-a", { route });
     coordinator.registerRoutePort("project-a", route, "work-a");
-    const target = { scheme: "manuscript" as const, path: "/chapter.md", workId: "work-a" };
+    const target = { scheme: "manuscript" as const, path: "/chapter.md" };
     const select = () => {
       const revision = coordinator.beginRouteSelection("project-a", target);
       coordinator.bindRouteSelection(

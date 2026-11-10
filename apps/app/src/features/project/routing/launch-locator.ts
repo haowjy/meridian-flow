@@ -13,19 +13,18 @@
 import type { ProjectContextIdentityResolution } from "@meridian/contracts/protocol";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import type { ContextTab } from "@/client/stores";
-import { editorHasReview, isDraftOnly } from "@/client/stores";
 import { parseContextUri } from "@/lib/context-uri";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { canonicalDocumentPath } from "./local-document-address";
 import type { ProjectDestination } from "./project-address";
-import type { ContextRouteRequest } from "./project-route";
+import { type ContextRouteRequest, contextRouteRequest } from "./project-route";
 
 export type LaunchIdentityLookup = (
   documentId: string,
 ) => Promise<ProjectContextIdentityResolution | { kind: "failed" }>;
 
 export async function resolveLaunchLocator(input: {
-  requested: ContextRouteRequest & { workId?: string };
+  requested: ContextRouteRequest;
   tabs: readonly ContextTab[];
   addressed: ProjectDestination;
   addressNamesIt: boolean;
@@ -44,33 +43,28 @@ export async function resolveLaunchLocator(input: {
   const { documentId } = requested;
   if (!documentId) return requested;
   const tab = input.tabs.find(
-    (candidate) =>
-      candidate.kind !== "new" &&
-      candidate.documentId === documentId &&
-      (!isDraftOnly(candidate) || editorHasReview(candidate, requested.workId ?? null)),
+    (candidate) => candidate.kind !== "new" && candidate.documentId === documentId,
   );
-  if (tab && tab.kind !== "new" && requested.workId) {
-    return { ...routeTargetForTab(tab, requested.workId), documentId };
-  }
+  if (tab && tab.kind !== "new") return { ...routeTargetForTab(tab), documentId };
   if (input.addressNamesIt && input.addressed.kind === "document") {
     // The address spells its path without the leading slash; routes, tabs and launches spell it with.
-    return {
+    return contextRouteRequest({
       ...requested,
       scheme: input.addressed.scheme,
       path: `/${canonicalDocumentPath(input.addressed.path)}`,
-    };
+    });
   }
   if (input.draftOnly) return requested;
-  const locate = (uri: string): ContextRouteRequest | null => {
+  const locate = (uri: string) => {
     const parsed = parseContextUri(uri);
     return parsed ? { scheme: parsed.scheme, path: parsed.path } : null;
   };
   const live = input.catalog?.findDocument(documentId);
   const cached = live ? locate(live.uri) : null;
-  if (cached) return { ...requested, ...cached };
+  if (cached) return contextRouteRequest({ ...requested, ...cached });
   if (input.selected) return requested;
   const resolution = await input.lookup(documentId);
   const location = resolution.kind === "available" ? locate(resolution.entry.uri) : null;
   if (!location) throw new Error("The reviewed document could not be located");
-  return { ...requested, ...location };
+  return contextRouteRequest({ ...requested, ...location });
 }

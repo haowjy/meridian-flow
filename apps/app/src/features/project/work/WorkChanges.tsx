@@ -43,17 +43,8 @@ import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { RuledList } from "../RuledList";
 import { WorkChangeFile } from "./WorkChangeFile";
 import { WorkFileGroup } from "./WorkFileGroup";
-import type { WorkFileSearch } from "./work-files-model";
 
-export function WorkChanges({
-  projectId,
-  work,
-  matchesSearch,
-}: {
-  projectId: string;
-  work: Work;
-  matchesSearch: WorkFileSearch;
-}) {
+export function WorkChanges({ projectId, work }: { projectId: string; work: Work }) {
   const ownerKey = workOwnerKey(work);
   const controller = useWorkBranchCommands({ projectId, work, ownerKey });
   useSyncExternalStore(
@@ -98,9 +89,6 @@ export function WorkChanges({
     setConfirmingDiscard(false);
     setAsking(null);
   }, [hasFiles]);
-  const visible = files.filter((file) =>
-    matchesSearch(file.documentName || file.contextLocation?.path || ""),
-  );
   if (files.length === 0 && drafts.status === "error") {
     return (
       <WorkFileGroup label={t`Changes to review`}>
@@ -112,7 +100,7 @@ export function WorkChanges({
       </WorkFileGroup>
     );
   }
-  if (visible.length === 0 && !controller.notice) return null;
+  if (files.length === 0 && !controller.notice) return null;
 
   const everyDraft = files.map((file) => ({
     documentId: file.documentId,
@@ -219,7 +207,7 @@ export function WorkChanges({
     >
       <RuledList
         className="-mx-2"
-        rows={visible.map((file) => ({
+        rows={files.map((file) => ({
           key: file.documentId,
           node: (
             <WorkChangeFile

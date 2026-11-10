@@ -37,7 +37,7 @@ function navigationFixture(
       navigate: vi.fn(),
       ...overrides,
     },
-    () => ({ work: { kind: "none" } }),
+    () => ({}),
   );
 }
 
@@ -107,13 +107,10 @@ it("preserves a proven local resource handle during readable-route admission", a
       address={{
         projectId: "550e8400-e29b-41d4-a716-446655440000",
         destination: { kind: "document", scheme: "kb", path: "doc" },
-
-        work: { kind: "none" },
       }}
       result={documentResult("current")}
       localFile={localFile}
       workId={"00000000-0000-4000-8000-000000000009"}
-      noWorkId={"00000000-0000-4000-8000-000000000009"}
       navigation={navigation}
       onAdmission={vi.fn()}
     />,
@@ -153,8 +150,6 @@ it.each([
   const address: ProjectAddress = {
     projectId: "550e8400-e29b-41d4-a716-446655440000",
     destination: { kind: "document", scheme: "kb", path: "before" },
-
-    work: { kind: "none" },
   };
   const onAdmission = vi.fn();
   try {
@@ -166,7 +161,6 @@ it.each([
         address={address}
         result={documentResult("alias")}
         workId={"00000000-0000-4000-8000-000000000009"}
-        noWorkId={"00000000-0000-4000-8000-000000000009"}
         navigation={navigation}
         onAdmission={onAdmission}
       />,
@@ -205,7 +199,6 @@ it("keeps a draft-only document out of the live view and repairs only its review
       address={{
         projectId,
         destination: { kind: "document", scheme: "manuscript", path: "doc" },
-        work: { kind: "none" },
       }}
       result={result}
       reviewItemKey="draft-1"
@@ -217,7 +210,6 @@ it("keeps a draft-only document out of the live view and repairs only its review
         draftOnly: true,
       }}
       workId={noWorkId}
-      noWorkId={noWorkId}
       navigation={navigation}
       onAdmission={onAdmission}
     />,
@@ -231,8 +223,8 @@ it("keeps a draft-only document out of the live view and repairs only its review
       });
       expect(onAdmission).not.toHaveBeenCalled();
       expect(replaceEntry).toHaveBeenCalledOnce();
-      // A No Work review address names its Work itself, so a copy opens the same draft.
-      expect(replaceEntry.mock.calls[0]?.[0]).toBe(`${href}?work=&item=draft-1`);
+      // A review address names its draft's owner itself, so a copy opens the same draft.
+      expect(replaceEntry.mock.calls[0]?.[0]).toBe(`${href}?owner=work%3A${noWorkId}&item=draft-1`);
     },
   );
   navigation.dispose();

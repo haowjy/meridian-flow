@@ -33,7 +33,7 @@ vi.mock("./context-tab-from-file", async (importOriginal) => ({
   projectResourceTab: () => ({ kind: "projected", resourceHandle: "handle-a", tab: moved }),
 }));
 
-const locator = { scheme: "manuscript" as const, path: "/old.md", workId: "work-a" };
+const locator = { scheme: "manuscript" as const, path: "/old.md" };
 const bound: ContextRouteSelection = {
   status: "bound",
   revision: 1,

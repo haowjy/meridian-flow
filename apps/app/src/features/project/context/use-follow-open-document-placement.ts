@@ -6,11 +6,12 @@
  * URL's catalog, so a move that leaves that catalog would otherwise strand the
  * editor on the old path.
  */
+
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect } from "react";
 import { useContextTabs, useContextTabsActions } from "@/client/stores";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
-import { sameContextTarget } from "../routing/project-route";
+import { contextRouteRequest, sameContextTarget } from "../routing/project-route";
 import {
   useAccountResourceProjection,
   useContextRemovalCoordinator,
@@ -23,6 +24,8 @@ import { projectResourceTab } from "./context-tab-from-file";
 export function useFollowOpenDocumentPlacement(input: {
   projectId: string;
   editorWorkId: string | null | undefined;
+  /** A Work's Scratch route: its owning Work. */
+  activeContextWork?: string | null;
   /** The route follows a document only while the selection is bound to it at this route. */
   selection: ContextRouteSelection;
   activeContextScheme: ProjectContextTreeScheme | null;
@@ -40,12 +43,12 @@ export function useFollowOpenDocumentPlacement(input: {
   useEffect(() => {
     const route =
       input.editorWorkId && input.activeContextScheme !== null && input.activeContextPath !== null
-        ? {
+        ? contextRouteRequest({
             scheme: input.activeContextScheme,
             path: input.activeContextPath,
-            workId: input.editorWorkId,
-            rootThreadId: input.activeContextChat ?? undefined,
-          }
+            workId: input.activeContextWork,
+            rootThreadId: input.activeContextChat,
+          })
         : null;
     // A review binding owns the draft's path, which the live placement does not show.
     const boundDocumentId =
@@ -87,17 +90,11 @@ export function useFollowOpenDocumentPlacement(input: {
         tab.kind !== "new" &&
         projection.tab.kind !== "new" &&
         boundDocumentId === tab.documentId &&
-        !sameContextTarget(routeTargetForTab(projection.tab, route.workId), route);
+        !sameContextTarget(routeTargetForTab(projection.tab), route);
       if (routeFollowsTab && projection.tab.kind !== "new")
         void input
           .onOpenContextTarget(
-            {
-              scheme: projection.tab.scheme,
-              path: projection.tab.path,
-              workId: projection.tab.workId ?? input.editorWorkId ?? undefined,
-              ...(projection.tab.rootThreadId ? { rootThreadId: projection.tab.rootThreadId } : {}),
-              documentId: projection.tab.documentId,
-            },
+            contextRouteRequest({ ...projection.tab, documentId: projection.tab.documentId }),
             // Keep the tab at the route's old locator until replacement is accepted. The
             // prepared tab and address then commit together, so admission can retain the
             // already-open document by identity while a move or rename is in flight.
@@ -116,6 +113,7 @@ export function useFollowOpenDocumentPlacement(input: {
     }
   }, [
     input.activeContextChat,
+    input.activeContextWork,
     input.activeContextPath,
     input.activeContextScheme,
     input.editorWorkId,

@@ -7,7 +7,6 @@ import {
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { isEditorTab } from "@/client/stores/context-tabs-store/editor-workspace-model";
 
 export const WORKING_SET_STORAGE_KEY = "meridian:working-set";
 
@@ -90,14 +89,6 @@ export function workingSetRouteEquals(
     left.rootThreadId === right.rootThreadId &&
     left.chatId === right.chatId
   );
-}
-
-/** First recent route that can be opened in the current Editor Work. */
-export function recentRouteForEditorWork(
-  routes: readonly WorkingSetRoute[],
-  editorWorkId: string | null,
-): WorkingSetRoute | null {
-  return routes.find((route) => isEditorTab(route, editorWorkId)) ?? null;
 }
 
 function snapshotEquals(left: WorkingSetSnapshot, right: WorkingSetSnapshot): boolean {

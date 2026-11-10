@@ -40,7 +40,8 @@ describe("phone draft-only review route", () => {
       enabled: true,
       scheme: "manuscript",
       path: "/new-chapter.md",
-      workId: "work-a",
+      workId: null,
+      scope: "work-a",
       workspaceTabs: [draftTab],
       catalog: emptyCatalog,
       isError: false,
@@ -48,8 +49,9 @@ describe("phone draft-only review route", () => {
       ...overrides,
     });
 
-  it("is never another Work's draft, and never a live tab", () => {
-    expect(route({ workId: "work-b" }).tab).toBeNull();
+  it("is never a live tab, and a plain path settles only on its own Work's draft", () => {
+    expect(route().tab).toMatchObject({ documentId: "document-draft" });
+    expect(route({ scope: "work-b" }).tab).toBeNull();
     expect(route({ workspaceTabs: [{ ...draftTab, reviews: undefined }] }).tab).toBeNull();
   });
 

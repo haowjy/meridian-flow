@@ -6,9 +6,9 @@ import { useCallback, useLayoutEffect } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
   type ContextTab,
-  editorTabsForWork,
   getContextTabs,
   isDraftOnly,
+  isEditorContextTab,
   matchesTabInstance,
   replaceOwner,
   selectedDocumentIdOf,
@@ -22,6 +22,7 @@ import {
 } from "./context/account-feature-context";
 import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState } from "./context/context-pane-state";
+import { routeTargetForTab } from "./context/context-removal-planner";
 import { selectionAtRoute } from "./context/context-removal-protocol";
 import { contextTabRouteKey } from "./context/context-tab-identity";
 import type { resolveRouteOwner } from "./context/resolve-route-owner";
@@ -36,7 +37,7 @@ import {
   useCaptureProjectNavigation,
 } from "./routing/ProjectNavigationContext";
 import type { ProjectRouteMask } from "./routing/ProjectRouteBoundary";
-import type { NavigationOptions } from "./routing/project-route";
+import { contextRouteRequest, type NavigationOptions } from "./routing/project-route";
 import { openDocumentInEditor } from "./routing/use-open-document-in-editor";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
@@ -45,6 +46,8 @@ export type ContextViewerSurfaceControllerProps = {
   resolvedEditor: ReturnType<typeof resolveRouteOwner>;
   /** Null while the requested Work cannot be shown; the frame keeps its navigation. */
   editorWorkId: string | null;
+  /** A Work's Scratch route: its owning Work. Null for every other document. */
+  activeContextWork?: string | null;
   /** What masks the document body; the tab strip and the address stay outside it. */
   mask: ProjectRouteMask;
   localDocumentId?: string;
@@ -76,6 +79,7 @@ export function ContextViewerSurfaceController({
   projectId,
   resolvedEditor,
   editorWorkId,
+  activeContextWork,
   mask,
   activeContextScheme,
   activeContextPath,
@@ -88,7 +92,6 @@ export function ContextViewerSurfaceController({
   onOpenContextTarget,
   routeDisplayed,
 }: ContextViewerSurfaceControllerProps) {
-  const routeWorkId = editorWorkId ?? undefined;
   const captureNavigation = useCaptureProjectNavigation();
   const contextRemoval = useContextRemovalCoordinator();
   const resources = useAccountResourceReplica();
@@ -97,7 +100,7 @@ export function ContextViewerSurfaceController({
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, updateTrackedTab, selectTab } = useContextTabsActions();
-  const visibleTabs = editorWorkId ? editorTabsForWork(tabs, editorWorkId) : [];
+  const visibleTabs = editorWorkId ? tabs.filter(isEditorContextTab) : [];
   const removalState = useContextRemovalProject(projectId);
   const { workspaceRoute, tab: activeTab } = resolvedEditor;
 
@@ -106,9 +109,8 @@ export function ContextViewerSurfaceController({
     isError: routeTreeIsError,
     isFetching: routeTreeIsFetching,
   } = useContextCatalogView(projectId, activeContextScheme ?? "kb", {
-    enabled:
-      routeWorkId !== undefined && activeContextScheme !== null && activeContextPath !== null,
-    ...contextOwner(routeWorkId, activeContextChat),
+    enabled: editorWorkId !== null && activeContextScheme !== null && activeContextPath !== null,
+    ...contextOwner(activeContextWork ?? null, activeContextChat),
   });
 
   useLayoutEffect(() => {
@@ -116,11 +118,11 @@ export function ContextViewerSurfaceController({
     const selection = removalState.selection;
     if (selection.status === "none") return;
     if (
-      routeWorkId === undefined ||
+      editorWorkId === null ||
       !selectionAtRoute(selection, {
         scheme: activeContextScheme,
         path: activeContextPath,
-        workId: routeWorkId,
+        workId: activeContextWork ?? undefined,
         rootThreadId: activeContextChat ?? undefined,
       })
     )
@@ -187,7 +189,8 @@ export function ContextViewerSurfaceController({
     projectId,
     routeCatalog,
     routeTreeIsFetching,
-    routeWorkId,
+    editorWorkId,
+    activeContextWork,
     removalState.selection,
     selectTab,
     tabs,
@@ -195,11 +198,11 @@ export function ContextViewerSurfaceController({
 
   // Names the destination's pending tab; the route installs the real one.
   const openTabKey =
-    routeWorkId !== undefined && activeContextScheme !== null && activeContextPath !== null
+    editorWorkId !== null && activeContextScheme !== null && activeContextPath !== null
       ? contextTabRouteKey(projectId, {
           scheme: activeContextScheme,
           path: activeContextPath,
-          workId: routeWorkId,
+          workId: activeContextWork ?? undefined,
           rootThreadId: activeContextChat ?? undefined,
         })
       : null;
@@ -207,7 +210,7 @@ export function ContextViewerSurfaceController({
     removalState.removalFence?.selectionRevision === removalState.selection.revision &&
     removalState.removalFence?.locator?.scheme === activeContextScheme &&
     removalState.removalFence.locator.path === activeContextPath &&
-    removalState.removalFence.locator.workId === routeWorkId &&
+    removalState.removalFence.locator.workId === (activeContextWork ?? undefined) &&
     removalState.removalFence.locator.rootThreadId === (activeContextChat ?? undefined);
   // Remember the last-opened file (device-local) once its tab actually
   // resolves — a tree-validated open or a launcher-synthesized draft tab
@@ -247,7 +250,7 @@ export function ContextViewerSurfaceController({
         ? {
             path: activeContextPath,
             scheme: activeContextScheme,
-            workId: routeWorkId,
+            workId: activeContextWork ?? undefined,
             rootThreadId: activeContextChat ?? undefined,
             optimisticTab: {
               id: `optimistic:${openTabKey}`,
@@ -265,19 +268,10 @@ export function ContextViewerSurfaceController({
   function handleSelectTab(tab: ContextTab) {
     if (!getContextTabs(projectId).tabs.some((candidate) => matchesTabInstance(candidate, tab)))
       return;
-    const documentId = tab.documentId;
-    if (tab.kind === "new") {
-      onOpenContextTarget({ scheme: "unfiled", path: "", workId: routeWorkId, documentId });
-      return;
-    }
-    if (tab.rootThreadId) {
-      void onOpenContextTarget({
-        scheme: tab.scheme,
-        path: tab.path,
-        workId: routeWorkId,
-        rootThreadId: tab.rootThreadId,
-        documentId,
-      });
+    // A tab states its own owner: a Scratch note's, never the scope's.
+    const target = routeTargetForTab(tab);
+    if (tab.kind === "new" || tab.rootThreadId) {
+      void onOpenContextTarget(target);
       return;
     }
     // A pinned review is part of the tab's address: selecting the tab must write it back.
@@ -285,10 +279,7 @@ export function ContextViewerSurfaceController({
       void openDocumentInEditor(onOpenContextTarget, tab, { review: tab.reviewPin });
       return;
     }
-    void onOpenContextTarget(
-      { scheme: tab.scheme, path: tab.path, workId: routeWorkId, documentId },
-      { tab },
-    );
+    void onOpenContextTarget(target, { tab });
   }
 
   function handleCloseTab(tab: ContextTab) {
@@ -308,7 +299,8 @@ export function ContextViewerSurfaceController({
 
   useFollowOpenDocumentPlacement({
     projectId,
-    editorWorkId: routeWorkId,
+    editorWorkId,
+    activeContextWork,
     selection: removalState.selection,
     activeContextScheme,
     activeContextPath,
@@ -341,7 +333,7 @@ export function ContextViewerSurfaceController({
           if (isCurrent?.() === false) return;
           const documentId = reservation.content.handle.documentId;
           const result = await onOpenContextTarget(
-            { scheme: "unfiled", path: "", workId: routeWorkId, documentId },
+            { scheme: "unfiled", path: "", documentId },
             {
               isCurrent,
               focus: true,
@@ -387,7 +379,6 @@ export function ContextViewerSurfaceController({
         if (
           activeTab &&
           matchesTabInstance(activeTab, ownership.tab) &&
-          next.routeWorkId === routeWorkId &&
           identityCommitMayNavigate(
             ownership,
             selectedDocumentIdOf(getContextTabs(projectId)) ?? undefined,
@@ -404,14 +395,11 @@ export function ContextViewerSurfaceController({
         }
       }}
       onOpenExisting={(scheme, path, owner) => {
-        // A chat's Scratch note is addressed by its lineage; anything else inherits the Editor's Work.
+        // A chat's Scratch note is addressed by its lineage.
         if (owner.rootThreadId)
-          void onOpenContextTarget({
-            scheme,
-            path,
-            workId: routeWorkId,
-            rootThreadId: owner.rootThreadId,
-          });
+          void onOpenContextTarget(
+            contextRouteRequest({ scheme, path, rootThreadId: owner.rootThreadId }),
+          );
         else onSelectContextPath(path, scheme);
       }}
     />

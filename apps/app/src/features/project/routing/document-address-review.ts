@@ -1,5 +1,5 @@
 /** A plain address never acquires a review's authority to read a hidden document. */
-import { draftOwnerKey } from "@meridian/contracts/branches";
+import { type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts/branches";
 import type {
   ContextOwner,
   DocumentAddressRequestOptions,
@@ -16,6 +16,7 @@ import {
   selectionAtRoute,
 } from "../context/context-removal-protocol";
 import type { ProjectDestination } from "./project-address";
+import type { ContextRouteRequest } from "./project-route";
 
 export type DocumentAddressBinding =
   | { kind: "plain" }
@@ -26,16 +27,17 @@ export type DocumentAddressBinding =
     };
 
 /**
- * Whose draft an address with an item reviews: the lineage its `chat` names, else the address's
- * Work. Null while the Work is unresolved, or when the address names no item.
+ * Whose draft an item reviews: the owner the address names. A hidden create can name its item
+ * without the address, and then it is the Work scope's draft. Null while the scope is unresolved,
+ * or when there is no item.
  */
 export function addressReviewOwner(
-  address: { itemKey?: string; lineage?: string },
-  workId: string | null,
-): string | null {
+  address: { itemKey?: string; owner?: DraftOwnerKey },
+  scopeWorkId: string | null,
+): DraftOwnerKey | null {
   if (!address.itemKey) return null;
-  if (address.lineage) return draftOwnerKey({ kind: "lineage", rootThreadId: address.lineage });
-  return workId ? draftOwnerKey({ kind: "work", workId }) : null;
+  if (address.owner) return address.owner;
+  return scopeWorkId ? draftOwnerKey({ kind: "work", workId: scopeWorkId }) : null;
 }
 
 /** The item owns review identity even while its owner's draft list is loading. */
@@ -67,8 +69,8 @@ export function addressRouteBinding(
   result: DocumentAddressResult | undefined,
   selection: ContextRouteSelection,
   destination: Extract<ProjectDestination, { kind: "document" }> | null,
-  workId: string | null,
-  rootThreadId: string | undefined,
+  /** The Scratch owner the route's locator carries; empty for every other document. */
+  owner: Pick<ContextRouteRequest, "workId" | "rootThreadId">,
   /** The owner the address reviews (`addressReviewOwner`); null when it names none. */
   reviewOwner?: string | null,
 ): { revision: number; documentId: string; by: RouteBindingProof } | null {
@@ -77,12 +79,10 @@ export function addressRouteBinding(
     !result ||
     result.kind === "unavailable" ||
     !destination ||
-    workId === null ||
     !selectionAtRoute(selection, {
       scheme: destination.scheme,
       path: destination.path,
-      workId,
-      rootThreadId,
+      ...owner,
     })
   )
     return null;
@@ -110,7 +110,6 @@ export function documentAddressQueryOptions(
     destination: Extract<ProjectDestination, { kind: "document" }> | null;
     owner: ContextOwner;
     binding: DocumentAddressBinding;
-    workResolved: boolean;
   },
   read: typeof getProjectDocumentAddress,
 ) {
@@ -132,9 +131,7 @@ export function documentAddressQueryOptions(
         ...(review ? { review } : {}),
       });
     },
-    enabled: projectReadEnabled(
-      !!input.destination && input.workResolved && input.binding.kind !== "pending",
-    ),
+    enabled: projectReadEnabled(!!input.destination && input.binding.kind !== "pending"),
     staleTime: 0,
     // A review's answer names another key's path and is only true while the draft's move
     // stands. Kept past its key, two such answers point at each other and the URL loops.

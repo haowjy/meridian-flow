@@ -36,6 +36,7 @@ stack.
 - [Failure cards](../../apps/app/src/features/chat/.context/qa/failure-cards.md): the failed reply, refused and lost Retry, failed compaction, handoff brief and live-region clearing, driven in the browser with injected faults.
 - [Queue controls](../../apps/app/src/features/chat/.context/qa/queue-controls.md): QC-01 to QC-08, the queued look, the x, Cancel queue, Send now and every failure card, driven in the browser with injected faults.
 - [Durable questions](../../apps/server/server/domains/runtime/.context/qa/ask.md): answer, own words, Skip, timeout, restart and crash recovery, claim races, the queue barrier, and fork refusal.
+- [Unsent edits hold a live session](../apps/app/src/core/editor/.context/qa/unsent-edits-session-hold.md): offline edit, tab closed, reconnect without reopening, and the removal exit; plus the two-draft Apply and untitled-document probes.
 - [Browser state envelopes](../../apps/app/.context/qa/browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
 - [Settled chat Markdown](../../apps/app/src/features/chat/.context/qa/chat-markdown.md): manuscript parity, list rhythm, highlighting and code copy.
 - [Chat session](../../apps/app/src/features/chat/.context/qa/chat-session.md): compare a chat in the browser with `./mf thread view --json` by row identity, kind, item kinds and text, the `cN` ref steps, and SY-01 to SY-07, the live-sync recipes (join, reload, navigate, another client's message, Stop, a held write-mode switch, a network gap).

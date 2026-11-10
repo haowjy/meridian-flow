@@ -430,13 +430,7 @@ export class DocumentSession {
       };
       const prefix = this.transportProvider?.whenCurrentChangesAcknowledged?.();
       stop = this.subscribe((snapshot) => {
-        const connection = snapshot.connectionState;
-        if (
-          snapshot.status === "destroyed" ||
-          connection?.kind === "reset" ||
-          connection?.kind === "terminal" ||
-          connection?.kind === "unauthorized"
-        )
+        if (this.isRoomEnded())
           finish(new Error("Document session can no longer acknowledge this cut"));
         else if (!prefix && snapshot.serverHasLocalChanges) finish();
       });
@@ -450,6 +444,29 @@ export class DocumentSession {
 
   hasUnacknowledgedEdits(): boolean {
     return this.unacknowledgedUpdates() !== null;
+  }
+
+  /**
+   * Whether this room can still take the unsent edits: false once it is reset, unauthorized,
+   * terminal, destroyed or admitted read-only (the server drops writes without closing).
+   * Owners that keep a released session until its edits are acknowledged ask this to know the
+   * wait can end.
+   */
+  canDeliverUnsentEdits(): boolean {
+    return !this.isRoomEnded() && this.access !== "read";
+  }
+
+  /** The room itself is over, whatever its access: reset, unauthorized, terminal or destroyed. */
+  isRoomEnded(): boolean {
+    const { status, connectionState } = this.getSnapshot();
+    return (
+      this.resetDisposition !== null ||
+      status === "destroyed" ||
+      status === "access-lost" ||
+      connectionState?.kind === "reset" ||
+      connectionState?.kind === "unauthorized" ||
+      connectionState?.kind === "terminal"
+    );
   }
 
   private waitForLocalPersistenceTransportGate(): Promise<void> {

@@ -2,7 +2,7 @@
 
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
 import { useRef } from "react";
-import { type ContextTab, editorTabsForWork, isDraftOnly } from "@/client/stores";
+import { type ContextTab, isDraftOnly, isEditorContextTab } from "@/client/stores";
 import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import type { ProjectAddress } from "./project-address";
 
@@ -36,7 +36,8 @@ export function resolveLocalDocumentSelection(input: {
   const owner = resolveWorkspaceRoute({
     tabs: input.tabs,
     selectedDocumentId: tab.documentId,
-    locator: { scheme: "unfiled", path: "", workId: input.workId },
+    locator: { scheme: "unfiled", path: "" },
+    scope: input.workId,
   });
   return owner.kind === "unowned"
     ? ({ kind: "unavailable" } as const)
@@ -48,10 +49,8 @@ export function selectEditorEntryTab(input: {
   tabs: readonly ContextTab[];
   selectedDocumentId: string | undefined;
   recentRoutes: readonly WorkingSetRoute[];
-  /** The Editor being entered: its row id, or null while unresolved. */
-  workId: string | null;
 }): ContextTab | null {
-  const eligible = editorTabsForWork(input.tabs, input.workId);
+  const eligible = input.tabs.filter(isEditorContextTab);
   const selected = eligible.find((tab) => tab.documentId === input.selectedDocumentId);
   if (selected) return selected;
   for (const route of input.recentRoutes) {
