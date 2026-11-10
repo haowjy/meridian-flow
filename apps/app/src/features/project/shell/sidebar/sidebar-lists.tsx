@@ -51,21 +51,15 @@ function ChatsList({
       scopeWorkId={scopeWorkId}
       noWorkId={noWork?.id ?? null}
       currentThreadId={chatThreadId}
-      onOpenChat={(threadId) => {
-        void chat.showChat(threadId);
-        onPicked?.();
-      }}
-      onNewChat={() => {
-        void chat.openChatIndex();
-        onPicked?.();
-      }}
-      onShowAllChats={() => {
-        void chat.openChatIndex();
-        onPicked?.();
-      }}
+      // The drawer closes once the navigation commits: a rejected one leaves it open.
+      onOpenChat={(threadId) => void chat.showChat(threadId).then(() => onPicked?.())}
+      onNewChat={() => void chat.openChatIndex().then(() => onPicked?.())}
+      onShowAllChats={() => void chat.openChatIndex().then(() => onPicked?.())}
       onShowWork={onShowWork}
       // Renders nothing while no chat is open.
-      footer={<RailScratchSection projectId={projectId} threadId={chatThreadId} />}
+      footer={
+        <RailScratchSection projectId={projectId} threadId={chatThreadId} onPicked={onPicked} />
+      }
     />
   );
 }

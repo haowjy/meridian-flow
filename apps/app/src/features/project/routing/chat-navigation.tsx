@@ -63,6 +63,7 @@ export type ChatNavigation = {
   display: ChatDisplay;
   /** An unacknowledged first send from before a reload needs a visible host. */
   recoveringFirstSend: boolean;
+  /** Opens the chat where the writer is: in main on a chat screen, else beside the document (mentions, links). */
   openChat: (threadId: string) => Promise<void>;
   /** Main goes to this chat, wherever the writer is: a sidebar row is navigation. */
   showChat: (threadId: string) => Promise<void>;

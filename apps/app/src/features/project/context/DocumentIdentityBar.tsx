@@ -1,7 +1,7 @@
 /**
  * DocumentIdentityBar — an open document's identity and state: the chips about it
  * (Draft or Live, Choose a home for a document in Unfiled, device-only, a refused
- * move, a review's controls). Write mode shows it at the tab row's right end with
+ * move, a review's controls). Main shows it at the tab row's right end with
  * no path (`variant="state"`); the dock shows it as its header, with the path.
  */
 import "./document-identity-row.css";
@@ -42,7 +42,7 @@ export type DocumentIdentityBarProps = {
   /** The document can't be renamed or moved (its Work is archived). */
   readOnly?: boolean;
   /**
-   * The content of the dock's header row, with the path; or Write mode's state at
+   * The content of the dock's header row, with the path; or main's state at
    * the tab row's right end, without it (the tab's tooltip carries the path).
    */
   variant: "header" | "state";
