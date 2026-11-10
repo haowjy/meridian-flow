@@ -88,6 +88,9 @@ function TooltipTrigger({
       onFocus={(event) => {
         onFocus?.(event);
         preventWhilePopupOpen(event);
+        // Focus opens a label only for someone moving by keyboard, as with the focus
+        // ring. A dialog that focuses its close button on open shows no tooltip.
+        if (!event.currentTarget.matches(":focus-visible")) event.preventDefault();
       }}
       {...props}
     />
@@ -99,6 +102,7 @@ function TooltipContent({
   // A small gap so the label never touches, or reads as part of, its trigger.
   sideOffset = 4,
   children,
+  onEscapeKeyDown,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Content>) {
   const hoverable = useContext(HoverableContext);
@@ -107,6 +111,18 @@ function TooltipContent({
       <TooltipPrimitive.Content
         data-slot="tooltip-content"
         sideOffset={sideOffset}
+        // Radix gives Escape to the topmost layer only, so an open label would take
+        // the press meant for the menu or dialog under it. Once the label is gone,
+        // the press is sent again for that surface.
+        onEscapeKeyDown={(event) => {
+          onEscapeKeyDown?.(event);
+          const target = event.target;
+          setTimeout(() => {
+            target?.dispatchEvent(
+              new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+            );
+          });
+        }}
         className={cn(
           !hoverable && "pointer-events-none",
           "z-50 w-fit origin-(--radix-tooltip-content-transform-origin) animate-in rounded-md bg-foreground px-3 py-1.5 text-xs text-balance text-background fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
