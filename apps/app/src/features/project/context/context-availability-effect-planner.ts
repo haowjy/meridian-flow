@@ -224,7 +224,9 @@ export function planContextAvailabilityBatch(
       intent,
     });
     if (removal.outcome.kind !== "noop") tabs = [...removal.outcome.remaining];
-    if (selectedDocumentId === id) selectedDocumentId = null;
+    // A draft-only tab the removal leaves open keeps the selection: the draft still paints in it.
+    if (selectedDocumentId === id && !tabs.some((tab) => tab.documentId === id))
+      selectedDocumentId = null;
     const exactRecentRoutes = recentRoutes.filter((route) => route.documentId === id);
     const workingSet = {
       ...removal.workingSet,
