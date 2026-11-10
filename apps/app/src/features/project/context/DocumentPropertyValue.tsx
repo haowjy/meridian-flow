@@ -6,7 +6,7 @@
 import { Trans } from "@lingui/react/macro";
 import type { JsonValue } from "@meridian/contracts/threads";
 
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { isChipList, isEmptyValue } from "./property-shapes";
 
 export function YamlBlock({ text }: { text: string }) {
@@ -42,9 +42,9 @@ export function DocumentPropertyValue({
         {value.map((item, index) => (
           // The same word can appear twice in a list, so the position keeps the keys apart.
           <li key={`${index}:${String(item)}`} className="flex">
-            <Badge variant="label" size="lg" className="font-normal text-foreground">
+            <Chip kind="label" className="font-normal text-foreground">
               {typeof item === "boolean" ? <Flag value={item} /> : String(item)}
-            </Badge>
+            </Chip>
           </li>
         ))}
       </ul>

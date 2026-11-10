@@ -6,7 +6,7 @@
  * takes more than two fifths of the line before it truncates itself.
  */
 import type { ReactNode } from "react";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { cn } from "@/lib/utils";
 
 export function WorkTitleLine({
@@ -25,9 +25,9 @@ export function WorkTitleLine({
       {title}
       {status ? (
         <div className="flex min-w-0 max-w-2/5 shrink-0">
-          <Badge variant="label" size={size === "heading" ? "lg" : "default"}>
+          <Chip kind="label">
             <span className="truncate">{status}</span>
-          </Badge>
+          </Chip>
         </div>
       ) : null}
     </div>

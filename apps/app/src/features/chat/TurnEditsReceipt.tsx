@@ -18,6 +18,7 @@ import { type ReversalDirection, successfulWorkReversals } from "@/client/api/re
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
@@ -235,12 +236,9 @@ export function TurnEditsReceipt({
           </span>
         </button>
         {undoUnavailable ? (
-          <span
-            className="shrink-0 rounded-full border border-border-subtle px-[var(--chat-space-block)] py-0.5 font-medium text-muted-foreground"
-            data-undo-unavailable
-          >
+          <Chip kind="label" className="shrink-0" data-undo-unavailable>
             <Trans>Can't undo</Trans>
-          </span>
+          </Chip>
         ) : (
           <Button
             type="button"

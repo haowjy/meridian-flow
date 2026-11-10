@@ -10,8 +10,8 @@ import type { OpenAsk } from "@meridian/thread-client";
 import { ArrowUp } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { FailureCard } from "@/components/app/FailureCard";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { permissionRequestText } from "./permission-request";
@@ -264,9 +264,9 @@ function QuestionTakeover({
               ) : null}
             </span>
             {option.label === recommended ? (
-              <Badge variant="label" className="mt-0.5">
+              <Chip kind="label" className="mt-0.5">
                 {t`Recommended`}
-              </Badge>
+              </Chip>
             ) : null}
           </button>
         ))}

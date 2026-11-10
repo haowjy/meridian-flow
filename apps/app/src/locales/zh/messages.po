@@ -4069,8 +4069,8 @@ msgid "Needs you"
 msgstr ""
 
 #: src/components/app/NewBadge.tsx
-msgid "New"
-msgstr ""
+#~ msgid "New"
+#~ msgstr ""
 
 #: src/features/chat/ChatThreadTitle.tsx
 #: src/features/chat/ChatView.tsx

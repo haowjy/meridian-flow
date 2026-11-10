@@ -7,6 +7,7 @@ import { useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
+import { Chip } from "@/components/ui/chip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,15 +73,10 @@ export function WorkScopePicker({
             </span>
           )}
           {pending > 0 ? (
-            <span
-              className={cn(
-                "rounded-full bg-primary/12 px-1.5 font-medium text-jade-text tabular-nums",
-                role.rowSecondary,
-              )}
-              title={t`${pending} documents to review`}
-            >
-              {pending}
-            </span>
+            <Chip kind="count" tone="jade">
+              <span aria-hidden>{pending}</span>
+              <span className="sr-only">{t`${pending} documents to review`}</span>
+            </Chip>
           ) : null}
           <ChevronsUpDown
             className={cn(sidebarIcon.row, "shrink-0 group-hover:text-foreground", role.secondary)}
