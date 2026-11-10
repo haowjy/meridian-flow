@@ -402,7 +402,8 @@ function focusEditorProse(documentId: string) {
 /**
  * Content-measured fit, after wrapping has done its work. The review controls
  * wrap to their own line before anything shortens; only a line too narrow for
- * them even alone gives up labels, in order (document-identity-row.css), and
+ * them even alone gives up labels, in order (`ACTIONS_DENSITY` and
+ * document-identity-row.css), and
  * the path drops its parent crumbs when the leaf would otherwise be cut.
  */
 function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
@@ -414,8 +415,10 @@ function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
       const style = getComputedStyle(row);
       const available =
         row.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-      for (let level = 0; level <= COLLAPSE_LEVELS; level++) {
+      const actions = controls?.querySelector<HTMLElement>("[data-review-actions]");
+      for (let level = 0; level < ACTIONS_DENSITY.length; level++) {
         row.dataset.collapse = String(level);
+        if (actions) actions.dataset.density = ACTIONS_DENSITY[level];
         if (!controls || controls.getBoundingClientRect().width <= available) break;
       }
       row.removeAttribute("data-path-short");
@@ -434,4 +437,5 @@ function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
   }, [ref]);
 }
 
-const COLLAPSE_LEVELS = 4;
+/** The review actions' form at each collapse level (document-identity-row.css has the rest). */
+const ACTIONS_DENSITY = ["full", "short", "short", "icon", "icon"] as const;

@@ -5,6 +5,7 @@
 
 import { Trans } from "@lingui/react/macro";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import { useDraftCommandState } from "./draft-changes";
@@ -39,9 +40,15 @@ export function DraftCommandStatus({
   ) : state.applying ? (
     <Trans>Applying</Trans>
   ) : state.failure ? (
-    <span className={state.failure.serverCode === "needs_restore" ? undefined : "text-destructive"}>
+    state.failure.serverCode === "needs_restore" ? (
       <ReviewMessageText failure={state.failure} />
-    </span>
+    ) : (
+      <InlineErrorRow
+        message={<ReviewMessageText failure={state.failure} />}
+        wrap
+        className="min-w-0 flex-1 p-0"
+      />
+    )
   ) : isDeletedFromManuscript(item) ? (
     <Trans>Deleted from the manuscript</Trans>
   ) : null;

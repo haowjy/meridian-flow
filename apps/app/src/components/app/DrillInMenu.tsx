@@ -21,7 +21,7 @@ import {
   useRef,
   useState,
 } from "react";
-
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -222,11 +222,7 @@ export function DrillInMenuBody({
           <ChevronLeft aria-hidden />
           <span className="min-w-0 flex-1 truncate">{choosing.label}</span>
         </DropdownMenuItem>
-        {status ? (
-          <div role="alert" className="px-2 py-1.5 text-xs text-destructive">
-            {status}
-          </div>
-        ) : null}
+        {status ? <InlineErrorRow message={status} wrap /> : null}
         <div className="min-h-0 overflow-y-auto">{choosing.choices.map(actionItem)}</div>
       </DropdownMenuContent>
     );
@@ -277,11 +273,7 @@ export function DrillInMenuBody({
           </DropdownMenuItem>
         ))}
       </div>
-      {status ? (
-        <div role="alert" className="px-2 py-1.5 text-xs text-destructive">
-          {status}
-        </div>
-      ) : null}
+      {status ? <InlineErrorRow message={status} wrap /> : null}
       {currentActions.length > 0 ? <DropdownMenuSeparator /> : null}
       {currentActions.map(actionItem)}
     </DropdownMenuContent>

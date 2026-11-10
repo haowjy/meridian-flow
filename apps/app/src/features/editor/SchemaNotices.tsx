@@ -27,13 +27,12 @@ import {
   useRef,
   useState,
 } from "react";
-
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { SchemaFence } from "@/core/editor/schema-fence";
 import type { SchemaRepairEvent } from "@/core/editor/schema-repair-witness";
 import { cn } from "@/lib/utils";
-
 import { writeClipboardText } from "./clipboard";
 
 const COPIED_RESET_MS = 1500;
@@ -275,9 +274,11 @@ function RemovedFragment({ repair }: { repair: SchemaRepairEvent }) {
             </Button>
           </div>
           {copy === "blocked" ? (
-            <p role="status" data-schema-repair-copy-blocked className="text-destructive">
-              <Trans>Couldn't copy. Select the text to copy it.</Trans>
-            </p>
+            <InlineErrorRow
+              message={<Trans>Couldn't copy. Select the text to copy it.</Trans>}
+              wrap
+              className="p-0"
+            />
           ) : null}
         </>
       ) : (

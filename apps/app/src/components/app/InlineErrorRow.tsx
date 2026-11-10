@@ -1,6 +1,7 @@
 /**
- * InlineErrorRow — compact failed-load or failed-command row for rail, popover,
- * header, and list surfaces.
+ * InlineErrorRow — the one error line: a red icon, the message in body ink, and at most
+ * one text action. Rails, popovers, headers, lists, dialogs and fields all use it; a
+ * caller sets only the inset (`className`).
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -16,6 +17,8 @@ export function InlineErrorRow({
   retryRef,
   onDismiss,
   wrap = false,
+  id,
+  className,
 }: {
   message: ReactNode;
   onRetry?: () => void;
@@ -25,10 +28,21 @@ export function InlineErrorRow({
   onDismiss?: () => void;
   /** Let a long message wrap, for dialogs where the words are the point. */
   wrap?: boolean;
+  /** For a field's `aria-describedby`. */
+  id?: string;
+  /** The host's inset, replacing the default `px-2 py-1.5`. */
+  className?: string;
 }) {
   return (
-    <div role="alert" className="flex items-center gap-2 px-2 py-1.5">
-      <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />
+    <div
+      id={id}
+      role="alert"
+      className={cn("flex items-center gap-2 px-2 py-1.5", wrap && "items-start", className)}
+    >
+      <AlertCircle
+        className={cn("size-3.5 shrink-0 text-destructive", wrap && "mt-px")}
+        aria-hidden
+      />
       <span
         className={cn("min-w-0 flex-1 text-xs text-foreground", wrap ? "break-words" : "truncate")}
       >

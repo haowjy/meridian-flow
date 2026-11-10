@@ -305,13 +305,12 @@ function WorkSection({
                 ) : null}
               </Button>
               {error ? (
-                <p
+                <InlineErrorRow
                   id={errorId}
-                  role="alert"
-                  className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] text-xs text-destructive"
-                >
-                  {failureCopy(error)}
-                </p>
+                  message={failureCopy(error)}
+                  wrap
+                  className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-0"
+                />
               ) : null}
             </div>
           );

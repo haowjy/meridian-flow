@@ -18,6 +18,7 @@ import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ReactNode } from "react";
 import { type LineageKey, useLineageTitle } from "@/client/query/useLineageTitle";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { addressDocumentName, type LinkFollowOutcome, linkTargetLabel } from "@/core/editor/links";
@@ -26,7 +27,6 @@ import {
   schemeIcon,
   schemeLabel,
 } from "@/features/project/context/context-schemes";
-
 import type { LinkDocumentRef } from "./follow-link";
 import { linkCreationTarget, useCreateLinkedDocument } from "./use-create-linked-document";
 
@@ -158,9 +158,11 @@ export function FollowOutcomeContent({
       />
 
       {failedToCreate ? (
-        <p className="text-destructive text-xs" role="alert">
-          <Trans>The document could not be created. Try again.</Trans>
-        </p>
+        <InlineErrorRow
+          message={<Trans>The document could not be created. Try again.</Trans>}
+          wrap
+          className="p-0"
+        />
       ) : null}
 
       <DialogFooter>

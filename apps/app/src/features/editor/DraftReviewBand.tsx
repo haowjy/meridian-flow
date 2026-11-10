@@ -23,17 +23,17 @@
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { Check, Eye, EyeOff, List, Loader2, Trash2 } from "lucide-react";
+import { Eye, EyeOff, List } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { PaintCapture } from "@/components/app/PaintHold";
-import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { changeListLabel, DocumentChanges } from "@/features/draft-review/DocumentChanges";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
+import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import {
   ReviewFailureNotices,
   ReviewStateInline,
@@ -79,7 +79,7 @@ export function DraftReviewBand({
   const listed = view.status === "ready" && count > 0;
   // A finger's 44px targets leave no room for every control in a docked row, so the
   // version menu carries Show changes, and the list and stepper give way before
-  // Discard draft and Apply draft do (document-identity-row.css, collapse 4).
+  // Discard and Apply do (document-identity-row.css, collapse 4).
   const coarse = useCoarsePointer();
   if (!props.itemKey) return children({ version: null, controls: null });
 
@@ -133,44 +133,14 @@ export function DraftReviewBand({
         onShowLive={header.showLive}
       />
       {finished ? null : (
-        <>
-          <Button
-            variant="quiet"
-            size="xs"
-            className="identity-discard h-6"
-            aria-label={t`Discard draft`}
-            disabled={locked}
-            onClick={header.discardDraft}
-          >
-            <Trash2 aria-hidden className="identity-command-icon hidden size-3.5" />
-            <span className="identity-command-label">
-              <Trans>Discard draft</Trans>
-            </span>
-            <span className="identity-command-short hidden">
-              <Trans>Discard</Trans>
-            </span>
-          </Button>
-          <Button
-            size="xs"
-            className="identity-apply h-6"
-            aria-label={t`Apply draft`}
-            disabled={locked || !header.canApply}
-            onClick={header.applyDraft}
-          >
-            {header.completing === "apply" ? (
-              <Loader2 className="size-3 animate-spin" aria-hidden />
-            ) : null}
-            {header.completing === "apply" ? null : (
-              <Check aria-hidden className="identity-command-icon hidden size-3.5" />
-            )}
-            <span className="identity-command-label">
-              <Trans>Apply draft</Trans>
-            </span>
-            <span className="identity-command-short hidden">
-              <Trans>Apply</Trans>
-            </span>
-          </Button>
-        </>
+        <ReviewActions
+          scope="document"
+          disabled={locked}
+          applyDisabled={!header.canApply}
+          applying={header.completing === "apply"}
+          onDiscard={header.discardDraft}
+          onApply={header.applyDraft}
+        />
       )}
     </span>
   );
