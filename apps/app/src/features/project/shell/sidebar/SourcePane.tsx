@@ -24,6 +24,7 @@ export function SourcePane({
   label,
   title,
   actions,
+  bar,
   drop,
   children,
 }: {
@@ -31,6 +32,8 @@ export function SourcePane({
   /** Tooltip and accessible name, for a list whose full name is longer than its label. */
   title?: string;
   actions?: ReactNode;
+  /** Controls too wide for the heading's line, held still on their own line under it. */
+  bar?: ReactNode;
   drop?: SourceDrop;
   children: ReactNode;
 }) {
@@ -48,6 +51,7 @@ export function SourcePane({
           </h2>
           <PaneHeaderActions actions={actions} />
         </div>
+        {bar ? <div className="mx-2 flex shrink-0 items-center justify-end pb-1">{bar}</div> : null}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: scrolling at the edges while dragging. slop-lint: allow suppression the reason is stated in this comment */}
         <div
           ref={scroller}
