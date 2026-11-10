@@ -12,11 +12,12 @@ import {
   type ThreadDraftListItem,
   workIdOfDraftOwnerKey,
 } from "@meridian/contracts/branches";
-import { useQueries, useQuery } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo } from "react";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { unwrapListQuery } from "@/client/query/list-query";
-import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { cachedOwnerDrafts, ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import {
   type ContextTab,
   DEFAULT_TAB_VIEW,
@@ -68,10 +69,16 @@ export type OpenTarget =
   | { kind: "document"; documentId: string; review?: ReviewAddress }
   | { kind: "tab"; tab: ContextTab; review?: ReviewAddress };
 
-type DraftRows = { status: "loading" | "ready"; rows: readonly ThreadDraftListItem[] };
+type DraftRows = {
+  status: "loading" | "ready";
+  rows: readonly ThreadDraftListItem[];
+  /** The list could not be read: it says nothing about which drafts exist. */
+  failed?: true;
+};
 
 const NO_ROWS: readonly ThreadDraftListItem[] = [];
 const READY_EMPTY: DraftRows = { status: "ready", rows: NO_ROWS };
+const FAILED_EMPTY: DraftRows = { status: "ready", rows: NO_ROWS, failed: true };
 
 /** An owner's draft list as the tabs read it: raw rows, no catalog labelling. */
 function useScopeDraftRows(projectId: string, ownerKey: string | null): DraftRows {
@@ -84,11 +91,13 @@ function useScopeDraftRows(projectId: string, ownerKey: string | null): DraftRow
   );
   return useMemo(
     () =>
-      ownerKey === null || list.status === "disabled" || list.status === "error"
+      ownerKey === null || list.status === "disabled"
         ? READY_EMPTY
-        : list.data === null
-          ? { status: "loading", rows: NO_ROWS }
-          : { status: "ready", rows: list.data },
+        : list.status === "error"
+          ? FAILED_EMPTY
+          : list.data === null
+            ? { status: "loading", rows: NO_ROWS }
+            : { status: "ready", rows: list.data },
     [ownerKey, list.status, list.data],
   );
 }
@@ -109,7 +118,7 @@ function usePinnedDraftRows(
           ownerKeys[index] as string,
           result.data === undefined
             ? result.isError
-              ? READY_EMPTY
+              ? FAILED_EMPTY
               : { status: "loading", rows: NO_ROWS }
             : { status: "ready", rows: result.data.items },
         ]),
@@ -219,6 +228,36 @@ export function useOpenDocuments(projectId: string): {
   const slice = useContextTabs(projectId);
   const scope = useResolveScope(projectId);
   const pinned = usePinnedDraftRows(projectId, pinOwnerKeys(slice.tabs, scope.ownerKey));
+  // A pin names a draft. A cached list lacking the item may only be stale (the draft was made a
+  // moment ago), so the pin goes only once a fresh read of the owner's list also lacks it: the
+  // draft has ended (Applied, Discarded, or gone in another tab). A failed read clears nothing.
+  // The address sync then drops `item=`. The effect keys on the pins that look missing, so its
+  // own fetch cannot re-trigger it.
+  const queryClient = useQueryClient();
+  const missingPins = slice.tabs.flatMap(({ reviewPin: pin }) => {
+    if (!pin) return [];
+    const list = pin.ownerKey === scope.ownerKey ? scope.drafts : pinned.get(pin.ownerKey);
+    return list?.status === "ready" &&
+      !list.failed &&
+      !list.rows.some((r) => r.itemKey === pin.itemKey)
+      ? [JSON.stringify([pin.ownerKey, pin.itemKey])]
+      : [];
+  });
+  const missingKey = [...new Set(missingPins)].join();
+  useEffect(() => {
+    for (const key of new Set(missingPins)) {
+      const [ownerKey, itemKey] = JSON.parse(key) as [string, string];
+      const queryKey = projectQueryKeys.ownerDrafts(projectId, ownerKey);
+      void queryClient.refetchQueries({ queryKey }).then(() => {
+        // A failed refetch keeps the old rows and sets status "error": it proves nothing.
+        if (queryClient.getQueryState(queryKey)?.status !== "success") return;
+        if (
+          !cachedOwnerDrafts(queryClient, projectId, ownerKey)?.some((r) => r.itemKey === itemKey)
+        )
+          useContextTabsStore.getState().clearReviewPins(projectId, { ownerKey, itemKey });
+      });
+    }
+  }, [projectId, queryClient, missingKey]);
   return useMemo(() => {
     const tabs = slice.tabs
       .filter(isEditorContextTab)
@@ -253,6 +292,7 @@ export function useOpenDocumentActions(projectId: string): {
 
   const reviewOf = (tab: ContextTab, review?: ReviewAddress | null): ReviewAddress | null => {
     if (review) return review;
+    if (tab.reviewPin) return tab.reviewPin;
     const ownerKey = reviewOwnerOfTab(tab, activeWorkId);
     const entry = ownerKey ? reviewEntryOf(tab, ownerKey) : undefined;
     return ownerKey && entry ? { ownerKey, itemKey: entry.itemKey } : null;

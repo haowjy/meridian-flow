@@ -179,9 +179,7 @@ export function ContextViewer({
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
         // With no tab left the landing's top margin holds it instead.
-        notice={
-          tabs.length > 0 ? <RemovedDocumentChip projectId={projectId} surface="editor" /> : null
-        }
+        notice={tabs.length > 0 ? <RemovedDocumentChip projectId={projectId} /> : null}
       />
       {masked && route ? (
         <PendingDocumentPath
@@ -234,6 +232,7 @@ export function ContextViewer({
                 >
                   <ContextEditorMountHost
                     projectId={projectId}
+                    editorWorkId={editorWorkId}
                     trackedTabs={trackedTabs}
                     activeTabId={activeIsEditable ? activeTabId : null}
                     active={active}

@@ -11,7 +11,6 @@ import type { ContextUri } from "@/lib/context-uri";
 import type { DraftRef } from "./review-command-types";
 
 export type DraftOnlyPresentation = DraftRef & {
-  container: "editor";
   /** A created document the draft alone holds; Discard removes it. */
   draftOnly: boolean;
   token: string;
@@ -30,7 +29,7 @@ export interface DraftOnlyContainer {
   remove(draft: DraftRef): void;
 }
 
-function presentations(projectId: string, tab: ContextTab, container: "editor") {
+function presentations(projectId: string, tab: ContextTab) {
   if (tab.kind !== "tracked") return [];
   return Object.entries(tab.reviews ?? {}).map(([ownerKey, entry]) => ({
     projectId,
@@ -39,7 +38,6 @@ function presentations(projectId: string, tab: ContextTab, container: "editor") 
     itemKey: entry.itemKey,
     draftOnly: isDraftOnly(tab),
     token: entry.tabInstanceToken,
-    container,
     contextLocation: { scheme: tab.scheme, path: tab.path },
   }));
 }
@@ -52,7 +50,7 @@ export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
     () => ({
       presentations: (project) => {
         if (epoch?.aborted) return [];
-        return getContextTabs(project).tabs.flatMap((tab) => presentations(project, tab, "editor"));
+        return getContextTabs(project).tabs.flatMap((tab) => presentations(project, tab));
       },
       subscribe: (listener) => useContextTabsStore.subscribe(listener),
       promote: async (draft) => {
@@ -68,8 +66,7 @@ export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
       remove: (draft) => {
         if (epoch?.aborted) return;
         const editor = removal.discardDraft(draft.projectId, draft.ownerKey, draft.itemKey);
-        if (editor.kind !== "noop")
-          notices?.presentedRemoved(draft.projectId, "editor", editor.removed);
+        if (editor.kind !== "noop") notices?.presentedRemoved(draft.projectId, editor.removed);
       },
     }),
     [removal, notices, epoch, projectId],

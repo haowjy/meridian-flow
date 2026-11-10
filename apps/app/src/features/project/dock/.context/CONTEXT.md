@@ -46,7 +46,7 @@ moves both ways: a change the writer focuses is written to the pin, and a pin th
 (reload, shared link, Back) focuses the change it names, or the first when that change is gone. An address arriving in Write (link, reload, Back) wins over the persisted selection:
 `use-review-address-sync.ts` selects the tab of the document the address names, and a review
 address with no tab installs one (`ProjectAddressDocument`). A review stays open after its draft
-leaves the Work's list while the tab's view is Draft, so the last Apply keeps its editor, Undo and
+leaves its owner's list while the tab's view is Draft, so the last Apply keeps its editor, Undo and
 "No changes left" until the writer chooses Live. A launch carries `ReviewFocus`: a group id with its
 immutable projection frame. `FocusOpenedReview` waits for review paint and resolves only within
 that same projection. A stale frame or a persisted bare id opens without that selection.
