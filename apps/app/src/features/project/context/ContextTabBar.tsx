@@ -93,14 +93,8 @@ export function ContextTabBar({
           </TooltipContent>
         </Tooltip>
       ) : null}
-      {/* Flush against the door when it is there: the door is the first chip in
-          the row, not a control docked beside it. */}
-      <div
-        className={cn(
-          "flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden",
-          onShowRecents ? "pl-0" : "pl-2",
-        )}
-      >
+      {/* The left padding is room for the first tab's flare, which this scroller would clip. */}
+      <div className="flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden pl-2">
         {tabs.map((tab, index) => {
           const isActive = (member: ContextTab) =>
             activeTabInstanceId

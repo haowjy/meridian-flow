@@ -742,14 +742,17 @@
   border-top-right-radius: var(--radius-md);
   background-color: var(--tab-chip-surface);
   /* The sheet's hairline carried up and over the tab. The band overlaps the sheet by
-     1px (`tab-band`), so this chip's fill hides the sheet's top edge beneath it. */
+     2px (`tab-band`): the sheet's top edge and one row inside it, so this chip's fill
+     hides the edge beneath it even where a fractional display scale draws the edge
+     a sliver thicker than the layout pixel. */
   box-shadow:
     inset 1px 0 0 var(--color-border-subtle),
     inset -1px 0 0 var(--color-border-subtle),
     inset 0 1px 0 var(--color-border-subtle);
   /* The base flares outward into the sheet's top edge. Each flare is one hairline wider
      than the radius and overlaps the chip by that hairline, so its arc starts on the
-     chip's side line and ends on the sheet's top edge, and its fill hides both beneath. */
+     chip's side line and ends on the sheet's top edge. Its last row lies inside the
+     sheet and is filled, which ends the chip's side line at the edge. */
   &::before,
   &::after {
     content: "";
@@ -757,25 +760,36 @@
     position: absolute;
     bottom: 0;
     width: calc(var(--radius-md) + 1px);
-    height: calc(var(--radius-md) + 1px);
+    height: calc(var(--radius-md) + 2px);
+    background-repeat: no-repeat;
+    background-size:
+      100% calc(100% - 1px),
+      100% 1px;
     --flare: transparent calc(var(--radius-md) - 0.5px), var(--color-border-subtle) var(--radius-md),
       var(--color-border-subtle) calc(var(--radius-md) + 0.5px),
       var(--tab-chip-surface) calc(var(--radius-md) + 1px);
+    --patch: linear-gradient(var(--tab-chip-surface), var(--tab-chip-surface));
   }
   &::before {
     left: calc(-1 * var(--radius-md));
-    background: radial-gradient(circle at 0 0, var(--flare));
+    background-image: radial-gradient(circle at 0 0, var(--flare)), var(--patch);
+    background-position:
+      top,
+      bottom;
   }
   &::after {
     right: calc(-1 * var(--radius-md));
-    background: radial-gradient(circle at 100% 0, var(--flare));
+    background-image: radial-gradient(circle at 100% 0, var(--flare)), var(--patch);
+    background-position:
+      top,
+      bottom;
   }
 }
 /* A band whose active chip joins the `page-sheet` below it. */
 @utility tab-band {
   position: relative;
   z-index: 1;
-  margin-bottom: -1px;
+  margin-bottom: -2px;
 }
 @utility tab-chip-inactive {
   /* isolate + z-index:-1 keeps the pill behind the chip's content without
