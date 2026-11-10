@@ -69,6 +69,8 @@ adapters. Use package public exports. Architecture:
 **Tooling.** `pnpm`, Biome and Nx, never npm. No raw colors outside
 `packages/design-tokens`.
 
+**Claude Code.** Never use the generic `claude` agent type or a fork of yourself.
+
 **Comments.** Few. Write one only for what the code can't show and a wrong edit
 would break silently, at the line it guards. No file headers, no decision ids.
 
@@ -114,7 +116,7 @@ Commit often. Worktrees, commits, pushes, PRs and issues need no permission.
 Documentation-only and comment-only changes need no PR: push them straight to `main`.
 A wrong comment or doc gets fixed as soon as you see it, without asking.
 
-A human merges into `main` or `staging`; `CLAUDE.md` grants Claude Opus more. A feature built
+A human merges into `main` or `staging`, or a model the global grant covers. A feature built
 in several pieces gets one integration branch: each finished piece bases on it and merges into
 it, instead of PRs stacked on each other, and the piece's worktree, stack and processes go as
 soon as it's in. One PR carries the integration branch into `main`.
