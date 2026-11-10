@@ -39,18 +39,22 @@ its own owner's Scratch.
 
 ## Review state
 
-A tab carries its own `view` (Live/Draft, Show changes) and optional `reviewPin`,
-persisted in tab session v3 with draft-only tabs. The review controller follows the selected tab
-(`ReviewAddressOwner`): it enters, keeps or leaves the review the tab names. The focused change
-moves both ways: a change the writer focuses is written to the pin, and a pin that moves by itself
-(reload, shared link, Back) focuses the change it names, or the first when that change is gone. An address arriving in Write (link, reload, Back) wins over the persisted selection:
-`use-review-address-sync.ts` selects the tab of the document the address names, and a review
-address with no tab installs one (`ProjectAddressDocument`). A review stays open after its draft
-leaves its owner's list while the tab's view is Draft, so the last Apply keeps its editor, Undo and
-"No changes left" until the writer chooses Live. A launch carries `ReviewFocus`: a group id with its
-immutable projection frame. `FocusOpenedReview` waits for review paint and resolves only within
-that same projection. A stale frame or a persisted bare id opens without that selection.
-Launchers live in `../review-launch.tsx`.
+What a document paints is its document view (`client/project-shell/document-views.ts`), keyed by
+document id per account and project in session storage: Live or Draft, the pinned draft (owner and
+item), and Show changes. A document opens on Live; a draft paints only when the writer picks it
+(the version menu) or arrives at an address naming it, and a draft-created document paints its own
+draft. `../views.ts` resolves the paint and holds it while the pinned owner's list loads, so a
+document never paints Live and then the draft; a pin goes only when a fresh read lacks its item.
+Picking a Work returns every view showing a draft of a live document to Live. Every document host
+(Editor tab, dock, phone) has its own review (`../DocumentReview.tsx`), and `useReviewAdmission`
+makes it enter, keep or leave the draft its paint names. The focused change moves both ways: a
+change the writer focuses is written to the pin, and a pin that moves by itself (reload, shared
+link, Back) focuses the change it names, or the first when that change is gone. Main's address and
+main's view stay in step (`../use-review-address-sync.ts`): an address arriving by push or pop sets
+or drops the pin and, in Write, selects the tab it names once that tab exists; after that the view
+writes the address by replace. A review stays open after its draft leaves its owner's list while
+the view says Draft, so the last Apply keeps its editor, Undo and "No changes left" until the writer
+chooses Live. A launch pins the draft with its focused change and opens the document. Launchers live in `../review-launch.tsx`.
 
 ## Review and paint
 

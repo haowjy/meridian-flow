@@ -78,8 +78,8 @@ clearing ask the server first (`reconcileClosed`). `gone`, the same closed draft
 failed read refuse admission, because the room owner just ended that review and admitting
 it again would loop; a different active draft is the replacement. While a command hides
 the item (a Discard in flight), the port refuses it outright for the same reason; the end of the hide is a new port, so a refused Discard restores the
-review. `ReviewAddressOwner` remembers a refusal only for the port that gave it, so a
-replacement that becomes known later is retried once.
+review. `useReviewAdmission` (one per document host) remembers a refusal only for the port
+that gave it, so a replacement that becomes known later is retried once.
 
 The server answers `gone` from the Work's ownership and the item key alone, before any
 content grant: the active draft is what grants reading a document deleted live or a
