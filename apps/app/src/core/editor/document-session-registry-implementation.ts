@@ -54,6 +54,19 @@ type LiveRoomState = {
 
 type RetainedLiveDocument = { lease: LiveDocumentSessionLease; detached: boolean };
 
+/** The room will never accept the session's edits as it is: reset, removed, refused or access lost. */
+function isTerminalRoom(session: DocumentSession): boolean {
+  const { status, connectionState } = session.getSnapshot();
+  return (
+    session.resetDisposition !== null ||
+    status === "destroyed" ||
+    status === "access-lost" ||
+    connectionState?.kind === "reset" ||
+    connectionState?.kind === "unauthorized" ||
+    connectionState?.kind === "terminal"
+  );
+}
+
 export class DocumentSessionRegistry
   implements
     LiveDocumentSessionAuthority,
@@ -92,6 +105,8 @@ export class DocumentSessionRegistry
     attachTransport: (session) => this.attachSessionTransport(session),
   });
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Unretained live sessions kept open only until the server acknowledges their edits. */
+  private readonly drainingRooms = new Set<string>();
   private liveDocCapWarningEmitted = false;
   private readonly sessionObservers = new Map<
     string,
@@ -374,6 +389,7 @@ export class DocumentSessionRegistry
     this.liveDocCapWarningEmitted = false;
     for (const timer of this.pendingTeardownTimers.values()) clearTimeout(timer);
     this.pendingTeardownTimers.clear();
+    this.drainingRooms.clear();
     const liveSessions = [...this.liveRooms.entries()].flatMap(([documentId, { session }]) =>
       session ? [{ documentId, session }] : [],
     );
@@ -618,6 +634,7 @@ export class DocumentSessionRegistry
       session.subscribe(() => {
         this.dropRefusedRoom(session);
         this.reportRemovedRoom(session);
+        this.retireDrainedRoom(session);
       });
     return session;
   }
@@ -755,19 +772,48 @@ export class DocumentSessionRegistry
   }
 
   private scheduleTeardown(roomKey: string): void {
-    if (this.pendingTeardownTimers.has(roomKey)) return;
+    if (this.pendingTeardownTimers.has(roomKey) || this.drainingRooms.has(roomKey)) return;
     const timer = setTimeout(() => {
       this.pendingTeardownTimers.delete(roomKey);
       const state = this.liveRooms.get(roomKey);
       if (!state?.session || this.isRetained(roomKey)) return;
-      const session = state.session;
-      state.session = null;
-      void this.teardownOwner.retire({ kind: "live", roomKey }, session).catch(() => undefined);
+      // Like draft rooms, a session with unsent edits stays until they are acknowledged.
+      // The other exits (refused, removed or reset room, revoked document, account close)
+      // retire it through `retireDrainedRoom`, `revokeAccess`, `revokeDocument` and `invalidateAll`.
+      if (this.mustKeepForUnsentEdits(state.session)) {
+        this.drainingRooms.add(roomKey);
+        return;
+      }
+      this.retireLiveSession(roomKey, state);
     }, this.teardownGraceMs);
     this.pendingTeardownTimers.set(roomKey, timer);
   }
 
+  private mustKeepForUnsentEdits(session: DocumentSession): boolean {
+    return session.hasUnacknowledgedEdits() && !isTerminalRoom(session);
+  }
+
+  private retireLiveSession(roomKey: string, state: LiveRoomState): void {
+    const session = state.session;
+    if (!session) return;
+    state.session = null;
+    this.drainingRooms.delete(roomKey);
+    void this.teardownOwner.retire({ kind: "live", roomKey }, session).catch(() => undefined);
+  }
+
+  private retireDrainedRoom(session: DocumentSession): void {
+    const roomKey = session.documentId;
+    if (!this.drainingRooms.has(roomKey)) return;
+    const state = this.liveRooms.get(roomKey);
+    if (state?.session !== session) return;
+    if (this.mustKeepForUnsentEdits(session)) return;
+    // A refused room is dropped through its leases (`dropRefusedRoom`), which clears its copy.
+    if (session.resetDisposition === "refused") return;
+    this.retireLiveSession(roomKey, state);
+  }
+
   private cancelPendingTeardown(roomKey: string): void {
+    this.drainingRooms.delete(roomKey);
     const timer = this.pendingTeardownTimers.get(roomKey);
     if (!timer) return;
     clearTimeout(timer);
