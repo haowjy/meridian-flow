@@ -37,14 +37,13 @@ export function DocumentDraftHint({ projectId, tab }: DocumentDraftHintProps) {
   const { controller } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
-  const others = branchesOtherThanViews(hints, controller.workId);
+  const others = branchesOtherThanViews(hints, controller.ownerKey);
   if (!contextLocation || others.length === 0) return null;
 
   const review = (hint: (typeof others)[number]) => {
-    const target = hintReviewTarget(hint, { documentId, contextLocation, documentName });
-    if (target) openAiDraft(target);
+    openAiDraft(hintReviewTarget(hint, { documentId, contextLocation, documentName }));
   };
-  const labelOf = (hint: (typeof others)[number]) => hint.label ?? t`Unnamed Work`;
+  const labelOf = (hint: (typeof others)[number]) => hint.label ?? t`Unnamed draft`;
   const [only] = others;
 
   return (
@@ -56,12 +55,12 @@ export function DocumentDraftHint({ projectId, tab }: DocumentDraftHintProps) {
       <span className="min-w-0 truncate">
         {others.length === 1 && only ? (
           only.label ? (
-            <Trans>A Work has drafts for this ({only.label})</Trans>
+            <Trans>Drafts for this ({only.label})</Trans>
           ) : (
-            <Trans>A Work has drafts for this</Trans>
+            <Trans>Drafts for this</Trans>
           )
         ) : (
-          plural(others.length, { other: "# Works have drafts for this" })
+          plural(others.length, { other: "# sets of drafts for this" })
         )}
       </span>
       {others.length === 1 && only ? (

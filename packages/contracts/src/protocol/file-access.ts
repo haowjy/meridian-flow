@@ -14,6 +14,7 @@ export type FileAccessLevel = "read" | "edit";
 export type FileAccessDenial =
   | "not_found"
   | "work_archived"
+  | "chat_frozen"
   | "agent_read_only"
   | "uploads_read_only";
 

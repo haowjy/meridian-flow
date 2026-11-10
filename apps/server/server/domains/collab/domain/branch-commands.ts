@@ -4,25 +4,24 @@
  * write, and the effect transaction stores its result.
  */
 import { createHash } from "node:crypto";
-import type { BranchCommandId, BranchId, UserId, WorkId } from "@meridian/contracts";
+import type { BranchCommandId, BranchId, UserId } from "@meridian/contracts";
 import type { BranchCommandKind, StoredBranchCommandResult } from "@meridian/contracts/branches";
 
 /** Who sent which command and what it said: the identity a resend must match exactly. */
 export type BranchCommandEnvelope = {
   commandId: BranchCommandId;
-  workId: WorkId;
   accountId: UserId;
   kind: BranchCommandKind;
-  branchId: BranchId | null;
+  branchId: BranchId;
   /** `commandDigest` of the canonical envelope. */
   digest: string;
 };
 
-/** Canonical hash of the whole envelope: account, project, Work, kind, selectors and body. */
+/** Canonical hash of the whole envelope: account, project, branch, kind, selectors and body. */
 export function commandDigest(envelope: {
   accountId: string;
   projectId: string;
-  workId: string;
+  branchId: string;
   kind: BranchCommandKind;
   selectors: Record<string, string | null>;
   body: unknown;
@@ -53,18 +52,21 @@ function canonicalJson(value: unknown): string {
 
 export type CommandLookup =
   | { kind: "none" }
-  /** Another digest, Work or account under this id: reveals nothing. */
+  /** Another digest, branch or account under this id: reveals nothing. */
   | { kind: "conflict" }
   | { kind: "pending"; branchId: BranchId | null }
   | { kind: "done"; commandKind: BranchCommandKind; result: StoredBranchCommandResult };
 
 /** What a lookup needs; the observation route has no body to digest, so it names none. */
-export type CommandLookupKey = Pick<BranchCommandEnvelope, "commandId" | "workId" | "accountId"> & {
+export type CommandLookupKey = Pick<
+  BranchCommandEnvelope,
+  "commandId" | "branchId" | "accountId"
+> & {
   digest?: string;
 };
 
 export interface BranchCommands {
-  /** Fresh and authenticated: the account and Work the key names are all it reads. */
+  /** Fresh and authenticated: the account and branch the key names are all it reads. */
   lookup(key: CommandLookupKey): Promise<CommandLookup>;
 }
 

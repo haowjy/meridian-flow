@@ -1,22 +1,20 @@
 /**
- * The two places a document's draft hint still depends on a branch originating in a Work: which
- * hints the current view already shows as its own draft, and the review address a hint opens
- * (today's address names the origin Work). When branches are chosen independently of Works,
- * this file is what changes.
+ * The two places a document's draft hint reads a branch's owner: which hints the current view
+ * already shows as its own draft, and the review address a hint opens.
  */
 import type { DocumentDraftHint } from "@meridian/contracts/branches";
 import type { AiDraftLaunchTarget } from "@/features/project/review-launch";
 import type { ContextUri } from "@/lib/context-uri";
 
-/** The hints the view is not already working in: its own Work's draft has the existing chip. */
+/** The hints the view is not already working in: its own owner's draft has the existing chip. */
 export function branchesOtherThanViews(
   hints: readonly DocumentDraftHint[],
-  viewWorkId: string,
+  viewOwnerKey: string,
 ): DocumentDraftHint[] {
-  return hints.filter((hint) => hint.originWorkId !== viewWorkId);
+  return hints.filter((hint) => hint.owner !== viewOwnerKey);
 }
 
-/** Where Review goes for a hint; null when its branch has no origin Work to address the review by. */
+/** Where Review goes for a hint. */
 export function hintReviewTarget(
   hint: DocumentDraftHint,
   document: {
@@ -24,10 +22,9 @@ export function hintReviewTarget(
     contextLocation: Pick<ContextUri, "scheme" | "path">;
     documentName?: string;
   },
-): AiDraftLaunchTarget | null {
-  if (!hint.originWorkId) return null;
+): AiDraftLaunchTarget {
   return {
-    workId: hint.originWorkId,
+    ownerKey: hint.owner,
     documentId: document.documentId,
     itemKey: hint.itemKey,
     contextLocation: document.contextLocation,

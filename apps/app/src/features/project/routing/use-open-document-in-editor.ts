@@ -1,8 +1,9 @@
 /** The shared Editor open path for a document locator or an already-resolved view. */
+import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback } from "react";
 import { type ContextTab, isEditorContextTab } from "@/client/stores";
-import { type ReviewAddress, reviewAddressWorkId } from "../presented-document";
+import type { ReviewAddress } from "../presented-document";
 import { type OpenContextRoute, useOpenContextRoute } from "./ProjectNavigationContext";
 
 type EditorDocument =
@@ -25,7 +26,7 @@ export function openDocumentInEditor(
     {
       scheme: target.scheme,
       path: target.path,
-      workId: (review && reviewAddressWorkId(review)) ?? target.workId ?? undefined,
+      workId: (review && workIdOfDraftOwnerKey(review.ownerKey)) || target.workId || undefined,
       ...(tab ? { documentId: tab.documentId } : {}),
       ...(target.rootThreadId ? { rootThreadId: target.rootThreadId } : {}),
     },
@@ -33,7 +34,9 @@ export function openDocumentInEditor(
       replace: false,
       ...routeOptions,
       ...(tab ? { tab } : {}),
-      ...(review ? { itemKey: review.itemKey, changeId: review.changeId } : {}),
+      ...(review
+        ? { itemKey: review.itemKey, reviewOwner: review.ownerKey, changeId: review.changeId }
+        : {}),
     },
   );
 }

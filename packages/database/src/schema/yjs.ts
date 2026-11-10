@@ -10,7 +10,6 @@ import type {
   ThreadId,
   TurnId,
   UserId,
-  WorkId,
 } from "@meridian/contracts";
 import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
@@ -33,7 +32,7 @@ import {
 import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { modelResponses, threads, turns } from "./agent-threads";
 import { branches } from "./branches";
-import { documents, projects, works } from "./content";
+import { documents, projects } from "./content";
 import { documentEdits } from "./document-edits";
 import { users } from "./users";
 
@@ -169,38 +168,6 @@ export const draftWriteJournal = pgTable(
       "draft_write_journal_status_valid",
       sql`${table.status} IN ('active', 'rollback_pending')`,
     ),
-  ],
-);
-
-export const pushLineage = pgTable(
-  "push_lineage",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    draftId: text("draft_id").references(() => documentDrafts.id, { onDelete: "set null" }),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    upstreamUpdateSeq: bigint("upstream_update_seq", { mode: "number" }),
-    pushedByUserId: uuid("pushed_by_user_id")
-      .$type<UserId>()
-      .references(() => users.id, { onDelete: "set null" }),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .references(() => threads.id, { onDelete: "set null" }),
-    turnId: uuid("turn_id")
-      .$type<TurnId>()
-      .references(() => turns.id, { onDelete: "set null" }),
-    idempotencyKey: text("idempotency_key").notNull(),
-    receiptId: uuid("receipt_id").notNull().default(sql`gen_random_uuid()`),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    uniqueIndex("push_lineage_idempotency").on(table.idempotencyKey),
-    index("push_lineage_document").on(table.documentId),
-    index("push_lineage_draft").on(table.draftId),
-    index("push_lineage_turn").on(table.threadId, table.turnId),
-    index("push_lineage_receipt").on(table.receiptId),
   ],
 );
 
@@ -379,10 +346,6 @@ export const branchCommands = pgTable(
   "branch_commands",
   {
     id: uuid("id").$type<BranchCommandId>().primaryKey(),
-    workId: uuid("work_id")
-      .$type<WorkId>()
-      .notNull()
-      .references(() => works.id, { onDelete: "cascade" }),
     branchId: uuid("branch_id")
       .$type<BranchId>()
       .references(() => branches.id, { onDelete: "cascade" }),
@@ -399,7 +362,6 @@ export const branchCommands = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
-    index("branch_commands_work").on(table.workId),
     check(
       "branch_commands_kind_valid",
       sql`${table.kind} IN ('apply_click', 'unapply_click', 'apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_branch')`,

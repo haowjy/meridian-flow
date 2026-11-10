@@ -1,13 +1,7 @@
 /** One draft-only lifecycle across the open tabs. */
 
 import { useMemo } from "react";
-import {
-  type ContextTab,
-  getContextTabs,
-  isDraftOnly,
-  useContextTabsStore,
-  workIdOfReviewOwner,
-} from "@/client/stores";
+import { type ContextTab, getContextTabs, isDraftOnly, useContextTabsStore } from "@/client/stores";
 import {
   useContextRemovalCoordinator,
   useOptionalAccountEpochSignal,
@@ -26,7 +20,7 @@ export type DraftOnlyPresentation = DraftRef & {
 export interface DraftOnlyContainer {
   presentations(projectId: string): readonly DraftOnlyPresentation[];
   subscribe(listener: () => void): () => void;
-  /** Document-wide: every Work's entry clears, and each container keeps the review it showed. */
+  /** Document-wide: every owner's entry clears, and each container keeps the review it showed. */
   promote(draft: DraftRef): Promise<boolean>;
   /**
    * Closes the discarded review wherever it shows. A created document's
@@ -38,23 +32,16 @@ export interface DraftOnlyContainer {
 
 function presentations(projectId: string, tab: ContextTab, container: "editor") {
   if (tab.kind !== "tracked") return [];
-  return Object.entries(tab.reviews ?? {}).flatMap(([owner, entry]) => {
-    const workId = workIdOfReviewOwner(owner);
-    return workId === null
-      ? []
-      : [
-          {
-            projectId,
-            documentId: tab.documentId,
-            workId,
-            itemKey: entry.itemKey,
-            draftOnly: isDraftOnly(tab),
-            token: entry.tabInstanceToken,
-            container,
-            contextLocation: { scheme: tab.scheme, path: tab.path },
-          },
-        ];
-  });
+  return Object.entries(tab.reviews ?? {}).map(([ownerKey, entry]) => ({
+    projectId,
+    documentId: tab.documentId,
+    ownerKey,
+    itemKey: entry.itemKey,
+    draftOnly: isDraftOnly(tab),
+    token: entry.tabInstanceToken,
+    container,
+    contextLocation: { scheme: tab.scheme, path: tab.path },
+  }));
 }
 
 export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
@@ -70,7 +57,7 @@ export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
       subscribe: (listener) => useContextTabsStore.subscribe(listener),
       promote: async (draft) => {
         if (epoch?.aborted) return false;
-        // The document becomes live once, whichever Work's draft supplied the evidence.
+        // The document becomes live once, whichever owner's draft supplied the evidence.
         const tab = getContextTabs(draft.projectId).tabs.find(
           (tab) => tab.documentId === draft.documentId && isDraftOnly(tab),
         );
@@ -80,7 +67,7 @@ export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
       },
       remove: (draft) => {
         if (epoch?.aborted) return;
-        const editor = removal.discardDraft(draft.projectId, draft.workId, draft.itemKey);
+        const editor = removal.discardDraft(draft.projectId, draft.ownerKey, draft.itemKey);
         if (editor.kind !== "noop")
           notices?.presentedRemoved(draft.projectId, "editor", editor.removed);
       },

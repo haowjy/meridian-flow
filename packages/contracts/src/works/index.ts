@@ -1,6 +1,7 @@
 export { type AiWriteMode, aiWriteModeSchema, effectiveAiWriteMode } from "./ai-write-mode.js";
 
 import { z } from "zod";
+import type { DraftOwner } from "../branches/owner.js";
 import { decodeWorkHandle, type WorkHandle } from "../handles.js";
 import type { ProjectId, ThreadId, UserId, WorkId } from "../ids.js";
 import type { AiWriteMode } from "./ai-write-mode.js";
@@ -113,7 +114,8 @@ export type ThreadWorkScope = { workId: WorkId; workHandle: WorkHandle | null };
 export type ThreadExecutionContext = {
   scope: ThreadWorkScope;
   aiWriteMode: AiWriteMode;
-  branchOwner: { kind: "work"; workId: WorkId } | null;
+  /** Who owns the drafts this chat writes (its Work, or its lineage with no Work); null in direct mode. */
+  branchOwner: DraftOwner | null;
 };
 
 /** HTTP rebind body. Null workId falls back to the project's No Work row. */

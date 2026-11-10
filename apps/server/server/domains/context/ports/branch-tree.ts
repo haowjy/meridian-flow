@@ -5,7 +5,7 @@
  * the in-memory composition has no branches and never builds a branch placement.
  */
 
-import type { BranchId, DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts";
+import type { BranchId, DocumentId, DraftOwner, ThreadId, TurnId } from "@meridian/contracts";
 import type { ContextSiblingPosition, RetractionCause } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type { BranchTreeChange, BranchTreeFault } from "../tree/branch-tree-changes.js";
@@ -16,8 +16,8 @@ import type {
   TrackedNode,
 } from "../tree/hidden-node-types.js";
 
-/** The drafting Work's active branch, locked by the command transaction that ensured it. */
-export type EnsuredBranch = { id: BranchId; workId: WorkId };
+/** The drafting owner's active branch, locked by the command transaction that ensured it. */
+export type EnsuredBranch = { id: BranchId; owner: DraftOwner };
 
 /** A drafted move or delete as it changed the branch's row, for the caller's record (D76). */
 export type RecordedBranchTreeChange = BranchTreeChange & { branchId: BranchId };

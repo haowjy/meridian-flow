@@ -200,7 +200,7 @@ export function createApplyClickService(input: {
       if (!textCut) {
         // A tree cut alone: a move, a delete or a creation with no text room (design-v2 §4).
         if (!tree) throw new ApplyClickRefused("malformed");
-        const resolved = await input.identity.resolveReviewItemByDocument(command);
+        const resolved = await input.identity.resolveReviewItemInBranch(command);
         if (!resolved) throw new ApplyClickRefused("not_found");
         return await input.store.apply(command, {
           kind: "tree",

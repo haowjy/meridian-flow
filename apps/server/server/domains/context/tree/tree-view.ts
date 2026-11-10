@@ -102,7 +102,6 @@ export type VisibleFolder = {
   parentId: FolderId | null;
   name: string;
   rank: string | null;
-  orderPolicy: "default" | "manual";
   hidden: boolean;
   locationVersion: bigint;
   path: string;
@@ -124,7 +123,12 @@ export type TreeNode =
   | { kind: "document"; document: VisibleDocument }
   | { kind: "folder"; folder: VisibleFolder };
 
-export type BranchUse = { branchId: BranchId; originWorkId: WorkId | null; createdAt: Date };
+export type BranchUse = {
+  branchId: BranchId;
+  originWorkId: WorkId | null;
+  originRootThreadId: string | null;
+  createdAt: Date;
+};
 
 export type IdentityStatus =
   /**
@@ -311,7 +315,6 @@ type VisibleFolderRow = {
   parentId: FolderId | null;
   name: string;
   rank: string | null;
-  orderPolicy: "default" | "manual";
   hidden: boolean;
   locationVersion: bigint;
 };
@@ -351,7 +354,6 @@ export function createTreeReader(
         parentId: vf.parentId,
         name: vf.name,
         rank: vf.rank,
-        orderPolicy: vf.orderPolicy,
         hidden: vf.hidden,
         locationVersion: vf.locationVersion,
       })
@@ -1000,5 +1002,10 @@ function rowLocation(
 }
 
 function branchUse(use: Awaited<ReturnType<typeof loadActiveBranchUses>>[number]): BranchUse {
-  return { branchId: use.branchId, originWorkId: use.originWorkId, createdAt: use.branchCreatedAt };
+  return {
+    branchId: use.branchId,
+    originWorkId: use.originWorkId,
+    originRootThreadId: use.originRootThreadId,
+    createdAt: use.branchCreatedAt,
+  };
 }

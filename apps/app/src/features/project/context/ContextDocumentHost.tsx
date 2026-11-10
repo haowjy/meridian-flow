@@ -11,10 +11,9 @@
  */
 
 import { Trans } from "@lingui/react/macro";
-import { isWorkArchived } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { useWorksSnapshot } from "@/client/query/useWorks";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import type { ContextTab } from "@/client/stores";
 import { isDraftOnly } from "@/client/stores";
@@ -54,7 +53,10 @@ export type ContextDocumentHostProps = {
   shown?: boolean;
   /** Whether the surface is on screen; a hidden surface's chrome stands down. */
   active: boolean;
-  /** The Work's scope freezes this document (an archived Work); the room's access must agree. */
+  /**
+   * The document as shown is frozen (an archived Work, or a trashed chat's draft under
+   * review); the room's access must agree.
+   */
   readOnly?: boolean;
   presentation?: DocumentPresentation;
   onUntitledBecameNonEmpty?: (documentId: string) => Promise<void>;
@@ -83,7 +85,7 @@ export function ContextDocumentHost({
   const availabilityRevision = resourceAvailabilityRevision(resourceProjection, tab.documentId);
   const requestedReview = useRequestedReview({
     container,
-    editorWorkId: controller.workId,
+    editorWorkId: controller.ownerKey,
     activeScheme: tab.kind === "tracked" ? tab.scheme : null,
     documentId: shown ? tab.documentId : null,
   });
@@ -102,7 +104,7 @@ export function ContextDocumentHost({
   // A draft-only document has no live room until Apply promotes it, and
   // the server refuses one. Review hosts the draft room alone.
   const draftOnly = isDraftOnly(tab);
-  // `readOnly` is the Work's scope (archived freezes it); the presentation decides whether
+  // `readOnly` is the owner's scope (archived or trashed freezes it); the presentation decides whether
   // this view ever types. Only the first is compared with the room's access.
   const editable = presentation.editable && !readOnly;
   const renderEditor = (
@@ -173,7 +175,7 @@ export function ContextDocumentHost({
                   projectId={projectId}
                   session={session}
                   reviewRoomName={reviewRoomName}
-                  reviewWorkId={controller.workId}
+                  reviewOwner={controller.ownerKey}
                   readOnly={readOnly}
                 />
               ) : null}
@@ -244,42 +246,35 @@ function ActiveReviewBinding(props: Parameters<typeof useActiveReviewBinding>[0]
 }
 
 /**
- * A room's scope follows its Work: an archived Work's drafts and scratch are
- * read-only. The front editor already follows its room; when the server
- * names a scope that `readOnly` doesn't show, this tab's Works catalog is
- * behind (another tab archived or unarchived the Work), and the archived
- * notice, its Unarchive and `readOnly` all come from it. Asked on activation
- * and on each named scope; this tab's own `readOnly` changes (its archive
- * command) never ask, because the room's next scope confirms them. A review
- * watches the draft's room, never the live one it reviews against.
+ * A room's scope follows its owner: an archived Work's drafts and scratch, and a trashed
+ * chat's drafts, are read-only. The front editor already follows its room; when the server
+ * names a scope that `readOnly` doesn't show, this tab's Works catalog or the review owner's
+ * draft list is behind (another tab archived the Work or trashed the chat), and the notice,
+ * its way back and `readOnly` all come from them. Asked on activation and on each named
+ * scope; this tab's own commands never ask, because the room's next scope confirms them. A
+ * review watches the draft's room, never the live one it reviews against; the host's
+ * `readOnly` is the review's while it shows one.
  */
 function RoomScopeCatalogCheck({
   projectId,
   session,
   reviewRoomName,
-  reviewWorkId,
+  reviewOwner,
   readOnly,
 }: {
   projectId: string;
   /** Null while a draft-only document is hosted by its draft room alone. */
   session: DocumentSession | null;
   reviewRoomName: string | null;
-  /** The Work a review room belongs to; its archive state is that room's expected scope. */
-  reviewWorkId: string | null;
+  /** The owner key of the review room's drafts. */
+  reviewOwner: string | null;
   readOnly: boolean;
 }) {
   const queryClient = useQueryClient();
-  const works = useWorksSnapshot(projectId).list.data?.works;
   const registry = useLiveDocumentSessionRegistry();
   const [access, setAccess] = useState<DocumentSessionAccess | null>(null);
-  // A review room follows the review's Work even when the reviewed file is
-  // project-owned; a live room follows the file's own scope (`readOnly`).
-  const reviewWork = reviewRoomName ? works?.find((work) => work.id === reviewWorkId) : undefined;
-  const expectedReadOnly = reviewRoomName
-    ? Boolean(reviewWork && isWorkArchived(reviewWork))
-    : readOnly;
-  const readOnlyRef = useRef(expectedReadOnly);
-  readOnlyRef.current = expectedReadOnly;
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   useEffect(() => {
     const observer = (snapshot: DocumentSessionSnapshot) => setAccess(snapshot.access);
     return reviewRoomName
@@ -289,7 +284,11 @@ function RoomScopeCatalogCheck({
   useEffect(() => {
     if (access === null || (access === "read") === readOnlyRef.current) return;
     void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);
-  }, [access, projectId, queryClient]);
+    if (reviewRoomName && reviewOwner)
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.ownerDrafts(projectId, reviewOwner),
+      });
+  }, [access, projectId, queryClient, reviewRoomName, reviewOwner]);
   return null;
 }
 

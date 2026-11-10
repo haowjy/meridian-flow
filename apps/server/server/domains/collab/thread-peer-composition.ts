@@ -14,7 +14,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { DocumentRemovals } from "../context/ports/document-removal.js";
-import type { FileAccess } from "../file-policy/index.js";
+import type { FileAccess, OwnerLocks } from "../file-policy/index.js";
 import type { LiveAgentEditCore, ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
 import type { Branches } from "./domain/branches.js";
 import { createScopedDocumentLinks } from "./domain/document-links-port.js";
@@ -72,9 +72,9 @@ export function createDraftThreadPeerAgentEditCore(input: {
   responseTransactions: ResponseTransactionHooks;
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
   removals: DocumentRemovals;
-  lockWorks(workIds: readonly string[]): Promise<void>;
+  lockOwners(locks: OwnerLocks): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
-  branches: Pick<Branches, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
+  branches: Pick<Branches, "viewForOwner" | "ensureActiveForWrite" | "shareActive">;
 }): ThreadPeerAgentEditCore {
   return createThreadPeerCorePool({
     branches: input.branches,
@@ -87,13 +87,13 @@ export function createDraftThreadPeerAgentEditCore(input: {
       diagnostics: input.diagnostics,
       fileAccess: input.fileAccess,
       removals: input.removals,
-      lockWorks: input.lockWorks,
+      lockOwners: input.lockOwners,
       lockLiveDocuments: input.lockLiveDocuments,
     }),
     liveUtilityCore: input.liveUtilityCore,
     afterLiveCommit: (documentId) => input.draftPulls.scheduleLivePull(documentId),
     fileAccess: input.fileAccess,
-    lockWorks: input.lockWorks,
+    lockOwners: input.lockOwners,
     lockLiveDocuments: input.lockLiveDocuments,
     commitThreadResponseAtomically: input.commitThreadResponseAtomically,
     attemptScope: input.attemptScope,

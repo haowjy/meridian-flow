@@ -2,10 +2,10 @@
 import type { Database } from "@meridian/database";
 import { contextSources, threads } from "@meridian/database/schema";
 import { and, eq, exists, isNull, type SQL } from "drizzle-orm";
+import { lineageHasLiveMember } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { ScratchLineage, ScratchLineages } from "../scratch-owner.js";
 import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
-import { lineageHasLiveMember } from "./lineage-scratch-lifecycle.js";
 
 export function createDrizzleScratchLineages(db: Database): ScratchLineages {
   async function roots(projectId: string, constraint: SQL | undefined): Promise<ScratchLineage[]> {

@@ -2,7 +2,6 @@
  * Removal's collab half: every removal registers its documents with the retirement batch, so
  * their live rooms close `4208`; only a discard closes their drafts.
  */
-import type { WorkId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { branches } from "@meridian/database/schema";
 import { inArray } from "drizzle-orm";
@@ -20,12 +19,15 @@ export function createDrizzleDocumentRemovalCollab(
       const tx = currentDrizzleDb(db);
       const closed = await close.closeDrafts(tx, { documentIds }, { documentRemoved: record });
       const branchIds = [...new Set(closed.map((draft) => draft.branchId))];
-      if (!branchIds.length) return [];
+      if (!branchIds.length) return { workIds: [], lineageRootIds: [] };
       const owners = await tx
-        .select({ workId: branches.originWorkId })
+        .select({ workId: branches.originWorkId, rootThreadId: branches.originRootThreadId })
         .from(branches)
         .where(inArray(branches.id, branchIds));
-      return owners.flatMap(({ workId }) => (workId ? [workId as WorkId] : []));
+      return {
+        workIds: owners.flatMap(({ workId }) => (workId ? [workId] : [])),
+        lineageRootIds: owners.flatMap(({ rootThreadId }) => (rootThreadId ? [rootThreadId] : [])),
+      };
     },
   };
 }

@@ -626,10 +626,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return { folders, documents };
   }
 
-  async parentOrderPolicy(_view: TreeView, _parentId: string | null) {
-    return "default" as const;
-  }
-
   async namesAt(_view: TreeView, parentId: string | null): Promise<Set<string>> {
     return entryNames(this.backing, this.sourceId, parentId);
   }

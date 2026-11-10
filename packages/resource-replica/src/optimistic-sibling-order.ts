@@ -7,7 +7,7 @@ import type { CatalogEntry, ContextSiblingPosition } from "@meridian/contracts/p
 import { placementOps } from "./placement-journal";
 import type { FolderNamespaceRecord, ParentRef, ResourceRecord } from "./resource-records";
 import { ownerListedInScope } from "./resource-work-authority";
-import { compareCatalogSiblings, compareDefaultSiblings, isManualParent } from "./sibling-order";
+import { compareCatalogSiblings } from "./sibling-order";
 
 type Child = Extract<CatalogEntry, { kind: "file" | "folder" }>;
 type Source = Extract<CatalogEntry, { kind: "source" }>;
@@ -45,11 +45,9 @@ function insertAtPosition(
 
 /**
  * Fold every unresolved placement, in admission order, over the canonical sibling lists:
- * membership, parent-policy promotion and position change together, step by step. A move
- * into a default parent that carries a position promotes it first; an arrival without one lands
- * last in a manual parent and in name order in a default one. The projected rows say where each
- * subject finally stands (its last placement); earlier steps resolve their destination from the
- * placement itself.
+ * membership and position change together, step by step. An arrival without a position lands
+ * last. The projected rows say where each subject finally stands (its last placement); earlier
+ * steps resolve their destination from the placement itself.
  */
 export function projectOptimisticSiblingOrder(input: {
   projectId: string;
@@ -94,26 +92,13 @@ export function projectOptimisticSiblingOrder(input: {
     if (siblings) siblings.push(entry.entryId);
     else seq.set(base.parentId, [entry.entryId]);
   }
-  const manual = new Set<string>();
-  for (const [parentId, ids] of seq) {
-    if (isManualParent(entries.get(parentId))) manual.add(parentId);
-    const useRank = manual.has(parentId);
+  for (const ids of seq.values()) {
     ids.sort((leftId, rightId) => {
       const left = entries.get(leftId);
       const right = entries.get(rightId);
-      return isChild(left) && isChild(right) ? compareCatalogSiblings(useRank, left, right) : 0;
+      return isChild(left) && isChild(right) ? compareCatalogSiblings(left, right) : 0;
     });
   }
-  const byName = (leftId: string, rightId: string) => {
-    const left = entries.get(leftId);
-    const right = entries.get(rightId);
-    return isChild(left) && isChild(right)
-      ? compareDefaultSiblings(
-          { kind: left.kind, name: left.name, identity: left.entryId },
-          { kind: right.kind, name: right.name, identity: right.entryId },
-        )
-      : 0;
-  };
 
   const affected = new Set<string>();
   for (const op of ops) {
@@ -138,21 +123,13 @@ export function projectOptimisticSiblingOrder(input: {
     const siblings = seq.get(target) ?? [];
     seq.set(target, siblings);
     if (position) {
-      manual.add(target);
       insertAtPosition(siblings, op.subject, position, from === target ? previousIndex : -1);
-    } else {
-      siblings.push(op.subject);
-      if (!manual.has(target)) siblings.sort(byName);
-    }
+    } else siblings.push(op.subject);
     parentOf.set(op.subject, target);
     affected.add(target);
   }
 
   for (const parentId of affected) {
-    if (!manual.has(parentId)) continue;
-    const parent = entries.get(parentId);
-    if (parent?.kind === "source" || parent?.kind === "folder")
-      entries.set(parentId, { ...parent, orderPolicy: "manual" });
     seq.get(parentId)?.forEach((entryId, index) => {
       const entry = entries.get(entryId);
       if (isChild(entry))

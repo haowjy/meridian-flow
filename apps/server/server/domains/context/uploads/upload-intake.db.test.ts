@@ -332,7 +332,6 @@ if (!RUN) {
           scope: "project",
           slug: "manuscript",
           name: "Manuscript",
-          adapterType: "local",
         });
         const catalog = createDrizzleContextCatalog(db);
         const collab = createCollabDomain({

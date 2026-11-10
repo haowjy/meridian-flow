@@ -59,8 +59,10 @@
      State the machine, workload, commits and method (runs, warm or cold,
      statistic) once above the table, and give a range when runs vary. A count
      of round trips or queries read from the code is not a timing; label it as
-     such. Write "None." with why performance is unaffected when nothing on
-     such a path changed. -->
+     such. A path that got slower doesn't block the merge, but say below the
+     table why the cost is worth it, and the reviewer checks that reason.
+     Write "None." with why performance is unaffected when nothing on such a
+     path changed. -->
 
 <machine · workload · method>
 

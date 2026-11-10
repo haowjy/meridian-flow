@@ -35,7 +35,6 @@ export async function loadLiveProjectExportDocuments(db: Database, projectId: st
       sourceId: documents.contextSourceId,
       folderId: documents.folderId,
       rank: documents.rank,
-      sourceOrderPolicy: contextSources.orderPolicy,
       workName: works.name,
       chatTitle: threads.title,
     })
@@ -68,15 +67,13 @@ export async function loadLiveProjectExportDocuments(db: Database, projectId: st
           parentId: folders.parentId,
           name: folders.name,
           rank: folders.rank,
-          orderPolicy: folders.orderPolicy,
         })
         .from(folders)
         .where(and(inArray(folders.contextSourceId, sourceIds), isNull(folders.deletedAt)))
     : [];
 
-  // A parent is a source's top level (null folder) or a folder; each owns one order policy.
+  // A parent is a source's top level (null folder) or a folder.
   const parentKey = (sourceId: string, folderId: string | null) => `${sourceId}/${folderId ?? ""}`;
-  const policies = new Map<string, "default" | "manual">();
   const children = new Map<string, Sibling<(typeof live)[number]>[]>();
   const adopt = (key: string, child: Sibling<(typeof live)[number]>) => {
     const list = children.get(key);
@@ -84,7 +81,6 @@ export async function loadLiveProjectExportDocuments(db: Database, projectId: st
     else children.set(key, [child]);
   };
   for (const row of live) {
-    policies.set(parentKey(row.sourceId, null), row.sourceOrderPolicy);
     adopt(parentKey(row.sourceId, row.folderId), {
       kind: "file",
       name: renderFilename(row.name, row.extension),
@@ -94,7 +90,6 @@ export async function loadLiveProjectExportDocuments(db: Database, projectId: st
     });
   }
   for (const folder of folderRows) {
-    policies.set(parentKey(folder.sourceId, folder.id), folder.orderPolicy);
     adopt(parentKey(folder.sourceId, folder.parentId), {
       kind: "folder",
       name: folder.name,
@@ -106,10 +101,7 @@ export async function loadLiveProjectExportDocuments(db: Database, projectId: st
   const ordered: typeof live = [];
   const walk = (sourceId: string, folderId: string | null) => {
     const key = parentKey(sourceId, folderId);
-    const manual = policies.get(key) === "manual";
-    for (const child of (children.get(key) ?? []).sort((left, right) =>
-      compareCatalogSiblings(manual, left, right),
-    )) {
+    for (const child of (children.get(key) ?? []).sort(compareCatalogSiblings)) {
       if (child.document) ordered.push(child.document);
       else walk(sourceId, child.entryId);
     }

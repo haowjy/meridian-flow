@@ -224,8 +224,13 @@ msgstr "{0, plural, one {Restored # item to {destinationName}.} other {Restored 
 
 #. placeholder {0}: others.length
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "{0, plural, other {# Works have drafts for this}}"
-msgstr "{0, plural, other {# Works have drafts for this}}"
+msgid "{0, plural, other {# sets of drafts for this}}"
+msgstr "{0, plural, other {# sets of drafts for this}}"
+
+#. placeholder {0}: others.length
+#: src/features/editor/DocumentDraftHint.tsx
+#~ msgid "{0, plural, other {# Works have drafts for this}}"
+#~ msgstr "{0, plural, other {# Works have drafts for this}}"
 
 #. placeholder {0}: list( entries.map( ({ name, outcome }) => `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`, ), )
 #: src/features/chat/subagent/DeliveryEventRows.tsx
@@ -878,13 +883,13 @@ msgid "A Work groups the chats and drafts for one piece of writing."
 msgstr "A Work groups the chats and drafts for one piece of writing."
 
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "A Work has drafts for this"
-msgstr "A Work has drafts for this"
+#~ msgid "A Work has drafts for this"
+#~ msgstr "A Work has drafts for this"
 
 #. placeholder {0}: only.label
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "A Work has drafts for this ({0})"
-msgstr "A Work has drafts for this ({0})"
+#~ msgid "A Work has drafts for this ({0})"
+#~ msgstr "A Work has drafts for this ({0})"
 
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "a writer"
@@ -2261,6 +2266,7 @@ msgid "Couldn't load this file."
 msgstr "Couldn't load this file."
 
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Couldn't load Trash."
 msgstr "Couldn't load Trash."
 
@@ -2439,6 +2445,10 @@ msgstr "Couldn't restore {name}. That folder is no longer available."
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Couldn't restore {name}. Try again."
 msgstr "Couldn't restore {name}. Try again."
+
+#: src/features/draft-review/TrashedChatNotice.tsx
+msgid "Couldn't restore the chat. Try again."
+msgstr "Couldn't restore the chat. Try again."
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
@@ -2901,6 +2911,15 @@ msgstr "Drafts"
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "Drafts ({waiting})"
 msgstr "Drafts ({waiting})"
+
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "Drafts for this"
+msgstr "Drafts for this"
+
+#. placeholder {0}: only.label
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "Drafts for this ({0})"
+msgstr "Drafts for this ({0})"
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 #~ msgid "Drop image to insert it"
@@ -3403,7 +3422,7 @@ msgid "Import in progress. Show activity"
 msgstr "Import in progress. Show activity"
 
 #. placeholder {0}: destination.name
-#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Import into {0}"
 msgstr "Import into {0}"
 
@@ -3746,6 +3765,7 @@ msgid "Loading signed image URL…"
 msgstr "Loading signed image URL…"
 
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Loading Trash…"
 msgstr "Loading Trash…"
 
@@ -3765,8 +3785,10 @@ msgid "Loading Works…"
 msgstr "Loading Works…"
 
 #: src/features/billing/UsageCard.tsx
+#: src/features/project/chat/ChatScratch.tsx
 #: src/features/project/context/DocumentPath.tsx
 #: src/features/project/context/FolderMenu.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Loading…"
 msgstr "Loading…"
 
@@ -4170,6 +4192,10 @@ msgstr "No files attached in this chat yet."
 msgid "No files in {containerLabel}."
 msgstr "No files in {containerLabel}."
 
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "No files yet."
+msgstr "No files yet."
+
 #: src/core/editor/asset-image-render-state.ts
 msgid "No image has been uploaded to {path} yet."
 msgstr "No image has been uploaded to {path} yet."
@@ -4312,6 +4338,7 @@ msgstr "Nothing here yet"
 #~ msgstr "Nothing here yet."
 
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Nothing in the trash."
 msgstr "Nothing in the trash."
 
@@ -4907,6 +4934,7 @@ msgstr "Resize sidebar"
 msgid "Response complete"
 msgstr "Response complete"
 
+#: src/features/draft-review/TrashedChatNotice.tsx
 #: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore"
@@ -6049,6 +6077,14 @@ msgstr "This chapter is temporarily unavailable"
 msgid "This chat continues without a brief."
 msgstr "This chat continues without a brief."
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This chat is in the trash, so its drafts are frozen. Restore the chat to apply them."
+msgstr "This chat is in the trash, so its drafts are frozen. Restore the chat to apply them."
+
+#: src/features/draft-review/TrashedChatNotice.tsx
+msgid "This chat is in Trash. Restore it to edit or apply its drafts."
+msgstr "This chat is in Trash. Restore it to edit or apply its drafts."
+
 #. placeholder {0}: workDisplayName(commit.work)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat now uses {0}."
@@ -6179,6 +6215,10 @@ msgstr "This document was removed when the reply that created it didn't finish."
 msgid "This document's Work is archived. Unarchive the Work to reverse this change."
 msgstr "This document's Work is archived. Unarchive the Work to reverse this change."
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This draft changed since you looked. Check it, then discard again."
+msgstr "This draft changed since you looked. Check it, then discard again."
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This draft is archived"
 msgstr "This draft is archived"
@@ -6186,6 +6226,10 @@ msgstr "This draft is archived"
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft is no longer here. It may have been applied or discarded already."
 msgstr "This draft is no longer here. It may have been applied or discarded already."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This draft just became read-only, so nothing was discarded. Check it, then try again."
+msgstr "This draft just became read-only, so nothing was discarded. Check it, then try again."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "This draft was discarded, so the change wasn't kept. The AI will read it again."
@@ -6405,7 +6449,6 @@ msgstr "Top up any time. Extra usage carries over month to month."
 #: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 #: src/features/project/shell/sidebar/TrashSource.tsx
-#: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "Trash"
 msgstr "Trash"
 
@@ -6533,8 +6576,13 @@ msgstr "Unknown component: {kindLabel}"
 
 #: src/features/editor/DocumentDraftHint.tsx
 #: src/features/editor/DocumentVersionMenu.tsx
-msgid "Unnamed Work"
-msgstr "Unnamed Work"
+msgid "Unnamed draft"
+msgstr "Unnamed draft"
+
+#: src/features/editor/DocumentDraftHint.tsx
+#: src/features/editor/DocumentVersionMenu.tsx
+#~ msgid "Unnamed Work"
+#~ msgstr "Unnamed Work"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx

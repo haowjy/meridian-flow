@@ -24,7 +24,6 @@ import {
   tabStateOf,
   withoutReviewEntry,
   withTabState,
-  workReviewOwner,
 } from "./editor-workspace-model";
 
 export const EDITOR_WORKSPACE_STORAGE_KEY = "meridian:editor-workspace:v2";
@@ -61,7 +60,7 @@ export type EditorWorkspaceCommand =
       /** A scope switch or a settled review drops every pin of the project. */
       kind: "clear-review-pins";
       projectId: string;
-      workId?: string;
+      ownerKey?: string;
       itemKey?: string;
     }
   | {
@@ -94,10 +93,10 @@ export type EditorWorkspaceCommand =
       tab: ContextTab;
     }
   | {
-      /** Discard in one Work: drops that Work's entry; the tab closes only when no Work reviews it. */
+      /** Discard in one owner: drops that owner's entry; the tab closes only when no owner reviews it. */
       kind: "drop-review";
       projectId: string;
-      workId: string;
+      ownerKey: string;
       tabInstanceId: string;
     }
   | {
@@ -203,7 +202,7 @@ function validTabState(tab: Record<string, unknown>): boolean {
     reviewPin !== undefined &&
     !(
       isRecord(reviewPin) &&
-      isString(reviewPin.owner) &&
+      isString(reviewPin.ownerKey) &&
       isString(reviewPin.itemKey) &&
       (reviewPin.changeId === undefined || isString(reviewPin.changeId))
     )
@@ -301,13 +300,13 @@ function normalizeProject(workspace: ProjectTabsSlice): ProjectTabsSlice {
   };
 }
 
-/** The tab to select once `removed` is gone: it keeps the selection unless it was the selected one. */
-function pinWithoutWork(tab: ContextTab, workId: string): ContextTab {
-  if (tab.reviewPin?.owner !== workReviewOwner(workId)) return tab;
+function pinWithoutOwner(tab: ContextTab, ownerKey: string): ContextTab {
+  if (tab.reviewPin?.ownerKey !== ownerKey) return tab;
   const { reviewPin: _pin, ...rest } = tab;
   return rest as ContextTab;
 }
 
+/** The tab to select once `removed` is gone: it keeps the selection unless it was the selected one. */
 function selectionAfterRemoval(
   workspace: ProjectTabsSlice,
   removed: readonly ContextTab[],
@@ -473,11 +472,12 @@ export function reduceEditorWorkspace(
     const tab = workspace?.tabs.find(
       (candidate) => candidate.tabInstanceId === command.tabInstanceId,
     );
-    if (!workspace || !tab || !reviewEntryOf(tab, command.workId)) return outcome("stale", current);
-    const after = withoutReviewEntry(tab, command.workId);
+    if (!workspace || !tab || !reviewEntryOf(tab, command.ownerKey))
+      return outcome("stale", current);
+    const after = withoutReviewEntry(tab, command.ownerKey);
     return replaceProject(current, command.projectId, {
       tabs: workspace.tabs.flatMap((candidate) =>
-        candidate !== tab ? [candidate] : after ? [pinWithoutWork(after, command.workId)] : [],
+        candidate !== tab ? [candidate] : after ? [pinWithoutOwner(after, command.ownerKey)] : [],
       ),
       selectedTabKey: after ? workspace.selectedTabKey : selectionAfterRemoval(workspace, [tab]),
     });
@@ -636,7 +636,7 @@ export function reduceEditorWorkspace(
     if (!workspace) return outcome("not-referenced", current);
     const matches = (tab: ContextTab) =>
       tab.reviewPin !== undefined &&
-      (command.workId === undefined || tab.reviewPin.owner === workReviewOwner(command.workId)) &&
+      (command.ownerKey === undefined || tab.reviewPin.ownerKey === command.ownerKey) &&
       (command.itemKey === undefined || tab.reviewPin.itemKey === command.itemKey);
     if (!workspace.tabs.some(matches)) return outcome("already-committed", current);
     return replaceProject(current, command.projectId, {

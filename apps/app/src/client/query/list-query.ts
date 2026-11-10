@@ -21,8 +21,8 @@ export type ListQueryStatus<T> = {
 
 type UnwrappableQuery<T> = Pick<
   UseQueryResult<T[]>,
-  "data" | "isPending" | "isFetching" | "isError" | "refetch"
->;
+  "data" | "isPending" | "isFetching" | "isError"
+> & { refetch: () => unknown };
 
 /**
  * Collapse a React Query result for a list endpoint into {@link ListQueryStatus}:

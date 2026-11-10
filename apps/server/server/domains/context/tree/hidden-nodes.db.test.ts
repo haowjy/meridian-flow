@@ -156,8 +156,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .soft(await scenario.documentDraft(ascension, kael), "the document's draft")
         .toMatchObject({ draftId: expect.any(String) });
       const pending = await runtime.ports.documentSync.draftReview.list({
-        projectId: scenario.project.id,
-        workId: ascension.id,
+        owner: { kind: "work", workId: ascension.id },
       });
       expect
         .soft(

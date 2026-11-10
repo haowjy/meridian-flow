@@ -74,8 +74,8 @@ export type EditorUser = {
 /** Project whose asset namespace resolves `asset:<documentId>` image sources. */
 export type AssetRenderContext = {
   projectId?: string;
-  /** The Work the viewer is in: a picture still pending in its branch is signed through it. */
-  workId?: string;
+  /** The draft owner the viewer reads (`work:<id>` or `lineage:<root>`): a picture still pending in its branch is signed through it. */
+  owner?: string;
 };
 
 export type CreateEditorExtensionsOptions = {
@@ -376,13 +376,13 @@ export function createStandaloneEditorExtensions({
     MeridianCodeBlockLowlight.configure({ lowlight }),
     MeridianImage.configure({
       projectId: assetRenderContext?.projectId,
-      workId: assetRenderContext?.workId,
+      owner: assetRenderContext?.owner,
     }),
     MeridianJsxLeaf,
     MeridianJsxContainer,
     MeridianFigure.configure({
       projectId: assetRenderContext?.projectId,
-      workId: assetRenderContext?.workId,
+      owner: assetRenderContext?.owner,
     }),
     ...(slashCommands
       ? [

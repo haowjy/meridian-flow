@@ -49,8 +49,7 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
   }
 
   async function folderSnapshot(path: string, folder: ContextFolder): Promise<CopySourceFolder> {
-    const [orderPolicy, folders, documents] = await Promise.all([
-      store.parentOrderPolicy(LIVE_TREE, folder.id),
+    const [folders, documents] = await Promise.all([
       store.listFolders(LIVE_TREE, folder.id),
       store.listDocuments(LIVE_TREE, folder.id),
     ]);
@@ -68,9 +67,7 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
         },
         document: child,
       })),
-    ].sort((left, right) =>
-      compareCatalogSiblings(orderPolicy === "manual", left.order, right.order),
-    );
+    ].sort((left, right) => compareCatalogSiblings(left.order, right.order));
     const children: CopySourceEntry[] = [];
     for (const sibling of siblings) {
       children.push(
@@ -88,7 +85,6 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
       uri: folderUri(path),
       folderId: folder.id,
       name: folder.name,
-      orderPolicy,
       children,
     };
   }

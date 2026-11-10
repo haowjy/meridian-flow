@@ -32,8 +32,6 @@ export async function ensureManuscriptSource(db: Database, projectId: ProjectId)
       name: "Manuscript",
       slug: "manuscript",
       scope: "project",
-      adapterType: "local",
-      isPrimary: true,
     })
     .returning({ id: contextSources.id });
   if (!source)
