@@ -714,16 +714,6 @@
 }
 
 /*
- * Dock surface — the chrome with airlight pooling at its floor. One utility (not
- * `bg-chrome` + a gradient class) because tailwind-merge can't tell a custom
- * bg-image utility from a bg-color and would drop one of the pair.
- */
-@utility dock-surface {
-  background-color: var(--color-chrome);
-  background-image: var(--background-image-dock-airlight);
-}
-
-/*
  * Tab-chip grammar — geometry for the places a surface RISES out of the
  * chrome: the document tab strip (`ContextTabBar`) and the centered chat
  * header's title chip (`ThreadSwitcherPopover` variant="tab"). A chip sits in

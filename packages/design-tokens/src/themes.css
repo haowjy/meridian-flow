@@ -49,11 +49,4 @@
   --color-syntax-builtin: oklch(0.72 0.09 195);
   --color-syntax-punctuation: oklch(0.68 0.008 100);
 
-  --background-image-dock-airlight: linear-gradient(
-    to top,
-    oklch(0.99 0.003 84 / 0.04) 0%,
-    oklch(0.99 0.003 84 / 0.02) 26%,
-    oklch(0.99 0.002 84 / 0.007) 46%,
-    transparent 68%
-  );
 }
