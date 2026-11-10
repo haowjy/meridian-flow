@@ -149,12 +149,10 @@ export function MobileProject(props: MobileProjectProps) {
         projectId={props.projectId}
         projectTitle={props.projectTitle}
         titleEdit={props.titleEdit}
-        activeScreen={props.activeScreen}
         editorWorkId={props.editorWorkId}
         contextLive={props.contextLive}
         activeContextScheme={props.activeContextScheme}
         activeContextPath={props.activeContextPath}
-        onSelectScreen={props.onSelectScreen}
         chatThreadId={displayedChatThreadId(props.chatDisplay)}
       />
     </div>

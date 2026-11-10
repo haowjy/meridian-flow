@@ -2,7 +2,7 @@
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { projectResourceTab } from "../context/context-tab-from-file";
 import { type OpenDocumentTab, useSelectedOpenDocument } from "../open-documents";
-import type { ScreenKey } from "../shell/screens";
+import type { ScreenKey } from "../routing/project-route";
 
 /** A removed document is closed by the removal coordinator, which tells the writer why. */
 export function useDockedDocument(projectId: string, screen: ScreenKey): OpenDocumentTab | null {

@@ -26,7 +26,7 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-import type { ScreenKey } from "../shell/screens";
+import type { ScreenKey } from "../routing/project-route";
 import { DockDocumentView } from "./DockDocumentView";
 import type { DockHeaderSlotArgs } from "./DockHeader";
 import { useDockedDocument } from "./useDockedDocument";
