@@ -3863,7 +3863,7 @@ msgstr ""
 msgid "missing kind"
 msgstr ""
 
-#: src/features/project/shell/sidebar/ModeSwitch.tsx
+#: src/features/project/shell/LeftSidebar.tsx
 msgid "Mode"
 msgstr ""
 
