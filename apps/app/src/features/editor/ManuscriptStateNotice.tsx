@@ -1,9 +1,9 @@
 /**
- * ManuscriptStateNotice — what live did to the document this draft holds (D79): deleted from
+ * ManuscriptStateNotice — what live did to the document this draft holds: deleted from
  * the manuscript (Apply brings it back). Once an
  * Apply brings it back the same place says so, until the writer dismisses it or opens another
  * document; a host swap on promotion (the phone's) remounts it and must not end it. With none
- * of those, it says what a Work's pending move or delete will do to the document (D26), which
+ * of those, it says what a Work's pending move or delete will do to the document, which
  * live doesn't show until Apply: "Ascension is renaming this to ch12-old."
  *
  * It lives in the free end of a header row the document already has (the identity row, the

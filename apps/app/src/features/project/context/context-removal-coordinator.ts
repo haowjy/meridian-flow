@@ -279,7 +279,7 @@ export class ContextRemovalCoordinator {
 
   /**
    * Live deleted these documents. A tab whose document a Work's open draft still has stays,
-   * presented draft-only in that Work (D79); every other tab closes as before. Returns the
+   * presented draft-only in that Work; every other tab closes as before. Returns the
    * documents whose tab stayed.
    */
   private holdDraftTabs(projectId: string, documentIds: readonly string[]): Set<string> {

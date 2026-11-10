@@ -71,7 +71,7 @@ export type EditorWorkspaceCommand =
       tabInstanceId: string;
     }
   | {
-      /** Live deleted the document; the Works whose drafts still have it keep the tab as draft-only (D79). */
+      /** Live deleted the document; the Works whose drafts still have it keep the tab as draft-only. */
       kind: "keep-for-drafts";
       projectId: string;
       documentId: string;

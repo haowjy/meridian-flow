@@ -185,7 +185,7 @@ export type ResourceTabProjection =
 /**
  * Reconcile any open tab by stable handle when known, otherwise by server document identity.
  * A draft-only tab is one live doesn't hold, so the live replica says nothing about it: the
- * record of a document live deleted while a Work's draft survives is terminal (D79), and
+ * record of a document live deleted while a Work's draft survives is terminal, and
  * hiding or closing the tab on it would strand the draft. Its draft lifecycle owns it.
  */
 export function projectResourceTab(

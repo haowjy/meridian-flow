@@ -5,10 +5,10 @@
  * the page, because all three answer the same question — what is the writer
  * approaching — and a second answer is how two surfaces end up on screen at
  * once. Hover reveals, selection makes persistent, and the ⋮ holds what the row
- * has no room for (ruling 8; mockup 03b is the decision record).
+ * has no room for.
  *
  * Diagram and image rows are `OverlayIconRow`s. A code block gets the chip
- * cluster instead (ruling 15): same inside-corner physics, different shape,
+ * cluster instead: same inside-corner physics, different shape,
  * because its language is a labeled control.
  *
  * **Nothing here names an object type.** Which objects this surface serves, what
@@ -21,7 +21,7 @@
  * Two of the claim ladder's rungs land here. `object` is a right-click on a
  * diagram or an image, which opens the ⋮ it already has. `caret` is a
  * right-click INSIDE a plain fence, which used to reach the browser and now
- * opens the fence's own verbs as one list (human ruling, 2026-07-29).
+ * opens the fence's own verbs as one list.
  *
  * **Approach is not identity.** Hover decides what the row hangs off; a menu
  * decides what its items act on. They are usually the same object and must not

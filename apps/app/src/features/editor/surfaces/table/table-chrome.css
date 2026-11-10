@@ -41,8 +41,7 @@
    row or edge it labels, at no cost and with no frame of lag, and clips it at
    its own boundary rather than letting it ride up over the app's chrome. There
    is deliberately no transition on `top` or `left` — hovering another row
-   re-anchors the grip there, it does not send it travelling (human ruling,
-   2026-07-30). */
+   re-anchors the grip there, it does not send it travelling. */
 .meridian-table-grip,
 .meridian-table-add-tab {
   position: absolute;

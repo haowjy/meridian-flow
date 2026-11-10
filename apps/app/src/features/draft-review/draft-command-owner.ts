@@ -393,7 +393,7 @@ export class DraftCommandOwner {
     else observe();
   }
 
-  /** Whether an Apply brought this document back from a delete (D79). */
+  /** Whether an Apply brought this document back from a delete. */
   wasRestored(projectId: string, documentId: string): boolean {
     return this.restoredDocuments.has(JSON.stringify([projectId, documentId]));
   }
@@ -422,7 +422,7 @@ export class DraftCommandOwner {
 
   /**
    * The drafts of one document that a surface holds open right now. A live delete leaves
-   * them active (D79), so their tabs stay; the review list lags, this does not.
+   * them active, so their tabs stay; the review list lags, this does not.
    */
   boundDrafts(projectId: string, documentId: string): DraftRef[] {
     return [...this.entries.values()].flatMap(({ ref, draftId, binding }) =>

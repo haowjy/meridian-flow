@@ -4,7 +4,7 @@
  *
  * A row that cannot run here greys, keeps its hover and focus, drops its
  * action, and shows its LABEL ALONE; the reason arrives in a tooltip when the
- * writer reaches the row (law 5, ruling 2026-07-29). Radix's `disabled` would
+ * writer reaches the row (law 5). Radix's `disabled` would
  * take the row out of the hover and focus path and the reason with it, so
  * nothing here uses it — `aria-disabled` says the same thing to a screen
  * reader and leaves the row reachable.

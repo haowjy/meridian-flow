@@ -3,7 +3,7 @@
  *
  * Object rows, the code block's chip cluster, and a link's destination hint
  * are all positioned against something in the manuscript with zero footprint
- * (ruling 8, ruling 15), so all three need the same answer to the same
+ *, so all three need the same answer to the same
  * question: where is that thing right now. And the manuscript moves. It
  * reflows when an image loads, it grows as a peer types above, and a block the
  * writer moves takes every block after it along. Anchoring is therefore a

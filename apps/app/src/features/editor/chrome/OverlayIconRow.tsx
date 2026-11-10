@@ -1,6 +1,6 @@
 /**
  * OverlayIconRow — an object's verbs, overlaid just inside its top-right
- * bounds (ruling 8; mockup 03b is the decision record).
+ * bounds.
  *
  * Zero footprint is the whole point: no band above the object, no reserved
  * space, no layout growth, nothing that moves a line of the manuscript when it

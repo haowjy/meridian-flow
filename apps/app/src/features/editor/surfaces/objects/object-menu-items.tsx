@@ -80,7 +80,7 @@ export function objectFieldLabel(field: ObjectSurfaceField): string {
 }
 
 /**
- * The row: fullscreen, one copy, and the ⋮ (ruling 8).
+ * The row: fullscreen, one copy, and the ⋮.
  *
  * A diagram's copy puts its **source** on the clipboard, not an image — revision
  * runs through the chat, so source is the bridge into that loop, and it works in

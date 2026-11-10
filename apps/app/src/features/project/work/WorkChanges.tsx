@@ -7,7 +7,7 @@
  * only a change row uses the per-change selection
  * commands. Discard all asks first, in the group's footer below the rows; so
  * does an Apply all that would delete documents or bring back documents deleted from the
- * manuscript (D79), naming each, and again for any a newer delete held back.
+ * manuscript, naming each, and again for any a newer delete held back.
  *
  * Nothing shows until the Work has something to review: no loading flash and no
  * empty group. A list that cannot be read says so, with Retry.

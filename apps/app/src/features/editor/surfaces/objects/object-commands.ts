@@ -177,7 +177,7 @@ export async function svgToPngBlob(svg: string): Promise<Blob> {
  * The ⋮ verb, not the row's copy chip: image-copy is the clipboard API's
  * fussiest corner and the row's copy puts Mermaid source there instead —
  * source is the bridge into the chat loop where diagrams get revised, and it
- * works in every browser (ruling 8's delegated call).
+ * works in every browser.
  */
 export async function copySvgImage(svg: string): Promise<void> {
   const blob = await svgToPngBlob(svg);

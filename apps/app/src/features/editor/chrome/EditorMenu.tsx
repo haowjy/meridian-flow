@@ -8,7 +8,7 @@
  * trigger — which is why anchoring lives here once instead of in six lanes.
  *
  * Radix is NOT wrapped away: it keeps ownership of dismissal, outside-click,
- * and roving focus (decision 2026-07-29). What this adds is subordination —
+ * and roving focus. What this adds is subordination —
  * the open menu registers as a layer so the Esc chain knows its place, and
  * every close path hands the caret back to the prose.
  *

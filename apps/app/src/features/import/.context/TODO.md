@@ -14,7 +14,7 @@ Delete an entry when it ships.
 
 - **A document deleted through the API took about 11 s to leave the tree.**
   `./mf doc rm` on imported `Lore/Sects` cleared from the sidebar ~11 s later
-  (D1 re-check run 4b). This may be pre-existing catalog wake latency rather
+  (re-check run 4b). This may be pre-existing catalog wake latency rather
   than import code; reproduce on `main` before fixing. Evidence:
   `evidence/d1-fix/run4-delete-timeline.txt`.
 
