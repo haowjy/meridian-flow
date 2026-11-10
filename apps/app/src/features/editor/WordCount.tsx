@@ -42,7 +42,7 @@ export function WordCount({ editor }: { editor: Editor }) {
   if (!words) return null;
   const total = plural(words, { one: "# word", other: "# words" });
   return (
-    <span className="rounded-full bg-background px-2 py-1 text-meta text-muted-foreground tabular-nums">
+    <span className="tabular-nums">
       {selected ? `${selected.toLocaleString()} / ${total}` : total}
     </span>
   );
