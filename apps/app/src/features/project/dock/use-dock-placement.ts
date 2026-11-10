@@ -45,7 +45,7 @@ export function useDockPlacement() {
       if (!projectId || screen !== "chat") return { kind: "cancelled" };
       if (claim !== undefined && !isCurrentOpenIntent(claim)) return { kind: "cancelled" };
       const store = useContextTabsStore.getState();
-      store.openTab(projectId, tab, undefined, undefined, { select: true });
+      store.openTab(projectId, tab, undefined, { select: true });
       const opened = getContextTabs(projectId).tabs.find((t) => t.documentId === tab.documentId);
       if (!opened) return { kind: "cancelled" };
       const key = tabKey(opened);

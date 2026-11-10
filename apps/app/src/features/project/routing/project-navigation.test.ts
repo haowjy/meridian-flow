@@ -4,10 +4,9 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - intent and native-history coordination
  */
-import { parseRequestId } from "@meridian/contracts/request-id";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
-import { parseProjectAddress, projectAddressHref, workDetailAddress } from "./project-address";
+import { parseProjectAddress } from "./project-address";
 import { createProjectNavigation, type DisplayedProjectSelection } from "./project-navigation";
 
 function address(href: string) {
@@ -18,7 +17,7 @@ function address(href: string) {
 }
 function setup(
   initial: string,
-  displayed: DisplayedProjectSelection = { work: { kind: "none" } },
+  displayed: DisplayedProjectSelection = {},
   restore?: () => undefined | Promise<boolean>,
 ) {
   const history = createMemoryHistory({ initialEntries: [initial] });
@@ -65,7 +64,7 @@ describe("project navigation", () => {
     const first = navigation.transition(address("/p/550e8400-e29b-41d4-a716-446655440000"), {
       replace: false,
     });
-    const second = navigation.transition(address("/p/550e8400-e29b-41d4-a716-446655440000/works"), {
+    const second = navigation.transition(address("/p/550e8400-e29b-41d4-a716-446655440000/chats"), {
       replace: false,
     });
     expect(changes).toEqual([]);
@@ -74,7 +73,7 @@ describe("project navigation", () => {
     await expect(second).resolves.toEqual({ kind: restored ? "applied" : "superseded" });
     expect(history.location.pathname).toBe(
       restored
-        ? "/p/550e8400-e29b-41d4-a716-446655440000/works"
+        ? "/p/550e8400-e29b-41d4-a716-446655440000/chats"
         : "/p/550e8400-e29b-41d4-a716-446655440000/editor",
     );
     navigation.dispose();
@@ -82,7 +81,7 @@ describe("project navigation", () => {
   it("rejects an effect rendered for a different entry, including equal-href history entries", () => {
     const { history, navigation } = setup("/p/550e8400-e29b-41d4-a716-446655440000/editor");
     const rendered = { href: history.location.href, key: history.location.state.__TSR_key ?? "" };
-    history.push("/p/550e8400-e29b-41d4-a716-446655440000/works");
+    history.push("/p/550e8400-e29b-41d4-a716-446655440000/chats");
     expect(navigation.captureForEntry(rendered.key)).toBeNull();
     history.push(rendered.href);
     expect(navigation.captureForEntry(rendered.key)).toBeNull();
@@ -92,7 +91,7 @@ describe("project navigation", () => {
   it("rejects stale repairs even after Back returns to the same entry and href", async () => {
     const { history, navigation } = setup("/p/550e8400-e29b-41d4-a716-446655440000/editor");
     const ticket = navigation.capture();
-    await navigation.navigate(address("/p/550e8400-e29b-41d4-a716-446655440000/works"), {
+    await navigation.navigate(address("/p/550e8400-e29b-41d4-a716-446655440000/chats"), {
       replace: false,
     });
     history.back();
@@ -205,20 +204,22 @@ it("address replacement neither prompts nor supersedes a pending writer navigati
     decision = intent;
   });
   navigation.registerGuard({ request, dirty: () => true, cancel: () => undefined });
-  const pending = navigation.transition(address("/p/550e8400-e29b-41d4-a716-446655440000/works"), {
+  const pending = navigation.transition(address("/p/550e8400-e29b-41d4-a716-446655440000/chats"), {
     replace: false,
   });
   expect(
     await navigation.replaceIfCurrent(
       navigation.capture(),
-      address("/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a?item=draft-a"),
+      address(
+        "/p/550e8400-e29b-41d4-a716-446655440000/editor/manuscript/a?owner=work%3A123e4567-e89b-42d3-a456-426614174000&item=draft-a",
+      ),
     ),
   ).toEqual({ kind: "superseded" });
   expect(request).toHaveBeenCalledOnce();
   expect(changes).toEqual([]);
   decision.run();
   await expect(pending).resolves.toEqual({ kind: "applied" });
-  expect(changes.at(-1)).toContain("push:/p/550e8400-e29b-41d4-a716-446655440000/works");
+  expect(changes.at(-1)).toContain("push:/p/550e8400-e29b-41d4-a716-446655440000/chats");
   navigation.dispose();
 });
 
@@ -247,7 +248,7 @@ it("writes the accepted native history entry before committing the workspace", a
         listener();
       },
     },
-    () => ({ work: { kind: "none" } }),
+    () => ({}),
   );
   const result = await navigation.transition(
     address(destination),
@@ -302,35 +303,4 @@ it("an accepted same-entry replacement reports a failed workspace commit at that
   });
   expect(history.location.pathname).toContain("/editor");
   navigation.dispose();
-});
-
-it("opens Work Files in one history entry from any screen and Back returns there", async () => {
-  const project = "/p/550e8400-e29b-41d4-a716-446655440000";
-  const workId = parseRequestId("123e4567-e89b-42d3-a456-426614174000");
-  if (!workId) throw new Error("Invalid fixture Work");
-  for (const start of [
-    `${project}/editor`,
-    `${project}/chats`,
-    `${project}/works/${workId}`,
-    `${project}/works/${workId}?view=files`,
-  ]) {
-    const { history, navigation } = setup(start);
-    try {
-      const current = address(start);
-      const next = workDetailAddress(current, { workId, view: "files" });
-      const length = history.length;
-      await navigation.transition(next, { replace: false });
-      expect(history.location.href).toBe(`${project}/works/${workId}?view=files`);
-      expect(history.length).toBe(length + 1);
-      history.back();
-      history.flush();
-      expect(history.location.href).toBe(start);
-      expect(projectAddressHref(workDetailAddress(current, { workId }))).toBe(
-        `${project}/works/${workId}`,
-      );
-    } finally {
-      navigation.dispose();
-      history.destroy();
-    }
-  }
 });

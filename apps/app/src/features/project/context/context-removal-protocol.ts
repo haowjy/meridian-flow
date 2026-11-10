@@ -1,9 +1,8 @@
 /** Pure selection and represented-removal obligation protocol. */
 
-import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import type { ContextTab } from "@/client/stores";
 import { canonicalDocumentPath } from "../routing/local-document-address";
-import { type ContextRouteTarget, sameContextTarget } from "../routing/project-route";
+import { type ContextRouteRequest, sameContextTarget } from "../routing/project-route";
 import {
   type ContextRemovalIntent,
   type ContextRouteIdentity,
@@ -15,7 +14,7 @@ import {
 import { contextTabMatchesRoute } from "./context-tab-identity";
 
 export type RouteRemovalProof = {
-  locator: ContextRouteTarget;
+  locator: ContextRouteRequest;
   identity: ContextRouteIdentity;
   witnessedRevision: number;
   intent: ContextRemovalIntent;
@@ -42,21 +41,21 @@ export type ContextRouteSelection =
   | {
       status: "candidate";
       revision: number;
-      locator: ContextRouteTarget;
+      locator: ContextRouteRequest;
       obligations: readonly PendingRouteObligation[];
       reentryGuard: TerminalRouteRemoval | null;
     }
   | {
       status: "bound";
       revision: number;
-      locator: ContextRouteTarget;
+      locator: ContextRouteRequest;
       identity: ContextRouteIdentity;
       by: RouteBindingProof;
     }
   | {
       status: "rejected";
       revision: number;
-      locator: ContextRouteTarget;
+      locator: ContextRouteRequest;
       reason: "fulfilled-absence" | "missing-local-owner";
     };
 
@@ -75,7 +74,7 @@ export type SelectionTransition = {
 
 export const sameLocator = sameContextTarget;
 
-export type RouteOwner = Pick<ContextRouteTarget, "scheme" | "path" | "workId" | "rootThreadId">;
+export type RouteOwner = Pick<ContextRouteRequest, "scheme" | "path" | "workId" | "rootThreadId">;
 
 /** Whether the selection is about exactly this route (paths compare without the leading slash). */
 export function selectionAtRoute(
@@ -147,7 +146,7 @@ function settleObligations(
 
 export function beginSelection(
   selection: ContextRouteSelection,
-  locator: ContextRouteTarget,
+  locator: ContextRouteRequest,
   reentryGuard: TerminalRouteRemoval | null = null,
 ): SelectionTransition {
   // A navigation that named its document, or an answer, already bound this locator. A review's
@@ -177,29 +176,6 @@ export function beginSelection(
   return {
     selection: next,
     planning: settleObligations(selection, null, { kind: "none" }, "never"),
-    rejection: null,
-    retireReentryGuard: false,
-  };
-}
-
-/** Supersedes old-Work continuity without ever offering it for promotion. */
-export function supersedeSelectionForWorkChange(
-  selection: ContextRouteSelection,
-  locator: ContextRouteTarget | null,
-  reentryGuard: TerminalRouteRemoval | null = null,
-): SelectionTransition {
-  if (selection.status === "bound" && locator && sameLocator(selection.locator, locator))
-    return { selection, planning: [], rejection: null, retireReentryGuard: false };
-  const revision = selection.revision + 1;
-  const next: ContextRouteSelection = locator
-    ? { status: "candidate", revision, locator, obligations: [], reentryGuard }
-    : { status: "none", revision };
-  return {
-    selection: next,
-    planning:
-      selection.status === "candidate"
-        ? settleObligations(selection, null, { kind: "none" }, "never")
-        : [],
     rejection: null,
     retireReentryGuard: false,
   };
@@ -400,11 +376,7 @@ export function reduceRepresentedRemoval(
       },
     };
   }
-  // A review removal addresses its own Work's route, not whichever Work is routed now.
-  const locator = routeTargetForTab(
-    represented,
-    (intent.reviewOwner && workIdOfDraftOwnerKey(intent.reviewOwner)) || selection.locator.workId,
-  );
+  const locator = routeTargetForTab(represented);
   const identity: ContextRouteIdentity = {
     kind: represented.kind === "new" ? "local" : "server",
     documentId: represented.documentId,

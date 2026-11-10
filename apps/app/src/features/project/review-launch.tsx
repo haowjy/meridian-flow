@@ -37,6 +37,7 @@ import { useProjectDocumentNavigationProjectId } from "./context/open-project-do
 import { FocusOpenedReview, type ReviewFocusRequest } from "./dock/FocusOpenedReview";
 import { type PresentedDocument, usePresentedDocument } from "./presented-document";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
+import { contextRouteRequest } from "./routing/project-route";
 
 export type AiDraftLaunchTarget = {
   ownerKey: string;
@@ -124,10 +125,10 @@ export function EditorReviewHandoffProvider({
       try {
         for (let attempt = 0; attempt < 2; attempt += 1) {
           const result = await openContextRoute(
-            {
+            contextRouteRequest({
               ...target.contextLocation,
               documentId: target.documentId,
-            },
+            }),
             {
               replaceIfSameDocument: true,
               tab: tab ?? undefined,

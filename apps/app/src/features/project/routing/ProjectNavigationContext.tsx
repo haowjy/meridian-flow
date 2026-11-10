@@ -3,7 +3,7 @@ import { createContext, type ReactNode, useContext, useLayoutEffect, useRef } fr
 import type { ContextTab } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
 import type { NavigationSettlement, ProjectLeaveGuard } from "./project-navigation";
-import type { ContextRouteRequest, ContextRouteTarget } from "./project-route";
+import type { ContextRouteRequest } from "./project-route";
 
 export type OpenContextOptions = {
   replace?: boolean;
@@ -42,7 +42,7 @@ const ProjectNavigationContext = createContext<{
       options?: { replace?: boolean },
     ) => Promise<unknown>;
   };
-  isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
+  isCurrentContextRoute?: (target: ContextRouteRequest) => boolean;
 } | null>(null);
 
 export function ProjectNavigationProvider({
@@ -69,7 +69,7 @@ export function ProjectNavigationProvider({
       options?: { replace?: boolean },
     ) => Promise<unknown>;
   };
-  isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
+  isCurrentContextRoute?: (target: ContextRouteRequest) => boolean;
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
 }) {
   return (
@@ -124,7 +124,6 @@ export function useProjectLeaveGuard(guard: ProjectLeaveGuard) {
 
 export type ScreenCommands = {
   showEditor: (options?: { afterCommit?: () => void }) => Promise<NavigationSettlement>;
-  showWork: () => Promise<NavigationSettlement>;
 };
 export function useScreenCommands() {
   return useContext(ProjectNavigationContext)?.screenCommands;

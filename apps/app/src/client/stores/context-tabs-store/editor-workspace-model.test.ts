@@ -4,7 +4,7 @@
  * - Editor Scratch admission and workspace schema (kb/decisions/work/model/lineage-scratch.md)
  */
 import { expect, it } from "vitest";
-import { type ContextTab, isEditorContextTab, isEditorTab } from "./editor-workspace-model";
+import { type ContextTab, isEditorContextTab } from "./editor-workspace-model";
 import { parseEditorWorkspace } from "./editor-workspace-state";
 
 function tab(scheme: "scratch" | "uploads"): ContextTab {
@@ -48,11 +48,9 @@ function workspaceWith(tab: ContextTab) {
   return { project: { tabs: [{ ...tab, tabInstanceId: "tab" }], selectedTabKey: null } };
 }
 
-it("shows a chat's Scratch in every Editor, and a Work's Scratch only in its own", () => {
-  expect(isEditorTab(lineageTab() as never, "any-work")).toBe(true);
-  expect(isEditorTab(lineageTab() as never, null)).toBe(true);
-  expect(isEditorTab(tab("scratch") as never, "work")).toBe(true);
-  expect(isEditorTab(tab("scratch") as never, "other-work")).toBe(false);
+it("keeps every owner's Scratch, whatever the Work scope", () => {
+  expect(isEditorContextTab(lineageTab())).toBe(true);
+  expect(isEditorContextTab(tab("scratch"))).toBe(true);
 });
 
 it("restores a chat's Scratch tab only with its lineage and handle, and never with a Work", () => {

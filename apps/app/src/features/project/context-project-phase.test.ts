@@ -38,7 +38,7 @@ describe("Context project authority", () => {
     const first = updateContextProjectReadiness(INITIAL_CONTEXT_PROJECT_AUTHORITY, true, ready);
     const waiting = updateContextProjectReadiness(first.authority, true, {
       status: "loading",
-      workId: WORK_1,
+      workId: null,
     }).authority;
     const settled = settleContextProjectBootstrap(waiting, 1);
     expect(settled).toMatchObject({ rawValidation: "settled", hasCompletedBootstrap: false });

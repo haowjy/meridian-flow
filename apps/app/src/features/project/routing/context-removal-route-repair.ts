@@ -1,6 +1,6 @@
 /** The route-side adapter for Editor address updates (a renamed or moved document, a materialized Untitled): turns a settled search update into a navigation. */
 import type { OpenContextRoute } from "./ProjectNavigationContext";
-import { type ProjectSearch, projectSearchEquals } from "./project-route";
+import { contextRouteRequest, type ProjectSearch, projectSearchEquals } from "./project-route";
 
 export function applyContextRemovalSearchUpdate({
   search,
@@ -18,13 +18,13 @@ export function applyContextRemovalSearchUpdate({
   if (projectSearchEquals(next, search)) return;
   if (next.scheme && next.path !== undefined)
     void openContext(
-      {
+      contextRouteRequest({
         scheme: next.scheme,
         path: next.path,
         workId: next.work,
         rootThreadId: next.chat,
-        ...(relocated ? { documentId: relocated.documentId } : {}),
-      },
+        documentId: relocated?.documentId,
+      }),
       { replace: true },
     );
 }

@@ -11,7 +11,10 @@ import { TreeCreationProvider } from "../context/TreeCreationProvider";
 import { InlineProjectTitle, type ProjectTitleEdit } from "../shell/InlineProjectTitle";
 import type { ScreenKey } from "../shell/screens";
 import { SourcesBody } from "../shell/sidebar/SourcesBody";
+import { WorkScopePicker } from "../shell/sidebar/WorkScopePicker";
 import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
+import { useWorkScope } from "../use-work-scope";
+import { useManageWorks } from "../work/ManageWorksDialog";
 
 /** The drawer is the sidebar: there is nothing to expand. */
 const keepOpen = () => {};
@@ -47,6 +50,8 @@ export function NavigationDrawer({
   chatThreadId,
 }: NavigationDrawerProps) {
   const openDocument = useOpenProjectDocument(projectId);
+  const scope = useWorkScope(projectId);
+  const manageWorks = useManageWorks();
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
     file: ContextFile,
@@ -128,6 +133,17 @@ export function NavigationDrawer({
             >
               {/* The drawer's own creation seam: closing the drawer unmounts it, ending any inline create. */}
               <TreeCreationProvider expandSidebar={keepOpen}>
+                <div className="flex shrink-0 py-1">
+                  <WorkScopePicker
+                    projectId={projectId}
+                    workId={scope.workId}
+                    onPick={scope.setWorkId}
+                    onManage={() => {
+                      manageWorks?.open();
+                      onOpenChange(false);
+                    }}
+                  />
+                </div>
                 <SourcesBody
                   projectId={projectId}
                   editorWorkId={editorWorkId}

@@ -4,13 +4,18 @@
  * has no tab yet shows nothing, so the pane waits for the open command instead of showing the
  * previous document under a new URL.
  */
+
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ContextTab } from "@/client/stores";
+import { contextRouteRequest } from "../routing/project-route";
 import { type ContextRouteSelection, routeSelectionDocumentId } from "./context-removal-protocol";
 import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
 
 export type VisibleEditorRoute = {
+  /** The Work scope. */
   editorWorkId: string | null;
+  /** A Work's Scratch route: its owning Work. Null for every other document. */
+  activeContextWork?: string | null;
   localDocumentId?: string | null;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
@@ -22,6 +27,7 @@ export function resolveRouteOwner({
   selectedTabId,
   selection,
   editorWorkId,
+  activeContextWork,
   localDocumentId,
   activeContextScheme,
   activeContextPath,
@@ -34,12 +40,12 @@ export function resolveRouteOwner({
   const selectedDocumentId = localDocumentId ?? selectedTabId ?? undefined;
   const locator =
     editorWorkId && activeContextScheme !== null && activeContextPath !== null
-      ? {
+      ? contextRouteRequest({
           scheme: activeContextScheme,
           path: activeContextPath,
-          workId: editorWorkId,
-          ...(activeContextChat ? { rootThreadId: activeContextChat } : {}),
-        }
+          workId: activeContextWork,
+          rootThreadId: activeContextChat,
+        })
       : null;
   const boundDocumentId = locator ? routeSelectionDocumentId(selection, locator) : null;
   const workspaceRoute = resolveWorkspaceRoute({
@@ -47,6 +53,7 @@ export function resolveRouteOwner({
     selectedDocumentId,
     locator,
     boundDocumentId,
+    scope: editorWorkId,
   });
   const selected = tabs.find((tab) => tab.documentId === selectedDocumentId) ?? null;
   return {
