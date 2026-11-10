@@ -1611,10 +1611,10 @@ msgstr "chart"
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/ChatView.tsx
-#: src/features/project/layout/modes.ts
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/shell/screens.ts
+#: src/features/project/mobile/MobileTopBar.tsx
+#: src/features/project/shell/sidebar/sidebar-lists.tsx
 msgid "Chat"
 msgstr "Chat"
 
@@ -3012,7 +3012,7 @@ msgstr "Editing"
 msgid "Editing paused. This chapter needs a newer version of Meridian."
 msgstr "Editing paused. This chapter needs a newer version of Meridian."
 
-#: src/features/project/shell/screens.ts
+#: src/features/project/mobile/MobileTopBar.tsx
 msgid "Editor"
 msgstr "Editor"
 
@@ -3876,8 +3876,8 @@ msgid "missing kind"
 msgstr "missing kind"
 
 #: src/features/project/shell/LeftSidebar.tsx
-msgid "Mode"
-msgstr "Mode"
+#~ msgid "Mode"
+#~ msgstr "Mode"
 
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
@@ -5334,6 +5334,10 @@ msgstr "Show Work"
 msgid "Shows token counts and the model on each reply and compaction"
 msgstr "Shows token counts and the model on each reply and compaction"
 
+#: src/features/project/shell/sidebar/ListSwitch.tsx
+msgid "Sidebar list"
+msgstr "Sidebar list"
+
 #: src/features/account/AccountMenu.tsx
 msgid "Signed in"
 msgstr "Signed in"
@@ -6383,8 +6387,8 @@ msgid "This version of Meridian can't display it."
 msgstr "This version of Meridian can't display it."
 
 #: src/features/project/shell/WorkspaceNavBody.tsx
-msgid "This view couldn’t open."
-msgstr "This view couldn’t open."
+#~ msgid "This view couldn’t open."
+#~ msgstr "This view couldn’t open."
 
 #: src/features/project/work/ArchivedWorkNotice.tsx
 msgid "This Work is archived."
@@ -6827,7 +6831,7 @@ msgstr "Workspace navigation"
 msgid "Wrap lines"
 msgstr "Wrap lines"
 
-#: src/features/project/layout/modes.ts
+#: src/features/project/shell/sidebar/sidebar-lists.tsx
 msgid "Write"
 msgstr "Write"
 

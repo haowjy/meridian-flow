@@ -143,7 +143,7 @@ function isSourceKey(key: string): key is SourceKey {
 }
 
 /**
- * Write mode's sidebar, and the phone drawer's: one source at a time behind a
+ * The Files list, on the sidebar and the phone drawer: one source at a time behind a
  * strip of tabs, so each list gets the full height. Tabs are icons named on
  * hover; the list names its source. + picks which tabs the strip shows. The
  * open document's source becomes the shown one when it changes. The strip and

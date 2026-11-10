@@ -22,10 +22,9 @@ import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
 import { useThreadSnapshotCache } from "@/client/query/thread-snapshot-query";
 import { useIsThreadPendingCreation } from "@/client/stores";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
-import type { ScreenKey } from "../shell/screens";
 import type { ProjectDestination } from "./project-address";
 import type { NavigationSettlement } from "./project-navigation";
-import type { NavigationOptions } from "./project-route";
+import type { NavigationOptions, ScreenKey } from "./project-route";
 
 /**
  * What the writer's screen currently shows for chat: the index (with the
@@ -64,9 +63,10 @@ export type ChatNavigation = {
   display: ChatDisplay;
   /** An unacknowledged first send from before a reload needs a visible host. */
   recoveringFirstSend: boolean;
+  /** Opens the chat where the writer is: in main on a chat screen, else beside the document (mentions, links). */
   openChat: (threadId: string) => Promise<void>;
-  /** The Chat screen: the current chat, or the index when there is none. */
-  showChatScreen: (options?: { afterCommit?: () => void }) => Promise<NavigationSettlement>;
+  /** Main goes to this chat, wherever the writer is: a sidebar row is navigation. */
+  showChat: (threadId: string) => Promise<void>;
   /** The Chat screen's index; in the dock, an empty composer. */
   openNewChat: (workId?: string, options?: { replace?: boolean }) => Promise<void>;
   openChatIndex: () => Promise<void>;
@@ -155,18 +155,11 @@ export function useProjectChatNavigation({
     const openChatIndex = async () => {
       await go({ kind: "chat-index" }, { replace: false });
     };
-    const showChatScreen = (options?: { afterCommit?: () => void }) => {
-      const threadId = latest.current.currentThreadId;
-      return latest.current.go(
-        threadId ? { kind: "chat", chatId: threadId } : { kind: "chat-index" },
-        { replace: false, ...options },
-      );
-    };
     const commands = {
       openChat,
       openChatIndex,
       revealDock: (view: DockReveal) => channels.dockReveal.request(view),
-      showChatScreen,
+      showChat: (threadId: string) => go({ kind: "chat", chatId: threadId }, { replace: false }),
       openNewChat: async (workId?: string, options?: { replace?: boolean }) => {
         if (onChatScreen()) {
           await go({ kind: "chat-index" }, { replace: options?.replace ?? false });

@@ -26,7 +26,7 @@ type ChatGroups = {
 };
 
 /**
- * Chat mode's sidebar: the scoped Work's chats by what they need from the
+ * The Chat list: the scoped Work's chats by what they need from the
  * writer. Running helpers sit under their parent. Other Works keep one row each
  * while one of their chats needs the writer or is running.
  */

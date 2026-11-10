@@ -14,13 +14,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { readCurrentChat } from "@/client/current-chat";
 import { threadSnapshotQueryOptions } from "@/client/query/thread-snapshot-query";
 import { ThreadStoreProvider, useThreadActions } from "@/client/stores";
-import type { ScreenKey } from "../shell/screens";
 import {
   type ChatNavigation,
   chatSurfaceThreadId,
   useProjectChatNavigation,
 } from "./chat-navigation";
 import type { ProjectDestination } from "./project-address";
+import type { ScreenKey } from "./project-route";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -111,31 +111,4 @@ it("keeps a first send whose pre-creation 404 is still cached once it is acknowl
   act(() => threadActions.clearPendingCreation({ threadId: "sent" }));
   expect(navigation.display).toEqual({ kind: "thread", threadId: "sent" });
   expect(go).not.toHaveBeenCalledWith({ kind: "chat-index" });
-});
-
-it("rail switches use the remembered current chat and forward the post-commit effect", async () => {
-  render("context");
-  act(() => navigation.acceptCreatedChat("remembered"));
-  const commit = vi.fn();
-  await act(async () => {
-    await navigation.showChatScreen({ afterCommit: commit });
-  });
-  expect(go).toHaveBeenCalledWith({ kind: "chat", chatId: "remembered" });
-  expect(effects).toHaveBeenCalledWith(commit);
-  expect(commit).not.toHaveBeenCalled();
-  go.mockClear();
-  await act(async () => {
-    await navigation.showChatScreen();
-  });
-  expect(go).toHaveBeenCalledWith({ kind: "chat", chatId: "remembered" });
-});
-
-it("rail switches with no current chat use the index and still forward the hand-off", async () => {
-  render("context");
-  const commit = vi.fn();
-  await act(async () => {
-    await navigation.showChatScreen({ afterCommit: commit });
-  });
-  expect(go).toHaveBeenCalledWith({ kind: "chat-index" });
-  expect(effects).toHaveBeenCalledWith(commit);
 });

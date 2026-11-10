@@ -51,7 +51,6 @@ import { ProjectDocumentNavigationProvider } from "../context/open-project-docum
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useRemovalRecord } from "../context/use-removal-record";
 import { ProjectView } from "../ProjectView";
-import type { ScreenKey } from "../shell/screens";
 import { useWorkScopeState } from "../use-work-scope";
 import { ChatNavigationProvider, useProjectChatNavigation } from "./chat-navigation";
 import { applyContextRemovalSearchUpdate } from "./context-removal-route-repair";
@@ -62,12 +61,6 @@ import {
   documentAddressQueryOptions,
   reviewBoundAddressResult,
 } from "./document-address-review";
-import {
-  DocumentSwitchFailureProvider,
-  destinationFailure,
-  useDocumentSwitchFailures,
-  useRailScreenSwitch,
-} from "./document-switch-failure";
 import { createEditorDocumentCommand, prepareEditorDestination } from "./editor-document-command";
 import {
   canonicalDocumentPath,
@@ -99,6 +92,7 @@ import {
   type NavigationSettlement,
   type PreparedWorkspaceNavigation,
 } from "./project-navigation";
+import type { ScreenKey } from "./project-route";
 import {
   type ContextRouteRequest,
   contextRouteRequest,
@@ -118,23 +112,7 @@ type ReadableProjectRouteProps = {
   entryHydration: WorkingSetHydrationPlan;
   user: { userId: string; workingSetSyncEnabled?: boolean | null };
 };
-export function ReadableProjectRoute(props: ReadableProjectRouteProps) {
-  const entryKey = useRouterState({ select: (state) => state.location.state.__TSR_key ?? "" });
-  return (
-    <DocumentSwitchFailureProvider entryKey={entryKey}>
-      <ReadableProjectDestination {...props} />
-    </DocumentSwitchFailureProvider>
-  );
-}
-function ReadableProjectDestination({
-  project,
-  entryHydration,
-  user,
-}: {
-  project: Project;
-  entryHydration: WorkingSetHydrationPlan;
-  user: { userId: string; workingSetSyncEnabled?: boolean | null };
-}) {
+export function ReadableProjectRoute({ project, entryHydration, user }: ReadableProjectRouteProps) {
   const projectId = project.id;
   const contextRemoval = useContextRemovalCoordinator();
   const router = useRouter();
@@ -631,16 +609,9 @@ function ReadableProjectDestination({
     if (ticket) void navigation.replaceIfCurrent(ticket, withoutReview(address));
   }, [reviewGone, navigation, location, address]);
   const removedTitle = documentDestination?.path.split("/").filter(Boolean).at(-1) ?? null;
-  const switchFailure = useDocumentSwitchFailures();
-  const failedDestination = destinationFailure(
-    switchFailure.failures,
-    location.href,
-    location.state.__TSR_key ?? "",
-  );
   const mainIssue = parsed.kind === "invalid" ? "unavailable" : undefined;
   // The failed reads are what the address waits on; retrying them is the destination's recovery.
   const retryEditorAddress = useCallback(() => {
-    switchFailure.clear();
     void documentLookup.refetch();
     refetchAddressCatalog();
     editorDrafts.refetch();
@@ -887,12 +858,6 @@ function ReadableProjectDestination({
     }
     return go(toDestination({ kind: "editor" }), { replace: false, ...options });
   };
-  const selectRailScreen = useRailScreenSwitch(
-    activeScreen,
-    (ticket) => latest.current.navigation?.isCurrent(ticket) ?? false,
-  );
-  const selectScreen = (next: ScreenKey) =>
-    selectRailScreen(next, () => (next === "chat" ? chat.showChatScreen() : showEditor()));
 
   return (
     <ProjectNavigationProvider
@@ -934,12 +899,11 @@ function ReadableProjectDestination({
             entryHydration={entryHydration}
             routeLocationKey={location.state.__TSR_key ?? location.href}
             routeIssues={{
-              main: failedDestination ? "error" : mainIssue,
+              main: mainIssue,
               // Loading until the removal lookup answers, so the destination
               // never says "unavailable", then who removed it.
-              editor: failedDestination
-                ? "error"
-                : removedDocumentId !== null && removedDestination === undefined
+              editor:
+                removedDocumentId !== null && removedDestination === undefined
                   ? "loading"
                   : editorIssue,
               removed:
@@ -980,7 +944,6 @@ function ReadableProjectDestination({
                     ? "admitted"
                     : "pending"
             }
-            onSelectScreen={selectScreen}
             onOpenContextTarget={openContext}
             onSetEditorReviewItemKey={setEditorReviewItemKey}
           />
