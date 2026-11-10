@@ -372,9 +372,13 @@ keyboard, pointer, drop, or draft-recovery answer.
 - A held session ends when the server acknowledges its edits, when the predicate turns
   false, when the room is refused, the document removed or access revoked
   (`dropRefusedRoom`, `drainDocument`, `drainAccess`), when the account closes
-  (`invalidateAll`), or at `UNSENT_EDITS_HOLD_MAX_MS` (10 min) for a room that
-  reconnects forever without answering (e.g. repeated `1013` admission failures). The
-  edits stay in IndexedDB in every case.
+  (`invalidateAll`), or after `UNSENT_EDITS_HOLD_MAX_MS` (10 min) spent connected
+  without an acknowledgement. That cap is for a room that answers but never accepts; the
+  clock runs only while the connection is up and restarts on each drop, so offline time
+  never counts and a writer who types on a train gets delivery on reconnect, however
+  long it takes. (Elapsed connected time, not a refusal count: the transport counts
+  refusals for draft rooms only, and a live-room count would change every live session.)
+  The edits stay in IndexedDB in every case.
 - A removed room (4208) retires at once, before an availability check can prove a
   restore and restart it; its edits wait in IndexedDB for the next open.
 - Restarting a removed or unavailable room cancels its pending teardown and schedules

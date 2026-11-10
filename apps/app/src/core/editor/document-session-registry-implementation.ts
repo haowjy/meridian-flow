@@ -52,7 +52,11 @@ type LiveRoomState = {
   leases: Map<ProjectId, LiveDocumentSessionLease>;
 };
 
-/** Longest a released live session waits for acknowledgement from a room that never answers. */
+/**
+ * Longest a released live session stays connected to the server without it acknowledging the
+ * unsent edits. The clock runs only while connected and restarts on every drop, so being offline
+ * never runs it down.
+ */
 const UNSENT_EDITS_HOLD_MAX_MS = 10 * 60_000;
 
 type RetainedLiveDocument = { lease: LiveDocumentSessionLease; detached: boolean };
@@ -97,6 +101,8 @@ export class DocumentSessionRegistry
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Unretained live sessions kept open only until the server acknowledges their edits. */
   private readonly drainingRooms = new Set<string>();
+  // Stops the connected-time cap of a held session (`holdUntilAcknowledged`).
+  private readonly holdCapStops = new Map<string, () => void>();
   private liveDocCapWarningEmitted = false;
   private readonly sessionObservers = new Map<
     string,
@@ -381,6 +387,8 @@ export class DocumentSessionRegistry
     this.liveDocCapWarningEmitted = false;
     for (const timer of this.pendingTeardownTimers.values()) clearTimeout(timer);
     this.pendingTeardownTimers.clear();
+    for (const stop of this.holdCapStops.values()) stop();
+    this.holdCapStops.clear();
     this.drainingRooms.clear();
     const liveSessions = [...this.liveRooms.entries()].flatMap(([documentId, { session }]) =>
       session ? [{ documentId, session }] : [],
@@ -764,30 +772,46 @@ export class DocumentSessionRegistry
   }
 
   private scheduleTeardown(roomKey: string): void {
-    if (this.pendingTeardownTimers.has(roomKey)) return;
+    if (this.pendingTeardownTimers.has(roomKey) || this.holdCapStops.has(roomKey)) return;
     const timer = setTimeout(() => {
       this.pendingTeardownTimers.delete(roomKey);
       const state = this.liveRooms.get(roomKey);
       if (!state?.session || this.isRetained(roomKey)) return;
       // Like draft rooms, a session with unsent edits stays until they are acknowledged.
       // `retireDrainedRoom` ends the hold when the room can no longer take them; a room that
-      // never answers (reconnecting forever, e.g. 1013 admission failures) ends it at the cap.
+      // stays connected without acknowledging ends it at the cap. Offline time never counts.
       // The other exits (refused room, removed document, revoked access, account close) go
       // through `dropRefusedRoom`, `drainDocument`, `drainAccess` and `invalidateAll`.
       if (this.mustKeepForUnsentEdits(state.session)) {
         this.drainingRooms.add(roomKey);
-        this.pendingTeardownTimers.set(
-          roomKey,
-          setTimeout(() => {
-            this.pendingTeardownTimers.delete(roomKey);
-            if (!this.isRetained(roomKey)) this.retireLiveSession(roomKey, state);
-          }, UNSENT_EDITS_HOLD_MAX_MS),
-        );
+        this.holdUntilAcknowledged(roomKey, state, state.session);
         return;
       }
       this.retireLiveSession(roomKey, state);
     }, this.teardownGraceMs);
     this.pendingTeardownTimers.set(roomKey, timer);
+  }
+
+  private holdUntilAcknowledged(
+    roomKey: string,
+    state: LiveRoomState,
+    session: DocumentSession,
+  ): void {
+    let capTimer: ReturnType<typeof setTimeout> | undefined;
+    const stopClock = () => {
+      clearTimeout(capTimer);
+      capTimer = undefined;
+    };
+    const unsubscribe = session.subscribe((snapshot) => {
+      if (snapshot.connectionState?.kind !== "connected") return stopClock();
+      capTimer ??= setTimeout(() => {
+        if (!this.isRetained(roomKey)) this.retireLiveSession(roomKey, state);
+      }, UNSENT_EDITS_HOLD_MAX_MS);
+    });
+    this.holdCapStops.set(roomKey, () => {
+      stopClock();
+      unsubscribe();
+    });
   }
 
   private mustKeepForUnsentEdits(session: DocumentSession): boolean {
@@ -820,6 +844,8 @@ export class DocumentSessionRegistry
 
   private cancelPendingTeardown(roomKey: string): void {
     this.drainingRooms.delete(roomKey);
+    this.holdCapStops.get(roomKey)?.();
+    this.holdCapStops.delete(roomKey);
     const timer = this.pendingTeardownTimers.get(roomKey);
     if (!timer) return;
     clearTimeout(timer);

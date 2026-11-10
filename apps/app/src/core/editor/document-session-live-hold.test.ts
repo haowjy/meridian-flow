@@ -114,3 +114,49 @@ it("holds a released live session with unsent edits until acknowledged, a dead r
     }
   }
 });
+
+const MINUTE = 60_000;
+
+// The cap counts connected time only. Fake timers start after the real grace has passed; the
+// connection is dropped first so the real cap timer is cleared and the fake one arms on reconnect.
+async function withFakeClock(
+  held: Awaited<ReturnType<typeof releasedSessionWithUnsentEdits>>,
+  run: () => Promise<void>,
+) {
+  held.script.setState({ kind: "reconnecting", attempt: 1, nextRetryAt: 0 });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    await run();
+  } finally {
+    vi.useRealTimers();
+    await held.registry.closeAccountRuntime();
+  }
+}
+
+it("offline time never runs the cap down: it restarts on every drop and delivers on reconnect", async () => {
+  const held = await releasedSessionWithUnsentEdits("live-hold-offline");
+  await withFakeClock(held, async () => {
+    await vi.advanceTimersByTimeAsync(11 * MINUTE);
+    expect(held.script.destroyed, "offline past the cap").toBe(false);
+    held.script.setState({ kind: "connected" });
+    await vi.advanceTimersByTimeAsync(9 * MINUTE);
+    held.script.setState({ kind: "reconnecting", attempt: 1, nextRetryAt: 0 });
+    await vi.advanceTimersByTimeAsync(9 * MINUTE);
+    held.script.setState({ kind: "connected" });
+    await vi.advanceTimersByTimeAsync(9 * MINUTE);
+    expect(held.script.destroyed, "restarted after a drop").toBe(false);
+    held.script.acknowledge();
+    await vi.waitFor(() => expect(held.script.destroyed, "delivered").toBe(true));
+  });
+});
+
+it("retires a session that stays connected for the limit without an acknowledgement", async () => {
+  const held = await releasedSessionWithUnsentEdits("live-hold-connected");
+  await withFakeClock(held, async () => {
+    held.script.setState({ kind: "connected" });
+    await vi.advanceTimersByTimeAsync(10 * MINUTE - 1);
+    expect(held.script.destroyed, "just under the limit").toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.waitFor(() => expect(held.script.destroyed, "at the limit").toBe(true));
+  });
+});

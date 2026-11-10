@@ -3,7 +3,7 @@
 The live registry (`document-session-registry-implementation.ts`) keeps a session with
 unacknowledged edits after its last host leaves, until the server acknowledges them or
 an exit applies: the room was refused, reset or admitted read-only, the document was
-removed or access revoked, the account's session ends, or 10 minutes pass. The exits
+removed or access revoked, the account's session ends, or it has stayed connected for 10 minutes without an acknowledgement (offline time does not count). The exits
 are listed in `../CONTEXT.md` (Live session teardown); `document-session-live-hold.test.ts`
 guards them. Recipe and the last run's results.
 
