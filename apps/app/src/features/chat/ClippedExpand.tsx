@@ -55,5 +55,5 @@ export function ClippedProse({ children, footer, className }: ClippedProseProps)
 
 /** A fact about what a capped list left out. Never an invitation. */
 export function BoundLine({ children }: { children: ReactNode }) {
-  return <p className="mt-[var(--chat-space-inline)] text-meta text-ink-subtle">{children}</p>;
+  return <p className="mt-[var(--chat-space-inline)] text-xs text-muted-foreground">{children}</p>;
 }

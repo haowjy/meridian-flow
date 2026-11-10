@@ -4,6 +4,7 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import {
   ApplyAllQuestion,
   CommandNotice,
@@ -13,6 +14,7 @@ import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
+import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { treeLineSentence } from "@/features/draft-review/tree-line";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
@@ -94,19 +96,13 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       onClick={(event) => event.stopPropagation()}
     >
       {confirming || askingApply ? null : dock.showCommands ? (
-        <>
-          <QuietButton
-            onClick={() => (multi ? setConfirmingDiscard(true) : dock.discard())}
-            disabled={!dock.canCommand}
-          >
-            <Trans>Discard</Trans>
-          </QuietButton>
-          {dock.canApply ? (
-            <QuietButton onClick={startApply} disabled={!dock.canCommand}>
-              <Trans>Apply</Trans>
-            </QuietButton>
-          ) : null}
-        </>
+        <ReviewActions
+          scope="all"
+          density="short"
+          disabled={!dock.canCommand}
+          onDiscard={() => (multi ? setConfirmingDiscard(true) : dock.discard())}
+          onApply={dock.canApply ? startApply : undefined}
+        />
       ) : null}
     </div>
   );
@@ -126,8 +122,8 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               }
         }
         className={cn(
-          "flex min-h-7 items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-caption @max-[20rem]/dock:[font-size:12px] text-prose-foreground",
-          multi && "cursor-pointer transition-colors hover:bg-muted/50",
+          "flex min-h-7 items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-caption @max-[20rem]/dock:text-xs text-foreground",
+          multi && "cursor-pointer transition-colors hover:bg-ink-fill",
         )}
       >
         <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1">
@@ -141,7 +137,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 dock.controller.dismissNotice();
                 setExpanded((value) => !value);
               }}
-              className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+              className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground coarse:min-h-11 coarse:min-w-11"
             >
               <ChevronRight
                 className={cn("size-3 transition-transform", expanded && "rotate-90")}
@@ -159,7 +155,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           ) : null}
           {trouble ||
             (dock.changeCount !== null ? (
-              <span className="hidden shrink-0 whitespace-nowrap text-ink-subtle @min-[25rem]/dock:inline">
+              <span className="hidden shrink-0 whitespace-nowrap text-muted-foreground @min-[25rem]/dock:inline">
                 <ChangeCount count={dock.changeCount} />
               </span>
             ) : null)}
@@ -170,7 +166,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   );
 
   return (
-    <div className="@container/dock rounded-t-lg bg-dock-surface" data-draft-dock="settled">
+    <div className="@container/dock rounded-t-lg bg-review" data-draft-dock="settled">
       {multi ? summary() : null}
       <div className={cn(expanded && multi && "app-scroll max-h-[min(40svh,20rem)]")}>
         {dock.files.map((file) => (
@@ -230,7 +226,7 @@ function DockFileLine({
       {summary ? (
         summary(trouble)
       ) : expanded && !wholeDocument ? (
-        <div className="flex min-h-7 items-center gap-1 px-2 text-caption text-prose-foreground">
+        <div className="flex min-h-7 items-center gap-1 px-2 text-caption text-foreground">
           <DockFileName file={file} onReview={() => dock.review(file)} />
           {trouble}
         </div>
@@ -253,31 +249,14 @@ function DockFileLine({
   );
 }
 
-/** A preview that did not load, in the strip's error voice, with Retry beside it. */
+/** A preview that did not load, with Retry beside it. */
 function FileTrouble({ file, row = false }: { file: DockFile; row?: boolean }) {
-  const message = t`Changes couldn't load.`;
   return (
-    <p
-      className={cn(
-        "flex min-w-0 items-center gap-[var(--chat-space-inline)] text-destructive text-caption",
-        row ? "max-w-[50%]" : "flex-1",
-      )}
-      role="alert"
-      {...{ [row ? "data-draft-dock-row-error" : "data-draft-dock-strip-error"]: "unreadable" }}
-    >
-      <span className="min-w-0 flex-1 truncate" title={message}>
-        {message}
-      </span>
-      {file.retry ? (
-        <button
-          type="button"
-          onClick={file.retry}
-          className="text-button shrink-0 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
-        >
-          <Trans>Retry</Trans>
-        </button>
-      ) : null}
-    </p>
+    <InlineErrorRow
+      message={t`Changes couldn't load.`}
+      onRetry={file.retry ?? undefined}
+      className={cn("min-w-0 p-0", row ? "max-w-[50%]" : "flex-1")}
+    />
   );
 }
 
@@ -299,28 +278,6 @@ function DockFileName({ file, onReview }: { file: DockFile; onReview: () => void
       }}
     >
       {label}
-    </button>
-  );
-}
-
-/** Quiet text verb — never destructive-colored. */
-function QuietButton({
-  onClick,
-  disabled,
-  children,
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="focus-ring shrink-0 whitespace-nowrap rounded-sm px-[var(--chat-space-block)] py-0.5 @max-[25rem]/dock:px-1 @max-[20rem]/dock:px-0 text-ink-muted hover:text-foreground disabled:opacity-50 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
-    >
-      {children}
     </button>
   );
 }

@@ -69,10 +69,10 @@ export function DocumentVersionMenu({ projectId, tab }: { projectId: string; tab
               <WorkIdentity
                 name={ownerName(hint)}
                 unavailableLabel={t`Unnamed draft`}
-                className="text-[13px] font-normal"
+                className="text-sm font-normal"
               />
               {hint.tree ? (
-                <span className="text-xs text-ink-muted">
+                <span className="text-xs text-muted-foreground">
                   {"deleted" in hint.tree ? (
                     <Trans>Deletes this document</Trans>
                   ) : (

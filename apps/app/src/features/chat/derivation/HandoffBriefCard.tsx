@@ -86,10 +86,10 @@ export function HandoffBriefCard({
       aria-label={title}
       data-handoff-brief
       data-handoff-brief-state={view.state}
-      className="surface-card chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] shadow-xs outline-none"
+      className="surface-card chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] shadow-raise outline-none"
     >
       <div className="flex items-start gap-[var(--chat-space-inline)]">
-        <div className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground">
+        <div className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-ink-fill text-muted-foreground">
           <Forward className="size-3.5" aria-hidden />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-[var(--chat-space-inline)]">
@@ -123,7 +123,7 @@ export function HandoffBriefCard({
                 // keyboard focus follows it there even while the chat is busy,
                 // where the wait note it is described by is read with it.
                 aria-disabled={destinationBusy || undefined}
-                className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted-foreground"
+                className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:text-muted-foreground"
                 aria-describedby={destinationBusy ? retryWaitId : undefined}
                 data-focus-landing
                 onClick={() => {

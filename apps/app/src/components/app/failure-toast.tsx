@@ -87,12 +87,12 @@ export function FailureToaster() {
         closeButtonAriaLabel: t`Dismiss`,
         classNames: {
           toast:
-            "pointer-events-auto flex w-full items-center gap-2 rounded-md border border-border bg-popover py-2 pr-2 pl-3 text-sm text-popover-foreground shadow-card",
+            "pointer-events-auto flex w-full items-center gap-2 rounded-md border border-border bg-card py-2 pr-2 pl-3 text-sm text-foreground shadow-float",
           content: "min-w-0 flex-1",
           title: "[overflow-wrap:anywhere]",
-          actionButton: "text-button shrink-0 text-sm [@media(pointer:coarse)]:min-h-11",
+          actionButton: "text-button shrink-0 text-sm coarse:min-h-11",
           closeButton:
-            "focus-ring order-last flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground [@media(pointer:coarse)]:size-11",
+            "focus-ring order-last flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground coarse:size-11",
         },
       }}
     />

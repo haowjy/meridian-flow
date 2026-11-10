@@ -1,10 +1,11 @@
 /** Chat Files combines existing shared Scratch with this chat's uploads and source-chat link. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { isHandoffSeed, readHandoffSeed } from "@meridian/contracts/threads";
 import { FileImage, FileText, FileType, PanelRightOpen, Paperclip, Trash2 } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { deleteChatUpload } from "@/client/api/context-upload-api";
 import { type ChatUpload, useChatUploads } from "@/client/query/useChatUploads";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -19,7 +20,9 @@ import {
   dropdownSurfaceVariants,
 } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
+import { handleListKeys } from "@/components/ui/list-keys";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { role } from "@/components/ui/roles";
 import { MenuScratchSection } from "@/features/project/chat/ChatScratch";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useOpenChatResource } from "@/features/project/context/open-chat-document";
@@ -135,42 +138,6 @@ function FilesDropdown({
     );
   };
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const rowKeys = ["ArrowDown", "ArrowUp", "Home", "End"];
-    const target = event.target as HTMLElement;
-    if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
-      // Within a row: the file's own button, then its actions.
-      const row = target.closest<HTMLElement>("[data-upload-item]");
-      const stops = Array.from(row?.querySelectorAll<HTMLElement>("button:not([disabled])") ?? []);
-      const index = stops.indexOf(target);
-      if (index < 0) return;
-      const next = stops[index + (event.key === "ArrowRight" ? 1 : -1)];
-      if (!next) return;
-      event.preventDefault();
-      next.focus();
-      return;
-    }
-    if (!rowKeys.includes(event.key)) return;
-    const primaries = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>("[data-upload-row]"),
-    );
-    if (primaries.length === 0) return;
-    const current = primaries.indexOf(
-      target.closest<HTMLElement>("[data-upload-item]")?.querySelector("[data-upload-row]") ??
-        target,
-    );
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? primaries.length - 1
-          : event.key === "ArrowDown"
-            ? (current + 1) % primaries.length
-            : (current <= 0 ? primaries.length : current) - 1;
-    event.preventDefault();
-    primaries[next]?.focus();
-  };
-
   return (
     <Popover open={open} onOpenChange={(next) => (next ? setOpen(true) : close(false))}>
       <PopoverTrigger asChild>
@@ -179,7 +146,7 @@ function FilesDropdown({
           aria-label={t`Files`}
           aria-expanded={open}
           aria-haspopup="dialog"
-          className="focus-ring inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground popup-open:bg-dropdown-hover popup-open:text-foreground [@media(pointer:coarse)]:min-h-11"
+          className="focus-ring inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-ink-fill hover:text-foreground popup-open:bg-ink-fill-strong popup-open:text-foreground coarse:min-h-11"
         >
           <Paperclip className="size-3.5" aria-hidden />
           <span aria-hidden="true">
@@ -198,7 +165,7 @@ function FilesDropdown({
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           contentRef.current
-            ?.querySelector<HTMLElement>('[role="button"][tabindex="0"], [data-upload-row]')
+            ?.querySelector<HTMLElement>('[role="button"][tabindex="0"], [data-list-item]')
             ?.focus();
         }}
         onCloseAutoFocus={(event) => {
@@ -206,11 +173,15 @@ function FilesDropdown({
           focusHandoff.current = false;
         }}
         onKeyDown={(event) => {
-          if ((event.target as HTMLElement).closest("[data-upload-item]")) handleKeyDown(event);
+          // The Scratch tree above the uploads keeps its own keys.
+          if ((event.target as HTMLElement).closest("[data-list-row]")) handleListKeys(event);
         }}
       >
         {continuesFrom ? (
-          <p className="px-2 py-1.5 text-sm text-ink-muted" onClickCapture={() => close(false)}>
+          <p
+            className="px-2 py-1.5 text-sm text-muted-foreground"
+            onClickCapture={() => close(false)}
+          >
             <ContinuesFrom source={continuesFrom} />
           </p>
         ) : null}
@@ -225,11 +196,11 @@ function FilesDropdown({
               <Trans>Uploads</Trans>
             </h3>
             {rows.length === 0 ? (
-              <p className="px-2 py-1.5 text-sm text-muted-foreground">
+              <p className={cn("px-2", role.emptyLine)}>
                 <Trans>No files attached in this chat yet.</Trans>
               </p>
             ) : (
-              <ul className="flex flex-col gap-[var(--chat-space-row)]">
+              <ul className="flex flex-col gap-[var(--chat-space-inline)]">
                 {rows.map((upload) => (
                   <UploadRow
                     key={upload.documentId}
@@ -284,15 +255,16 @@ function UploadRow({
   const drag = useReferenceDrag({ ref: { kind: "file", id: upload.documentId }, name });
   const failure = failed ? t`Couldn’t delete this file. Try again.` : null;
   return (
-    <li data-upload-item className="relative flex flex-col">
+    <li className="relative flex flex-col">
       <div
         className={cn(
           dropdownRowContainerClass,
-          "flex min-w-0 items-center transition-colors hover:bg-dropdown-hover",
+          "flex min-w-0 items-center transition-colors hover:bg-ink-fill",
         )}
+        data-list-row
       >
         <button
-          data-upload-row
+          data-list-item
           type="button"
           {...drag}
           onClick={onInsert}
@@ -306,11 +278,11 @@ function UploadRow({
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="truncate">{upload.name}</span>
             {failure ? (
-              <span aria-hidden="true" className="truncate text-meta text-destructive">
+              <span aria-hidden="true" className="truncate text-xs text-destructive">
                 {failure}
               </span>
             ) : (
-              <span className="flex min-w-0 justify-between gap-3 text-meta text-ink-subtle">
+              <span className="flex min-w-0 justify-between gap-3 text-xs text-muted-foreground">
                 <span className="truncate">{uploadTypeLabel(upload.fileType)}</span>
                 <span className="shrink-0 tabular-nums">{attachedAgo(upload.attachedAt, now)}</span>
               </span>
@@ -318,24 +290,12 @@ function UploadRow({
           </span>
         </button>
         {canDelete ? (
-          <IconButton
-            size="xs"
-            aria-label={t`Delete ${name}`}
-            title={t`Delete ${name}`}
-            onClick={onDelete}
-            className="[@media(pointer:coarse)]:size-11"
-          >
+          <IconButton size="xs" label={t`Delete ${name}`} onClick={onDelete}>
             <Trash2 className="size-3.5" aria-hidden />
           </IconButton>
         ) : null}
         {onOpen ? (
-          <IconButton
-            size="xs"
-            aria-label={t`Open ${name}`}
-            title={t`Open ${name}`}
-            onClick={onOpen}
-            className="mr-1 [@media(pointer:coarse)]:size-11"
-          >
+          <IconButton size="xs" label={t`Open ${name}`} onClick={onOpen} className="mr-1">
             <PanelRightOpen className="size-3.5" aria-hidden />
           </IconButton>
         ) : null}

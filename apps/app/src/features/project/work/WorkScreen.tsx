@@ -1,10 +1,12 @@
 /** Route dispatcher for Work collection, creation, and detail destinations. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { role } from "@/components/ui/roles";
 import { CreationDialog } from "@/features/creation/CreationDialog";
 import type { ProjectRouteCommands, RouteWorkResolution } from "../routing/project-route";
 import { useCreateWork, useWorkCreationRecovery } from "./useWorkCreation";
@@ -76,7 +78,7 @@ export function WorkScreen({ projectId, routeWork, routeCommands, deletion }: Wo
     return (
       <div className="app-scroll">
         <div className="project-screen-column">
-          <p className="text-sm text-muted-foreground">
+          <p className={role.emptyLine}>
             <Trans>Loading Work…</Trans>
           </p>
         </div>

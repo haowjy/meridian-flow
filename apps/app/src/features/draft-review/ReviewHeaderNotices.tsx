@@ -1,7 +1,7 @@
 /** Whole-draft failures and inline review completion. End states share the existing review/path row rather than adding a banner. */
 import { Plural, Trans } from "@lingui/react/macro";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import { Button } from "@/components/ui/button";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { cn } from "@/lib/utils";
 import { useDraftCommandState } from "./draft-changes";
@@ -17,7 +17,6 @@ export function ReviewFailureNotices({
   itemKey = "",
   failedElsewhere = [],
   onOpenNext,
-  touch = false,
   className,
 }: {
   commandError: BranchCommandFailure | null;
@@ -25,57 +24,50 @@ export function ReviewFailureNotices({
   /** Other drafts of the Work whose last Apply or Discard was refused or lost. */
   failedElsewhere?: { row: ReviewFileTarget; failure: BranchCommandFailure }[];
   onOpenNext: (row: ReviewFileTarget) => void;
-  touch?: boolean;
   /** The inset of whatever hosts the notices. */
   className?: string;
 }) {
   const owner = useDraftCommandOwner();
   const command = useDraftCommandState(itemKey);
-  const button = touch ? "h-11 px-4 text-sm" : undefined;
   return (
     <>
       {commandError ? (
-        <p
-          className={cn("flex items-center gap-2 pb-1.5 text-destructive", className)}
-          role="alert"
-        >
-          <span>
-            <ReviewMessageText failure={commandError} />
-          </span>
-          {commandError.code === "unapply-refused" && command.stalled ? (
-            <Button size="xs" variant="outline" onClick={() => owner.retry(itemKey)}>
-              <Trans>Retry</Trans>
-            </Button>
-          ) : null}
-        </p>
+        <InlineErrorRow
+          message={<ReviewMessageText failure={commandError} />}
+          onRetry={
+            commandError.code === "unapply-refused" && command.stalled
+              ? () => owner.retry(itemKey)
+              : undefined
+          }
+          className={className}
+        />
       ) : null}
       {failedElsewhere.slice(0, MAX_NAMED_FAILURES).map(({ row, failure }) => (
-        <div
+        <InlineErrorRow
           key={row.documentId}
-          className={cn(
-            "flex items-center gap-3 border-border border-t py-1 text-destructive",
-            className,
-          )}
-          role="alert"
-        >
-          <p className="min-w-0 flex-1">
-            <span className="font-medium">{row.documentName ?? <Trans>Untitled</Trans>}</span>
-            <br />
-            <ReviewMessageText failure={failure} />
-          </p>
-          <Button size="xs" variant="outline" className={button} onClick={() => onOpenNext(row)}>
-            <Trans>Open</Trans>
-          </Button>
-        </div>
+          message={
+            <>
+              <span className="font-medium">{row.documentName ?? <Trans>Untitled</Trans>}</span>
+              <br />
+              <ReviewMessageText failure={failure} />
+            </>
+          }
+          onRetry={() => onOpenNext(row)}
+          actionLabel={<Trans>Open</Trans>}
+          className={className}
+        />
       ))}
       {failedElsewhere.length > MAX_NAMED_FAILURES ? (
-        <p className={cn("border-border border-t py-1 text-destructive", className)} role="alert">
-          <Plural
-            value={failedElsewhere.length - MAX_NAMED_FAILURES}
-            one="Changes in # more document did not apply"
-            other="Changes in # more documents did not apply"
-          />
-        </p>
+        <InlineErrorRow
+          message={
+            <Plural
+              value={failedElsewhere.length - MAX_NAMED_FAILURES}
+              one="Changes in # more document did not apply"
+              other="Changes in # more documents did not apply"
+            />
+          }
+          className={className}
+        />
       ) : null}
     </>
   );
@@ -102,7 +94,7 @@ export function ReviewStateInline({
         <ReviewStatusContent {...state} />
       </span>
       {state.finished ? (
-        <ReviewNextAction {...state} className={touch ? "h-11 px-2" : "h-5.5"} />
+        <ReviewNextAction {...state} className={touch ? "h-11 px-2" : "h-6"} />
       ) : null}
     </span>
   );

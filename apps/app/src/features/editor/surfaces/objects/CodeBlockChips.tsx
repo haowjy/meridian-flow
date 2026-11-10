@@ -120,7 +120,7 @@ export function CodeBlockChips({
         type="button"
         size="xs"
         variant="ghost"
-        aria-label={t`Copy code`}
+        label={t`Copy code`}
         onClick={() => run(copyText(target.node.textContent), t`Code copied`)}
       >
         <Copy aria-hidden />
@@ -133,7 +133,7 @@ export function CodeBlockChips({
         onOpenChange={setOverflowOpen}
         align="end"
         trigger={
-          <IconButton type="button" size="xs" variant="ghost" aria-label={t`More`}>
+          <IconButton type="button" size="xs" variant="ghost" label={t`More`}>
             <Ellipsis aria-hidden />
           </IconButton>
         }

@@ -13,6 +13,6 @@ export function titleChipClass(variant: "quiet" | "tab") {
     "flex w-fit min-w-0 max-w-full items-center gap-[var(--chat-space-inline)]",
     variant === "tab"
       ? "tab-chip-active relative h-9 px-[var(--chat-card-pad-x)] [--tab-chip-surface:var(--color-background)]"
-      : "tab-chip-inactive relative -ml-2 self-stretch px-[var(--chat-card-pad-x)] [--tab-chip-surface:var(--color-background)] [@media(pointer:coarse)]:min-h-11",
+      : "tab-chip-inactive relative -ml-2 self-stretch px-[var(--chat-card-pad-x)] [--tab-chip-surface:var(--color-background)] coarse:min-h-11",
   );
 }

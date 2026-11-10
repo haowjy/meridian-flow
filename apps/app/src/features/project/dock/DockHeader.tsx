@@ -46,7 +46,7 @@ export function DockHeader({
     );
   }
   return (
-    <header className="flex h-10 shrink-0 items-stretch pl-2 [@media(pointer:coarse)]:h-11">
+    <header className="flex h-10 shrink-0 items-stretch pl-2 coarse:h-11">
       {/* No overflow-hidden: truncation is owned by the min-w-0/truncate chain
           inside, and clipping here shears the trigger's hover pill (it
           bleeds left of the slot). */}

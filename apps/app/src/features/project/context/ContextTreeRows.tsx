@@ -18,6 +18,7 @@ import type {
   CatalogFile as ContextFile,
   CatalogNode as ContextNode,
 } from "@/client/query/context-catalog-projection";
+import { role } from "@/components/ui/roles";
 import { useRevealImport } from "@/features/import/ImportProvider";
 import {
   type ImportedTree,
@@ -37,7 +38,6 @@ import {
   contextTreeRowGrowClassName,
   contextTreeSelectedRowClassName,
   sidebarIcon,
-  sidebarRole,
 } from "./context-row-geometry";
 import { EntryNameField } from "./EntryNameField";
 import { EntryRefusalNotice } from "./EntryRefusalNotice";
@@ -193,9 +193,7 @@ function activateOnKey(handler: (event: KeyboardEvent) => void) {
 
 export function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
   return (
-    <span
-      className={cn("flex h-7 w-4 shrink-0 items-center justify-center", sidebarRole.secondary)}
-    >
+    <span className={cn("flex h-7 w-4 shrink-0 items-center justify-center", role.secondary)}>
       <Icon aria-hidden className={sidebarIcon.row} />
     </span>
   );
@@ -279,8 +277,8 @@ function DirRow({
           {...drop.dropProps}
           className={cn(
             "group focus-ring mx-2 flex items-center rounded-md pr-1 text-foreground",
-            sidebarRole.row,
-            row.selected ? contextTreeSelectedRowClassName : sidebarRole.hover,
+            role.row,
+            row.selected ? contextTreeSelectedRowClassName : role.hover,
             contextTreeRowGrowClassName,
           )}
           style={{ paddingLeft: rowPaddingLeft(depth) }}
@@ -344,9 +342,9 @@ function PendingTreeRow({ row, depth }: { row: PendingRow; depth: number }) {
       onClick={() => reveal?.(row.importId)}
       className={cn(
         "focus-ring mx-2 flex w-[calc(100%-1rem)] items-center rounded-md pr-2 text-left",
-        sidebarRole.row,
-        sidebarRole.secondary,
-        sidebarRole.hover,
+        role.row,
+        role.secondary,
+        role.hover,
         contextTreeRowGrowClassName,
       )}
       style={{ paddingLeft: rowPaddingLeft(depth) }}
@@ -458,7 +456,7 @@ function RenameRow({
     <div
       className={cn(
         "mx-2 flex items-center pr-1 text-foreground",
-        sidebarRole.row,
+        role.row,
         contextTreeRowClassName,
       )}
       style={{ paddingLeft: rowPaddingLeft(depth) }}
@@ -496,7 +494,7 @@ function CreateRow({
     <div
       className={cn(
         "mx-2 flex items-center pr-1 text-foreground",
-        sidebarRole.row,
+        role.row,
         contextTreeRowClassName,
       )}
       style={{ paddingLeft: rowPaddingLeft(depth) }}

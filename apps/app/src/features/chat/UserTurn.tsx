@@ -5,6 +5,7 @@ import { Loader2, X } from "lucide-react";
 import { memo, useMemo } from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import {
   useCanOpenChatReference,
   useOpenChatDocument,
@@ -92,17 +93,15 @@ function UserTurnComponent({
         // The x sits beside the bubble, centred on it; the bubble gives up width for it.
         <div className="flex items-center justify-end gap-[var(--chat-space-inline)]">
           <div className="user-message-bubble min-w-0">{content}</div>
-          <Button
+          <IconButton
             type="button"
-            variant="quiet"
-            size="icon-xs"
             data-queue-control="move-to-box"
-            aria-label={t`Move to the message box`}
-            className="shrink-0 [@media(pointer:coarse)]:size-11"
+            label={t`Move to the message box`}
+            className="shrink-0"
             onClick={() => queueControls.remove(turn.id)}
           >
             <X aria-hidden />
-          </Button>
+          </IconButton>
         </div>
       ) : (
         <div className="user-message-bubble">{content}</div>
@@ -128,7 +127,6 @@ function UserTurnComponent({
               variant="quiet"
               size="meta"
               data-queue-control="cancel-queue"
-              className="[@media(pointer:coarse)]:min-h-11"
               onClick={queueControls.cancelQueue}
             >
               {t`Cancel queue`}
@@ -143,7 +141,6 @@ function UserTurnComponent({
               data-busy={queueControls.sendNow.busy ? "" : undefined}
               disabled={queueControls.sendNow.busy}
               aria-label={t`Stop the reply and send now`}
-              className="[@media(pointer:coarse)]:min-h-11"
               onClick={queueControls.sendNow.send}
             >
               {queueControls.sendNow.busy ? (

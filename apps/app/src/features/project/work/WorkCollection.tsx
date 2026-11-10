@@ -1,4 +1,5 @@
 /** Collection surface for Work creation and lifecycle: Active, Archived, and Deleted tabs. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
@@ -11,9 +12,11 @@ import { useWorkMutations } from "@/client/query/work-command-store";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { role } from "@/components/ui/roles";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
+import { cn } from "@/lib/utils";
 import { RuledList } from "../RuledList";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { DeletedWorkList } from "./DeletedWorkList";
@@ -102,11 +105,7 @@ export function WorkCollection({
         return (
           <WorkRow
             {...shared}
-            liveState={
-              <span role="alert" className="text-destructive">
-                <Trans>Not created</Trans>
-              </span>
-            }
+            liveState={<InlineErrorRow message={<Trans>Not created</Trans>} className="p-0" />}
           />
         );
       case "restoring":
@@ -157,7 +156,7 @@ export function WorkCollection({
     <div className="app-scroll" aria-busy={isFetching}>
       <section className="project-screen-column">
         <div className="flex items-center justify-between gap-4">
-          <h1 ref={collectionHeading} tabIndex={-1} className="text-xl font-semibold">
+          <h1 ref={collectionHeading} tabIndex={-1} className={role.pageHeading}>
             <Trans>Work</Trans>
           </h1>
           <NewWorkButton projectId={projectId} />
@@ -196,7 +195,7 @@ export function WorkCollection({
               entries={entries.archived}
               row={row}
               empty={
-                <p className="px-2 py-2 text-sm text-muted-foreground">
+                <p className={cn("px-2", role.emptyLine)}>
                   <Trans>No archived Work.</Trans>
                 </p>
               }
@@ -229,7 +228,7 @@ function WorkRows({
 
 function NewWorkButton({ projectId, variant }: { projectId: string; variant?: "outline" }) {
   return (
-    <Button asChild size="sm" variant={variant} className="[@media(pointer:coarse)]:min-h-11">
+    <Button asChild size="sm" variant={variant}>
       <Link to="/p/$projectId/$" params={{ projectId, _splat: "works/new" }}>
         <Plus aria-hidden />
         <Trans>New Work</Trans>
@@ -242,7 +241,7 @@ function NewWorkButton({ projectId, variant }: { projectId: string; variant?: "o
 function StartWork({ projectId }: { projectId: string }) {
   return (
     <div className="flex flex-col items-center px-2 py-16 text-center sm:py-20">
-      <h2 className="text-base font-semibold text-foreground">
+      <h2 className={role.sectionHeading}>
         <Trans>Start a Work</Trans>
       </h2>
       <p className="mt-2 max-w-sm text-sm text-muted-foreground">
@@ -278,12 +277,7 @@ function DeletedWorkRow({
       <button type="button" className="text-button shrink-0 text-sm" onClick={onUndo}>
         <Trans>Undo</Trans>
       </button>
-      <IconButton
-        size="sm"
-        className="ml-auto shrink-0 [@media(pointer:coarse)]:size-11"
-        aria-label={t`Dismiss`}
-        onClick={onDismiss}
-      >
+      <IconButton size="sm" className="ml-auto shrink-0" label={t`Dismiss`} onClick={onDismiss}>
         <X aria-hidden className="size-4" />
       </IconButton>
     </div>

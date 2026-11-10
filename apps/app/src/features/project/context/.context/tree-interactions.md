@@ -242,7 +242,7 @@ starts an explicit selection from the open row and adds or removes rows;
 Shift-click selects the on-screen range from the last clicked row, read from the
 DOM (`data-entry-key`) so it always matches what is visible; Escape returns to
 the open row. Explicit selections and the open row share the selected fill
-(`sidebarRole.selected`, ink, never jade); the open row stays findable inside a
+(`role.selected`, ink, never jade); the open row stays findable inside a
 selection by its weight. Adjacent selected rows join into one block rounded only at its ends:
 after each commit the selection marks each row's place in its run
 (`data-selection-run`) in one pass over screen order. The same

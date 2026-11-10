@@ -10,8 +10,9 @@ import type { OpenAsk } from "@meridian/thread-client";
 import { ArrowUp } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { FailureCard } from "@/components/app/FailureCard";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { permissionRequestText } from "./permission-request";
 
@@ -105,7 +106,7 @@ function TakeoverFrame({ labelledBy, children }: { labelledBy: string; children:
       ref={frame}
       aria-labelledby={labelledBy}
       data-ask-takeover=""
-      className="flex flex-col gap-[var(--chat-space-block)] rounded-composer-pinned border border-composer-border bg-composer-surface px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
+      className="flex flex-col gap-[var(--chat-space-block)] rounded-xl border border-border bg-card px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
     >
       {children}
     </section>
@@ -250,8 +251,8 @@ function QuestionTakeover({
             aria-pressed={picked === option.label}
             onClick={() => choose({ kind: "option", label: option.label })}
             className={cn(
-              "focus-ring flex w-full items-start gap-[var(--chat-space-block)] rounded-field border border-border-subtle bg-background px-[var(--chat-space-block)] py-[var(--chat-space-inline)] text-left transition-colors hover:border-border-focus hover:bg-accent",
-              picked === option.label && "border-border-focus bg-accent",
+              "focus-ring flex w-full items-start gap-[var(--chat-space-block)] rounded-lg border border-border-subtle bg-background px-[var(--chat-space-block)] py-[var(--chat-space-inline)] text-left transition-colors hover:border-focus hover:bg-ink-fill",
+              picked === option.label && "border-focus bg-ink-fill",
             )}
           >
             <span className="min-w-0 flex-1">
@@ -263,18 +264,18 @@ function QuestionTakeover({
               ) : null}
             </span>
             {option.label === recommended ? (
-              <Badge variant="label" className="mt-0.5">
+              <Chip kind="label" className="mt-0.5">
                 {t`Recommended`}
-              </Badge>
+              </Chip>
             ) : null}
           </button>
         ))}
       </fieldset>
       <div
         className={cn(
-          "flex items-end gap-[var(--chat-space-inline)] rounded-field border border-border-subtle bg-background py-1 pl-[var(--chat-space-block)] focus-within:border-border-focus",
+          "flex items-end gap-[var(--chat-space-inline)] rounded-lg border border-border-subtle bg-background py-1 pl-[var(--chat-space-block)] focus-within:border-focus",
           several ? "pr-[var(--chat-space-block)]" : "pr-1",
-          entry.choice?.kind === "text" && "border-border-focus",
+          entry.choice?.kind === "text" && "border-focus",
         )}
       >
         <textarea
@@ -291,16 +292,17 @@ function QuestionTakeover({
           className="field-sizing-content max-h-40 min-h-8 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-compact outline-none placeholder:text-muted-foreground"
         />
         {several ? null : (
-          <Button
+          <IconButton
             type="button"
-            size="icon-sm"
-            className="rounded-field"
-            aria-label={t`Send answer`}
+            variant="default"
+            size="sm"
+            className="rounded-lg"
+            label={t`Send answer`}
             disabled={entry.choice?.kind !== "text"}
             onClick={forward}
           >
             <ArrowUp className="size-4" />
-          </Button>
+          </IconButton>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)]">
@@ -311,7 +313,7 @@ function QuestionTakeover({
           aria-pressed={entry.choice?.kind === "skipped"}
           className={cn(
             "border border-transparent",
-            entry.choice?.kind === "skipped" && "border-border-focus bg-accent text-foreground",
+            entry.choice?.kind === "skipped" && "border-focus bg-ink-fill text-foreground",
           )}
           onClick={() => choose({ kind: "skipped" })}
         >

@@ -107,7 +107,7 @@ function ChatComposerComponent({
         attached={
           <>
             {composerStrip ? (
-              <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
+              <div className="mx-[var(--chat-space-block)] rounded-t-xl border border-b-0 border-border bg-card">
                 {composerStrip}
               </div>
             ) : null}

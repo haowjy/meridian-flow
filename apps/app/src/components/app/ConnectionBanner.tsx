@@ -65,8 +65,8 @@ export function ConnectionBanner() {
 
   const toneClassName =
     kind === "reconnected"
-      ? "border-status-done-bg bg-status-done-bg text-status-done-foreground"
-      : "border-border bg-status-live-bg text-status-live-foreground";
+      ? "border-primary/22 bg-primary/12 text-jade-text"
+      : "border-border bg-ink-fill text-muted-foreground";
 
   return (
     <Alert
