@@ -3,7 +3,7 @@
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { resourceIdentityIndex } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
@@ -56,6 +56,10 @@ function OwnerSettlement({
   const resources = useOptionalAccountResourceReplica();
   const availability = useOptionalProjectContextAvailabilityCoordinator();
   const drafts = useOwnerDrafts(projectId, ownerKey);
+  // A `removed` availability answer is final until someone looks the document up again, and a
+  // restore prompts no lookup. Once the replica has gone terminal for a document, its placed
+  // record is a restore, not the lag the removal check guards against.
+  const replicaSawTerminal = useRef(new Set<string>());
   const projection = useObservedResourceProjection(resources, projectId);
   // The pending list omits a draft with no effect (and one inside the
   // `has_effect` lag), so leaving it proves nothing. For an unlisted draft-only
@@ -142,12 +146,19 @@ function OwnerSettlement({
       const row = drafts.drafts?.find((candidate) => candidate.itemKey === draft.itemKey);
       const record = identities.byDocumentId(draft.documentId);
       if (draft.ownerKey !== ownerKey || !row || !record) continue;
-      if (record.resource.lifecycle.kind === "terminal") continue;
+      if (record.resource.lifecycle.kind === "terminal") {
+        replicaSawTerminal.current.add(draft.documentId);
+        continue;
+      }
       if (!projection.placement.resourceLocation(record)) continue;
-      if (availability?.removalRecord(projectId, draft.documentId).get()?.kind === "removed")
+      if (
+        availability?.removalRecord(projectId, draft.documentId).get()?.kind === "removed" &&
+        !replicaSawTerminal.current.has(draft.documentId)
+      )
         continue;
       if (promoting.has(draft.documentId)) continue;
       promoting.add(draft.documentId);
+      replicaSawTerminal.current.delete(draft.documentId);
       void lifecycle.promote(draft);
     }
   }, [
