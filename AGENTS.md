@@ -18,39 +18,27 @@ explanations. See [trust the LLM][trust-llm] and [trust the user][trust-user].
 
 ## Invariants
 
-These hold however the work is done. Each changes only as its own visible step,
-never to get a task passing:
+These hold however the work is done, but they can change too. When evidence shows one
+no longer serves writers, propose the change to the owner as its own step, never as a
+side effect of getting a task to pass. How the code keeps each one, what checks it and
+where it falls short: [.context/invariants.md](.context/invariants.md).
 
-- Migrations lose no data: online-safe DDL, and no skip that relies on empty
-  tables ([`migration-lint`](tools/dev/migration-lint.ts)).
-- Every copy of a document's text converges, and no accepted edit is lost in the
-  merge. [`text-convergence.test.ts`](apps/server/server/domains/collab/text-convergence.test.ts)
-  checks this through the production room, persistence, and stored-state path.
-- Writer text stays out of logs and diagnostics. The sanitizers are checked
-  (`packages/yjs-inspect`'s canary, `safe-event.test.ts`); what emit sites pass them
-  is not.
-- Marks and receipts say truthfully who did what. Checked for live and draft
-  writes, response rollback, subagent bylines, model and writer inverse receipts,
-  Apply settlement, and tree receipts. Browser display is not checked.
+- **Migrations lose no data.** Every migration is safe on a populated database and none
+  relies on empty tables: a writer's manuscript is the product.
+- **Text converges.** Every copy of a document's text converges, and no accepted edit is
+  lost in the merge: the writer and the model edit the same document at once.
+- **Writer text stays out of logs and diagnostics:** it is unpublished, private work.
+- **Marks and receipts say truthfully who did what:** seeing what changed and taking it
+  back is the writer's protection.
 
 Everything else is the current implementation, open to rewriting once evidence or
-testing shows something better. The owner's words are direction, not rulings:
-reason against them when the evidence says to. Write down the behavior and its
-reason, not who said it. Never paste the owner's messages into docs, briefs, issues,
-commits or PRs: he refines a point over several messages, so one message out of its
-conversation misleads. Write each decision for a reader who never saw that
-conversation: what was decided, what it applies to, his reason if he gave one, and
-whether it is settled or only an idea.
+testing shows something better.
 
 ## Engineering
 
-**Act on confident inferences.** Refactor, delete dead code and simplify without
-asking. Fix structural debt in the same PR, whatever the PR's size.
-
-**Fix what you find as you work,** including problems that were already there. A small
-fix goes in the current PR, and a larger one gets its own PR now. Call out every found
-fix in the PR body, so a reader can tell it apart from the change the PR is for. File an
-issue only when the fix needs a product decision or is a project of its own.
+**Fix structural debt in the same PR,** whatever the PR's size: refactor, delete dead
+code and simplify without asking. A found fix too large for the PR gets its own PR now;
+an issue is only for a fix that needs a product decision or is a project of its own.
 
 **Optimistic UI.** The writer sees the result of their action at once, and failure
 shows on the thing they did. **Navigate first:** every destination change goes to
@@ -74,8 +62,6 @@ adapters. Use package public exports. Architecture:
 **Comments.** Few. Write one only for what the code can't show and a wrong edit
 would break silently, at the line it guards. No file headers, no decision ids.
 
-**Writing.** Load `/llm-writing` before writing anything a person or agent will read
-later. Update `AGENTS.md`, `.context/` or the KB when a change makes them wrong.
 Debugging: [docs/debugging.md](docs/debugging.md).
 
 ## Dev environment
@@ -112,9 +98,7 @@ decision, change the test.
 
 ## Git
 
-Commit often. Worktrees, commits, pushes, PRs and issues need no permission.
 Documentation-only and comment-only changes need no PR: push them straight to `main`.
-A wrong comment or doc gets fixed as soon as you see it, without asking.
 
 A human merges into `main` or `staging`, or a model the global grant covers. A feature built
 in several pieces gets one integration branch: each finished piece bases on it and merges into
