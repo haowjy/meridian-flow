@@ -72,8 +72,8 @@ export function SegmentedTabs<T extends string>({
                 }
               }}
               className={cn(
-                "focus-ring inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2.5 text-xs transition-colors [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:px-3.5 [@media(pointer:coarse)]:text-sm",
-                option.closeAction && "pr-1 [@media(pointer:coarse)]:pr-1.5",
+                "focus-ring inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2.5 text-xs transition-colors coarse:h-11 coarse:px-3.5 coarse:text-sm",
+                option.closeAction && "pr-1 coarse:pr-1.5",
                 active
                   ? "bg-background font-medium text-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -85,7 +85,7 @@ export function SegmentedTabs<T extends string>({
                 <span
                   data-segmented-tab-close
                   aria-hidden="true"
-                  className="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-ink-fill hover:text-foreground [@media(pointer:coarse)]:size-8"
+                  className="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-ink-fill hover:text-foreground coarse:size-8"
                 >
                   {option.closeAction.icon}
                 </span>

@@ -53,8 +53,6 @@ function focusVerified(node: HTMLElement | null | undefined, allowAriaDisabled =
   return document.activeElement === target || Boolean(target.contains(document.activeElement));
 }
 
-const overflowControlClassName = "[@media(pointer:coarse)]:size-11";
-
 export function ComposerToolbar({
   model,
   ariaLabel,
@@ -273,8 +271,7 @@ export function ComposerToolbar({
           <OverflowMenuTrigger
             ref={overflowTrigger}
             type="button"
-            className={overflowControlClassName}
-            aria-label={t`More composer controls`}
+            label={t`More composer controls`}
             aria-haspopup="dialog"
             aria-controls={view.kind === "overflow" ? contentId : undefined}
             aria-expanded={view.kind === "overflow"}
@@ -291,10 +288,8 @@ export function ComposerToolbar({
           tabIndex={-1}
           inert
           aria-hidden
-          className={cn(
-            overflowControlClassName,
-            "pointer-events-none invisible absolute left-0 top-0",
-          )}
+          label={t`More composer controls`}
+          className="pointer-events-none invisible absolute left-0 top-0"
         />
       </fieldset>
       <PopoverAnchor virtualRef={virtualRef} />

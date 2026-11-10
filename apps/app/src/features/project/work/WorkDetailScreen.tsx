@@ -147,27 +147,17 @@ function DirtyDecision({ controller }: { controller: WorkMetadataController }) {
           <InlineErrorRow message={controller.error} wrap className="p-0" />
         ) : null}
         <DialogFooter>
-          <Button
-            variant="ghost"
-            disabled={controller.saving}
-            onClick={controller.keepEditing}
-            className="[@media(pointer:coarse)]:min-h-11"
-          >
+          <Button variant="ghost" disabled={controller.saving} onClick={controller.keepEditing}>
             <Trans>Keep editing</Trans>
           </Button>
           <Button
             variant="outline"
             disabled={controller.saving}
             onClick={controller.discardAndResume}
-            className="[@media(pointer:coarse)]:min-h-11"
           >
             <Trans>Discard changes</Trans>
           </Button>
-          <Button
-            disabled={controller.saving}
-            onClick={() => void controller.saveAndResume()}
-            className="[@media(pointer:coarse)]:min-h-11"
-          >
+          <Button disabled={controller.saving} onClick={() => void controller.saveAndResume()}>
             {controller.saving ? <Trans>Saving…</Trans> : <Trans>Save changes</Trans>}
           </Button>
         </DialogFooter>

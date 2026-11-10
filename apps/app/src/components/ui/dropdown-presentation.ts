@@ -11,8 +11,8 @@ const dropdownRow = cva(
   {
     variants: {
       kind: {
-        navigation: "h-8 py-1.5 [@media(pointer:coarse)]:h-11",
-        descriptive: "h-10 py-0.5 [@media(pointer:coarse)]:h-11",
+        navigation: "h-8 py-1.5 coarse:h-11",
+        descriptive: "h-10 py-0.5 coarse:h-11",
         identity: "min-h-11 flex-col items-start gap-0.5 py-0.5",
       },
       interactive: {
@@ -59,7 +59,7 @@ export const dropdownSurfaceVariants = cva(
   },
 );
 
-export const dropdownSearchClass = "h-8 pl-8 pr-2 text-sm [@media(pointer:coarse)]:h-11";
+export const dropdownSearchClass = "h-8 pl-8 pr-2 text-sm coarse:h-11";
 
 export const dropdownResultsClass = "app-scroll max-h-64";
 

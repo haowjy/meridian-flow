@@ -163,7 +163,7 @@ function ChangeListPopover({ header }: { header: ReviewHeaderModel }) {
       <PopoverTrigger asChild>
         <IconButton
           disabled={view.finished || !!view.completing}
-          tooltip={changeListLabel(view.items.length)}
+          label={changeListLabel(view.items.length)}
           data-review-secondary
           className="size-5.5"
         >

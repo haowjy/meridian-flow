@@ -166,7 +166,7 @@ function SelectScrollDownButton({
 }
 
 export const selectScrollControlClass =
-  "focus-ring flex shrink-0 cursor-default items-center justify-center py-1 outline-hidden [@media(pointer:coarse)]:min-h-11";
+  "focus-ring flex shrink-0 cursor-default items-center justify-center py-1 outline-hidden coarse:min-h-11";
 
 export {
   Select,

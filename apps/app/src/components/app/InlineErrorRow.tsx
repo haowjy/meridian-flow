@@ -53,17 +53,13 @@ export function InlineErrorRow({
           ref={retryRef}
           type="button"
           onClick={onRetry}
-          className="text-button shrink-0 text-xs [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+          className="text-button shrink-0 text-xs coarse:min-h-11 coarse:min-w-11"
         >
           {actionLabel ?? <Trans>Retry</Trans>}
         </button>
       ) : null}
       {onDismiss ? (
-        <IconButton
-          className="shrink-0 [@media(pointer:coarse)]:size-11"
-          aria-label={t`Dismiss`}
-          onClick={onDismiss}
-        >
+        <IconButton className="shrink-0" label={t`Dismiss`} onClick={onDismiss}>
           <X aria-hidden className="size-3.5" />
         </IconButton>
       ) : null}

@@ -328,7 +328,7 @@ export function IdentityPlacementField({
         </div>
       </PopoverAnchor>
       <IconButton
-        aria-label={t`Save name and location`}
+        label={t`Save name and location`}
         className="size-5.5"
         disabled={saving}
         onPointerDown={(event) => event.preventDefault()}
@@ -337,7 +337,7 @@ export function IdentityPlacementField({
         <Check aria-hidden />
       </IconButton>
       <IconButton
-        aria-label={t`Cancel editing`}
+        label={t`Cancel editing`}
         className="size-5.5"
         disabled={saving}
         onPointerDown={(event) => event.preventDefault()}

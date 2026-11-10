@@ -118,6 +118,9 @@ Core shell expectations:
 - Prefer optimistic local state where the server can reconcile safely.
 - Use skeletons or stable live-status rows instead of spinner-first waiting states.
 - Keep keyboard focus visible, quiet, and consistent.
+- An icon-only control is `IconButton`. Its required `label` is both its accessible
+  name and its tooltip. Under a coarse pointer it and `Button` grow to the 44px touch
+  target themselves (the `coarse:` variant), so a call site never adds touch sizing.
 - Editing text in place never moves or resizes it. Use `components/ui/inline-edit`
   (`InlineEditInput`, `InlineEditTextarea`): the field inherits the text's
   typography, has no padding or border, sizes to its text, and paints its edge

@@ -136,7 +136,7 @@ function ReviewActionButton({
           onClick={onClick}
           className={cn(
             variant === "row" && "text-jade-text",
-            "[@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11",
+            "coarse:min-w-11",
             "group-data-[density=icon]/review:w-6 group-data-[density=icon]/review:px-0",
             touch &&
               "h-11 min-w-11 px-4 text-sm group-data-[density=icon]/review:w-11 [&_svg:not([class*='size-'])]:size-5",

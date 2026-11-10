@@ -97,8 +97,7 @@ export function PaneHeaderActionButton({
   return (
     <IconButton
       size="xs"
-      title={label}
-      aria-label={label}
+      label={label}
       {...props}
       onClick={(event) => {
         event.stopPropagation();

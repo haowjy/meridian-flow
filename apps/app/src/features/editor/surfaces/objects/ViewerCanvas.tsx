@@ -102,7 +102,7 @@ export function ViewerCanvas({ children, contentKey, maxFitScale }: ViewerCanvas
           type="button"
           size="sm"
           variant="ghost"
-          aria-label={t`Zoom out`}
+          label={t`Zoom out`}
           onClick={() => step(1 / 1.6)}
         >
           <Minus aria-hidden />
@@ -114,7 +114,7 @@ export function ViewerCanvas({ children, contentKey, maxFitScale }: ViewerCanvas
           type="button"
           size="sm"
           variant="ghost"
-          aria-label={t`Zoom in`}
+          label={t`Zoom in`}
           onClick={() => step(1.6)}
         >
           <Plus aria-hidden />

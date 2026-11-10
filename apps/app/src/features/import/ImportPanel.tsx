@@ -13,7 +13,7 @@ import {
   dropdownPageClass,
   dropdownRowVariants,
 } from "@/components/ui/dropdown-presentation";
-import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Progress } from "@/components/ui/progress";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { projectAddressHref } from "@/features/project/routing/project-address";
@@ -268,9 +268,9 @@ export function ImportSheet({
           <SheetTitle className="min-w-0 flex-1 truncate text-sm">
             <Trans>Imports</Trans>
           </SheetTitle>
-          <PhoneIconButton aria-label={t`Close`} onClick={() => onOpenChange(false)}>
+          <IconButton size="sm" label={t`Close`} onClick={() => onOpenChange(false)}>
             <X className="size-5" aria-hidden />
-          </PhoneIconButton>
+          </IconButton>
         </div>
         <SheetDescription className="sr-only">
           <Trans>Your imports in this project, with their controls.</Trans>

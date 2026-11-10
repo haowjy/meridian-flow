@@ -14,7 +14,7 @@ import { ArrowDownIcon } from "lucide-react";
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
@@ -426,16 +426,16 @@ function JumpToLatestButton({
       inert={hidden}
       style={{ bottom: bottomInset + 12 }}
     >
-      <Button
+      <IconButton
         type="button"
         variant="secondary"
-        size="icon-sm"
+        size="sm"
+        label={t`Scroll to latest`}
         onClick={onClick}
         className="pointer-events-auto rounded-full border border-border"
       >
         <ArrowDownIcon />
-        <span className="sr-only">Scroll to latest</span>
-      </Button>
+      </IconButton>
     </div>
   );
 }

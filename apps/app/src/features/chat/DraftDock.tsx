@@ -137,7 +137,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 dock.controller.dismissNotice();
                 setExpanded((value) => !value);
               }}
-              className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+              className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground coarse:min-h-11 coarse:min-w-11"
             >
               <ChevronRight
                 className={cn("size-3 transition-transform", expanded && "rotate-90")}

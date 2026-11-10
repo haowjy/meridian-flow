@@ -38,7 +38,7 @@ import { writeClipboardText } from "./clipboard";
 const COPIED_RESET_MS = 1500;
 
 /** A 44px touch target under a coarse pointer, without making the bar taller. */
-const BAR_ACTION = "shrink-0 [@media(pointer:coarse)]:-my-2.5 [@media(pointer:coarse)]:h-11";
+const BAR_ACTION = "shrink-0 coarse:-my-2.5 coarse:h-11";
 
 export function SchemaNotices({
   fence,
@@ -206,7 +206,7 @@ function SchemaRepairNotice({
             type="button"
             variant="outline"
             size="xs"
-            className="shrink-0 [@media(pointer:coarse)]:h-11"
+            className="shrink-0 coarse:h-11"
             onClick={() => {
               dismissing.current = true;
               setDismissedCount(repairs.length);
@@ -253,7 +253,7 @@ function RemovedFragment({ repair }: { repair: SchemaRepairEvent }) {
               type="button"
               variant="ghost"
               size="xs"
-              className="shrink-0 [@media(pointer:coarse)]:h-11"
+              className="shrink-0 coarse:h-11"
               data-copy-schema-repair
               onClick={() => {
                 void writeClipboardText(text).then((write) => {

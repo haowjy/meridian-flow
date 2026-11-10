@@ -29,7 +29,7 @@ export function DraftCommandStatus({
       )}
       <button
         type="button"
-        className="text-button [@media(pointer:coarse)]:min-h-11"
+        className="text-button coarse:min-h-11"
         onClick={() => owner.retry(itemKey)}
       >
         <Trans>Retry</Trans>
@@ -56,7 +56,7 @@ export function DraftCommandStatus({
   return (
     <div
       role="status"
-      className="flex min-h-7 [@media(pointer:coarse)]:min-h-11 items-center gap-2 px-2 text-caption text-muted-foreground"
+      className="flex min-h-7 coarse:min-h-11 items-center gap-2 px-2 text-caption text-muted-foreground"
     >
       {content}
     </div>

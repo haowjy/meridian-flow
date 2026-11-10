@@ -51,10 +51,10 @@ export function WorkCreationDestination({
                   aria-label={t`Search chats`}
                   placeholder={t`Search chats`}
                   disabled
-                  className="h-8 [@media(pointer:coarse)]:h-11"
+                  className="h-8 coarse:h-11"
                 />
               </div>
-              <Button size="sm" disabled className="[@media(pointer:coarse)]:min-h-11">
+              <Button size="sm" disabled>
                 <Trans>New chat</Trans>
               </Button>
             </>

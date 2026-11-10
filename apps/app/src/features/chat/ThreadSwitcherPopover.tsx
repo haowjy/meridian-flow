@@ -292,10 +292,9 @@ function ThreadSwitchItem({
         <IconButton
           data-switcher-focus
           size="xs"
-          aria-label={t`Rename chat`}
-          title={t`Rename chat`}
+          label={t`Rename chat`}
           onClick={onRename}
-          className="mr-1 [@media(pointer:coarse)]:size-11"
+          className="mr-1"
         >
           <Pencil className="size-3.5" aria-hidden />
         </IconButton>

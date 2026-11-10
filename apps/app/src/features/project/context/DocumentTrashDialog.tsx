@@ -22,8 +22,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
-import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { role } from "@/components/ui/roles";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
@@ -194,9 +194,9 @@ function PhoneTrashContent({
             }}
           >
             {detail ? (
-              <PhoneIconButton aria-label={t`Back to Trash`} onClick={onBack}>
+              <IconButton size="sm" label={t`Back to Trash`} onClick={onBack}>
                 <ChevronLeft className="size-5" aria-hidden />
-              </PhoneIconButton>
+              </IconButton>
             ) : (
               <span className="size-11 shrink-0" aria-hidden />
             )}
@@ -213,9 +213,9 @@ function PhoneTrashContent({
               )}
             </DialogDescription>
             <DialogClose asChild>
-              <PhoneIconButton aria-label={t`Close Trash`}>
+              <IconButton size="sm" label={t`Close Trash`}>
                 <X className="size-5" aria-hidden />
-              </PhoneIconButton>
+              </IconButton>
             </DialogClose>
           </div>
         </header>
@@ -484,7 +484,6 @@ function TrashNotice({
             variant="outline"
             disabled={state?.kind === "restoring"}
             onClick={onRestore}
-            className="[@media(pointer:coarse)]:min-h-11"
           >
             {state?.kind === "restoring" ? <Trans>Restoring</Trans> : <Trans>Restore</Trans>}
           </Button>
