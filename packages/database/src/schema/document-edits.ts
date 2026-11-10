@@ -67,6 +67,7 @@ export const documentEdits = pgTable(
     index("document_edits_document_thread_idx")
       .on(t.documentId, t.threadId)
       .where(sql`${t.threadId} IS NOT NULL`),
+    index("document_edits_thread_idx").on(t.threadId).where(sql`${t.threadId} IS NOT NULL`),
     index("document_edits_turn_idx").on(t.turnId),
     index("document_edits_action_idx").on(t.actionId),
     check("document_edits_actor_valid", sql`${t.actor} IN ('agent','human','system')`),
