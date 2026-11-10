@@ -4,6 +4,7 @@ import type React from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
+import { sidebarIcon, sidebarRole } from "./context-row-geometry";
 
 export function RailPaneHeader({
   label,
@@ -15,20 +16,19 @@ export function RailPaneHeader({
   actions,
   dropProps,
 }: {
-  /** Header text, rendered in UPPERCASE at the tree rows' `text-sm` scale. */
   label: string;
-  /** Mini category mark between the twistie and the label. */
+  /** Mini category mark before the label. */
   icon: LucideIcon;
   /** Optional richer accessible name (e.g. "Work: {name}"). */
   ariaLabel?: string;
   /** Tooltip, for a header whose richer name is not shown as a line. */
   title?: string;
   expanded: boolean;
-  /** Click toggles; ArrowLeft/ArrowRight force collapse/expand. Absent, the pane is always open and the header is a plain label. */
-  onExpandedChange?: (expanded: boolean) => void;
+  /** Click toggles; ArrowLeft/ArrowRight force collapse/expand. */
+  onExpandedChange: (expanded: boolean) => void;
   /** `PaneHeaderActionButton`s revealed on header hover / focus, expanded or collapsed. */
   actions?: React.ReactNode;
-  /** Drop handlers when the header is a drop target (the tree's areas). */
+  /** Drop handlers when the header is a drop target. */
   dropProps?: React.HTMLAttributes<HTMLElement>;
 }) {
   return (
@@ -36,72 +36,52 @@ export function RailPaneHeader({
     <div
       {...dropProps}
       data-rail-pane-header
-      className={cn(
-        "relative mx-2 flex h-7 items-center rounded-md transition-colors",
-        // A header that can't collapse names the whole list, so it stays put while the rows scroll.
-        onExpandedChange ? "hover:bg-sidebar-accent/50" : "sticky top-0 z-20 bg-sidebar",
-      )}
+      className={cn("relative mx-2 flex h-7 items-center rounded-md", sidebarRole.hover)}
     >
-      {onExpandedChange ? (
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-label={ariaLabel}
-          title={title}
-          onClick={() => onExpandedChange(!expanded)}
-          onKeyDown={(event) => {
-            // VS Code pane header keys: Left collapses, Right expands.
-            if (event.key === "ArrowLeft") onExpandedChange(false);
-            if (event.key === "ArrowRight") onExpandedChange(true);
-          }}
-          className="focus-ring flex h-full min-w-0 flex-1 items-center rounded-md pr-1 text-left"
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-label={ariaLabel}
+        title={title}
+        onClick={() => onExpandedChange(!expanded)}
+        onKeyDown={(event) => {
+          // VS Code pane header keys: Left collapses, Right expands.
+          if (event.key === "ArrowLeft") onExpandedChange(false);
+          if (event.key === "ArrowRight") onExpandedChange(true);
+        }}
+        className="focus-ring flex h-full min-w-0 flex-1 items-center rounded-md pr-1 text-left"
+      >
+        <span
+          className={cn("flex w-4 shrink-0 items-center justify-center", sidebarRole.secondary)}
         >
-          <span className="flex w-4 shrink-0 items-center justify-center text-muted-foreground">
-            <ChevronRight
-              aria-hidden
-              className={cn("size-3 transition-transform", expanded && "rotate-90")}
-            />
-          </span>
-          <HeaderName icon={Icon} label={label} />
-        </button>
-      ) : (
-        <h2
-          aria-label={ariaLabel}
-          title={title}
-          className="flex h-full min-w-0 flex-1 items-center pr-1 pl-1.5"
-        >
-          <HeaderName icon={Icon} label={label} />
-        </h2>
-      )}
-      {/* Actions show on a collapsed pane too (Jimmy overrode VS Code's
-          expanded-only rule), so each action must expand its pane itself.
-          The shelf sits in normal flow at the row's end (VS Code: titles
-          ellipsize, actions hold the right edge) so it needs no background
-          mask over the translucent tint. With hover, invisible at rest and
-          revealed on header hover / focus; on touch always shown, since an
-          invisible button would still take a tap meant for the header
-          (`.rail-pane-actions` in globals.css). */}
-      {actions ? (
-        <span className="rail-pane-actions mr-2 flex shrink-0 items-center gap-1 [&>*]:transition-opacity">
-          {actions}
+          <ChevronRight
+            aria-hidden
+            className={cn("size-3 transition-transform", expanded && "rotate-90")}
+          />
         </span>
-      ) : null}
+        <span
+          className={cn("flex h-7 w-4 shrink-0 items-center justify-center", sidebarRole.secondary)}
+        >
+          <Icon aria-hidden className={sidebarIcon.row} />
+        </span>
+        <span className={cn("ml-1 min-w-0 flex-1 truncate", sidebarRole.heading)}>{label}</span>
+      </button>
+      <PaneHeaderActions actions={actions} />
     </div>
   );
 }
 
-function HeaderName({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
+/**
+ * A header's actions: invisible at rest and revealed on header hover or focus;
+ * on touch always shown, since an invisible button would still take a tap
+ * (`.rail-pane-actions` in globals.css). The header carries `data-rail-pane-header`.
+ */
+export function PaneHeaderActions({ actions }: { actions?: React.ReactNode }) {
+  if (!actions) return null;
   return (
-    <>
-      {/* Tree-row icon scale: size-3.5 glyph in a w-4 slot, matching `RowIcon` in
-          `ContextTreeRows`. The tint and caps keep the header reading as a header. */}
-      <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
-        <Icon aria-hidden className="size-3.5" />
-      </span>
-      <span className="ml-0.5 min-w-0 flex-1 truncate font-medium text-foreground text-sm uppercase tracking-wide">
-        {label}
-      </span>
-    </>
+    <span className="rail-pane-actions mr-2 flex shrink-0 items-center gap-1 [&>*]:transition-opacity">
+      {actions}
+    </span>
   );
 }
 
@@ -129,7 +109,7 @@ export function PaneHeaderActionButton({
       }}
       className="relative size-5 rounded"
     >
-      <Icon aria-hidden className={cn("size-4", iconClassName)} />
+      <Icon aria-hidden className={cn(sidebarIcon.action, iconClassName)} />
       {children}
     </IconButton>
   );

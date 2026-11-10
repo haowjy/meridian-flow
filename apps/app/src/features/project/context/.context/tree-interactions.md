@@ -230,12 +230,11 @@ and dialog serve all Scratch rows, retaining each target's owner. The actual own
 
 ## Selecting and dragging rows
 
-The Files tree, the chat's Scratch and a Work's Files are each one list:
+The Write sidebar, Chat mode's Scratch and a Work's Files are each one list:
 `useEntryList` owns its selection, its entries route and, through `EntryList`,
-its drop scope (the Files tree is one list over the project's three areas,
-with each section keeping its own expansion). User is its own list and system,
-docked above Scratch (`UserRailSection` over the shared `DockedRailSection`),
-so a drag between it and the tree stays quiet. Rows join through `EntrySelectionProvider`.
+its drop scope. The Write sidebar (also the phone drawer) is one list over every
+source it can show: Manuscript, Knowledge Base, Your files, Unfiled and the chat's
+Scratch, each tree keeping its own expansion. Rows join through `EntrySelectionProvider`.
 Selection keys are `kind:id` and carry no scheme or place, so a moved row keeps
 its key and stays selected. A plain click opens or toggles the row as before and leaves no
 selection of its own: until the writer Ctrl/Cmd- or Shift-clicks, the selection
@@ -243,10 +242,9 @@ is just the open row, shown by the open row's own highlight. Ctrl/Cmd-click
 starts an explicit selection from the open row and adds or removes rows;
 Shift-click selects the on-screen range from the last clicked row, read from the
 DOM (`data-entry-key`) so it always matches what is visible; Escape returns to
-the open row. Only explicit selections get the selection fill
-(`sidebar-selected`, the row fill with a little jade), which reads apart from
-hover and from the open row's fill, so the open row stays findable inside a
-selection. Adjacent selected rows join into one block rounded only at its ends:
+the open row. Explicit selections and the open row share the selected fill
+(`sidebarRole.selected`, ink, never jade); the open row stays findable inside a
+selection by its weight. Adjacent selected rows join into one block rounded only at its ends:
 after each commit the selection marks each row's place in its run
 (`data-selection-run`) in one pass over screen order. The same
 modifiers with Enter or Space select from the keyboard, and a selected row
@@ -300,14 +298,15 @@ selection of one), not the open row.
 ### Dropping across systems, and dropping references
 
 In the Write sidebar the sources sit behind icon tabs (`shell/sidebar/SourcesBody.tsx`).
-The tabs render inside the tree's drop scope, which spans every project source and Your
-files (`ContextTreePanel`'s `tabs` slot). Dropping on a tree source's tab lands at that
-source's root ("Move to Knowledge Base"), and so does the empty space below an open
-source's last row; the usual crossing-system rules apply, so Your files still offers
-Copy only. A drag that rests on a tab for 600 ms opens it, as on a closed folder, for a
-drop into a folder inside. Trash is a tab
-too, not a scheme: rows dropped on its tab or its list are deleted at once, with no
-menu, through `useDeleteContextEntry().deleteEntries`.
+Each source in its `SOURCES` table has one root drop, used by its tab and by its pane
+(`SourcePane`), and the strip and the pane share the sidebar's one drop scope. Dropping
+on a source's tab lands at that source's root ("Move to Knowledge Base"), and so does
+its heading or the space below its last row; the usual crossing-system rules apply, so
+Your files and Scratch still ask. A drag that rests on a tab for 600 ms opens it, as on
+a closed folder, for a drop into a folder inside. Trash is a source too, not a scheme:
+rows dropped on its tab or its pane are deleted at once, with no menu, through
+`useDeleteContextEntry().deleteEntries`, and its rows drag out to be restored where
+they land.
 
 A list row dropped within one system moves at once. A drop that crosses systems (the
 project's areas are one system; User and each Scratch owner and each chat's Uploads

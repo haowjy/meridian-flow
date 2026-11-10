@@ -17,6 +17,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+import { sidebarIcon, sidebarRole } from "../../context/context-row-geometry";
 
 /**
  * The Work scope under the project name: which Work's drafts the documents show
@@ -51,28 +53,42 @@ export function WorkScopePicker({
         {/* The Work in scope is state, not a link: it rests on the selected fill, like the selected tab. */}
         <button
           type="button"
-          className="focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md bg-sidebar-accent/60 px-2 text-left text-[13px] hover:bg-sidebar-accent popup-open:bg-dropdown-hover"
+          className={cn(
+            "group focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md px-2 text-left",
+            sidebarRole.row,
+            sidebarRole.selected,
+          )}
         >
           {scoped || noWorkScoped ? (
             <WorkIdentity
               name={scoped ? scoped.name : t`None`}
               unavailableLabel={t`None`}
-              className="flex-1 text-[13px]"
+              className={cn("flex-1", sidebarRole.row)}
             />
           ) : (
-            <span className="min-w-0 flex-1 truncate text-ink-muted">
+            <span className={cn("min-w-0 flex-1 truncate", sidebarRole.secondary)}>
               <Trans>Loading Works…</Trans>
             </span>
           )}
           {pending > 0 ? (
             <span
-              className="rounded-full bg-primary/12 px-1.5 text-[11px] font-medium text-primary tabular-nums"
+              className={cn(
+                "rounded-full bg-primary/12 px-1.5 font-medium text-primary tabular-nums",
+                sidebarRole.rowSecondary,
+              )}
               title={t`${pending} documents to review`}
             >
               {pending}
             </span>
           ) : null}
-          <ChevronsUpDown className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
+          <ChevronsUpDown
+            className={cn(
+              sidebarIcon.row,
+              "shrink-0 group-hover:text-foreground",
+              sidebarRole.secondary,
+            )}
+            aria-hidden
+          />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
@@ -149,7 +165,7 @@ function WorkState({ work, needsYou }: { work: Work; needsYou: number }) {
   const toReview = work.pendingDocumentCount;
   if (toReview === 0 && needsYou === 0) return null;
   return (
-    <span className="flex shrink-0 gap-2 text-[11px] text-primary tabular-nums">
+    <span className="flex shrink-0 gap-2 text-xs text-primary tabular-nums">
       {toReview > 0 ? <Trans>{toReview} to review</Trans> : null}
       {needsYou > 0 ? (
         <span>

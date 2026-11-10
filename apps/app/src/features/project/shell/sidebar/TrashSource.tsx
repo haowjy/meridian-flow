@@ -1,52 +1,59 @@
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { useState } from "react";
 import { useDocumentTrash } from "@/client/query/useDocumentTrash";
-import { cn } from "@/lib/utils";
-import { TrashListPane } from "../../context/DocumentTrashDialog";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { useMinuteClock } from "@/hooks/use-minute-clock";
+import { TrashRow } from "../../context/DocumentTrashDialog";
 import { useDocumentTrashRestore } from "../../context/DocumentTrashRestoreProvider";
-import { useDeleteContextEntry } from "../../context/use-delete-context-entry";
 import { useProjectTrashNavigation } from "../../routing/ProjectNavigationContext";
-import { acceptEntryDrag, draggedEntries } from "./trash-drop";
+import { type SourceDrop, SourceHint, SourcePane } from "./SourcePane";
 
 /**
- * Trash as a source: deleted documents, newest first. Rows dropped anywhere on
- * it are deleted at once. Picking a document opens its preview with Restore.
+ * Trash as a source: deleted documents, newest first. Rows dropped on it are
+ * deleted at once; its rows drag out to be restored where they land. Picking
+ * one opens its preview with Restore.
  */
-export function TrashSource({ projectId }: { projectId: string }) {
+export function TrashSource({
+  projectId,
+  onPicked,
+  drop,
+}: {
+  projectId: string;
+  onPicked?: () => void;
+  drop: SourceDrop;
+}) {
   const query = useDocumentTrash(projectId);
   const { states, restore } = useDocumentTrashRestore();
   const { navigate } = useProjectTrashNavigation();
-  const deletion = useDeleteContextEntry(projectId);
-  const [over, setOver] = useState(false);
+  const now = useMinuteClock();
   const entries = query.data?.documents ?? [];
-
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: a drop is a pointer shortcut for each row's Delete. slop-lint: allow suppression the reason is stated in this comment
-    <div
-      className={cn(
-        "flex min-h-0 flex-1 flex-col rounded-md transition-colors",
-        over && "bg-sidebar-accent ring-1 ring-border-focus ring-inset",
+    <SourcePane label={t`Trash`} drop={drop}>
+      {entries.map((entry) => (
+        <TrashRow
+          key={entry.documentId}
+          entry={entry}
+          now={now}
+          selected={false}
+          state={states.get(entry.documentId)}
+          onOpen={() => {
+            void navigate(entry.documentId);
+            onPicked?.();
+          }}
+          onRestore={() => restore(entry)}
+        />
+      ))}
+      {query.isError ? (
+        <InlineErrorRow message={t`Couldn't load Trash.`} onRetry={() => void query.refetch()} />
+      ) : entries.length > 0 ? null : query.isPending ? (
+        <SourceHint status>
+          <Trans>Loading Trash…</Trans>
+        </SourceHint>
+      ) : (
+        <SourceHint>
+          <Trans>Nothing in the trash.</Trans>
+        </SourceHint>
       )}
-      onDragOver={(event) => setOver(acceptEntryDrag(event))}
-      onDragLeave={() => setOver(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        setOver(false);
-        deletion.deleteEntries(draggedEntries());
-      }}
-    >
-      <p className="px-4 pt-1 pb-1 text-[13px] font-semibold">
-        <Trans>Trash</Trans>
-      </p>
-      <TrashListPane
-        entries={entries}
-        query={query}
-        selectedId={undefined}
-        states={states}
-        onSelect={(documentId) => void navigate(documentId)}
-        onRestore={restore}
-        className="flex-1"
-      />
-    </div>
+    </SourcePane>
   );
 }

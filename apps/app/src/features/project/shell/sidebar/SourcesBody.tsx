@@ -1,8 +1,17 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { Plus, Trash2 } from "lucide-react";
-import { type HTMLAttributes, type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { type LucideIcon, Plus, Trash2 } from "lucide-react";
+import {
+  type ComponentType,
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
+import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -11,28 +20,134 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { destinationOf } from "@/features/import/destination";
+import { useOptionalImports } from "@/features/import/ImportProvider";
 import { cn } from "@/lib/utils";
-import { ScratchSource } from "../../chat/ChatScratch";
-import { ContextTreePanel } from "../../context/ContextTreePanel";
-import { schemeIcon, schemeLabel } from "../../context/context-schemes";
-import { activeDragSession } from "../../context/entry-drag/drag-session";
-import { type TreeDropTarget, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
-import { useDeleteContextEntry } from "../../context/use-delete-context-entry";
+import { ScratchSource, useChatScratch } from "../../chat/ChatScratch";
+import { type CatalogState, ContextTreePanel } from "../../context/ContextTreePanel";
+import { sidebarIcon, sidebarRole } from "../../context/context-row-geometry";
+import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../../context/context-schemes";
+import type { MoveArea } from "../../context/entry-drag/move-plan";
+import { EntryList, useEntryList } from "../../context/entry-drag/use-entry-list";
+import { useOptionalTreeCreation } from "../../context/TreeCreationProvider";
+import { type FilesRoute, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
+import type { SourceDrop } from "./SourcePane";
 import { ALL_SOURCES, type SourceKey, useSidebarTabs } from "./sidebar-tabs-store";
 import { TrashSource } from "./TrashSource";
-import { acceptEntryDrag, draggedEntries } from "./trash-drop";
+import { useTrashDrop } from "./trash-drop";
 
-type TreeSource = Exclude<SourceKey, "trash" | "scratch">;
+type TreeKey = (typeof EDITOR_CONTEXT_SCHEMES)[number];
 
-function isTreeSource(key: SourceKey): key is TreeSource {
-  return key !== "trash" && key !== "scratch";
+type WriteSources = {
+  projectId: string;
+  /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
+  editorWorkId: string | null;
+  activeScheme: ProjectContextTreeScheme | null;
+  activePath: string | null;
+  onSelectFile: (
+    scheme: ProjectContextTreeScheme,
+    file: ContextFile,
+    options?: { focus?: true },
+  ) => void;
+  /** After a pick that opens something elsewhere (the phone drawer closes). */
+  onPicked?: () => void;
+  catalogs: Record<TreeKey, CatalogState>;
+  scratch: ReturnType<typeof useChatScratch>;
+};
+
+const WriteSourcesContext = createContext<WriteSources | null>(null);
+
+function useWriteSources(): WriteSources {
+  const sources = useContext(WriteSourcesContext);
+  if (!sources) throw new Error("A source needs SourcesBody");
+  return sources;
 }
 
 /**
- * Write mode's sidebar: one source at a time behind a strip of tabs, so each
- * list gets the full height. Tabs are icons named on hover; the list names its
- * source. + picks which tabs the strip shows. The open document's source
- * becomes the shown one when it changes.
+ * One sidebar source. `useDrop` is the drop at the source's root, used by its
+ * tab (where `reveal` shows the source) and by its pane; `Body` is its pane.
+ */
+type Source = {
+  label: () => string;
+  icon: LucideIcon;
+  useDrop: (reveal?: () => void) => SourceDrop;
+  Body: ComponentType<{ drop: SourceDrop }>;
+};
+
+/** A drop at a catalog's top level; a drag resting on it accepted shows the source. */
+function useRootDrop(scheme: TreeKey | "scratch", reveal?: () => void): SourceDrop {
+  const { catalogs, scratch } = useWriteSources();
+  const catalog = scheme === "scratch" ? scratch.primary.catalog : catalogs[scheme].catalog;
+  const rootId = catalog?.root.entryId ?? null;
+  const target = useMemo(
+    () => ({ scheme, catalogRootId: rootId ?? `${scheme}:loading`, folder: null }),
+    [scheme, rootId],
+  );
+  return useTreeDropTarget(target, { reveal });
+}
+
+function treeSource(scheme: TreeKey): Source {
+  return {
+    label: () => schemeLabel(scheme),
+    icon: schemeIcon(scheme),
+    useDrop: (reveal) => useRootDrop(scheme, reveal),
+    Body: ({ drop }) => {
+      const sources = useWriteSources();
+      return (
+        <ContextTreePanel
+          scheme={scheme}
+          catalogState={sources.catalogs[scheme]}
+          projectId={sources.projectId}
+          editorWorkId={sources.editorWorkId}
+          activeScheme={sources.activeScheme}
+          activePath={sources.activePath}
+          onSelectFile={sources.onSelectFile}
+          drop={drop}
+        />
+      );
+    },
+  };
+}
+
+const SOURCES: Record<SourceKey, Source> = {
+  manuscript: treeSource("manuscript"),
+  kb: treeSource("kb"),
+  user: treeSource("user"),
+  unfiled: treeSource("unfiled"),
+  scratch: {
+    label: () => schemeLabel("scratch"),
+    icon: schemeIcon("scratch"),
+    useDrop: (reveal) => useRootDrop("scratch", reveal),
+    Body: ({ drop }) => {
+      const { projectId, scratch, onPicked } = useWriteSources();
+      return (
+        <ScratchSource projectId={projectId} scratch={scratch} onPicked={onPicked} drop={drop} />
+      );
+    },
+  },
+  trash: {
+    label: () => t`Trash`,
+    icon: Trash2,
+    // Dropping deletes, so the drag needs no look at Trash first.
+    useDrop: () => useTrashDrop(useWriteSources().projectId),
+    Body: ({ drop }) => {
+      const { projectId, onPicked } = useWriteSources();
+      return <TrashSource projectId={projectId} onPicked={onPicked} drop={drop} />;
+    },
+  },
+};
+
+function isSourceKey(key: string): key is SourceKey {
+  return Object.hasOwn(SOURCES, key);
+}
+
+/**
+ * Write mode's sidebar, and the phone drawer's: one source at a time behind a
+ * strip of tabs, so each list gets the full height. Tabs are icons named on
+ * hover; the list names its source. + picks which tabs the strip shows. The
+ * open document's source becomes the shown one when it changes. The strip and
+ * every source are one list: one selection, and a row dragged anywhere in the
+ * sidebar drops on any tab or pane.
  */
 export function SourcesBody({
   projectId,
@@ -42,23 +157,12 @@ export function SourcesBody({
   activeScheme,
   activePath,
   onSelectFile,
-  paneRef,
-}: {
-  projectId: string;
-  editorWorkId: string | null;
+  onPicked,
+}: Omit<WriteSources, "catalogs" | "scratch"> & {
   chatThreadId: string | null;
   contextLive: boolean;
-  activeScheme: ProjectContextTreeScheme | null;
-  activePath: string | null;
-  onSelectFile: (
-    scheme: ProjectContextTreeScheme,
-    file: ContextFile,
-    options?: { focus?: true },
-  ) => void;
-  paneRef?: RefObject<HTMLDivElement | null>;
 }) {
   const shown = useSidebarTabs((state) => state.shown);
-  const toggle = useSidebarTabs((state) => state.toggle);
   useEffect(() => {
     void useSidebarTabs.persist.rehydrate();
   }, []);
@@ -66,49 +170,117 @@ export function SourcesBody({
   useEffect(() => {
     if (activeScheme && isSourceKey(activeScheme)) setPicked(activeScheme);
   }, [activeScheme]);
+  // A new file or folder asked for elsewhere (the empty Editor) appears in its source.
+  const creatingScheme = useOptionalTreeCreation()?.request?.scheme;
+  useEffect(() => {
+    if (creatingScheme && isSourceKey(creatingScheme)) setPicked(creatingScheme);
+  }, [creatingScheme]);
   // A tab the writer hid can't stay selected: the strip's first tab shows instead.
   const source = shown.includes(picked) ? picked : (shown[0] ?? "manuscript");
-  const deletion = useDeleteContextEntry(projectId);
 
-  const selectFrom = (key: SourceKey) => () => setPicked(key);
-  const tabs = (rootIdOf?: (scheme: ProjectContextTreeScheme) => string | null) => (
+  const catalogs = useContextCatalogViews(projectId, EDITOR_CONTEXT_SCHEMES, {
+    workId: editorWorkId,
+    enabled: contextLive,
+  });
+  const scratch = useChatScratch(projectId, chatThreadId);
+  const areas = useMemo<MoveArea[]>(
+    () => [
+      ...EDITOR_CONTEXT_SCHEMES.flatMap((scheme) => {
+        const catalog = catalogs[scheme].catalog;
+        return catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, accepts: true }] : [];
+      }),
+      ...scratch.areas,
+    ],
+    [catalogs, editorWorkId, scratch.areas],
+  );
+  const list = useEntryList({ projectId, areas });
+  const dropImport = useOptionalImports()?.drop;
+  const files = useMemo<FilesRoute>(
+    () => ({
+      verdict: (target) => {
+        const destination = destinationOf(target.scheme, target.folder);
+        return destination ? { kind: "accept", label: t`Import into ${destination.name}` } : null;
+      },
+      drop: (target, items) => {
+        const destination = destinationOf(target.scheme, target.folder);
+        if (destination) dropImport?.(destination, items);
+      },
+    }),
+    [dropImport],
+  );
+  const value = useMemo<WriteSources>(
+    () => ({
+      projectId,
+      editorWorkId,
+      activeScheme,
+      activePath,
+      onSelectFile,
+      onPicked,
+      catalogs,
+      scratch,
+    }),
+    [projectId, editorWorkId, activeScheme, activePath, onSelectFile, onPicked, catalogs, scratch],
+  );
+
+  return (
+    <WriteSourcesContext.Provider value={value}>
+      <EntryList list={list} files={files}>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <SourceTabs shown={shown} source={source} onSelect={setPicked} />
+          <SourceView key={source} source={source} />
+        </div>
+      </EntryList>
+    </WriteSourcesContext.Provider>
+  );
+}
+
+/** The shown source's pane; keyed by source, so each source's drop hook keeps its own place. */
+function SourceView({ source }: { source: SourceKey }) {
+  const { useDrop, Body } = SOURCES[source];
+  const drop = useDrop();
+  return <Body drop={drop} />;
+}
+
+function SourceTabs({
+  shown,
+  source,
+  onSelect,
+}: {
+  shown: readonly SourceKey[];
+  source: SourceKey;
+  onSelect: (key: SourceKey) => void;
+}) {
+  const toggle = useSidebarTabs((state) => state.toggle);
+  return (
     <div className="flex shrink-0 items-center gap-1 px-2 py-1">
       <div
         role="tablist"
         aria-label={t`Sources`}
         className="-m-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        {shown.map((key) => {
-          const rootId = isTreeSource(key) ? (rootIdOf?.(key) ?? null) : null;
-          return rootId && isTreeSource(key) ? (
-            <TreeSourceTab
-              key={key}
-              source={key}
-              rootId={rootId}
-              active={key === source}
-              onSelect={selectFrom(key)}
-            />
-          ) : (
-            <SourceTab
-              key={key}
-              source={key}
-              active={key === source}
-              onSelect={selectFrom(key)}
-              onDropTrash={
-                key === "trash" ? () => deletion.deleteEntries(draggedEntries()) : undefined
-              }
-            />
-          );
-        })}
+        {shown.map((key) => (
+          <SourceTab
+            key={key}
+            source={key}
+            active={key === source}
+            onSelect={() => onSelect(key)}
+          />
+        ))}
       </div>
       <DropdownMenu>
         <Tooltip>
           <TooltipTrigger asChild>
             <DropdownMenuTrigger
               aria-label={t`Choose tabs`}
-              className="focus-ring grid size-7 shrink-0 place-items-center rounded-md text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground popup-open:bg-dropdown-hover popup-open:text-foreground"
+              className={cn(
+                TAB_BUTTON,
+                sidebarRole.secondary,
+                sidebarRole.hover,
+                sidebarRole.open,
+                "hover:text-foreground",
+              )}
             >
-              <Plus className="size-4" aria-hidden />
+              <Plus className={sidebarIcon.tab} aria-hidden />
             </DropdownMenuTrigger>
           </TooltipTrigger>
           <TooltipContent side="bottom">{t`Choose tabs`}</TooltipContent>
@@ -117,6 +289,7 @@ export function SourcesBody({
           <DropdownMenuLabel>{t`Tabs`}</DropdownMenuLabel>
           {ALL_SOURCES.map((key) => {
             const on = shown.includes(key);
+            const Icon = SOURCES[key].icon;
             return (
               <DropdownMenuCheckboxItem
                 key={key}
@@ -128,8 +301,8 @@ export function SourcesBody({
                   toggle(key);
                 }}
               >
-                <SourceIcon source={key} />
-                {sourceLabel(key)}
+                <Icon className={sidebarIcon.tab} aria-hidden />
+                {SOURCES[key].label()}
               </DropdownMenuCheckboxItem>
             );
           })}
@@ -137,96 +310,32 @@ export function SourcesBody({
       </DropdownMenu>
     </div>
   );
-  const other =
-    source === "trash" ? (
-      <TrashSource projectId={projectId} />
-    ) : source === "scratch" ? (
-      <ScratchSource projectId={projectId} threadId={chatThreadId} editorWorkId={editorWorkId} />
-    ) : undefined;
-
-  return (
-    <div ref={paneRef} className="flex min-h-0 flex-1 flex-col">
-      {contextLive ? (
-        <ContextTreePanel
-          projectId={projectId}
-          editorWorkId={editorWorkId}
-          activeScheme={activeScheme}
-          activePath={activePath}
-          onSelectFile={onSelectFile}
-          only={isTreeSource(source) ? source : undefined}
-          tabs={tabs}
-          body={other}
-        />
-      ) : (
-        <>
-          {tabs()}
-          {other}
-        </>
-      )}
-    </div>
-  );
 }
 
-/** A tree source's tab: a drop lands at the source's root, and a drag that rests opens it. */
-function TreeSourceTab({
-  source,
-  rootId,
-  active,
-  onSelect,
-}: {
-  source: TreeSource;
-  rootId: string;
-  active: boolean;
-  onSelect: () => void;
-}) {
-  const target = useMemo<TreeDropTarget>(
-    () => ({ scheme: source, catalogRootId: rootId, folder: null }),
-    [source, rootId],
-  );
-  const drop = useTreeDropTarget(target, { reveal: onSelect });
-  return (
-    <SourceTab
-      source={source}
-      active={active}
-      onSelect={onSelect}
-      dropProps={drop.dropProps}
-      lit={drop.dropState === "over"}
-    />
-  );
-}
+/**
+ * A tab and the strip's + button: 28px, 36px where the pointer is a finger.
+ * The default five tabs and + still fit a default-width sidebar without scrolling the strip.
+ */
+const TAB_BUTTON =
+  "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors [@media(hover:none)]:size-9 [@media(pointer:coarse)]:size-9";
 
-/** How long a drag rests on a tab before the tab opens, as on a closed folder. */
-const SPRING_OPEN_MS = 600;
-
+/** A source's tab: a drop on it lands at the source's root, and a drag that rests opens it. */
 function SourceTab({
   source,
   active,
   onSelect,
-  onDropTrash,
-  dropProps,
-  lit = false,
 }: {
   source: SourceKey;
   active: boolean;
   onSelect: () => void;
-  onDropTrash?: () => void;
-  /** The tree's drop handlers, for a tab that drops at its source's root. */
-  dropProps?: HTMLAttributes<HTMLElement>;
-  lit?: boolean;
 }) {
-  const spring = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [over, setOver] = useState(false);
+  const { label, icon: Icon, useDrop } = SOURCES[source];
+  const drop = useDrop(onSelect);
   const self = useRef<HTMLButtonElement>(null);
   // The strip scrolls when its tabs outgrow the sidebar: keep the selected one in view.
   useEffect(() => {
     if (active) self.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [active]);
-  const cancelSpring = () => {
-    if (spring.current) clearTimeout(spring.current);
-    spring.current = null;
-    setOver(false);
-  };
-  useEffect(() => cancelSpring, []);
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -235,59 +344,22 @@ function SourceTab({
           type="button"
           role="tab"
           aria-selected={active}
-          aria-label={sourceLabel(source)}
+          aria-label={label()}
           onClick={onSelect}
-          {...dropProps}
-          onDragOver={(event) => {
-            if (dropProps) return dropProps.onDragOver?.(event);
-            if (!activeDragSession()) return;
-            if (onDropTrash) acceptEntryDrag(event);
-            if (spring.current || active) return;
-            setOver(true);
-            spring.current = setTimeout(() => {
-              spring.current = null;
-              onSelect();
-            }, SPRING_OPEN_MS);
-          }}
-          onDragLeave={dropProps?.onDragLeave ?? cancelSpring}
-          onDrop={(event) => {
-            if (dropProps) return dropProps.onDrop?.(event);
-            cancelSpring();
-            if (!onDropTrash) return;
-            event.preventDefault();
-            onDropTrash();
-          }}
+          {...drop.dropProps}
           className={cn(
-            "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors",
-            active
-              ? "bg-sidebar-accent text-foreground"
-              : "text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",
-            (over || lit) && "bg-sidebar-accent ring-1 ring-border-focus ring-inset",
+            TAB_BUTTON,
+            drop.dropState === "over"
+              ? sidebarRole.dropTarget
+              : active
+                ? sidebarRole.selected
+                : cn(sidebarRole.secondary, sidebarRole.hover, "hover:text-foreground"),
           )}
         >
-          <SourceIcon source={source} />
+          <Icon className={sidebarIcon.tab} aria-hidden />
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">{sourceLabel(source)}</TooltipContent>
+      <TooltipContent side="bottom">{label()}</TooltipContent>
     </Tooltip>
-  );
-}
-
-function SourceIcon({ source }: { source: SourceKey }) {
-  const Icon = source === "trash" ? Trash2 : schemeIcon(source);
-  return <Icon className="size-4" aria-hidden />;
-}
-
-function sourceLabel(source: SourceKey): string {
-  return source === "trash" ? t`Trash` : schemeLabel(source);
-}
-
-function isSourceKey(scheme: ProjectContextTreeScheme): scheme is Exclude<SourceKey, "trash"> {
-  return (
-    scheme === "manuscript" ||
-    scheme === "kb" ||
-    scheme === "scratch" ||
-    scheme === "user" ||
-    scheme === "unfiled"
   );
 }

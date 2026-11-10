@@ -26,8 +26,8 @@ it("keeps live toggles in memory when storage is blocked", async () => {
     return (
       <button
         type="button"
-        aria-expanded={tree.expanded}
-        onClick={() => tree.setExpanded(!tree.expanded)}
+        aria-expanded={tree.isExpanded("folder")}
+        onClick={() => tree.toggleEntry("folder")}
       >
         Tree
       </button>
@@ -92,7 +92,7 @@ it("restores only this tab's account, project, and tree, including explicit coll
     },
   });
   const key = treeExpansionKey("account", "project", "manuscript");
-  const state = { expanded: true, entries: { folder: true, closed: false } };
+  const state = { entries: { folder: true, closed: false } };
   writeTreeExpansion(key, "account", state);
   expect(readTreeExpansion(key, "account")).toEqual(state);
   for (const other of [
@@ -115,7 +115,7 @@ it("rejects malformed tree data: broken", () => {
 });
 
 it("drops missing folders and keeps explicit closed folders", () => {
-  expect(
-    pruneTreeExpansion({ expanded: true, entries: { gone: true, kept: false } }, ["kept"]),
-  ).toEqual({ expanded: true, entries: { kept: false } });
+  expect(pruneTreeExpansion({ entries: { gone: true, kept: false } }, ["kept"])).toEqual({
+    entries: { kept: false },
+  });
 });

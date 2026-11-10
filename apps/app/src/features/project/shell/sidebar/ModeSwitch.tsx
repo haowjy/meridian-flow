@@ -1,5 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { cn } from "@/lib/utils";
+import { sidebarIcon, sidebarRole } from "../../context/context-row-geometry";
 import { MODES, type ModeKey, modeLabel } from "../../layout/modes";
 
 /** Write | Chat: which mode shows, and with it its sidebar. One segment per entry in `MODES`. */
@@ -27,13 +28,14 @@ export function ModeSwitch({
             aria-selected={active}
             onClick={() => onSelect(entry.key)}
             className={cn(
-              "focus-ring flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md text-[13px] transition-colors",
+              "focus-ring flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md transition-colors",
+              sidebarRole.row,
               active
                 ? "bg-background font-medium text-foreground shadow-xs"
-                : "text-ink-muted hover:text-foreground",
+                : cn(sidebarRole.secondary, "hover:text-foreground"),
             )}
           >
-            <Icon className="size-3.5" aria-hidden />
+            <Icon className={sidebarIcon.row} aria-hidden />
             {modeLabel(entry.key)}
           </button>
         );

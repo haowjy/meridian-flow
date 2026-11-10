@@ -10,7 +10,9 @@ import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useSelectedContextTab } from "@/client/stores";
 import { AccountMenu } from "@/features/account/AccountMenu";
+import { cn } from "@/lib/utils";
 import { useAccountResourceProjection } from "../context/account-feature-context";
+import { sidebarRole } from "../context/context-row-geometry";
 import { projectResourceTab } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { modeMeta } from "../layout/modes";
@@ -107,8 +109,12 @@ export function LeftSidebar({
           editRef={titleEditor}
           title={projectTitle}
           {...titleEdit}
-          className="focus-ring flex h-8 min-w-0 flex-1 cursor-default items-center rounded-md px-2 text-left text-[14px] font-semibold hover:bg-sidebar-accent"
-          inputClassName="h-8 px-2 text-[14px] font-semibold"
+          className={cn(
+            "focus-ring flex h-8 min-w-0 flex-1 cursor-default items-center rounded-md px-2 text-left font-semibold",
+            sidebarRole.row,
+            sidebarRole.hover,
+          )}
+          inputClassName={cn("h-8 px-2 font-semibold", sidebarRole.row)}
         />
         <ProjectMenu
           key={projectId}

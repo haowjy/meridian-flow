@@ -39,10 +39,6 @@ export function useTreeExpansion(
     if (folderIds === null) return;
     update((current) => pruneTreeExpansion(current, folderIds));
   }, [folderIds, update]);
-  const setExpanded = useCallback(
-    (expanded: boolean) => update((current) => ({ ...current, expanded })),
-    [update],
-  );
   const setExpandedEntryIds = useCallback(
     (action: SetStateAction<Record<string, boolean>>) =>
       update((current) => ({
@@ -69,9 +65,7 @@ export function useTreeExpansion(
   return {
     isExpanded,
     toggleEntry,
-    expanded: saved.state.expanded,
     expandedEntryIds: saved.state.entries,
-    setExpanded,
     setExpandedEntryIds,
   };
 }

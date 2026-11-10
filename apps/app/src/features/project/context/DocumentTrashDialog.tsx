@@ -31,11 +31,12 @@ import {
   useCaptureProjectNavigation,
   useProjectTrashNavigation,
 } from "../routing/ProjectNavigationContext";
-import { RowIcon } from "./ContextTreeRows";
+import { RowIcon, rowPaddingLeft } from "./ContextTreeRows";
 import { fileKindIcon } from "./context-file-icon";
 import {
   contextTreeFileRowClassName,
   contextTreeOverflowTriggerClassName,
+  sidebarRole,
 } from "./context-row-geometry";
 import { schemeLabel } from "./context-schemes";
 import { type TrashRestoreState, useDocumentTrashRestore } from "./DocumentTrashRestoreProvider";
@@ -243,7 +244,7 @@ function PhoneTrashContent({
   );
 }
 
-export function TrashListPane({
+function TrashListPane({
   entries,
   query,
   selectedId,
@@ -308,7 +309,8 @@ export function TrashListPane({
   );
 }
 
-function TrashRow({
+/** One deleted document: its name, age and former place, with Restore. Drags like a tree row inside a list. */
+export function TrashRow({
   entry,
   now,
   selected,
@@ -342,18 +344,19 @@ function TrashRow({
           event.preventDefault();
           row.activate(onOpen)(event);
         }}
-        className={cn(contextTreeFileRowClassName(selected), "py-1.5 pl-2")}
+        className={cn(contextTreeFileRowClassName(selected), "py-1.5")}
+        style={{ paddingLeft: rowPaddingLeft(0) }}
       >
         <RowIcon icon={fileKindIcon(entry.name)} />
         <span className="ml-0.5 min-w-0 flex-1">
           <span className="flex min-w-0 items-baseline gap-2">
             <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-            <span className="shrink-0 text-xs font-normal tabular-nums text-muted-foreground">
+            <span className={cn("shrink-0 font-normal tabular-nums", sidebarRole.rowSecondary)}>
               {restoring ? <Trans>Restoring</Trans> : age}
             </span>
           </span>
           <span
-            className="block truncate text-xs leading-snug font-normal text-ink-subtle"
+            className={cn("block truncate leading-snug font-normal", sidebarRole.rowSecondary)}
             title={location}
           >
             {location}
@@ -371,7 +374,7 @@ function TrashRow({
         </OverflowMenu>
       </div>
       {state?.kind === "failed" ? (
-        <p role="alert" className="px-5 pb-1 text-xs text-destructive">
+        <p role="alert" className="pr-2 pb-1 pl-3.5 text-xs text-destructive">
           {state.message}
         </p>
       ) : null}

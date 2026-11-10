@@ -78,22 +78,18 @@ export function normalizeDocumentPrefs(prefs?: Partial<DocumentPrefs> | null): D
   };
 }
 
-export type RailSectionId = "scratch" | "user" | "recent";
-/** The rail sections docked above the account row, each trading height with the tree. */
-export type DockedRailSectionId = "scratch" | "user";
+export type RailSectionId = "scratch" | "recent";
+/** The rail sections docked under a list, each trading height with it. */
+export type DockedRailSectionId = "scratch";
 export type RailPrefs = {
   scratchExpanded: boolean;
-  userExpanded: boolean;
   recentExpanded: boolean;
   scratchHeight: number | null;
-  userHeight: number | null;
 };
 export const DEFAULT_RAIL_PREFS: RailPrefs = {
   scratchExpanded: false,
-  userExpanded: false,
   recentExpanded: true,
   scratchHeight: null,
-  userHeight: null,
 };
 
 function savedHeight(height: unknown): number | null {
@@ -105,10 +101,8 @@ function savedHeight(height: unknown): number | null {
 export function normalizeRailPrefs(prefs?: Partial<RailPrefs> | null): RailPrefs {
   return {
     scratchExpanded: typeof prefs?.scratchExpanded === "boolean" ? prefs.scratchExpanded : false,
-    userExpanded: typeof prefs?.userExpanded === "boolean" ? prefs.userExpanded : false,
     recentExpanded: typeof prefs?.recentExpanded === "boolean" ? prefs.recentExpanded : true,
     scratchHeight: savedHeight(prefs?.scratchHeight),
-    userHeight: savedHeight(prefs?.userHeight),
   };
 }
 

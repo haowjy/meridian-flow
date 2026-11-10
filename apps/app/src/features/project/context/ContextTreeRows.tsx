@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { ChevronRight, Folder, FolderOpen, LoaderCircle } from "lucide-react";
+import { Folder, FolderOpen, LoaderCircle } from "lucide-react";
 import {
   createContext,
   type KeyboardEvent,
@@ -36,6 +36,8 @@ import {
   contextTreeRowClassName,
   contextTreeRowGrowClassName,
   contextTreeSelectedRowClassName,
+  sidebarIcon,
+  sidebarRole,
 } from "./context-row-geometry";
 import { EntryNameField } from "./EntryNameField";
 import { EntryRefusalNotice } from "./EntryRefusalNotice";
@@ -189,21 +191,12 @@ function activateOnKey(handler: (event: KeyboardEvent) => void) {
   };
 }
 
-export function Twistie({ expanded }: { expanded: boolean }) {
-  return (
-    <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
-      <ChevronRight
-        aria-hidden
-        className={cn("size-3 transition-transform", expanded && "rotate-90")}
-      />
-    </span>
-  );
-}
-
 export function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
   return (
-    <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
-      <Icon aria-hidden className="size-3.5" />
+    <span
+      className={cn("flex h-7 w-4 shrink-0 items-center justify-center", sidebarRole.secondary)}
+    >
+      <Icon aria-hidden className={sidebarIcon.row} />
     </span>
   );
 }
@@ -285,8 +278,9 @@ function DirRow({
           {...row.rowProps}
           {...drop.dropProps}
           className={cn(
-            "group focus-ring mx-2 flex items-center rounded-md pr-1 text-sm text-foreground",
-            row.selected ? contextTreeSelectedRowClassName : "hover:bg-sidebar-accent/50",
+            "group focus-ring mx-2 flex items-center rounded-md pr-1 text-foreground",
+            sidebarRole.row,
+            row.selected ? contextTreeSelectedRowClassName : sidebarRole.hover,
             contextTreeRowGrowClassName,
           )}
           style={{ paddingLeft: rowPaddingLeft(depth) }}
@@ -349,7 +343,10 @@ function PendingTreeRow({ row, depth }: { row: PendingRow; depth: number }) {
       data-import-root={row.id}
       onClick={() => reveal?.(row.importId)}
       className={cn(
-        "focus-ring mx-2 flex w-[calc(100%-1rem)] items-center rounded-md pr-2 text-left text-sm text-ink-muted hover:bg-sidebar-accent/50",
+        "focus-ring mx-2 flex w-[calc(100%-1rem)] items-center rounded-md pr-2 text-left",
+        sidebarRole.row,
+        sidebarRole.secondary,
+        sidebarRole.hover,
         contextTreeRowGrowClassName,
       )}
       style={{ paddingLeft: rowPaddingLeft(depth) }}
@@ -358,7 +355,7 @@ function PendingTreeRow({ row, depth }: { row: PendingRow; depth: number }) {
       <span className="ml-0.5 min-w-0 flex-1 truncate">{row.name}</span>
       <LoaderCircle
         aria-hidden
-        className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
+        className={cn(sidebarIcon.row, "shrink-0 animate-spin motion-reduce:animate-none")}
       />
       <span className="sr-only">
         <Trans>Import in progress. Show activity</Trans>
@@ -459,7 +456,11 @@ function RenameRow({
   const form = useRenameEntryForm(options);
   return (
     <div
-      className={cn("mx-2 flex items-center pr-1 text-sm text-foreground", contextTreeRowClassName)}
+      className={cn(
+        "mx-2 flex items-center pr-1 text-foreground",
+        sidebarRole.row,
+        contextTreeRowClassName,
+      )}
       style={{ paddingLeft: rowPaddingLeft(depth) }}
     >
       <RowIcon icon={icon} />
@@ -493,7 +494,11 @@ function CreateRow({
   });
   return (
     <div
-      className={cn("mx-2 flex items-center pr-1 text-sm text-foreground", contextTreeRowClassName)}
+      className={cn(
+        "mx-2 flex items-center pr-1 text-foreground",
+        sidebarRole.row,
+        contextTreeRowClassName,
+      )}
       style={{ paddingLeft: rowPaddingLeft(depth) }}
     >
       <RowIcon icon={form.icon} />

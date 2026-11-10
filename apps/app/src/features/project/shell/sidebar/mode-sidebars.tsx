@@ -29,13 +29,7 @@ function WriteSidebar(props: ModeSidebarProps) {
   return <SourcesBody {...props} />;
 }
 
-function ChatSidebar({
-  projectId,
-  editorWorkId,
-  chatThreadId,
-  scopeWorkId,
-  onShowWork,
-}: ModeSidebarProps) {
+function ChatSidebar({ projectId, chatThreadId, scopeWorkId, onShowWork }: ModeSidebarProps) {
   const chat = useChatNavigation();
   const { noWork } = useWorks(projectId);
   return (
@@ -49,13 +43,7 @@ function ChatSidebar({
       onShowAllChats={() => void chat.openChatIndex()}
       onShowWork={onShowWork}
       // Renders nothing while no chat is open.
-      footer={
-        <RailScratchSection
-          projectId={projectId}
-          threadId={chatThreadId}
-          editorWorkId={editorWorkId}
-        />
-      }
+      footer={<RailScratchSection projectId={projectId} threadId={chatThreadId} />}
     />
   );
 }
