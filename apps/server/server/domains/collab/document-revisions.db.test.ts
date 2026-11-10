@@ -2,7 +2,7 @@
  * Revision identity across live rooms, Work peers, response settlement and rebinding.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - snapshot-derived freshness tokens across content, tree, receipt, peer, and flush boundaries (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - snapshot-derived freshness tokens across content, tree, receipt, peer, and flush boundaries (kb/wiki/architecture/collaboration/draft-store-concurrency.md)
  */
 
 import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";

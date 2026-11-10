@@ -2,7 +2,7 @@
  * Exact-content cold-replica matrix for durable forward inverses (POC 1 and 2 contracts).
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Forward inverses use lineage admission and inverse-of-inverse replay (kb/decisions/collab/reversal/revert-is-a-forward-edit.md)
+ * - Forward inverses use lineage admission and inverse-of-inverse replay (kb/wiki/architecture/collaboration/agent-editing-and-reversal.md#reversal-is-a-forward-edit)
  */
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";

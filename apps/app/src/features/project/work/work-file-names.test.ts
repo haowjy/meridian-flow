@@ -2,7 +2,7 @@
  * Work file names behavior.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Work note name allocation (kb/decisions/documents/naming/document-names.md)
+ * - Work note name allocation (kb/wiki/architecture/documents/placement-and-naming.md#a-document-has-one-canonical-name)
  */
 import { describe, expect, it } from "vitest";
 

@@ -162,7 +162,7 @@ ordering.
 
 ## Late peers
 
-The rules are in the [late-peer recovery decision][late-peer]. Detection indexes the incoming
+The rules are in the [late-peer recovery rule][late-peer]. Detection indexes the incoming
 structs once by client and clock in the shared pinned Yjs adapter; parent and origin lookups
 must not scan the whole update per item, because a whole-draft Discard or Undo can carry tens
 of thousands of structs. Noncanonical updates with repeated, out-of-order client blocks keep
@@ -182,7 +182,7 @@ replaced in contested text. No caller should rediff the result to recover the me
 side, for joining host ownership. A whole-block deletion has empty output support, so callers
 keep its removed base support separately.
 
-[review]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/diff-based-review-is-the-draft-review.md
-[authors]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/review-change-authors.md
-[cost]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/review-cost-bounded-by-text.md
-[late-peer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/late-peer-recovery.md
+[review]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/draft-review.md#what-review-shows
+[authors]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/draft-review.md#who-wrote-a-change
+[cost]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/draft-review.md#what-review-shows
+[late-peer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/draft-store-concurrency.md#a-late-peer-keeps-only-its-surviving-typing

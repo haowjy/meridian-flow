@@ -2,7 +2,7 @@
  * Database coverage for response transaction atomicity.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - best-effort post-commit refresh isolated from durable response settlement (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - best-effort post-commit refresh isolated from durable response settlement (kb/wiki/architecture/collaboration/durability-and-honest-outcomes.md#honest-results)
  */
 
 import { eq } from "drizzle-orm";

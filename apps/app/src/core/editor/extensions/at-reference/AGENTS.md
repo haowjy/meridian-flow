@@ -10,4 +10,4 @@ Behavior is in [one predictive browser][at-references] and
   Interaction code still owns its own landing, spacing and Undo.
 
 [at-references]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/editor/references.md
-[link-identity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-identity.md
+[link-identity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/links.md#stored-identity-and-spelling
