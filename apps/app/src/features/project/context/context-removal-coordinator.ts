@@ -927,19 +927,16 @@ export class ContextRemovalCoordinator {
   }
 
   /**
-   * The catalog no longer places this tab's document. Its tab closes as the
-   * writer's own close would; the notice says why once availability proves
-   * a removal.
+   * The catalog no longer places this tab's document. The tab leaves the store and the
+   * notice says why once availability proves a removal; the address stays where it is, so
+   * the view shows the removal in place.
    */
-  closeVanished(
-    projectId: string,
-    tab: ContextTab,
-  ): ContextRemovalOutcome | Promise<NavigationSettlement> {
+  closeVanished(projectId: string, tab: ContextTab): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     if (this.holdDraftTabs(projectId, [tab.documentId]).has(tab.documentId))
       return { kind: "noop" };
     this.notices?.presentedRemoved(projectId, [tab]);
-    return this.writerClose(projectId, tab);
+    return this.commitWriterClose(projectId, tab);
   }
 
   /** Owns the synchronous old-Work prune and next-Work route transition. */

@@ -82,7 +82,11 @@ import {
   reconcileDocumentAddress,
   resolveLocalDocumentAddress,
 } from "./local-document-address";
-import { type AddressAdmission, ProjectAddressDocument } from "./ProjectAddressDocument";
+import {
+  type AddressAdmission,
+  ProjectAddressDocument,
+  useAddressResultAfterRemoval,
+} from "./ProjectAddressDocument";
 import { ProjectNavigationProvider } from "./ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import {
@@ -606,6 +610,13 @@ function ReadableProjectDestination({
     reconciledDocumentAddress.view,
   );
   const documentResult = gated.result;
+  const afterRemoval = useAddressResultAfterRemoval(
+    projectId,
+    documentResult,
+    documentLookup.dataUpdatedAt,
+  );
+  // A review address names its draft, which outlives the live document's removal.
+  const admissibleResult = address.itemKey ? documentResult : afterRemoval;
   const routeBinding = addressRouteBinding(
     addressBinding,
     documentResult,
@@ -1072,7 +1083,7 @@ function ReadableProjectDestination({
               entryKey={location.state.__TSR_key ?? ""}
               address={address}
               // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
-              result={documentResult}
+              result={admissibleResult}
               localFile={reconciledDocumentAddress.localFile}
               reviewItemKey={reviewItemKey}
               draftOnly={draftOnly}
