@@ -4920,8 +4920,8 @@ msgstr ""
 
 #. placeholder {0}: line.place
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "Renaming to {0}"
-msgstr ""
+#~ msgid "Renaming to {0}"
+#~ msgstr ""
 
 #: src/core/editor/diagrams/DiagramBody.tsx
 msgid "Rendering diagram…"
@@ -6763,6 +6763,11 @@ msgstr ""
 
 #: src/features/import/import-presentation.ts
 msgid "Waiting to organize {name}"
+msgstr ""
+
+#. placeholder {0}: line.name
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Was {0}"
 msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx

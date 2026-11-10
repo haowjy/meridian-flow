@@ -4920,8 +4920,8 @@ msgstr "Renamed to {confirmed}"
 
 #. placeholder {0}: line.place
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "Renaming to {0}"
-msgstr "Renaming to {0}"
+#~ msgid "Renaming to {0}"
+#~ msgstr "Renaming to {0}"
 
 #: src/core/editor/diagrams/DiagramBody.tsx
 msgid "Rendering diagram…"
@@ -6764,6 +6764,11 @@ msgstr "Waiting for your review"
 #: src/features/import/import-presentation.ts
 msgid "Waiting to organize {name}"
 msgstr "Waiting to organize {name}"
+
+#. placeholder {0}: line.name
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Was {0}"
+msgstr "Was {0}"
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
