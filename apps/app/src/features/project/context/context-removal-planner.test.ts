@@ -18,7 +18,7 @@ function tab(documentId: string, path: string): ContextTab {
 }
 
 it("keeps the bound document's route through a removal when a stale tab shares its locator", () => {
-  const locator = { scheme: "manuscript", path: "/x.md", workId: "work" } as const;
+  const locator = { scheme: "manuscript", path: "/x.md" } as const;
   const plan = planContextRemoval({
     activeWorkId: "work",
     tabs: [tab("stale", "/x.md"), tab("bound", "/x.md"), tab("other", "/other.md")],

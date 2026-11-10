@@ -18,7 +18,7 @@ it("validates the original duplicate query through the installed router", async 
   const route = createRoute({ getParentRoute: () => root, path: "/p/$slug/editor" });
   const history = createMemoryHistory({
     initialEntries: [
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=one&%77ork=two&settings=usage",
+      "/p/550e8400-e29b-41d4-a716-446655440000/editor?settings=usage&%73ettings=profile",
     ],
   });
   const router = createRouter({
@@ -33,13 +33,13 @@ it("validates the original duplicate query through the installed router", async 
       router.state.location.pathname,
       originalBrowserSearch(router.state.location.search),
     ),
-  ).toEqual({ kind: "invalid", reason: "duplicate:work" });
+  ).toEqual({ kind: "invalid", reason: "duplicate:settings" });
   await router.navigate({
-    href: "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=550e8400-e29b-41d4-a716-446655440000&settings=usage",
+    href: "/p/550e8400-e29b-41d4-a716-446655440000/editor?settings=usage",
     replace: true,
   });
   expect(history.location.href).toBe(
-    "/p/550e8400-e29b-41d4-a716-446655440000/editor?work=550e8400-e29b-41d4-a716-446655440000&settings=usage",
+    "/p/550e8400-e29b-41d4-a716-446655440000/editor?settings=usage",
   );
   expect(
     parseProjectAddress(
@@ -49,7 +49,6 @@ it("validates the original duplicate query through the installed router", async 
   ).toMatchObject({
     kind: "valid",
     address: {
-      work: { kind: "id", id: "550e8400-e29b-41d4-a716-446655440000" },
       settings: "usage",
     },
   });

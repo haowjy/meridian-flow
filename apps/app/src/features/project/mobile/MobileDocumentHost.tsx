@@ -86,7 +86,7 @@ function MobileDraftOnlyDocumentHost({
 }: MobileDocumentHostProps & { tab: Extract<ContextTab, { kind: "tracked" }> }) {
   // The route is bound to the draft's document, but never remembered or activated: its
   // path dies if the draft is discarded.
-  useMobileRouteBinding({ projectId, workId: editorWorkId, route, activate: false });
+  useMobileRouteBinding({ projectId, route, activate: false });
   const removal = useContextRemovalCoordinator();
   return (
     <MobileDocumentReview
@@ -118,11 +118,12 @@ function MobileLocalDocumentHost({
     const selected = state.selection;
     // The pointer route (`unfiled`, no path) and a path route the pointer holds: both bind to
     // the local document, so a move of it carries the route instead of rejecting its old path.
-    if (selected.status === "none" || selected.locator.workId !== workId) return;
+    if (selected.status === "none") return;
     const workspace = resolveWorkspaceRoute({
       tabs: [tab],
       selectedDocumentId: tab.documentId,
       locator: selected.locator,
+      scope: workId,
     });
     if (workspace.kind === "materialized-local") {
       removal.redirectMaterializedLocal(
@@ -211,12 +212,10 @@ function PhoneDocument({
  */
 function useMobileRouteBinding({
   projectId,
-  workId,
   route,
   activate,
 }: {
   projectId: string;
-  workId: string;
   route: MobileDocumentRoute;
   activate: boolean;
 }) {
@@ -236,7 +235,7 @@ function useMobileRouteBinding({
       !selectionAtRoute(selection, {
         scheme: activeContextScheme,
         path: activeContextPath,
-        workId,
+        workId: route.workId ?? undefined,
         rootThreadId: route.rootThreadId ?? undefined,
       })
     )
@@ -276,7 +275,7 @@ function useMobileRouteBinding({
     catalogResolved,
     addressState,
     route.rootThreadId,
-    workId,
+    route.workId,
   ]);
 
   useLayoutEffect(() => {
@@ -304,7 +303,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   const activeContextPath = route.path;
   const activeTab = route.tab;
   const { catalogResolved, addressState, isError, isFetching } = route;
-  useMobileRouteBinding({ projectId, workId, route, activate: true });
+  useMobileRouteBinding({ projectId, route, activate: true });
 
   const opening = Boolean(
     activeContextScheme &&

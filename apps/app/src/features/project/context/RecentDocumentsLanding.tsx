@@ -253,7 +253,6 @@ async function openRecent(
     {
       scheme: "unfiled",
       path: "",
-      workId: ports.editorWorkId ?? undefined,
       documentId: item.documentId,
     },
     {
@@ -278,8 +277,6 @@ function recentDocumentHref(item: AccountRecentItem, projectId: string | undefin
       scheme: item.address.scheme,
       path,
     },
-
-    work: { kind: "absent" },
   });
 }
 

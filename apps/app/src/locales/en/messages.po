@@ -1086,8 +1086,8 @@ msgid "All projects"
 msgstr "All projects"
 
 #: src/features/project/work/useWorkChrome.tsx
-msgid "All Work"
-msgstr "All Work"
+#~ msgid "All Work"
+#~ msgstr "All Work"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "All your devices"
@@ -1259,6 +1259,10 @@ msgstr "Back online (all changes saved)"
 #: src/features/project/shell/IndexTabChip.tsx
 msgid "Back to {title}"
 msgstr "Back to {title}"
+
+#: src/features/project/work/ManageWorksDialog.tsx
+msgid "Back to all Work"
+msgstr "Back to all Work"
 
 #: src/features/draft-review/ReviewCompletion.tsx
 #: src/features/editor/EditorView.tsx
@@ -1633,18 +1637,17 @@ msgstr "Chat updates disconnected"
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Chats"
 msgstr "Chats"
 
 #: src/features/project/work/WorkChatsTab.tsx
-msgid "Chats couldn’t load"
-msgstr "Chats couldn’t load"
+#~ msgid "Chats couldn’t load"
+#~ msgstr "Chats couldn’t load"
 
 #: src/features/project/work/WorkChatsTab.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
-msgid "Chats in this Work share its goal and scratch files."
-msgstr "Chats in this Work share its goal and scratch files."
+#~ msgid "Chats in this Work share its goal and scratch files."
+#~ msgstr "Chats in this Work share its goal and scratch files."
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Chats without a Work"
@@ -1691,7 +1694,7 @@ msgstr "Choose agent, currently {0}"
 msgid "Choose tabs"
 msgstr "Choose tabs"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkDetail.tsx
 msgid "Choose what to do before continuing."
 msgstr "Choose what to do before continuing."
 
@@ -2025,8 +2028,8 @@ msgid "Copying from {source} into"
 msgstr "Copying from {source} into"
 
 #: src/features/project/mobile/MobileContextBrowser.tsx
-msgid "Could not load files."
-msgstr "Could not load files."
+#~ msgid "Could not load files."
+#~ msgstr "Could not load files."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't apply this draft."
@@ -2111,8 +2114,8 @@ msgid "Couldn't create a Work"
 msgstr "Couldn't create a Work"
 
 #: src/features/project/work/WorkFileRows.tsx
-msgid "Couldn’t create note"
-msgstr "Couldn’t create note"
+#~ msgid "Couldn’t create note"
+#~ msgstr "Couldn’t create note"
 
 #: src/features/project/context/IdentityPlacementField.tsx
 #: src/features/project/context/NamespaceFailureMark.tsx
@@ -2584,30 +2587,34 @@ msgstr "Create a project"
 msgid "Create a project for your first book, series, or story world."
 msgstr "Create a project for your first book, series, or story world."
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/ManageWorksDialog.tsx
 msgid "Create a Work"
 msgstr "Create a Work"
 
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
-msgid "Create file or folder"
-msgstr "Create file or folder"
+#~ msgid "Create file or folder"
+#~ msgstr "Create file or folder"
 
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
-msgid "Create file or folder, import in progress"
-msgstr "Create file or folder, import in progress"
+#~ msgid "Create file or folder, import in progress"
+#~ msgstr "Create file or folder, import in progress"
 
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
-msgid "Create file or folder, import needs your attention"
-msgstr "Create file or folder, import needs your attention"
+#~ msgid "Create file or folder, import needs your attention"
+#~ msgstr "Create file or folder, import needs your attention"
 
 #: src/features/home/NewProjectView.tsx
 #: src/features/home/ProjectLibrary.tsx
 msgid "Create project"
 msgstr "Create project"
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/ManageWorksDialog.tsx
 msgid "Create Work"
 msgstr "Create Work"
+
+#: src/features/project/work/ManageWorksDialog.tsx
+msgid "Create, rename, archive, restore and delete Works, and review their changes."
+msgstr "Create, rename, archive, restore and delete Works, and review their changes."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Created a Work"
@@ -2632,8 +2639,8 @@ msgid "Creating project…"
 msgstr "Creating project…"
 
 #: src/features/project/work/WorkFileRows.tsx
-msgid "Creating…"
-msgstr "Creating…"
+#~ msgid "Creating…"
+#~ msgstr "Creating…"
 
 #: src/features/editor/surfaces/blocks/BlockMenu.tsx
 msgid "Current block type"
@@ -2809,7 +2816,7 @@ msgstr "Discard all"
 msgid "Discard all changes?"
 msgstr "Discard all changes?"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkDetail.tsx
 msgid "Discard changes"
 msgstr "Discard changes"
 
@@ -2894,7 +2901,7 @@ msgstr "Download image"
 msgid "Draft"
 msgstr "Draft"
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/ManageWorksDialog.tsx
 msgid "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 msgstr "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 
@@ -3164,8 +3171,6 @@ msgstr "File this document"
 
 #: src/features/chat/ChatFilesMenu.tsx
 #: src/features/project/context/PendingDocumentPath.tsx
-#: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
 msgid "Files"
 msgstr "Files"
 
@@ -3438,7 +3443,6 @@ msgstr "Import, needs your attention"
 
 #: src/features/import/ImportPanel.tsx
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "Import…"
 msgstr "Import…"
 
@@ -3586,7 +3590,7 @@ msgstr "Just now"
 msgid "Keep"
 msgstr "Keep"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkDetail.tsx
 msgid "Keep editing"
 msgstr "Keep editing"
 
@@ -3773,8 +3777,6 @@ msgid "Loading Work"
 msgstr "Loading Work"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#: src/features/project/EditorWorkRecovery.tsx
-#: src/features/project/work/WorkScreen.tsx
 msgid "Loading Work…"
 msgstr "Loading Work…"
 
@@ -3801,6 +3803,10 @@ msgstr "Looking for the document this link names."
 #: src/features/account/SettingsDialog.tsx
 msgid "Manage billing"
 msgstr "Manage billing"
+
+#: src/features/project/work/ManageWorksDialog.tsx
+msgid "Manage Works"
+msgstr "Manage Works"
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 msgid "Manage Works…"
@@ -4039,7 +4045,7 @@ msgstr "Moving {source} to"
 msgid "Name is required"
 msgstr "Name is required"
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/ManageWorksDialog.tsx
 msgid "Name this Work"
 msgstr "Name this Work"
 
@@ -4078,8 +4084,6 @@ msgstr "Needs you"
 #: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/chat/ChatScreen.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-#: src/features/project/work/WorkChatsTab.tsx
-#: src/features/project/work/WorkCreationDestination.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "New chat"
@@ -4090,19 +4094,17 @@ msgstr "New document"
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
-#: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "New file"
 msgstr "New file"
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
-#: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "New folder"
 msgstr "New folder"
 
 #: src/features/project/work/WorkFilesView.tsx
-msgid "New note"
-msgstr "New note"
+#~ msgid "New note"
+#~ msgstr "New note"
 
 #: src/features/project/context/ContextTabBar.tsx
 msgid "New tab"
@@ -4158,7 +4160,6 @@ msgid "No chats in this Work yet."
 msgstr "No chats in this Work yet."
 
 #: src/features/project/chat-index/ChatIndex.tsx
-#: src/features/project/work/WorkChatsTab.tsx
 msgid "No chats match “{search}”."
 msgstr "No chats match “{search}”."
 
@@ -4242,11 +4243,10 @@ msgid "No report text was returned."
 msgstr "No report text was returned."
 
 #: src/features/project/work/WorkFilesView.tsx
-msgid "No scratch notes match “{search}”."
-msgstr "No scratch notes match “{search}”."
+#~ msgid "No scratch notes match “{search}”."
+#~ msgstr "No scratch notes match “{search}”."
 
 #: src/features/project/chat/ChatScratch.tsx
-#: src/features/project/work/WorkFilesView.tsx
 msgid "No scratch notes yet."
 msgstr "No scratch notes yet."
 
@@ -5008,7 +5008,6 @@ msgstr "Resume my documents on any device"
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
-#: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
@@ -5037,7 +5036,6 @@ msgid "Retry the handoff brief"
 msgstr "Retry the handoff brief"
 
 #: src/features/project/work/WorkCollection.tsx
-#: src/features/project/work/WorkScreen.tsx
 msgid "Retry Work"
 msgstr "Retry Work"
 
@@ -5081,11 +5079,11 @@ msgid "Save"
 msgstr "Save"
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkDetail.tsx
 msgid "Save changes"
 msgstr "Save changes"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkDetail.tsx
 msgid "Save goal changes?"
 msgstr "Save goal changes?"
 
@@ -5101,7 +5099,7 @@ msgstr "Save name and location"
 msgid "Saved locally (offline)"
 msgstr "Saved locally (offline)"
 
-#: src/features/project/work/WorkDetailScreen.tsx
+#: src/features/project/work/WorkDetail.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Saving…"
 msgstr "Saving…"
@@ -5114,12 +5112,10 @@ msgstr "scene break"
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat/use-chat-scratch-source.ts
 #: src/features/project/context/context-schemes.ts
-#: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch"
 msgstr "Scratch"
 
 #: src/features/project/chat/ChatScratch.tsx
-#: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch couldn’t load"
 msgstr "Scratch couldn’t load"
 
@@ -5145,8 +5141,6 @@ msgstr "Scroll to latest"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
-#: src/features/project/work/WorkChatsTab.tsx
-#: src/features/project/work/WorkCreationDestination.tsx
 msgid "Search chats"
 msgstr "Search chats"
 
@@ -5159,8 +5153,8 @@ msgid "Search documents or paste a web link"
 msgstr "Search documents or paste a web link"
 
 #: src/features/project/work/WorkFilesTab.tsx
-msgid "Search files"
-msgstr "Search files"
+#~ msgid "Search files"
+#~ msgstr "Search files"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Search Work"
@@ -5317,6 +5311,10 @@ msgstr "Show the changes list"
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Show the whole brief"
 msgstr "Show the whole brief"
+
+#: src/features/project/work/WorkDetail.tsx
+msgid "Show this Work"
+msgstr "Show this Work"
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "Show Work"
@@ -6267,8 +6265,8 @@ msgid "This filename contains unsupported characters. Rename the file and try ag
 msgstr "This filename contains unsupported characters. Rename the file and try again."
 
 #: src/features/project/mobile/MobileContextBrowser.tsx
-msgid "This folder is empty."
-msgstr "This folder is empty."
+#~ msgid "This folder is empty."
+#~ msgstr "This folder is empty."
 
 #: src/features/project/context/FolderMenu.tsx
 msgid "This folder is no longer available."
@@ -6279,8 +6277,8 @@ msgid "This folder is unavailable. Refresh and try again."
 msgstr "This folder is unavailable. Refresh and try again."
 
 #: src/features/project/mobile/MobileContextBrowser.tsx
-msgid "This folder no longer exists."
-msgstr "This folder no longer exists."
+#~ msgid "This folder no longer exists."
+#~ msgstr "This folder no longer exists."
 
 #: src/features/chat/derivation/InheritedMarks.tsx
 msgid "This fork continues here"
@@ -6386,7 +6384,7 @@ msgstr "This Work is archived."
 msgid "This Work is archived. Unarchive it to edit."
 msgstr "This Work is archived. Unarchive it to edit."
 
-#: src/features/project/EditorWorkRecovery.tsx
+#: src/features/project/work/ManageWorksDialog.tsx
 msgid "This Work is unavailable."
 msgstr "This Work is unavailable."
 
@@ -6728,7 +6726,7 @@ msgstr "We couldn’t confirm this purchase yet. Check your balance before tryin
 msgid "We couldn’t confirm this purchase. Check your balance before trying again."
 msgstr "We couldn’t confirm this purchase. Check your balance before trying again."
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/ManageWorksDialog.tsx
 msgid "What are you working on?"
 msgstr "What are you working on?"
 
@@ -6740,7 +6738,7 @@ msgstr "What are you writing?"
 #~ msgid "What is running in the background, with its controls."
 #~ msgstr "What is running in the background, with its controls."
 
-#: src/features/project/work/WorkScreen.tsx
+#: src/features/project/work/ManageWorksDialog.tsx
 msgid "What is your goal?"
 msgstr "What is your goal?"
 
@@ -6774,9 +6772,6 @@ msgstr "Word document"
 
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
-#: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/shell/screens.ts
-#: src/features/project/work/WorkCollection.tsx
 msgid "Work"
 msgstr "Work"
 
@@ -6798,15 +6793,13 @@ msgid "Work couldn’t be unarchived"
 msgstr "Work couldn’t be unarchived"
 
 #: src/features/chat/CreationComposer.tsx
-#: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/work/WorkCollection.tsx
-#: src/features/project/work/WorkScreen.tsx
 msgid "Work couldn’t load"
 msgstr "Work couldn’t load"
 
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "Work view"
-msgstr "Work view"
+#~ msgid "Work view"
+#~ msgstr "Work view"
 
 #: src/features/chat/SpawnReportCard.tsx
 msgid "Working"

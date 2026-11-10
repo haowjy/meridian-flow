@@ -5,7 +5,7 @@ import {
   type ContextRouteSelection,
 } from "./context-removal-protocol";
 
-const locator = { scheme: "manuscript" as const, path: "/x.md", workId: "work" };
+const locator = { scheme: "manuscript" as const, path: "/x.md" };
 const bound = (by: "navigation" | "answer" | "review"): ContextRouteSelection => ({
   status: "bound",
   revision: 1,

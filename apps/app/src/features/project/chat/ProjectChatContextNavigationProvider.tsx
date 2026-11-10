@@ -15,6 +15,7 @@
  * document inside the answer and lands on the anchor if the open result allows. No lookup
  * stands between the answer and the open.
  */
+
 import { type ReactNode, useCallback, useContext, useMemo } from "react";
 import { useLineage } from "@/client/query/useLineageTitle";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -38,7 +39,7 @@ import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { BesideChatContext, useOpenChatDocument } from "../context/open-chat-document";
 import { claimOpenIntent, isCurrentOpenIntent } from "../context/open-intent";
 import { useReviewingLinkDestination } from "../review-launch";
-import type { ContextRouteRequest } from "../routing/project-route";
+import { type ContextRouteRequest, contextRouteRequest } from "../routing/project-route";
 import { canonicalDoorUri } from "./canonical-door-uri";
 import { usePassageDoors } from "./usePassageDoors";
 
@@ -112,8 +113,7 @@ export function ProjectChatContextNavigationProvider({
   const besideChat = useContext(BesideChatContext);
   const openChatDocument = useOpenChatDocument(projectId);
   const route = useCallback(
-    (target: RouteTarget) =>
-      onOpenContextTarget?.({ ...target, workId: target.workId ?? undefined }),
+    (target: RouteTarget) => onOpenContextTarget?.(contextRouteRequest(target)),
     [onOpenContextTarget],
   );
 

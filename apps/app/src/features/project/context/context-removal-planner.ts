@@ -1,13 +1,11 @@
 /** Pure eligibility and continuity planning for one exact context-removal intent. */
 
-import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
 import {
   type ContextTab,
-  editorTabsForWork,
   isDraftOnly,
-  reviewOwners,
+  isEditorContextTab,
   withoutReviewEntry,
 } from "@/client/stores";
 import {
@@ -15,15 +13,14 @@ import {
   type ReconcileContextRoutesInput,
   workingSetRouteEquals,
 } from "@/client/working-set";
-import { type ContextRouteTarget, sameContextTarget } from "../routing/project-route";
+import {
+  type ContextRouteRequest,
+  contextRouteRequest,
+  sameContextTarget,
+} from "../routing/project-route";
 
 export type ContextRemovalIntent = {
-  cause:
-    | "writer-close"
-    | "catalog-unavailable"
-    | "authority-unavailable"
-    | "work-prune"
-    | "draft-discard";
+  cause: "writer-close" | "catalog-unavailable" | "authority-unavailable" | "draft-discard";
   documentIds: readonly string[];
   /** Writer close and draft settlement address a mounted tab, not every document representation. */
   tabInstanceId?: string;
@@ -38,13 +35,13 @@ export type RouteContinuityVerdict =
   | {
       kind: "bound";
       revision: number;
-      locator: ContextRouteTarget;
+      locator: ContextRouteRequest;
       identity: ContextRouteIdentity;
     }
   | {
       kind: "proven-removed";
       revision: number;
-      locator: ContextRouteTarget;
+      locator: ContextRouteRequest;
       identity: ContextRouteIdentity;
     };
 
@@ -60,7 +57,7 @@ export type ContextRemovalOutcome =
 
 export type ContextRemovalPlan = {
   outcome: ContextRemovalOutcome;
-  admitted: ContextRouteTarget | null;
+  admitted: ContextRouteRequest | null;
   workingSet: ReconcileContextRoutesInput;
 };
 
@@ -68,7 +65,7 @@ export type ContextRemovalPlannerInput = {
   activeWorkId: string | null;
   tabs: readonly ContextTab[];
   selectedTabId: string | null;
-  admitted: ContextRouteTarget | null;
+  admitted: ContextRouteRequest | null;
   route: {
     cleanup: ExactRouteCleanup | null;
     current: RouteContinuityVerdict;
@@ -78,17 +75,17 @@ export type ContextRemovalPlannerInput = {
 
 export type ExactRouteCleanup = {
   revision: number;
-  locator: ContextRouteTarget;
+  locator: ContextRouteRequest;
   identity: ContextRouteIdentity;
 };
 
 /** A rejected candidate leaves the address as written: the view says the document is gone. */
 export function planCandidateRejection(input: {
-  rejected: ContextRouteTarget;
+  rejected: ContextRouteRequest;
   tabs: readonly ContextTab[];
-  admitted: ContextRouteTarget | null;
+  admitted: ContextRouteRequest | null;
   recentRoutes: readonly WorkingSetRoute[];
-}): { admitted: ContextRouteTarget | null; workingSet: ReconcileContextRoutesInput } {
+}): { admitted: ContextRouteRequest | null; workingSet: ReconcileContextRoutesInput } {
   const rejectedRoute = input.recentRoutes.find((route) =>
     workingSetRouteMatchesTarget(route, input.rejected),
   );
@@ -119,12 +116,6 @@ export function contextTabEligibleForRemoval(
     case "catalog-unavailable":
     case "authority-unavailable":
       return tab.kind !== "new" && !isDraftOnly(tab);
-    case "work-prune":
-      return (
-        tab.kind !== "new" &&
-        (tab.kind !== "tracked" || tab.origin !== "local-resource") &&
-        isWorkScopedScheme(tab.scheme)
-      );
     case "draft-discard":
       return tab.kind !== "new" && isDraftOnly(tab);
   }
@@ -137,37 +128,23 @@ export function workingSetRouteForTab(tab: ContextTab) {
   return buildWorkingSetRoute(tab.documentId, tab.scheme, tab.path, tab);
 }
 
-export function routeTargetForTab(tab: ContextTab, activeWorkId: string): ContextRouteTarget {
-  if (tab.kind === "new")
-    return { scheme: "unfiled", path: "", workId: activeWorkId, documentId: tab.documentId };
-  if (tab.rootThreadId)
-    return {
-      scheme: tab.scheme,
-      path: tab.path,
-      workId: activeWorkId,
-      rootThreadId: tab.rootThreadId,
-      documentId: tab.documentId,
-    };
-  const reviewers = reviewOwners(tab).flatMap((key) => workIdOfDraftOwnerKey(key) ?? []);
-  let workId = reviewers.includes(activeWorkId) ? activeWorkId : (reviewers[0] ?? activeWorkId);
-  if (isWorkScopedScheme(tab.scheme)) {
-    if (!tab.workId) throw new Error("Work-scoped tab has no Work owner");
-    workId = tab.workId;
-  }
-  return { scheme: tab.scheme, path: tab.path, workId, documentId: tab.documentId };
+export function routeTargetForTab(tab: ContextTab): ContextRouteRequest {
+  if (tab.kind === "new") return { scheme: "unfiled", path: "", documentId: tab.documentId };
+  if (isWorkScopedScheme(tab.scheme) && !tab.rootThreadId && !tab.workId)
+    throw new Error("Work-scoped tab has no Work owner");
+  return contextRouteRequest(tab);
 }
 
 /** The tab a target names: by its document when it carries one, else by locator. */
 export function tabForTarget(
   tabs: readonly ContextTab[],
-  target: ContextRouteTarget,
-  activeWorkId: string,
+  target: ContextRouteRequest,
 ): ContextTab | null {
   return (
     tabs.find((tab) =>
       target.documentId !== undefined
         ? tab.documentId === target.documentId
-        : sameTarget(routeTargetForTab(tab, activeWorkId), target),
+        : sameContextTarget(routeTargetForTab(tab), target),
     ) ?? null
   );
 }
@@ -205,8 +182,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
       },
     };
   }
-  const activeWorkId = input.activeWorkId;
-  const visibleRemaining = editorTabsForWork(remaining, activeWorkId);
+  const visibleRemaining = remaining.filter(isEditorContextTab);
   const survives = (documentId: string) =>
     visibleRemaining.some((tab) => tab.documentId === documentId);
   const workspaceSelectedRemoved =
@@ -229,15 +205,14 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   const admittedTab = admitted
     ? tabForTarget(
         input.tabs,
-        boundSelection && sameTarget(boundSelection.locator, admitted)
+        boundSelection && sameContextTarget(boundSelection.locator, admitted)
           ? { ...admitted, documentId: boundSelection.identity.documentId }
           : admitted,
-        activeWorkId,
       )
     : null;
   const admittedRoute = admittedTab
     ? workingSetRouteForTab(admittedTab)
-    : input.admitted && boundSelection && sameTarget(boundSelection.locator, input.admitted)
+    : input.admitted && boundSelection && sameContextTarget(boundSelection.locator, input.admitted)
       ? workingSetRouteForTarget(boundSelection.identity.documentId, input.admitted)
       : null;
   const survivingRoutes = remaining.flatMap((tab) => workingSetRouteForTab(tab) ?? []);
@@ -246,16 +221,16 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     .filter((route) => !survivingRoutes.some((survivor) => workingSetRouteEquals(survivor, route)));
   const admittedWasRemoved =
     input.admitted !== null &&
-    ((provenRemoved !== null && sameTarget(provenRemoved.locator, input.admitted)) ||
+    ((provenRemoved !== null && sameContextTarget(provenRemoved.locator, input.admitted)) ||
       (input.route.cleanup !== null &&
-        sameTarget(input.route.cleanup.locator, input.admitted) &&
+        sameContextTarget(input.route.cleanup.locator, input.admitted) &&
         !(
           boundSelection !== null &&
-          sameTarget(boundSelection.locator, input.admitted) &&
+          sameContextTarget(boundSelection.locator, input.admitted) &&
           boundSelection.identity.documentId !== input.route.cleanup.identity.documentId
         )) ||
       removedTabRoutes.some((route) =>
-        workingSetRouteMatchesTarget(route, input.admitted as ContextRouteTarget),
+        workingSetRouteMatchesTarget(route, input.admitted as ContextRouteRequest),
       ));
   const survivingAdmittedRoute = admittedWasRemoved ? null : admittedRoute;
 
@@ -287,14 +262,12 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
       ? (visibleRemaining.find((tab) => tab.documentId === boundSelection.identity.documentId) ??
         null)
       : null;
-  const survivingRoutedTarget = survivingRoutedTab
-    ? routeTargetForTab(survivingRoutedTab, activeWorkId)
-    : null;
+  const survivingRoutedTarget = survivingRoutedTab ? routeTargetForTab(survivingRoutedTab) : null;
   const survivingRoutedIsUnadmittedBinding =
     survivingRoutedTarget !== null &&
     boundSelection !== null &&
-    sameTarget(survivingRoutedTarget, boundSelection.locator) &&
-    (input.admitted === null || !sameTarget(input.admitted, boundSelection.locator));
+    sameContextTarget(survivingRoutedTarget, boundSelection.locator) &&
+    (input.admitted === null || !sameContextTarget(input.admitted, boundSelection.locator));
   const nextAdmitted = survivingRoutedIsUnadmittedBinding ? null : survivingRoutedTarget;
   const promote =
     survivingAdmittedRoute ??
@@ -323,9 +296,10 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   };
 }
 
-const sameTarget = sameContextTarget;
-
-function workingSetRouteMatchesTarget(route: WorkingSetRoute, target: ContextRouteTarget): boolean {
+function workingSetRouteMatchesTarget(
+  route: WorkingSetRoute,
+  target: ContextRouteRequest,
+): boolean {
   return (
     route.scheme === target.scheme &&
     route.path === target.path &&
@@ -338,12 +312,12 @@ function workingSetRouteMatchesTarget(route: WorkingSetRoute, target: ContextRou
 
 export function workingSetRouteForTarget(
   documentId: string,
-  locator: ContextRouteTarget,
+  locator: ContextRouteRequest,
 ): WorkingSetRoute | null {
   return buildWorkingSetRoute(documentId, locator.scheme, locator.path, locator);
 }
 
-function sameContinuityLocator(a: ContextRouteTarget, b: ContextRouteTarget): boolean {
+function sameContinuityLocator(a: ContextRouteRequest, b: ContextRouteRequest): boolean {
   return (
     a.scheme === b.scheme &&
     a.path === b.path &&

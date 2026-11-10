@@ -59,9 +59,8 @@ describe("Editor screen entry", () => {
     tabs: [tab, document],
     selectedDocumentId: undefined,
     recentRoutes: [],
-    workId: "work-a",
   };
-  it("resumes the selected scratch tab of the Editor's own Work only", () => {
+  it("resumes the selected scratch tab whichever Work owns it", () => {
     const scratch: ContextTab = {
       ...document,
       documentId: "note",
@@ -71,7 +70,6 @@ describe("Editor screen entry", () => {
     };
     const selected = { ...entry, tabs: [scratch], selectedDocumentId: scratch.documentId };
     expect(selectEditorEntryTab(selected)).toBe(scratch);
-    expect(selectEditorEntryTab({ ...selected, workId: "work-b" })).toBeNull();
   });
   it("does not reopen closed identities or choose an arbitrary open tab", () => {
     expect(selectEditorEntryTab(entry)).toBeNull();
