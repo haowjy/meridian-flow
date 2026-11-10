@@ -1,4 +1,4 @@
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import { isWorkScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   AvailabilityGeneration,
   CatalogFileEntry,
@@ -501,7 +501,7 @@ export class ProjectDocumentNavigationAdapter {
         projectId,
         scheme: identity.scheme,
         file: identity.file,
-        routeWorkId: identity.workId ?? workId,
+        workId: identity.workId ?? workId,
         rootThreadId: identity.rootThreadId,
         chatId: identity.chatId,
         disposition,
@@ -538,7 +538,7 @@ export class ProjectDocumentNavigationAdapter {
     projectId: string;
     scheme: ProjectContextTreeScheme;
     file: CatalogFile;
-    routeWorkId: string | undefined;
+    workId: string | undefined;
     rootThreadId?: string;
     chatId?: string;
     disposition: "current" | "background";
@@ -552,7 +552,7 @@ export class ProjectDocumentNavigationAdapter {
       ? { chatThreadId: input.chatId }
       : input.rootThreadId
         ? { rootThreadId: input.rootThreadId }
-        : { workId: input.routeWorkId ?? null };
+        : { workId: input.workId ?? null };
     const tab = isEditorScheme(input.scheme)
       ? {
           ...contextTabFromFile(input.scheme, input.file, owner),
@@ -596,7 +596,10 @@ export class ProjectDocumentNavigationAdapter {
         {
           scheme: input.scheme,
           path: input.file.path,
-          workId: input.rootThreadId ? undefined : input.routeWorkId,
+          // The owner is a Scratch note's alone; the scope never travels in a route.
+          ...(isWorkScopedScheme(input.scheme) && !input.rootThreadId && input.workId
+            ? { workId: input.workId }
+            : {}),
           ...(input.rootThreadId ? { rootThreadId: input.rootThreadId } : {}),
           documentId: input.file.documentId,
         },

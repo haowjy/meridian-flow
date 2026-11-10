@@ -7,7 +7,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { getContextTabs, selectedTabOf, tabKey, useContextTabsStore } from "@/client/stores";
 import type { OpenDocumentTab } from "./open-documents";
-import type { ReviewAddressAdmission } from "./presented-document";
+import type { ReviewAddress, ReviewAddressAdmission } from "./presented-document";
 
 export function useReviewAddressSync({
   projectId,
@@ -34,7 +34,7 @@ export function useReviewAddressSync({
     documentId: string | undefined;
     admission: ReviewAddressAdmission | undefined;
   };
-  writeItemKey: (itemKey: string | null, changeId?: string, ownerKey?: string) => void;
+  writeItemKey: (review: ReviewAddress | null) => void;
 }) {
   /** The history entry whose address the tab has taken in. */
   const arrived = useRef<string | undefined>(undefined);
@@ -92,7 +92,7 @@ export function useReviewAddressSync({
       (!live || address.owner === live.ownerKey)
     )
       return;
-    writeItemKey(live?.itemKey ?? null, live?.changeId, live?.ownerKey);
+    writeItemKey(live ?? null);
   }, [
     writing,
     key,

@@ -3,7 +3,7 @@ import { createContext, type ReactNode, useContext, useLayoutEffect, useRef } fr
 import type { ContextTab } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
 import type { NavigationSettlement, ProjectLeaveGuard } from "./project-navigation";
-import type { ContextRouteRequest, ContextRouteTarget } from "./project-route";
+import type { ContextRouteTarget } from "./project-route";
 
 export type OpenContextOptions = {
   replace?: boolean;
@@ -24,7 +24,7 @@ export type OpenContextOptions = {
 };
 
 export type OpenContextRoute = (
-  target: ContextRouteRequest,
+  target: ContextRouteTarget,
   options?: OpenContextOptions,
 ) => Promise<NavigationSettlement>;
 

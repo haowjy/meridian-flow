@@ -110,6 +110,7 @@ import {
 import { useSelectedOpenDocument } from "./open-documents";
 import {
   PresentedDocumentContext,
+  type ReviewAddress,
   type ReviewAddressAdmission,
   resolvePresentedDocument,
 } from "./presented-document";
@@ -181,8 +182,8 @@ export type ProjectViewProps = {
   contextRemovalRoute: ContextRemovalRoutePort;
   /** Active context scheme (manuscript/kb/user/work), when `screen=context`. */
   activeContextScheme: ProjectContextTreeScheme | null;
-  /** The Work that owns the address's locator: a Scratch address's owner, else the scope's. */
-  activeContextWorkId: string | null;
+  /** A Work's Scratch route: its owning Work. Null for every other document. */
+  activeContextWork: string | null;
   /** Active context file path, when `screen=context`. */
   activeContextPath: string | null;
   /** The lineage a chat's Scratch route names, in place of a Work. */
@@ -205,7 +206,7 @@ export type ProjectViewProps = {
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
   onOpenContextTarget: OpenContextRoute;
-  onSetEditorReviewItemKey: (itemKey: string | null, changeId?: string, ownerKey?: string) => void;
+  onSetEditorReviewItemKey: (review: ReviewAddress | null) => void;
 };
 
 export function ProjectView(props: ProjectViewProps) {
@@ -389,7 +390,7 @@ export function ProjectView(props: ProjectViewProps) {
                   activeContextPath={props.activeContextPath}
                   activeContextChat={props.activeContextChat}
                   editorWorkId={editorScope.workId}
-                  routeWorkId={props.activeContextWorkId ?? editorScope.workId}
+                  activeContextWork={props.activeContextWork}
                   localDocumentId={props.activeLocalDocumentId}
                   reviewDocumentId={props.reviewDocumentId}
                   route={props.contextRemovalRoute}
@@ -478,7 +479,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     projectId: props.projectId,
     scheme: props.activeContextScheme,
     path: props.activeContextPath,
-    workId: props.activeContextWorkId,
+    workId: props.activeContextWork,
     rootThreadId: props.activeContextChat,
     addressState: addressStateOf(props.routeIssues?.editor),
   });
@@ -493,7 +494,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     props.editorScope.status === "ready" &&
     props.routeIssues?.editor === "loading" &&
     priorMobile.current?.projectId === props.projectId &&
-    priorMobile.current.workId === props.activeContextWorkId;
+    priorMobile.current.workId === props.activeContextWork;
   const retainedPresentation = retainEditorWhileLoading ? priorMobile.current?.presentation : null;
   const displayedProps = retainedPresentation ? { ...props, ...retainedPresentation } : props;
   const mobileDocumentRoute =
@@ -508,7 +509,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     ) {
       priorMobile.current = {
         projectId: props.projectId,
-        workId: props.activeContextWorkId,
+        workId: props.activeContextWork,
         presentation: {
           activeContextScheme: props.activeContextScheme,
           activeContextPath: props.activeContextPath,
@@ -703,11 +704,12 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
             activeContextPath: props.activeContextPath,
             activeContextChat: props.activeContextChat,
             activeLocalDocumentId: props.activeLocalDocumentId,
-            editorWorkId: props.activeContextWorkId ?? props.editorScope.workId,
+            editorWorkId: props.editorScope.workId,
+            activeContextWork: props.activeContextWork,
             localDocumentId: props.activeLocalDocumentId,
           }
         : null,
-    requestedWorkId: props.activeContextWorkId,
+    requestedWorkId: props.editorScope.status === "ready" ? props.editorScope.workId : null,
     screen: props.activeScreen,
     contextLive: props.contextLive,
     issue: props.routeIssues?.editor,
@@ -719,7 +721,8 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const frameEditorRoute = resolveEditorFrame({
     screen: props.activeScreen,
     requested: {
-      editorWorkId: props.activeContextWorkId,
+      editorWorkId: props.editorScope.workId,
+      activeContextWork: props.activeContextWork,
       activeContextScheme: props.activeContextScheme,
       activeContextPath: props.activeContextPath,
       activeContextChat: props.activeContextChat,
@@ -728,6 +731,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     mounted: mountedEditor
       ? {
           editorWorkId: mountedEditor.editorWorkId,
+          activeContextWork: mountedEditor.activeContextWork,
           activeContextScheme: mountedEditor.activeContextScheme,
           activeContextPath: mountedEditor.activeContextPath,
           activeContextChat: mountedEditor.activeContextChat,

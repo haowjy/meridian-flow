@@ -1,6 +1,5 @@
 /** Pure selection and represented-removal obligation protocol. */
 
-import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import type { ContextTab } from "@/client/stores";
 import { canonicalDocumentPath } from "../routing/local-document-address";
 import { type ContextRouteTarget, sameContextTarget } from "../routing/project-route";
@@ -179,29 +178,6 @@ export function beginSelection(
   return {
     selection: next,
     planning: settleObligations(selection, null, { kind: "none" }, "never"),
-    rejection: null,
-    retireReentryGuard: false,
-  };
-}
-
-/** Supersedes old-Work continuity without ever offering it for promotion. */
-export function supersedeSelectionForWorkChange(
-  selection: ContextRouteSelection,
-  locator: ContextRouteTarget | null,
-  reentryGuard: TerminalRouteRemoval | null = null,
-): SelectionTransition {
-  if (selection.status === "bound" && locator && sameLocator(selection.locator, locator))
-    return { selection, planning: [], rejection: null, retireReentryGuard: false };
-  const revision = selection.revision + 1;
-  const next: ContextRouteSelection = locator
-    ? { status: "candidate", revision, locator, obligations: [], reentryGuard }
-    : { status: "none", revision };
-  return {
-    selection: next,
-    planning:
-      selection.status === "candidate"
-        ? settleObligations(selection, null, { kind: "none" }, "never")
-        : [],
     rejection: null,
     retireReentryGuard: false,
   };
@@ -407,11 +383,7 @@ export function reduceRepresentedRemoval(
       },
     };
   }
-  // A review removal addresses its own Work's route, not whichever Work is routed now.
-  const locator = routeTargetForTab(
-    represented,
-    (intent.reviewOwner && workIdOfDraftOwnerKey(intent.reviewOwner)) || selection.locator.workId,
-  );
+  const locator = routeTargetForTab(represented);
   const identity: ContextRouteIdentity = {
     kind: represented.kind === "new" ? "local" : "server",
     documentId: represented.documentId,

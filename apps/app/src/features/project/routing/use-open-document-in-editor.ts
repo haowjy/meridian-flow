@@ -1,5 +1,5 @@
 /** The shared Editor open path for a document locator or an already-resolved view. */
-import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback } from "react";
 import { type ContextTab, isEditorContextTab } from "@/client/stores";
@@ -26,7 +26,8 @@ export function openDocumentInEditor(
     {
       scheme: target.scheme,
       path: target.path,
-      workId: (review && workIdOfDraftOwnerKey(review.ownerKey)) || target.workId || undefined,
+      // The owner is a Scratch note's alone; a draft's owner travels as `reviewOwner`.
+      ...(isWorkScopedScheme(target.scheme) && target.workId ? { workId: target.workId } : {}),
       ...(tab ? { documentId: tab.documentId } : {}),
       ...(target.rootThreadId ? { rootThreadId: target.rootThreadId } : {}),
     },

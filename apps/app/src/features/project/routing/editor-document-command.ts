@@ -1,4 +1,5 @@
 import { type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts/branches";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import {
   type ContextTab,
   getContextTabs,
@@ -12,7 +13,6 @@ import {
   useContextTabsStore,
 } from "@/client/stores";
 import { armEditorFocus } from "@/features/editor/focus-on-open";
-import { routeTargetForTab } from "../context/context-removal-planner";
 import type { RouteBindingProof } from "../context/context-removal-protocol";
 import { contextTabMatchesRoute } from "../context/context-tab-identity";
 import { addressReviewOwner } from "./document-address-review";
@@ -25,7 +25,7 @@ import type { OpenContextRoute } from "./ProjectNavigationContext";
 import { type ProjectAddress, type ProjectDestination, scratchOwnerKey } from "./project-address";
 import { resolveLocalDocumentSelection } from "./project-local-selection";
 import type { createProjectNavigation } from "./project-navigation";
-import type { ContextRouteRequest, ContextRouteTarget } from "./project-route";
+import type { ContextRouteTarget } from "./project-route";
 
 type Navigation = ReturnType<typeof createProjectNavigation>;
 export type EditorCommandSnapshot = {
@@ -57,8 +57,8 @@ export function createEditorDocumentCommand({
     const navigation = current.navigation;
     const ticket = navigation.capture();
     try {
-      const resolvedWorkId = request.workId ?? current.editorWorkId;
-      const requested = { ...request, workId: resolvedWorkId ?? undefined };
+      const scope = current.editorWorkId;
+      const requested = routeTargetOwner(request, scope);
       // Identity decides sameness once the address has resolved; the path is
       // only the fallback before that.
       const sameDocument = projectAddressMatchesContextTarget(
@@ -68,7 +68,7 @@ export function createEditorDocumentCommand({
       );
       // A review launch carries the locator its draft row captured, which a rename or a
       // reused path can have outdated. Identity decides where that document is now.
-      let target: ContextRouteRequest = requested;
+      let target: ContextRouteTarget = requested;
       if (options?.replaceIfSameDocument === true) {
         target = await resolveLaunchLocator({
           requested,
@@ -77,7 +77,7 @@ export function createEditorDocumentCommand({
           addressNamesIt: sameDocument,
           draftOnly: options.tab !== undefined && isDraftOnly(options.tab),
           catalog: current.documentCatalog,
-          selected: !!options.itemKey && !!requested.workId,
+          selected: !!options.itemKey && scope !== null,
           lookup,
         });
         if (options.isCurrent?.() === false) return { kind: "superseded" };
@@ -94,10 +94,8 @@ export function createEditorDocumentCommand({
         options?.tab ?? openDraftOnlyTabFor(getContextTabs(projectId).tabs, requested);
       const reviewOwner =
         options?.reviewOwner ??
-        (addressedTab ? reviewOwnerOfTab(addressedTab, requested.workId) : undefined) ??
-        (sameDocument
-          ? (addressReviewOwner(current.address, requested.workId ?? null) ?? undefined)
-          : undefined);
+        (addressedTab ? reviewOwnerOfTab(addressedTab, scope) : undefined) ??
+        (sameDocument ? (addressReviewOwner(current.address, scope) ?? undefined) : undefined);
       const itemKey =
         options?.itemKey ??
         (addressedTab && reviewOwner
@@ -105,7 +103,7 @@ export function createEditorDocumentCommand({
           : undefined) ??
         (sameDocument ? current.address.itemKey : undefined);
       const next = prepareEditorDestination(
-        { projectId, accountId, address: current.address },
+        { projectId, accountId, address: current.address, scope },
         target,
         preparedTab,
         itemKey,
@@ -123,26 +121,26 @@ export function createEditorDocumentCommand({
         if (preparedTab) {
           const installed = useContextTabsStore.getState().openTab(projectId, preparedTab);
           if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
-          if (installed.tab.kind === "tracked" && resolvedWorkId)
+          if (installed.tab.kind === "tracked" && scope)
             admitDraftReview(
               installed.tab,
-              reviewOwner ?? draftOwnerKey({ kind: "work", workId: resolvedWorkId }),
+              reviewOwner ?? draftOwnerKey({ kind: "work", workId: scope }),
             );
           selected = installed.tab;
           installedTab = installed.tab;
           if (options?.focus && installed.tab.tabInstanceId)
             armEditorFocus(installed.tab.tabInstanceId);
         }
-        if (selected && resolvedWorkId)
+        if (selected && scope)
           void useContextTabsStore.getState().selectTab(projectId, selected.documentId, selected);
         // The writer opened this document: the route is its own from the first frame, whatever
         // another document holds at its cached path. A pasted or reloaded URL names none.
-        if (target.documentId && target.path && resolvedWorkId && !next.state)
+        if (target.documentId && target.path && scope && !next.state)
           enterRoute(
             {
               scheme: target.scheme,
               path: `/${canonicalDocumentPath(target.path)}`,
-              workId: resolvedWorkId,
+              ...(target.workId ? { workId: target.workId } : {}),
               ...(target.rootThreadId ? { rootThreadId: target.rootThreadId } : {}),
             },
             target.documentId,
@@ -195,17 +193,31 @@ export function createEditorDocumentCommand({
   };
 }
 
+/**
+ * Callers name a Work for any document they open; only a Work's Scratch note has one, and an
+ * unnamed one is the scope's. The route's locator carries nothing else.
+ */
+function routeTargetOwner(request: ContextRouteTarget, scope: string | null): ContextRouteTarget {
+  const { workId, ...rest } = request;
+  if (!isWorkScopedScheme(request.scheme) || request.rootThreadId) return rest;
+  const owner = workId ?? scope;
+  return owner ? { ...rest, workId: owner } : rest;
+}
+
 export function prepareEditorDestination(
   {
     projectId,
     accountId,
     address,
+    scope,
   }: {
     projectId: string;
     accountId: string;
     address: ProjectAddress;
+    /** The Work scope; null while the Works list has not resolved. */
+    scope: string | null;
   },
-  target: ContextRouteRequest,
+  target: ContextRouteTarget,
   preparedTab?: ContextTab,
   itemKey?: string,
   reviewOwner?: string,
@@ -213,18 +225,15 @@ export function prepareEditorDestination(
 ) {
   let state: Record<string, unknown> | undefined;
   const workspace = getContextTabs(projectId);
-  const resolvedWorkId = target.workId;
   const documentId =
     target.documentId ??
-    (target.path === "" && resolvedWorkId
-      ? (selectedDocumentIdOf(workspace) ?? undefined)
-      : undefined);
+    (target.path === "" && scope ? (selectedDocumentIdOf(workspace) ?? undefined) : undefined);
   const eligible = workspace.tabs.filter(isEditorContextTab);
   const addressedDraft =
-    itemKey && documentId && resolvedWorkId
+    itemKey && documentId && scope
       ? eligible.find((tab) =>
           matchesReviewItem(tab, {
-            reviewOwner: reviewOwner ?? draftOwnerKey({ kind: "work", workId: resolvedWorkId }),
+            reviewOwner: reviewOwner ?? draftOwnerKey({ kind: "work", workId: scope }),
             reviewItemKey: itemKey,
           }),
         )
@@ -233,9 +242,7 @@ export function prepareEditorDestination(
     addressedDraft ??
     (documentId
       ? eligible.find((tab) => tab.documentId === documentId)
-      : resolvedWorkId
-        ? eligible.find((tab) => contextTabMatchesRoute(tab, { ...target, workId: resolvedWorkId }))
-        : undefined);
+      : eligible.find((tab) => contextTabMatchesRoute(tab, target)));
   const selected = preparedTab ?? tab;
   // A locally created document keeps its stable selection even when its
   // readable address is reused or its background placement is rejected.
@@ -259,12 +266,12 @@ export function prepareEditorDestination(
       resourceHandle: selected.resourceHandle,
     };
     // Pointer identity is ready now; Editor Work membership waits for resolution.
-    const resolved = resolvedWorkId
+    const resolved = scope
       ? resolveLocalDocumentSelection({
           pointer,
           accountId: accountId,
           projectId,
-          workId: routeTargetForTab(selected, resolvedWorkId).workId,
+          workId: scope,
           hydrated: true,
           tabs,
         })
@@ -276,12 +283,10 @@ export function prepareEditorDestination(
     ? { kind: "document", scheme: target.scheme, path: canonicalDocumentPath(target.path) }
     : { kind: "editor" };
   // Only a Scratch document and a draft item put an owner in the address; the scope never is one.
-  const workOwner = resolvedWorkId
-    ? draftOwnerKey({ kind: "work", workId: resolvedWorkId })
-    : undefined;
+  const workOwner = scope ? draftOwnerKey({ kind: "work", workId: scope }) : undefined;
   const scratchOwner =
-    target.scheme === "scratch" && (resolvedWorkId || target.rootThreadId)
-      ? scratchOwnerKey({ workId: resolvedWorkId ?? "", rootThreadId: target.rootThreadId })
+    target.scheme === "scratch" && (target.workId || target.rootThreadId)
+      ? scratchOwnerKey({ workId: target.workId ?? "", rootThreadId: target.rootThreadId })
       : undefined;
   const owner = !target.path
     ? undefined
@@ -304,22 +309,20 @@ export function prepareEditorDestination(
 }
 function openDraftOnlyTabFor(
   tabs: readonly ContextTab[],
-  request: ContextRouteRequest,
+  request: ContextRouteTarget,
 ): ContextTab | undefined {
-  if (!request.workId) return undefined;
-  const workId = request.workId;
   return tabs
     .filter(isEditorContextTab)
     .find(
       (tab) =>
         isDraftOnly(tab) &&
         (request.documentId === undefined || tab.documentId === request.documentId) &&
-        contextTabMatchesRoute(tab, { ...request, workId }),
+        contextTabMatchesRoute(tab, request),
     );
 }
 
 /** A prepared tab states the locator the route will use, not the one it was built from. */
-function tabAtLocator(tab: ContextTab, locator: ContextRouteRequest): ContextTab {
+function tabAtLocator(tab: ContextTab, locator: ContextRouteTarget): ContextTab {
   if (tab.kind === "new" || (tab.scheme === locator.scheme && tab.path === locator.path))
     return tab;
   return {

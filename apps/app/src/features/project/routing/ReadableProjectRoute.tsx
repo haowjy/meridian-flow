@@ -50,6 +50,7 @@ import { ProjectDocumentNavigationProvider } from "../context/open-project-docum
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useRemovalRecord } from "../context/use-removal-record";
 import { ProjectView } from "../ProjectView";
+import type { ReviewAddress } from "../presented-document";
 import type { ScreenKey } from "../shell/screens";
 import { useWorkScopeState } from "../use-work-scope";
 import { ChatNavigationProvider, useProjectChatNavigation } from "./chat-navigation";
@@ -99,7 +100,6 @@ import {
   type PreparedWorkspaceNavigation,
 } from "./project-navigation";
 import type {
-  ContextRouteRequest,
   ContextRouteTarget,
   NavigationOptions,
   ProjectRouteCommands,
@@ -280,12 +280,20 @@ function ReadableProjectDestination({
     destination.kind === "document" && !resourceDestination ? destination : null;
   // A Scratch address names its own owner, whatever the scope: a chat's lineage, else a Work.
   const lineage = addressLineage(address);
-  // The Work the address's locators carry: a Scratch address's owner, else the scope's.
-  const locatorWorkId = addressScratchWorkId(address) ?? workId;
+  // The owner a locator carries is a Scratch note's alone; the scope never is one.
+  const scratchWork = addressScratchWorkId(address);
+  const locatorOwner: Pick<ContextRouteTarget, "workId" | "rootThreadId"> =
+    documentDestination?.scheme === "scratch"
+      ? lineage
+        ? { rootThreadId: lineage }
+        : scratchWork
+          ? { workId: scratchWork }
+          : {}
+      : {};
   const addressOwner: ContextOwner =
     documentDestination?.scheme !== "scratch"
       ? { workId: null }
-      : contextOwner(locatorWorkId, lineage);
+      : contextOwner(scratchWork ?? null, lineage);
   const addressSchemes = useMemo(
     () => (documentDestination ? [documentDestination.scheme] : []),
     [documentDestination?.scheme],
@@ -358,12 +366,11 @@ function ReadableProjectDestination({
   const reviewBindingEnded =
     selection.status === "bound" && selection.by === "review" && !address.itemKey;
   const boundDocumentId =
-    documentDestination && locatorWorkId !== null && !reviewBindingEnded
+    documentDestination && !reviewBindingEnded
       ? routeSelectionDocumentId(selection, {
           scheme: documentDestination.scheme,
           path: documentDestination.path,
-          workId: locatorWorkId,
-          rootThreadId: lineage,
+          ...locatorOwner,
         })
       : null;
   const localDocumentAddress = useMemo(
@@ -461,7 +468,7 @@ function ReadableProjectDestination({
       ? `${boundDocumentId}|${documentDestination.scheme}|${documentDestination.path}`
       : null;
   useEffect(() => {
-    if (!heldAttempt || !boundDocumentId || !documentDestination || !locatorWorkId) return;
+    if (!heldAttempt || !boundDocumentId || !documentDestination) return;
     // A plain ticket: a delayed repair must not retire the writer's pending navigation.
     const navigation = latest.current.navigation;
     const ticket = navigation?.capture();
@@ -470,8 +477,7 @@ function ReadableProjectDestination({
       contextRemoval.unbindRoute(projectId, boundDocumentId, {
         scheme: documentDestination.scheme,
         path: documentDestination.path,
-        workId: locatorWorkId,
-        rootThreadId: lineage,
+        ...locatorOwner,
       });
     void availability.resolveForOpen(projectId, boundDocumentId).then((answer) => {
       const located = answer.kind === "available" ? parseContextUri(answer.entry.uri) : null;
@@ -488,11 +494,11 @@ function ReadableProjectDestination({
           scheme: located.scheme,
           path: located.path,
           // A moved document may live in another Work's Scratch.
-          workId:
-            answer.kind === "available" && answer.authority.kind === "work"
-              ? answer.authority.workId
-              : locatorWorkId,
-          ...(lineage ? { rootThreadId: lineage } : {}),
+          ...(located.scheme === "scratch" &&
+          answer.kind === "available" &&
+          answer.authority.kind === "work"
+            ? { workId: answer.authority.workId }
+            : locatorOwner),
           documentId: boundDocumentId,
         },
         { replace: true, isCurrent: current },
@@ -522,8 +528,7 @@ function ReadableProjectDestination({
     documentResult,
     selection,
     documentDestination,
-    locatorWorkId,
-    lineage,
+    locatorOwner,
     reviewOwner,
   );
   useLayoutEffect(() => {
@@ -587,19 +592,18 @@ function ReadableProjectDestination({
       reviewGone ||
       localDocumentAddress ||
       destination.kind !== "document" ||
-      !locatorWorkId ||
       selection.status !== "candidate" ||
       !selectionAtRoute(selection, {
         scheme: destination.scheme,
         path: destination.path,
-        workId: locatorWorkId,
-        rootThreadId: lineage,
+        ...locatorOwner,
       })
     )
       return;
     contextRemoval.rejectRouteCandidate(projectId, selection.revision);
   }, [
-    lineage,
+    locatorOwner.workId,
+    locatorOwner.rootThreadId,
     contextRemoval,
     destination,
     documentLookup.data,
@@ -607,7 +611,6 @@ function ReadableProjectDestination({
     localDocumentAddress,
     projectId,
     selection,
-    locatorWorkId,
   ]);
   useLayoutEffect(() => {
     if (!reviewGone || !navigation) return;
@@ -679,18 +682,19 @@ function ReadableProjectDestination({
     };
   }
   const contextDestination = useCallback(
-    (target: ContextRouteRequest, preparedTab?: ContextTab, itemKey?: string) =>
+    (target: ContextRouteTarget, preparedTab?: ContextTab, itemKey?: string) =>
       prepareEditorDestination(
         {
           projectId,
           accountId: user.userId,
           address: latest.current.address,
+          scope: workId,
         },
         target,
         preparedTab,
         itemKey,
       ),
-    [projectId, user.userId],
+    [projectId, user.userId, workId],
   );
   // A document the server never accepted keeps its stable local identity when its placement is
   // refused, and the route bound to it follows that identity back to Unfiled. Its own tab already
@@ -709,32 +713,26 @@ function ReadableProjectDestination({
   useEffect(() => {
     if (!departedLocalTab || !workId) return;
     void openContext(
-      { ...routeTargetForTab(departedLocalTab, workId), documentId: departedLocalTab.documentId },
+      { ...routeTargetForTab(departedLocalTab), documentId: departedLocalTab.documentId },
       { replace: true },
     );
   }, [departedLocalTab?.documentId, workId, openContext]);
   const setEditorReviewItemKey = useCallback(
-    (itemKey: string | null, changeId?: string, ownerKey?: string) => {
+    (review: ReviewAddress | null) => {
       const current = latest.current;
       if (!current.navigation) return;
       const ticket = current.navigation.capture();
       const { address } = current;
-      if (!itemKey) contextRemoval.adoptReviewBinding(projectId);
-      // A draft's owner is part of its link: the pin's owner, else the scope's Work.
-      const next = itemKey
+      if (!review) contextRemoval.adoptReviewBinding(projectId);
+      // A draft's owner is part of its link: the pin's owner.
+      const next = review
         ? {
             ...address,
-            owner:
-              (ownerKey as DraftOwnerKey | undefined) ??
-              address.owner ??
-              (current.editorWorkId
-                ? draftOwnerKey({ kind: "work", workId: current.editorWorkId })
-                : undefined),
-            itemKey,
-            changeId,
+            owner: review.ownerKey as DraftOwnerKey,
+            itemKey: review.itemKey,
+            changeId: review.changeId,
           }
         : withoutReview(address);
-      if (itemKey && !next.owner) return;
       void current.navigation.replaceIfCurrent(ticket, next);
     },
     [contextRemoval, projectId],
@@ -836,8 +834,8 @@ function ReadableProjectDestination({
       : null;
   const search: ProjectSearch = {
     screen: activeScreen,
-    work: locatorWorkId ?? undefined,
-    chat: documentDestination?.scheme === "scratch" ? lineage : undefined,
+    work: locatorOwner.workId,
+    chat: locatorOwner.rootThreadId,
     scheme: localDocumentId
       ? (localTarget?.scheme ?? "unfiled")
       : destination.kind === "document"
@@ -866,7 +864,7 @@ function ReadableProjectDestination({
       });
       if (tab)
         return openContext(
-          { ...routeTargetForTab(tab, workId), documentId: tab.documentId },
+          { ...routeTargetForTab(tab), documentId: tab.documentId },
           {
             ...options,
             ...(editorContainerAddress?.documentId === tab.documentId &&
@@ -954,7 +952,7 @@ function ReadableProjectDestination({
             }}
             activeLocalDocumentId={editorDocument.localDocumentId}
             activeContextScheme={editorDocument.activeContextScheme}
-            activeContextWorkId={locatorWorkId}
+            activeContextWork={locatorOwner.workId ?? null}
             activeContextPath={editorDocument.activeContextPath}
             activeContextChat={editorDocument.activeContextChat}
             reviewItemKey={address.itemKey}

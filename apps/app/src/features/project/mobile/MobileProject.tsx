@@ -54,7 +54,8 @@ export function MobileProject(props: MobileProjectProps) {
   const { selection } = useContextRemovalProject(props.projectId);
   useFollowOpenDocumentPlacement({
     projectId: props.projectId,
-    editorWorkId: props.activeContextWorkId ?? props.editorWorkId,
+    editorWorkId: props.editorWorkId,
+    activeContextWork: props.activeContextWork,
     selection,
     activeContextScheme: props.activeContextScheme,
     activeContextPath: props.activeContextPath,
@@ -195,13 +196,13 @@ function renderActiveView(
       return (
         <DraftReviewBoundary value={props.presentedReview}>
           <EditorReviewIntentClaimant
-            editorWorkId={props.activeContextWorkId ?? props.editorScope.workId}
+            editorWorkId={props.editorScope.workId}
             activeScheme={props.activeContextScheme}
           />
           {props.activeContextPath || localTab ? (
             <MobileDocumentHost
               projectId={props.projectId}
-              editorWorkId={props.activeContextWorkId ?? props.editorScope.workId}
+              editorWorkId={props.editorScope.workId}
               route={props.mobileDocumentRoute}
               localTab={localTab}
             />

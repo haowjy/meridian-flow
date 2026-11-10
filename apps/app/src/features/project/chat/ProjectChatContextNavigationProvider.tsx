@@ -38,14 +38,14 @@ import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { BesideChatContext, useOpenChatDocument } from "../context/open-chat-document";
 import { claimOpenIntent, isCurrentOpenIntent } from "../context/open-intent";
 import { useReviewingLinkDestination } from "../review-launch";
-import type { ContextRouteRequest } from "../routing/project-route";
+import type { ContextRouteTarget } from "../routing/project-route";
 import { canonicalDoorUri } from "./canonical-door-uri";
 import { usePassageDoors } from "./usePassageDoors";
 
 /** The review handoff never consults its live destination for a hidden document. */
 const reviewOnly: LinkDestination = async () => undefined;
 
-type OpenContextTarget = (target: ContextRouteRequest) => void;
+type OpenContextTarget = (target: ContextRouteTarget) => void;
 
 type RouteTarget = NonNullable<ReturnType<typeof contextRouteTargetFromUri>>;
 

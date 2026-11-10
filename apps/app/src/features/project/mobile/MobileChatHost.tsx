@@ -7,7 +7,7 @@
  */
 import type { Work } from "@meridian/contracts/protocol";
 import { ChatScreen } from "../chat/ChatScreen";
-import type { ContextRouteRequest } from "../routing/project-route";
+import type { ContextRouteTarget } from "../routing/project-route";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
 
 export type MobileChatHostProps = {
@@ -15,7 +15,7 @@ export type MobileChatHostProps = {
   threadId: string | null;
   activeWork: Work | null;
   availableWorks: readonly Work[];
-  onOpenContextTarget?: (target: ContextRouteRequest) => void;
+  onOpenContextTarget?: (target: ContextRouteTarget) => void;
 };
 
 export function MobileChatHost({

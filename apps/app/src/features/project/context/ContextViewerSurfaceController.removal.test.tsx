@@ -161,7 +161,7 @@ it("persists and admits the real New action without an empty working-set route",
   });
   useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: false });
   await rehydrateEditorWorkspace(`new-action-${crypto.randomUUID()}`);
-  let search: ProjectSearch = { screen: "context", work: "work-a" };
+  let search: ProjectSearch = { screen: "context" };
   let releaseLocalRoute: (() => void) | null = null;
 
   function Harness() {
@@ -189,7 +189,6 @@ it("persists and admits the real New action without an empty working-set route",
           activeContextScheme={route.scheme}
           activeContextPath={route.path}
           editorWorkId="work-a"
-          routeWorkId="work-a"
           route={{
             transition: acceptContextTransition,
             readSearch: () => search,

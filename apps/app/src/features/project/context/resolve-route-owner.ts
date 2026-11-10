@@ -10,7 +10,10 @@ import { type ContextRouteSelection, routeSelectionDocumentId } from "./context-
 import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
 
 export type VisibleEditorRoute = {
+  /** The Work scope. */
   editorWorkId: string | null;
+  /** A Work's Scratch route: its owning Work. Null for every other document. */
+  activeContextWork?: string | null;
   localDocumentId?: string | null;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
@@ -22,6 +25,7 @@ export function resolveRouteOwner({
   selectedTabId,
   selection,
   editorWorkId,
+  activeContextWork,
   localDocumentId,
   activeContextScheme,
   activeContextPath,
@@ -37,7 +41,7 @@ export function resolveRouteOwner({
       ? {
           scheme: activeContextScheme,
           path: activeContextPath,
-          workId: editorWorkId,
+          ...(activeContextWork ? { workId: activeContextWork } : {}),
           ...(activeContextChat ? { rootThreadId: activeContextChat } : {}),
         }
       : null;
