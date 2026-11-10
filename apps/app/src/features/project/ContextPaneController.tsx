@@ -37,7 +37,7 @@ import {
   useCaptureProjectNavigation,
 } from "./routing/ProjectNavigationContext";
 import type { ProjectRouteMask } from "./routing/ProjectRouteBoundary";
-import type { NavigationOptions } from "./routing/project-route";
+import { contextRouteRequest, type NavigationOptions } from "./routing/project-route";
 import { openDocumentInEditor } from "./routing/use-open-document-in-editor";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
@@ -397,7 +397,9 @@ export function ContextViewerSurfaceController({
       onOpenExisting={(scheme, path, owner) => {
         // A chat's Scratch note is addressed by its lineage.
         if (owner.rootThreadId)
-          void onOpenContextTarget({ scheme, path, rootThreadId: owner.rootThreadId });
+          void onOpenContextTarget(
+            contextRouteRequest({ scheme, path, rootThreadId: owner.rootThreadId }),
+          );
         else onSelectContextPath(path, scheme);
       }}
     />

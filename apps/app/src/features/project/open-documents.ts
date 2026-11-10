@@ -38,6 +38,7 @@ import {
   useProjectScreen,
 } from "@/features/project/routing/ProjectNavigationContext";
 import { openDocumentInEditor } from "@/features/project/routing/use-open-document-in-editor";
+import { contextRouteRequest } from "./routing/project-route";
 
 export { type TabView, useSelectedDocumentId } from "@/client/stores";
 
@@ -273,15 +274,7 @@ export function useOpenDocumentActions(projectId: string): {
         await openDocumentInEditor(openRoute, tab, { review });
         return;
       }
-      await openRoute(
-        {
-          scheme: tab.scheme,
-          path: tab.path,
-          workId: tab.workId ?? activeWorkId ?? undefined,
-          documentId: tab.documentId,
-        },
-        { tab },
-      );
+      await openRoute(contextRouteRequest({ ...tab, workId: tab.workId ?? activeWorkId }), { tab });
     },
     [openRoute, activeWorkId],
   );

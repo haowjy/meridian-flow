@@ -15,6 +15,7 @@ import { contextTabFromFile } from "../context/context-tab-from-file";
 import { resolveRouteDocumentOwner } from "../context/route-document-owner";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import type { ProjectRouteIssue } from "../routing/ProjectRouteBoundary";
+import { contextRouteRequest } from "../routing/project-route";
 
 export type AddressState = "pending" | "failed" | "settled";
 
@@ -92,12 +93,12 @@ export function resolveMobileDocumentRoute(input: {
   // Identity before path, exactly as the desktop's route owner reads it.
   const rootThreadId = input.rootThreadId ?? undefined;
   const owner = resolveRouteDocumentOwner({
-    locator: {
+    locator: contextRouteRequest({
       scheme: input.scheme,
       path: input.path,
-      ...(input.workId ? { workId: input.workId } : {}),
+      workId: input.workId,
       rootThreadId,
-    },
+    }),
     boundDocumentId: input.boundDocumentId,
     catalog: input.catalog,
     workspaceTabs: input.workspaceTabs,

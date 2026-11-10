@@ -34,7 +34,7 @@ import type {
 import {
   applyContextRepairIfCurrent,
   type ContextRouteRepair,
-  type ContextRouteTarget,
+  type ContextRouteRequest,
   contextRouteMatchesSearch,
   type ProjectSearch,
   projectSearchEquals,
@@ -88,7 +88,7 @@ export type ContextRemovalRoutePort = {
   ): void;
   transition(
     projectId: string,
-    target: ContextRouteTarget | { kind: "clear" },
+    target: ContextRouteRequest | { kind: "clear" },
     prepared: PreparedWorkspaceNavigation,
   ): Promise<NavigationSettlement>;
 };
@@ -126,7 +126,7 @@ export type BoundDraftsPort = {
 type RemovalFence = {
   selectionRevision: number;
   transitionRevision: number;
-  locator: ContextRouteTarget | null;
+  locator: ContextRouteRequest | null;
   removedDocumentIds: readonly string[];
 };
 
@@ -134,7 +134,7 @@ export type ContextRouteActivation = {
   projectId: string;
   selectionRevision: number;
   transitionRevision: number;
-  locator: ContextRouteTarget;
+  locator: ContextRouteRequest;
   identity: ContextRouteIdentity;
   owner: { kind: "workspace"; tab: ContextTab } | { kind: "route-only" };
 };
@@ -145,7 +145,7 @@ export type RemovedPresentationPort = Pick<RemovedNoticeStore, "presentedRemoved
 type CoordinatorProjectState = {
   activeWorkId: string | null;
   selection: ContextRouteSelection;
-  admitted: ContextRouteTarget | null;
+  admitted: ContextRouteRequest | null;
   removalFence: RemovalFence | null;
   transitionRevision: number;
   terminalRemovals: Map<string, TerminalRouteRemoval>;
@@ -401,7 +401,7 @@ export class ContextRemovalCoordinator {
     projectId: string,
     selectionRevision: number,
     documentId: string,
-    target: ContextRouteTarget,
+    target: ContextRouteRequest,
   ): boolean {
     if (this.unavailable()) return false;
     const state = this.project(projectId);
@@ -474,7 +474,7 @@ export class ContextRemovalCoordinator {
     };
   }
 
-  beginRouteSelection(projectId: string, locator: ContextRouteTarget): number {
+  beginRouteSelection(projectId: string, locator: ContextRouteRequest): number {
     if (this.unavailable()) return this.projects.get(projectId)?.selection.revision ?? 0;
     const state = this.project(projectId);
     const transition = beginSelection(
@@ -489,7 +489,7 @@ export class ContextRemovalCoordinator {
   /** A navigation or review that names a document binds the route it opens: the id is proof. */
   enterRoute(
     projectId: string,
-    locator: ContextRouteTarget,
+    locator: ContextRouteRequest,
     documentId: string,
     by: RouteBindingProof,
   ): void {
@@ -1171,6 +1171,7 @@ export class ContextRemovalCoordinator {
     const search = route?.readSearch(projectId);
     const plan = planCandidateRejection({
       rawRouteWork: search?.work,
+      rawRouteChat: search?.chat,
       revision: rejection.revision,
       rejected: rejection.locator,
       tabs: slice.tabs,
@@ -1256,7 +1257,7 @@ function selectedTabIdFor(slice: ProjectTabsSlice, workId: string | null): strin
   return workId ? selectedDocumentIdOf(slice) : null;
 }
 
-function locatorKey(locator: ContextRouteTarget): string {
+function locatorKey(locator: ContextRouteRequest): string {
   return `${locator.scheme}\u0000${locator.path}\u0000${locator.workId ?? ""}\u0000${locator.rootThreadId ?? ""}`;
 }
 

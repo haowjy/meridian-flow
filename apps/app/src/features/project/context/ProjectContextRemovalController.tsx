@@ -2,6 +2,7 @@
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useLayoutEffect, useMemo, useRef } from "react";
+import { contextRouteRequest } from "../routing/project-route";
 import type { ScreenKey } from "../shell/screens";
 import { useContextRemovalCoordinator } from "./account-feature-context";
 import type { ContextRemovalRoutePort } from "./context-removal-coordinator";
@@ -78,12 +79,12 @@ export function ProjectContextRemovalController({
   useLayoutEffect(() => {
     const locator =
       activeScreen === "context" && activeContextScheme !== null && activeContextPath !== null
-        ? {
+        ? contextRouteRequest({
             scheme: activeContextScheme,
             path: activeContextPath,
-            ...(activeContextWork ? { workId: activeContextWork } : {}),
-            ...(activeContextChat ? { rootThreadId: activeContextChat } : {}),
-          }
+            workId: activeContextWork,
+            rootThreadId: activeContextChat,
+          })
         : null;
     if (previousLocalDocument.current !== localDocumentId) {
       previousLocalDocument.current = localDocumentId;

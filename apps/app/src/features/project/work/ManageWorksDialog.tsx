@@ -64,6 +64,10 @@ export function ManageWorksProvider({ children }: { children: ReactNode }) {
   return <ManageWorksContext.Provider value={value}>{children}</ManageWorksContext.Provider>;
 }
 
+type HistoryAction =
+  | { type: "PUSH" | "REPLACE" | "BACK" | "FORWARD" }
+  | { type: "GO"; index: number };
+
 type View = { kind: "list" } | { kind: "work"; workId: string };
 
 function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose: () => void }) {
@@ -77,7 +81,8 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
   const setGuard = useCallback((next: LeaveGuard | null) => {
     guard.current = next;
   }, []);
-  const leaveVia = (leave: () => void) => (guard.current ? guard.current(leave) : leave());
+  const leaveVia = (leave: () => void, cancel: () => void = () => undefined) =>
+    guard.current ? guard.current(leave, cancel) : leave();
   const close = () => {
     deletion.dismissAll();
     onClose();
@@ -85,12 +90,32 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
   // A change row opens its review in main: the dialog gets out of its way on a push or a
   // traversal, through the goal guard. The shell's own replaces repair the address in place.
   const router = useRouter();
-  const leave = useRef(() => leaveVia(close));
-  leave.current = () => leaveVia(close);
+  const leave = useRef((_: HistoryAction) => leaveVia(close));
+  leave.current = (action) => leaveVia(close, () => undoTraversal(action));
+  // Keeping the goal edit undoes a Back or Forward the writer pressed, so the page under the
+  // dialog stays the one it opened over. The undo's own event must not ask again.
+  const undoing = useRef(false);
+  const undoTraversal = (action: HistoryAction) => {
+    const delta =
+      action.type === "BACK"
+        ? 1
+        : action.type === "FORWARD"
+          ? -1
+          : action.type === "GO"
+            ? -action.index
+            : 0;
+    if (delta === 0) return;
+    undoing.current = true;
+    router.history.go(delta);
+  };
   useEffect(
     () =>
       router.history.subscribe(({ action }) => {
-        if (action.type !== "REPLACE") leave.current();
+        if (undoing.current) {
+          undoing.current = false;
+          return;
+        }
+        if (action.type !== "REPLACE") leave.current(action);
       }),
     [router],
   );

@@ -25,7 +25,7 @@ import type { OpenContextRoute } from "./ProjectNavigationContext";
 import { type ProjectAddress, type ProjectDestination, scratchOwnerKey } from "./project-address";
 import { resolveLocalDocumentSelection } from "./project-local-selection";
 import type { createProjectNavigation } from "./project-navigation";
-import type { ContextRouteTarget } from "./project-route";
+import { type ContextRouteRequest, contextRouteRequest } from "./project-route";
 
 type Navigation = ReturnType<typeof createProjectNavigation>;
 export type EditorCommandSnapshot = {
@@ -49,7 +49,7 @@ export function createEditorDocumentCommand({
   lookup: Parameters<typeof resolveLaunchLocator>[0]["lookup"];
   admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>, ownerKey: string) => void;
   /** Binds the route about to be shown to the document the navigation named. */
-  enterRoute: (locator: ContextRouteTarget, documentId: string, by: RouteBindingProof) => void;
+  enterRoute: (locator: ContextRouteRequest, documentId: string, by: RouteBindingProof) => void;
 }): OpenContextRoute {
   return async (request, options) => {
     const current = read();
@@ -68,7 +68,7 @@ export function createEditorDocumentCommand({
       );
       // A review launch carries the locator its draft row captured, which a rename or a
       // reused path can have outdated. Identity decides where that document is now.
-      let target: ContextRouteTarget = requested;
+      let target: ContextRouteRequest = requested;
       if (options?.replaceIfSameDocument === true) {
         target = await resolveLaunchLocator({
           requested,
@@ -137,12 +137,7 @@ export function createEditorDocumentCommand({
         // another document holds at its cached path. A pasted or reloaded URL names none.
         if (target.documentId && target.path && scope && !next.state)
           enterRoute(
-            {
-              scheme: target.scheme,
-              path: `/${canonicalDocumentPath(target.path)}`,
-              ...(target.workId ? { workId: target.workId } : {}),
-              ...(target.rootThreadId ? { rootThreadId: target.rootThreadId } : {}),
-            },
+            contextRouteRequest({ ...target, path: `/${canonicalDocumentPath(target.path)}` }),
             target.documentId,
             // An address that carries an item is a review: the item owns its path.
             itemKey ? "review" : "navigation",
@@ -193,15 +188,11 @@ export function createEditorDocumentCommand({
   };
 }
 
-/**
- * Callers name a Work for any document they open; only a Work's Scratch note has one, and an
- * unnamed one is the scope's. The route's locator carries nothing else.
- */
-function routeTargetOwner(request: ContextRouteTarget, scope: string | null): ContextRouteTarget {
-  const { workId, ...rest } = request;
-  if (!isWorkScopedScheme(request.scheme) || request.rootThreadId) return rest;
-  const owner = workId ?? scope;
-  return owner ? { ...rest, workId: owner } : rest;
+/** A bare Scratch request takes the scope's Work as its owner. */
+function routeTargetOwner(request: ContextRouteRequest, scope: string | null): ContextRouteRequest {
+  if (request.scheme !== "scratch" || request.workId || request.rootThreadId || !scope)
+    return request;
+  return contextRouteRequest({ ...request, workId: scope });
 }
 
 export function prepareEditorDestination(
@@ -217,7 +208,7 @@ export function prepareEditorDestination(
     /** The Work scope; null while the Works list has not resolved. */
     scope: string | null;
   },
-  target: ContextRouteTarget,
+  target: ContextRouteRequest,
   preparedTab?: ContextTab,
   itemKey?: string,
   reviewOwner?: string,
@@ -309,7 +300,7 @@ export function prepareEditorDestination(
 }
 function openDraftOnlyTabFor(
   tabs: readonly ContextTab[],
-  request: ContextRouteTarget,
+  request: ContextRouteRequest,
 ): ContextTab | undefined {
   return tabs
     .filter(isEditorContextTab)
@@ -322,7 +313,7 @@ function openDraftOnlyTabFor(
 }
 
 /** A prepared tab states the locator the route will use, not the one it was built from. */
-function tabAtLocator(tab: ContextTab, locator: ContextRouteTarget): ContextTab {
+function tabAtLocator(tab: ContextTab, locator: ContextRouteRequest): ContextTab {
   if (tab.kind === "new" || (tab.scheme === locator.scheme && tab.path === locator.path))
     return tab;
   return {

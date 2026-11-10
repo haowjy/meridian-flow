@@ -1,10 +1,12 @@
 /** The shared Editor open path for a document locator or an already-resolved view. */
+
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback } from "react";
 import { type ContextTab, isEditorContextTab } from "@/client/stores";
 import type { ReviewAddress } from "../presented-document";
 import { type OpenContextRoute, useOpenContextRoute } from "./ProjectNavigationContext";
+import { contextRouteRequest } from "./project-route";
 
 type EditorDocument =
   | ({ scheme: ProjectContextTreeScheme; path: string } & ContextOwner)
@@ -23,14 +25,8 @@ export function openDocumentInEditor(
       { replace: false, tab, ...routeOptions },
     );
   return open(
-    {
-      scheme: target.scheme,
-      path: target.path,
-      // The owner is a Scratch note's alone; a draft's owner travels as `reviewOwner`.
-      ...(isWorkScopedScheme(target.scheme) && target.workId ? { workId: target.workId } : {}),
-      ...(tab ? { documentId: tab.documentId } : {}),
-      ...(target.rootThreadId ? { rootThreadId: target.rootThreadId } : {}),
-    },
+    // The owner is a Scratch note's alone; a draft's owner travels as `reviewOwner`.
+    contextRouteRequest({ ...target, documentId: tab?.documentId }),
     {
       replace: false,
       ...routeOptions,

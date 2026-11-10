@@ -6,7 +6,7 @@ import { type ProjectContextTreeScheme, storedFilename } from "@meridian/contrac
 import { useWorks } from "@/client/query/useWorks";
 import { type ContextTab, replaceOwner, type TabOwner } from "@/client/stores";
 import type { OpenContextOptions } from "../routing/ProjectNavigationContext";
-import type { ContextRouteTarget } from "../routing/project-route";
+import { type ContextRouteRequest, contextRouteRequest } from "../routing/project-route";
 import { useAccountResourceReplica } from "./account-feature-context";
 import { documentRow } from "./context-entry-name";
 import {
@@ -54,16 +54,9 @@ export function identityCommitMayNavigate(
 export function identityCommitRoute(
   documentId: string,
   next: Pick<IdentityCommitted, "scheme" | "path" | "workId" | "rootThreadId">,
-): { request: ContextRouteTarget; options: OpenContextOptions } {
+): { request: ContextRouteRequest; options: OpenContextOptions } {
   return {
-    request: {
-      scheme: next.scheme,
-      path: next.path,
-      // The owner is a Scratch note's alone.
-      ...(next.workId && isWorkScopedScheme(next.scheme) ? { workId: next.workId } : {}),
-      ...(next.rootThreadId ? { rootThreadId: next.rootThreadId } : {}),
-      documentId,
-    },
+    request: contextRouteRequest({ ...next, documentId }),
     options: { replace: true },
   };
 }

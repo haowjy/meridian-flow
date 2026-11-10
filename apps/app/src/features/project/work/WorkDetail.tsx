@@ -27,7 +27,7 @@ import { WorkTitleLine } from "./WorkTitleLine";
 import { WorkHeading } from "./WorkTitles";
 
 /** Asks before leaving with an unsaved goal edit; the dialog calls it for Back and close. */
-export type LeaveGuard = (leave: () => void) => void;
+export type LeaveGuard = (leave: () => void, cancel: () => void) => void;
 
 export function WorkDetail({
   projectId,
@@ -54,7 +54,7 @@ export function WorkDetail({
   });
   const { request } = controller;
   useEffect(() => {
-    onGuard((leave) => request({ run: leave, cancel: () => undefined }));
+    onGuard((leave, cancel) => request({ run: leave, cancel }));
     return () => onGuard(null);
   }, [onGuard, request]);
   return (

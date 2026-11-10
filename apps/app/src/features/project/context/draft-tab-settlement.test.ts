@@ -146,7 +146,6 @@ describe("draft tab settlement", () => {
     const revision = coordinator.beginRouteSelection("project-a", {
       scheme: "manuscript",
       path: "/chapter.md",
-      workId: "work-b",
     });
     coordinator.bindRouteSelection(
       "project-a",
@@ -222,7 +221,7 @@ describe("draft tab settlement", () => {
     };
     const coordinator = new ContextRemovalCoordinator("account-a", { route });
     coordinator.registerRoutePort("project-a", route, "work-a");
-    const target = { scheme: "manuscript" as const, path: "/chapter.md", workId: "work-a" };
+    const target = { scheme: "manuscript" as const, path: "/chapter.md" };
     const select = () => {
       const revision = coordinator.beginRouteSelection("project-a", target);
       coordinator.bindRouteSelection(

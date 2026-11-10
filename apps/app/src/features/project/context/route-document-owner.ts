@@ -11,7 +11,7 @@
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ContextTab, ServerContextTab } from "@/client/stores";
 import { isDraftOnly } from "@/client/stores";
-import type { ContextRouteTarget } from "../routing/project-route";
+import type { ContextRouteRequest } from "../routing/project-route";
 import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
 
 export type RouteDocumentOwner =
@@ -44,7 +44,7 @@ export function resolveLiveRouteDocument(input: {
 }
 
 export function resolveRouteDocumentOwner(input: {
-  locator: ContextRouteTarget;
+  locator: ContextRouteRequest;
   boundDocumentId?: string | null;
   catalog: Pick<CatalogContextView, "findDocument" | "findPath"> | null;
   /** The Editor workspace's tabs; only draft-only review tabs of the locator's Work count. */
@@ -67,7 +67,7 @@ function draftOnlyOwner({
   workspaceTabs,
   scope,
 }: {
-  locator: ContextRouteTarget;
+  locator: ContextRouteRequest;
   boundDocumentId?: string | null;
   workspaceTabs?: readonly ContextTab[];
   scope: string | null;
