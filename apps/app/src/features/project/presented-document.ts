@@ -7,7 +7,7 @@ import type { ScreenKey } from "./shell/screens";
 
 /** The route's verdict on an explicit review selector, asked of the server by `{ workId, itemKey }`. */
 export type ReviewAddressAdmission = "pending" | "admitted" | "unavailable" | "failed";
-export type ReviewAddress = { workId: string; itemKey: string; changeId?: string };
+export type ReviewAddress = { ownerKey: string; itemKey: string; changeId?: string };
 export type PresentedDocument = {
   container: "editor" | "dock";
   documentId: string | null;
@@ -21,7 +21,8 @@ export function resolvePresentedDocument(input: {
   phone: boolean;
   screen: ScreenKey;
   editor: {
-    workId: string | null;
+    /** Whose draft the address reviews: a draft owner key (`addressReviewOwner`). */
+    reviewOwner: string | null;
     scheme: ProjectContextTreeScheme | null;
     path: string | null;
     documentId?: string | null;
@@ -40,8 +41,8 @@ export function resolvePresentedDocument(input: {
       path: editor.path,
       draftOnly: editor.draftOnly,
       review:
-        editor.workId && editor.itemKey
-          ? { workId: editor.workId, itemKey: editor.itemKey, changeId: editor.changeId }
+        editor.reviewOwner && editor.itemKey
+          ? { ownerKey: editor.reviewOwner, itemKey: editor.itemKey, changeId: editor.changeId }
           : null,
     };
   }

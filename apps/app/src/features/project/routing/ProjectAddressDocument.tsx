@@ -11,6 +11,7 @@ import {
 } from "@/client/stores";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { canonicalDocumentAddress, canonicalReviewTabPatch } from "./document-address-canonical";
+import { addressReviewOwner } from "./document-address-review";
 import { mergeLocalResourceState } from "./local-document-address";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import { type ProjectAddress, projectAddressHref } from "./project-address";
@@ -58,7 +59,10 @@ export function ProjectAddressDocument({
       !!result &&
       result.kind !== "unavailable" &&
       tab.documentId === result.document.documentId &&
-      matchesReviewItem(tab, { reviewWorkId: workId ?? "", reviewItemKey: reviewItemKey }),
+      matchesReviewItem(tab, {
+        reviewOwner: addressReviewOwner(address, workId) ?? "",
+        reviewItemKey: reviewItemKey,
+      }),
   );
   const reviewLocatorFingerprint = JSON.stringify(
     reviewTab ? { scheme: reviewTab.scheme, path: reviewTab.path, name: reviewTab.name } : null,

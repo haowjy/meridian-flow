@@ -10,7 +10,7 @@ import { admissible, requestedReviewItemKey } from "./editor-review-handoff";
 
 it.each(CONTEXT_URI_SCHEMES)("admits a %s review in its matching document and Work", (scheme) => {
   const intent = {
-    workId: "work",
+    ownerKey: "work:work",
     documentId: "hero",
     itemKey: "draft",
     sequence: 1,
@@ -20,7 +20,7 @@ it.each(CONTEXT_URI_SCHEMES)("admits a %s review in its matching document and Wo
   expect(contextTabFromDraftGroup(intent)).toMatchObject({
     scheme,
     path: "/characters/Hero",
-    reviews: { work: { itemKey: "draft", tabInstanceToken: expect.any(String) } },
+    reviews: { "work:work": { itemKey: "draft", tabInstanceToken: expect.any(String) } },
   });
   const host = { editorWorkId: "work", activeScheme: scheme, documentId: "hero" };
   expect(admissible(intent, host)).toBe(true);
@@ -30,7 +30,7 @@ it.each(CONTEXT_URI_SCHEMES)("admits a %s review in its matching document and Wo
 
 it("requests a warm Editor before admission, retaining only admitted review after failure", () => {
   const intent = {
-    workId: "work",
+    ownerKey: "work:work",
     documentId: "hero",
     itemKey: "draft",
     sequence: 1,

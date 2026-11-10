@@ -140,7 +140,7 @@ describe("reply save refusals (postgres)", () => {
   /** Marks `documentId` as created by `workId`'s active branch, making that branch if need be. */
   async function claimCreate(documentId: string, workId: WorkId, threadId: string) {
     const branch = await branchesOf().ensureActiveForWrite({
-      workId,
+      owner: { kind: "work", workId },
       projectId: PROJECT_ID as never,
       threadId: threadId as never,
       userId: USER_ID as never,
@@ -178,7 +178,10 @@ describe("reply save refusals (postgres)", () => {
   }
   const NEW_ID = "00000000-0000-4000-8000-000000000830";
   const grantFor = (documentId: string, workId = WORK_ID, slug = "atomicity-work") => {
-    const granted = testFileGrant({ kind: "draft", workId, workHandle: slug }, documentId);
+    const granted = testFileGrant(
+      { kind: "draft", owner: { kind: "work", workId }, ownerHandle: slug },
+      documentId,
+    );
     return {
       ...granted,
       principal: { ...granted.principal, accountId: USER_ID as never },

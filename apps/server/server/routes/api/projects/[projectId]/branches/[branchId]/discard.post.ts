@@ -1,12 +1,14 @@
-/** POST /api/projects/:projectId/works/:workId/branches/discard: Discard all, one server command. */
+/** POST /api/projects/:projectId/branches/:branchId/discard: Discard all, one server command. */
+
+import type { BranchId } from "@meridian/contracts";
 import { BranchDiscardAllRequestSchema } from "@meridian/contracts/branches";
-import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
+import type { ProjectId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
-import { requireAppUser } from "../../../../../../../lib/auth-gate.js";
+import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import {
   handleDiscardAllWorkBranchRequest,
   selectBranchRouteServices,
-} from "../../../../../../../lib/branch-review-route.js";
+} from "../../../../../../lib/branch-review-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -16,7 +18,7 @@ export default defineEventHandler(async (event) => {
   }
   const result = await handleDiscardAllWorkBranchRequest(selectBranchRouteServices(app), {
     projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
-    workId: (getRouterParam(event, "workId") ?? "") as WorkId,
+    branchId: (getRouterParam(event, "branchId") ?? "") as BranchId,
     userId: user.userId,
     request: request.data,
   });

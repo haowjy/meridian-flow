@@ -395,7 +395,7 @@
       {
         "path": "apps/server/server/domains/context/adapters/context-catalog.ts",
         "line": "} catch {",
-        "count": 2
+        "count": 1
       },
       {
         "path": "apps/server/server/domains/context/context-catalog-wake-hub.ts",
@@ -722,11 +722,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/features/draft-review/DraftReviewProvider.tsx",
-        "line": "/** The Work whose drafts this scope reviews; its archived state freezes them (D30). */",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/features/draft-review/tree-line.ts",
         "line": "* is renaming this to ch12-old.\"). Live doesn't show either until Apply (D26). Works are named,",
         "count": 1
@@ -754,11 +749,6 @@
       {
         "path": "apps/app/src/features/project/context/context-tab-from-file.ts",
         "line": "* record of a document live deleted while a Work's draft survives is terminal (D79), and",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/project/context/ContextViewer.tsx",
-        "line": "// Archiving freezes the Editor Work's own files and its drafts (D30). A",
         "count": 1
       },
       {
@@ -862,11 +852,6 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/collab/domain/branch-discard.ts",
-        "line": "/** The public command: writer and model. Refuses archived and deleted Works (D30). */",
-        "count": 1
-      },
-      {
         "path": "apps/server/server/domains/collab/domain/branch-review-items.ts",
         "line": "* branch's view does while it has pending changes (D79). It authorizes through the",
         "count": 1
@@ -953,11 +938,6 @@
       },
       {
         "path": "apps/server/server/domains/collab/domain/turn-live-lineage.ts",
-        "line": "* branch of the Work `workId` names (a drafted entry, D26).",
-        "count": 1
-      },
-      {
-        "path": "apps/server/server/domains/collab/domain/turn-live-lineage.ts",
         "line": "* it stays on the turn's receipt after a live delete its draft outlived (D79).",
         "count": 1
       },
@@ -1005,11 +985,6 @@
         "path": "apps/server/server/domains/context/ports/context-port.ts",
         "line": "* version that thread's writes change, per document (D14, D20), or the",
         "count": 2
-      },
-      {
-        "path": "apps/server/server/domains/context/ports/context-port.ts",
-        "line": "/** The Work whose branch this thread's drafted writes land in; null outside draft mode (D40). */",
-        "count": 1
       },
       {
         "path": "apps/server/server/domains/context/ports/document-removal.ts",
@@ -1080,11 +1055,6 @@
         "path": "apps/server/server/domains/file-policy/domain/types.ts",
         "line": "/** The skills a thread's binding names (D52) or its user invoked (D64), as the skill rule reads them. */",
         "count": 2
-      },
-      {
-        "path": "apps/server/server/domains/file-policy/domain/types.ts",
-        "line": "/** Where a write lands: the live document, or a Work's branch (D20). */",
-        "count": 1
       },
       {
         "path": "apps/server/server/domains/observability/ports/event-sink.ts",
@@ -1314,11 +1284,6 @@
       {
         "path": "apps/server/server/domains/runtime/tools/work-result.ts",
         "line": "* The `work` result (D65): the typed values the handler returns, and the short",
-        "count": 1
-      },
-      {
-        "path": "apps/server/server/domains/threads/domain/thread-execution-context.ts",
-        "line": "/** Draft mode writes drafts in the Work the chat is bound to at the time of the call (D62). */",
         "count": 1
       },
       {

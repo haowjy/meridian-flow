@@ -9,6 +9,7 @@
 import { z } from "zod";
 import type { ParsedContextUri } from "../context-uri.js";
 import type { BranchCommandId, BranchId, DraftItemKey } from "../ids.js";
+import type { DraftOwnerKey } from "./owner.js";
 
 /** A UUID the client mints once per writer command; resends reuse it (contract §4.6). */
 export const BranchCommandIdSchema = z.string().uuid();
@@ -48,6 +49,7 @@ export type ApplyClickRefusalReason =
   | "unsynced"
   | "malformed"
   | "work_archived"
+  | "chat_frozen"
   | "work_deleted"
   | "not_found"
   | "ancestor_taken";
@@ -160,13 +162,16 @@ export interface ThreadDraftListItem {
   } | null;
   /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
+  /**
+   * The text draft's last committed write (content-free folds keep it), which a whole-item
+   * Discard sends back as `draftSeenAt`. Meaningless when `hasDraft` is false.
+   */
   updatedAt: string;
 }
 
 /**
  * One document's draft in an active branch, for the hint on an open document. The branch is
- * named by its own `label`; `originWorkId` is the branch's origin Work, which today's review
- * address still needs and a branch without an origin Work will not have.
+ * named by its own `label`; `owner` is who owns it, which the review address names.
  */
 export interface DocumentDraftHint {
   branchId: BranchId;
@@ -174,7 +179,7 @@ export interface DocumentDraftHint {
   itemKey: DraftItemKey;
   /** How the branch is named to the writer; null when it has no name (the client words that). */
   label: string | null;
-  originWorkId: string | null;
+  owner: DraftOwnerKey;
   /**
    * The branch's move or delete of the document, which live doesn't show until Apply (D26):
    * where the branch puts it, or that it deletes it. Null when the branch only edits its text.
@@ -188,6 +193,12 @@ export interface DocumentDraftHintsResponse {
 
 export interface ThreadDraftListResponse {
   items: ThreadDraftListItem[];
+  /**
+   * The owner is a conversation lineage with no live chat (every chat in it is in Trash):
+   * its drafts take no text and no Apply, only a whole Discard, until a chat is restored.
+   * Always false for a Work, whose archive state the Work itself carries.
+   */
+  frozen: boolean;
 }
 
 /** SQL-only addressed lookup; no text room is loaded or created. */
@@ -230,7 +241,13 @@ export type DraftItemSettlement = {
   itemDisposition?: "applied" | "discarded";
 };
 
-export type DraftDiscardRefusalStatus = "stale" | "gone" | "whole_item" | "incomplete_class";
+/** `draft_changed`: the text draft moved on since the writer saw it (`draftSeenAt`); nothing ended. */
+export type DraftDiscardRefusalStatus =
+  | "stale"
+  | "gone"
+  | "whole_item"
+  | "incomplete_class"
+  | "draft_changed";
 
 export type DraftDiscardResponse =
   | ({
@@ -240,12 +257,18 @@ export type DraftDiscardResponse =
     } & DraftItemSettlement)
   | { status: DraftDiscardRefusalStatus; branchId: BranchId; itemKey: DraftItemKey };
 
-/** End one still-hidden creation's branch use; edited-text Discard is browser-local. */
+/**
+ * One item's Discard on the server. `tree` ends only the branch's move or delete: a live chat's
+ * Discard, whose text the writer reverts in the room. `item` ends everything the branch holds
+ * on the document: a still-hidden creation, or a frozen owner's draft, whose room refuses the
+ * writer's text. `draftSeenAt` is the item's `updatedAt` the writer decided on (null: no text
+ * draft); when sent, a draft that moved on refuses as `draft_changed`.
+ */
 export type DraftDiscardRequest = {
   branchId: BranchId;
   itemKey: DraftItemKey;
   commandId: BranchCommandId;
-};
+} & ({ ends: "tree" } | { ends: "item"; draftSeenAt?: string | null });
 
 export const BranchDiscardAllRequestSchema = z.object({
   /** A `branches` row id (D68), never a per-document draft id. */

@@ -1,4 +1,4 @@
-/** One project lifecycle owner settles remote dispositions for every Work with draft-only presentations. */
+/** One project lifecycle owner settles remote dispositions for every owner with draft-only presentations. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { resourceIdentityIndex } from "@meridian/resource-replica";
@@ -7,7 +7,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
-import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
+import { cachedOwnerDrafts, catalogOwnerOf, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import {
   useObservedResourceProjection,
   useOptionalAccountResourceReplica,
@@ -24,11 +24,11 @@ import type { DraftRef } from "./review-command-types";
 
 export function DraftOnlySettlement({
   projectId,
-  editorWorkId,
+  editorOwnerKey,
 }: {
   projectId: string;
-  /** The Work the Editor presents documents in: the entry its tab restores when no review is addressed. */
-  editorWorkId: string | null;
+  /** The owner key of the Work the Editor presents documents in: the entry its tab restores when no review is addressed. */
+  editorOwnerKey: string | null;
 }) {
   const lifecycle = useDraftOnlyLifecycle(projectId);
   // Primitive snapshot: a fresh presentation array is not an external-store change.
@@ -38,36 +38,36 @@ export function DraftOnlySettlement({
     () => "",
   );
   const presentations = lifecycle.presentations(projectId);
-  const works = new Set(presentations.map((draft) => draft.workId));
-  return [...works].map((workId) => (
-    <WorkSettlement
-      key={workId}
+  const owners = new Set(presentations.map((draft) => draft.ownerKey));
+  return [...owners].map((ownerKey) => (
+    <OwnerSettlement
+      key={ownerKey}
       projectId={projectId}
-      workId={workId}
-      editorWorkId={editorWorkId}
+      ownerKey={ownerKey}
+      editorOwnerKey={editorOwnerKey}
       lifecycle={lifecycle}
-      membership={JSON.stringify(presentations.filter((draft) => draft.workId === workId))}
+      membership={JSON.stringify(presentations.filter((draft) => draft.ownerKey === ownerKey))}
     />
   ));
 }
 
-function WorkSettlement({
+function OwnerSettlement({
   projectId,
-  workId,
-  editorWorkId,
+  ownerKey,
+  editorOwnerKey,
   lifecycle,
   membership,
 }: {
   projectId: string;
-  workId: string;
-  editorWorkId: string | null;
+  ownerKey: string;
+  editorOwnerKey: string | null;
   lifecycle: DraftOnlyContainer;
   membership: string;
 }) {
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
   const availability = useOptionalProjectContextAvailabilityCoordinator();
-  const drafts = useWorkBranchDrafts(projectId, workId);
+  const drafts = useOwnerDrafts(projectId, ownerKey);
   const projection = useObservedResourceProjection(resources, projectId);
   // The pending list omits a draft with no effect (and one inside the
   // `has_effect` lag), so leaving it proves nothing. For an unlisted draft-only
@@ -75,15 +75,15 @@ function WorkSettlement({
   // the tab goes live. Otherwise only the draft's own metadata may retire it: a
   // `gone` draft was discarded; an active one keeps its tab (a delete's hold).
   useEffect(() => {
-    if (!resources || !projectId || !workId) return;
+    if (!resources || !projectId || !ownerKey) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
     const isOrphan = (draft: DraftRef, activeDrafts: readonly ThreadDraftListItem[]) =>
-      draft.workId === workId && !activeDrafts.some((row) => row.itemKey === draft.itemKey);
+      draft.ownerKey === ownerKey && !activeDrafts.some((row) => row.itemKey === draft.itemKey);
     const activeDrafts = drafts.drafts ?? [];
     if (!lifecycle.presentations(projectId).some((draft) => isOrphan(draft, activeDrafts))) return;
 
     const scopeFor = (draft: DraftOnlyPresentation) =>
-      contextCatalogScope(projectId, draft.contextLocation.scheme, { workId: draft.workId });
+      contextCatalogScope(projectId, draft.contextLocation.scheme, catalogOwnerOf(draft.ownerKey));
     const scopes = new Map(
       lifecycle
         .presentations(projectId)
@@ -102,10 +102,7 @@ function WorkSettlement({
         .then((view) => {
           if (attempt.signal.aborted) return;
           queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, scope), view);
-          const currentDrafts =
-            queryClient.getQueryData<ThreadDraftListItem[]>(
-              projectQueryKeys.workBranchDrafts(projectId, workId),
-            ) ?? [];
+          const currentDrafts = cachedOwnerDrafts(queryClient, projectId, ownerKey) ?? [];
           for (const draft of lifecycle.presentations(projectId)) {
             if (!isOrphan(draft, currentDrafts) || JSON.stringify(scopeFor(draft)) !== key)
               continue;
@@ -137,7 +134,7 @@ function WorkSettlement({
     projectId,
     queryClient,
     resources,
-    workId,
+    ownerKey,
   ]);
 
   const presented = usePresentedDocument();
@@ -160,7 +157,7 @@ function WorkSettlement({
     for (const draft of lifecycle.presentations(projectId)) {
       const row = drafts.drafts?.find((candidate) => candidate.itemKey === draft.itemKey);
       const record = identities.byDocumentId(draft.documentId);
-      if (draft.workId !== workId || !row || !record) continue;
+      if (draft.ownerKey !== ownerKey || !row || !record) continue;
       if (record.resource.lifecycle.kind === "terminal") continue;
       if (!projection.placement.resourceLocation(record)) continue;
       if (availability?.removalRecord(projectId, draft.documentId).get()?.kind === "removed")
@@ -176,11 +173,11 @@ function WorkSettlement({
           (entry) =>
             entry.container === "editor" &&
             entry.documentId === draft.documentId &&
-            entry.workId === editorWorkId,
+            entry.ownerKey === editorOwnerKey,
         );
       const review =
         shown?.container === "editor" && shown.documentId === draft.documentId && shown.draftOnly
-          ? (shown.review ?? (own ? { workId: own.workId, itemKey: own.itemKey } : null))
+          ? (shown.review ?? (own ? { ownerKey: own.ownerKey, itemKey: own.itemKey } : null))
           : null;
       void lifecycle.promote(draft).then((promoted) => {
         const now = presentedRef.current;
@@ -189,10 +186,10 @@ function WorkSettlement({
         const moved =
           now?.review !== null &&
           now?.review !== undefined &&
-          (now.review.workId !== review.workId || now.review.itemKey !== review.itemKey);
+          (now.review.ownerKey !== review.ownerKey || now.review.itemKey !== review.itemKey);
         if (now?.container !== "editor" || now.documentId !== draft.documentId || moved) return;
         void openReview?.({
-          workId: review.workId,
+          ownerKey: review.ownerKey,
           documentId: draft.documentId,
           itemKey: review.itemKey,
           contextLocation: draft.contextLocation,
@@ -208,8 +205,8 @@ function WorkSettlement({
     projection.records,
     projection.placement,
     projectId,
-    workId,
-    editorWorkId,
+    ownerKey,
+    editorOwnerKey,
     openReview,
     availability,
   ]);

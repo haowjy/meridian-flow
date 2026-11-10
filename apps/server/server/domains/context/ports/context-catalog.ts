@@ -8,6 +8,7 @@ import type {
   CatalogScope,
   CatalogSnapshot,
   CatalogWakeHint,
+  DraftOwnerHint,
 } from "@meridian/contracts/protocol";
 
 export const DEFAULT_CATALOG_CHANGES_LIMIT = 100;
@@ -42,10 +43,12 @@ export interface ProjectCatalogLifecyclePort {
 export interface WorkAuthorityCatalogMutationPort {
   /** Upsert only the named Work authority signals in their project scopes. */
   upsertWorkAuthorities(workIds: readonly string[]): Promise<void>;
+  /** Wake the project's clients once the caller's transaction commits. Lossy, truth-free. */
+  publishDraftOwnerHints(hints: readonly DraftOwnerHint[]): void;
 }
 
 export interface ContextCatalogWakePort {
-  publish(hint: CatalogWakeHint): void | Promise<void>;
+  publish(hint: CatalogWakeHint | DraftOwnerHint): void | Promise<void>;
 }
 
 /** Exact-document metadata/content changes, without a whole-tree rebuild. */

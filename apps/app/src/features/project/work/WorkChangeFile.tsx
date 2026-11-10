@@ -25,13 +25,13 @@ import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 
 export function WorkChangeFile({
   projectId,
-  workId,
+  ownerKey,
   file,
   controller,
   touch,
 }: {
   projectId: string;
-  workId: string;
+  ownerKey: string;
   file: ReviewFileTarget;
   /** The scope that sends this file's per-change commands. */
   controller: WorkBranchCommands;
@@ -40,7 +40,7 @@ export function WorkChangeFile({
   const [expanded, setExpanded] = useState(false);
   const { openReviewFile } = useAiDraftLauncher();
   const [previewing, setPreviewing] = useState(false);
-  const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
+  const draft = { projectId, ownerKey, documentId: file.documentId, itemKey: file.draft.itemKey };
   const treeOnly = reviewHasNoRoom(file.draft);
   const shown = expanded || treeOnly;
   const view = useDraftView(draft, { controller, enabled: shown, item: file.draft });
@@ -53,7 +53,7 @@ export function WorkChangeFile({
   const wholeDocument = shown && isWholeDocumentChange(view);
   const imageOpenable = file.draft.binary;
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
-  const copyView = draftCopyView(file, workId);
+  const copyView = draftCopyView(file, ownerKey);
   const drag = useReferenceDrag(
     copyView ? { ref: { kind: "file", id: file.documentId }, name, view: copyView } : null,
   );
@@ -61,7 +61,7 @@ export function WorkChangeFile({
   const review = (focus?: ReviewFocus) => {
     controller.dismissNotice();
     return file.draft.hasDraft || treeOnly
-      ? openReviewFile(file, workId, focus)
+      ? openReviewFile(file, ownerKey, focus)
       : imageOpenable && setPreviewing(true);
   };
 
@@ -121,7 +121,7 @@ export function WorkChangeFile({
         <DraftCommandStatus itemKey={file.draft.itemKey} item={file.draft} />
       </div>
       <DraftImagePreview
-        target={previewing ? { projectId, workId, documentId: file.documentId, name } : null}
+        target={previewing ? { projectId, ownerKey, documentId: file.documentId, name } : null}
         onClose={() => setPreviewing(false)}
       />
       {expanded && !wholeDocument ? (

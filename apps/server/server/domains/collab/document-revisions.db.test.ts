@@ -141,7 +141,11 @@ async function fixture(
       testFileGrant(
         mode === "direct"
           ? { kind: "live" }
-          : { kind: "draft", workId: WORK_ID, workHandle: "atomicity-work" },
+          : {
+              kind: "draft",
+              owner: { kind: "work", workId: WORK_ID },
+              ownerHandle: "atomicity-work",
+            },
       ),
     ),
   };
@@ -266,7 +270,7 @@ describe("document revisions (postgres and collab)", () => {
       documentId: ALPHA_ID,
       threadId: THREAD_ID,
       destination: "draft" as const,
-      workId: WORK_ID,
+      owner: { kind: "work", workId: WORK_ID } as const,
     };
     const markdown = await f.effective.readEffectiveMarkdown(view);
     const hashlines = await f.effective.readEffectiveHashlines(view);
@@ -317,7 +321,11 @@ describe("document revisions (postgres and collab)", () => {
     await createDrizzleThreadWorksRepository(db).rebindPrimary(THREAD_ID, workB);
     expect(await f.current()).not.toBe(before.revision);
     // The thread's grants now name Work B, which has no branch yet: the read is live (S1).
-    const rebound = { kind: "draft", workId: workB, workHandle: "other-draft" } as const;
+    const rebound = {
+      kind: "draft",
+      owner: { kind: "work", workId: workB },
+      ownerHandle: "other-draft",
+    } as const;
     expect((await f.read(undefined, rebound)).revision).toBe(await f.current());
   });
 
@@ -381,7 +389,7 @@ describe("document revisions (postgres and collab)", () => {
   it("a flush joining an older snapshot waits for a fresh committed pull", async () => {
     const f = await fixture(db, harnesses, "draft");
     await f.liveCoordinator.withDocument(ALPHA_ID, async (liveDoc) => {
-      const branch = await f.branches.activeForWork(WORK_ID);
+      const branch = await f.branches.activeForOwner({ kind: "work", workId: WORK_ID });
       if (!branch) throw new Error("the harness seeds the Work's branch");
       await f.draftStore.ensureDocumentDraft({
         documentId: ALPHA_ID,
@@ -440,7 +448,7 @@ describe("document revisions (postgres and collab)", () => {
     await f.read();
     await f.writerDelete();
     const branch = await f.branches.ensureActiveForWrite({
-      workId: WORK_ID,
+      owner: { kind: "work", workId: WORK_ID },
       projectId: PROJECT_ID as never,
       threadId: THREAD_ID,
       userId: USER_ID as never,

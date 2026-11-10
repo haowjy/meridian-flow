@@ -43,7 +43,7 @@ function versionGateServices(
     resolveDraftHocuspocusRoom: vi.fn(async (draftId: string, generation: number) => ({
       draftId,
       documentId: liveDocumentName,
-      workId: "00000000-0000-4000-8000-000000000107",
+      owner: { kind: "work" as const, workId: "00000000-0000-4000-8000-000000000107" },
       generation,
       schemaVersion: input.draftHead ?? COLLAB_SCHEMA_VERSION,
       status: "active" as const,

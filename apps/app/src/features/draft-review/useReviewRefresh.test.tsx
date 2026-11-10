@@ -27,12 +27,12 @@ afterEach(async () => {
 });
 
 const review = { documentId: "document-a", itemKey: "draft-a" };
-const metadataKey = projectQueryKeys.workDraftMetadata("p", "w", "document-a", "draft-a");
+const metadataKey = projectQueryKeys.ownerDraftMetadata("p", "work:w", "document-a", "draft-a");
 
 function Owner() {
   useReviewRefresh({
     projectId: "p",
-    workId: "w",
+    ownerKey: "work:w",
     review,
     runtime: null,
     session: null,
@@ -89,7 +89,7 @@ describe("useReviewRefresh", () => {
       rebind = setBound;
       useReviewRefresh({
         projectId: "p",
-        workId: "w",
+        ownerKey: "work:w",
         review,
         runtime: null,
         session: null,

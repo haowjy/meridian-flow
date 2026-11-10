@@ -1,4 +1,5 @@
 /** Editor view identity and membership, independent of React and persistence. */
+import { draftOwnerKey } from "@meridian/contracts/branches";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type {
   ContextOwner,
@@ -64,10 +65,10 @@ export function tabContextOwner(owner: TabOwner): ContextOwner {
     : { workId: owner.workId ?? null };
 }
 
-/** One Work's draft-only presentation of a document: the draft item it shows and its tab-generation fence. */
+/** One owner's draft-only presentation of a document: the draft item it shows and its tab-generation fence. */
 export type ReviewEntry = { itemKey: string; tabInstanceToken: string };
 
-/** Work id to that Work's entry; one entry per Work whose branch creates the document. */
+/** Owner key (`work:<id>` or `lineage:<root>`) to that owner's entry; one entry per owner whose branch creates the document. */
 export type ReviewEntries = Record<string, ReviewEntry>;
 
 export type ContextTab =
@@ -151,7 +152,7 @@ export type EditorTabCandidate =
  */
 export function isEditorTab(tab: EditorTabCandidate, workId: string | null): boolean {
   if (tab.kind === "new") return true;
-  if (isDraftOnly(tab) && !(workId && reviewEntryOf(tab, workId))) return false;
+  if (isDraftOnly(tab) && !editorHasReview(tab, workId)) return false;
   if (!isEditorScheme(tab.scheme)) return false;
   if (tab.rootThreadId) return true;
   return !isWorkScopedScheme(tab.scheme) || tab.workId === workId;
@@ -170,38 +171,55 @@ export function reviewEntriesOf(tab: ContextTab | EditorTabCandidate): ReviewEnt
   return (tab as { reviews?: ReviewEntries }).reviews ?? {};
 }
 
-/** A hidden draft-created document: the tab carries at least one Work's entry. */
+/** A Work's Editor shows its own draft-only entries, and every Editor shows a lineage's (a lineage belongs to no Work). */
+export function editorHasReview(tab: EditorTabCandidate, workId: string | null): boolean {
+  if (workId && reviewEntryOf(tab, draftOwnerKey({ kind: "work", workId }))) return true;
+  return Object.keys(reviewEntriesOf(tab)).some((key) => key.startsWith("lineage:"));
+}
+
+/** The owner a draft-only tab is reviewed under: the Work's entry, else a lineage's, else any. */
+export function reviewOwnerOfTab(
+  tab: ContextTab | EditorTabCandidate,
+  workId: string | null | undefined,
+): string | undefined {
+  const workKey = workId ? draftOwnerKey({ kind: "work", workId }) : undefined;
+  if (workKey && reviewEntryOf(tab, workKey)) return workKey;
+  const keys = Object.keys(reviewEntriesOf(tab));
+  return keys.find((key) => key.startsWith("lineage:")) ?? keys[0];
+}
+
+/** A hidden draft-created document: the tab carries at least one owner's entry. */
 export function isDraftOnly(tab: ContextTab | EditorTabCandidate): boolean {
   return Object.keys(reviewEntriesOf(tab)).length > 0;
 }
 
-/** The entry Work `workId` has on this tab, if its branch creates the document. */
+/** The entry `ownerKey` has on this tab, if its branch creates the document. */
 export function reviewEntryOf(
   tab: ContextTab | EditorTabCandidate,
-  workId: string,
+  ownerKey: string,
 ): ReviewEntry | undefined {
-  return reviewEntriesOf(tab)[workId];
+  return reviewEntriesOf(tab)[ownerKey];
 }
 
 /**
- * The tab after Work `workId` loses its entry: the one place that decides what a
- * Discard or a writer's close leaves behind. null means no Work presents it any more.
+ * The tab after `ownerKey` loses its entry: the one place that decides what a
+ * Discard or a writer's close leaves behind. null means no owner presents it any more.
  */
-export function withoutReviewEntry(tab: ContextTab, workId: string): ContextTab | null {
-  const { [workId]: _dropped, ...reviews } = reviewEntriesOf(tab);
+export function withoutReviewEntry(tab: ContextTab, ownerKey: string): ContextTab | null {
+  const { [ownerKey]: _dropped, ...reviews } = reviewEntriesOf(tab);
   return tab.kind === "tracked" && Object.keys(reviews).length > 0 ? { ...tab, reviews } : null;
 }
 
 /** A review item's semantic address (the item key names its document), separate from its mounted instance fence. */
 export type ReviewItemTabIdentity = {
-  reviewWorkId: string;
+  reviewOwner: string;
   reviewItemKey: string;
 };
 
 export function matchesReviewItem(tab: ContextTab, identity: ReviewItemTabIdentity): boolean {
   return (
     tab.kind !== "new" &&
-    reviewEntryOf(tab, identity.reviewWorkId)?.itemKey === identity.reviewItemKey
+    reviewEntryOf(tab, identity.reviewOwner)?.itemKey === identity.reviewItemKey
   );
 }
 
@@ -215,9 +233,9 @@ export function matchesTabInstance(tab: ContextTab, addressed: ContextTab): bool
       !isDraftOnly(addressed) ||
       (tab.kind !== "new" &&
         Object.entries(reviewEntriesOf(addressed)).some(
-          ([workId, entry]) =>
-            reviewEntryOf(tab, workId)?.itemKey === entry.itemKey &&
-            reviewEntryOf(tab, workId)?.tabInstanceToken === entry.tabInstanceToken,
+          ([ownerKey, entry]) =>
+            reviewEntryOf(tab, ownerKey)?.itemKey === entry.itemKey &&
+            reviewEntryOf(tab, ownerKey)?.tabInstanceToken === entry.tabInstanceToken,
         )))
   );
 }

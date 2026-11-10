@@ -13,6 +13,8 @@ import type {
   CatalogLookupResult,
   CatalogScope,
   CatalogSnapshot,
+  CatalogWakeHint,
+  DraftOwnerHint,
 } from "@meridian/contracts/protocol";
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { decodeWorkHandle } from "@meridian/contracts/works";
@@ -462,6 +464,19 @@ export function createDrizzleContextCatalog(
   ContextCatalogFileMutationPort &
   ProjectCatalogLifecyclePort &
   WorkAuthorityCatalogMutationPort {
+  /** Wake hints are explicitly lossy: pull-on-focus and polling repair a missed one. */
+  function publishLossy(hints: readonly (CatalogWakeHint | DraftOwnerHint)[]) {
+    if (!wakePort || hints.length === 0) return;
+    runAfterDrizzleCommit(async () => {
+      for (const hint of hints) {
+        try {
+          await wakePort.publish(hint);
+        } catch {
+          // Lossy by design.
+        }
+      }
+    });
+  }
   const availabilityMutations =
     options.availabilityMutations ?? createDrizzleProjectContextAvailability(db);
   const retainedCommitsPerScope = Math.max(
@@ -584,18 +599,7 @@ export function createDrizzleContextCatalog(
           lt(contextCatalogCommits.lastRevision, oldestRevision),
         ),
       );
-    runAfterDrizzleCommit(async () => {
-      if (!wakePort) return;
-      try {
-        await wakePort.publish({
-          type: "context-catalog-hint",
-          scope,
-          headRevision: String(revision),
-        });
-      } catch {
-        // Wake hints are explicitly lossy. Pull-on-focus/poll repairs delivery.
-      }
-    });
+    publishLossy([{ type: "context-catalog-hint", scope, headRevision: String(revision) }]);
   }
 
   /**
@@ -839,6 +843,9 @@ export function createDrizzleContextCatalog(
         userIds: project?.isPersonal ? [project.userId] : [],
       });
     },
+    publishDraftOwnerHints(hints) {
+      publishLossy(hints);
+    },
     async upsertWorkAuthorities(workIds) {
       const unique = [...new Set(workIds)].sort();
       if (unique.length === 0) return;
@@ -943,18 +950,7 @@ export function createDrizzleContextCatalog(
                 lt(contextCatalogCommits.lastRevision, oldestRevision),
               ),
             );
-          runAfterDrizzleCommit(async () => {
-            if (!wakePort) return;
-            try {
-              await wakePort.publish({
-                type: "context-catalog-hint",
-                scope,
-                headRevision: String(revision),
-              });
-            } catch {
-              // Wake hints are explicitly lossy. Pull-on-focus/poll repairs delivery.
-            }
-          });
+          publishLossy([{ type: "context-catalog-hint", scope, headRevision: String(revision) }]);
         }
       });
     },

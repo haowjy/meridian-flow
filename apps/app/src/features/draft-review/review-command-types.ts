@@ -1,5 +1,5 @@
 /** Work addresses and item-level command feedback shared by review surfaces. */
-export type DraftRef = { projectId: string; workId: string; documentId: string; itemKey: string };
+export type DraftRef = { projectId: string; ownerKey: string; documentId: string; itemKey: string };
 export type ServerRefusal = {
   serverCode?: string;
   serverReason?: string;

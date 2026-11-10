@@ -374,7 +374,7 @@ export async function runNamespaceCommand(
       payload: {
         path: uri,
         destination: destination.kind,
-        ...(destination.kind === "draft" ? { draftWork: destination.workHandle ?? "/" } : {}),
+        ...(destination.kind === "draft" ? { draftWork: destination.ownerHandle ?? "/" } : {}),
         write: { id: handle },
         namespace:
           input.command === "move"

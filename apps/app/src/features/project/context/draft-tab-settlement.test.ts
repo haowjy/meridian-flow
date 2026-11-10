@@ -21,7 +21,7 @@ function draftTab(token = "tab-a", workId = "work-a", itemKey = "draft-a") {
     editable: true as const,
     filetype: "markdown" as const,
     schemaType: "document" as const,
-    reviews: { [workId]: { itemKey, tabInstanceToken: token } },
+    reviews: { [`work:${workId}`]: { itemKey, tabInstanceToken: token } },
   };
 }
 
@@ -129,8 +129,8 @@ describe("draft tab settlement", () => {
     expect(inWork("work-b")).toEqual(["document-a"]);
     expect(tabs[0]).toMatchObject({
       reviews: {
-        "work-a": { itemKey: "draft-a", tabInstanceToken: "tab-a" },
-        "work-b": { itemKey: "draft-b", tabInstanceToken: "tab-b" },
+        "work:work-a": { itemKey: "draft-a", tabInstanceToken: "tab-a" },
+        "work:work-b": { itemKey: "draft-b", tabInstanceToken: "tab-b" },
       },
     });
 
@@ -151,7 +151,7 @@ describe("draft tab settlement", () => {
     );
 
     // Discard in A leaves B's entry, tab and routed screen; A no longer shows it.
-    coordinator.discardDraft("project-a", "work-a", "draft-a");
+    coordinator.discardDraft("project-a", "work:work-a", "draft-a");
     expect(inWork("work-a")).toEqual([]);
     expect(inWork("work-b")).toEqual(["document-a"]);
     expect(updateSearch).not.toHaveBeenCalled();
@@ -164,7 +164,7 @@ describe("draft tab settlement", () => {
     expect(inWork("work-a")).toEqual([]);
     expect(inWork("work-b")).toEqual(["document-a"]);
     // The last entry's Discard closes the tab.
-    coordinator.discardDraft("project-a", "work-b", "draft-b");
+    coordinator.discardDraft("project-a", "work:work-b", "draft-b");
     expect(getContextTabs("project-a").tabs).toEqual([]);
 
     // Apply in A settles the one tab for every Work.
@@ -174,7 +174,7 @@ describe("draft tab settlement", () => {
     if (shared?.kind !== "tracked") throw new Error("Expected tracked draft tab");
     await coordinator.promoteAppliedDraft("project-a", {
       ...shared,
-      reviews: { "work-a": shared.reviews!["work-a"]! },
+      reviews: { "work:work-a": shared.reviews!["work:work-a"]! },
     });
     expect(getContextTabs("project-a").tabs).toHaveLength(1);
     expect(isDraftOnly(getContextTabs("project-a").tabs[0] as ContextTab)).toBe(false);
@@ -223,7 +223,7 @@ describe("draft tab settlement", () => {
       );
     };
     select();
-    coordinator.discardDraft("project-a", "work-a", "draft-a");
+    coordinator.discardDraft("project-a", "work:work-a", "draft-a");
     expect(getContextTabs("project-a").tabs).toEqual([]);
     updateSearch.mockClear();
 
