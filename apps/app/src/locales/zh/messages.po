@@ -2261,6 +2261,7 @@ msgid "Couldn't load this file."
 msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Couldn't load Trash."
 msgstr ""
 
@@ -3403,7 +3404,7 @@ msgid "Import in progress. Show activity"
 msgstr ""
 
 #. placeholder {0}: destination.name
-#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Import into {0}"
 msgstr ""
 
@@ -3746,6 +3747,7 @@ msgid "Loading signed image URL…"
 msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Loading Trash…"
 msgstr ""
 
@@ -3765,8 +3767,10 @@ msgid "Loading Works…"
 msgstr ""
 
 #: src/features/billing/UsageCard.tsx
+#: src/features/project/chat/ChatScratch.tsx
 #: src/features/project/context/DocumentPath.tsx
 #: src/features/project/context/FolderMenu.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Loading…"
 msgstr ""
 
@@ -4170,6 +4174,10 @@ msgstr ""
 msgid "No files in {containerLabel}."
 msgstr ""
 
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "No files yet."
+msgstr ""
+
 #: src/core/editor/asset-image-render-state.ts
 msgid "No image has been uploaded to {path} yet."
 msgstr ""
@@ -4312,6 +4320,7 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Nothing in the trash."
 msgstr ""
 
@@ -6405,7 +6414,6 @@ msgstr ""
 #: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 #: src/features/project/shell/sidebar/TrashSource.tsx
-#: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "Trash"
 msgstr ""
 
