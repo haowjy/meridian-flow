@@ -20,7 +20,7 @@ import {
   getProjectContextAvailability,
   getProjectDocumentAddress,
 } from "@/client/api/projects-api";
-import type { DraftPin } from "@/client/project-shell/document-views";
+import { type DraftPin, readDocumentView } from "@/client/project-shell/document-views";
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
@@ -92,11 +92,7 @@ import {
   parseProjectAddress,
   withoutReview,
 } from "./project-address";
-import {
-  resolveLocalDocumentSelection,
-  selectEditorEntryTab,
-  useEditorContainerAddress,
-} from "./project-local-selection";
+import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
 import {
   createProjectNavigation,
   type DisplayedProjectSelection,
@@ -110,6 +106,7 @@ import {
   type ProjectRouteCommands,
   type ProjectSearch,
 } from "./project-route";
+import { reviewRouteOptions } from "./use-open-document-in-editor";
 
 function screen(destination: ProjectDestination): ScreenKey {
   if (destination.kind === "chat" || destination.kind === "chat-index") return "chat";
@@ -564,13 +561,6 @@ function ReadableProjectDestination({
       ? documentResult.document.documentId
       : undefined;
   addressDocumentIdRef.current = addressDocumentId;
-  const editorContainerAddress = useEditorContainerAddress({
-    active: activeScreen === "context",
-    accountId: user.userId,
-    address,
-    documentId: addressDocumentId ?? null,
-    workId,
-  });
   const documentIssue: ProjectRouteIssue | undefined = !documentDestination
     ? undefined
     : !documentResult
@@ -891,10 +881,7 @@ function ReadableProjectDestination({
           { ...routeTargetForTab(tab), documentId: tab.documentId },
           {
             ...options,
-            ...(editorContainerAddress?.documentId === tab.documentId &&
-            editorContainerAddress.workId === workId
-              ? { itemKey: editorContainerAddress.address.itemKey }
-              : {}),
+            ...reviewRouteOptions(readDocumentView(user.userId, projectId, tab.documentId).pin),
           },
         );
     }

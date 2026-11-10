@@ -5,7 +5,7 @@
  * pin so a review link can name it, and a pin that moves on its own (a reload, a shared link,
  * Back, a launch that names a change) focuses the change it names.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DraftPin } from "@/client/project-shell/document-views";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
@@ -44,7 +44,13 @@ export function useReviewAdmission({
   admission: ReviewAddressAdmission;
   port: ReviewAdmissionPort;
 }) {
+  /** The item an admission is in flight for. */
   const restoring = useRef<string | null>(null);
+  /**
+   * Bumped when an admission settles, so the effect looks again: a host mounted while hidden can
+   * lose the review it entered before it renders it, and nothing else re-runs the effect.
+   */
+  const [settledAdmissions, setSettledAdmissions] = useState(0);
   /**
    * The port that refused the request. Admitting the same item through it again would be
    * refused again; a new port (a newer draft generation) gets one try.
@@ -127,14 +133,15 @@ export function useReviewAdmission({
       })
       .then(
         (admitted) => {
-          if (admitted || restoring.current !== itemKey) return;
+          if (restoring.current !== itemKey) return;
           restoring.current = null;
-          refused.current = { itemKey, port };
+          if (!admitted) refused.current = { itemKey, port };
+          else setSettledAdmissions((count) => count + 1);
         },
         (error) => {
           if (restoring.current === itemKey) restoring.current = null;
           console.error("[review] address restore failed", error);
         },
       );
-  }, [presented, port, requested, review, admission, changes, status]);
+  }, [presented, port, requested, review, admission, changes, status, settledAdmissions]);
 }
