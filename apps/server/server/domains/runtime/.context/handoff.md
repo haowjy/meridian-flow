@@ -20,9 +20,8 @@ messages, controls, and Work notices run after S without a seed-specific gate.
 A rollback or untransferred path releases the claim.
 
 `brief-request.ts` prepares the source-shaped request through the selected turn
-and invokes the shared [summarizer](summarizer.md) once. The path is known-too-
-large → rolling, warm → source-model branch, cold → rolling; preparation or
-summary failure is final and needs a new S to retry. S freezes source identity,
+and invokes the shared [summarizer](summarizer.md) once, which picks the
+summary path; preparation or summary failure is final and needs a new S to retry. S freezes source identity,
 cutoff, typed summary telemetry, and the `handoff-brief` block. A writer
 message at the cutoff is reported as open, not answered by the brief.
 

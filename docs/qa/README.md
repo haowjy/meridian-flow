@@ -4,15 +4,14 @@ Recipes live beside the code they check, in `.context/qa/<name>.md`. List them w
 `git ls-files '*/.context/qa/*.md'`: ripgrep and most globs skip hidden folders.
 
 Use these recipes to check the running product, in addition to `pnpm check`.
-While working, `./mf` is the verification tool for the code it shares with the
-app (the socket client, message serializer and chat event processing), and a
-`./mf` run is evidence for that code against the real server. A command with no
-shared client code behind it is evidence of the server only. What the writer
-sees (rendering, the composer, optimistic UI, client state) is checked in the
-browser (`agent-browser`), judged by the screen with the durable transcript as
-truth. A PR that changes app behavior confirms it in the browser at least once,
-at the end. A new recipe uses `./mf` steps where the code is shared, and ends
-with a browser confirmation.
+While working, `./mf` debugs the code it shares with the app (the socket client,
+message serializer and chat event processing) against the real server; a command
+with no shared client code behind it shows the server only. What the writer sees
+(rendering, the composer, optimistic UI, client state) is checked in the browser
+(`agent-browser`), judged by the screen with the durable transcript as truth.
+The browser run the root [`AGENTS.md`](../../AGENTS.md) requires before a change
+reaches `main` is never replaced by a `./mf` run. A new recipe uses `./mf` steps
+where the code is shared, and ends with a browser confirmation.
 Keep evidence in the active work directory, not in this repository. Record the
 commit, date, stack/provider, outcome, and evidence path after each run. A recipe
 is not a claim that it passed on the current commit.
