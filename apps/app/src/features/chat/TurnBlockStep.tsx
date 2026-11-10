@@ -34,7 +34,7 @@ export function TurnBlockStep({ block, body }: TurnBlockStepProps) {
       <ActivityRow
         Icon={Icon}
         quietIcon={isReasoning}
-        proseClassName={isReasoning ? "italic text-ink-subtle" : undefined}
+        proseClassName={isReasoning ? "italic text-muted-foreground" : undefined}
       >
         {isReasoning ? (
           <Markdown variant="compact">{body}</Markdown>

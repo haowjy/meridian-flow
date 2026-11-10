@@ -125,14 +125,14 @@ function ImportCard({
     <li className="px-3 py-2.5">
       <div className="break-words text-sm font-medium text-foreground">{title}</div>
       {presentation.detail ? (
-        <div className="mt-0.5 text-caption text-ink-muted">{presentation.detail}</div>
+        <div className="mt-0.5 text-caption text-muted-foreground">{presentation.detail}</div>
       ) : null}
       {progress === undefined ? null : progress === "indeterminate" ? (
         <Progress indeterminate label={title} className="mt-2 h-1" />
       ) : (
         <Progress value={progress} label={title} className="mt-2 h-1" />
       )}
-      <div className="mt-2 space-y-2 text-caption text-ink-muted empty:hidden">
+      <div className="mt-2 space-y-2 text-caption text-muted-foreground empty:hidden">
         {presentation.note ? <p>{presentation.note}</p> : null}
         {presentation.fallback ? <p>{presentation.fallback}</p> : null}
         {local.stopLost ? (
@@ -255,7 +255,7 @@ export function ImportSheet({
       <SheetContent
         side="bottom"
         showCloseButton={false}
-        className="max-h-[78svh] gap-0 rounded-t-2xl border-border-subtle p-0"
+        className="max-h-[78svh] gap-0 rounded-t-xl border-border-subtle p-0"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-border" />

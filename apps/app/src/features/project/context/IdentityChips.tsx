@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { IDENTITY_BAR_BOX_CLASS } from "./identity-bar-geometry";
 
 const chipClass = cn(
-  "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-1.5 font-medium font-sans text-xs motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150",
+  "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border px-1.5 font-medium font-sans text-xs motion-safe:animate-in motion-safe:fade-in",
   IDENTITY_BAR_BOX_CLASS,
 );
 
@@ -27,7 +27,7 @@ export function ChooseHomeChip({ onClick }: { onClick: () => void }) {
           // The label hides in a narrow pane (the dock); the button keeps its name.
           aria-label={t`File this document`}
           onClick={onClick}
-          className={cn("focus-ring", chipClass, "border-primary/30 bg-primary/10 text-jade-text")}
+          className={cn("focus-ring", chipClass, "border-primary/40 bg-primary/12 text-jade-text")}
         >
           <FolderDown aria-hidden className="size-3" />
           <span className="@max-md:hidden">
@@ -51,7 +51,7 @@ export function DeviceOnlyChip() {
       <TooltipTrigger asChild>
         <span
           role="status"
-          className={cn(chipClass, "border-warning-border bg-warning-bg text-warning-foreground")}
+          className={cn(chipClass, "border-warning/40 bg-warning-tint text-warning-ink")}
         >
           <TriangleAlert aria-hidden className="size-3" />
           <span className="@max-md:hidden">{label}</span>

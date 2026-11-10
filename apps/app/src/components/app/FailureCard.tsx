@@ -52,16 +52,19 @@ export function FailureCard({
       className={cn(
         tone === "error"
           ? "border-destructive-border bg-destructive-tint"
-          : "border-border bg-muted",
-        "rounded-field py-[var(--chat-card-pad-y)] shadow-none",
+          : "border-border bg-ink-fill",
+        "rounded-lg py-[var(--chat-card-pad-y)] shadow-none",
         // Inline is tightened so Retry and Edit fit the narrowest dock (280px) on one line.
         inline
           ? "w-fit px-[var(--chat-space-block)] has-[>svg]:gap-x-2"
           : "px-[var(--chat-card-pad-x)]",
       )}
     >
-      <Icon className={tone === "error" ? "text-destructive" : "text-ink-subtle"} aria-hidden />
-      <AlertDescription className="text-compact text-ink-muted">
+      <Icon
+        className={tone === "error" ? "text-destructive" : "text-muted-foreground"}
+        aria-hidden
+      />
+      <AlertDescription className="text-compact text-muted-foreground">
         <div
           className={cn(
             "flex items-center",

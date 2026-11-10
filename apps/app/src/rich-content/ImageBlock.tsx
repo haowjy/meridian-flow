@@ -48,7 +48,7 @@ export function ImageBlock({ content, variant = "inline", className }: ImageBloc
       <figure
         className={cn(
           "surface-card flex items-center gap-3 rounded-lg bg-card px-3 py-3 text-muted-foreground",
-          isThumb && "max-w-[220px] gap-2 px-2 py-2 text-[12px]",
+          isThumb && "max-w-[220px] gap-2 px-2 py-2 text-xs",
           className,
         )}
         aria-label={alt}
@@ -71,7 +71,7 @@ export function ImageBlock({ content, variant = "inline", className }: ImageBloc
   return (
     <figure
       className={cn(
-        "my-4 overflow-hidden rounded-lg border border-border-subtle bg-card shadow-card",
+        "my-4 overflow-hidden rounded-lg border border-border-subtle bg-card shadow-float",
         isThumb && "my-2 max-w-[220px] rounded-md shadow-none",
         className,
       )}

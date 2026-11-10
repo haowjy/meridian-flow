@@ -80,7 +80,7 @@ export function WorkChangeFile({
               setExpanded((open) => !open);
             }}
             className={cn(
-              "focus-ring grid shrink-0 place-items-center rounded-md text-ink-subtle transition-colors hover:bg-dropdown-hover motion-reduce:transition-none",
+              "focus-ring grid shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-ink-fill motion-reduce:transition-none",
               touch ? "size-11" : "size-8",
             )}
           >
@@ -102,7 +102,7 @@ export function WorkChangeFile({
             type="button"
             {...drag}
             className={cn(
-              "focus-ring flex min-h-10 w-full min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors motion-reduce:transition-none hover:bg-dropdown-hover",
+              "focus-ring flex min-h-10 w-full min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors motion-reduce:transition-none hover:bg-ink-fill",
               "w-auto flex-1 pl-1",
               touch && "min-h-11",
             )}

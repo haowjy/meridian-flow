@@ -169,7 +169,7 @@ export function WorkPickerPanel({
           className={dropdownSearchClass}
         />
       </div>
-      <div className={`${dropdownResultsClass} space-y-[var(--chat-space-row)]`}>
+      <div className={`${dropdownResultsClass} space-y-[var(--chat-space-inline)]`}>
         {view.status === "ready" ? (
           <Button
             ref={operation.currentWorkId === view.noWork.id ? focusRefs?.selected : undefined}
@@ -253,7 +253,7 @@ function WorkSection({
   return (
     <section aria-label={label}>
       <h3 className={dropdownGroupLabelClass}>{label}</h3>
-      <div className="space-y-[var(--chat-space-row)]">
+      <div className="space-y-[var(--chat-space-inline)]">
         {works.map((work) => {
           const current = work.id === operation.currentWorkId;
           const changing = work.id === operation.targetId && operation.pending;

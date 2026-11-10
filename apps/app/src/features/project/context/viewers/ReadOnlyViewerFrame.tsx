@@ -43,7 +43,7 @@ export function ReadOnlyViewerFrame({
         >
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-foreground">{header.name}</div>
-            <div className="truncate font-mono text-meta text-ink-subtle">{header.path}</div>
+            <div className="truncate font-mono text-meta text-muted-foreground">{header.path}</div>
           </div>
         </header>
       ) : null}

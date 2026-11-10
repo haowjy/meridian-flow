@@ -53,7 +53,7 @@ export function PhoneSettingsContent({
           event.preventDefault();
           (event.target as HTMLElement | null)?.focus({ preventScroll: true });
         }}
-        className="fixed inset-0 z-50 flex flex-col bg-background outline-none duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
+        className="fixed inset-0 z-50 flex flex-col bg-background outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
       >
         {/* Solid bg, no backdrop-filter — iOS repaint reasoning. */}
         <header
@@ -143,7 +143,7 @@ function SectionChip({
         // doesn't pin the chip flush against the viewport edge.
         "focus-ring flex h-11 shrink-0 scroll-mx-3 items-center gap-2 whitespace-nowrap rounded-full border px-4 text-sm transition-colors active:scale-[0.98]",
         isActive
-          ? "border-transparent bg-sidebar-accent font-medium text-foreground"
+          ? "border-transparent bg-ink-fill-strong font-medium text-foreground"
           : "border-border-subtle text-muted-foreground",
       )}
     >

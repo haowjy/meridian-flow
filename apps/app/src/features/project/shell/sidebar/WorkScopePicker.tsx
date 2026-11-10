@@ -17,8 +17,9 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
-import { sidebarIcon, sidebarRole } from "../../context/context-row-geometry";
+import { sidebarIcon } from "../../context/context-row-geometry";
 
 /**
  * The Work scope under the project name: which Work's drafts the documents show
@@ -55,18 +56,18 @@ export function WorkScopePicker({
           type="button"
           className={cn(
             "group focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md px-2 text-left",
-            sidebarRole.row,
-            sidebarRole.selected,
+            role.row,
+            role.selected,
           )}
         >
           {scoped || noWorkScoped ? (
             <WorkIdentity
               name={scoped ? scoped.name : t`None`}
               unavailableLabel={t`None`}
-              className={cn("flex-1", sidebarRole.row)}
+              className={cn("flex-1", role.row)}
             />
           ) : (
-            <span className={cn("min-w-0 flex-1 truncate", sidebarRole.secondary)}>
+            <span className={cn("min-w-0 flex-1 truncate", role.secondary)}>
               <Trans>Loading Works…</Trans>
             </span>
           )}
@@ -74,7 +75,7 @@ export function WorkScopePicker({
             <span
               className={cn(
                 "rounded-full bg-primary/12 px-1.5 font-medium text-primary tabular-nums",
-                sidebarRole.rowSecondary,
+                role.rowSecondary,
               )}
               title={t`${pending} documents to review`}
             >
@@ -82,11 +83,7 @@ export function WorkScopePicker({
             </span>
           ) : null}
           <ChevronsUpDown
-            className={cn(
-              sidebarIcon.row,
-              "shrink-0 group-hover:text-foreground",
-              sidebarRole.secondary,
-            )}
+            className={cn(sidebarIcon.row, "shrink-0 group-hover:text-foreground", role.secondary)}
             aria-hidden
           />
         </button>

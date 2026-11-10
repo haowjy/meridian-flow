@@ -163,7 +163,7 @@ export function SuggestionMenu({
       className={cn(dropdownPanelClass, "meridian-suggestion-menu-shell min-w-64 p-0", className)}
     >
       {note ? (
-        <div className="border-border-subtle border-b px-2 py-1.5 text-ink-subtle text-xs">
+        <div className="border-border-subtle border-b px-2 py-1.5 text-muted-foreground text-xs">
           {note}
         </div>
       ) : null}

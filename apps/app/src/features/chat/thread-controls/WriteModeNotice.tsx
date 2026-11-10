@@ -34,8 +34,8 @@ export function WriteModeNotice({
       className="flex min-h-[calc(var(--text-meta--line-height)+0.5rem+var(--chat-space-block)*2)] min-w-0 flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)] py-[var(--chat-space-block)]"
     >
       <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
-        <Icon aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
-        <span className="min-w-0 text-meta text-ink-muted">{label}</span>
+        <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 text-meta text-muted-foreground">{label}</span>
       </span>
       {children}
     </div>

@@ -45,7 +45,7 @@ export function MobileContextBrowser(props: MobileContextBrowserProps) {
             key={scheme}
             type="button"
             onClick={() => props.onSelectContextScheme(scheme)}
-            className="focus-ring flex min-h-11 items-center gap-2.5 px-4 text-left text-sm text-foreground hover:bg-sidebar-accent/50"
+            className="focus-ring flex min-h-11 items-center gap-2.5 px-4 text-left text-sm text-foreground hover:bg-ink-fill"
           >
             <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
             <span className="flex-1">{schemeLabel(scheme)}</span>

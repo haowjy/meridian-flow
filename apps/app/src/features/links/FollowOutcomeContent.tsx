@@ -88,7 +88,9 @@ function TargetLocation({
   const Location = description ? DialogDescription : "p";
   if (!address || !parsed?.ok) {
     return (
-      <Location className="break-words text-ink-muted text-xs">{linkTargetLabel(target)}</Location>
+      <Location className="break-words text-muted-foreground text-xs">
+        {linkTargetLabel(target)}
+      </Location>
     );
   }
   const { scheme, path } = parsed.value;
@@ -106,7 +108,7 @@ function TargetLocation({
   return (
     <Location
       title={lineageRef ? undefined : address}
-      className="flex items-center gap-1.5 text-ink-muted text-xs"
+      className="flex items-center gap-1.5 text-muted-foreground text-xs"
     >
       <Icon aria-hidden className="size-3.5 shrink-0" />
       <span className="truncate">{location}</span>

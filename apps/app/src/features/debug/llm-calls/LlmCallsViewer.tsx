@@ -37,9 +37,9 @@ type CallsState =
   | { status: "error"; message: string };
 
 const OUTCOME_CLASS: Record<LlmCallOutcome, string> = {
-  "in-flight": "bg-status-live-bg text-status-live-foreground",
-  ok: "bg-status-done-bg text-status-done-foreground",
-  cancelled: "bg-review-warning-tint text-status-warning",
+  "in-flight": "bg-ink-fill text-muted-foreground",
+  ok: "bg-primary/12 text-jade-text",
+  cancelled: "bg-warning/12 text-warning",
   error: "bg-destructive-tint text-destructive",
 };
 
@@ -301,7 +301,7 @@ function CallCard({
     <article className="overflow-hidden rounded-md border border-border bg-card">
       <button
         type="button"
-        className="focus-ring block w-full p-3 text-left hover:bg-muted"
+        className="focus-ring block w-full p-3 text-left hover:bg-ink-fill"
         onClick={() => setExpanded((current) => !current)}
         aria-expanded={expanded}
       >
@@ -407,7 +407,7 @@ function Metric({
       <dd
         className={cn(
           "font-mono text-xs text-foreground",
-          emphasis && "font-semibold text-status-warning",
+          emphasis && "font-semibold text-warning",
         )}
       >
         {value}
@@ -455,7 +455,7 @@ function CallDetail({ call }: { call: LlmCallSummary }) {
               {call.lifecycleEvents.map((event, index) => (
                 <li
                   key={event.eventId ?? `${event.stream?.observerSeq ?? index}:${event.name}`}
-                  className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2 rounded border border-border-subtle bg-muted px-2 py-1.5"
+                  className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2 rounded-sm border border-border-subtle bg-ink-fill px-2 py-1.5"
                 >
                   <span className="font-mono text-meta text-muted-foreground">
                     +{relativeMilliseconds(startedAt, event.timestamp)} ms
@@ -475,7 +475,7 @@ function CallDetail({ call }: { call: LlmCallSummary }) {
                 {call.chunks.map((chunk) => (
                   <div
                     key={chunk.messageClass}
-                    className="flex justify-between gap-2 rounded border border-border-subtle bg-muted px-2 py-1.5"
+                    className="flex justify-between gap-2 rounded-sm border border-border-subtle bg-ink-fill px-2 py-1.5"
                   >
                     <dt className="truncate font-mono text-meta text-muted-foreground">
                       {chunk.messageClass}

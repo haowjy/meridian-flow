@@ -263,7 +263,7 @@ function ThreadSwitchItem({
     <li
       className={cn(
         dropdownRowContainerClass,
-        "group flex min-w-0 items-center transition-colors hover:bg-dropdown-hover",
+        "group flex min-w-0 items-center transition-colors hover:bg-ink-fill",
       )}
       data-selected={active}
     >
@@ -275,14 +275,16 @@ function ThreadSwitchItem({
         className={cn(dropdownRowVariants({ interactive: false }), "flex-1")}
       >
         <span className="min-w-0 flex-1 truncate">{title}</span>
-        <span className="min-w-0 max-w-24 shrink-0 truncate text-xs font-medium text-ink-muted">
+        <span className="min-w-0 max-w-24 shrink-0 truncate text-xs font-medium text-muted-foreground">
           <span className="sr-only">
             <Trans>Agent:</Trans>{" "}
           </span>
           {agentName}
         </span>
         {rel ? (
-          <span className="shrink-0 text-meta font-normal tabular-nums text-ink-subtle">{rel}</span>
+          <span className="shrink-0 text-meta font-normal tabular-nums text-muted-foreground">
+            {rel}
+          </span>
         ) : null}
       </button>
       {active ? (

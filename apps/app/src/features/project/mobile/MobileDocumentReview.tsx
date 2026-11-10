@@ -106,7 +106,7 @@ function LiveDraftEntry({
   return (
     <div
       data-phone-draft-entry
-      className="flex min-h-12 shrink-0 items-center border-b border-border-subtle bg-dock-surface"
+      className="flex min-h-12 shrink-0 items-center border-b border-border-subtle bg-review"
       style={{
         paddingLeft: "calc(0.25rem + env(safe-area-inset-left))",
         paddingRight: "calc(0.25rem + env(safe-area-inset-right))",

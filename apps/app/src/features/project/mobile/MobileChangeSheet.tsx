@@ -34,7 +34,7 @@ export function MobileChangeSheet({
         side="bottom"
         showCloseButton={false}
         data-phone-change-sheet
-        className="max-h-[78svh] gap-0 rounded-t-2xl border-border-subtle p-0"
+        className="max-h-[78svh] gap-0 rounded-t-xl border-border-subtle p-0"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-border" />

@@ -82,7 +82,7 @@ export const FileSuggestionList = forwardRef<
     rows[nextIndex]?.focus();
   };
 
-  const rowClass = `${dropdownRowVariants()} focus:bg-dropdown-hover`;
+  const rowClass = `${dropdownRowVariants()} focus:bg-ink-fill`;
 
   return (
     // The keydown boundary wraps header + rows so one arrow walk covers both;

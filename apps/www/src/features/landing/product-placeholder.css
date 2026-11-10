@@ -11,7 +11,7 @@
   margin: auto;
   overflow: hidden;
   border-radius: 12px;
-  background: var(--color-sidebar);
+  background: var(--color-chrome);
   color: var(--color-foreground);
   font: 400 14px / 1.4 var(--mkt-font-plain);
 }
@@ -53,12 +53,12 @@
 }
 
 .s-n.on {
-  background: var(--color-sidebar-accent);
+  background: var(--color-ink-fill-strong);
 }
 
 @media (hover: hover) {
   .s-n:not(.on):hover {
-    background: color-mix(in oklab, var(--color-sidebar-accent) 50%, transparent);
+    background: color-mix(in oklab, var(--color-ink-fill-strong) 50%, transparent);
   }
 }
 
@@ -114,7 +114,7 @@
 
 @media (hover: hover) {
   .s-f:hover {
-    background: color-mix(in oklab, var(--color-sidebar-accent) 50%, transparent);
+    background: color-mix(in oklab, var(--color-ink-fill-strong) 50%, transparent);
   }
 }
 
@@ -359,9 +359,9 @@
 
 .s-comp {
   padding: 9px 10px;
-  background: var(--color-composer-surface);
-  border: 1px solid var(--color-composer-border);
-  border-radius: var(--radius-composer-pinned);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
   color: var(--color-muted-foreground);
   font-size: 13px;
 }

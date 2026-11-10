@@ -33,8 +33,8 @@ export function PassageDoor({ path, excerpt, passage }: PassageDoorProps) {
     <span
       className={
         isDoor
-          ? "font-semibold text-prose-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors group-hover:decoration-jade-text group-hover:text-jade-text group-focus-visible:decoration-jade-text group-focus-visible:text-jade-text"
-          : "font-semibold text-prose-foreground"
+          ? "font-semibold text-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors group-hover:decoration-jade-text group-hover:text-jade-text group-focus-visible:decoration-jade-text group-focus-visible:text-jade-text"
+          : "font-semibold text-foreground"
       }
     >
       {excerpt.match}
@@ -51,7 +51,7 @@ export function PassageDoor({ path, excerpt, passage }: PassageDoorProps) {
   );
 
   if (!isDoor) {
-    return <p className="text-xs leading-relaxed text-ink-muted">{body}</p>;
+    return <p className="text-xs leading-relaxed text-muted-foreground">{body}</p>;
   }
 
   return (
@@ -65,7 +65,7 @@ export function PassageDoor({ path, excerpt, passage }: PassageDoorProps) {
         event.stopPropagation();
         openContextUri(uri, passage);
       }}
-      className="focus-ring group block w-full rounded-sm py-px text-left text-xs leading-relaxed text-ink-muted"
+      className="focus-ring group block w-full rounded-sm py-px text-left text-xs leading-relaxed text-muted-foreground"
     >
       {body}
     </button>

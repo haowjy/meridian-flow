@@ -118,7 +118,7 @@ function TraceCounters({ paused }: { paused: boolean }) {
       <span>captured {snapshot.entries.length + snapshot.ringDropped}</span>
       <span>ring dropped {snapshot.ringDropped}</span>
       <span>tap errors {snapshot.tapErrors}</span>
-      {paused ? <span className="font-medium text-status-warning">frozen</span> : null}
+      {paused ? <span className="font-medium text-warning">frozen</span> : null}
     </div>
   );
 }

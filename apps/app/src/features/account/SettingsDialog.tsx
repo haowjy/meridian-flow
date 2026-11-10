@@ -168,7 +168,7 @@ export function SettingsDialog() {
         <DialogContent className="@container/settings flex h-[540px] max-w-[min(48rem,calc(100%-2rem))] gap-0 overflow-hidden rounded-lg p-0">
           {/* A container can't query itself, so the direction switch lives one level in. */}
           <div className="flex min-w-0 flex-1 flex-col @[40rem]/settings:flex-row">
-            <aside className="flex shrink-0 flex-col gap-3 border-b border-border-subtle bg-muted px-3 pt-4 pb-2 @[40rem]/settings:w-52 @[40rem]/settings:gap-4 @[40rem]/settings:border-r @[40rem]/settings:border-b-0 @[40rem]/settings:py-4">
+            <aside className="flex shrink-0 flex-col gap-3 border-b border-border-subtle bg-ink-fill px-3 pt-4 pb-2 @[40rem]/settings:w-52 @[40rem]/settings:gap-4 @[40rem]/settings:border-r @[40rem]/settings:border-b-0 @[40rem]/settings:py-4">
               <DialogTitle className="px-2 text-lg font-semibold tracking-tight">
                 <Trans>Settings</Trans>
               </DialogTitle>
@@ -230,8 +230,8 @@ function SectionLink({
       className={cn(
         "focus-ring flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-2 py-1.5 text-left text-sm transition-colors",
         isActive
-          ? "bg-sidebar-accent font-medium text-foreground"
-          : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
+          ? "bg-ink-fill-strong font-medium text-foreground"
+          : "text-muted-foreground hover:bg-ink-fill hover:text-foreground",
       )}
     >
       <Icon className="size-4 shrink-0" aria-hidden />

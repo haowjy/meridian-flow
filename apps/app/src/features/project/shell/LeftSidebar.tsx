@@ -4,15 +4,16 @@
  * own sidebar (`MODE_SIDEBARS`). The phone drawer has no mode switch: it
  * composes `WorkspaceNavBody` instead.
  */
+
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useSelectedContextTab } from "@/client/stores";
+import { role } from "@/components/ui/roles";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
 import { useAccountResourceProjection } from "../context/account-feature-context";
-import { sidebarRole } from "../context/context-row-geometry";
 import { projectResourceTab } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { modeMeta } from "../layout/modes";
@@ -111,10 +112,10 @@ export function LeftSidebar({
           {...titleEdit}
           className={cn(
             "focus-ring flex h-8 min-w-0 flex-1 cursor-default items-center rounded-md px-2 text-left font-semibold",
-            sidebarRole.row,
-            sidebarRole.hover,
+            role.row,
+            role.hover,
           )}
-          inputClassName={cn("h-8 px-2 font-semibold", sidebarRole.row)}
+          inputClassName={cn("h-8 px-2 font-semibold", role.row)}
         />
         <ProjectMenu
           key={projectId}

@@ -106,8 +106,8 @@ function QueuedControlRow({
       <div className="flex min-w-0 flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)]">
         {failed ? null : (
           <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
-            <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
-            <span className="text-meta text-ink-muted">{label}</span>
+            <FoldVertical aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="text-meta text-muted-foreground">{label}</span>
           </span>
         )}
         {actions}

@@ -27,7 +27,7 @@ export function DragHint() {
   return createPortal(
     <div
       aria-hidden
-      className="pointer-events-none fixed z-50 max-w-72 overflow-hidden rounded-md text-xs shadow-sm"
+      className="pointer-events-none fixed z-50 max-w-72 overflow-hidden rounded-md text-xs shadow-float"
       style={{ left: current.x + 14, top: current.y + 18 }}
     >
       <div
@@ -40,7 +40,7 @@ export function DragHint() {
         {current.label}
       </div>
       {current.warning ? (
-        <div className="border-x border-b border-warning-border rounded-b-md bg-warning-bg px-2 py-1 text-warning-foreground">
+        <div className="border-x border-b border-warning/40 rounded-b-md bg-warning-tint px-2 py-1 text-warning-ink">
           {current.warning}
         </div>
       ) : null}

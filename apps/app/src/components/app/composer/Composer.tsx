@@ -650,9 +650,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         {...fileDrop.dropProps}
         hidden={takeover ? true : undefined}
         className={cn(
-          "border border-composer-border bg-composer-surface px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-card-pad-y)] focus-within:border-border-focus",
-          variant === "hero" ? "rounded-composer" : "rounded-composer-pinned",
-          (fileDrop.over || fileDropActive) && "border-border-focus bg-sidebar-accent",
+          "border border-border bg-card px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-card-pad-y)] focus-within:border-focus",
+          variant === "hero" ? "rounded-xl" : "rounded-xl",
+          (fileDrop.over || fileDropActive) && "border-focus bg-ink-fill-strong",
         )}
         aria-busy={busy || uploadsHeld === "sending" || undefined}
       >
@@ -707,11 +707,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               }
               className="relative rounded-full"
             >
-              <span className="size-2.5 rounded-[3px] bg-primary-foreground" />
+              <span className="size-2.5 rounded-sm bg-primary-foreground" />
               {stopInProgress ? (
                 <span
                   aria-hidden="true"
-                  className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
+                  className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/40 border-t-primary motion-safe:animate-spin"
                 />
               ) : null}
             </Button>
@@ -724,13 +724,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               disabled={!hasContent || submitDisabled || uploadsHeld !== null}
               aria-label={t`Send message`}
               aria-describedby={submitDisabledReason ? disabledReasonId : undefined}
-              className={running ? "relative rounded-full" : "rounded-field"}
+              className={running ? "relative rounded-full" : "rounded-lg"}
             >
               <ArrowUp className="size-4" />
               {running ? (
                 <span
                   aria-hidden="true"
-                  className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
+                  className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/40 border-t-primary motion-safe:animate-spin"
                 />
               ) : null}
             </Button>

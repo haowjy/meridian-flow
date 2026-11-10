@@ -313,7 +313,7 @@
 }
 
 .cine .ag .ring {
-  border-color: var(--color-sidebar-accent);
+  border-color: var(--color-ink-fill-strong);
   border-top-color: var(--color-primary);
   animation: spin 1.3s linear infinite;
 }

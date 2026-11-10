@@ -74,7 +74,7 @@ function ImageArtifact({ image }: { image: Extract<ArtifactRef, { type: "image" 
       <DialogTrigger asChild>
         <button
           type="button"
-          className="focus-ring group block w-full overflow-hidden rounded-md border border-border-subtle bg-muted transition-all hover:border-border-focus"
+          className="focus-ring group block w-full overflow-hidden rounded-md border border-border-subtle bg-ink-fill transition-all hover:border-focus"
         >
           <img
             src={image.url}
@@ -117,9 +117,9 @@ function LiveViewSlot({ artifact }: { artifact: Extract<ArtifactRef, { type: "li
   // proxy's auth cookie usable. Nothing produces liveView arms today —
   // this slot is the contract landing zone.
   return (
-    <div className="overflow-hidden rounded-md border border-border-subtle bg-muted">
+    <div className="overflow-hidden rounded-md border border-border-subtle bg-ink-fill">
       <div className="flex items-center justify-between border-border-subtle border-b px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]">
-        <span className="font-medium text-foreground text-xs uppercase tracking-wide">
+        <span className="font-medium text-foreground text-xs uppercase tracking-caps">
           <Trans>Live view</Trans>
         </span>
         {artifact.expiresAt ? (

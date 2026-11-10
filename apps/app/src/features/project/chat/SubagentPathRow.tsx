@@ -33,7 +33,7 @@ export function SubagentPathRow({
             <button
               type="button"
               onClick={() => onOpenParent(ancestor.id)}
-              className="focus-ring inline-flex max-w-44 items-center gap-1 rounded px-1 py-1 text-muted-foreground hover:text-foreground"
+              className="focus-ring inline-flex max-w-44 items-center gap-1 rounded-sm px-1 py-1 text-muted-foreground hover:text-foreground"
             >
               {index === 0 ? <ChevronLeft className="size-3.5 shrink-0" aria-hidden /> : null}
               <span className="truncate">

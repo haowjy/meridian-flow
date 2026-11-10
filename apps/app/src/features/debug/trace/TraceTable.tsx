@@ -57,7 +57,7 @@ export function TraceTable({
             return (
               <tr
                 key={traceRowKey(record, index)}
-                className={`border-b border-border-subtle ${active ? "bg-muted" : "hover:bg-muted"}`}
+                className={`border-b border-border-subtle ${active ? "bg-ink-fill" : "hover:bg-ink-fill"}`}
                 aria-selected={active}
               >
                 <td className="whitespace-nowrap p-0">

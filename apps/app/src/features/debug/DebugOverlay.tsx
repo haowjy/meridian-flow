@@ -77,15 +77,15 @@ export function DebugOverlay() {
 
 const CONNECTION_DOT: Record<string, string> = {
   connected: "bg-primary",
-  connecting: "bg-status-warning",
-  reconnecting: "bg-status-warning",
+  connecting: "bg-warning",
+  reconnecting: "bg-warning",
   disconnected: "bg-destructive",
   closed: "bg-destructive",
 };
 
 const SERVER_FEED_DOT: Record<ServerFeedState, string> = {
   idle: "bg-muted-foreground",
-  connecting: "bg-status-warning",
+  connecting: "bg-warning",
   open: "bg-primary",
   error: "bg-destructive",
 };
@@ -182,7 +182,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
       <div className="fixed bottom-3 right-3 z-[55] flex flex-col items-end gap-2">
         {open ? (
           <section
-            className="flex max-h-[70svh] w-96 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg border border-border bg-background text-foreground shadow-rail-left"
+            className="flex max-h-[70svh] w-96 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg border border-border bg-background text-foreground shadow-modal"
             aria-label="Debug panel"
           >
             <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
@@ -213,14 +213,14 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
                 <div className="flex min-w-0 flex-1 gap-2">
                   <button
                     type="button"
-                    className="focus-ring min-w-0 flex-1 rounded border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-muted"
+                    className="focus-ring min-w-0 flex-1 rounded-sm border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-ink-fill"
                     onClick={openTraceViewer}
                   >
                     Streams
                   </button>
                   <button
                     type="button"
-                    className="focus-ring min-w-0 flex-1 rounded border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-muted"
+                    className="focus-ring min-w-0 flex-1 rounded-sm border border-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-ink-fill"
                     onClick={() => openLlmCalls(null)}
                   >
                     LLM Calls
@@ -247,7 +247,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
                 </label>
               </div>
               {popupBlocked ? (
-                <p className="text-meta text-status-warning" role="status">
+                <p className="text-meta text-warning" role="status">
                   Popup blocked — allow popups and try again.
                 </p>
               ) : null}
@@ -261,7 +261,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="focus-ring flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-meta text-foreground shadow-rail-left hover:bg-muted"
+          className="focus-ring flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-meta text-foreground shadow-modal hover:bg-ink-fill"
           aria-label={open ? "Collapse debug panel" : "Expand debug panel"}
           aria-expanded={open}
         >

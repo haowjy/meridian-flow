@@ -153,7 +153,7 @@ export function DocumentIdentityBar({
   const renderState = (version: ReactNode, controls: ReactNode) => (
     <>
       {controls ? (
-        <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-x-2 border-b border-border-subtle bg-dock-surface px-4 text-[13px] text-ink-muted">
+        <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-x-2 border-b border-border-subtle bg-review px-4 text-sm text-muted-foreground">
           {controls}
         </div>
       ) : null}
@@ -161,7 +161,7 @@ export function DocumentIdentityBar({
         <div
           ref={rowRef}
           data-document-identity-row
-          className="flex min-w-0 shrink items-center gap-1 text-[13px] text-ink-muted"
+          className="flex min-w-0 shrink items-center gap-1 text-sm text-muted-foreground"
         >
           {placementOpen ? (
             <IdentityPlacementField
@@ -224,7 +224,7 @@ export function DocumentIdentityBar({
         ref={rowRef}
         data-document-identity-row
         className={cn(
-          "relative flex flex-wrap items-center gap-x-1 font-mono text-ink-subtle text-sm",
+          "relative flex flex-wrap items-center gap-x-1 font-mono text-muted-foreground text-sm",
           "min-h-10 gap-y-0.5 py-1 pl-2",
           trailing && "pr-12 [@media(pointer:coarse)]:pr-14",
           // The row grows so every control can own a 44px target (document-identity-row.css).
@@ -262,7 +262,7 @@ export function DocumentIdentityBar({
                     projectId={projectId}
                     subject={{ kind: "file", id: tab.documentId }}
                     operationId={noteOperationId}
-                    className="ml-3 font-sans text-ink-muted"
+                    className="ml-3 font-sans text-muted-foreground"
                   />
                 }
               />

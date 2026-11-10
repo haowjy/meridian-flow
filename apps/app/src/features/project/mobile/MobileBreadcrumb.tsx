@@ -70,7 +70,7 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
         {items.map((item, index) => {
           const separator =
             index > 0 ? (
-              <ChevronRight aria-hidden className="size-3 shrink-0 text-ink-subtle" />
+              <ChevronRight aria-hidden className="size-3 shrink-0 text-muted-foreground" />
             ) : null;
           if (item.kind === "ellipsis") {
             return (

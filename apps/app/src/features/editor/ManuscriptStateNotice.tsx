@@ -123,14 +123,14 @@ function ManuscriptStateChip({ state, touch }: { state: ManuscriptState; touch: 
     <div
       role="status"
       data-manuscript-state-notice={state.kind}
-      className="flex min-w-0 max-w-full items-center font-sans text-ink-muted text-xs"
+      className="flex min-w-0 max-w-full items-center font-sans text-muted-foreground text-xs"
     >
       <Popover>
         <PopoverTrigger
           aria-label={state.sentence}
           title={state.sentence}
           className={cn(
-            "focus-ring flex min-w-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-muted hover:text-foreground",
+            "focus-ring flex min-w-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-ink-fill hover:text-foreground",
             touch ? "h-11" : "h-6 [@media(pointer:coarse)]:h-11",
           )}
         >

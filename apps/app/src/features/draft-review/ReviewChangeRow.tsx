@@ -62,7 +62,7 @@ export function ReviewChangeRow({
       onClick={onFocus}
       className={cn(
         "group flex cursor-pointer items-center rounded-md border border-transparent px-2 py-1 transition-colors",
-        focused ? "border-border-subtle bg-card" : "hover:bg-sidebar-accent/50",
+        focused ? "border-border-subtle bg-card" : "hover:bg-ink-fill",
         arrived && "meridian-review-row-arrived",
       )}
     >
@@ -100,8 +100,8 @@ export function ReviewChangeRow({
                       index < runs.length - 1 && "mr-1",
                       !sentence &&
                         (run.kind === "removed"
-                          ? "text-diff-removed line-through"
-                          : "text-diff-added"),
+                          ? "text-destructive line-through"
+                          : "text-jade-text"),
                     )}
                   >
                     {run.text}

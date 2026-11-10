@@ -256,7 +256,7 @@ function ReviewError({ props }: { props: EditorViewProps }) {
     : () => showDocumentLive(controller.projectId, props.documentId);
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-      <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
+      <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-float">
         <p className="font-medium text-foreground text-sm">
           <Trans>Couldn't open review mode.</Trans>
         </p>

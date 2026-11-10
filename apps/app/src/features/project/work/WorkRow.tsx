@@ -29,7 +29,7 @@ export function WorkRow({
   liveState?: ReactNode;
 }) {
   return (
-    <div className="group relative flex min-h-12 min-w-0 items-center gap-3 rounded-md px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-dropdown-hover">
+    <div className="group relative flex min-h-12 min-w-0 items-center gap-3 rounded-md px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-ink-fill">
       <a
         href={href}
         onClick={(event: MouseEvent<HTMLAnchorElement>) => {
@@ -60,7 +60,7 @@ export function WorkRow({
       <span
         className={cn(
           "shrink-0 text-xs tabular-nums",
-          liveState ? "text-muted-foreground" : "text-ink-subtle",
+          liveState ? "text-muted-foreground" : "text-muted-foreground",
         )}
       >
         {liveState ?? relativeTime(work.lastActivityAt, now)}

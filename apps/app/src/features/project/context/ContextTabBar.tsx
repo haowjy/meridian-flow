@@ -226,9 +226,9 @@ function TabChip({
         onClick={onClose}
         aria-label={t`Close ${tab.name}`}
         className={cn(
-          "focus-ring relative grid size-4 shrink-0 place-items-center rounded text-muted-foreground transition-opacity",
+          "focus-ring relative grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground transition-opacity",
           // Works on both fields: the active tab's canvas and the recessed strip.
-          "hover:bg-foreground/10 hover:text-foreground",
+          "hover:bg-ink-fill-strong hover:text-foreground",
           // Hide on inactive tabs unless hovered, like VS Code / Cursor.
           active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
         )}
@@ -276,7 +276,7 @@ function TabChipFrame({
           : "tab-chip-inactive text-muted-foreground hover:text-foreground",
         // Under review the chip surfaces the review strip's tone so tab and
         // banner read as one continuous surface.
-        reviewing && "[--tab-chip-surface:var(--color-dock-surface)]",
+        reviewing && "[--tab-chip-surface:var(--color-chrome)]",
       )}
     >
       {divider ? (

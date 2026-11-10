@@ -40,7 +40,7 @@ export function toolbarControlClass({
   blocked?: boolean;
 }): string {
   return cn(
-    active && "bg-sidebar-accent text-foreground hover:text-foreground",
+    active && "bg-ink-fill-strong text-foreground hover:text-foreground",
     blocked &&
       "cursor-not-allowed opacity-50 hover:bg-transparent hover:text-current active:scale-100",
   );

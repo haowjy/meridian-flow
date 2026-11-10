@@ -52,7 +52,7 @@ export function SlashMenu({ editor }: EditorChromeSurfaceProps) {
         key: item.id,
         before:
           grouped && groupLabels && item.group !== snapshot.items[index - 1]?.group ? (
-            <div className="px-2 pt-2 pb-1 font-semibold text-ink-subtle text-xs uppercase tracking-wider">
+            <div className="px-2 pt-2 pb-1 font-semibold text-muted-foreground text-xs uppercase tracking-caps">
               {groupLabels[item.group]}
             </div>
           ) : undefined,
@@ -68,7 +68,9 @@ function SlashRow({ item }: { item: SlashCommandItem }) {
     <>
       <Icon aria-hidden />
       <span>{item.label}</span>
-      {item.hint ? <span className="ml-auto pl-4 text-ink-subtle text-xs">{item.hint}</span> : null}
+      {item.hint ? (
+        <span className="ml-auto pl-4 text-muted-foreground text-xs">{item.hint}</span>
+      ) : null}
     </>
   );
 }
