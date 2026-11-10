@@ -146,7 +146,7 @@ export function ContextViewer({
       ? controller.inlineReview.itemKey
       : null;
   // One freeze source with the dock and the phone: an archived Work freezes its own files and
-  // its drafts' reviews (D30); a trashed chat freezes its drafts' reviews. The reviewed file
+  // its drafts' reviews; a trashed chat freezes its drafts' reviews. The reviewed file
   // itself may be project-owned, so only its own Work's archive freezes its identity bar.
   const freeze = useDocumentFreeze(
     projectId,
