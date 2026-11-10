@@ -430,13 +430,7 @@ export class DocumentSession {
       };
       const prefix = this.transportProvider?.whenCurrentChangesAcknowledged?.();
       stop = this.subscribe((snapshot) => {
-        const connection = snapshot.connectionState;
-        if (
-          snapshot.status === "destroyed" ||
-          connection?.kind === "reset" ||
-          connection?.kind === "terminal" ||
-          connection?.kind === "unauthorized"
-        )
+        if (this.isRoomEnded())
           finish(new Error("Document session can no longer acknowledge this cut"));
         else if (!prefix && snapshot.serverHasLocalChanges) finish();
       });

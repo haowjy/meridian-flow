@@ -1,6 +1,9 @@
 /**
  * Guards the no-lost-edit rule: a released live session with unacknowledged edits stays open
  * until the server has them, and only the exits below end the wait.
+ *
+ * Pins implementation decisions: the 10-minute limit on connected time a held session waits
+ * for an acknowledgement (`UNSENT_EDITS_HOLD_MAX_MS`).
  */
 import "fake-indexeddb/auto";
 import { expect, it, vi } from "vitest";
@@ -61,7 +64,7 @@ function scriptedTransport() {
   return { script, provider };
 }
 
-async function releasedSessionWithUnsentEdits(accountId: string) {
+async function admittedSessionWithUnsentEdits(accountId: string) {
   const { script, provider } = scriptedTransport();
   const registry = new DocumentSessionRegistry(
     (id, local) =>
@@ -86,9 +89,14 @@ async function releasedSessionWithUnsentEdits(accountId: string) {
   const lease = await registry.admit("project-1", "document-1", "1");
   registry.retain("host", [lease]);
   await vi.waitFor(() => expect(registry.get(lease).getSnapshot().status).toBe("synced"));
-  registry.release("host");
-  await new Promise((resolve) => setTimeout(resolve, GRACE_MS * 5));
   return { registry, script };
+}
+
+async function releasedSessionWithUnsentEdits(accountId: string) {
+  const held = await admittedSessionWithUnsentEdits(accountId);
+  held.registry.release("host");
+  await new Promise((resolve) => setTimeout(resolve, GRACE_MS * 5));
+  return held;
 }
 
 it("holds a released live session with unsent edits until acknowledged, a dead room, read access or account close", async () => {
@@ -117,16 +125,19 @@ it("holds a released live session with unsent edits until acknowledged, a dead r
 
 const MINUTE = 60_000;
 
-// The cap counts connected time only. Fake timers start after the real grace has passed; the
-// connection is dropped first so the real cap timer is cleared and the fake one arms on reconnect.
-async function withFakeClock(
-  held: Awaited<ReturnType<typeof releasedSessionWithUnsentEdits>>,
-  run: () => Promise<void>,
+// The cap counts connected time only. Fake timers are installed before the release so every
+// timer the hold arms, the first cap timer included, runs on the fake clock.
+async function withHeldSessionOnFakeClock(
+  accountId: string,
+  run: (held: Awaited<ReturnType<typeof admittedSessionWithUnsentEdits>>) => Promise<void>,
 ) {
-  held.script.setState({ kind: "reconnecting", attempt: 1, nextRetryAt: 0 });
+  const held = await admittedSessionWithUnsentEdits(accountId);
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   try {
-    await run();
+    held.registry.release("host");
+    await vi.advanceTimersByTimeAsync(GRACE_MS);
+    expect(held.script.destroyed, "held after the grace").toBe(false);
+    await run(held);
   } finally {
     vi.useRealTimers();
     await held.registry.closeAccountRuntime();
@@ -134,26 +145,21 @@ async function withFakeClock(
 }
 
 it("offline time never runs the cap down: it restarts on every drop and delivers on reconnect", async () => {
-  const held = await releasedSessionWithUnsentEdits("live-hold-offline");
-  await withFakeClock(held, async () => {
-    await vi.advanceTimersByTimeAsync(11 * MINUTE);
-    expect(held.script.destroyed, "offline past the cap").toBe(false);
-    held.script.setState({ kind: "connected" });
+  await withHeldSessionOnFakeClock("live-hold-offline", async (held) => {
     await vi.advanceTimersByTimeAsync(9 * MINUTE);
     held.script.setState({ kind: "reconnecting", attempt: 1, nextRetryAt: 0 });
-    await vi.advanceTimersByTimeAsync(9 * MINUTE);
+    await vi.advanceTimersByTimeAsync(11 * MINUTE);
+    expect(held.script.destroyed, "offline past the limit").toBe(false);
     held.script.setState({ kind: "connected" });
-    await vi.advanceTimersByTimeAsync(9 * MINUTE);
-    expect(held.script.destroyed, "restarted after a drop").toBe(false);
+    await vi.advanceTimersByTimeAsync(10 * MINUTE - 1);
+    expect(held.script.destroyed, "a full limit after reconnecting, minus 1 ms").toBe(false);
     held.script.acknowledge();
     await vi.waitFor(() => expect(held.script.destroyed, "delivered").toBe(true));
   });
 });
 
 it("retires a session that stays connected for the limit without an acknowledgement", async () => {
-  const held = await releasedSessionWithUnsentEdits("live-hold-connected");
-  await withFakeClock(held, async () => {
-    held.script.setState({ kind: "connected" });
+  await withHeldSessionOnFakeClock("live-hold-connected", async (held) => {
     await vi.advanceTimersByTimeAsync(10 * MINUTE - 1);
     expect(held.script.destroyed, "just under the limit").toBe(false);
     await vi.advanceTimersByTimeAsync(1);

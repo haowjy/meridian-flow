@@ -100,7 +100,6 @@ export class DocumentSessionRegistry
   });
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Unretained live sessions kept open only until the server acknowledges their edits. */
-  private readonly drainingRooms = new Set<string>();
   // Stops the connected-time cap of a held session (`holdUntilAcknowledged`).
   private readonly holdCapStops = new Map<string, () => void>();
   private liveDocCapWarningEmitted = false;
@@ -246,8 +245,11 @@ export class DocumentSessionRegistry
       return false;
     }
     this.cancelPendingTeardown(lease.documentId);
-    await session.restartTransport(this.transportFactory);
-    this.scheduleTeardownIfUnretained(lease.documentId);
+    try {
+      await session.restartTransport(this.transportFactory);
+    } finally {
+      this.scheduleTeardownIfUnretained(lease.documentId);
+    }
     return true;
   }
 
@@ -286,8 +288,11 @@ export class DocumentSessionRegistry
     const state = this.liveRooms.get(session.documentId as DocumentId);
     if (state?.session !== session) return false;
     this.cancelPendingTeardown(session.documentId as DocumentId);
-    await session.restartTransport(this.transportFactory);
-    this.scheduleTeardownIfUnretained(session.documentId as DocumentId);
+    try {
+      await session.restartTransport(this.transportFactory);
+    } finally {
+      this.scheduleTeardownIfUnretained(session.documentId as DocumentId);
+    }
     return true;
   }
 
@@ -389,7 +394,6 @@ export class DocumentSessionRegistry
     this.pendingTeardownTimers.clear();
     for (const stop of this.holdCapStops.values()) stop();
     this.holdCapStops.clear();
-    this.drainingRooms.clear();
     const liveSessions = [...this.liveRooms.entries()].flatMap(([documentId, { session }]) =>
       session ? [{ documentId, session }] : [],
     );
@@ -783,7 +787,6 @@ export class DocumentSessionRegistry
       // The other exits (refused room, removed document, revoked access, account close) go
       // through `dropRefusedRoom`, `drainDocument`, `drainAccess` and `invalidateAll`.
       if (this.mustKeepForUnsentEdits(state.session)) {
-        this.drainingRooms.add(roomKey);
         this.holdUntilAcknowledged(roomKey, state, state.session);
         return;
       }
@@ -828,7 +831,7 @@ export class DocumentSessionRegistry
 
   private retireDrainedRoom(session: DocumentSession): void {
     const roomKey = session.documentId;
-    if (!this.drainingRooms.has(roomKey)) return;
+    if (!this.holdCapStops.has(roomKey)) return;
     const state = this.liveRooms.get(roomKey);
     if (state?.session !== session) return;
     if (this.mustKeepForUnsentEdits(session)) return;
@@ -843,7 +846,6 @@ export class DocumentSessionRegistry
   }
 
   private cancelPendingTeardown(roomKey: string): void {
-    this.drainingRooms.delete(roomKey);
     this.holdCapStops.get(roomKey)?.();
     this.holdCapStops.delete(roomKey);
     const timer = this.pendingTeardownTimers.get(roomKey);

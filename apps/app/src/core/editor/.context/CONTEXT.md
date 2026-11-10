@@ -388,7 +388,8 @@ keyboard, pointer, drop, or draft-recovery answer.
 
 - `DraftRoomPool` retains stable `draft:<draftId>` rooms without leases. The last
   owner releases through a grace period; a room with unacknowledged edits drains
-  before retirement. Ordinary retirement keeps IndexedDB state. There is no
+  before retirement. The drain ends when the server acknowledges the edits or when
+  `canDeliverUnsentEdits()` turns false, read-only access included. Ordinary retirement keeps IndexedDB state. There is no
   draft-generation replacement or writer-operation handoff to a new draft.
 - Terminal `4205` (`closed`) and `4208` (`removed`) end that identity and clear
   its exact cache. The account command owner also handles authoritative metadata
