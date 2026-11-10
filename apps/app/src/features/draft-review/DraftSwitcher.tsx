@@ -109,7 +109,12 @@ export function DraftSwitcher({
               <Trans>Draft</Trans>
             )
           ) : scopeDraft ? (
-            <Trans>Live · Work has a draft</Trans>
+            <span className="flex items-baseline gap-1.5">
+              <Trans>Live</Trans>
+              <span className="font-normal text-muted-foreground">
+                <Trans>(Work has a draft)</Trans>
+              </span>
+            </span>
           ) : (
             <Trans>Live</Trans>
           )}
