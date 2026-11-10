@@ -13,13 +13,16 @@ import {
   X,
 } from "lucide-react";
 import { type HTMLAttributes, type ReactNode, useEffect, useRef } from "react";
+import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useReviewCopy } from "@/features/draft-review/copy-view";
+import { draftCopyView } from "@/features/draft-review/copy-view";
 import { cn } from "@/lib/utils";
+import { useDocumentPaint } from "../views";
 import { fileKindIcon } from "./context-file-icon";
 import type { OptimisticContextTab } from "./context-pane-state";
 import { useReferenceDrag } from "./entry-drag/reference-source";
+import { useProjectDocumentNavigationProjectId } from "./open-project-document";
 import { RemovedNoticeSlot } from "./RemovedDocumentNotice";
 import { tabSubject } from "./tab-subject";
 
@@ -198,7 +201,7 @@ function TabChip({
   onClose: () => void;
 }) {
   // The review is in the active tab; another tab of the same document shows it live.
-  const review = useReviewCopy(tab.documentId);
+  const review = useTabReviewCopy(tab);
   const reviewing = active && review.reviewing;
   const drag = useReferenceDrag(tabSubject(tab, reviewing ? review : NOT_REVIEWING));
   return (
@@ -237,6 +240,18 @@ function TabChip({
       </button>
     </TabChipFrame>
   );
+}
+
+/** Whether the tab's document paints a draft, and what a Copy of it reads then. */
+function useTabReviewCopy(tab: ContextTab) {
+  const projectId = useProjectDocumentNavigationProjectId() ?? "";
+  const paint = useDocumentPaint(projectId, tab);
+  const drafts = useOwnerDrafts(projectId || null, paint.draft?.ownerKey ?? null);
+  const file = paint.draft ? drafts.fileForDocument(tab.documentId) : null;
+  return {
+    reviewing: paint.showing === "draft",
+    view: file && paint.draft ? draftCopyView(file, paint.draft.ownerKey) : null,
+  };
 }
 
 function useActiveTabVisibility(active: boolean) {
