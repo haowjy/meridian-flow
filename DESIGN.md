@@ -27,25 +27,27 @@ keeps reading consistent across those surfaces. Jade appears only where the
 writer acts; cinnabar is a scarce seal.
 
 - **Audience:** fiction writers managing long-running serials, chapters, continuity notes, and agent-assisted revision threads.
-- **Mood:** warm chrome, lit paper.
+- **Mood:** paper grey panels around near-white warm paper.
 - **Density:** comfortable reading/drafting rhythm in the main column; compact but legible metadata in rails and rows.
 - **Scope:** authenticated app shell, project views, chat/thread surfaces, context/document surfaces, and marketing-adjacent pages that share the brand language.
 
-The shell has two region materials, chrome and page, plus the raised step for
-cards, menus and the composer, and a jade-grey review ground under draft chrome.
-Their separation is tonal—through lightness—not a seam border or structural shadow.
+The shell has at most two region tones: chrome for both side panels (the sidebar and the
+dock) and the tab band, and page for the main view. The two sit close together, so a
+hairline separates each side panel from the centre. The raised step serves cards, menus
+and the composer, and a jade-grey review ground sits under draft chrome only while a
+draft is under review.
 
 ## Color roles
 
 Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 
-- `chrome` — grey-gold `oklch(0.928 0.018 85)`: the sidebar, the tab band and the dock.
-- `background` — warm paper `oklch(0.966 0.015 90)`, the page.
-- `card` — the raised step `oklch(0.978 0.012 92)`: cards, menus, popovers, the composer, bubbles.
+- `chrome` — paper grey `oklch(0.963 0.0055 85)`: the sidebar, the tab band and the dock.
+- `background` — warm near-white paper `oklch(0.988 0.0045 90)`, the page.
+- `card` — the raised step `oklch(0.996 0.003 90)`: cards, menus, popovers, the composer, bubbles.
 - `review` — chrome with a little jade, under draft chrome and the reviewing tab.
 - `foreground` / `muted-foreground` — the two inks. A hint differs by size, never by a paler ink.
 - `ink-fill` / `ink-fill-strong` — foreground at 5% and 10%: hover and wells, then current, selected, open and pressed. Filled controls take them through the `interactive` layer.
-- `border` / `border-subtle` — foreground at 15% and 9%, for in-pane hairlines, never shell-region seams.
+- `border` / `border-subtle` — foreground at 15% and 9%, for hairlines, including the seam between each side panel and the centre.
 - `focus` — the one keyboard focus colour, 3:1 or better on every surface.
 - `primary` / `jade-text` — jade fills and icons, and jade text; never a wall or routine selection.
 - `cinnabar` — the brand seal. `gold` — favourites only.
