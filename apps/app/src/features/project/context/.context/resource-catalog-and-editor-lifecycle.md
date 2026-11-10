@@ -175,6 +175,16 @@ Eligibility is enforced at live workspace transitions, including bootstrap,
 adoption and availability updates. Hiding a row alone must not leave an
 ineligible tab available for close fallback.
 
+A removed document empties its view and nothing else moves. Neither the
+planner nor the coordinator picks a neighbouring tab or repairs the address: a trash,
+a lost access or a document that was never there leaves the address as written, and
+the route says "unavailable" there. `useAddressResultAfterRemoval` keeps the address
+lookup's stale "available" answer from installing the tab again (the removal would
+close it at once, in a loop) until a read after the removal and the replica's living
+record say it is back, so a restore returns the document at the same address.
+Closing a tab with its own control is still the one place that navigates, to the empty
+Editor.
+
 Every editable tab keeps `ContextTabSessionBoundary` as the same React ancestor.
 Resource-backed tabs resolve through their stable resource handle before and after
 acknowledgement, placement, and remint, so metadata changes do not remount the
@@ -253,8 +263,8 @@ the notice loses its words.
 `DesktopProject`) starts a notice's lifetime only when its placement is on
 screen (the Editor screen; Chat with its rail open and no dock document), so a
 removal noticed elsewhere waits for the writer. It anchors once the place no
-longer shows a removed document (the removal's own fallback is not a
-navigation), and the next change of place clears the notice, documents still
+longer shows a removed document (a removal leaves the address on the
+removed document, which is not a navigation), and the next change of place clears the notice, documents still
 waiting for an answer included. A removal joining the notice re-anchors it.
 A dock removal on the Work screen has no placement there; it shows when the
 writer next sees Chat's rail.
