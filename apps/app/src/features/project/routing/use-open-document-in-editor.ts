@@ -30,11 +30,16 @@ export function openDocumentInEditor(
       replace: false,
       ...routeOptions,
       ...(tab ? { tab } : {}),
-      ...(review
-        ? { itemKey: review.itemKey, reviewOwner: review.ownerKey, changeId: review.changeId }
-        : {}),
+      ...reviewRouteOptions(review),
     },
   );
+}
+
+/** The route options that open a document on its view's draft; none for Live. */
+export function reviewRouteOptions(review: DraftPin | null | undefined) {
+  return review
+    ? { itemKey: review.itemKey, reviewOwner: review.ownerKey, changeId: review.changeId }
+    : {};
 }
 
 export function useOpenDocumentInEditor() {
