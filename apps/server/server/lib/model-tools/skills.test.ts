@@ -5,7 +5,7 @@
  * and nothing else.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Extensionless, read-only skill addresses (kb/decisions/agents/tools/skills-as-files.md)
+ * - Extensionless, read-only skill addresses (kb/wiki/architecture/agents/definitions.md)
  */
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";

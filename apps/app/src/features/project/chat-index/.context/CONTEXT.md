@@ -1,7 +1,7 @@
 # Project chat index contracts
 
 The list contract is in
-[Project Chat Lists Share Presentation and State Boundaries](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/entry-and-navigation/project-chat-list-contract.md).
+[Project Chat Lists Share Presentation and State Boundaries](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/entry-and-navigation.md).
 
 ## Feed
 

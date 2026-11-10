@@ -10,4 +10,4 @@ walker, with no editor instance ([decision][chat-rendering]).
 Worker protocol and writer occurrences:
 [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
-[chat-rendering]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/chat-markdown-document-rendering.md
+[chat-rendering]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/transcript.md
