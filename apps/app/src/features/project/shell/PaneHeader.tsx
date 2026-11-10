@@ -45,7 +45,7 @@ export type PaneHeaderProps = {
 export function PaneHeader({ title, left, right, actions, leading, notice }: PaneHeaderProps) {
   const leftToggle = left && !left.open;
   return (
-    <div className="@container/pane-header shrink-0">
+    <div className="@container/pane-header tab-band shrink-0">
       <header className="flex flex-wrap items-center gap-x-1 px-2">
         {leftToggle ? <PanelToggleSpacer /> : null}
         {leading ? (

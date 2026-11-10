@@ -693,7 +693,7 @@
  * sheet is the ONE sanctioned surface paint on top of it.
  */
 @utility page-sheet {
-  @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-tr-md bg-background;
+  @apply mb-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-border-subtle bg-background;
 }
 
 /*
@@ -719,10 +719,8 @@
  * Tab-chip grammar — geometry for the places a surface RISES out of the
  * chrome: the document tab strip (`ContextTabBar`) and the centered chat
  * header's title chip (`ThreadSwitcherPopover` variant="tab"). A chip sits in
- * the chrome band; the ACTIVE chip surfaces the field tone below it — rounded
- * top plus Obsidian-style bottom flares (corner fills outside the chip so its
- * base curves outward into the page instead of meeting the band at a hard
- * right angle). An INACTIVE chip carries an inset rounded hover pill covering
+ * the chrome band; the ACTIVE chip surfaces the field tone below it as a
+ * folder tab: rounded top, the sheet's hairline around it, open at the base. An INACTIVE chip carries an inset rounded hover pill covering
  * its full hit target. (The dock's Chat|Changes switcher is deliberately NOT
  * this grammar — the dock is one uniform surface; its view switch is a
  * contained segmented track that presses into the chrome.)
@@ -730,8 +728,8 @@
  * The variation point is the surfacing color: consumers set
  * `--tab-chip-surface` on the strip (canvas for document tabs). These
  * utilities own geometry and surface paint only — DOM, text color, and a11y
- * stay local to each consumer. Chips must be `relative` (the flares and pill
- * are absolutely-positioned pseudos).
+ * stay local to each consumer. Chips must be `relative` (the hover pill is an
+ * absolutely-positioned pseudo).
  *
  * No transition on the active chip: activation swaps geometry instantly, so
  * a background fade would flash the outgoing chip as a full-height rectangle
@@ -742,31 +740,18 @@
   border-top-left-radius: var(--radius-md);
   border-top-right-radius: var(--radius-md);
   background-color: var(--tab-chip-surface);
-  &::before,
-  &::after {
-    content: "";
-    pointer-events: none;
-    position: absolute;
-    bottom: 0;
-    width: var(--radius-md);
-    height: var(--radius-md);
-  }
-  &::before {
-    left: calc(-1 * var(--radius-md));
-    background: radial-gradient(
-      circle at 0 0,
-      transparent calc(var(--radius-md) - 0.5px),
-      var(--tab-chip-surface) var(--radius-md)
-    );
-  }
-  &::after {
-    right: calc(-1 * var(--radius-md));
-    background: radial-gradient(
-      circle at 100% 0,
-      transparent calc(var(--radius-md) - 0.5px),
-      var(--tab-chip-surface) var(--radius-md)
-    );
-  }
+  /* The sheet's hairline carried up and over the tab. The band overlaps the sheet by
+     1px (`tab-band`), so this chip's fill hides the sheet's top edge beneath it. */
+  box-shadow:
+    inset 1px 0 0 var(--color-border-subtle),
+    inset -1px 0 0 var(--color-border-subtle),
+    inset 0 1px 0 var(--color-border-subtle);
+}
+/* A band whose active chip joins the `page-sheet` below it. */
+@utility tab-band {
+  position: relative;
+  z-index: 1;
+  margin-bottom: -1px;
 }
 @utility tab-chip-inactive {
   /* isolate + z-index:-1 keeps the pill behind the chip's content without
