@@ -47,7 +47,6 @@ import {
 } from "@/client/working-set";
 import { PaintScope } from "@/components/app/PaintHold";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
-import { useReviewProseFocus } from "@/features/chat/review-prose-focus";
 import { DraftOnlySettlement } from "@/features/draft-review/DraftOnlySettlement";
 import {
   DraftReviewBoundary,
@@ -93,7 +92,6 @@ import { ChatDocumentsBesideProvider } from "./dock/ChatDocumentsBesideProvider"
 import { EditorWorkRecovery } from "./EditorWorkRecovery";
 import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
 import {
-  type DesktopProjectSlotId,
   modeOf,
   NO_COLLAPSED_SLOTS,
   type PanelSlotId,
@@ -742,18 +740,10 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
       ) : undefined,
   };
 
-  // Inline review on the Editor screen holds the left rail collapsed to give
-  // the manuscript prose width. The hold is derived from review being open and
-  // never written to prefs, so the writer's saved rail state returns by itself.
-  const proseFocus = useReviewProseFocus(props.activeScreen, props.presentedReview);
   // useProjectLayout subscribes to the slot widths and this mode's panels and
   // returns the merged SurfaceLayoutMap; no other whole-prefs subscription exists.
   const narrowHold = useNarrowWindowHold();
-  const heldSlots = useMemo(
-    () => mergeHeldSlots(proseFocus.collapsedSlots, narrowHold.collapsedSlots),
-    [proseFocus.collapsedSlots, narrowHold.collapsedSlots],
-  );
-  const layout = useProjectLayout(props.activeScreen, heldSlots);
+  const layout = useProjectLayout(props.activeScreen, narrowHold.collapsedSlots);
   const mode = modeOf(props.activeScreen);
 
   const { setSlotOpen, setSlotWidth } = useProjectSurfacePrefsActions();
@@ -761,11 +751,10 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   useDockReveal(() => setSlotOpen(mode, "dock", true));
 
   const isOpen = (surfaceId: SurfaceId) => !layout[surfaceId].collapsed;
-  // The single writer-driven open/close entry, for this mode's panel. Opening
-  // the sidebar also releases review's hold on it, so the control can never
+  // The single writer-driven open/close entry, for this mode's panel. Opening a
+  // panel also releases the narrow-window hold on it, so the control can never
   // write a pref that changes nothing on screen.
   const setSlotOpenHere = (slot: PanelSlotId, open: boolean) => {
-    if (open && slot === "rail-l") proseFocus.release();
     if (open) narrowHold.release(slot);
     setSlotOpen(mode, slot, open);
   };
@@ -994,13 +983,4 @@ function useNarrowWindowHold() {
     [],
   );
   return { collapsedSlots: held.length === 0 ? NO_COLLAPSED_SLOTS : held, release };
-}
-
-function mergeHeldSlots(
-  a: readonly DesktopProjectSlotId[],
-  b: readonly DesktopProjectSlotId[],
-): readonly DesktopProjectSlotId[] {
-  if (b.length === 0) return a;
-  if (a.length === 0) return b;
-  return [...new Set([...a, ...b])];
 }
