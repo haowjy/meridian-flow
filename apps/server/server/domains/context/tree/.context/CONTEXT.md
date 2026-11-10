@@ -127,15 +127,20 @@ same seam in its own transaction and reports after commit.
 Tree writes return changed identities; ContextFS, the mover, Apply, and Discard
 refresh the catalog in their own surrounding transaction.
 
-Sibling order is part of effective placement. Parents are either `default` (folders first, then
-numeric-aware names) or `manual` (stored ranks in byte order: every SQL comparison or `ORDER BY` on
-`rank` uses `COLLATE "C"`, matching `compareCatalogSiblings` in `@meridian/resource-replica`, which also defines the default order). Position commands carry start/end or
+Sibling order is part of effective placement. Every parent lists its children by stored rank in
+byte order: every SQL comparison or `ORDER BY` on `rank` uses `COLLATE "C"`, matching
+`compareCatalogSiblings` in `@meridian/resource-replica`. There is no name-ordered parent, so a
+rename or a same-parent move without a position never changes a rank, and every row that becomes
+visible (create, reveal, restore, copy, import, move to another parent) is ranked by
+`placeLiveSibling` or `placeArrivedBatch` and lands last. An unranked visible row would sort first;
+a write path that inserts visible rows must rank them. Position commands carry start/end or
 before/after one sibling identity; the server resolves the anchor and allocates the rank while the
 namespace lock is held. Draft-Work placement carries the same position fact, so pending detection,
 Apply, Discard, and inverse operations cannot erase a reorder. Settlement reconciles only the
 parents the document left or entered. If an inverse restores a ranked fact after its parent baseline
 was cleaned up, it rebuilds that baseline before reinstalling the saved rank.
-A batch that arrives together (an import's reveal) is placed in one allocation (`placeArrivedBatch`); export walks each source depth first, children in this order (`export-inventory.ts`), so the archive follows the tree.
+A branch owns a parent's whole order once a row sits in `branch_tree_parent_orders` (after a rank collision rebalanced it); until then it reads the live ranks.
+A batch that arrives together (an import's reveal) is placed in one allocation (`placeArrivedBatch`, in name order via `compareDefaultSiblings`, which orders only such batches); the folders an import creates rank their own children (`rankNewFolderChildren`); export walks each source depth first, children in this order (`export-inventory.ts`), so the archive follows the tree.
 
 ## Removal facts
 

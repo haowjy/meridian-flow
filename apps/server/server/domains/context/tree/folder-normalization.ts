@@ -115,12 +115,11 @@ async function fold(db: Database, hidden: FolderId, into: FolderId): Promise<voi
   await tx.delete(branchTreeFolders).where(eq(branchTreeFolders.folderId, hidden));
   await tx.execute(sql`
     INSERT INTO branch_tree_parent_orders
-      (branch_id, parent_kind, parent_id, order_policy, created_at, updated_at)
-    SELECT branch_id, parent_kind, ${into}::uuid, order_policy, created_at, now()
+      (branch_id, parent_kind, parent_id, created_at, updated_at)
+    SELECT branch_id, parent_kind, ${into}::uuid, created_at, now()
     FROM branch_tree_parent_orders
     WHERE parent_kind = 'folder' AND parent_id = ${hidden}::uuid
-    ON CONFLICT (branch_id, parent_kind, parent_id)
-    DO UPDATE SET order_policy = EXCLUDED.order_policy, updated_at = now()`);
+    ON CONFLICT (branch_id, parent_kind, parent_id) DO NOTHING`);
   await tx
     .delete(branchTreeParentOrders)
     .where(

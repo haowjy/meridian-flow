@@ -22,6 +22,7 @@ import {
   works,
 } from "@meridian/database/schema";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import type { OwnerLocks } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   type DrizzleDb,
@@ -42,10 +43,17 @@ import { type PlaceTarget, placeLive } from "./placement.js";
 import type { NodeRef } from "./tree-view.js";
 import { loadActiveBranchUses, loadDocumentIdentityRows } from "./tree-view-sql.js";
 
-/** Works whose branches use these documents, in the caller's transaction. */
-async function usingWorks(tx: DrizzleDb, ids: readonly DocumentId[]): Promise<WorkId[]> {
+/** Owners whose branches use these documents, in the caller's transaction. */
+async function usingOwners(tx: DrizzleDb, ids: readonly DocumentId[]): Promise<OwnerLocks> {
   const uses = await loadActiveBranchUses(tx, ids);
-  return [...new Set(uses.flatMap(({ originWorkId }) => (originWorkId ? [originWorkId] : [])))];
+  return {
+    workIds: [...new Set(uses.flatMap(({ originWorkId }) => (originWorkId ? [originWorkId] : [])))],
+    lineageRootIds: [
+      ...new Set(
+        uses.flatMap(({ originRootThreadId }) => (originRootThreadId ? [originRootThreadId] : [])),
+      ),
+    ],
+  };
 }
 
 export function createDocumentRemoval(
@@ -63,7 +71,7 @@ export function createDocumentRemoval(
       const living = (await loadDocumentIdentityRows(tx, ids)).filter((row) => !row.deleted);
       const removed = living.map((row) => row.id as DocumentId);
       if (!removed.length) return [];
-      const affected = await usingWorks(tx, removed);
+      const affected = await usingOwners(tx, removed);
       const now = input.at ?? new Date();
       // A model's delete keeps its chat's owner too, who stands in once the chat is gone.
       const [chat] = input.threadId
@@ -116,9 +124,14 @@ export function createDocumentRemoval(
       if (!record) throw new Error(`Removal of ${removed[0]} wrote no record`);
       deps.collab.registerRemoved(removed, record);
       const drafted =
-        input.reason === "discarded" ? await deps.collab.closeDiscardedDrafts(removed, record) : [];
+        input.reason === "discarded"
+          ? await deps.collab.closeDiscardedDrafts(removed, record)
+          : { workIds: [], lineageRootIds: [] };
       await testHook("removal.afterRecord");
-      deps.workProjection.recountAfterCommit([...affected, ...drafted]);
+      deps.workProjection.recountAfterCommit({
+        workIds: [...affected.workIds, ...drafted.workIds],
+        lineageRootIds: [...affected.lineageRootIds, ...drafted.lineageRootIds],
+      });
       if (input.reason === "discarded") await releaseDocumentStorage(db, removed);
       const identities = await tx
         .select({
@@ -145,14 +158,9 @@ export function createDocumentRemoval(
 
 /**
  * A Work Restore's documents: every one its deletion removed stands again, at its prior or
- * next free leaf name, and returns the Works whose branches use them, whose pending counts moved.
+ * next free leaf name, and returns the owners whose branches use them, whose pending counts moved.
  */
-export async function restoreWorkDocuments(
-  db: Database,
-  workId: WorkId,
-): Promise<{
-  workIds: WorkId[];
-}> {
+export async function restoreWorkDocuments(db: Database, workId: WorkId): Promise<OwnerLocks> {
   const tx = currentDrizzleDb(db);
   const rows = await tx
     .select({
@@ -210,12 +218,10 @@ export async function restoreWorkDocuments(
     );
     if (!placed.ok) throw new Error(`Work restore could not place ${row.id}: ${placed.error.code}`);
   }
-  return {
-    workIds: await usingWorks(
-      tx,
-      rows.map(({ id }) => id as DocumentId),
-    ),
-  };
+  return usingOwners(
+    tx,
+    rows.map(({ id }) => id as DocumentId),
+  );
 }
 
 /**

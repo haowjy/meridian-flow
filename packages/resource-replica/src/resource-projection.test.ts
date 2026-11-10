@@ -110,8 +110,8 @@ it("projects only the requesting project's durable location intention", () => {
   // Placement replay follows durable admission order, and every unresolved placement counts, not
   // each row's latest: A→after C, B→after A, A→before C is A,C,B (latest-only gives A,B,C).
   const canonical = [
-    { ...entries[0], orderPolicy: "default" as const },
-    { ...node("P", "P"), orderPolicy: "default" as const },
+    entries[0],
+    node("P", "P"),
     node("A", "P/A", "P", "file"),
     node("B", "P/B", "P", "file"),
     node("C", "P/C", "P", "file"),
@@ -177,8 +177,7 @@ it("projects only the requesting project's durable location intention", () => {
       .map((entry) => entry.entryId),
   ).toEqual(["A", "C", "B"]);
 
-  // A promotion changes how later arrivals are placed: the server appends to the now-manual
-  // parent even though the catalog snapshot used to build the projection still says default.
+  // A later arrival lands after an earlier reorder in the same parent.
   const promotionRecord = reserveResourceDocument({
     projectId: "project-a",
     handle: "promotion",
@@ -240,16 +239,16 @@ it("projects only the requesting project's durable location intention", () => {
     projectId: "project-a",
     canonical: [
       root,
-      { ...parentP, orderPolicy: "default" },
-      { ...parentQ, orderPolicy: "default" },
+      parentP,
+      parentQ,
       node("A", "Q/A", "Q", "file"),
       node("B", "P/B", "P", "file"),
       node("C", "P/C", "P", "file"),
     ],
     projected: [
       root,
-      { ...parentP, orderPolicy: "default" },
-      { ...parentQ, orderPolicy: "default" },
+      parentP,
+      parentQ,
       node("A", "P/A", "P", "file"),
       node("B", "P/B", "P", "file"),
       node("C", "P/C", "P", "file"),

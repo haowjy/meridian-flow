@@ -4,9 +4,9 @@ import type { BranchId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { DocumentRemovals } from "../../context/ports/document-removal.js";
-import { grantWorkIds, targetDocumentId } from "../../file-policy/domain/types.js";
+import { grantOwnerLocks, targetDocumentId } from "../../file-policy/domain/types.js";
 import { markReplyConfirmed } from "../../file-policy/edit-confirmation.js";
-import type { FileAccess, FileGrant } from "../../file-policy/index.js";
+import type { FileAccess, FileGrant, OwnerLocks } from "../../file-policy/index.js";
 import type { RefusedResponseDocument } from "./agent-edit-cores.js";
 import type { Branches } from "./branches.js";
 import { type ClosedPin, closedPinReason } from "./closed-pin-reason.js";
@@ -63,7 +63,7 @@ export function createReplySaveFences(deps: {
   diagnostics?: Pick<DraftAgentEditDiagnostics, "replyPinMismatch">;
   fileAccess: Pick<FileAccess, "confirmEdit">;
   removals: DocumentRemovals;
-  lockWorks(workIds: readonly string[]): Promise<void>;
+  lockOwners(locks: OwnerLocks): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
 }): ReplySaveFences {
   return {
@@ -72,7 +72,10 @@ export function createReplySaveFences(deps: {
       if (!entries.length) return [];
       const grants = entries.map(([, entry]) => entry.grant);
       await testHook("save.beforeWorkLock");
-      await deps.lockWorks(grants.flatMap((grant) => grantWorkIds(grant.facts)));
+      await deps.lockOwners({
+        workIds: grants.flatMap((grant) => grantOwnerLocks(grant.facts).workIds),
+        lineageRootIds: grants.flatMap((grant) => grantOwnerLocks(grant.facts).lineageRootIds),
+      });
       await testHook("save.afterWorkLock");
       // Works first, then the sorted live documents, never a Work after them. A removal takes
       // the same document locks, so the confirmation below sees it or holds it off until commit.

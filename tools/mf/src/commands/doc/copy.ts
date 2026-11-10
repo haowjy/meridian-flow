@@ -53,7 +53,10 @@ export const docCopyCommand: CommandSpec = {
     const view: CopyContextEntryView | undefined =
       draftWork === undefined
         ? undefined
-        : { kind: "draft", workId: (await resolveWork(session, projectId, draftWork)).id };
+        : {
+            kind: "draft",
+            owner: `work:${(await resolveWork(session, projectId, draftWork)).id}`,
+          };
 
     if (ctx.positionals.length === 0) throw usageError("Name at least one source URI");
     const sources: CopyContextEntrySource[] = [];

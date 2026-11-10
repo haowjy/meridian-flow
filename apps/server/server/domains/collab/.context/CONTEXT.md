@@ -10,13 +10,17 @@ reversal, and WebSocket details; this page keeps their shared rules.
 `@meridian/agent-edit`. Model reads and writes enter through the thread-peer
 pool and carry an explicit destination. A `live` destination uses the live
 core and creates no Work draft or thread peer; a `draft` destination uses the
-thread-peer core and names its Work. Scratch and upload content is always live;
+thread-peer core and names its owner: the chat's Work, or for a chat with no Work
+its lineage (the first chat, its forks and subagents; a handoff starts a new one).
+`shared/draft-owner.ts` is the one reader of a branch's owner and lifecycle
+(`branchOwnerSql`). A lineage is writable while some chat in it is live; with none,
+writes and Apply are refused and Discard still works. Scratch and upload content is always live;
 their placement can still be a Work branch fact.
 
 A reply may hold a live core and a thread core at once. Staged writes overlay
 only reads of the destination to which they were pinned. A live read never
 shows staged draft content. Rebinding is resolved again for each query; a
-read-only draft query without a peer may rebase live content into the shared Work draft,
+read-only draft query without a peer may rebase live content into the owner's draft,
 but does not create a peer.
 
 The composition root wires required services and provider ports. It owns no
@@ -59,9 +63,17 @@ and owner-rolled AI ranges; current single-user projects never query human
 receipts, even when unresolved ranges were requested. The receipt query starts
 with the document's agent edits (partial actor index) and joins parts by edit
 and immutable origin draft, so human typing history need not be scanned. Edited-text Discard belongs to the browser's local undoable edit.
-The per-document HTTP Discard can only end a still-hidden creation's branch use;
-a creation revealed before its locks answers `stale`, without changing text or
-claiming a command. Work Discard all and purge keep the shared close/end-use kernel.
+The per-document HTTP Discard says what it ends. `tree` ends only the branch's move or
+delete: a live chat's Discard, whose text the writer reverts in the room. `item` ends
+everything the branch holds on the document: a still-hidden creation (always ended
+whole), or a frozen lineage's draft, whose room drops the writer's text. An `item`
+Discard may carry `draftSeenAt`, the text draft's `updated_at` the writer decided on;
+the kernel compares it under the draft's row lock and refuses `draft_changed` when the
+draft moved on (a chat restored elsewhere, then written to). `updated_at` and not
+`revision` is the fence because content-free folds keep it. The answer's `itemClosed`
+is what the kernel ended, and the command row is claimed pending and settled with that
+answer in the kernel's transaction. Nothing left to end answers `stale` without changing
+text or claiming a command. Work Discard all and purge keep the shared close/end-use kernel.
 
 ## Revision and review authority
 
@@ -72,7 +84,7 @@ pure deletion and a document snapshot misses tree-only moves. Reads and applies
 compute the token synchronously in their prepared link scope; an unverified
 recovery returns `null`, never a later read's token.
 
-Hidden-creation Discard closes its addressed drafts and peers; Work Discard
+A whole-item Discard closes its addressed drafts and peers; Work Discard
 all closes the branch. Edited-text Discard closes no server peer. Thread-core
 invalidation follows committed close retirement.
 

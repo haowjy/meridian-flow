@@ -12,7 +12,7 @@ import {
   canonicalContextUri,
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
 } from "@meridian/contracts/context-uri";
-import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { projects } from "@meridian/database/schema";
@@ -146,7 +146,7 @@ interface AdapterAssembly {
 }
 
 type BranchPlacements = {
-  branches: Pick<Branches, "viewForWork">;
+  branches: Pick<Branches, "viewForOwner">;
   tree(store: ContextDocumentStore): BranchTreePort;
 };
 
@@ -162,10 +162,10 @@ function placementFor(
 ): ContextPlacement {
   const { thread, placements } = assembly;
   if (!thread || placements === "live-only") return { kind: "live" };
-  const destination = sourceDestination(scheme, thread.branchWork);
-  if (!thread.branchWork) return { kind: "live" };
+  const destination = sourceDestination(scheme, thread.branchOwner);
+  if (!thread.branchOwner) return { kind: "live" };
   const branch = {
-    workId: thread.branchWork.id as WorkId,
+    owner: thread.branchOwner.owner,
     threadId: thread.threadId as ThreadId,
     userId: assembly.owner.userId as UserId,
     branches: placements.branches,
@@ -692,20 +692,22 @@ export function createProductionUnifiedContextPortFactory(options: {
           const command: ContextCommandContext = { branch: null };
           const lockedScopes = typeof scopes === "function" ? await scopes() : scopes;
           await lockContextNamespaces(options.db, { projectId, userId }, lockedScopes, {
-            workIds: branchWrite ? [branchWrite.workId] : [],
+            workIds: branchWrite?.owner.kind === "work" ? [branchWrite.owner.workId] : [],
+            lineageRootIds:
+              branchWrite?.owner.kind === "lineage" ? [branchWrite.owner.rootThreadId] : [],
             sourceIds: commandOptions.sourceIds ?? [],
             afterWorkLocks: async () => {
               if (!branchWrite) return;
               approveBranchWriteJoin();
               if (branchWrite.mode === "ensure") {
                 command.branch = await options.branches.ensureActiveForWrite({
-                  workId: branchWrite.workId,
+                  owner: branchWrite.owner,
                   projectId: projectId as ProjectId,
                   threadId: branchWrite.threadId,
                   userId: branchWrite.userId,
                 });
               } else {
-                const active = await options.branches.activeForWork(branchWrite.workId);
+                const active = await options.branches.activeForOwner(branchWrite.owner);
                 command.branch = active ? await options.branches.lockActive(active.id) : null;
               }
             },

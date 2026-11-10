@@ -6,7 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
-import type { BranchId } from "@meridian/contracts";
+import { type BranchId, type DraftOwner, draftOwnerKey } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -14,7 +14,9 @@ import {
   documentDrafts,
   documentEditParts,
   draftWriteJournal,
+  threads,
   threadWorks,
+  works,
 } from "@meridian/database/schema";
 import {
   COLLAB_SCHEMA_VERSION,
@@ -24,6 +26,7 @@ import {
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
+import { chatOwner, ownerKeyOfColumns } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -109,7 +112,7 @@ export function createDrizzleDraftStore(
     /** Every close retires what it closed after commit. */
     close: DraftClose;
     /** A peer ensure relies on its branch staying active; a thread finds its Work's branch. */
-    branches: Pick<Branches, "shareActive" | "activeForWork">;
+    branches: Pick<Branches, "shareActive" | "activeForOwner">;
     /** A `commitRewrite` committed: the row lock's hold (`FOR UPDATE` → `COMMIT`) and its tail. */
     onRewriteCommitted?: (detail: RewriteCommitted) => void;
     /** An `appendRows` committed: its wait for the row lock and its hold to `COMMIT`. */
@@ -117,21 +120,29 @@ export function createDrizzleDraftStore(
   },
 ): ApplicationDraftStore {
   const { live, workProjection, branches, onRewriteCommitted, onAppendSequenced } = deps;
-  async function findPrimaryWork(threadId: ThreadId): Promise<WorkId> {
+  /** The owner of the thread's drafts: its primary Work, or its lineage when that is No Work. */
+  async function findPrimaryOwner(threadId: ThreadId): Promise<DraftOwner> {
     const [row] = await currentDrizzleDb(db)
-      .select({ workId: threadWorks.workId })
+      .select({
+        workId: threadWorks.workId,
+        isNoWork: works.isNoWork,
+        projectId: threads.projectId,
+        rootThreadId: threads.rootThreadId,
+      })
       .from(threadWorks)
+      .innerJoin(works, eq(works.id, threadWorks.workId))
+      .innerJoin(threads, eq(threads.id, threadWorks.threadId))
       .where(and(eq(threadWorks.threadId, threadId), eq(threadWorks.isPrimary, true)))
       .limit(1);
     if (!row) throw new NoPrimaryWorkError(threadId);
-    return row.workId;
+    return chatOwner(row, { id: row.workId, isNoWork: row.isNoWork });
   }
 
-  async function findWorkDraft(
+  async function findOwnerDraft(
     documentId: DocumentId,
-    workId: WorkId,
+    owner: DraftOwner,
   ): Promise<ResolvedDraft | null> {
-    const branch = await branches.activeForWork(workId);
+    const branch = await branches.activeForOwner(owner);
     const row = branch ? await activeDocumentDraft(documentId, branch.id) : null;
     return row ? resolved(row) : null;
   }
@@ -523,6 +534,7 @@ export function createDrizzleDraftStore(
     revision: number;
     hasEffect: boolean;
     workId: WorkId | null;
+    rootThreadId: ThreadId | null;
   }): Promise<"written" | "moved" | "contended"> {
     const write = async () => {
       const [row] = await currentDrizzleDb(db)
@@ -535,13 +547,17 @@ export function createDrizzleDraftStore(
       // The judgement no longer holds: the Work is not touched for it.
       if (!row) throw new DraftWriteRollback({ status: "moved" });
     };
-    const { workId } = input;
+    const { workId, rootThreadId } = input;
     try {
       await runInRootDrizzleTransaction(db, async () => {
         await currentDrizzleDb(db).execute(
           sql.raw(`SET LOCAL lock_timeout = '${EFFECT_WRITE_LOCK_TIMEOUT}'`),
         );
-        await (workId ? workProjection.mutate({ works: [workId] }, write) : write());
+        await (workId
+          ? workProjection.mutate({ works: [workId] }, write)
+          : rootThreadId
+            ? workProjection.mutate({ lineages: [rootThreadId] }, write)
+            : write());
       });
       return "written";
     } catch (cause) {
@@ -684,29 +700,30 @@ export function createDrizzleDraftStore(
     commitRewrite,
 
     async resolveThreadDraft(documentId, threadId): Promise<ResolvedDraft> {
-      const workId = await findPrimaryWork(threadId).catch((cause) => {
+      const owner = await findPrimaryOwner(threadId).catch((cause) => {
         if (cause instanceof NoPrimaryWorkError) throw new DraftNotFoundError(documentId, threadId);
         throw cause;
       });
       const row = await findActiveThreadPeer(documentId, threadId);
-      if (!row || row.workId !== workId) throw new DraftNotFoundError(documentId, threadId);
+      if (!row || ownerKeyOfColumns(row) !== draftOwnerKey(owner))
+        throw new DraftNotFoundError(documentId, threadId);
       return resolved(row);
     },
 
     async resolveWorkDraftForThread(documentId, threadId): Promise<ResolvedDraft> {
-      let workId: WorkId;
+      let owner: DraftOwner;
       try {
-        workId = await findPrimaryWork(threadId);
+        owner = await findPrimaryOwner(threadId);
       } catch (cause) {
         if (cause instanceof NoPrimaryWorkError) throw new DraftNotFoundError(documentId, threadId);
         throw cause;
       }
-      const draft = await findWorkDraft(documentId, workId);
+      const draft = await findOwnerDraft(documentId, owner);
       if (!draft) throw new DraftNotFoundError(documentId, threadId);
       return draft;
     },
 
-    findWorkDraft,
+    findOwnerDraft,
 
     async listActiveWorkDraftIds(documentId) {
       const rows = await currentDrizzleDb(db)

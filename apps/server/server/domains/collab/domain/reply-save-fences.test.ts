@@ -37,7 +37,7 @@ function scenario() {
     diagnostics,
     fileAccess,
     removals: { lookup: async () => new Map() },
-    lockWorks: async () => {},
+    lockOwners: async () => {},
     lockLiveDocuments: async () => {},
   });
   const core = threadCore.asCore();
@@ -51,7 +51,11 @@ function scenario() {
         DOCUMENT,
         {
           core,
-          grant: fakeEditGrant({ kind: "draft", workId: WORK, workHandle: "a" }),
+          grant: fakeEditGrant({
+            kind: "draft",
+            owner: { kind: "work", workId: WORK },
+            ownerHandle: "a",
+          }),
           linkView: { kind: "branch", branchId: FAKE_BRANCH_ID },
           pin: {
             branchId: FAKE_BRANCH_ID,

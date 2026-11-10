@@ -46,7 +46,7 @@ export type InlineReviewRuntime = {
 
 export type DraftReviewController = {
   projectId: string;
-  workId: string;
+  ownerKey: string;
   /** Focused thread owning this review surface; threads Apply/Discard cache invalidation. */
   threadId: string | null;
   inlineReview: InlineDraftReview | null;
@@ -111,19 +111,21 @@ export type DraftReviewController = {
 export function useDraftReviewController({
   projectId,
   work,
+  ownerKey,
   threadId = null,
   stateOwner,
   marks,
 }: {
   projectId: string;
-  /** The Work whose drafts this surface reviews; null scopes nothing. */
+  /** The Work whose archived state freezes these drafts; null scopes nothing. */
   work: Work | null;
+  /** Whose drafts this surface reviews: `work:<id>` or `lineage:<root>`; "" scopes nothing. */
+  ownerKey: string;
   threadId?: string | null;
   stateOwner: DraftReviewStateOwner;
   /** Show changes, which belongs to the presented tab's view, not to this review. */
   marks: { visible: boolean; set: (visible: boolean) => void };
 }): DraftReviewController {
-  const workId = work?.id ?? "";
   const queryClient = useQueryClient();
   const { state, dispatch } = stateOwner;
   const stateRef = useRef(state);
@@ -131,6 +133,7 @@ export function useDraftReviewController({
   const commands = useWorkBranchCommands({
     projectId,
     work,
+    ownerKey,
     threadId,
     surface: "editor",
     editorHistory: (draft) => {
@@ -158,23 +161,23 @@ export function useDraftReviewController({
         itemKey,
       });
     },
-    [projectId, queryClient, workId],
+    [projectId, queryClient, ownerKey],
   );
 
   const exitInlineReview = useCallback(() => {
     const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
     if (inline) {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workDraftMetadata(
+        queryKey: projectQueryKeys.ownerDraftMetadata(
           projectId,
-          workId,
+          ownerKey,
           inline.documentId,
           inline.itemKey,
         ),
       });
     }
     dispatch({ type: "exitInline" });
-  }, [projectId, queryClient, workId]);
+  }, [projectId, queryClient, ownerKey]);
 
   const exitReview = useCallback(() => {
     dispatch({ type: "exitReview" });
@@ -246,7 +249,7 @@ export function useDraftReviewController({
   return useMemo(
     () => ({
       projectId,
-      workId,
+      ownerKey,
       threadId,
       inlineReview,
       commandChange: commands.commandChange,
@@ -273,7 +276,7 @@ export function useDraftReviewController({
     [
       commands.commandChange,
       projectId,
-      workId,
+      ownerKey,
       threadId,
       inlineReview,
       dispositionLocked,

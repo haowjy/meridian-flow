@@ -1,25 +1,26 @@
 /**
  * DocumentPaneChrome — what sits above an open document's editor: the passage
- * notice, the archived-Work notice, a failed review command, and the document's
- * properties. The Editor's page and the dock's document stack the same chrome.
- * The document's identity and state are elsewhere: in Write mode at the end of
- * the toolbar row, in the dock in its header (the Live menu lists other Works' drafts).
+ * notice, the frozen-document notice (an archived Work, a trashed chat), a failed
+ * review command, and the document's properties. The Editor's page and the dock's
+ * document stack the same chrome. The document's identity and state are elsewhere:
+ * in Write mode at the end of the toolbar row, in the dock in its header (the Live
+ * menu lists other owners' drafts).
  */
-import type { Work } from "@meridian/contracts/works";
 import type { ContextTab } from "@/client/stores";
 import { DraftedDeleteNotice } from "@/features/draft-review/DraftedDeleteNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { useAiDraftLauncher } from "../review-launch";
-import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
+import { DocumentFreezeNotice } from "./DocumentFreezeNotice";
 import { DocumentProperties } from "./DocumentProperties";
+import type { DocumentFreeze } from "./use-document-freeze";
 
 export type DocumentPaneChromeProps = {
   projectId: string;
   tab: ContextTab;
-  /** Set when the document is frozen by its archived Work. */
-  archivedWork: Work | null;
+  /** Set when the document as shown is frozen: by its archived Work, or a trashed chat. */
+  freeze: DocumentFreeze | null;
   /**
    * Write mode: show a failed review command here (the dock's header shows its
    * own).
@@ -30,7 +31,7 @@ export type DocumentPaneChromeProps = {
 export function DocumentPaneChrome({
   projectId,
   tab,
-  archivedWork,
+  freeze,
   reviewNotices,
 }: DocumentPaneChromeProps) {
   return (
@@ -38,8 +39,8 @@ export function DocumentPaneChrome({
       {/* A jump that could not find its passage says so here, over the page
           rather than in the layout. */}
       <PassageNotice documentId={tab.documentId} />
-      {archivedWork ? (
-        <ArchivedWorkNotice projectId={projectId} work={archivedWork} className="px-4 pt-3" />
+      {freeze ? (
+        <DocumentFreezeNotice projectId={projectId} freeze={freeze} className="px-4 pt-3" />
       ) : null}
       {reviewNotices ? <ReviewFailureNotices tab={tab} /> : null}
       <DocumentProperties projectId={projectId} tab={tab} />
@@ -57,7 +58,7 @@ function ReviewFailureNotices({ tab }: { tab: ContextTab }) {
     <DraftReviewFailureNotices
       documentId={tab.documentId}
       itemKey={review.itemKey}
-      onOpenDraft={(row) => openReviewFile(row, controller.workId)}
+      onOpenDraft={(row) => openReviewFile(row, controller.ownerKey)}
     />
   );
 }

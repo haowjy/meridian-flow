@@ -179,7 +179,7 @@ export async function resolveToolCall(
   if (!primaryWork || workLifecycleState(primaryWork) === "deleted") {
     return toolError({ code: "work_unavailable", message: "The current Work is unavailable" });
   }
-  const execution = threadExecutionContext(primaryWork, context.resolution.thread.aiWriteMode);
+  const execution = threadExecutionContext(primaryWork, context.resolution.thread);
   return { execution, context, principal: await agentPrincipal(deps, context, execution) };
 }
 

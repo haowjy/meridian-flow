@@ -1,10 +1,9 @@
 /**
- * Live Yjs connections by the Works their file access depends on (file-access
+ * Live Yjs connections by the owners (Works and lineages, keyed by `draftOwnerKey`) their file access depends on (file-access
  * §7). A Work's archive, unarchive, delete or restore reaches exactly the rooms
  * of its own files, its scratch and its drafts, and no manuscript, kb or user
  * room. Draft rooms are named by draft id, so room names can't answer this.
  */
-import type { WorkId } from "@meridian/contracts/runtime";
 
 /** One admitted connection; `revoke` closes it so the client reconnects. */
 export type YjsRoomRegistration = { revoke(): void };
@@ -12,32 +11,32 @@ export type YjsRoomRegistration = { revoke(): void };
 export type YjsRoomAccessIndex = ReturnType<typeof createYjsRoomAccessIndex>;
 
 export function createYjsRoomAccessIndex() {
-  const byWork = new Map<WorkId, Set<YjsRoomRegistration>>();
-  const worksOf = new Map<YjsRoomRegistration, readonly WorkId[]>();
+  const byOwner = new Map<string, Set<YjsRoomRegistration>>();
+  const ownersOf = new Map<YjsRoomRegistration, readonly string[]>();
 
   function unregister(registration: YjsRoomRegistration): void {
-    for (const workId of worksOf.get(registration) ?? []) {
-      const registrations = byWork.get(workId);
+    for (const ownerKey of ownersOf.get(registration) ?? []) {
+      const registrations = byOwner.get(ownerKey);
       registrations?.delete(registration);
-      if (registrations?.size === 0) byWork.delete(workId);
+      if (registrations?.size === 0) byOwner.delete(ownerKey);
     }
-    worksOf.delete(registration);
+    ownersOf.delete(registration);
   }
 
   return {
-    register(registration: YjsRoomRegistration, workIds: readonly WorkId[]): void {
+    register(registration: YjsRoomRegistration, ownerKeys: readonly string[]): void {
       unregister(registration);
-      worksOf.set(registration, workIds);
-      for (const workId of workIds) {
-        const registrations = byWork.get(workId) ?? new Set();
+      ownersOf.set(registration, ownerKeys);
+      for (const ownerKey of ownerKeys) {
+        const registrations = byOwner.get(ownerKey) ?? new Set();
         registrations.add(registration);
-        byWork.set(workId, registrations);
+        byOwner.set(ownerKey, registrations);
       }
     },
     unregister,
-    /** Closes every connection whose access this Work decides. */
-    revokeWork(workId: WorkId): void {
-      for (const registration of [...(byWork.get(workId) ?? [])]) {
+    /** Closes every connection whose access this owner decides. */
+    revokeOwner(ownerKey: string): void {
+      for (const registration of [...(byOwner.get(ownerKey) ?? [])]) {
         unregister(registration);
         registration.revoke();
       }

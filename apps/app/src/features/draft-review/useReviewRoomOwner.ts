@@ -6,7 +6,7 @@ import { useRoomBindings } from "./useRoomReview";
 
 export function useReviewRoomOwner(input: {
   projectId: string;
-  workId: string;
+  ownerKey: string;
   review: InlineDraftReview | null;
   dispatch: Dispatch<DraftReviewAction>;
 }) {
@@ -33,7 +33,7 @@ export function useReviewRoomOwner(input: {
       ? [
           {
             projectId: input.projectId,
-            workId: input.workId,
+            ownerKey: input.ownerKey,
             documentId: review.documentId,
             itemKey: review.itemKey,
           },

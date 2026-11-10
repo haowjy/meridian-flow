@@ -11,11 +11,11 @@ export default defineEventHandler(async (event) => {
   const path = parseContextMutationPath(query.path, "path");
   // A request still carrying the retired `draftId` selector is a review request that answers unavailable.
   const hasReview =
-    query.reviewWorkId !== undefined || query.itemKey !== undefined || query.draftId !== undefined;
+    query.reviewOwner !== undefined || query.itemKey !== undefined || query.draftId !== undefined;
   if (
     hasReview &&
-    (typeof query.reviewWorkId !== "string" ||
-      !query.reviewWorkId ||
+    (typeof query.reviewOwner !== "string" ||
+      !query.reviewOwner ||
       typeof query.itemKey !== "string" ||
       !query.itemKey ||
       query.draftId !== undefined)
@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
     },
     hasReview
       ? {
-          workId: query.reviewWorkId as string,
+          owner: query.reviewOwner as string,
           itemKey: query.itemKey as string,
         }
       : undefined,

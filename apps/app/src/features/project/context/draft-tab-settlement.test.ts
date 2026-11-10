@@ -156,7 +156,7 @@ describe("draft tab settlement", () => {
     );
 
     // Discard in A leaves B's entry, tab and routed screen; A no longer shows it.
-    coordinator.discardDraft("project-a", "work-a", "draft-a");
+    coordinator.discardDraft("project-a", "work:work-a", "draft-a");
     expect(inWork("work-a")).toEqual([]);
     expect(inWork("work-b")).toEqual(["document-a"]);
     expect(updateSearch).not.toHaveBeenCalled();
@@ -169,7 +169,7 @@ describe("draft tab settlement", () => {
     expect(inWork("work-a")).toEqual([]);
     expect(inWork("work-b")).toEqual(["document-a"]);
     // The last entry's Discard closes the tab.
-    coordinator.discardDraft("project-a", "work-b", "draft-b");
+    coordinator.discardDraft("project-a", "work:work-b", "draft-b");
     expect(getContextTabs("project-a").tabs).toEqual([]);
 
     // Apply in A settles the one tab for every Work.
@@ -233,14 +233,14 @@ describe("draft tab settlement", () => {
       );
     };
     select();
-    coordinator.discardDraft("project-a", "work-a", "draft-a");
+    coordinator.discardDraft("project-a", "work:work-a", "draft-a");
     expect(getContextTabs("project-a").tabs).toEqual([]);
     updateSearch.mockClear();
 
     // The refused draft is still pending: Review installs its overlay again.
     const opened = useContextTabsStore.getState().openTab("project-a", draftTab("reopened"));
     if (opened.kind !== "opened" || opened.tab.kind !== "tracked") throw new Error("not opened");
-    coordinator.admitDraftReview("project-a", opened.tab, "work-a");
+    coordinator.admitDraftReview("project-a", opened.tab, "work:work-a");
     select();
 
     // The removal guard no longer repairs the address away from the draft.

@@ -35,9 +35,9 @@ export async function lockNamespaceKeys(
 }
 
 /**
- * Seam C (file-access §5): Work rows in id order, the bound edit grants'
- * confirmation, then every advisory lock sorted by key, before provisioning
- * or publishing any source. A branch write's Work joins the Work locks, and
+ * Seam C (file-access §5): Work rows in id order, the lineages' draft-owner locks, the bound
+ * edit grants' confirmation, then every advisory lock sorted by key, before provisioning
+ * or publishing any source. A branch write's owner joins the owner locks, and
  * `afterWorkLocks` (the branch row, contract §14) runs before any namespace key.
  */
 export async function lockContextNamespaces(
@@ -46,6 +46,8 @@ export async function lockContextNamespaces(
   scopes: readonly ContextCommandScope[],
   options: {
     workIds?: readonly string[];
+    /** Lineages whose draft-owner locks join the Work locks, right after them. */
+    lineageRootIds?: readonly string[];
     sourceIds?: readonly string[];
     afterWorkLocks?: () => Promise<void>;
   } = {},
@@ -58,7 +60,7 @@ export async function lockContextNamespaces(
       ...sources.flatMap((source) => (source.workId ? [source.workId] : [])),
     ]),
   ];
-  await requireLockedActiveWorks(db, workIds);
+  await requireLockedActiveWorks(db, workIds, options.lineageRootIds);
   await options.afterWorkLocks?.();
   await lockAdvisoryKeys(db, [
     ...(scopes.some((scope) => scope.scheme === "user") ? [owner.userId] : []),

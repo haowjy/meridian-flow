@@ -36,7 +36,11 @@ never to get a task passing:
 Everything else is the current implementation, open to rewriting once evidence or
 testing shows something better. The owner's words are direction, not rulings:
 reason against them when the evidence says to. Write down the behavior and its
-reason, not who said it.
+reason, not who said it. Never paste the owner's messages into docs, briefs, issues,
+commits or PRs: he refines a point over several messages, so one message out of its
+conversation misleads. Write each decision for a reader who never saw that
+conversation: what was decided, what it applies to, his reason if he gave one, and
+whether it is settled or only an idea.
 
 ## Engineering
 
@@ -110,23 +114,18 @@ Commit often. Worktrees, commits, pushes, PRs and issues need no permission.
 Documentation-only and comment-only changes need no PR: push them straight to `main`.
 A wrong comment or doc gets fixed as soon as you see it, without asking.
 
-A human merges into `main` or `staging`; `CLAUDE.md` grants Claude Opus more. A big feature gets one integration
-branch: each finished piece bases on it and merges into it, instead of PRs stacked on
-each other, and the piece's worktree, stack and processes go as soon as it's in. One PR
-carries the integration branch into `main`.
+A human merges into `main` or `staging`; `CLAUDE.md` grants Claude Opus more. A feature built
+in several pieces gets one integration branch: each finished piece bases on it and merges into
+it, instead of PRs stacked on each other, and the piece's worktree, stack and processes go as
+soon as it's in. One PR carries the integration branch into `main`.
 
-A fix restores intended behavior; changing what writers are meant to see is a feature.
-A big refactor, reorganization or architecture change needs the owner's approval first,
-quoted in its issue or PR; another agent's report of that approval doesn't count. Small
-fixes need no approval to start. Before a merge, CI is green, the regressions the change
-could cause are tested, and the PR body is reread against the final diff, with evidence
-from the commit being merged. A big fix or refactor also needs an independent review.
+A PR merges as soon as it is complete and a reviewer has approved it: another model, or the
+owner. Before the merge, CI is green, the regressions the change could cause are tested, and the
+PR body is reread against the final diff, with evidence from the commit being merged. Don't hold
+a finished PR for the owner: he uses the app, and what he finds wrong becomes a follow-up PR.
 
-Big means impact, not size: a change is big when it crosses a boundary others depend on.
-That is `packages/contracts` or a package's public exports, the database schema or a
-migration, the wire protocol or a stored format, or more than one server domain or app.
-A change that looks narrow but alters behavior others rely on is big too; when unsure, call
-it big.
+Open a draft PR as soon as a branch has its first commit, and update its body with each push,
+so anyone can see the work's state from the PR. Mark it ready when it's complete.
 
 Write a PR body for a reader who knows nothing about the area, from the
 [template](.github/PULL_REQUEST_TEMPLATE.md), and check it with

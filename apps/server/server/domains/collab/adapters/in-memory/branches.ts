@@ -1,5 +1,5 @@
 /** In-memory Work branches: the same resolver semantics over a map, for in-memory composition. */
-import type { BranchId, WorkId } from "@meridian/contracts";
+import { type BranchId, type DraftOwner, draftOwnerKey, type ThreadId } from "@meridian/contracts";
 import type { Branch, BranchStore, BranchWriteBoundary } from "../../domain/ports/branch-store.js";
 
 export function createInMemoryBranchStore(): BranchStore {
@@ -8,23 +8,44 @@ export function createInMemoryBranchStore(): BranchStore {
     const row = rows.get(branchId);
     return row?.status === "active" ? row : null;
   };
-  const byOrigin = (workId: WorkId) =>
+  const ownerKeyOf = (row: Branch) =>
+    row.originWorkId
+      ? draftOwnerKey({ kind: "work", workId: row.originWorkId })
+      : row.originRootThreadId
+        ? draftOwnerKey({ kind: "lineage", rootThreadId: row.originRootThreadId })
+        : null;
+  const byOrigin = (owner: DraftOwner) =>
     [...rows.values()]
-      .filter((row) => row.originWorkId === workId)
+      .filter((row) => ownerKeyOf(row) === draftOwnerKey(owner))
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
-  const activeOf = (workId: WorkId) =>
-    byOrigin(workId).find((row) => row.status === "active") ?? null;
+  const activeOf = (owner: DraftOwner) =>
+    byOrigin(owner).find((row) => row.status === "active") ?? null;
   return {
-    activeForWork: async (workId) => activeOf(workId),
+    async ownerOf(branchId) {
+      const branch = rows.get(branchId);
+      if (!branch) return null;
+      const owner: DraftOwner | null = branch.originWorkId
+        ? { kind: "work", workId: branch.originWorkId }
+        : branch.originRootThreadId
+          ? {
+              kind: "lineage",
+              projectId: branch.projectId,
+              rootThreadId: branch.originRootThreadId,
+            }
+          : null;
+      return { branch, owner, handle: null, lifecycle: owner ? "active" : "missing" };
+    },
+    activeForOwner: async (owner) => activeOf(owner),
     // Lookup and insert with no await between them: one critical section.
     async ensureActiveLocked(input) {
-      const existing = activeOf(input.workId);
+      const existing = activeOf(input.owner);
       if (existing) return existing;
       const branch: Branch = {
         id: crypto.randomUUID() as BranchId,
         projectId: input.projectId,
         status: "active",
-        originWorkId: input.workId,
+        originWorkId: input.owner.kind === "work" ? input.owner.workId : null,
+        originRootThreadId: input.owner.kind === "lineage" ? input.owner.rootThreadId : null,
         originThreadId: input.originThreadId,
         createdBy: input.createdBy,
         createdAt: new Date(),
@@ -39,20 +60,28 @@ export function createInMemoryBranchStore(): BranchStore {
       if (row) rows.set(branchId, { ...row, status: "closed" });
     },
     byIds: async (branchIds) => branchIds.flatMap((id) => rows.get(id) ?? []),
-    byOriginWork: async (workId) => byOrigin(workId),
+    byOriginWork: async (workId) => byOrigin({ kind: "work", workId }),
+    activeByOriginLineages: async (rootThreadIds: readonly ThreadId[]) =>
+      [...rows.values()].filter(
+        (row) =>
+          row.status === "active" &&
+          row.originRootThreadId !== null &&
+          rootThreadIds.includes(row.originRootThreadId),
+      ),
   };
 }
 
-/** No Work rows in memory: every Work is active; a per-Work queue stands in for its row lock. */
+/** No owner rows in memory: every owner is active; a per-owner queue stands in for its lock. */
 export function createInMemoryBranchWriteBoundary(): BranchWriteBoundary {
-  const tails = new Map<WorkId, Promise<unknown>>();
+  const tails = new Map<string, Promise<unknown>>();
   return {
-    withActiveWorkLocked(workId, operation) {
-      const run = (tails.get(workId) ?? Promise.resolve()).then(operation, operation);
+    withActiveOwnerLocked(owner, operation) {
+      const key = draftOwnerKey(owner);
+      const run = (tails.get(key) ?? Promise.resolve()).then(operation, operation);
       const tail = run.catch(() => undefined);
-      tails.set(workId, tail);
+      tails.set(key, tail);
       void tail.then(() => {
-        if (tails.get(workId) === tail) tails.delete(workId);
+        if (tails.get(key) === tail) tails.delete(key);
       });
       return run;
     },

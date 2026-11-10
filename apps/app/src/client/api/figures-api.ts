@@ -28,7 +28,7 @@ export type GetFigureSignedUrlInput = AssetRouteInput & {
    * The Work the viewer is in. A picture still in a Work's branch is readable
    * only through that Work, so the request names it.
    */
-  workId?: string;
+  owner?: string;
   src?: string;
   skipCache?: boolean;
 };
@@ -46,12 +46,12 @@ function signedUrlPath(input: AssetRouteInput): string {
   return `${figurePath(input.projectId, input.assetDocumentId)}/signed-url`;
 }
 
-function cacheKey(input: AssetRouteInput & { workId?: string }): string {
-  return `${input.projectId}\u0000${input.assetDocumentId}\u0000${input.workId ?? ""}`;
+function cacheKey(input: AssetRouteInput & { owner?: string }): string {
+  return `${input.projectId}\u0000${input.assetDocumentId}\u0000${input.owner ?? ""}`;
 }
 
 function cacheSignedUrl(
-  input: AssetRouteInput & { workId?: string },
+  input: AssetRouteInput & { owner?: string },
   value: GetFigureSignedUrlResponse,
 ): void {
   signedUrlCache.set(cacheKey(input), value);
@@ -62,7 +62,7 @@ function getCachedSignedUrl(input: GetFigureSignedUrlInput): GetFigureSignedUrlR
     cacheKey({
       projectId: input.projectId,
       assetDocumentId: input.assetDocumentId,
-      workId: input.workId,
+      owner: input.owner,
     }),
   );
   if (!cached) return null;
@@ -82,7 +82,7 @@ export async function getFigureSignedUrl(
   const request = (async () => {
     // A refusal keeps its status: a 404 is the route saying the document is
     // gone (or unreadable, which it does not tell apart), not a failure.
-    const query = input.workId ? `?workId=${encodeURIComponent(input.workId)}` : "";
+    const query = input.owner ? `?owner=${encodeURIComponent(input.owner)}` : "";
     const value = await getJson<GetFigureSignedUrlResponse>(`${signedUrlPath(input)}${query}`);
     cacheSignedUrl(input, value);
     return value;

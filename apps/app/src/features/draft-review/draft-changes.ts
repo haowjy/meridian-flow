@@ -36,7 +36,7 @@ export function isWholeDocumentChange(view: Pick<DraftChangesData, "status" | "i
   return view.status === "ready" && view.items.length === 1 && view.items[0]?.change.frame === null;
 }
 
-type DraftRef = { projectId: string; workId: string; documentId: string; itemKey: string };
+type DraftRef = { projectId: string; ownerKey: string; documentId: string; itemKey: string };
 
 /** Subscribe to this item's record, not another draft's command activity. */
 export function useDraftCommandState(itemKey: string) {

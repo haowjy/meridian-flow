@@ -24,7 +24,8 @@ const workHint = (workId: string, headRevision = "5") =>
 
 const installed = (appliedRevision: string) => ({ appliedRevision, entries: new Map() });
 const invalidated = (queryClient: QueryClient, workId: string) =>
-  queryClient.getQueryState(projectQueryKeys.workBranchDrafts("project-a", workId))?.isInvalidated;
+  queryClient.getQueryState(projectQueryKeys.ownerDrafts("project-a", `work:${workId}`))
+    ?.isInvalidated;
 const settleHint = async () => {
   await Promise.resolve();
   await Promise.resolve();
@@ -32,8 +33,8 @@ const settleHint = async () => {
 
 it("re-reads the project's draft lists once the pulled catalog is installed, and no other project's", async () => {
   const queryClient = new QueryClient();
-  const mine = projectQueryKeys.workBranchDrafts("project-a", "work-1");
-  const other = projectQueryKeys.workBranchDrafts("project-b", "work-1");
+  const mine = projectQueryKeys.ownerDrafts("project-a", "work:work-1");
+  const other = projectQueryKeys.ownerDrafts("project-b", "work:work-1");
   const hints = projectQueryKeys.documentDraftHints("project-a", "doc-1");
   queryClient.setQueryData(mine, []);
   queryClient.setQueryData(other, []);
@@ -51,7 +52,7 @@ it("re-reads the project's draft lists once the pulled catalog is installed, and
 it("re-reads only the hinted Work's draft list for a Work-scoped hint", async () => {
   const queryClient = new QueryClient();
   for (const work of ["work-0", "work-1", "work-2"]) {
-    queryClient.setQueryData(projectQueryKeys.workBranchDrafts("project-a", work), []);
+    queryClient.setQueryData(projectQueryKeys.ownerDrafts("project-a", `work:${work}`), []);
   }
   const resources = { hintCatalog: vi.fn().mockResolvedValue(installed("5")) };
 
@@ -64,7 +65,7 @@ it("re-reads only the hinted Work's draft list for a Work-scoped hint", async ()
 
 it("does not re-read again for a hint whose catalog revision was already handled", async () => {
   const queryClient = new QueryClient();
-  const key = projectQueryKeys.workBranchDrafts("project-a", "work-1");
+  const key = projectQueryKeys.ownerDrafts("project-a", "work:work-1");
   queryClient.setQueryData(key, []);
   const hintCatalog = vi.fn().mockResolvedValue(installed("5"));
 
@@ -95,7 +96,7 @@ it("does not re-read again for a hint whose catalog revision was already handled
 it("still re-reads every Work's list of the project for a project-wide manifest hint, once per revision", async () => {
   const queryClient = new QueryClient();
   const keys = ["work-1", "work-2"].map((work) =>
-    projectQueryKeys.workBranchDrafts("project-a", work),
+    projectQueryKeys.ownerDrafts("project-a", `work:${work}`),
   );
   for (const key of keys) queryClient.setQueryData(key, []);
   const hintCatalog = vi.fn().mockResolvedValue(installed("7"));
@@ -114,7 +115,7 @@ it("still re-reads every Work's list of the project for a project-wide manifest 
 
 it("leaves project draft lists alone for a user-scoped hint", async () => {
   const queryClient = new QueryClient();
-  queryClient.setQueryData(projectQueryKeys.workBranchDrafts("project-a", "work-1"), []);
+  queryClient.setQueryData(projectQueryKeys.ownerDrafts("project-a", "work:work-1"), []);
   const hintCatalog = vi.fn().mockResolvedValue(installed("3"));
   const userHint = {
     scope: { kind: "user", userId: "u" },

@@ -191,6 +191,7 @@ export function createDraftProjection(input: {
               readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
             ),
             workId: snapshot.workId,
+            rootThreadId: snapshot.rootThreadId,
           },
         };
       });

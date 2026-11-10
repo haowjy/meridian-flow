@@ -6,6 +6,8 @@
  * - Retry revives an import that used up its tries.
  * - A failed pass is not reclaimed at once.
  * - After reveal, the Markdown document and the image are live and the document has block rows.
+ * - Into an area the reveal creates, every visible row takes a rank, so a drag relative to one
+ *   places instead of answering stale-anchor.
  */
 import { randomUUID } from "node:crypto";
 import type { ImportSelection } from "@meridian/contracts";
@@ -176,6 +178,7 @@ describe.runIf(enabled)("import resume", () => {
       "Ch5.",
       "image-1.png",
     ]);
+    expect([...revealedFolders, ...revealed].filter((row) => row.rank === null)).toEqual([]);
     const markdown = revealed.find((document) => document.fileType === "markdown");
     expect(markdown).toBeTruthy();
     // Block derivation is scheduled at reveal and runs detached.

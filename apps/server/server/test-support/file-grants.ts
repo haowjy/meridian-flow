@@ -28,7 +28,7 @@ export function testFileGrant(
         ? {
             agent: {
               chain: [],
-              branchWork: { id: destination.workId, handle: destination.workHandle },
+              branchOwner: { owner: destination.owner, handle: destination.ownerHandle },
             },
           }
         : {}),
@@ -45,17 +45,19 @@ export function testFileGrant(
       ancestors: [],
       ...(destination.kind === "draft"
         ? {
-            branchWork: {
-              id: destination.workId,
-              handle: destination.workHandle,
+            branchOwner: {
+              owner: destination.owner,
+              handle: destination.ownerHandle,
               isNoWork: false,
               archived: false,
               deleted: false,
+              frozen: false,
             },
           }
         : {}),
     },
     destination,
+    need: "edit",
   } as unknown as FileGrant<"edit">;
 }
 
@@ -73,7 +75,7 @@ export function drizzleFileAccess(db: Database): FileAccess {
 /** Runs writes as an entry point holding already confirmed grants would: for adapter tests. */
 export function asGrantedWriter<T>(operation: () => Promise<T>): Promise<T> {
   return runWithEditConfirmation(
-    { workIds: [], async confirm() {}, covers: async () => true },
+    { workIds: [], lineageRootIds: [], async confirm() {}, covers: async () => true },
     operation,
   );
 }

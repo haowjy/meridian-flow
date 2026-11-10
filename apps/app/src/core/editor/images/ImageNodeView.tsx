@@ -60,13 +60,13 @@ export function ImageNodeView(props: NodeViewProps) {
   const src = typeof props.node.attrs.src === "string" ? props.node.attrs.src : "";
   const alt = typeof props.node.attrs.alt === "string" ? props.node.attrs.alt : "";
   const width = imageWidthAttr(props.node.attrs);
-  const { projectId, workId } = (props.extension.options ?? {}) as {
+  const { projectId, owner } = (props.extension.options ?? {}) as {
     projectId?: string;
-    workId?: string;
+    owner?: string;
   };
   const [state, actions] = useAssetImageRenderState({
     projectId,
-    workId,
+    owner,
     src,
     ref: props.node.attrs.ref,
     links: mountedLinks(props.editor),

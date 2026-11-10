@@ -1,4 +1,5 @@
 /** A plain address never acquires a review's authority to read a hidden document. */
+import { draftOwnerKey } from "@meridian/contracts/branches";
 import type {
   ContextOwner,
   DocumentAddressRequestOptions,
@@ -24,14 +25,27 @@ export type DocumentAddressBinding =
       review: NonNullable<DocumentAddressRequestOptions["review"]>;
     };
 
-/** The item owns review identity even while its Work's draft list is loading. */
+/**
+ * Whose draft an address with an item reviews: the lineage its `chat` names, else the address's
+ * Work. Null while the Work is unresolved, or when the address names no item.
+ */
+export function addressReviewOwner(
+  address: { itemKey?: string; lineage?: string },
+  workId: string | null,
+): string | null {
+  if (!address.itemKey) return null;
+  if (address.lineage) return draftOwnerKey({ kind: "lineage", rootThreadId: address.lineage });
+  return workId ? draftOwnerKey({ kind: "work", workId }) : null;
+}
+
+/** The item owns review identity even while its owner's draft list is loading. */
 export function bindDocumentAddressReview(
   itemKey: string | undefined,
-  workId: string | null,
+  owner: string | null,
 ): DocumentAddressBinding {
   if (!itemKey) return { kind: "plain" };
-  if (!workId) return { kind: "pending" };
-  return { kind: "review", review: { workId, itemKey } };
+  if (!owner) return { kind: "pending" };
+  return { kind: "review", review: { owner, itemKey } };
 }
 
 /** A failed review selector never falls back to the live occupant. */
@@ -55,6 +69,8 @@ export function addressRouteBinding(
   destination: Extract<ProjectDestination, { kind: "document" }> | null,
   workId: string | null,
   rootThreadId: string | undefined,
+  /** The owner the address reviews (`addressReviewOwner`); null when it names none. */
+  reviewOwner?: string | null,
 ): { revision: number; documentId: string; by: RouteBindingProof } | null {
   if (
     binding.kind === "pending" ||
@@ -73,7 +89,7 @@ export function addressRouteBinding(
   const { documentId } = result.document;
   if (binding.kind === "review") {
     if (
-      workId !== binding.review.workId ||
+      reviewOwner !== binding.review.owner ||
       (selection.status === "bound" &&
         selection.identity.kind === "server" &&
         selection.identity.documentId === documentId)
@@ -105,7 +121,7 @@ export function documentAddressQueryOptions(
       input.destination?.scheme,
       input.destination?.path,
       input.owner.rootThreadId ?? input.owner.workId,
-      review?.workId,
+      review?.owner,
       review?.itemKey,
     ],
     queryFn: () => {

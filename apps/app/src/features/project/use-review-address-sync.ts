@@ -7,14 +7,14 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { getContextTabs, selectedTabOf, tabKey, useContextTabsStore } from "@/client/stores";
 import type { OpenDocumentTab } from "./open-documents";
-import { type ReviewAddressAdmission, reviewAddress } from "./presented-document";
+import type { ReviewAddressAdmission } from "./presented-document";
 
 export function useReviewAddressSync({
   projectId,
   selected,
   writing,
   locationKey,
-  editorWorkId,
+  reviewOwner,
   address,
   writeItemKey,
 }: {
@@ -23,7 +23,8 @@ export function useReviewAddressSync({
   /** Write on a desktop: the only place the address carries a review. */
   writing: boolean;
   locationKey: string | undefined;
-  editorWorkId: string | null;
+  /** Whose draft the address's item reviews (`addressReviewOwner`); null while unresolved. */
+  reviewOwner: string | null;
   address: {
     itemKey: string | undefined;
     changeId: string | undefined;
@@ -51,14 +52,18 @@ export function useReviewAddressSync({
       return;
     }
     if (key === null) return;
-    if (address.itemKey && (address.admission !== "admitted" || !editorWorkId)) return;
+    if (address.itemKey && (address.admission !== "admitted" || !reviewOwner)) return;
     arrived.current = locationKey;
     const next =
-      address.itemKey && editorWorkId
-        ? reviewAddress(editorWorkId, address.itemKey, address.changeId)
+      address.itemKey && reviewOwner
+        ? {
+            ownerKey: reviewOwner,
+            itemKey: address.itemKey,
+            ...(address.changeId ? { changeId: address.changeId } : {}),
+          }
         : null;
     if (
-      next?.owner === pin?.owner &&
+      next?.ownerKey === pin?.ownerKey &&
       next?.itemKey === pin?.itemKey &&
       next?.changeId === pin?.changeId
     )
@@ -70,7 +75,7 @@ export function useReviewAddressSync({
         key,
         next ? { reviewPin: next, view: { version: "draft" } } : { reviewPin: null },
       );
-  }, [writing, key, documentId, locationKey, editorWorkId, address, pin, projectId]);
+  }, [writing, key, documentId, locationKey, reviewOwner, address, pin, projectId]);
 
   const pinnedItem = pin?.itemKey ?? null;
   const pinnedChange = pin?.changeId;

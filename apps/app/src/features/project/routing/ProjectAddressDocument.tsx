@@ -13,6 +13,7 @@ import {
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { canonicalDocumentAddress, canonicalReviewTabPatch } from "./document-address-canonical";
+import { addressReviewOwner } from "./document-address-review";
 import { mergeLocalResourceState } from "./local-document-address";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import { type ProjectAddress, projectAddressHref } from "./project-address";
@@ -56,6 +57,10 @@ export function ProjectAddressDocument({
 }) {
   const { openTab } = useContextTabsActions();
   const { tabs } = useContextTabs(projectId);
+  // A hidden create can name its item through `draftOnly` rather than the address.
+  const reviewOwner = reviewItemKey
+    ? addressReviewOwner({ lineage: address.lineage, itemKey: reviewItemKey }, workId)
+    : null;
   const reviewTab = tabs.find(
     (tab): tab is Extract<ContextTab, { kind: "tracked" }> =>
       tab.kind === "tracked" &&
@@ -63,7 +68,7 @@ export function ProjectAddressDocument({
       !!result &&
       result.kind !== "unavailable" &&
       tab.documentId === result.document.documentId &&
-      matchesReviewItem(tab, { reviewWorkId: workId ?? "", reviewItemKey: reviewItemKey }),
+      matchesReviewItem(tab, { reviewOwner: reviewOwner ?? "", reviewItemKey }),
   );
   const reviewLocatorFingerprint = JSON.stringify(
     reviewTab ? { scheme: reviewTab.scheme, path: reviewTab.path, name: reviewTab.name } : null,
@@ -108,16 +113,18 @@ export function ProjectAddressDocument({
       // one, and the pin sync and ReviewAddressOwner take it from there. A hidden review has no
       // live catalog to refresh its labels, so the server's canonical locator repairs its tab here.
       if (!opened) {
-        const tab = draftOnly
-          ? contextTabFromDraftGroup({
-              workId,
-              documentId: result.document.documentId,
-              itemKey: reviewItemKey,
-              contextLocation: draftOnly.contextLocation,
-              documentName: draftOnly.documentName,
-              draftOnly: true,
-            })
-          : liveTab();
+        const tab = !draftOnly
+          ? liveTab()
+          : reviewOwner
+            ? contextTabFromDraftGroup({
+                ownerKey: reviewOwner,
+                documentId: result.document.documentId,
+                itemKey: reviewItemKey,
+                contextLocation: draftOnly.contextLocation,
+                documentName: draftOnly.documentName,
+                draftOnly: true,
+              })
+            : null;
         if (tab) openTab(projectId, tab, () => navigation.isCurrent(ticket), workId);
       } else if (reviewTab) {
         const patch = canonicalReviewTabPatch(
@@ -168,6 +175,7 @@ export function ProjectAddressDocument({
     reviewLocatorFingerprint,
     opened,
     workId,
+    reviewOwner,
     noWorkId,
     navigation,
     openTab,
