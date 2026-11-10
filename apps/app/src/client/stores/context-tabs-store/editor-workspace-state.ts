@@ -27,10 +27,10 @@ import {
 } from "./editor-workspace-model";
 
 export const EDITOR_WORKSPACE_STORAGE_KEY = "meridian:editor-workspace:v2";
-export const EDITOR_WORKSPACE_VERSION = 2;
+export const EDITOR_WORKSPACE_VERSION = 3;
 const EMPTY_PROJECT: ProjectTabsSlice = { tabs: [], selectedTabKey: null };
 export type EditorWorkspaceSnapshot = Readonly<{
-  version: 2;
+  version: typeof EDITOR_WORKSPACE_VERSION;
   accountId: string;
   projects: Readonly<Record<string, ProjectTabsSlice>>;
 }>;
@@ -46,13 +46,12 @@ export type EditorWorkspaceCommand =
   | { kind: "close"; projectId: string; tabInstanceId: string }
   | { kind: "select"; projectId: string; tabInstanceId: string | null }
   | {
-      /** The writer's choices on one tab: its view, whether it is the preview, its review pin. `null` clears a field. */
+      /** The writer's choices on one tab: its view and its review pin. `null` clears a field. */
       kind: "set-tab-state";
       projectId: string;
       tabInstanceId: string;
       patch: {
         view?: Partial<NonNullable<TabState["view"]>>;
-        preview?: boolean;
         reviewPin?: ReviewPin | null;
       };
     }
@@ -68,12 +67,6 @@ export type EditorWorkspaceCommand =
       projectId: string;
       resourceHandle: string;
       tab: ContextTab;
-    }
-  | {
-      kind: "reorder";
-      projectId: string;
-      expectedTabInstanceIds: readonly string[];
-      nextTabInstanceIds: readonly string[];
     }
   | {
       kind: "reconcile-bootstrap";
@@ -187,7 +180,7 @@ const isString = (value: unknown): value is string => typeof value === "string";
 
 /** What a tab session written by this build holds; anything else means the record is not ours. */
 function validTabState(tab: Record<string, unknown>): boolean {
-  const { view, preview, reviewPin, reviews } = tab;
+  const { view, reviewPin, reviews } = tab;
   if (
     view !== undefined &&
     !(
@@ -197,7 +190,6 @@ function validTabState(tab: Record<string, unknown>): boolean {
     )
   )
     return false;
-  if (preview !== undefined && preview !== true) return false;
   if (
     reviewPin !== undefined &&
     !(
@@ -241,8 +233,6 @@ function parseProjectWorkspace(value: unknown): ProjectTabsSlice | null {
   const parsedTabs = (tabs as ContextTab[]).filter((tab) => !resourceIds.has(tab.documentId));
   const instanceIds = parsedTabs.map((tab) => tab.tabInstanceId as string);
   if (new Set(instanceIds).size !== instanceIds.length) return null;
-  const previews = parsedTabs.filter((tab) => tab.preview).length;
-  if (previews > 1) return null;
   const selected = parsedTabs.find((tab) => tabKey(tab) === value.selectedTabKey);
   return { tabs: parsedTabs, selectedTabKey: selected ? tabKey(selected) : null };
 }
@@ -619,14 +609,7 @@ export function reduceEditorWorkspace(
     // Choosing Live ends an explicit review address: the pin would keep the review on screen.
     if (patch.reviewPin === null || patch.view?.version === "live") delete next.reviewPin;
     if (patch.reviewPin) next.reviewPin = patch.reviewPin;
-    if (patch.preview === false) delete next.preview;
-    const tabs = workspace.tabs.map((candidate) => {
-      if (candidate === tab)
-        return patch.preview ? ({ ...next, preview: true } as ContextTab) : next;
-      if (!patch.preview || !candidate.preview) return candidate;
-      const { preview: _preview, ...rest } = candidate;
-      return rest as ContextTab;
-    });
+    const tabs = workspace.tabs.map((candidate) => (candidate === tab ? next : candidate));
     if (JSON.stringify(tabs) === JSON.stringify(workspace.tabs))
       return outcome("already-committed", current);
     return replaceProject(current, command.projectId, { ...workspace, tabs });
@@ -646,25 +629,6 @@ export function reduceEditorWorkspace(
         const { reviewPin: _pin, ...rest } = tab;
         return rest as ContextTab;
       }),
-    });
-  }
-  if (command.kind === "reorder") {
-    const workspace = current.projects[command.projectId];
-    const prior = workspace?.tabs.map((tab) => tab.tabInstanceId as string) ?? [];
-    if (
-      prior.length !== command.expectedTabInstanceIds.length ||
-      prior.some((id, index) => id !== command.expectedTabInstanceIds[index]) ||
-      command.nextTabInstanceIds.length !== prior.length ||
-      new Set(command.nextTabInstanceIds).size !== prior.length ||
-      command.nextTabInstanceIds.some((id) => !prior.includes(id))
-    )
-      return outcome("stale", current);
-    if (prior.every((id, index) => id === command.nextTabInstanceIds[index]))
-      return outcome("already-committed", current);
-    const byInstance = new Map(workspace?.tabs.map((tab) => [tab.tabInstanceId, tab]));
-    return replaceProject(current, command.projectId, {
-      ...workspace,
-      tabs: command.nextTabInstanceIds.map((id) => byInstance.get(id) as ContextTab),
     });
   }
   return outcome("stale", current);
