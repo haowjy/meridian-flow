@@ -8,7 +8,7 @@
  * account fence are proven rather than assumed.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - account-settings confirmed snapshot and optimistic overlay (kb/decisions/platform/client/account-and-device-settings.md)
+ * - account-settings confirmed snapshot and optimistic overlay (kb/wiki/architecture/state-tier-contract.md#account-and-device-settings)
  */
 
 import { DEFAULT_ACCOUNT_APPEARANCE } from "@meridian/contracts/preferences";

@@ -760,4 +760,4 @@ pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr> --dry-run
 pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr>
 ```
 
-[mf-claims]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md
+[mf-claims]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/mf-cli.md#every-exit-is-a-proof-or-a-refusal

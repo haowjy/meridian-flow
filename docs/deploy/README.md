@@ -63,7 +63,7 @@ before that release deploys. Releases before it run on either image.
 1. **Back up first.** Take a dump or a platform snapshot of the database you can restore from.
 2. **Build and publish the image.** Railway pulls a database image from a registry, so push
    the image built from `tools/postgres/Dockerfile` to one Railway can reach. Per
-   [release promotion](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/hosting/release-promotion.md),
+   [release promotion](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/hosting.md#releases-promote-the-same-images-from-staging-to-production),
    the release pipeline builds that file and promotes it by digest.
 3. **Change only the image.** Stay on Postgres 16 and keep the existing data volume. A major
    version change or a new, empty service means a dump and restore instead.

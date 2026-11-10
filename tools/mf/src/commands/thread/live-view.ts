@@ -8,7 +8,7 @@
  * code: only the proving read decides those. `differs` is a lead to investigate; `matches` does
  * not prove a screen was right. A planned follow-up lets a true disagreement fail with exit 6; that
  * is not true yet. See
- * https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md
+ * https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/mf-cli.md#every-exit-is-a-proof-or-a-refusal
  */
 import type { Diff } from "@meridian/thread-client/sync";
 import { truncate } from "../../core/output";

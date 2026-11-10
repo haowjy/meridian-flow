@@ -2,7 +2,7 @@
  * In-memory shown-link storage matches the runtime store contract.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - latest-tuple shown-link arbitration and lineage-cutoff inheritance (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
+ * - latest-tuple shown-link arbitration and lineage-cutoff inheritance (kb/wiki/architecture/server-runtime.md#one-delivery-boundary-and-one-run-claim)
  */
 
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
