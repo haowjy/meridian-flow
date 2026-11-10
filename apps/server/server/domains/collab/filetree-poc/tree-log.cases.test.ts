@@ -1,7 +1,15 @@
 /** Proof-of-concept cases for the Yjs file-tree log: the conflicts that break trees, by name. */
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { childrenOf, LIVE, materialize, ROOT, TreeWriter, treeViolations } from "./tree-log.js";
+import {
+  childrenOf,
+  fingerprint,
+  LIVE,
+  materialize,
+  ROOT,
+  TreeWriter,
+  treeViolations,
+} from "./tree-log.js";
 
 const W = "user:writer";
 const A = "agent:thread-1/turn-1";
@@ -251,5 +259,82 @@ describe("file tree as a Yjs operation log", () => {
       outcomes.add(materialize(live.doc, LIVE).nodes.get(n)?.name as string);
     }
     expect(outcomes).toEqual(new Set(["drafted", "live"]));
+  });
+});
+
+describe("file tree log: cases found in review", () => {
+  it("two deletes of one folder both count, whatever the client ids", () => {
+    const outcomes = new Set<string>();
+    for (const [ia, ib] of [
+      [1, 2],
+      [2, 1],
+    ] as const) {
+      const a = replica(ia);
+      const b = replica(ib);
+      const f = a.create(LIVE, W, { kind: "folder", name: "F", parent: ROOT }).node;
+      a.create(LIVE, W, { kind: "document", name: "x", parent: f });
+      sync(a, b);
+      a.create(LIVE, W, { kind: "document", name: "y", parent: f });
+      a.delete(LIVE, W, f);
+      b.delete(LIVE, A, f);
+      sync(a, b);
+      const live = materialize(a.doc, LIVE);
+      expect(treeViolations(live)).toEqual([]);
+      outcomes.add([...live.nodes.values()].map((n) => `${n.name}:${n.trashed}`).join(","));
+    }
+    expect(outcomes.size).toBe(1);
+    expect([...outcomes][0]).not.toContain("false,y");
+    expect([...outcomes][0]).toContain("y:true");
+  });
+
+  it("applying a later rename alone brings the earlier one, so the draft doesn't go backwards", () => {
+    const a = replica(1);
+    const ch = a.create(LIVE, W, { kind: "document", name: "Ch", parent: ROOT }).node;
+    const work = { draft: "w" };
+    a.rename(work, A, ch, "First");
+    const second = a.rename(work, A, ch, "Second");
+    a.apply("w", W, [second.id]);
+    expect(materialize(a.doc, LIVE).nodes.get(ch)?.name).toBe("Second");
+    expect(materialize(a.doc, work).nodes.get(ch)?.name).toBe("Second");
+  });
+
+  it("a partial Apply whose move depends on an earlier drafted move takes both", () => {
+    const a = replica(1);
+    const x = a.create(LIVE, W, { kind: "folder", name: "X", parent: ROOT }).node;
+    const y = a.create(LIVE, W, { kind: "folder", name: "Y", parent: x }).node;
+    const work = { draft: "w" };
+    a.move(work, A, y, ROOT);
+    const dependent = a.move(work, A, x, y);
+    const before = fingerprint(materialize(a.doc, work));
+    a.apply("w", W, [dependent.id]);
+    expect(fingerprint(materialize(a.doc, work))).toBe(before);
+    expect(materialize(a.doc, LIVE).nodes.get(x)?.parent).toBe(y);
+  });
+
+  it("restoring a document doesn't take the name from the one standing there", () => {
+    const a = replica(1);
+    const old = a.create(LIVE, W, { kind: "document", name: "Ch1", parent: ROOT }).node;
+    a.delete(LIVE, W, old);
+    const current = a.create(LIVE, W, { kind: "document", name: "Ch1", parent: ROOT }).node;
+    a.restore(LIVE, W, old);
+    const live = materialize(a.doc, LIVE);
+    expect(live.nodes.get(current)?.displayName).toBe("Ch1");
+    expect(live.nodes.get(old)?.displayName).toBe("Ch1 (2)");
+  });
+
+  it("undo of a move into a folder deleted since is refused, not a revival", () => {
+    const a = replica(1);
+    const f = a.create(LIVE, W, { kind: "folder", name: "F", parent: ROOT }).node;
+    const ch = a.create(LIVE, W, { kind: "document", name: "Ch", parent: f }).node;
+    const move = a.move(LIVE, A, ch, ROOT);
+    a.delete(LIVE, W, f);
+    expect(a.undo(LIVE, W, move.id)).toBe("superseded");
+  });
+
+  it("an applied copy names who drafted it and who applied it", () => {
+    const a = replica(1);
+    a.create({ draft: "w" }, A, { kind: "document", name: "Ch", parent: ROOT });
+    const [copy] = a.apply("w", W);
+    expect(copy).toMatchObject({ actor: A, appliedBy: W, draft: null });
   });
 });

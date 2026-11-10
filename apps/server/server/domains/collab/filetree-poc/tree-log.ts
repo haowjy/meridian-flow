@@ -35,6 +35,8 @@ type OpBase = {
   appliedFrom?: string;
   /** On an inverse: the op it undoes. */
   undoes?: string;
+  /** On a live copy made by Apply: who applied it. `actor` stays the drafting author. */
+  appliedBy?: Actor;
 };
 
 export type CreateOp = OpBase & {
@@ -135,6 +137,8 @@ type Working = {
   createdBy: Actor;
   lastChangedBy: Actor;
   createdAt: number;
+  /** Log position of the op that last brought it to its parent under its name: who gets a numbered name. */
+  arrivedAt: number;
 };
 
 export function replay(ops: readonly TreeOp[]): TreeProjection {
@@ -150,6 +154,7 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
         createdBy: "system",
         lastChangedBy: "system",
         createdAt: -1,
+        arrivedAt: -1,
       },
     ],
   ]);
@@ -167,6 +172,18 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
       at = nodes.get(at)?.parent ?? null;
     }
     return false;
+  };
+
+  // An undo puts back the arrival it reverses, so an undone move or rename shows the names it
+  // showed before, not a numbered copy.
+  const arrivalBefore = new Map<string, number>();
+  const arrival = (node: Working, op: TreeOp, index: number, changed: boolean) => {
+    arrivalBefore.set(op.id, node.arrivedAt);
+    // A live copy answers to its drafted op's id too, which an inverse drafted after it names.
+    if (op.appliedFrom) arrivalBefore.set(op.appliedFrom, node.arrivedAt);
+    const undone = op.undoes === undefined ? undefined : arrivalBefore.get(op.undoes);
+    if (undone !== undefined) node.arrivedAt = undone;
+    else if (changed) node.arrivedAt = index;
   };
 
   for (const [index, op] of ops.entries()) {
@@ -194,6 +211,7 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
           createdBy: op.actor,
           lastChangedBy: op.actor,
           createdAt: index,
+          arrivedAt: index,
         });
         continue;
       }
@@ -216,6 +234,7 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
           skipped.push({ op: op.id, reason: "cycle" });
           continue;
         }
+        arrival(node, op, index, node.parent !== op.parent);
         node.parent = op.parent;
         node.rank = op.rank;
         node.lastChangedBy = op.actor;
@@ -227,6 +246,7 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
           skipped.push({ op: op.id, reason: "missing-node" });
           continue;
         }
+        arrival(node, op, index, node.name !== op.name);
         node.name = op.name;
         node.lastChangedBy = op.actor;
         continue;
@@ -236,7 +256,10 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
           skipped.push({ op: op.id, reason: "missing-node" });
           continue;
         }
-        deletes.set(op.node, new Set(op.cascade));
+        // Two deletes of one node both count: each takes what its author saw.
+        const record = deletes.get(op.node) ?? new Set<string>();
+        for (const member of op.cascade) record.add(member);
+        deletes.set(op.node, record);
         continue;
       }
       case "restore": {
@@ -245,6 +268,8 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
           continue;
         }
         deletes.delete(op.node);
+        const restored = nodes.get(op.node);
+        if (restored) restored.arrivedAt = index;
         // Restoring a node also restores the delete of any folder above it, so it shows.
         for (const [deleted] of deletes) if (isAncestor(deleted, op.node)) deletes.delete(deleted);
         continue;
@@ -280,7 +305,8 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
   const displayNames = new Map<string, string>();
   for (const siblings of children.values()) {
     const shown = siblings.filter((node) => !deleted.has(node.id) || keptByChild.has(node.id));
-    shown.sort((a, b) => a.createdAt - b.createdAt);
+    // The node already standing keeps its name; the one that arrived later is numbered.
+    shown.sort((a, b) => a.arrivedAt - b.arrivedAt || a.createdAt - b.createdAt);
     const taken = new Set<string>();
     for (const node of shown) {
       let name = node.name;
@@ -457,19 +483,24 @@ export class TreeWriter {
    */
   apply(draft: DraftId, appliedBy: Actor, only?: readonly string[]): TreeOp[] {
     const pending = viewOps(this.doc, { draft }).filter((op) => op.draft === draft);
-    const chosen = only ? prerequisites(pending, only) : new Set(pending.map((op) => op.id));
+    const chosen = only
+      ? stableSelection(viewOps(this.doc, LIVE), pending, prerequisites(pending, only))
+      : new Set(pending.map((op) => op.id));
     const live = this.view(LIVE);
     const copies: TreeOp[] = [];
     for (const op of pending) {
       if (!chosen.has(op.id)) continue;
-      const copy = { ...op, id: this.nextId("op"), draft: null, appliedFrom: op.id } as TreeOp & {
-        appliedBy?: Actor;
-      };
-      copy.appliedBy = appliedBy;
+      const copy = {
+        ...op,
+        id: this.nextId("op"),
+        draft: null,
+        appliedFrom: op.id,
+        appliedBy,
+      } as TreeOp;
       // The undo of a live copy returns to where live had it, not where the draft saw it.
       if (copy.type === "move") {
         const at = live.nodes.get(copy.node);
-        copy.from = { parent: at?.parent ?? ROOT, rank: at?.rank ?? "" };
+        if (at?.parent) copy.from = { parent: at.parent, rank: at.rank };
       }
       if (copy.type === "rename") copy.fromName = live.nodes.get(copy.node)?.name ?? copy.fromName;
       copies.push(copy);
@@ -516,7 +547,9 @@ export class TreeWriter {
         );
       case "move":
         if (node.parent !== op.parent || node.rank !== op.rank) return "superseded";
-        if (!projection.nodes.has(op.from.parent)) return "superseded";
+        if (!op.from.rank) return "superseded";
+        if (!projection.nodes.has(op.from.parent) || projection.nodes.get(op.from.parent)?.trashed)
+          return "superseded";
         return this.author(
           view,
           actor,
@@ -564,10 +597,21 @@ function needs(op: TreeOp): string[] {
   return [op.node];
 }
 
-/** The chosen ops plus the drafted creates they stand on, transitively. */
+function factOf(op: TreeOp): string {
+  if (op.type === "rename") return `name:${op.node}`;
+  if (op.type === "move") return `place:${op.node}`;
+  if (op.type === "delete" || op.type === "restore") return `presence:${op.node}`;
+  return `create:${op.node}`;
+}
+
+/**
+ * The chosen ops plus the drafted creates they stand on, and the earlier drafted ops on the same
+ * fact (applying a second rename brings the first, or the draft would read the first after it).
+ */
 export function prerequisites(pending: readonly TreeOp[], only: readonly string[]): Set<string> {
   const created = nodesCreatedBy(pending);
   const byId = new Map(pending.map((op) => [op.id, op]));
+  const position = new Map(pending.map((op, index) => [op.id, index]));
   const out = new Set<string>();
   const stack = [...only];
   while (stack.length > 0) {
@@ -579,8 +623,33 @@ export function prerequisites(pending: readonly TreeOp[], only: readonly string[
       const creator = created.get(node);
       if (creator && creator !== id) stack.push(creator);
     }
+    const at = position.get(id) ?? 0;
+    for (const earlier of pending.slice(0, at))
+      if (factOf(earlier) === factOf(op)) stack.push(earlier.id);
   }
   return out;
+}
+
+/**
+ * A partial Apply must leave the draft's view as it was. Moves can depend on each other in ways
+ * the closure doesn't see (a drafted move is valid only after an earlier one), so the selection
+ * is checked by replay, and widened to every drafted op up to the last chosen one when it would
+ * change the view. That prefix always keeps it, because it replays the same sequence.
+ */
+export function stableSelection(
+  live: readonly TreeOp[],
+  pending: readonly TreeOp[],
+  chosen: Set<string>,
+): Set<string> {
+  const before = fingerprint(replay([...live, ...pending]));
+  const ordered = [
+    ...live,
+    ...pending.filter((op) => chosen.has(op.id)),
+    ...pending.filter((op) => !chosen.has(op.id)),
+  ];
+  if (fingerprint(replay(ordered)) === before) return chosen;
+  const last = Math.max(...pending.flatMap((op, index) => (chosen.has(op.id) ? [index] : [])));
+  return new Set(pending.slice(0, last + 1).map((op) => op.id));
 }
 
 /** The chosen ops plus every drafted op that stands on a node one of them creates, transitively. */

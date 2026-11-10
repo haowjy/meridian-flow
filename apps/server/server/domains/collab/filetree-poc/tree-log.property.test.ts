@@ -22,6 +22,7 @@ import {
 } from "./tree-log.js";
 
 const SEEDS = Number(process.env.TREE_SEEDS ?? 300);
+const FIRST_SEED = Number(process.env.TREE_FIRST_SEED ?? 1);
 const STEPS = Number(process.env.TREE_STEPS ?? 160);
 const REPLICAS = 4;
 const VIEWS: View[] = [LIVE, { draft: "w1" }, { draft: "w2" }];
@@ -38,7 +39,11 @@ function rng(seed: number) {
   };
 }
 
-type Replica = { writer: TreeWriter; outbox: Uint8Array[]; delivered: Map<number, Set<number>> };
+type Replica = {
+  writer: TreeWriter;
+  outbox: Uint8Array[];
+  delivered: Map<number, Set<number>>;
+};
 
 function makeReplicas(): Replica[] {
   return Array.from({ length: REPLICAS }, (_, index) => {
@@ -46,7 +51,9 @@ function makeReplicas(): Replica[] {
     doc.clientID = index + 1;
     const replica: Replica = { writer: new TreeWriter(doc), outbox: [], delivered: new Map() };
     doc.on("update", (update: Uint8Array, origin: unknown) => {
-      if (origin !== "remote") replica.outbox.push(update);
+      if (origin !== "remote") {
+        replica.outbox.push(update);
+      }
     });
     return replica;
   });
@@ -76,7 +83,7 @@ function viewProblems(doc: Y.Doc, view: View): string[] {
   return problems;
 }
 
-function runSeed(seed: number): { ops: number; skipped: number; kept: number } {
+function runSeed(seed: number): { ops: number; skipped: number; kept: number; repaired: number } {
   const random = rng(seed);
   const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)] as T;
   const replicas = makeReplicas();
@@ -141,13 +148,33 @@ function runSeed(seed: number): { ops: number; skipped: number; kept: number } {
             );
         }
       }
-    } else if (action < 0.68) {
+    } else if (action < 0.64) {
       writer.rename(view, actor, pick(shown).id, pick(NAMES));
+    } else if (action < 0.68) {
+      // Undo of an earlier op of any kind, which others may have changed since.
+      const mine = viewOps(writer.doc, view).filter((op) =>
+        op.id.includes(`-${writer.doc.clientID.toString(36)}-`),
+      );
+      if (mine.length > 0) writer.undo(view, actor, pick(mine).id);
     } else if (action < 0.8) {
-      writer.delete(view, actor, pick(shown).id);
+      const target = pick(shown).id;
+      writer.delete(view, actor, target);
+      // A delete does its job where it was made: the node and everything shown inside it go.
+      const after = materialize(writer.doc, view);
+      for (const id of [target, ...descendantsOf(after, target)])
+        expect(after.nodes.get(id)?.trashed, `seed ${seed} step ${step} delete took ${id}`).toBe(
+          true,
+        );
     } else if (action < 0.85) {
       const trashed = [...projection.nodes.values()].filter((node) => node.trashed);
-      if (trashed.length > 0) writer.restore(view, actor, pick(trashed).id);
+      if (trashed.length > 0) {
+        const target = pick(trashed).id;
+        writer.restore(view, actor, target);
+        expect(
+          materialize(writer.doc, view).nodes.get(target)?.trashed,
+          `seed ${seed} restore`,
+        ).toBe(false);
+      }
     } else if (view.draft !== null) {
       const pending = viewOps(writer.doc, view).filter((op) => op.draft === view.draft);
       if (pending.length === 0) continue;
@@ -155,6 +182,10 @@ function runSeed(seed: number): { ops: number; skipped: number; kept: number } {
       if (action < 0.93) {
         const shownBefore = fingerprint(materialize(writer.doc, view));
         writer.apply(view.draft, "user:w", some);
+        // A partial Apply leaves the draft reading as it did.
+        expect(fingerprint(materialize(writer.doc, view)), `seed ${seed} partial apply`).toBe(
+          shownBefore,
+        );
         if (!some)
           expect(fingerprint(materialize(writer.doc, LIVE)), `seed ${seed} WYSIWYG apply`).toBe(
             shownBefore,
@@ -176,9 +207,26 @@ function runSeed(seed: number): { ops: number; skipped: number; kept: number } {
     for (const to of replicas)
       for (const from of [...replicas].sort(() => random() - 0.5))
         if (from !== to) for (let n = 0; n < from.outbox.length; n += 1) deliver(from, to);
+  const clocks = (doc: Y.Doc) =>
+    [...Y.decodeStateVector(Y.encodeStateVector(doc))].sort(([a], [b]) => a - b);
+  // Yjs 13.6 can leave a causally complete set of updates pending when they arrive out of order
+  // (yjs-pending.test.ts). A state-vector exchange, what y-protocols does on every connect,
+  // repairs it; count how often it was needed.
+  let repaired = 0;
+  for (const to of replicas) {
+    if (!to.writer.doc.store.pendingStructs && !to.writer.doc.store.pendingDs) continue;
+    repaired += 1;
+    for (const from of replicas)
+      if (from !== to)
+        Y.applyUpdate(
+          to.writer.doc,
+          Y.encodeStateAsUpdate(from.writer.doc, Y.encodeStateVector(to.writer.doc)),
+          "remote",
+        );
+  }
   for (const replica of replicas)
-    expect(Y.encodeStateVector(replica.writer.doc)).toEqual(
-      Y.encodeStateVector(replicas[0]?.writer.doc as Y.Doc),
+    expect(clocks(replica.writer.doc), `seed ${seed} every update delivered`).toEqual(
+      clocks(replicas[0]?.writer.doc as Y.Doc),
     );
 
   for (const view of VIEWS) {
@@ -194,6 +242,7 @@ function runSeed(seed: number): { ops: number; skipped: number; kept: number } {
     skipped: views.flatMap((view) => view.skipped).filter((s) => s.reason === "cycle").length,
     kept: views.flatMap((view) => [...view.nodes.values()]).filter((node) => node.keptByChild)
       .length,
+    repaired,
   };
 }
 
@@ -202,19 +251,21 @@ describe("file tree log under random concurrent edits", () => {
     let ops = 0;
     let skipped = 0;
     let kept = 0;
-    for (let seed = 1; seed <= SEEDS; seed += 1) {
+    let repaired = 0;
+    for (let seed = FIRST_SEED; seed < FIRST_SEED + SEEDS; seed += 1) {
       const result = runSeed(seed);
       ops += result.ops;
       skipped += result.skipped;
       kept += result.kept;
+      repaired += result.repaired;
     }
     // The run must actually reach the hard cases, or it proves nothing about them.
     expect(skipped).toBeGreaterThan(0);
     expect(kept).toBeGreaterThan(0);
     console.info(
-      `tree property: ${SEEDS} seeds, ${ops} live ops, ${skipped} cycle skips, ${kept} folders kept by a child`,
+      `tree property: ${SEEDS} seeds, ${ops} live ops, ${skipped} cycle skips, ${kept} folders kept by a child, ${repaired} replicas left with stuck pending updates and repaired by a state-vector sync`,
     );
-  });
+  }, 600_000);
 
   it("replays a large project quickly enough to recompute on every change", () => {
     const doc = new Y.Doc({ gc: false });
