@@ -87,18 +87,13 @@ export type ReviewPin = { ownerKey: string; itemKey: string; changeId?: string }
 /** What the writer has done to a tab, kept with the record in the tab session. */
 export type TabState = {
   view?: TabView;
-  /** The one peek slot, drawn in italics; at most one tab per project. */
-  preview?: true;
   reviewPin?: ReviewPin;
 };
 
-export const TAB_STATE_KEYS = ["view", "preview", "reviewPin"] as const;
-
 export function tabStateOf(tab: ContextTab): TabState {
-  const { view, preview, reviewPin } = tab;
+  const { view, reviewPin } = tab;
   return {
     ...(view ? { view } : {}),
-    ...(preview ? { preview } : {}),
     ...(reviewPin ? { reviewPin } : {}),
   };
 }

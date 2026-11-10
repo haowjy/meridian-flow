@@ -19,7 +19,7 @@ second filename. Rename/move belong to file lists.
 
 The dock shows the project's selected tab (`useSelectedOpenDocument`); it has no document
 store. A chat door opens or selects a tab through the tab store (`use-dock-placement.ts`
-`commit`), peeking as the one preview tab unless the writer keeps it, then reveals the dock.
+`commit`), then reveals the dock.
 "Open in Editor" shows Write; "Close" closes the tab. Browser history and phone navigation do
 not move documents between surfaces.
 
@@ -39,8 +39,8 @@ its own owner's Scratch.
 
 ## Review state
 
-A tab carries its own `view` (Live/Draft, Show changes), `preview` flag and optional `reviewPin`,
-persisted in tab session v2 with draft-only tabs. The review controller follows the selected tab
+A tab carries its own `view` (Live/Draft, Show changes) and optional `reviewPin`,
+persisted in tab session v3 with draft-only tabs. The review controller follows the selected tab
 (`ReviewAddressOwner`): it enters, keeps or leaves the review the tab names. The focused change
 moves both ways: a change the writer focuses is written to the pin, and a pin that moves by itself
 (reload, shared link, Back) focuses the change it names, or the first when that change is gone. An address arriving in Write (link, reload, Back) wins over the persisted selection:
