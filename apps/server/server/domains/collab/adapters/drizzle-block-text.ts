@@ -10,6 +10,7 @@ import {
   documentYjsHeads,
 } from "@meridian/database";
 import { and, eq, inArray, isNull, lte, ne, not, notExists, or, type SQL, sql } from "drizzle-orm";
+import { branchOwnedBy } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { BlockText } from "../domain/ports/block-text.js";
 import { DOCUMENT_EXTRACTOR_VERSION } from "../domain/ports/document-derivations.js";
@@ -53,7 +54,7 @@ export function createDrizzleBlockText(db: Database): BlockText {
   const current = (ids: DocumentId[]) =>
     and(inArray(documentBlockRooms.documentId, ids), not(staleForReaders));
   return {
-    async grepTexts(ids, { draftWorkId }) {
+    async grepTexts(ids, { draftOwner }) {
       if (!ids.length) return new Map();
       // The watermark and the text come from one snapshot: one statement.
       const rows = await currentDrizzleDb(db)
@@ -73,7 +74,7 @@ export function createDrizzleBlockText(db: Database): BlockText {
           and(
             current(ids),
             // A draft reader sees the draft, which the live room doesn't hold.
-            draftWorkId
+            draftOwner
               ? notExists(
                   currentDrizzleDb(db)
                     .select({ one: sql`1` })
@@ -85,7 +86,7 @@ export function createDrizzleBlockText(db: Database): BlockText {
                         eq(documentDrafts.kind, "work_draft"),
                         eq(documentDrafts.status, "active"),
                         eq(branches.status, "active"),
-                        eq(branches.originWorkId, draftWorkId),
+                        branchOwnedBy(draftOwner),
                       ),
                     ),
                 )

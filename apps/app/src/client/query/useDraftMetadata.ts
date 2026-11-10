@@ -7,9 +7,9 @@ import { projectQueryKeys } from "./project-query-keys";
 
 export function draftMetadataQueryOptions(draft: DraftRef) {
   return {
-    queryKey: projectQueryKeys.workDraftMetadata(
+    queryKey: projectQueryKeys.ownerDraftMetadata(
       draft.projectId,
-      draft.workId,
+      draft.ownerKey,
       draft.documentId,
       draft.itemKey,
     ),

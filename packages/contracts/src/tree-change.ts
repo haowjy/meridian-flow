@@ -12,7 +12,7 @@ export type TreePlacement = {
   rootSourceId: string | null;
   name: string;
   extension: string;
-  /** Sibling rank in the named parent; null follows that parent's default order. */
+  /** Sibling rank in the named parent; null when the row has none. */
   rank?: string | null;
 };
 

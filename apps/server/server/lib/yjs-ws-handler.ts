@@ -1,8 +1,9 @@
 /** Hocuspocus-backed Yjs gateway orchestration behind the thin CrossWS route. */
 import { Hocuspocus, type WebSocketLike } from "@hocuspocus/server";
 import { isDocumentNotFoundError } from "@meridian/agent-edit/integration";
+import { draftOwnerKey } from "@meridian/contracts/branches";
 import { parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
-import type { DocumentId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
@@ -25,7 +26,8 @@ import {
   type FileFacts,
   type FileGrant,
   type FileTarget,
-  grantWorkIds,
+  fileAccessChangeKey,
+  grantOwnerLocks,
   isFileAccessDenied,
   runWithEditGrants,
 } from "../domains/file-policy/index.js";
@@ -96,8 +98,8 @@ type YjsConnectionAdmission =
       /** The file the room serves, asked again once the room is registered. */
       fileTarget: FileTarget;
       access: YjsRoomAccess;
-      /** The Works whose lifecycle decides this access: the file's owner, the draft's origin Work. */
-      accessWorkIds: WorkId[];
+      /** The owners whose lifecycle decides this access: the file's owner, the draft's owner (its `draftOwnerKey`). */
+      accessKeys: string[];
     }
   | {
       kind: "refused";
@@ -314,7 +316,7 @@ async function classifyYjsConnectionAdmission(input: {
     if (!documentDraft) refuse(WS_CLOSE.DRAFT_CLOSED);
     documentId = documentDraft.documentId;
     headSchemaVersion = documentDraft.schemaVersion;
-    fileTarget = { kind: "draft", documentId, workId: documentDraft.workId };
+    fileTarget = { kind: "draft", documentId, owner: documentDraft.owner };
     admitted = await roomAccess(services, userId, fileTarget);
   }
   if (headSchemaVersion !== null && !serverServesHead(headSchemaVersion, COLLAB_SCHEMA_VERSION)) {
@@ -341,7 +343,7 @@ async function classifyYjsConnectionAdmission(input: {
   const access = {
     fileTarget,
     access: admitted.access,
-    accessWorkIds: grantWorkIds(admitted.facts),
+    accessKeys: accessKeys(admitted.facts),
   };
   if (room.kind === "live") {
     return {
@@ -363,6 +365,15 @@ async function classifyYjsConnectionAdmission(input: {
       documentId,
     },
   };
+}
+
+/** Room access follows these owners, each under its `draftOwnerKey`. */
+function accessKeys(facts: FileFacts): string[] {
+  const { workIds, lineageRootIds } = grantOwnerLocks(facts);
+  return [
+    ...workIds.map((workId) => draftOwnerKey({ kind: "work", workId })),
+    ...lineageRootIds.map((rootThreadId) => draftOwnerKey({ kind: "lineage", rootThreadId })),
+  ];
 }
 
 async function enforceDraftHandshake(input: {
@@ -532,7 +543,7 @@ export function createHocuspocus(
           context.access = admission.access;
           // Hocuspocus sends this as the authenticated scope: `readonly` or `read-write`.
           connectionConfig.readOnly = admission.access.level === "read";
-          rooms.register(context.registration, admission.accessWorkIds);
+          rooms.register(context.registration, admission.accessKeys);
           // A Work change between admission and registration reached no room.
           // Registered now, the room hears every later change; ask once more.
           const settled = await findRoomAccess(services, userId, admission.fileTarget);
@@ -695,8 +706,8 @@ export function createYjsGateway(services: YjsGatewayServices) {
   let acceptingConnections = true;
   const rooms = createYjsRoomAccessIndex();
   const hocuspocus = createHocuspocus(services, rooms);
-  const unsubscribe = services.fileAccessChanges.subscribe(({ workId }) =>
-    rooms.revokeWork(workId),
+  const unsubscribe = services.fileAccessChanges.subscribe((change) =>
+    rooms.revokeOwner(fileAccessChangeKey(change)),
   );
 
   function closeConnection(

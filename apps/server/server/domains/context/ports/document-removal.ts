@@ -4,8 +4,10 @@
  * its record (`removal`); every model path words it from that record. Callers of `remove` hold
  * Work/namespace and sorted document mutation locks before entering it.
  */
+
 import type { DocumentId, RemovalIdentity, ThreadId, UserId, WorkId } from "@meridian/contracts";
 import type { DocumentRemovalCause, DocumentRemovalRecord } from "@meridian/contracts/protocol";
+import type { OwnerLocks } from "../../../shared/draft-owner.js";
 
 type RemoveDocumentsInput = {
   documentIds: readonly DocumentId[];
@@ -30,14 +32,14 @@ export interface DocumentRemoval {
  * Collab's half. Every removal registers its documents, so their live rooms close `4208` once
  * the transaction commits; a delete closes no draft, since a draft outlives a live delete of its
  * document (D79). A discard also closes every active draft on its documents and names the Works
- * those drafts belonged to (their pending counts moved).
+ * those drafts belonged to (their pending counts moved): Works and lineages.
  */
 export interface DocumentRemovalCollab {
   registerRemoved(documentIds: readonly DocumentId[], record: DocumentRemovalRecord): void;
   closeDiscardedDrafts(
     documentIds: readonly DocumentId[],
     record: DocumentRemovalRecord,
-  ): Promise<readonly WorkId[]>;
+  ): Promise<OwnerLocks>;
 }
 
 /** Current removal records, in the caller's transaction. Callers authorize identities before exposing them. */

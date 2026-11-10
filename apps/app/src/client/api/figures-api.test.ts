@@ -19,10 +19,10 @@ it("asks for a draft-only picture through the viewing Work, and caches per Work"
   vi.stubGlobal("fetch", fetchMock);
   const base = { projectId: "p1", assetDocumentId: "a1" };
 
-  await getFigureSignedUrl({ ...base, workId: "w1" });
+  await getFigureSignedUrl({ ...base, owner: "w1" });
   await getFigureSignedUrl({ ...base });
 
   const urls = fetchMock.mock.calls.map(([url]) => String(url));
-  expect(urls[0]).toContain("/figure/signed-url?workId=w1");
-  expect(urls[1]).not.toContain("workId");
+  expect(urls[0]).toContain("/figure/signed-url?owner=w1");
+  expect(urls[1]).not.toContain("owner");
 });

@@ -2,7 +2,6 @@
 
 import type {
   ContextOperationReceipt,
-  ContextParentOrderPolicy,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { canonicalRefreshObservation, newerCanonicalObservation } from "./canonical-observation";
@@ -737,7 +736,6 @@ export function installFolderCanonicalRefresh(
   parent: ParentRef,
   observationVersion: string,
   rank?: string | null,
-  orderPolicy?: ContextParentOrderPolicy,
   locationVersion?: string,
 ): FolderNamespaceWrite | null {
   if (record.canonicalRefresh?.operationId !== operationId) return null;
@@ -763,7 +761,6 @@ export function installFolderCanonicalRefresh(
             canonicalParent: parent,
             canonicalRank: rank,
             canonicalLocationVersion: locationVersion,
-            canonicalOrderPolicy: orderPolicy,
             observationVersion,
           }
         : {}),
@@ -786,7 +783,6 @@ export function installFolderNamespaceAvailability(
       availability.parent,
       availability.observationVersion,
       availability.rank,
-      availability.orderPolicy,
       availability.locationVersion,
     );
   const { canonicalRefresh: _completed, ...rest } = record;

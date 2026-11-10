@@ -1,9 +1,10 @@
 /** JSON-natural protocol for the authoritative context metadata catalog. */
+import type { DraftOwnerKey } from "../branches/owner.js";
 import type { CanonicalContextUri, ContextUriScheme } from "../context-uri.js";
 import type { ContextSourceId, DocumentId, FolderId, ProjectId, UserId, WorkId } from "../ids.js";
 import type { WorkAuthorityDto } from "../works/work-authority.js";
 import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
-import type { ContextParentOrderPolicy, DocumentFileType } from "./http-types.js";
+import type { DocumentFileType } from "./http-types.js";
 
 export type CatalogScope =
   | { kind: "project"; projectId: ProjectId }
@@ -29,7 +30,6 @@ export type CatalogSourceEntry = {
   scheme: ContextUriScheme;
   name: string;
   uri: CanonicalContextUri;
-  orderPolicy?: ContextParentOrderPolicy;
 };
 
 export type CatalogFolderEntry = {
@@ -47,7 +47,6 @@ export type CatalogFolderEntry = {
   uri: CanonicalContextUri;
   hasChildren: boolean;
   rank?: string | null;
-  orderPolicy?: ContextParentOrderPolicy;
   /** Device-synthesized ancestry has no server folder identity or management actions. */
   navigationOnly?: true;
 };
@@ -181,6 +180,20 @@ export type CatalogWakeHint = {
   scope: CatalogScope;
   headRevision: string;
 };
+
+/**
+ * A lineage's draft list is stale: its pending draft count moved, or it lost or regained its
+ * last live chat (trash, restore). Truth-free, like the catalog hint; it rides the same
+ * per-project subscription. Work branches keep the Work authority entry instead.
+ */
+export type DraftOwnerHint = {
+  type: "draft-owner-hint";
+  projectId: ProjectId;
+  owner: DraftOwnerKey;
+};
+
+/** What a project's catalog subscription receives. */
+export type CatalogChannelMessage = CatalogWakeHint | DraftOwnerHint;
 
 export function catalogScopeKey(scope: CatalogScope): string {
   switch (scope.kind) {

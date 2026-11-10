@@ -450,6 +450,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const repository = createDrizzleProjectRepository({
         db,
         catalogLifecycle: {
+          publishDraftOwnerHints() {},
           async upsertWorkAuthorities() {},
           async refreshProject(projectId) {
             await catalog.refreshProject(projectId);
@@ -512,6 +513,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           pendingCounts: createDrizzleWorkBranchPendingStore(db),
           availability,
           catalog: {
+            publishDraftOwnerHints() {},
             async refreshProject(projectId) {
               await catalog.refreshProject(projectId);
             },

@@ -72,7 +72,17 @@ and tree uses, then validate. The pending-part pass is independently paged;
 an interrupted cutover must finish before serving traffic.
 
 
-A `branches` row is a Work's pending file tree. `document_drafts` stores each
+A `branches` row is one owner's pending file tree. The owner is a Work
+(`origin_work_id`) or, for a chat with no Work, a conversation lineage
+(`origin_root_thread_id`, no foreign key): exactly one while the branch is active
+(`branches_one_owner`). `branches.pending_document_count` is the branch's own
+count; `works.pending_document_count` sums its active branches. Migration 0131
+closed empty No Work branches, moved single-lineage ones to their lineage, and left
+the rest on the No Work row as legacy branches (reviewable and discardable, no new
+writes). It moves a branch only when every author it ever recorded (open, applied and
+discarded drafts alike) sits in one lineage, so old receipts keep naming the chat that
+made them. It also drops the unused `branch_commands.work_id` and can be re-run after a
+partial failure. It needs all writers stopped. `document_drafts` stores each
 document version, with writes in `draft_write_journal`; `branch_tree_changes`
 and `branch_commands` belong to the whole branch. Expand-only migrations 0075
 (server journal source and Apply-click command kind) and 0076 precede preflight and write no data. Migration 0077 refuses legacy
@@ -112,6 +122,21 @@ reserve inserts `size_bytes`, which the old one never sets. Start only the new r
 afterwards. Intakes still open across the cutover read `size_bytes = 0`: a resumed old
 attach gets `idempotency_conflict` and an old `object_stored` row gets `size_mismatch`
 (its object is deleted). The documents are untouched.
+
+`0129` needs the same stop. It drops `push_lineage`, which the old release inserts on every
+Apply, and the connector columns on `context_sources` (`adapter_type`, `adapter_config`,
+`sync_state`, `is_primary`), which the old release names on every source insert. Nothing
+reads either, so no data is lost.
+
+`0130` needs the same stop. Its code half (`0130_ordered_folders.ts`) ranks every visible
+child of a name-ordered parent in the order it displays, then the SQL half drops
+`order_policy` from `context_sources`, `folders` and `branch_tree_parent_orders` and gives
+every catalog scope a new generation, so a browser resuming from its stored catalog takes a
+fresh snapshot instead of showing unranked folders in id order. The old release reads the
+policy column and leaves new rows unranked, so either release breaks on the other's schema.
+Only rank is written, so no data is lost, and a rerun after a crash ranks the same way.
+Branch rows in a formerly name-ordered parent open across the cutover have a null
+`moved_rank` and show first in their draft.
 
 `0092` rebuilds what an active branch's drafted tree entries own
 (`branch_tree_folders`, `branch_tree_unsettled`, which 0090 and 0091 started

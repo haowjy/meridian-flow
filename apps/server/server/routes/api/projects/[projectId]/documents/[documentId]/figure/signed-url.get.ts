@@ -1,6 +1,8 @@
 /** Figure signed URL HTTP boundary: resolve the query view, authorize, then sign. */
+
+import { draftOwnerFromKey } from "@meridian/contracts";
 import { serializeTransport } from "@meridian/contracts/protocol";
-import type { UserId } from "@meridian/contracts/runtime";
+import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { H3Event } from "nitro/h3";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireProjectOwner } from "../../../../../../../domains/projects/index.js";
@@ -26,16 +28,22 @@ export function createFigureSignedUrlHandler(
     const projectId = getRouterParam(event, "projectId") ?? "";
     const assetDocumentId = requireRequestId(getRouterParam(event, "documentId"), "documentId");
     await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
-    const queryWorkId = getQuery(event).workId;
-    const workId = queryWorkId === undefined ? undefined : requireRequestId(queryWorkId, "workId");
-    const view = workId
-      ? await app.documentSync.branches.viewForWork(workId)
+    const queryOwner = getQuery(event).owner;
+    const owner =
+      queryOwner === undefined
+        ? null
+        : draftOwnerFromKey(String(queryOwner), projectId as ProjectId);
+    if (queryOwner !== undefined && !owner) {
+      throw createError({ statusCode: 400, message: "Invalid draft owner" });
+    }
+    const view = owner
+      ? await app.documentSync.branches.viewForOwner(owner)
       : { kind: "live" as const };
     const asset = await requireFileGrant(
       app.fileAccess,
       user.userId,
-      workId
-        ? { kind: "draft", documentId: assetDocumentId, workId }
+      owner
+        ? { kind: "draft", documentId: assetDocumentId, owner }
         : documentTarget(assetDocumentId),
       "read",
     );

@@ -29,13 +29,21 @@ function personPrincipal(userId: string): Principal {
 }
 
 /** 404 hides existence; an archived Work's files are 403 `work_archived`. */
-function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">): never {
+export function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">): never {
   switch (denial.reason) {
     case "not_found":
       throw createError({ statusCode: 404, message: "Document not found" });
     case "work_archived":
       return throwHttpInterrupt(
         meridianErrorFromSystem("work_archived", "This Work is archived and read-only."),
+        403,
+      );
+    case "chat_frozen":
+      return throwHttpInterrupt(
+        meridianErrorFromSystem(
+          "chat_frozen",
+          "This chat is in the trash, so its drafts are read-only. Restore the chat to change them.",
+        ),
         403,
       );
     case "agent_read_only":
@@ -58,7 +66,10 @@ export function isFileAccessRefusal(cause: unknown): boolean {
   if (message === "agent_read_only" || message === "uploads_read_only") return true;
   const data = (cause as { data?: Record<string, unknown> }).data;
   const envelope = data?.[HTTP_INTERRUPT_ENVELOPE_KEY];
-  return isHttpInterruptEnvelope(envelope) && envelope.error.code === "work_archived";
+  return (
+    isHttpInterruptEnvelope(envelope) &&
+    (envelope.error.code === "work_archived" || envelope.error.code === "chat_frozen")
+  );
 }
 
 /** The person's grant on a target, or the route's refusal. */
@@ -76,7 +87,7 @@ export async function requireFileGrant<N extends FileNeed>(
 /** Runs a write with its grants bound; a seam's refusal becomes the route's. */
 export async function withEditGrants<T>(
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">,
-  grants: readonly FileGrant<"edit">[],
+  grants: readonly FileGrant<"edit" | "discard">[],
   operation: () => Promise<T>,
 ): Promise<T> {
   const result = await runWithEditGrants(fileAccess, grants, operation);

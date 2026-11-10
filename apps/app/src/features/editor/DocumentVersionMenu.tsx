@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { DocumentDraftHint } from "@meridian/contracts/branches";
+import { type DocumentDraftHint, workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import { useWorks } from "@/client/query/useWorks";
 import type { ContextTab } from "@/client/stores";
@@ -21,7 +21,8 @@ import { hintReviewTarget } from "./draft-hint-review";
 
 /**
  * Which version of the open document is showing, at the end of the toolbar row: Live, with
- * every Work that has a draft of it one pick away. Picking a draft opens its review.
+ * every draft of it (a Work's, or a chat's with no Work) one pick away. Picking a draft opens
+ * its review.
  */
 export function DocumentVersionMenu({ projectId, tab }: { projectId: string; tab: ContextTab }) {
   const { documentId } = tab;
@@ -32,8 +33,9 @@ export function DocumentVersionMenu({ projectId, tab }: { projectId: string; tab
   if (tab.kind === "new" || !location.path) return null;
   const contextLocation = { scheme: location.scheme, path: location.path };
 
-  const workName = (hint: DocumentDraftHint) => {
-    const work = works?.find((candidate) => candidate.id === hint.originWorkId);
+  const ownerName = (hint: DocumentDraftHint) => {
+    const workId = workIdOfDraftOwnerKey(hint.owner);
+    const work = workId ? works?.find((candidate) => candidate.id === workId) : undefined;
     return work ? workDisplayName(work) : hint.label;
   };
 
@@ -61,13 +63,12 @@ export function DocumentVersionMenu({ projectId, tab }: { projectId: string; tab
           return (
             <DropdownMenuItem
               key={hint.branchId}
-              disabled={!target}
-              onSelect={() => target && openAiDraft(target)}
+              onSelect={() => openAiDraft(target)}
               className="h-auto min-h-8 flex-col items-start gap-0.5"
             >
               <WorkIdentity
-                name={workName(hint)}
-                unavailableLabel={t`Unnamed Work`}
+                name={ownerName(hint)}
+                unavailableLabel={t`Unnamed draft`}
                 className="text-[13px] font-normal"
               />
               {hint.tree ? (

@@ -261,6 +261,7 @@ export type WsServerMessage =
       scope: import("./context-catalog.js").CatalogScope;
       headRevision: string;
     }
+  | import("./context-catalog.js").DraftOwnerHint
   | AskAnswerReply
   | {
       type: "error";
@@ -329,6 +330,13 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
       }),
     ]),
     headRevision: wsEventSeqSchema,
+  }),
+  z.object({
+    type: z.literal("draft-owner-hint"),
+    projectId: z.string().min(1),
+    owner: z.string().regex(/^(work|lineage):.+$/) as z.ZodType<
+      `work:${string}` | `lineage:${string}`
+    >,
   }),
   wsAskAnswerOkSchema,
   wsAskAnswerErrorSchema,

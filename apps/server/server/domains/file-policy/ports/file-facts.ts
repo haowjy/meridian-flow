@@ -1,15 +1,16 @@
 /** Port: load the facts the file policy decides on (file-access §2, §5). */
-import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
+import type { DraftOwner } from "@meridian/contracts";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { TreeView } from "../../context/tree/tree-view.js";
 import type { FileFacts, FileTarget } from "../domain/types.js";
 
 export interface FileFactsRequest {
   target: FileTarget;
   /**
-   * The Work whose branch this access may go through: an agent's draft-mode
-   * Work. A `draft` target names its own; facts then include `branchWork`.
+   * The owner whose branch this access may go through: an agent's draft-mode
+   * owner. A `draft` target names its own; facts then include `branchOwner`.
    */
-  branchWorkId?: WorkId;
+  branchOwner?: DraftOwner;
 }
 
 export interface FileFactsPort {
@@ -17,13 +18,13 @@ export interface FileFactsPort {
   load(request: FileFactsRequest): Promise<FileFacts | null>;
   /**
    * The list path (file-access §6): many documents' facts in one query, each
-   * through `branchWorkId`'s branch when given. Folders are left out of
+   * through `branchOwner`'s branch when given. Folders are left out of
    * `ancestors`: a listed row is already visible, and v1 grants
    * sit on the project. Missing documents are absent from the map.
    */
   loadList(
     documentIds: readonly DocumentId[],
-    branchWorkId?: WorkId,
+    branchOwner?: DraftOwner,
     branchViews?: ReadonlyMap<DocumentId, TreeView>,
   ): Promise<Map<DocumentId, FileFacts>>;
 }

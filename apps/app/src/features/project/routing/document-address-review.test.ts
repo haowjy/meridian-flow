@@ -3,22 +3,22 @@ import { expect, it } from "vitest";
 import { addressRouteBinding, bindDocumentAddressReview } from "./document-address-review";
 
 it("starts review admission with the selected Work and draft, without draft-list identity", () => {
-  expect(bindDocumentAddressReview("draft-a", "work-a")).toEqual({
+  expect(bindDocumentAddressReview("draft-a", "work:work-a")).toEqual({
     kind: "review",
-    review: { workId: "work-a", itemKey: "draft-a" },
+    review: { owner: "work:work-a", itemKey: "draft-a" },
   });
-  expect(bindDocumentAddressReview("missing", "work-a")).toEqual({
+  expect(bindDocumentAddressReview("missing", "work:work-a")).toEqual({
     kind: "review",
-    review: { workId: "work-a", itemKey: "missing" },
+    review: { owner: "work:work-a", itemKey: "missing" },
   });
   expect(bindDocumentAddressReview("draft-a", null)).toEqual({ kind: "pending" });
-  expect(bindDocumentAddressReview(undefined, "work-a")).toEqual({ kind: "plain" });
+  expect(bindDocumentAddressReview(undefined, "work:work-a")).toEqual({ kind: "plain" });
 });
 
 it("replaces a cold live path binding only after the selected review identity is admitted", () => {
   const binding = {
     kind: "review" as const,
-    review: { workId: "work", itemKey: "draft" },
+    review: { owner: "work:work", itemKey: "draft" },
   };
   const selection = {
     status: "bound" as const,
@@ -32,7 +32,9 @@ it("replaces a cold live path binding only after the selected review identity is
     kind: "current",
     document: { documentId: "hidden" },
   } as import("@meridian/contracts/protocol").DocumentAddressResult;
-  expect(addressRouteBinding(binding, result, selection, destination, "work", undefined)).toEqual({
+  expect(
+    addressRouteBinding(binding, result, selection, destination, "work", undefined, "work:work"),
+  ).toEqual({
     revision: 2,
     documentId: "hidden",
     by: "review",
@@ -41,7 +43,7 @@ it("replaces a cold live path binding only after the selected review identity is
     addressRouteBinding({ kind: "pending" }, result, selection, destination, "work", undefined),
   ).toBeNull();
   expect(
-    addressRouteBinding(binding, undefined, selection, destination, "work", undefined),
+    addressRouteBinding(binding, undefined, selection, destination, "work", undefined, "work:work"),
   ).toBeNull();
   expect(
     addressRouteBinding(
@@ -51,10 +53,19 @@ it("replaces a cold live path binding only after the selected review identity is
       destination,
       "work",
       undefined,
+      "work:work",
     ),
   ).toBeNull();
   expect(
-    addressRouteBinding(binding, result, selection, destination, "other-work", undefined),
+    addressRouteBinding(
+      binding,
+      result,
+      selection,
+      destination,
+      "work",
+      undefined,
+      "work:other-work",
+    ),
   ).toBeNull();
 });
 
@@ -92,6 +103,7 @@ it("a plain answer binds a candidate at its own route and never rebinds a proven
       destination,
       "work",
       undefined,
+      "work:work",
     ),
   ).toBeNull();
 });
@@ -103,6 +115,7 @@ it("starts a cold copied URL's selector read while the list is unresolved and ro
   const { documentAddressQueryOptions } = await import("./document-address-review");
   const projectId = "550e8400-e29b-41d4-a716-446655440000";
   const workId = "123e4567-e89b-42d3-a456-426614174000";
+  const owner = `work:${workId}`;
   const itemKey = "branch:document";
   const address = parseProjectAddress(
     `/p/${projectId}/editor/kb/Old.md`,
@@ -129,7 +142,7 @@ it("starts a cold copied URL's selector read while the list is unresolved and ro
       projectId,
       destination: address.address.destination,
       owner: {},
-      binding: bindDocumentAddressReview(address.address.itemKey, workId),
+      binding: bindDocumentAddressReview(address.address.itemKey, owner),
       workResolved: true,
     },
     read,
@@ -141,12 +154,12 @@ it("starts a cold copied URL's selector read while the list is unresolved and ro
     expect(result).toMatchObject({ document: { documentId: "server-admitted" } });
     expect([...new URL(requested, "https://app.test").searchParams.entries()]).toEqual([
       ["path", "Old.md"],
-      ["reviewWorkId", workId],
+      ["reviewOwner", owner],
       ["itemKey", itemKey],
     ]);
     for (const binding of [
-      bindDocumentAddressReview("other-item", workId),
-      bindDocumentAddressReview(itemKey, "other-work"),
+      bindDocumentAddressReview("other-item", owner),
+      bindDocumentAddressReview(itemKey, "work:other-work"),
     ]) {
       expect(
         documentAddressQueryOptions(

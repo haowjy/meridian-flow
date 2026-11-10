@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { browserRecord } from "@/client/storage/browser-record";
 import {
   type ContextTab,
+  editorHasReview,
   isDraftOnly,
   isEditorContextTab,
   matchesTabInstance,
@@ -36,6 +37,7 @@ export type TrackedTabPatch = Partial<
 export {
   type ContextTab,
   DEFAULT_TAB_VIEW,
+  editorHasReview,
   editorTabsForWork,
   isDraftOnly,
   isEditorContextTab,
@@ -46,12 +48,12 @@ export {
   type ProjectTabsSlice,
   type ReviewEntries,
   type ReviewItemTabIdentity,
-  type ReviewOwner,
   type ReviewPin,
   replaceOwner,
   reviewEntriesOf,
   reviewEntryOf,
-  reviewWorkIds,
+  reviewOwnerOfTab,
+  reviewOwners,
   type ServerContextTab,
   selectedDocumentIdOf,
   selectedTabOf,
@@ -61,8 +63,6 @@ export {
   tabContextOwner,
   tabKey,
   withoutReviewEntry,
-  workIdOfReviewOwner,
-  workReviewOwner,
 } from "./editor-workspace-model";
 
 type ContextTabsState = {
@@ -106,8 +106,8 @@ type ContextTabsActions = {
     key: string,
     patch: { view?: Partial<TabView>; preview?: boolean; reviewPin?: ReviewPin | null },
   ) => void;
-  /** Drops pins by Work and/or item (a scope switch, a settled or dropped review); no filter drops all. */
-  clearReviewPins: (projectId: string, filter?: { workId?: string; itemKey?: string }) => void;
+  /** Drops pins by owner and/or item (a scope switch, a settled or dropped review); no filter drops all. */
+  clearReviewPins: (projectId: string, filter?: { ownerKey?: string; itemKey?: string }) => void;
   reconcileBootstrap: (
     projectId: string,
     changes: readonly { prior: ContextTab; next: ContextTab | null }[],
@@ -118,7 +118,7 @@ type ContextTabsActions = {
     next: ProjectTabsSlice,
   ) => Promise<void>;
   settleDraft: (projectId: string, tab: ContextTab) => Promise<DraftWorkspaceSettlementReceipt>;
-  dropReviewEntry: (projectId: string, workId: string, tabInstanceId: string) => void;
+  dropReviewEntry: (projectId: string, ownerKey: string, tabInstanceId: string) => void;
   keepForDrafts: (projectId: string, documentId: string, reviews: ReviewEntries) => void;
 };
 
@@ -199,7 +199,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           return installed &&
             (editorWorkId === undefined ||
               !isDraftOnly(installed) ||
-              reviewEntryOf(installed, editorWorkId) !== undefined)
+              editorHasReview(installed, editorWorkId))
             ? { kind: "opened", tab: installed }
             : { kind: "not-opened" };
         },
@@ -311,8 +311,8 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             };
           }),
 
-        dropReviewEntry: (projectId, workId, tabInstanceId) => {
-          dispatchResult(() => ({ kind: "drop-review", projectId, workId, tabInstanceId }));
+        dropReviewEntry: (projectId, ownerKey, tabInstanceId) => {
+          dispatchResult(() => ({ kind: "drop-review", projectId, ownerKey, tabInstanceId }));
         },
 
         keepForDrafts: (projectId, documentId, reviews) => {

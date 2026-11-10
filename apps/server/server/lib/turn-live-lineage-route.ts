@@ -1,4 +1,6 @@
 /** Route core for authenticated live-lineage document reads for one thread turn. */
+
+import { draftOwnerKey } from "@meridian/contracts";
 import type {
   ListTurnLiveLineageResponse,
   TurnLiveLineageDocumentItem,
@@ -122,7 +124,7 @@ function serializeLiveLineageDocument(document: TurnEditedDocument): TurnLiveLin
     uri: parsed.value.normalized,
     path: `/${parsed.value.path}`,
     ...(document.scope === "draft"
-      ? { scope: "draft" as const, workId: document.work.id }
+      ? { scope: "draft" as const, owner: draftOwnerKey(document.owner) }
       : { scope: "live" as const }),
     ...(document.tree ? { tree: document.tree } : {}),
   };

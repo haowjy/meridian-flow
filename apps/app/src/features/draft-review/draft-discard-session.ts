@@ -85,6 +85,11 @@ export function startDraftDiscardSession(input: {
     doc.off("update", onTextChange);
     if (!input.active() || entry.binding !== binding || input.state().closed)
       return { kind: "blocked" };
+    // A read room drops the writer's text: a revert written here would show, then never land.
+    if (binding.session.getSnapshot().access === "read") {
+      input.setState({ failure: { code: "discard-refused", serverCode: "read_only" } });
+      return { kind: "change-refused", code: "read_only" };
+    }
     const current = binding.runtime.projectNow();
     if (
       !current ||
@@ -109,6 +114,8 @@ export function startDraftDiscardSession(input: {
     return { kind: "done" };
   };
   if (editor) {
+    // A new command replaces what the last one left on the draft, as the dock's does below.
+    input.setState({ failure: null });
     const outcome = write();
     return { notice: { kind: "discarded", end() {} }, outcome: Promise.resolve(outcome) };
   }

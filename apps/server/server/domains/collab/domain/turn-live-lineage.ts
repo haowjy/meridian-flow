@@ -1,15 +1,20 @@
 /** Server-owned read-model for documents edited by one transcript turn. */
 
-import type { BranchId } from "@meridian/contracts";
+import {
+  type BranchId,
+  type DraftOwner,
+  type DraftOwnerKey,
+  draftOwnerKey,
+} from "@meridian/contracts";
 import type { TurnReceiptChip, TurnTreeLine } from "@meridian/contracts/protocol";
-import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { FileDestination } from "../../file-policy/index.js";
 import type { TurnReceiptStateStore } from "./turn-receipt.js";
 
 export type TurnEditedDocumentScope = "live" | "draft";
 
 /**
- * Where a turn's edit landed: live, or the draft of the Work whose branch held it (from the
+ * Where a turn's edit landed: live, or the draft of the owner whose branch held it (from the
  * edit's draft row). A draft-scoped edit is read and reversed at that draft destination, so
  * it stays on the turn's receipt after a live delete its draft outlived (D79).
  */
@@ -18,8 +23,9 @@ export type TurnEditedDocumentId =
   | {
       documentId: DocumentId;
       scope: "draft";
-      work: { id: WorkId; handle: string | null };
-      /** The Work's branches the turn's edits landed in, for inverse admission. */
+      owner: DraftOwner;
+      ownerHandle: string | null;
+      /** The owner's branches the turn's edits landed in, for inverse admission. */
       branchIds: BranchId[];
     };
 
@@ -32,11 +38,11 @@ export type TurnEditedDocument = TurnEditedDocumentId & {
 
 /**
  * One of a turn's own moves, deletes or restores of a document, in `seq` order: live, or in the
- * branch of the Work `workId` names (a drafted entry, D26).
+ * branch of the owner `ownerKey` names (a drafted entry).
  */
 export type TurnTreeEntry = {
   documentId: DocumentId;
-  workId: WorkId | null;
+  ownerKey: DraftOwnerKey | null;
   op: "create" | "move" | "delete" | "restore";
   shownAt: string | null;
   landedAt: string | null;
@@ -53,7 +59,7 @@ export type LiveLineageDocument = TurnEditedDocument & { scope: "live" };
 /** The file-policy destination a turn's edit is read and reversed at. */
 export function turnEditDestination(target: TurnEditedDocumentId): FileDestination {
   return target.scope === "draft"
-    ? { kind: "draft", workId: target.work.id, workHandle: target.work.handle }
+    ? { kind: "draft", owner: target.owner, ownerHandle: target.ownerHandle }
     : { kind: "live" };
 }
 
@@ -148,11 +154,15 @@ function createAddresses(entries: readonly TurnTreeEntry[]): ReadonlyMap<string,
   );
 }
 
-/** A document's tree line is per destination: live, or one Work's branch. */
+/** A document's tree line is per destination: live, or one owner's branch. */
 function treeLineKey(target: TurnEditedDocumentId | TurnTreeEntry): string {
-  const workId =
-    "workId" in target ? target.workId : target.scope === "draft" ? target.work.id : null;
-  return workId ? `${target.documentId}:${workId}` : target.documentId;
+  const ownerKey =
+    "ownerKey" in target
+      ? target.ownerKey
+      : target.scope === "draft"
+        ? draftOwnerKey(target.owner)
+        : null;
+  return ownerKey ? `${target.documentId}:${ownerKey}` : target.documentId;
 }
 
 /**

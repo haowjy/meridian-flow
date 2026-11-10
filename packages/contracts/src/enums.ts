@@ -3,9 +3,6 @@ import { z } from "zod";
 export const ContextScope = z.enum(["project", "work"]);
 export type ContextScope = z.infer<typeof ContextScope>;
 
-export const AdapterType = z.enum(["local", "google_drive", "dropbox", "notion"]);
-export type AdapterType = z.infer<typeof AdapterType>;
-
 export const FileType = z.enum(["markdown", "docx", "image", "pdf", "text"]);
 export type FileType = z.infer<typeof FileType>;
 

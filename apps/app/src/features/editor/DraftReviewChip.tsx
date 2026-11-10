@@ -36,7 +36,7 @@ export function DraftReviewChip({ documentId, touch = false }: DraftReviewChipPr
       failed={failed}
       touch={touch}
       onShowLive={() => undefined}
-      onShowDraft={() => openReviewFile(group, controller.workId)}
+      onShowDraft={() => openReviewFile(group, controller.ownerKey)}
     />
   );
 }

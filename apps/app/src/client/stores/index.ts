@@ -13,6 +13,7 @@ export {
   DEFAULT_TAB_VIEW,
   type DraftWorkspaceSettlementReceipt,
   durableContextTab,
+  editorHasReview,
   editorTabsForWork,
   getContextTabs,
   isDraftOnly,
@@ -26,14 +27,14 @@ export {
   parseContextTab,
   type ReviewEntries,
   type ReviewItemTabIdentity,
-  type ReviewOwner,
   type ReviewPin,
   reconcileEditorWorkspaceBootstrap,
   rehydrateEditorWorkspace,
   replaceOwner,
   reviewEntriesOf,
   reviewEntryOf,
-  reviewWorkIds,
+  reviewOwnerOfTab,
+  reviewOwners,
   type ServerContextTab,
   selectedDocumentIdOf,
   selectedTabOf,
@@ -48,8 +49,6 @@ export {
   useSelectedContextTab,
   useSelectedDocumentId,
   withoutReviewEntry,
-  workIdOfReviewOwner,
-  workReviewOwner,
 } from "./context-tabs-store";
 export type { ProjectStoreActions, ProjectStoreState } from "./project-store";
 export {

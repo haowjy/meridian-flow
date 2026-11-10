@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { DocumentId } from "@meridian/contracts";
+import type { BranchId, DocumentId } from "@meridian/contracts";
 import { documentEdits, documents } from "@meridian/database/schema";
 import {
   acknowledgeResourceTerminalCleanup,
@@ -93,7 +93,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
     if (!item.tree?.revision) throw new Error("the model move has no tree revision");
     const applied = await handleApplyClickRequest(selectBranchRouteServices(runtime.app), {
       projectId: s.project.id,
-      workId: work.id,
+      branchId: item.branchId as BranchId,
       userId: s.project.userId,
       documentId,
       request: {

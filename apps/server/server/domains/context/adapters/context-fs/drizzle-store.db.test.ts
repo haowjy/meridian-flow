@@ -54,7 +54,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Manuscript",
         slug: "manuscript",
         scope: "project",
-        isPrimary: true,
       });
     });
 
