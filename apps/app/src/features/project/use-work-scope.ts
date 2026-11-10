@@ -1,62 +1,55 @@
 import { useCallback, useMemo } from "react";
-import { useCurrentWork, writeCurrentWork } from "@/client/current-work";
+import { NO_SCOPE, useProjectScope, writeProjectScope } from "@/client/project-shell/store";
 import { useWorks } from "@/client/query/useWorks";
 import { useAccountId } from "./context/account-feature-context";
-import { modeOf } from "./layout/placement";
-import { useOpenDocuments } from "./open-documents";
-import { useOpenContextRoute, useProjectScreen } from "./routing/ProjectNavigationContext";
+
+/** The Work scope as the shell can use it: ready with a Work row id (No Work's included), or not yet. */
+export type WorkScope =
+  | { status: "ready"; workId: string }
+  | { status: "loading" | "error"; workId: null };
 
 /**
- * The Work scope the v1 shell's picker reads and sets, per browser tab.
- *
- * `workId` is a Work row id, No Work's included, and `null` only while the Work catalog has not
- * loaded. A remembered Work the catalog no longer holds resolves to No Work.
- *
- * Adapter over today's Work selection, which PR 3 replaces:
- * - The store is the remembered-Work record, kept current by the Editor and Work page routes
- *   (they write it when their Work changes), so `workId` follows `?work` and the Work page.
- * - In Write mode `setWorkId` reopens the selected document with `?work=<id>`, the way the editor
- *   switches Work today, and the store follows when the route settles. With no document open it
- *   only writes the store. In Chat mode it only writes the store; no chat is rebound.
+ * The one Work scope per project: whose drafts, chats and Scratch the shell shows. It is a stored
+ * value, never read from the address, and only the Work picker writes it. A stored Work the
+ * catalog no longer holds resolves to No Work.
+ */
+export function useWorkScopeState(projectId: string): WorkScope & { retry: () => void } {
+  const accountId = useAccountId();
+  const stored = useProjectScope(accountId, projectId);
+  const works = useWorks(projectId);
+  const noWorkId = works.noWork?.id ?? null;
+  const { refetch } = works;
+  const ready = works.status === "ready" || works.status === "empty";
+  const known =
+    stored !== NO_SCOPE &&
+    (works.works?.some((work) => work.id === stored) || works.creations.has(stored));
+  return useMemo(() => {
+    const scope: WorkScope =
+      ready && noWorkId
+        ? { status: "ready", workId: known ? stored : noWorkId }
+        : { status: works.status === "error" ? "error" : "loading", workId: null };
+    return { ...scope, retry: refetch };
+  }, [ready, noWorkId, known, stored, works.status, refetch]);
+}
+
+/**
+ * Pick a Work, or No Work by its row id. Only the scope changes: main, the address and the open
+ * documents stay put. The project view then drops every pinned draft, so each document re-resolves
+ * under the new scope.
  */
 export function useWorkScope(projectId: string): {
   workId: string | null;
   setWorkId(id: string): void;
 } {
   const accountId = useAccountId();
-  const remembered = useCurrentWork(accountId, projectId);
   const works = useWorks(projectId);
-  const mode = modeOf(useProjectScreen());
-  const openRoute = useOpenContextRoute();
-  const selected = useOpenDocuments(projectId).selected?.tab;
-
   const noWorkId = works.noWork?.id ?? null;
-  const catalogReady = works.status === "ready" || works.status === "empty";
-  const known =
-    remembered !== null &&
-    (remembered === noWorkId ||
-      works.works?.some((work) => work.id === remembered) ||
-      works.creations.has(remembered));
-  const workId = !catalogReady || !noWorkId ? null : known ? remembered : noWorkId;
-
+  const { workId } = useWorkScopeState(projectId);
   const setWorkId = useCallback(
     (id: string) => {
-      if (mode === "write" && openRoute && selected && selected.kind !== "new") {
-        void openRoute(
-          {
-            scheme: selected.scheme,
-            path: selected.path,
-            workId: id,
-            documentId: selected.documentId,
-          },
-          { tab: selected },
-        );
-        return;
-      }
-      writeCurrentWork(accountId, projectId, id);
+      writeProjectScope(accountId, projectId, id === noWorkId ? NO_SCOPE : id);
     },
-    [accountId, projectId, mode, openRoute, selected],
+    [accountId, projectId, noWorkId],
   );
-
   return useMemo(() => ({ workId, setWorkId }), [workId, setWorkId]);
 }

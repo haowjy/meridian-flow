@@ -8,8 +8,7 @@ import type {
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { resolveLiveRouteDocument } from "../context/route-document-owner";
-import type { ProjectAddress, ProjectDestination } from "./project-address";
-import { workSelectionFor } from "./project-address-resolution";
+import { type ProjectAddress, type ProjectDestination, scratchOwnerKey } from "./project-address";
 
 type DocumentDestination = Extract<ProjectDestination, { kind: "document" }>;
 type AvailableDocumentAuthority = Extract<
@@ -22,11 +21,10 @@ export function canonicalDocumentPath(path: string): string {
 }
 
 /**
- * Whether the address already names this document, in the Work the target
- * resolves to. Open requests carry no Work until the route boundary resolves
- * it, so an unresolved target never matches. When both sides know the document,
- * identity alone decides: a reused path never makes two documents one. The path
- * is only the fallback while either identity is unresolved.
+ * Whether the address already names this document. A Scratch document is addressed by its owner,
+ * so the target must name that owner; any other document is its path alone, whatever the scope.
+ * When both sides know the document, identity alone decides: a reused path never makes two
+ * documents one. The path is only the fallback while either identity is unresolved.
  */
 export function projectAddressMatchesContextTarget(
   address: ProjectAddress,
@@ -37,29 +35,19 @@ export function projectAddressMatchesContextTarget(
     rootThreadId?: string;
     documentId?: string;
   },
-  noWorkId: string | null,
   /** The document the address resolved to, absent while it is still resolving. */
   addressDocumentId?: string,
-  /** The Editor's resolved Work: the one an address that names none (a copied live URL) shows. */
-  editorWorkId?: string | null,
 ): boolean {
   const destination = address.destination;
   if (destination.kind !== "document") return false;
-  // A chat's Scratch is owned by its lineage; a Work's Scratch by its Work.
-  if (target.rootThreadId !== address.lineage) return false;
-  if (target.rootThreadId !== undefined)
-    return sameDocument(destination, target, addressDocumentId);
-  const work = workSelectionFor(destination, target.workId, noWorkId);
-  // An address with no `?work=` is not a different Work from No Work: it shows the Editor's own.
-  const addressWork =
-    address.work.kind === "absent" && editorWorkId
-      ? workSelectionFor(destination, editorWorkId, noWorkId)
-      : address.work;
-  if (
-    work.kind !== addressWork.kind ||
-    (work.kind === "id" && !(addressWork.kind === "id" && addressWork.id === work.id))
-  )
-    return false;
+  if (target.scheme === "scratch") {
+    if (target.workId === undefined && target.rootThreadId === undefined) return false;
+    const owner = scratchOwnerKey({
+      workId: target.workId ?? "",
+      rootThreadId: target.rootThreadId,
+    });
+    if (address.owner !== owner) return false;
+  }
   return sameDocument(destination, target, addressDocumentId);
 }
 

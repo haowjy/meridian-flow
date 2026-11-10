@@ -36,7 +36,6 @@ export function ProjectAddressDocument({
   reviewItemKey,
   draftOnly,
   workId,
-  noWorkId,
   navigation,
   onAdmission,
 }: {
@@ -51,7 +50,6 @@ export function ProjectAddressDocument({
   /** The Work's draft row when the addressed document exists only in the draft. */
   draftOnly?: ReviewFileTarget;
   workId: string | null;
-  noWorkId: string | null;
   navigation: ReturnType<typeof createProjectNavigation> | null;
   onAdmission: Dispatch<SetStateAction<AddressAdmission | null>>;
 }) {
@@ -59,7 +57,7 @@ export function ProjectAddressDocument({
   const { tabs } = useContextTabs(projectId);
   // A hidden create can name its item through `draftOnly` rather than the address.
   const reviewOwner = reviewItemKey
-    ? addressReviewOwner({ lineage: address.lineage, itemKey: reviewItemKey }, workId)
+    ? addressReviewOwner({ owner: address.owner, itemKey: reviewItemKey }, workId)
     : null;
   const reviewTab = tabs.find(
     (tab): tab is Extract<ContextTab, { kind: "tracked" }> =>
@@ -87,7 +85,7 @@ export function ProjectAddressDocument({
     if (!workId || !navigation || !result || result.kind === "unavailable") return;
     const ticket = navigation.captureForEntry(entryKey);
     if (!ticket) return;
-    const canonical = canonicalDocumentAddress(address, result.document.entry, workId, noWorkId);
+    const canonical = canonicalDocumentAddress(address, result.document.entry);
     if (!canonical) {
       onAdmission({
         key: entryKey,
@@ -125,7 +123,7 @@ export function ProjectAddressDocument({
                 draftOnly: true,
               })
             : null;
-        if (tab) openTab(projectId, tab, () => navigation.isCurrent(ticket), workId);
+        if (tab) openTab(projectId, tab, () => navigation.isCurrent(ticket));
       } else if (reviewTab) {
         const patch = canonicalReviewTabPatch(
           reviewTab,
@@ -135,7 +133,8 @@ export function ProjectAddressDocument({
         if (patch)
           openTab(projectId, { ...reviewTab, ...patch }, () => navigation.isCurrent(ticket));
       }
-      const next = { ...canonical, itemKey: reviewItemKey };
+      // The link to a draft carries its owner, which a hidden create takes from the scope.
+      const next = { ...canonical, owner: reviewOwner ?? canonical.owner, itemKey: reviewItemKey };
       if (projectAddressHref(next) !== href) void navigation.replaceIfCurrent(ticket, next);
       return;
     }
@@ -176,7 +175,6 @@ export function ProjectAddressDocument({
     opened,
     workId,
     reviewOwner,
-    noWorkId,
     navigation,
     openTab,
     onAdmission,

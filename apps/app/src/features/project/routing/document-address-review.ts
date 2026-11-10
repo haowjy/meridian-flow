@@ -1,5 +1,5 @@
 /** A plain address never acquires a review's authority to read a hidden document. */
-import { draftOwnerKey } from "@meridian/contracts/branches";
+import { type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts/branches";
 import type {
   ContextOwner,
   DocumentAddressRequestOptions,
@@ -26,16 +26,17 @@ export type DocumentAddressBinding =
     };
 
 /**
- * Whose draft an address with an item reviews: the lineage its `chat` names, else the address's
- * Work. Null while the Work is unresolved, or when the address names no item.
+ * Whose draft an item reviews: the owner the address names. A hidden create can name its item
+ * without the address, and then it is the Work scope's draft. Null while the scope is unresolved,
+ * or when there is no item.
  */
 export function addressReviewOwner(
-  address: { itemKey?: string; lineage?: string },
-  workId: string | null,
-): string | null {
+  address: { itemKey?: string; owner?: DraftOwnerKey },
+  scopeWorkId: string | null,
+): DraftOwnerKey | null {
   if (!address.itemKey) return null;
-  if (address.lineage) return draftOwnerKey({ kind: "lineage", rootThreadId: address.lineage });
-  return workId ? draftOwnerKey({ kind: "work", workId }) : null;
+  if (address.owner) return address.owner;
+  return scopeWorkId ? draftOwnerKey({ kind: "work", workId: scopeWorkId }) : null;
 }
 
 /** The item owns review identity even while its owner's draft list is loading. */

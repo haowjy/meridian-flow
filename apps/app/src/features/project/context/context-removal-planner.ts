@@ -5,8 +5,8 @@ import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
 import {
   type ContextTab,
-  editorTabsForWork,
   isDraftOnly,
+  isEditorContextTab,
   matchesTabInstance,
   reviewOwners,
   withoutReviewEntry,
@@ -24,12 +24,7 @@ import {
 } from "../routing/project-route";
 
 export type ContextRemovalIntent = {
-  cause:
-    | "writer-close"
-    | "catalog-unavailable"
-    | "authority-unavailable"
-    | "work-prune"
-    | "draft-discard";
+  cause: "writer-close" | "catalog-unavailable" | "authority-unavailable" | "draft-discard";
   documentIds: readonly string[];
   /** Writer close and draft settlement address a mounted tab, not every document representation. */
   tabInstanceId?: string;
@@ -186,12 +181,6 @@ export function contextTabEligibleForRemoval(
     case "catalog-unavailable":
     case "authority-unavailable":
       return tab.kind !== "new" && !isDraftOnly(tab);
-    case "work-prune":
-      return (
-        tab.kind !== "new" &&
-        (tab.kind !== "tracked" || tab.origin !== "local-resource") &&
-        isWorkScopedScheme(tab.scheme)
-      );
     case "draft-discard":
       return tab.kind !== "new" && isDraftOnly(tab);
   }
@@ -295,24 +284,15 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     };
   }
   const activeWorkId = input.activeWorkId;
-  const visibleRemaining = editorTabsForWork(remaining, activeWorkId);
-  const visibleTabs = editorTabsForWork(input.tabs, activeWorkId);
+  const visibleRemaining = remaining.filter(isEditorContextTab);
+  const visibleTabs = input.tabs.filter(isEditorContextTab);
   const survives = (documentId: string) =>
     visibleRemaining.some((tab) => tab.documentId === documentId);
   const workspaceSelectedRemoved =
     input.selectedTabId !== null &&
     removedIds.has(input.selectedTabId) &&
     !survives(input.selectedTabId);
-  const workspaceSelectedTab =
-    visibleTabs.find((tab) => tab.documentId === input.selectedTabId) ?? null;
-  const workspaceSelectedIneligibleForWork =
-    input.intent.cause === "work-prune" &&
-    workspaceSelectedTab !== null &&
-    (() => {
-      return !targetInEditorOf(routeTargetForTab(workspaceSelectedTab, activeWorkId), activeWorkId);
-    })();
-  const workspaceSelectionNeedsFallback =
-    workspaceSelectedRemoved || workspaceSelectedIneligibleForWork;
+  const workspaceSelectionNeedsFallback = workspaceSelectedRemoved;
   const boundSelection = input.route.current.kind === "bound" ? input.route.current : null;
   const provenRemoved = input.route.current.kind === "proven-removed" ? input.route.current : null;
   const routedDocumentRemoved =

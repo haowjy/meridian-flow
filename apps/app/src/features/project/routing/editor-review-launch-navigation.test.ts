@@ -38,7 +38,7 @@ function setup(
         else history.push(href, options.state);
       },
     },
-    () => ({ work: { kind: "none" } }),
+    () => ({}),
   );
   const cut = path.indexOf("?");
   const parsed =
@@ -51,7 +51,6 @@ function setup(
       navigation,
       address: parsed.address,
       editorWorkId: workId,
-      noWorkId: null,
       documentCatalog: null,
       addressDocumentId,
     }),
@@ -90,10 +89,10 @@ describe("review launch navigation", () => {
         [`work:${workId}`]: { itemKey: "branch-hidden:doc-hidden", tabInstanceToken: "token" },
       },
     } as never;
-    useContextTabsStore.getState().openTab(projectId, hidden, undefined, workId);
+    useContextTabsStore.getState().openTab(projectId, hidden);
     const { open, history } = setup(
       vi.fn(async () => ({ kind: "failed" as const })),
-      `/p/${projectId}/editor/manuscript/Scene.md?work=${workId}&item=branch-hidden:doc-hidden`,
+      `/p/${projectId}/editor/manuscript/Scene.md?owner=work:${workId}&item=branch-hidden:doc-hidden`,
       "doc-hidden",
     );
     const live = { ...(hidden as object), documentId: "doc-live", reviews: undefined } as never;
@@ -128,7 +127,7 @@ describe("review launch navigation", () => {
 
   describe("Editor address repair", () => {
     const itemUrl = (path: string) =>
-      `/p/${projectId}/editor/manuscript/${path}?work=${workId}&item=draft-1&change=c1`;
+      `/p/${projectId}/editor/manuscript/${path}?owner=work:${workId}&item=draft-1&change=c1`;
     const repair = (
       path: string,
       next: string,
@@ -145,7 +144,6 @@ describe("review launch navigation", () => {
         update: (latest) => ({ ...latest, path: next }),
         relocated,
         openContext: open,
-        goWorks: () => undefined,
         goEditor: () => undefined,
       });
       return history;
@@ -169,7 +167,7 @@ describe("review launch navigation", () => {
         schemaType: "document" as const,
         reviews: { [`work:${workId}`]: { itemKey: "branch-c:doc-c", tabInstanceToken: "token" } },
       } as never;
-      useContextTabsStore.getState().openTab(projectId, tab, undefined, workId);
+      useContextTabsStore.getState().openTab(projectId, tab);
       const history = repair("gone.md", "fallback.md", undefined);
       await vi.waitFor(() => expect(history.location.href).toContain("fallback.md"));
       expect(history.location.href).toContain("item=branch-c");

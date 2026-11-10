@@ -16,6 +16,7 @@ import {
   useCanOpenChatReference,
   useOpenChatDocument,
 } from "@/features/project/context/open-chat-document";
+import { useWorkScope } from "@/features/project/use-work-scope";
 import { DeletedChatCard } from "./DeletedChatCard";
 import { useCreationComposer } from "./useCreationComposer";
 
@@ -65,8 +66,9 @@ export function CreationComposer({
   );
   const agent = choices?.agent ?? defaultAgent ?? null;
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
-  const initialWork = works.works?.find((work) => !isWorkArchived(work)) ?? null;
-  const workId = choices?.workId ?? initialWork?.id ?? works.noWork?.id ?? null;
+  // A new chat takes the Work scope unless the writer picked another Work for this draft.
+  const scope = useWorkScope(projectId);
+  const workId = choices?.workId ?? scope.workId;
   const selected = workId
     ? workFromSnapshot(
         works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null,

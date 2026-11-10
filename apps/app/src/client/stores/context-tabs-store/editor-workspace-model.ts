@@ -1,6 +1,5 @@
 /** Editor view identity and membership, independent of React and persistence. */
 import { draftOwnerKey } from "@meridian/contracts/branches";
-import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type {
   ContextOwner,
   DocumentFileType,
@@ -200,7 +199,7 @@ export function isEditorScheme(scheme: ProjectContextTreeScheme): boolean {
   return scheme !== "uploads";
 }
 
-/** What `isEditorTab` reads: an open tab, or a recent route to one. */
+/** An open tab, or a recent route to one: what the review-entry readers accept. */
 export type EditorTabCandidate =
   | Pick<Extract<ContextTab, { kind: "new" }>, "kind">
   | {
@@ -212,21 +211,8 @@ export type EditorTabCandidate =
     };
 
 /**
- * Whether the Editor of `workId` (null: unresolved) shows this tab: any Editor
- * scheme, a Work's scratch only in that Work's Editor, and a chat's scratch in
- * every Editor (a lineage belongs to no Work).
- */
-export function isEditorTab(tab: EditorTabCandidate, workId: string | null): boolean {
-  if (tab.kind === "new") return true;
-  if (isDraftOnly(tab) && !editorHasReview(tab, workId)) return false;
-  if (!isEditorScheme(tab.scheme)) return false;
-  if (tab.rootThreadId) return true;
-  return !isWorkScopedScheme(tab.scheme) || tab.workId === workId;
-}
-
-/**
- * Workspace admission: the persisted workspace keeps every Work's scratch
- * tabs, and each Editor shows its own through `isEditorTab`.
+ * Workspace admission: the persisted workspace keeps every Work's scratch tabs, whatever the
+ * Work scope: a Scratch document's owner is its identity, not the scope's.
  */
 export function isEditorContextTab(tab: ContextTab): boolean {
   return tab.kind === "new" || isEditorScheme(tab.scheme);
@@ -235,12 +221,6 @@ export function isEditorContextTab(tab: ContextTab): boolean {
 /** Only tracked tabs and strip candidates carry entries; every other tab has none. */
 export function reviewEntriesOf(tab: ContextTab | EditorTabCandidate): ReviewEntries {
   return (tab as { reviews?: ReviewEntries }).reviews ?? {};
-}
-
-/** A Work's Editor shows its own draft-only entries, and every Editor shows a lineage's (a lineage belongs to no Work). */
-export function editorHasReview(tab: EditorTabCandidate, workId: string | null): boolean {
-  if (workId && reviewEntryOf(tab, draftOwnerKey({ kind: "work", workId }))) return true;
-  return Object.keys(reviewEntriesOf(tab)).some((key) => key.startsWith("lineage:"));
 }
 
 /** The owner a draft-only tab is reviewed under: the Work's entry, else a lineage's, else any. */
@@ -309,12 +289,4 @@ export function matchesTabInstance(tab: ContextTab, addressed: ContextTab): bool
             reviewEntryOf(tab, ownerKey)?.tabInstanceToken === entry.tabInstanceToken,
         )))
   );
-}
-
-/** One Work's strip: the one tab per document that this Work's Editor shows. */
-export function editorTabsForWork(
-  tabs: readonly ContextTab[],
-  workId: string | null,
-): ContextTab[] {
-  return tabs.filter((tab) => isEditorTab(tab, workId));
 }

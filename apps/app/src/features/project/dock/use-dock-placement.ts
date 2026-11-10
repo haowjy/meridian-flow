@@ -56,7 +56,7 @@ export function useDockPlacement() {
       const store = useContextTabsStore.getState();
       const previous = getContextTabs(projectId).tabs.find((t) => t.preview);
       const wasOpen = getContextTabs(projectId).tabs.some((t) => t.documentId === tab.documentId);
-      store.openTab(projectId, tab, undefined, undefined, { select: true });
+      store.openTab(projectId, tab, undefined, { select: true });
       const opened = getContextTabs(projectId).tabs.find((t) => t.documentId === tab.documentId);
       if (!opened) return { kind: "cancelled" };
       const key = tabKey(opened);

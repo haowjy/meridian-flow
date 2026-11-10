@@ -1,10 +1,9 @@
-import { draftOwnerKey, parseDraftOwnerKey } from "@meridian/contracts/branches";
-import { parseRequestId } from "@meridian/contracts/request-id";
+import { type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts/branches";
 import {
   type ContextTab,
-  editorTabsForWork,
   getContextTabs,
   isDraftOnly,
+  isEditorContextTab,
   matchesReviewItem,
   matchesTabInstance,
   reviewEntryOf,
@@ -23,8 +22,7 @@ import {
   projectAddressMatchesContextTarget,
 } from "./local-document-address";
 import type { OpenContextRoute } from "./ProjectNavigationContext";
-import type { ProjectAddress, ProjectDestination } from "./project-address";
-import { workSelectionFor } from "./project-address-resolution";
+import { type ProjectAddress, type ProjectDestination, scratchOwnerKey } from "./project-address";
 import { resolveLocalDocumentSelection } from "./project-local-selection";
 import type { createProjectNavigation } from "./project-navigation";
 import type { ContextRouteRequest, ContextRouteTarget } from "./project-route";
@@ -34,7 +32,6 @@ export type EditorCommandSnapshot = {
   navigation: Navigation | null;
   address: ProjectAddress;
   editorWorkId: string | null;
-  noWorkId: string | null;
   addressDocumentId?: string;
   documentCatalog: Parameters<typeof resolveLaunchLocator>[0]["catalog"];
 };
@@ -67,9 +64,7 @@ export function createEditorDocumentCommand({
       const sameDocument = projectAddressMatchesContextTarget(
         current.address,
         requested,
-        current.noWorkId,
         current.addressDocumentId,
-        current.editorWorkId,
       );
       // A review launch carries the locator its draft row captured, which a rename or a
       // reused path can have outdated. Identity decides where that document is now.
@@ -110,7 +105,7 @@ export function createEditorDocumentCommand({
           : undefined) ??
         (sameDocument ? current.address.itemKey : undefined);
       const next = prepareEditorDestination(
-        { projectId, accountId, address: current.address, noWorkId: current.noWorkId },
+        { projectId, accountId, address: current.address },
         target,
         preparedTab,
         itemKey,
@@ -126,9 +121,7 @@ export function createEditorDocumentCommand({
       const commit = () => {
         let selected = tab;
         if (preparedTab) {
-          const installed = useContextTabsStore
-            .getState()
-            .openTab(projectId, preparedTab, undefined, resolvedWorkId ?? undefined);
+          const installed = useContextTabsStore.getState().openTab(projectId, preparedTab);
           if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
           if (installed.tab.kind === "tracked" && resolvedWorkId)
             admitDraftReview(
@@ -207,12 +200,10 @@ export function prepareEditorDestination(
     projectId,
     accountId,
     address,
-    noWorkId,
   }: {
     projectId: string;
     accountId: string;
     address: ProjectAddress;
-    noWorkId: string | null;
   },
   target: ContextRouteRequest,
   preparedTab?: ContextTab,
@@ -228,7 +219,7 @@ export function prepareEditorDestination(
     (target.path === "" && resolvedWorkId
       ? (selectedDocumentIdOf(workspace) ?? undefined)
       : undefined);
-  const eligible = editorTabsForWork(workspace.tabs, resolvedWorkId ?? null);
+  const eligible = workspace.tabs.filter(isEditorContextTab);
   const addressedDraft =
     itemKey && documentId && resolvedWorkId
       ? eligible.find((tab) =>
@@ -284,24 +275,29 @@ export function prepareEditorDestination(
   const destination: ProjectDestination = target.path
     ? { kind: "document", scheme: target.scheme, path: canonicalDocumentPath(target.path) }
     : { kind: "editor" };
-  // A chat's Scratch names its lineage and leaves the Editor's own Work to the Editor.
-  const { lineage: _previousLineage, ...previous } = address;
+  // Only a Scratch document and a draft item put an owner in the address; the scope never is one.
+  const workOwner = resolvedWorkId
+    ? draftOwnerKey({ kind: "work", workId: resolvedWorkId })
+    : undefined;
+  const scratchOwner =
+    target.scheme === "scratch" && (resolvedWorkId || target.rootThreadId)
+      ? scratchOwnerKey({ workId: resolvedWorkId ?? "", rootThreadId: target.rootThreadId })
+      : undefined;
+  const owner = !target.path
+    ? undefined
+    : itemKey
+      ? ((reviewOwner as DraftOwnerKey | undefined) ?? scratchOwner ?? workOwner)
+      : scratchOwner;
+  const { owner: _previousOwner, ...previous } = address;
   return {
     tab,
     address: {
       ...previous,
       destination,
       trash: undefined,
-      work: target.rootThreadId
-        ? { kind: "absent" }
-        : workSelectionFor(destination, target.workId, noWorkId),
-      ...(target.rootThreadId ? { lineage: parseRequestId(target.rootThreadId) } : {}),
-      // A review of a lineage's draft names that lineage beside its item.
-      ...(itemKey && reviewOwner && parseDraftOwnerKey(reviewOwner)?.kind === "lineage"
-        ? { lineage: parseRequestId(parseDraftOwnerKey(reviewOwner)?.id ?? "") }
-        : {}),
-      itemKey,
-      changeId: itemKey ? changeId : undefined,
+      ...(owner ? { owner } : {}),
+      itemKey: owner ? itemKey : undefined,
+      changeId: owner && itemKey ? changeId : undefined,
     } as ProjectAddress,
     state,
   };
@@ -312,12 +308,14 @@ function openDraftOnlyTabFor(
 ): ContextTab | undefined {
   if (!request.workId) return undefined;
   const workId = request.workId;
-  return editorTabsForWork(tabs, workId).find(
-    (tab) =>
-      isDraftOnly(tab) &&
-      (request.documentId === undefined || tab.documentId === request.documentId) &&
-      contextTabMatchesRoute(tab, { ...request, workId }),
-  );
+  return tabs
+    .filter(isEditorContextTab)
+    .find(
+      (tab) =>
+        isDraftOnly(tab) &&
+        (request.documentId === undefined || tab.documentId === request.documentId) &&
+        contextTabMatchesRoute(tab, { ...request, workId }),
+    );
 }
 
 /** A prepared tab states the locator the route will use, not the one it was built from. */

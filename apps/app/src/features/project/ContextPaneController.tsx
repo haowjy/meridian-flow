@@ -6,9 +6,9 @@ import { useCallback, useLayoutEffect } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
   type ContextTab,
-  editorTabsForWork,
   getContextTabs,
   isDraftOnly,
+  isEditorContextTab,
   matchesTabInstance,
   replaceOwner,
   selectedDocumentIdOf,
@@ -97,7 +97,7 @@ export function ContextViewerSurfaceController({
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, updateTrackedTab, selectTab } = useContextTabsActions();
-  const visibleTabs = editorWorkId ? editorTabsForWork(tabs, editorWorkId) : [];
+  const visibleTabs = editorWorkId ? tabs.filter(isEditorContextTab) : [];
   const removalState = useContextRemovalProject(projectId);
   const { workspaceRoute, tab: activeTab } = resolvedEditor;
 

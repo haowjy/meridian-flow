@@ -7,7 +7,6 @@ export function applyContextRemovalSearchUpdate({
   update,
   relocated,
   openContext,
-  goWorks,
   goEditor,
 }: {
   search: ProjectSearch;
@@ -15,7 +14,6 @@ export function applyContextRemovalSearchUpdate({
   /** Set when the planner moved the route's own bound document; absent for a fallback to another. */
   relocated: { documentId: string } | undefined;
   openContext: OpenContextRoute;
-  goWorks: () => void;
   goEditor: () => void;
 }): void {
   const next = update(search);
@@ -33,6 +31,5 @@ export function applyContextRemovalSearchUpdate({
       // command gives a draft-only tab its own.
       { replace: true },
     );
-  else if (next.screen === "work") goWorks();
   else if (next.screen === "context") goEditor();
 }

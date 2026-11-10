@@ -10,7 +10,7 @@
  */
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ContextTab, ServerContextTab } from "@/client/stores";
-import { editorHasReview } from "@/client/stores";
+import { isDraftOnly } from "@/client/stores";
 import type { ContextRouteTarget } from "../routing/project-route";
 import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
 
@@ -70,9 +70,7 @@ function draftOnlyOwner({
   workspaceTabs?: readonly ContextTab[];
 }): ServerContextTab | null {
   const owner = resolveWorkspaceRoute({
-    tabs: (workspaceTabs ?? []).filter(
-      (tab) => tab.kind !== "new" && editorHasReview(tab, locator.workId ?? null),
-    ),
+    tabs: (workspaceTabs ?? []).filter((tab) => tab.kind !== "new" && isDraftOnly(tab)),
     selectedDocumentId: undefined,
     locator,
     boundDocumentId,

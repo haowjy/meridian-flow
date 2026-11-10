@@ -1,7 +1,6 @@
 /** Account-lifetime effect shell for exact context removal transitions. */
 
 import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
-import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { LiveDocumentSessionAuthority, WorkingSetRoute } from "@meridian/contracts/protocol";
 import {
   type ContextTab,
@@ -12,7 +11,6 @@ import {
   type DraftWorkspaceSettlementReceipt,
   getContextTabs,
   isDraftOnly,
-  isEditorTab,
   matchesReviewItem,
   matchesTabInstance,
   type ProjectTabsSlice,
@@ -55,7 +53,6 @@ import {
   planContextRemoval,
   type RouteContinuityVerdict,
   routeTargetForTab,
-  tabForTarget,
   workingSetRouteForTab,
   workingSetRouteForTarget,
 } from "./context-removal-planner";
@@ -949,7 +946,10 @@ export class ContextRemovalCoordinator {
     return this.writerClose(projectId, tab);
   }
 
-  /** Owns the synchronous old-Work prune and next-Work route transition. */
+  /**
+   * The Work scope changed: the route's selection begins again under the new scope. Nothing is
+   * pruned. A document's owner is its identity, so a Scratch note of the old Work stays open.
+   */
   changeWorkSelection(
     projectId: string,
     activeWorkId: string,
@@ -961,66 +961,22 @@ export class ContextRemovalCoordinator {
       throw new Error("changeWorkSelection requires an actual Editor Work transition");
     }
     state.activeWorkId = activeWorkId;
-    const previousSelection = state.selection;
     const tabs = this.workspace.read(projectId).tabs;
-    const { documentIds, obsoleteRoutes } = this.readWorkPruneEvidence(
-      projectId,
-      activeWorkId,
-      previousSelection,
-    );
-    const recentRoutes = this.workingSet.readRecentRoutes(projectId);
-    const remainingTabs = tabs.filter((tab) => !documentIds.includes(tab.documentId));
-    const targetSelection = selectedDocumentIdOf(this.workspace.read(projectId));
-    const fallback = chooseAdmittedFallback({
-      activeWorkId,
-      tabs: remainingTabs,
-      selectedTabId: null,
-      admitted: state.admitted,
-      recentRoutes,
-      excluded: null,
-      allowWorkspaceFallback: false,
-    });
     const transition = supersedeSelectionForWorkChange(
-      previousSelection,
+      state.selection,
       locator,
       locator ? (state.terminalRemovals.get(locatorKey(locator)) ?? null) : null,
     );
     state.selection = transition.selection;
-    state.admitted = fallback;
-
-    if (documentIds.length > 0) {
-      const represented = reduceRepresentedRemoval(previousSelection, tabs, {
-        cause: "work-prune",
-        documentIds,
-      });
-      this.executePlanning(
-        projectId,
-        { ...represented.planning, current: { kind: "none" }, repair: "never" },
-        obsoleteRoutes,
-      );
-    } else {
-      const selectedTab =
-        remainingTabs.find(
-          (tab) => tab.documentId === targetSelection && isEditorTab(tab, activeWorkId),
-        ) ?? null;
-      const _compatibleSelected =
-        selectedTab && targetInEditorOf(routeTargetForTab(selectedTab, activeWorkId), activeWorkId)
-          ? selectedTab
-          : null;
-      const fallbackTab = fallback ? tabForTarget(remainingTabs, fallback, activeWorkId) : null;
-      const promotedRoute = fallbackTab ? workingSetRouteForTab(fallbackTab) : null;
-      this.workingSet.reconcileContextRoutes(projectId, {
-        removedLocators: obsoleteRoutes,
-        survivingOwnedLocators: [
-          ...remainingTabs.flatMap((tab) => workingSetRouteForTab(tab) ?? []),
-          ...(promotedRoute ? [promotedRoute] : []),
-        ].filter(
-          (route) => !obsoleteRoutes.some((removed) => workingSetRouteEquals(route, removed)),
-        ),
-        promote: promotedRoute,
-        clearAll: false,
-      });
-    }
+    state.admitted = chooseAdmittedFallback({
+      activeWorkId,
+      tabs,
+      selectedTabId: null,
+      admitted: state.admitted,
+      recentRoutes: this.workingSet.readRecentRoutes(projectId),
+      excluded: null,
+      allowWorkspaceFallback: false,
+    });
     for (const planning of transition.planning) this.executePlanning(projectId, planning);
     this.publish(state);
     return transition.selection.status === "none" ? null : transition.selection.revision;
@@ -1098,54 +1054,6 @@ export class ContextRemovalCoordinator {
     state?.listeners.clear();
     this.projects.delete(projectId);
     this.routePorts.delete(projectId);
-  }
-
-  private readWorkPruneEvidence(
-    projectId: string,
-    activeWorkId: string,
-    selection: ContextRouteSelection,
-  ): { documentIds: string[]; obsoleteRoutes: WorkingSetRoute[] } {
-    const documentIds = this.workspace
-      .read(projectId)
-      .tabs.filter(
-        (tab): tab is ServerContextTab =>
-          tab.kind !== "new" &&
-          (tab.kind !== "tracked" || tab.origin !== "local-resource") &&
-          isWorkScopedScheme(tab.scheme) &&
-          // A chat's Scratch belongs to no Work, so changing the Editor's Work never prunes it.
-          tab.rootThreadId === undefined &&
-          tab.workId !== activeWorkId,
-      )
-      .map((tab) => tab.documentId);
-    if (
-      selection.status === "bound" &&
-      selection.identity.kind === "server" &&
-      isWorkScopedScheme(selection.locator.scheme) &&
-      selection.locator.rootThreadId === undefined &&
-      selection.locator.workId !== activeWorkId &&
-      !this.workspace
-        .read(projectId)
-        .tabs.some(
-          (tab) =>
-            tab.kind === "tracked" &&
-            tab.origin === "local-resource" &&
-            tab.documentId === selection.identity.documentId,
-        ) &&
-      !documentIds.includes(selection.identity.documentId)
-    ) {
-      documentIds.push(selection.identity.documentId);
-    }
-    return {
-      documentIds,
-      obsoleteRoutes: this.workingSet
-        .readRecentRoutes(projectId)
-        .filter(
-          (route) =>
-            isWorkScopedScheme(route.scheme) &&
-            route.rootThreadId === undefined &&
-            route.workId !== activeWorkId,
-        ),
-    };
   }
 
   private executePlanning(

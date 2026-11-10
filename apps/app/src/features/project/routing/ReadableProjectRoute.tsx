@@ -1,10 +1,10 @@
 /** Browser address resolution and navigation over one authorized, ID-backed project shell. */
 
 import { draftOwnerKey, parseDraftItemKey } from "@meridian/contracts";
+import type { DraftOwnerKey } from "@meridian/contracts/branches";
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
-import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { ParsedRequestId } from "@meridian/contracts/request-id";
+import { contextOwner } from "@meridian/contracts/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import {
@@ -20,13 +20,11 @@ import {
   getProjectContextAvailability,
   getProjectDocumentAddress,
 } from "@/client/api/projects-api";
-import { useCurrentWork, writeCurrentWork } from "@/client/current-work";
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { fetchCurrentDraftMetadata, useDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { projectWorkBranchFiles } from "@/client/query/work-branch-files";
 import {
   type ContextTab,
@@ -53,11 +51,8 @@ import { useContextRemovalProject } from "../context/use-context-removal-project
 import { useRemovalRecord } from "../context/use-removal-record";
 import { ProjectView } from "../ProjectView";
 import type { ScreenKey } from "../shell/screens";
-import {
-  ChatNavigationProvider,
-  chatSurfaceThreadId,
-  useProjectChatNavigation,
-} from "./chat-navigation";
+import { useWorkScopeState } from "../use-work-scope";
+import { ChatNavigationProvider, useProjectChatNavigation } from "./chat-navigation";
 import { applyContextRemovalSearchUpdate } from "./context-removal-route-repair";
 import {
   addressReviewOwner,
@@ -72,7 +67,6 @@ import {
   useDocumentSwitchFailures,
   useRailScreenSwitch,
 } from "./document-switch-failure";
-import { editorDefaultWorkPending } from "./editor-default-work";
 import { createEditorDocumentCommand, prepareEditorDestination } from "./editor-document-command";
 import {
   canonicalDocumentPath,
@@ -86,16 +80,13 @@ import { type AddressAdmission, ProjectAddressDocument } from "./ProjectAddressD
 import { ProjectNavigationProvider } from "./ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import {
-  type AddressSelection,
-  browseDestination,
-  browsedFolder,
+  addressLineage,
+  addressScratchWorkId,
   type ProjectAddress,
   type ProjectDestination,
   parseProjectAddress,
-  projectAddressHref,
-  workDetailAddress,
+  withoutReview,
 } from "./project-address";
-import { addressWorkSelection, workSelectionFor } from "./project-address-resolution";
 import {
   resolveLocalDocumentSelection,
   selectEditorEntryTab,
@@ -107,26 +98,15 @@ import {
   type NavigationSettlement,
   type PreparedWorkspaceNavigation,
 } from "./project-navigation";
-import {
-  type ContextRouteRequest,
-  type ContextRouteTarget,
-  type NavigationOptions,
-  type ProjectRouteCommands,
-  type ProjectSearch,
-  type RouteWorkResolution,
-  routeWorkIssue,
-  type WorkDetailTarget,
+import type {
+  ContextRouteRequest,
+  ContextRouteTarget,
+  NavigationOptions,
+  ProjectRouteCommands,
+  ProjectSearch,
 } from "./project-route";
-import { resolveRouteWork, useWorkRoute } from "./work-route";
 
-const NONE: AddressSelection = { kind: "none" };
 function screen(destination: ProjectDestination): ScreenKey {
-  if (
-    destination.kind === "work" ||
-    destination.kind === "works" ||
-    destination.kind === "works-new"
-  )
-    return "work";
   if (destination.kind === "chat" || destination.kind === "chat-index") return "chat";
   return "context";
 }
@@ -157,31 +137,19 @@ function ReadableProjectDestination({
   const contextRemoval = useContextRemovalCoordinator();
   const router = useRouter();
   const location = useRouterState({ select: (state) => state.location });
-  const parsed = parseProjectAddress(
-    location.pathname,
-    originalBrowserSearch(location.search),
-    location.state,
-  );
+  const parsed = parseProjectAddress(location.pathname, originalBrowserSearch(location.search));
   const address: ProjectAddress =
     parsed.kind === "valid"
       ? parsed.address
       : {
           projectId: project.id,
           destination: { kind: "chat-index" },
-          work: NONE,
         };
   const destination = address.destination;
   const activeScreen = screen(destination);
   const [navigation, setNavigation] = useState<ReturnType<typeof createProjectNavigation> | null>(
     null,
   );
-  const { routeWork, workCatalog, rememberedWork, openRemembered } = useWorkRoute({
-    projectId,
-    address,
-    navigation,
-  });
-  const noWorkId = workCatalog.noWork?.id ?? null;
-  const threads = useProjectThreads(projectId);
   const chat = useProjectChatNavigation({
     accountId: user.userId,
     projectId,
@@ -189,45 +157,9 @@ function ReadableProjectDestination({
     urlChatId: destination.kind === "chat" ? destination.chatId : null,
     go: (next, options) => go(toDestination(next), options),
   });
-  const chatThreadId = chatSurfaceThreadId(chat.display);
-  const displayedChat = threads.threads?.find((thread) => thread.id === chatThreadId) ?? null;
-  // The tab's Work scope is the Editor's Work when the address names none. A stale id is no seed.
-  const scopeId = useCurrentWork(user.userId, projectId);
-  const rememberedEditor =
-    scopeId &&
-    (scopeId === noWorkId ||
-      workCatalog.entries?.some((work) => work.id === scopeId) ||
-      workCatalog.creations.has(scopeId))
-      ? scopeId
-      : undefined;
-  const requestedWork = addressWorkSelection(address);
-  const editorSeed = rememberedEditor ?? displayedChat?.workId;
-  // Chat may seed a genuinely absent Editor context once, never rebind it after navigation.
-  const editorSelection: Exclude<AddressSelection, { kind: "absent" }> =
-    activeScreen === "context" && requestedWork.kind !== "absent"
-      ? requestedWork
-      : editorSeed
-        ? workSelectionFor({ kind: "editor" }, editorSeed, noWorkId)
-        : { kind: "none" };
-  const editorDefaultPending =
-    rememberedEditor === undefined &&
-    !(activeScreen === "context" && requestedWork.kind !== "absent") &&
-    editorDefaultWorkPending({
-      workCatalogReady: workCatalog.status === "ready",
-      chatThreadId,
-      displayedChatFound: displayedChat !== null,
-      threadsFailed: threads.isError,
-      threadsUnloaded: threads.threads === null,
-    });
-  const editorWork: Exclude<RouteWorkResolution, { status: "new" | "absent" }> =
-    editorDefaultPending
-      ? {
-          status: "unresolved",
-          reason: workCatalog.status === "error" || threads.isError ? "error" : "loading",
-          workId: null,
-        }
-      : resolveRouteWork(editorSelection, workCatalog);
-  const workId = editorWork.status === "present" ? editorWork.workId : null;
+  // The Work scope is stored, never read from the address: a Work-scoped page lens, not a place.
+  const editorScope = useWorkScopeState(projectId);
+  const workId = editorScope.workId;
   const { tabs: workspaceTabs } = useContextTabs(projectId);
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const localDocument = resolveLocalDocumentSelection({
@@ -254,7 +186,8 @@ function ReadableProjectDestination({
     if (localDocumentId && workId)
       void useContextTabsStore.getState().selectTab(projectId, localDocumentId);
   }, [projectId, workId, localDocumentId]);
-  const shown = useRef<DisplayedProjectSelection>({ work: { kind: "none" } });
+  const shown = useRef<DisplayedProjectSelection>({});
+  shown.current = { local: localPointer };
   useBlocker({
     shouldBlockFn: async () => (navigation ? !(await navigation.allowDeparture()) : false),
     enableBeforeUnload: () => navigation?.hasUnsavedChanges() ?? false,
@@ -297,11 +230,8 @@ function ReadableProjectDestination({
     if (!navigation || parsed.kind !== "valid") return;
     const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
     if (!ticket) return;
-    // A cached miss while a catalog refresh is pending is not confirmed unavailability.
-    navigation.repairAddress(ticket, {
-      work: workCatalog.isFetching ? { status: "loading" } : workCatalog,
-    });
-  }, [navigation, location, workCatalog.entries, workCatalog.status, workCatalog.isFetching]);
+    navigation.repairAddress(ticket);
+  }, [navigation, location]);
 
   // Cached live locations, read only to place a review launch's document (never fetched for it).
   const launchCatalogs = useContextCatalogViews(projectId, CONTEXT_URI_SCHEMES, {
@@ -322,7 +252,6 @@ function ReadableProjectDestination({
     location,
     navigation,
     editorWorkId: workId,
-    noWorkId,
     documentCatalog,
   });
   latest.current = {
@@ -330,7 +259,6 @@ function ReadableProjectDestination({
     location,
     navigation,
     editorWorkId: workId,
-    noWorkId,
     documentCatalog,
   };
   // The document the address resolved to: a review of it stays on this address
@@ -342,46 +270,29 @@ function ReadableProjectDestination({
     return () => !!ticket && !!current?.isCurrent(ticket);
   }, []);
   const isCurrentContextRoute = useCallback((target: ContextRouteTarget) => {
-    return projectAddressMatchesContextTarget(
-      latest.current.address,
-      target,
-      latest.current.noWorkId,
-      undefined,
-      latest.current.editorWorkId,
-    );
+    return projectAddressMatchesContextTarget(latest.current.address, target);
   }, []);
-  const reportSelection = useCallback(
-    ({ editorWorkId: workId }: { editorWorkId: ParsedRequestId | null }) => {
-      shown.current = {
-        work: workSelectionFor(address.destination, workId ?? undefined, noWorkId),
-        local: localPointer,
-      };
-      if (activeScreen === "context" && workId && !routeWorkIssue(editorWork))
-        writeCurrentWork(user.userId, projectId, workId);
-    },
-    [activeScreen, editorWork.status, address.destination, localPointer, noWorkId],
-  );
 
   // A scheme the Editor never opens (Uploads) shows in its resource view.
   const resourceDestination =
-    (destination.kind === "document" || destination.kind === "browse") &&
-    destination.scheme !== null &&
-    !isEditorScheme(destination.scheme);
+    destination.kind === "document" && !isEditorScheme(destination.scheme);
   const documentDestination =
     destination.kind === "document" && !resourceDestination ? destination : null;
-  const addressWorkId = workId;
-  // A Scratch address names its own owner: a chat's lineage, else the Work the Editor shows.
+  // A Scratch address names its own owner, whatever the scope: a chat's lineage, else a Work.
+  const lineage = addressLineage(address);
+  // The Work the address's locators carry: a Scratch address's owner, else the scope's.
+  const locatorWorkId = addressScratchWorkId(address) ?? workId;
   const addressOwner: ContextOwner =
     documentDestination?.scheme !== "scratch"
       ? { workId: null }
-      : contextOwner(addressWorkId, address.lineage);
+      : contextOwner(locatorWorkId, lineage);
   const addressSchemes = useMemo(
     () => (documentDestination ? [documentDestination.scheme] : []),
     [documentDestination?.scheme],
   );
   const addressCatalogs = useContextCatalogViews(projectId, addressSchemes, {
     ...addressOwner,
-    enabled: !!documentDestination && editorWork.status === "present",
+    enabled: !!documentDestination && workId !== null,
   });
   const {
     catalog: addressCatalog,
@@ -398,7 +309,7 @@ function ReadableProjectDestination({
         isError: false,
         refetch: () => undefined,
       };
-  const reviewOwner = addressReviewOwner(address, addressWorkId);
+  const reviewOwner = addressReviewOwner(address, workId);
   const addressBinding = bindDocumentAddressReview(address.itemKey, reviewOwner);
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
   const documentLookup = useQuery(
@@ -408,7 +319,7 @@ function ReadableProjectDestination({
         destination: documentDestination,
         owner: addressOwner,
         binding: addressBinding,
-        workResolved: editorWork.status === "present",
+        workResolved: workId !== null,
       },
       getProjectDocumentAddress,
     ),
@@ -447,12 +358,12 @@ function ReadableProjectDestination({
   const reviewBindingEnded =
     selection.status === "bound" && selection.by === "review" && !address.itemKey;
   const boundDocumentId =
-    documentDestination && workId !== null && !reviewBindingEnded
+    documentDestination && locatorWorkId !== null && !reviewBindingEnded
       ? routeSelectionDocumentId(selection, {
           scheme: documentDestination.scheme,
           path: documentDestination.path,
-          workId,
-          rootThreadId: address.lineage,
+          workId: locatorWorkId,
+          rootThreadId: lineage,
         })
       : null;
   const localDocumentAddress = useMemo(
@@ -550,7 +461,7 @@ function ReadableProjectDestination({
       ? `${boundDocumentId}|${documentDestination.scheme}|${documentDestination.path}`
       : null;
   useEffect(() => {
-    if (!heldAttempt || !boundDocumentId || !documentDestination || !workId) return;
+    if (!heldAttempt || !boundDocumentId || !documentDestination || !locatorWorkId) return;
     // A plain ticket: a delayed repair must not retire the writer's pending navigation.
     const navigation = latest.current.navigation;
     const ticket = navigation?.capture();
@@ -559,8 +470,8 @@ function ReadableProjectDestination({
       contextRemoval.unbindRoute(projectId, boundDocumentId, {
         scheme: documentDestination.scheme,
         path: documentDestination.path,
-        workId,
-        rootThreadId: address.lineage ?? undefined,
+        workId: locatorWorkId,
+        rootThreadId: lineage,
       });
     void availability.resolveForOpen(projectId, boundDocumentId).then((answer) => {
       const located = answer.kind === "available" ? parseContextUri(answer.entry.uri) : null;
@@ -580,8 +491,8 @@ function ReadableProjectDestination({
           workId:
             answer.kind === "available" && answer.authority.kind === "work"
               ? answer.authority.workId
-              : workId,
-          ...(address.lineage ? { rootThreadId: address.lineage } : {}),
+              : locatorWorkId,
+          ...(lineage ? { rootThreadId: lineage } : {}),
           documentId: boundDocumentId,
         },
         { replace: true, isCurrent: current },
@@ -611,8 +522,8 @@ function ReadableProjectDestination({
     documentResult,
     selection,
     documentDestination,
-    workId,
-    address.lineage,
+    locatorWorkId,
+    lineage,
     reviewOwner,
   );
   useLayoutEffect(() => {
@@ -640,25 +551,22 @@ function ReadableProjectDestination({
   });
   const documentIssue: ProjectRouteIssue | undefined = !documentDestination
     ? undefined
-    : (routeWorkIssue(routeWork) ??
-      (!documentResult
-        ? // A prerequisite that failed ends the wait: the address stays, with a way to retry.
-          documentLookup.isError ||
-          gated.outcome === "failed" ||
-          (holdsBound && addressCatalogError)
-          ? "error"
-          : "loading"
-        : documentResult.kind === "unavailable"
-          ? closingRef &&
-            !closeState.removed &&
-            (closeMetadata?.isFetching ||
-              (!closeMetadata?.isError &&
-                (closeMetadata?.dataUpdatedAt ?? 0) <= documentLookup.dataUpdatedAt) ||
-              closeState.checkingClose ||
-              closeState.closed)
-            ? "loading"
-            : "unavailable"
-          : undefined));
+    : !documentResult
+      ? // A prerequisite that failed ends the wait: the address stays, with a way to retry.
+        documentLookup.isError || gated.outcome === "failed" || (holdsBound && addressCatalogError)
+        ? "error"
+        : "loading"
+      : documentResult.kind === "unavailable"
+        ? closingRef &&
+          !closeState.removed &&
+          (closeMetadata?.isFetching ||
+            (!closeMetadata?.isError &&
+              (closeMetadata?.dataUpdatedAt ?? 0) <= documentLookup.dataUpdatedAt) ||
+            closeState.checkingClose ||
+            closeState.closed)
+          ? "loading"
+          : "unavailable"
+        : undefined;
   // A review address names its document: when it is unavailable because the
   // document was removed, it says so instead. A plain path names no document
   // once nothing lives there, so it stays "unavailable".
@@ -679,19 +587,19 @@ function ReadableProjectDestination({
       reviewGone ||
       localDocumentAddress ||
       destination.kind !== "document" ||
-      !workId ||
+      !locatorWorkId ||
       selection.status !== "candidate" ||
       !selectionAtRoute(selection, {
         scheme: destination.scheme,
         path: destination.path,
-        workId,
-        rootThreadId: address.lineage,
+        workId: locatorWorkId,
+        rootThreadId: lineage,
       })
     )
       return;
     contextRemoval.rejectRouteCandidate(projectId, selection.revision);
   }, [
-    address.lineage,
+    lineage,
     contextRemoval,
     destination,
     documentLookup.data,
@@ -699,17 +607,12 @@ function ReadableProjectDestination({
     localDocumentAddress,
     projectId,
     selection,
-    workId,
+    locatorWorkId,
   ]);
   useLayoutEffect(() => {
     if (!reviewGone || !navigation) return;
     const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
-    if (ticket)
-      void navigation.replaceIfCurrent(ticket, {
-        ...address,
-        itemKey: undefined,
-        changeId: undefined,
-      });
+    if (ticket) void navigation.replaceIfCurrent(ticket, withoutReview(address));
   }, [reviewGone, navigation, location, address]);
   const removedTitle = documentDestination?.path.split("/").filter(Boolean).at(-1) ?? null;
   const switchFailure = useDocumentSwitchFailures();
@@ -718,12 +621,7 @@ function ReadableProjectDestination({
     location.href,
     location.state.__TSR_key ?? "",
   );
-  const mainIssue =
-    parsed.kind === "invalid"
-      ? "unavailable"
-      : destination.kind === "work" && routeWork.status === "unresolved"
-        ? routeWork.reason
-        : undefined;
+  const mainIssue = parsed.kind === "invalid" ? "unavailable" : undefined;
   // The failed reads are what the address waits on; retrying them is the destination's recovery.
   const retryEditorAddress = useCallback(() => {
     switchFailure.clear();
@@ -736,7 +634,7 @@ function ReadableProjectDestination({
     : ((localDocument.kind === "loading" || localDocument.kind === "unavailable"
         ? localDocument.kind
         : undefined) ??
-      routeWorkIssue(editorWork) ??
+      (editorScope.status === "ready" ? undefined : editorScope.status) ??
       // A locally created document wins over the server address lookup.
       (localDocumentId
         ? undefined
@@ -776,14 +674,9 @@ function ReadableProjectDestination({
       destination: next,
       trash: undefined,
       itemKey: undefined,
-      workView: undefined,
-      worksView: undefined,
+      changeId: undefined,
+      owner: undefined,
     };
-  }
-  // A Work opens on its chats unless the target names Files: one address, so
-  // one transition and one history entry, whatever screen it leaves.
-  function workAddress(target: WorkDetailTarget): ProjectAddress {
-    return workDetailAddress(address, target);
   }
   const contextDestination = useCallback(
     (target: ContextRouteRequest, preparedTab?: ContextTab, itemKey?: string) =>
@@ -792,7 +685,6 @@ function ReadableProjectDestination({
           projectId,
           accountId: user.userId,
           address: latest.current.address,
-          noWorkId: latest.current.noWorkId,
         },
         target,
         preparedTab,
@@ -822,23 +714,28 @@ function ReadableProjectDestination({
     );
   }, [departedLocalTab?.documentId, workId, openContext]);
   const setEditorReviewItemKey = useCallback(
-    (itemKey: string | null, changeId?: string) => {
+    (itemKey: string | null, changeId?: string, ownerKey?: string) => {
       const current = latest.current;
       if (!current.navigation) return;
       const ticket = current.navigation.capture();
       const { address } = current;
       if (!itemKey) contextRemoval.adoptReviewBinding(projectId);
-      // A review names its Work: an address that left it implicit states the Editor's own now.
-      const work =
-        itemKey && address.work.kind === "absent" && current.editorWorkId
-          ? workSelectionFor(address.destination, current.editorWorkId, current.noWorkId)
-          : address.work;
-      void current.navigation.replaceIfCurrent(ticket, {
-        ...address,
-        work,
-        itemKey: itemKey ?? undefined,
-        changeId: itemKey ? changeId : undefined,
-      });
+      // A draft's owner is part of its link: the pin's owner, else the scope's Work.
+      const next = itemKey
+        ? {
+            ...address,
+            owner:
+              (ownerKey as DraftOwnerKey | undefined) ??
+              address.owner ??
+              (current.editorWorkId
+                ? draftOwnerKey({ kind: "work", workId: current.editorWorkId })
+                : undefined),
+            itemKey,
+            changeId,
+          }
+        : withoutReview(address);
+      if (itemKey && !next.owner) return;
+      void current.navigation.replaceIfCurrent(ticket, next);
     },
     [contextRemoval, projectId],
   );
@@ -918,15 +815,6 @@ function ReadableProjectDestination({
     if (result.kind === "failed") throw result.error;
   };
   const routeCommands: ProjectRouteCommands = {
-    openWork: (target, options) => goLegacy(workAddress(target), options),
-    workHref: (target) => projectAddressHref(workAddress(target)),
-    workView: address.workView ?? "chats",
-    setWorkView: (view) =>
-      goLegacy({ ...address, workView: view === "files" ? "files" : undefined }, { replace: true }),
-    worksView: address.worksView ?? "active",
-    setWorksView: (view) =>
-      goLegacy({ ...address, worksView: view === "active" ? undefined : view }, { replace: true }),
-    closeWork: (options) => goLegacy(toDestination({ kind: "works" }), options),
     // Selecting no document keeps every open tab. Already on the chooser is a
     // no-op. A local draft is also `/editor`; its history pointer is the
     // selection. Navigation clears that pointer. Departure freezes it, so Back
@@ -938,25 +826,6 @@ function ReadableProjectDestination({
           location.state.meridianProjectSelection == null);
       return onChooser ? Promise.resolve() : goLegacy(toDestination({ kind: "editor" }), options);
     },
-    openWorkContext: (target, options) =>
-      target.path !== undefined
-        ? openContext(
-            { scheme: target.scheme, path: target.path, workId: target.workId },
-            options,
-          ).then((result) => {
-            if (result.kind === "failed") throw result.error;
-          })
-        : goLegacy(
-            {
-              ...toDestination(browseDestination(target.scheme, target.folder ?? "")),
-              work: workSelectionFor(
-                browseDestination(target.scheme, target.folder ?? ""),
-                target.workId,
-                noWorkId,
-              ),
-            },
-            options,
-          ),
   };
   // A resource pointer holds identity, not an Untitled address. Once placement
   // exists, publish its real locator so the removal host does not repair it
@@ -967,20 +836,18 @@ function ReadableProjectDestination({
       : null;
   const search: ProjectSearch = {
     screen: activeScreen,
-    work: workId ?? undefined,
-    chat: documentDestination?.scheme === "scratch" ? address.lineage : undefined,
+    work: locatorWorkId ?? undefined,
+    chat: documentDestination?.scheme === "scratch" ? lineage : undefined,
     scheme: localDocumentId
       ? (localTarget?.scheme ?? "unfiled")
-      : destination.kind === "document" || destination.kind === "browse"
-        ? (destination.scheme ?? undefined)
+      : destination.kind === "document"
+        ? destination.scheme
         : undefined,
     path: localDocumentId
       ? (localTarget?.path ?? "")
       : documentDestination
         ? `/${documentDestination.path}`
         : undefined,
-    folder: browsedFolder(destination) ?? undefined,
-    view: address.workView ?? address.worksView,
   };
   const editorDocument = {
     editorWorkId: workId,
@@ -989,19 +856,13 @@ function ReadableProjectDestination({
     activeContextPath: search.path ?? null,
     activeContextChat: search.chat ?? null,
   };
-  const showScreenDestination = (
-    next: "work" | "context",
-    options?: { afterCommit?: () => void },
-  ) => {
-    // Work reopens the last opened Work while it still exists; else the collection.
-    if (next === "work" && rememberedWork) return openRemembered();
-    if (next === "context" && workId && contextRemoval.getProjectSnapshot(projectId).live) {
+  const showEditor = (options?: { afterCommit?: () => void }) => {
+    if (workId && contextRemoval.getProjectSnapshot(projectId).live) {
       const workspace = getContextTabs(projectId);
       const tab = selectEditorEntryTab({
         tabs: workspace.tabs,
         selectedDocumentId: selectedDocumentIdOf(workspace) ?? undefined,
         recentRoutes: readRecentRoutes(projectId),
-        workId,
       });
       if (tab)
         return openContext(
@@ -1015,45 +876,20 @@ function ReadableProjectDestination({
           },
         );
     }
-    return go(
-      {
-        ...toDestination({ kind: next === "work" ? "works" : "editor" }),
-        work: workSelectionFor(
-          { kind: next === "work" ? "works" : "editor" },
-          rememberedEditor ?? workId ?? undefined,
-          noWorkId,
-        ),
-      },
-      { replace: false, ...options },
-    );
+    return go(toDestination({ kind: "editor" }), { replace: false, ...options });
   };
   const selectRailScreen = useRailScreenSwitch(
     activeScreen,
     (ticket) => latest.current.navigation?.isCurrent(ticket) ?? false,
   );
   const selectScreen = (next: ScreenKey) =>
-    selectRailScreen(next, () =>
-      next === "chat" ? chat.showChatScreen() : showScreenDestination(next),
-    );
-  // A project folder keeps the current editing context; a Work's folder names its Work.
-  const browse = (scheme: ProjectContextTreeScheme | null, path = "") =>
-    go(
-      {
-        ...toDestination(browseDestination(scheme, path)),
-        work: workSelectionFor(browseDestination(scheme, path), workId ?? undefined, noWorkId),
-      },
-      { replace: false },
-    );
+    selectRailScreen(next, () => (next === "chat" ? chat.showChatScreen() : showEditor()));
 
   return (
     <ProjectNavigationProvider
       screen={activeScreen}
       openContextRoute={openContext}
-      openWork={routeCommands.openWork}
-      screenCommands={{
-        showEditor: (options) => showScreenDestination("context", options),
-        showWork: () => showScreenDestination("work"),
-      }}
+      screenCommands={{ showEditor }}
       isCurrentNavigation={(ticket) => latest.current.navigation?.isCurrent(ticket) ?? false}
       captureNavigation={captureNavigation}
       trash={{ destination: trashDestination, navigate: navigateTrash }}
@@ -1077,7 +913,6 @@ function ReadableProjectDestination({
               reviewItemKey={reviewItemKey}
               draftOnly={draftOnly}
               workId={workId}
-              noWorkId={noWorkId}
               navigation={navigation}
               onAdmission={setAdmission}
             />
@@ -1088,9 +923,6 @@ function ReadableProjectDestination({
             activeScreen={activeScreen}
             chatDisplay={chat.display}
             entryHydration={entryHydration}
-            routeWork={routeWork}
-            rememberedWork={rememberedWork}
-            editorRouteWork={editorWork}
             routeLocationKey={location.state.__TSR_key ?? location.href}
             routeIssues={{
               main: failedDestination ? "error" : mainIssue,
@@ -1107,7 +939,6 @@ function ReadableProjectDestination({
                   : undefined,
             }}
             onRetryEditorRoute={retryEditorAddress}
-            onDisplayedSelection={reportSelection}
             routeCommands={routeCommands}
             contextRemovalRoute={{
               transition: (_id, target, prepared) => closeDestination(target, prepared),
@@ -1118,17 +949,17 @@ function ReadableProjectDestination({
                   update,
                   relocated,
                   openContext,
-                  goWorks: () => void go(toDestination({ kind: "works" }), { replace: true }),
                   goEditor: () => void go(toDestination({ kind: "editor" }), { replace: true }),
                 }),
             }}
             activeLocalDocumentId={editorDocument.localDocumentId}
             activeContextScheme={editorDocument.activeContextScheme}
-            activeContextFolder={search.folder ?? null}
+            activeContextWorkId={locatorWorkId}
             activeContextPath={editorDocument.activeContextPath}
             activeContextChat={editorDocument.activeContextChat}
             reviewItemKey={address.itemKey}
             reviewOwner={reviewOwner}
+            reviewAddressOwner={address.owner}
             reviewDocumentId={closingDocumentId ?? undefined}
             reviewChangeId={address.changeId}
             reviewAddressDocumentId={addressDocumentId}
@@ -1142,9 +973,6 @@ function ReadableProjectDestination({
                     : "pending"
             }
             onSelectScreen={selectScreen}
-            onSelectContextScheme={(scheme) => browse(scheme)}
-            onExitContextScheme={() => browse(null)}
-            onSelectContextFolder={(path) => browse(search.scheme ?? null, path)}
             onOpenContextTarget={openContext}
             onSetEditorReviewItemKey={setEditorReviewItemKey}
           />

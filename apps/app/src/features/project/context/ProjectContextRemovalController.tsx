@@ -15,7 +15,10 @@ export type ProjectContextRemovalControllerProps = {
   activeContextPath: string | null;
   /** A chat's Scratch route names its lineage here. */
   activeContextChat?: string | null;
+  /** The Work scope: the project's active Work. */
   editorWorkId: string;
+  /** The Work that owns the address's locator: a Scratch address's owner, else the scope. */
+  routeWorkId: string;
   localDocumentId?: string;
   /** A review address names its document by item: that id is proof, so the route starts bound. */
   reviewDocumentId?: string;
@@ -29,6 +32,7 @@ export function ProjectContextRemovalController({
   activeContextPath,
   activeContextChat,
   editorWorkId,
+  routeWorkId,
   localDocumentId,
   reviewDocumentId,
   route,
@@ -68,7 +72,7 @@ export function ProjectContextRemovalController({
       !selectionAtRoute(selection, {
         scheme: activeContextScheme,
         path: activeContextPath,
-        workId: editorWorkId,
+        workId: routeWorkId,
         rootThreadId: activeContextChat ?? undefined,
       }));
   const previousLocalDocument = useRef(localDocumentId);
@@ -80,7 +84,7 @@ export function ProjectContextRemovalController({
         ? {
             scheme: activeContextScheme,
             path: activeContextPath,
-            workId: editorWorkId,
+            workId: routeWorkId,
             ...(activeContextChat ? { rootThreadId: activeContextChat } : {}),
           }
         : null;
@@ -104,6 +108,7 @@ export function ProjectContextRemovalController({
     activeScreen,
     coordinator,
     editorWorkId,
+    routeWorkId,
     projectId,
     localDocumentId,
     reviewDocumentId,

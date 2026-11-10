@@ -119,7 +119,7 @@ it("starts a cold copied URL's selector read while the list is unresolved and ro
   const itemKey = "branch:document";
   const address = parseProjectAddress(
     `/p/${projectId}/editor/kb/Old.md`,
-    `?work=${workId}&item=${encodeURIComponent(itemKey)}&change=class%3Apart`,
+    `?owner=${owner}&item=${encodeURIComponent(itemKey)}&change=class%3Apart`,
   );
   if (address.kind !== "valid" || address.address.destination.kind !== "document")
     throw new Error("Expected a document address");

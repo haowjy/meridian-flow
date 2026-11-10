@@ -15,7 +15,7 @@ import {
   settleContextProjectBootstrap,
   updateContextProjectReadiness,
 } from "./context-project-phase";
-import type { EditorWorkScope } from "./editor-work-scope";
+import type { WorkScope } from "./use-work-scope";
 
 export function useContextProjectAuthority({
   projectId,
@@ -24,7 +24,7 @@ export function useContextProjectAuthority({
 }: {
   projectId: string;
   workspaceHydrated: boolean;
-  editorScope: EditorWorkScope;
+  editorScope: WorkScope;
 }): ContextProjectPhase {
   const [authority, setAuthority] = useState<ContextProjectAuthority>(
     INITIAL_CONTEXT_PROJECT_AUTHORITY,

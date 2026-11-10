@@ -21,7 +21,6 @@ export async function acceptContextTransition(
     const next = { ...current };
     delete next.scheme;
     delete next.path;
-    delete next.folder;
     return next;
   });
   prepared.commit();

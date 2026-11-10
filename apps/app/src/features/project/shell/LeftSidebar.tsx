@@ -17,8 +17,8 @@ import { projectResourceTab } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { modeMeta } from "../layout/modes";
 import { modeOf } from "../layout/placement";
-import { useScreenCommands } from "../routing/ProjectNavigationContext";
 import { useWorkScope } from "../use-work-scope";
+import { useManageWorks } from "../work/ManageWorksDialog";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleSpacer } from "./PanelToggleButton";
 import { ProjectMenu } from "./ProjectMenu";
@@ -54,7 +54,7 @@ export function LeftSidebar({
   activeContextPath,
   onSelectScreen,
 }: LeftSidebarProps) {
-  const screenCommands = useScreenCommands();
+  const manageWorks = useManageWorks();
   const titleEditor = useRef<TitleEditHandle>(null);
   const openDocument = useOpenProjectDocument(projectId);
   const scope = useWorkScope(projectId);
@@ -129,7 +129,7 @@ export function LeftSidebar({
         projectId={projectId}
         workId={scope.workId}
         onPick={scope.setWorkId}
-        onManage={() => void screenCommands?.showWork()}
+        onManage={() => manageWorks?.open()}
       />
       <ModeSwitch
         mode={mode}

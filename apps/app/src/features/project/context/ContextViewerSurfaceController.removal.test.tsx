@@ -189,6 +189,7 @@ it("persists and admits the real New action without an empty working-set route",
           activeContextScheme={route.scheme}
           activeContextPath={route.path}
           editorWorkId="work-a"
+          routeWorkId="work-a"
           route={{
             transition: acceptContextTransition,
             readSearch: () => search,
@@ -358,50 +359,4 @@ it("does not admit an old bound document while its retained controller is inacti
       lease.disposeIfSuspended();
     }
   });
-});
-
-it("a pending navigation to a document only another Work reviews shows one loading entry", async () => {
-  useContextTabsStore.setState({
-    byProject: {
-      project: {
-        tabs: [
-          {
-            kind: "tracked",
-            documentId: "a",
-            tabInstanceId: "instance-a",
-            scheme: "manuscript",
-            path: "/a.md",
-            name: "a.md",
-            editable: true,
-            filetype: "markdown",
-            schemaType: "document",
-            reviews: { "work-1": { itemKey: "draft-1", tabInstanceToken: "token" } },
-          },
-        ],
-        selectedTabKey: null,
-      },
-    },
-    _workspaceHydrated: false,
-  });
-  queryState.isFetching = true;
-  await withReactRoot(
-    <AccountFeatureTestProvider accountId="account-a">
-      <ContextViewerSurfaceController
-        {...shellProps}
-        projectId="project"
-        editorWorkId="work-2"
-        activeContextScheme="manuscript"
-        activeContextPath="/a.md"
-        active
-      />
-    </AccountFeatureTestProvider>,
-    async () => {
-      // Work 1's hidden tab is not work 2's strip entry, so it cannot settle work 2's destination.
-      expect(viewerProps?.tabs).toEqual([]);
-      expect(viewerProps?.paneState).toMatchObject({
-        kind: "optimistic-loading",
-        settledTab: null,
-      });
-    },
-  );
 });

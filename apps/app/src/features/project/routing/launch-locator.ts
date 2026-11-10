@@ -13,7 +13,6 @@
 import type { ProjectContextIdentityResolution } from "@meridian/contracts/protocol";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import type { ContextTab } from "@/client/stores";
-import { editorHasReview, isDraftOnly } from "@/client/stores";
 import { parseContextUri } from "@/lib/context-uri";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { canonicalDocumentPath } from "./local-document-address";
@@ -44,10 +43,7 @@ export async function resolveLaunchLocator(input: {
   const { documentId } = requested;
   if (!documentId) return requested;
   const tab = input.tabs.find(
-    (candidate) =>
-      candidate.kind !== "new" &&
-      candidate.documentId === documentId &&
-      (!isDraftOnly(candidate) || editorHasReview(candidate, requested.workId ?? null)),
+    (candidate) => candidate.kind !== "new" && candidate.documentId === documentId,
   );
   if (tab && tab.kind !== "new" && requested.workId) {
     return { ...routeTargetForTab(tab, requested.workId), documentId };

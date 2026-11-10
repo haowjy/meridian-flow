@@ -2,10 +2,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type ContextTab,
-  editorTabsForWork,
   getContextTabs,
   isDraftOnly,
   rehydrateEditorWorkspace,
+  reviewEntryOf,
   selectedDocumentIdOf,
   useContextTabsStore,
 } from "@/client/stores";
@@ -125,8 +125,11 @@ describe("draft tab settlement", () => {
     const coordinator = new ContextRemovalCoordinator("account-a", { route });
     coordinator.registerRoutePort("project-a", route, "work-b");
     const store = useContextTabsStore.getState();
+    // What a Work's review shows: a live tab, or a draft-only tab holding that Work's entry.
     const inWork = (workId: string) =>
-      editorTabsForWork(getContextTabs("project-a").tabs, workId).map((tab) => tab.documentId);
+      getContextTabs("project-a")
+        .tabs.filter((tab) => !isDraftOnly(tab) || reviewEntryOf(tab, `work:${workId}`))
+        .map((tab) => tab.documentId);
     store.openTab("project-a", draftTab("tab-b", "work-b", "draft-b"));
     const tabs = getContextTabs("project-a").tabs;
     expect(tabs).toHaveLength(1);

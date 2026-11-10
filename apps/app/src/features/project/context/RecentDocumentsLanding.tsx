@@ -281,8 +281,6 @@ function recentDocumentHref(item: AccountRecentItem, projectId: string | undefin
       scheme: item.address.scheme,
       path,
     },
-
-    work: { kind: "absent" },
   });
 }
 

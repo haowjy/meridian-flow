@@ -9,11 +9,10 @@ import type { AddressableWork } from "@/client/query/useWorks";
 import type { UncreatedWork, WorkCreation } from "@/client/query/work-command-projection";
 import type { WorkDeleteWindow } from "@/client/query/work-command-selectors";
 import { daysUntilPurge as daysUntilScheduledPurge } from "../deletion-retention";
-import type { WorksView } from "../routing/project-address";
 import type { WorkRowFailure } from "./WorkCommandFailureRow";
 
 /** The list tab a Work the server has sits in until it is deleted. */
-export type ArchiveTab = Exclude<WorksView, "deleted">;
+export type ArchiveTab = "active" | "archived";
 
 export const archiveTab = (work: Pick<Work, "archivedAt">): ArchiveTab =>
   isWorkArchived(work) ? "archived" : "active";
