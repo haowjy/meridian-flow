@@ -90,7 +90,6 @@ import { DragHint } from "./context/tree-drop/drag-hint";
 import { WindowDropGuard } from "./context/tree-drop/WindowDropGuard";
 import { useDesktopProjectController } from "./DesktopProjectController";
 import { ChatDocumentsBesideProvider } from "./dock/ChatDocumentsBesideProvider";
-import { EditorWorkRecovery } from "./EditorWorkRecovery";
 import {
   modeOf,
   NO_COLLAPSED_SLOTS,
@@ -371,7 +370,6 @@ export function ProjectView(props: ProjectViewProps) {
     editorScope,
     editorWorkId,
     editorWork,
-    retryEditorWork: editorScope.retry,
     contextLive: contextPhase.status === "live" && editorScope.status === "ready",
   };
   return (
@@ -429,7 +427,6 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
   editorWorkId: string | null;
   /** The Editor's Work, when the route names one the project has. */
   editorWork: Work | null;
-  retryEditorWork: () => void;
   contextLive: boolean;
 };
 
@@ -742,14 +739,10 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   });
   const editorMask: ProjectRouteMask = {
     destinationKey: props.routeLocationKey,
-    issue: props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined,
+    issue: props.routeIssues?.editor,
     removed: props.routeIssues?.removed,
     onRetry: props.onRetryEditorRoute,
     retainWhileLoading: editorPresentation.retainWhileLoading,
-    recovery:
-      props.editorScope.status !== "ready" ? (
-        <EditorWorkRecovery status={props.editorScope.status} onRetry={props.retryEditorWork} />
-      ) : undefined,
   };
 
   // useProjectLayout subscribes to the slot widths and this mode's panels and

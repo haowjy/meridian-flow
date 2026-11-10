@@ -68,9 +68,11 @@ export function WorkDetail({
               size="heading"
             />
           </div>
-          <Button size="sm" variant="outline" onClick={() => onShowWork(work.id)}>
-            <Trans>Show this Work</Trans>
-          </Button>
+          {isWorkArchived(work) ? null : (
+            <Button size="sm" variant="outline" onClick={() => onShowWork(work.id)}>
+              <Trans>Show this Work</Trans>
+            </Button>
+          )}
           <WorkActionsMenu
             work={work}
             onToggleArchive={() => void toggleArchive(work)}
