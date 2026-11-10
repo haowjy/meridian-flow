@@ -614,6 +614,7 @@ function ReadableProjectDestination({
     projectId,
     documentResult,
     documentLookup.dataUpdatedAt,
+    (documentId) => workspaceTabs.some((tab) => tab.documentId === documentId),
   );
   const routeBinding = addressRouteBinding(
     addressBinding,
