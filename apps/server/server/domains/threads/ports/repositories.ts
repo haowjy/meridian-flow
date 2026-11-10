@@ -621,8 +621,13 @@ export interface TurnDocumentTouch {
   touchedAt: string;
 }
 
-/** A document a chat or one of its subagents touched; `edited` when one of them wrote to it. */
-export type ThreadTouchedDocument = TurnDocumentTouch & { edited: boolean };
+/** A document a chat or one of its subagents touched or wrote to; `edited` when one of them wrote text to it. */
+export type ThreadTouchedDocument = Pick<
+  TurnDocumentTouch,
+  "documentId" | "threadId" | "touchedAt"
+> & {
+  edited: boolean;
+};
 
 export interface TurnDocumentTouchRepository {
   recordTouch(turnId: TurnId, documentId: string): Promise<TurnDocumentTouch>;

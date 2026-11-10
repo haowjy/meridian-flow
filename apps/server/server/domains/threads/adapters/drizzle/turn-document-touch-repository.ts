@@ -1,5 +1,4 @@
 /** Drizzle TurnDocumentTouchRepository: SQL for turn_document_touches record/list. */
-import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { eq, sql } from "drizzle-orm";
 import { runIsolatedFromAmbientTransaction } from "../../../../shared/drizzle-transaction.js";
@@ -45,44 +44,41 @@ export function createDrizzleTurnDocumentTouchRepository(
         return mapTurnDocumentTouch({ ...row, threadId: turn.threadId });
       }),
     async listByThread(threadId, limit) {
-      // `family` is the thread and its subagents (a fork is a chat of its own). A subagent's
-      // touch is the chat's; `edited` is an agent write in document_edits by any of them.
+      // `family` is the thread and its subagents (a fork is a chat of its own). A subagent's work
+      // is the chat's. A document is listed when one of them touched it or wrote text to it
+      // (document_edits; a touch is best-effort, so an edit alone counts, as in the related read).
       const rows = await currentDrizzleDb(db).execute<{
-        id: string;
-        turn_id: TurnId;
         document_id: string;
         touched_at: Date | string;
         edited: boolean;
       }>(sql`
         WITH RECURSIVE family AS (
-          SELECT id FROM threads WHERE id = ${threadId}
+          SELECT id, 0 AS depth FROM threads WHERE id = ${threadId}
           UNION ALL
-          SELECT t.id FROM threads t JOIN family ON t.parent_thread_id = family.id
-          WHERE t.kind <> 'primary'
+          SELECT t.id, family.depth + 1 FROM threads t JOIN family ON t.parent_thread_id = family.id
+          WHERE t.kind <> 'primary' AND family.depth < 32
         )
-        SELECT DISTINCT ON (x.document_id)
-          x.id, x.turn_id, x.document_id, x.touched_at,
-          EXISTS (
-            SELECT 1 FROM document_edits e
-            WHERE e.document_id = x.document_id AND e.thread_id IN (SELECT id FROM family)
-              AND e.actor = 'agent' AND e.kind = 'write'
-          ) AS edited
-        FROM turn_document_touches x
-        JOIN turns ON turns.id = x.turn_id
-        WHERE turns.thread_id IN (SELECT id FROM family)
-        ORDER BY x.document_id, x.touched_at DESC
+        SELECT document_id, max(at) AS touched_at, bool_or(edited) AS edited FROM (
+          SELECT x.document_id, x.touched_at AS at, false AS edited
+          FROM turn_document_touches x
+          JOIN turns ON turns.id = x.turn_id
+          WHERE turns.thread_id IN (SELECT id FROM family)
+          UNION ALL
+          SELECT e.document_id, e.created_at, true
+          FROM document_edits e
+          WHERE e.thread_id IN (SELECT id FROM family)
+            AND e.actor = 'agent' AND e.kind = 'write' AND e.tree_change IS NULL
+        ) seen
+        GROUP BY document_id
+        ORDER BY max(at) DESC, document_id
+        ${typeof limit === "number" ? sql`LIMIT ${limit}` : sql``}
       `);
-      const mapped = rows
-        .map((row) => ({
-          id: row.id,
-          turnId: row.turn_id,
-          documentId: row.document_id,
-          threadId,
-          touchedAt: new Date(row.touched_at).toISOString(),
-          edited: row.edited,
-        }))
-        .sort((a, b) => b.touchedAt.localeCompare(a.touchedAt));
-      return typeof limit === "number" ? mapped.slice(0, limit) : mapped;
+      return rows.map((row) => ({
+        documentId: row.document_id,
+        threadId,
+        touchedAt: new Date(row.touched_at).toISOString(),
+        edited: row.edited,
+      }));
     },
   };
 }
