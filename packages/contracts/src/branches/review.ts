@@ -162,6 +162,10 @@ export interface ThreadDraftListItem {
   } | null;
   /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
+  /**
+   * The text draft's last committed write (content-free folds keep it), which a whole-item
+   * Discard sends back as `draftSeenAt`. Meaningless when `hasDraft` is false.
+   */
   updatedAt: string;
 }
 
@@ -237,7 +241,13 @@ export type DraftItemSettlement = {
   itemDisposition?: "applied" | "discarded";
 };
 
-export type DraftDiscardRefusalStatus = "stale" | "gone" | "whole_item" | "incomplete_class";
+/** `draft_changed`: the text draft moved on since the writer saw it (`draftSeenAt`); nothing ended. */
+export type DraftDiscardRefusalStatus =
+  | "stale"
+  | "gone"
+  | "whole_item"
+  | "incomplete_class"
+  | "draft_changed";
 
 export type DraftDiscardResponse =
   | ({
@@ -247,12 +257,18 @@ export type DraftDiscardResponse =
     } & DraftItemSettlement)
   | { status: DraftDiscardRefusalStatus; branchId: BranchId; itemKey: DraftItemKey };
 
-/** End one still-hidden creation's branch use; edited-text Discard is browser-local. */
+/**
+ * One item's Discard on the server. `tree` ends only the branch's move or delete: a live chat's
+ * Discard, whose text the writer reverts in the room. `item` ends everything the branch holds
+ * on the document: a still-hidden creation, or a frozen owner's draft, whose room refuses the
+ * writer's text. `draftSeenAt` is the item's `updatedAt` the writer decided on (null: no text
+ * draft); when sent, a draft that moved on refuses as `draft_changed`.
+ */
 export type DraftDiscardRequest = {
   branchId: BranchId;
   itemKey: DraftItemKey;
   commandId: BranchCommandId;
-};
+} & ({ ends: "tree" } | { ends: "item"; draftSeenAt?: string | null });
 
 export const BranchDiscardAllRequestSchema = z.object({
   /** A `branches` row id (D68), never a per-document draft id. */

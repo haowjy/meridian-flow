@@ -11,7 +11,6 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
@@ -35,7 +34,7 @@ import { PendingDocumentPath } from "./PendingDocumentPath";
 import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
 import { RemovedDocumentChip } from "./RemovedDocumentNotice";
 import { recentOpening } from "./recent-opening";
-import type { DocumentFreeze } from "./use-document-freeze";
+import { useDocumentFreeze } from "./use-document-freeze";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 import { useRecordOpenedDocument } from "./use-record-opened-document";
 
@@ -52,8 +51,6 @@ export type ContextViewerProps = {
   /** The address the Editor was asked for, shown as the path while the body is masked. */
   route: { scheme: ProjectContextTreeScheme; path: string | null } | null;
   onSelectContextPath: (path: string, scheme: ProjectContextTreeScheme) => void;
-  /** The Editor's Work, when it has one. */
-  editorWork: Work | null;
   tabs: ContextTab[];
   paneState: ContextPaneState;
   onSelectTab: (tab: ContextTab) => void;
@@ -85,7 +82,6 @@ export function ContextViewer({
   mask,
   route,
   onSelectContextPath,
-  editorWork,
   tabs,
   paneState,
   onSelectTab,
@@ -142,24 +138,22 @@ export function ContextViewer({
     activeTab.rootThreadId === undefined;
 
   // Draft review state: the review's controls live in the identity bar.
-  const { controller, drafts } = useDraftReview();
+  const { controller } = useDraftReview();
   const activeReviewItemKey =
     activeTab &&
     controller.inlineReview?.documentId === activeTab.documentId &&
     controller.inlineReview.shown
       ? controller.inlineReview.itemKey
       : null;
-  const archivedEditorWork = editorWork && isWorkArchived(editorWork) ? editorWork : null;
-  // Archiving freezes the Editor Work's own files and its drafts (D30). A
-  // review edits the draft, so its editor freezes and shows the notice; the
-  // reviewed file itself may be project-owned and keeps its identity bar.
-  const fileFrozen = Boolean(activeFileInWork && archivedEditorWork);
-  const freeze: DocumentFreeze | null =
-    (activeFileInWork || activeReviewItemKey) && archivedEditorWork
-      ? { kind: "work", work: archivedEditorWork }
-      : activeReviewItemKey && drafts.frozen
-        ? { kind: "chat", ownerKey: controller.ownerKey }
-        : null;
+  // One freeze source with the dock and the phone: an archived Work freezes its own files and
+  // its drafts' reviews (D30); a trashed chat freezes its drafts' reviews. The reviewed file
+  // itself may be project-owned, so only its own Work's archive freezes its identity bar.
+  const freeze = useDocumentFreeze(
+    projectId,
+    activeTab,
+    activeReviewItemKey ? controller.ownerKey : null,
+  );
+  const fileFrozen = Boolean(activeFileInWork && freeze?.kind === "work");
 
   return (
     <div

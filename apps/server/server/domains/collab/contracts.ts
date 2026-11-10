@@ -31,6 +31,7 @@ import type {
   CommandLookup,
   CommandLookupKey,
 } from "./domain/branch-commands.js";
+import type { DiscardItem } from "./domain/branch-discard.js";
 import type { ResolvedReviewItem } from "./domain/branch-review-identity.js";
 import type { DraftReviewItem } from "./domain/branch-review-items.js";
 import type { Branches } from "./domain/branches.js";
@@ -455,6 +456,9 @@ export type DraftReviewApi = {
   lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
   discardItem(input: {
     item: DraftReviewItem;
+    /** What ends, and the text draft the writer saw (`DraftDiscardRequest`). */
+    ends: DiscardItem["ends"];
+    draftSeenAt?: DiscardItem["draftSeenAt"];
     userId: UserId;
     envelope: BranchCommandEnvelope;
   }): Promise<CommandOutcome>;

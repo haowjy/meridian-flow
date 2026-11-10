@@ -6018,12 +6018,20 @@ msgstr ""
 msgid "This document's Work is archived. Unarchive the Work to reverse this change."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This draft changed since you looked. Check it, then discard again."
+msgstr ""
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This draft is archived"
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft is no longer here. It may have been applied or discarded already."
+msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This draft just became read-only, so nothing was discarded. Check it, then try again."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx

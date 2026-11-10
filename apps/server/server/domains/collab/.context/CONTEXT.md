@@ -63,9 +63,17 @@ and owner-rolled AI ranges; current single-user projects never query human
 receipts, even when unresolved ranges were requested. The receipt query starts
 with the document's agent edits (partial actor index) and joins parts by edit
 and immutable origin draft, so human typing history need not be scanned. Edited-text Discard belongs to the browser's local undoable edit.
-The per-document HTTP Discard can only end a still-hidden creation's branch use;
-a creation revealed before its locks answers `stale`, without changing text or
-claiming a command. Work Discard all and purge keep the shared close/end-use kernel.
+The per-document HTTP Discard says what it ends. `tree` ends only the branch's move or
+delete: a live chat's Discard, whose text the writer reverts in the room. `item` ends
+everything the branch holds on the document: a still-hidden creation (always ended
+whole), or a frozen lineage's draft, whose room drops the writer's text. An `item`
+Discard may carry `draftSeenAt`, the text draft's `updated_at` the writer decided on;
+the kernel compares it under the draft's row lock and refuses `draft_changed` when the
+draft moved on (a chat restored elsewhere, then written to). `updated_at` and not
+`revision` is the fence because content-free folds keep it. The answer's `itemClosed`
+is what the kernel ended, and the command row is claimed pending and settled with that
+answer in the kernel's transaction. Nothing left to end answers `stale` without changing
+text or claiming a command. Work Discard all and purge keep the shared close/end-use kernel.
 
 ## Revision and review authority
 
@@ -76,7 +84,7 @@ pure deletion and a document snapshot misses tree-only moves. Reads and applies
 compute the token synchronously in their prepared link scope; an unverified
 recovery returns `null`, never a later read's token.
 
-Hidden-creation Discard closes its addressed drafts and peers; Work Discard
+A whole-item Discard closes its addressed drafts and peers; Work Discard
 all closes the branch. Edited-text Discard closes no server peer. Thread-core
 invalidation follows committed close retirement.
 

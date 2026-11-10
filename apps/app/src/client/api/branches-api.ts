@@ -85,7 +85,7 @@ export function unapplyDraftClick(draft: DraftAddress, body: UnapplyClick) {
     { signal: AbortSignal.timeout(10_000) },
   );
 }
-export function discardCreatedDraft(draft: DraftAddress, body: DraftDiscardRequest) {
+export function discardDraftItem(draft: DraftAddress, body: DraftDiscardRequest) {
   return postJson<DraftDiscardResponse>(
     apiProjectBranchDocumentDraftDiscardPath(
       draft.projectId,

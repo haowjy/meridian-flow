@@ -228,7 +228,7 @@ export function useWorkBranchCommands({
       const item = row(draft);
       if (item && (item.isNew || frozen) && target.kind === "draft") {
         const removed: DiscardNotice = { kind: "removed", end() {} };
-        const outcome = owner.discardOnServer(ref(draft), item).then((answer) => {
+        const outcome = owner.discardOnServer(ref(draft), item, frozen).then((answer) => {
           refresh([draft.documentId]);
           if (answer.kind === "done" && !item.isNew) show(removed);
           else if (answer.kind !== "done" && heldNotice.current === removed) endNotice();

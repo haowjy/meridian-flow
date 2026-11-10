@@ -1,4 +1,4 @@
-/** Work draft listing, idempotent hidden-create/whole Discard, and the frozen Apply command. */
+/** Work draft listing, idempotent item and whole Discard, and the frozen Apply command. */
 import type { BranchId, DraftOwner } from "@meridian/contracts";
 import type { BranchCommandResult, ThreadDraftListItem } from "@meridian/contracts/branches";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
@@ -11,8 +11,12 @@ import {
   type BranchCommands,
   type CommandLookup,
 } from "./branch-commands.js";
-import type { BranchDiscard } from "./branch-discard.js";
-import { BranchDiscardApplicableStateChangedError } from "./branch-discard.js";
+import {
+  type BranchDiscard,
+  BranchDiscardApplicableStateChangedError,
+  BranchDiscardDraftChangedError,
+  type DiscardResult,
+} from "./branch-discard.js";
 import type { BranchReviewIdentity } from "./branch-review-identity.js";
 import type { BranchReviewItems, DraftReviewItem } from "./branch-review-items.js";
 import type { Branches } from "./branches.js";
@@ -118,56 +122,71 @@ export function createWorkBranchReviewService(input: {
         const { envelope, item } = command;
         const first = await known(envelope);
         if (first) return first;
-        const settled: BranchCommandResult = {
-          status: "discarded",
+        const refused = (status: "stale" | "gone" | "draft_changed"): BranchCommandResult => ({
+          status,
           branchId: item.branchId,
           itemKey: item.itemKey,
-          itemClosed: true,
-          itemDisposition: "discarded",
+        });
+        // What the kernel ended decides the answer, stored with the command in its transaction.
+        const settled = (ended: DiscardResult): BranchCommandResult => {
+          if (ended.status === "gone") return refused("gone");
+          const closed = ended.branchClosed || ended.closed.includes(item.documentId);
+          return {
+            status: "discarded",
+            branchId: item.branchId,
+            itemKey: item.itemKey,
+            ...(closed
+              ? { itemClosed: true, itemDisposition: "discarded" as const }
+              : { itemClosed: false }),
+          };
         };
         return effect(envelope, async () => {
-          const result = await input.discard
-            .discardItems({
-              branchId: item.branchId,
-              selection: {
-                kind: "items",
-                items: [
-                  {
-                    documentId: item.documentId,
-                    draftId: item.draftId,
-                    origin: item.origin,
-                  },
-                ],
-              },
-              userId: command.userId,
-              command: { envelope, result: settled },
-            })
-            .catch((cause) => {
-              if (cause instanceof BranchDiscardApplicableStateChangedError)
-                return { status: "stale" as const, branchId: item.branchId };
-              throw cause;
-            });
-          return result.status === "stale"
-            ? { status: "stale", branchId: item.branchId, itemKey: item.itemKey }
-            : result.status === "gone"
-              ? { status: "gone", branchId: item.branchId, itemKey: item.itemKey }
-              : settled;
+          try {
+            return settled(
+              await input.discard.discardItems({
+                branchId: item.branchId,
+                selection: {
+                  kind: "items",
+                  items: [
+                    {
+                      documentId: item.documentId,
+                      origin: item.origin,
+                      ends: command.ends,
+                      ...(command.draftSeenAt !== undefined
+                        ? { draftSeenAt: command.draftSeenAt }
+                        : {}),
+                    },
+                  ],
+                },
+                userId: command.userId,
+                command: { envelope, result: settled },
+              }),
+            );
+          } catch (cause) {
+            if (cause instanceof BranchDiscardApplicableStateChangedError) return refused("stale");
+            if (cause instanceof BranchDiscardDraftChangedError) return refused("draft_changed");
+            throw cause;
+          }
         });
       },
       async discardAll(command) {
         const { envelope, branchId } = command;
         const first = await known(envelope);
         if (first) return first;
-        const settled: BranchCommandResult = { status: "discarded", branchId };
-        return effect(envelope, async () => {
-          const result = await input.discard.discardItems({
-            branchId,
-            selection: { kind: "whole" },
-            userId: command.userId,
-            command: { envelope, result: settled },
-          });
-          return result.status === "gone" ? { status: "gone", branchId } : settled;
-        });
+        const settled = (ended: DiscardResult): BranchCommandResult =>
+          ended.status === "gone"
+            ? { status: "gone", branchId }
+            : { status: "discarded", branchId };
+        return effect(envelope, async () =>
+          settled(
+            await input.discard.discardItems({
+              branchId,
+              selection: { kind: "whole" },
+              userId: command.userId,
+              command: { envelope, result: settled },
+            }),
+          ),
+        );
       },
     },
   };

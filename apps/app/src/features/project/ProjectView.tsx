@@ -710,7 +710,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     current:
       props.editorScope.status === "ready"
         ? {
-            editorWork: props.editorWork,
             activeContextScheme: props.activeContextScheme,
             activeContextPath: props.activeContextPath,
             activeContextChat: props.activeContextChat,
@@ -862,11 +861,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               {...frameEditorRoute}
               mask={editorMask}
               resolvedEditor={editorPresentation.resolved}
-              editorWork={
-                props.activeScreen === "context"
-                  ? props.editorWork
-                  : (mountedEditor?.editorWork ?? null)
-              }
               routeDisplayed={props.activeScreen === "context"}
               active={editorActive}
               sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}

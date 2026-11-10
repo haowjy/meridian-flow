@@ -177,7 +177,14 @@ const UnapplyClickBody = z.strictObject({
   commandId: BranchCommandIdSchema,
   applyCommandId: BranchCommandIdSchema,
 });
-const DiscardBody = z.strictObject(Base);
+const DiscardBody = z.discriminatedUnion("ends", [
+  z.strictObject({ ...Base, ends: z.literal("tree") }),
+  z.strictObject({
+    ...Base,
+    ends: z.literal("item"),
+    draftSeenAt: z.iso.datetime().nullable().optional(),
+  }),
+]);
 
 function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, what: string): z.infer<S> {
   const parsed = schema.safeParse(body ?? {});
@@ -768,7 +775,8 @@ const goneBranch = (branchId: BranchId) => (): CommandRouteResult => ({
 });
 
 /**
- * Item Discard (the whole item through the one kernel, §12.3). A document deleted live authorizes through the draft (§13.3).
+ * Item Discard through the one kernel (§12.3): the move or delete only, or the whole item, as
+ * the request says. A document deleted live authorizes through the draft (§13.3).
  */
 export async function handleDiscardWorkDraftRequest(
   deps: BranchRouteServices,
@@ -794,6 +802,10 @@ export async function handleDiscardWorkDraftRequest(
       effect: () =>
         deps.documentSync.draftReview.discardItem({
           item,
+          ends: request.ends,
+          ...(request.ends === "item" && request.draftSeenAt !== undefined
+            ? { draftSeenAt: request.draftSeenAt }
+            : {}),
           userId: input.userId,
           envelope,
         }),

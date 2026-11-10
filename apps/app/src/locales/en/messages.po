@@ -6018,6 +6018,10 @@ msgstr "This document was removed when the reply that created it didn't finish."
 msgid "This document's Work is archived. Unarchive the Work to reverse this change."
 msgstr "This document's Work is archived. Unarchive the Work to reverse this change."
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This draft changed since you looked. Check it, then discard again."
+msgstr "This draft changed since you looked. Check it, then discard again."
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This draft is archived"
 msgstr "This draft is archived"
@@ -6025,6 +6029,10 @@ msgstr "This draft is archived"
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft is no longer here. It may have been applied or discarded already."
 msgstr "This draft is no longer here. It may have been applied or discarded already."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This draft just became read-only, so nothing was discarded. Check it, then try again."
+msgstr "This draft just became read-only, so nothing was discarded. Check it, then try again."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "This draft was discarded, so the change wasn't kept. The AI will read it again."

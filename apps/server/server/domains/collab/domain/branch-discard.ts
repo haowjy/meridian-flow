@@ -16,7 +16,9 @@ import { DraftCasConflictError } from "./draft-store.js";
 export type DiscardSelection = { kind: "items"; items: readonly DiscardItem[] } | { kind: "whole" };
 
 export type DiscardResult =
-  | { status: "discarded"; branchId: BranchId; branchClosed: boolean }
+  | { status: "discarded"; branchId: BranchId; branchClosed: true }
+  /** `closed`: the selected documents whose item left review (the kernel closed all it held). */
+  | { status: "discarded"; branchId: BranchId; branchClosed: false; closed: readonly DocumentId[] }
   | { status: "gone"; branchId: BranchId };
 
 export interface BranchDiscard {
@@ -28,18 +30,30 @@ export interface BranchDiscard {
     branchId: BranchId;
     selection: DiscardSelection;
     userId?: UserId;
-    /** The writer's command, claimed `done` in the kernel's transaction with this result (§4.6). */
-    command?: { envelope: BranchCommandEnvelope; result: BranchCommandResult };
+    /** The writer's command, settled `done` in the kernel's transaction with what it ended (§4.6). */
+    command?: {
+      envelope: BranchCommandEnvelope;
+      result(ended: DiscardResult): BranchCommandResult;
+    };
   }): Promise<DiscardResult>;
 }
 
 /** One selected item as the kernel ends it. */
 export type DiscardItem = {
   documentId: DocumentId;
-  /** The branch's draft on it; null for a created image. */
-  draftId: string | null;
   /** Provenance only: the kernel classifies by the document's visibility under its locks (§2.2). */
   origin: "created" | "edited";
+  /**
+   * What ends: `tree`, only the branch's move or delete (a live chat's Discard, whose text the
+   * writer reverts in the room), or `item`, everything the branch holds on the document. A
+   * hidden creation always ends whole.
+   */
+  ends: "tree" | "item";
+  /**
+   * For `item`: the text draft's `updated_at` as the writer saw it (ISO; null, no text draft).
+   * A draft that moved on refuses the Discard (`BranchDiscardDraftChangedError`). Absent: no fence.
+   */
+  draftSeenAt?: string | null;
 };
 
 export type DiscardKernelInput = {
@@ -55,9 +69,25 @@ export class BranchDiscardApplicableStateChangedError extends Error {
   }
 }
 
+/** The item's text draft is not the one the writer saw: nothing ended. */
+export class BranchDiscardDraftChangedError extends Error {
+  constructor() {
+    super("This draft changed since the writer saw it");
+    this.name = "BranchDiscardDraftChangedError";
+  }
+}
+
 export type DiscardKernelResult = {
   /** Storage URLs of tombstoned binaries: deleted after commit, best effort. */
   releasedObjects: readonly string[];
+  /** The selected documents whose item left review: nothing of the branch remains on them. */
+  closed: readonly DocumentId[];
+};
+
+/** The writer's command, settled in the kernel's transaction; null: the branch is not active. */
+export type DiscardCommandClaim = {
+  envelope: BranchCommandEnvelope;
+  result(ended: DiscardKernelResult | null): BranchCommandResult;
 };
 
 export interface BranchDiscardStore {
@@ -68,7 +98,7 @@ export interface BranchDiscardStore {
    */
   discardLocked(input: {
     kernel: DiscardKernelInput;
-    command?: { envelope: BranchCommandEnvelope; result: BranchCommandResult };
+    command?: DiscardCommandClaim;
   }): Promise<DiscardKernelResult | null>;
   /**
    * Runs `callback` once the ambient transaction's root commits, never after a rollback
@@ -87,7 +117,18 @@ export class BranchDiscardScopeChangedError extends Error {
 
 const ATTEMPTS = 4;
 
-type CommandClaim = { envelope: BranchCommandEnvelope; result: BranchCommandResult };
+type CommandClaim = NonNullable<Parameters<BranchDiscard["discardItems"]>[0]["command"]>;
+
+function discardResult(
+  branchId: BranchId,
+  selection: DiscardSelection,
+  ended: DiscardKernelResult | null,
+): DiscardResult {
+  if (!ended) return { status: "gone", branchId };
+  return selection.kind === "whole"
+    ? { status: "discarded", branchId, branchClosed: true }
+    : { status: "discarded", branchId, branchClosed: false, closed: ended.closed };
+}
 
 export function createBranchDiscard(deps: {
   branches: Pick<Branches, "byIds">;
@@ -127,39 +168,26 @@ export function createBranchDiscard(deps: {
   /** `discardLocked` in the attempt's scope, its objects released once that transaction commits. */
   async function commitDiscard(
     attempt: Attempt,
-    input: Parameters<BranchDiscardStore["discardLocked"]>[0],
+    kernel: DiscardKernelInput,
+    command: CommandClaim | undefined,
   ): Promise<DiscardKernelResult | null> {
     await testHook("discard.beforeCommitScope");
     return attempt.commit(async () => {
-      const ended = await deps.store.discardLocked(input);
+      const ended = await deps.store.discardLocked({
+        kernel,
+        ...(command
+          ? {
+              command: {
+                envelope: command.envelope,
+                result: (ended) =>
+                  command.result(discardResult(kernel.branchId, kernel.selection, ended)),
+              },
+            }
+          : {}),
+      });
       if (ended && !deps.store.deferUntilCommit(() => deps.releaseObjects(ended.releasedObjects)))
         throw new Error("Discard must run inside its attempt's transaction");
       return ended;
-    });
-  }
-
-  function whole(
-    attempt: Attempt,
-    branchId: BranchId,
-    command: CommandClaim | undefined,
-    userId: UserId | undefined,
-  ): Promise<DiscardKernelResult | null> {
-    return commitDiscard(attempt, {
-      kernel: { userId, branchId, selection: { kind: "whole" } },
-      ...(command ? { command } : {}),
-    });
-  }
-
-  function items(
-    attempt: Attempt,
-    branchId: BranchId,
-    selected: readonly DiscardItem[],
-    command: CommandClaim | undefined,
-    userId: UserId | undefined,
-  ): Promise<DiscardKernelResult | null> {
-    return commitDiscard(attempt, {
-      kernel: { userId, branchId, selection: { kind: "items", items: selected } },
-      ...(command ? { command } : {}),
     });
   }
 
@@ -170,19 +198,14 @@ export function createBranchDiscard(deps: {
       const [branch] = await deps.branches.byIds([branchId]);
       if (branch?.status !== "active") return gone;
 
-      if (input.selection.kind === "whole") {
-        const ended = await deps.holdRetirement(() =>
-          attempts((attempt) => whole(attempt, branchId, input.command, input.userId)),
-        );
-        return ended ? { status: "discarded", branchId, branchClosed: true } : gone;
-      }
-
-      const selected = input.selection.items;
-      if (selected.length === 0) return { status: "discarded", branchId, branchClosed: false };
+      const { selection } = input;
+      if (selection.kind === "items" && selection.items.length === 0)
+        return { status: "discarded", branchId, branchClosed: false, closed: [] };
+      const kernel = { userId: input.userId, branchId, selection };
       const ended = await deps.holdRetirement(() =>
-        attempts((attempt) => items(attempt, branchId, selected, input.command, input.userId)),
+        attempts((attempt) => commitDiscard(attempt, kernel, input.command)),
       );
-      return ended ? { status: "discarded", branchId, branchClosed: false } : gone;
+      return discardResult(branchId, selection, ended);
     },
   };
 }

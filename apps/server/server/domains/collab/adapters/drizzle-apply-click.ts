@@ -28,18 +28,13 @@ import type {
   ApplyRenamedNote,
 } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
-import {
-  applyCommandEffects,
-  branchCommands,
-  branches,
-  documentDrafts,
-} from "@meridian/database/schema";
+import { applyCommandEffects, branches, documentDrafts } from "@meridian/database/schema";
 import {
   allocateDocumentClient,
   buildDocumentSchema,
   PROSEMIRROR_FRAGMENT_NAME,
 } from "@meridian/prosemirror-schema";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { LineageDraftsUnavailableError } from "../../../shared/draft-owner.js";
@@ -75,7 +70,11 @@ import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coor
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { storedDocument } from "../domain/stored-document.js";
 import { createApplyTreeOperations, liveLocation } from "./drizzle-apply-tree.js";
-import { claimCommandWithinTx, lookupCommand } from "./drizzle-branch-commands.js";
+import {
+  claimCommandWithinTx,
+  lookupCommand,
+  settleCommandWithinTx,
+} from "./drizzle-branch-commands.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
@@ -240,10 +239,7 @@ export function createDrizzleApplyClick(
             const finish = async (
               result: import("@meridian/contracts/branches").UnapplyClickResult,
             ) => {
-              await tx
-                .update(branchCommands)
-                .set({ state: "done", result, completedAt: sql`clock_timestamp()` })
-                .where(eq(branchCommands.id, commandId));
+              await settleCommandWithinTx(tx, commandId, result);
               return result;
             };
             if (!(await deps.branches.lockActive(prepared.branchId))) return finish(closed());
@@ -471,10 +467,7 @@ export function createDrizzleApplyClick(
                     )
                       throw new BranchCommandExistsError(command.envelope.commandId);
                     const finish = async (result: ApplyClickResult) => {
-                      await tx
-                        .update(branchCommands)
-                        .set({ state: "done", result, completedAt: sql`clock_timestamp()` })
-                        .where(eq(branchCommands.id, command.envelope.commandId));
+                      await settleCommandWithinTx(tx, command.envelope.commandId, result);
                       return result;
                     };
                     if (!(await deps.branches.lockActive(branchId))) return finish(closed(command));
