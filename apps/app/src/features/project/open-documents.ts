@@ -12,7 +12,7 @@ import {
   type ThreadDraftListItem,
   workIdOfDraftOwnerKey,
 } from "@meridian/contracts/branches";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { unwrapListQuery } from "@/client/query/list-query";
@@ -227,21 +227,34 @@ export function useOpenDocuments(projectId: string): {
   const slice = useContextTabs(projectId);
   const scope = useResolveScope(projectId);
   const pinned = usePinnedDraftRows(projectId, pinOwnerKeys(slice.tabs, scope.ownerKey));
-  // A pin names a draft; once its owner's list is read and no longer holds the item, the draft
-  // has ended (Applied, Discarded, or gone elsewhere), and the pin goes with it. The address
-  // sync then drops `item=`.
+  // A pin names a draft. A cached list lacking the item may only be stale (the draft was made a
+  // moment ago), so the pin goes only once a fresh read of the owner's list also lacks it: the
+  // draft has ended (Applied, Discarded, or gone in another tab). A failed read clears nothing.
+  // The address sync then drops `item=`. The effect keys on the pins that look missing, so its
+  // own fetch cannot re-trigger it.
+  const queryClient = useQueryClient();
+  const missingPins = slice.tabs.flatMap(({ reviewPin: pin }) => {
+    if (!pin) return [];
+    const list = pin.ownerKey === scope.ownerKey ? scope.drafts : pinned.get(pin.ownerKey);
+    return list?.status === "ready" &&
+      !list.failed &&
+      !list.rows.some((r) => r.itemKey === pin.itemKey)
+      ? [JSON.stringify([pin.ownerKey, pin.itemKey])]
+      : [];
+  });
+  const missingKey = [...new Set(missingPins)].join();
   useEffect(() => {
-    for (const { reviewPin: pin } of slice.tabs) {
-      if (!pin) continue;
-      const list = pin.ownerKey === scope.ownerKey ? scope.drafts : pinned.get(pin.ownerKey);
-      if (
-        list?.status === "ready" &&
-        !list.failed &&
-        !list.rows.some((row) => row.itemKey === pin.itemKey)
-      )
-        useContextTabsStore.getState().clearReviewPins(projectId, pin);
+    for (const key of new Set(missingPins)) {
+      const [ownerKey, itemKey] = JSON.parse(key) as [string, string];
+      queryClient
+        .fetchQuery({ ...ownerDraftsQueryOptions(projectId, ownerKey), staleTime: 0 })
+        .then((fresh) => {
+          if (!fresh.items.some((row) => row.itemKey === itemKey))
+            useContextTabsStore.getState().clearReviewPins(projectId, { ownerKey, itemKey });
+        })
+        .catch(() => {});
     }
-  }, [projectId, slice.tabs, scope, pinned]);
+  }, [projectId, queryClient, missingKey]);
   return useMemo(() => {
     const tabs = slice.tabs
       .filter(isEditorContextTab)
