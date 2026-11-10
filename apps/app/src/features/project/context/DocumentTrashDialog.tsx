@@ -4,26 +4,18 @@ import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
-import { ArchiveRestore, ChevronLeft, X } from "lucide-react";
-import { Dialog as DialogPrimitive } from "radix-ui";
+import { ArchiveRestore, ChevronLeft } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { useDocumentTrash, useTrashedDocument } from "@/client/query/useDocumentTrash";
 import { DocumentNotice } from "@/components/app/DocumentNotice";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogOverlay,
-  DialogPortal,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PhoneTakeover } from "@/components/ui/phone-shell";
 import { role } from "@/components/ui/roles";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
@@ -172,77 +164,47 @@ function PhoneTrashContent({
 }) {
   const detail = typeof destination === "string";
   return (
-    <DialogPortal>
-      <DialogOverlay />
-      <DialogPrimitive.Content
-        data-slot="dialog-content"
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          (event.target as HTMLElement | null)?.focus({ preventScroll: true });
-        }}
-        className="fixed inset-0 z-50 flex flex-col bg-background outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
-      >
-        <header
-          className="shrink-0 border-b border-border-subtle bg-background"
-          style={{ paddingTop: "env(safe-area-inset-top)" }}
-        >
-          <div
-            className="flex h-12 items-center gap-1"
-            style={{
-              paddingLeft: "calc(0.5rem + env(safe-area-inset-left))",
-              paddingRight: "calc(0.5rem + env(safe-area-inset-right))",
-            }}
-          >
-            {detail ? (
-              <IconButton size="sm" label={t`Back to Trash`} onClick={onBack}>
-                <ChevronLeft className="size-5" aria-hidden />
-              </IconButton>
-            ) : (
-              <span className="size-11 shrink-0" aria-hidden />
-            )}
-            <DialogTitle className="min-w-0 flex-1 truncate text-center text-sm font-semibold text-foreground">
-              {detail
-                ? entries.find((entry) => entry.documentId === selectedId)?.name || t`Trash`
-                : t`Trash`}
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              {detail ? (
-                <Trans>Read-only document in Trash.</Trans>
-              ) : (
-                <Trans>Deleted documents.</Trans>
-              )}
-            </DialogDescription>
-            <DialogClose asChild>
-              <IconButton size="sm" label={t`Close Trash`}>
-                <X className="size-5" aria-hidden />
-              </IconButton>
-            </DialogClose>
-          </div>
-        </header>
-        <div className="min-h-0 flex-1">
-          {detail && selectedId ? (
-            <TrashedDocumentView
-              key={selectedId}
-              projectId={projectId}
-              documentId={selectedId}
-              state={states.get(selectedId)}
-              onRestore={onRestore}
-              showHeader={false}
-            />
-          ) : (
-            <TrashListPane
-              entries={entries}
-              query={query}
-              selectedId={undefined}
-              states={states}
-              onSelect={onSelect}
-              onRestore={onRestore}
-              className="h-full overflow-y-auto overscroll-contain py-2"
-            />
-          )}
-        </div>
-      </DialogPrimitive.Content>
-    </DialogPortal>
+    <PhoneTakeover
+      title={
+        detail
+          ? entries.find((entry) => entry.documentId === selectedId)?.name || t`Trash`
+          : t`Trash`
+      }
+      description={
+        detail ? <Trans>Read-only document in Trash.</Trans> : <Trans>Deleted documents.</Trans>
+      }
+      closeLabel={t`Close Trash`}
+      leading={
+        detail ? (
+          <IconButton size="sm" label={t`Back to Trash`} onClick={onBack}>
+            <ChevronLeft className="size-5" aria-hidden />
+          </IconButton>
+        ) : undefined
+      }
+    >
+      <div className="min-h-0 flex-1">
+        {detail && selectedId ? (
+          <TrashedDocumentView
+            key={selectedId}
+            projectId={projectId}
+            documentId={selectedId}
+            state={states.get(selectedId)}
+            onRestore={onRestore}
+            showHeader={false}
+          />
+        ) : (
+          <TrashListPane
+            entries={entries}
+            query={query}
+            selectedId={undefined}
+            states={states}
+            onSelect={onSelect}
+            onRestore={onRestore}
+            className="h-full overflow-y-auto overscroll-contain py-2"
+          />
+        )}
+      </div>
+    </PhoneTakeover>
   );
 }
 
