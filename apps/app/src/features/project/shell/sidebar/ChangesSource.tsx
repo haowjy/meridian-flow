@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
@@ -61,27 +61,30 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   // A chat on a named Work has no drafts of its own under None: its Work holds them.
   const lineageKey =
     !picked && chatWork?.isNoWork ? chatOwnerKey(chatWork, thread?.rootThreadId ?? null) : "";
-  const lineageDrafts = useOwnerDrafts(projectId, lineageKey, { enabled: !picked });
-  if (picked) {
-    const name = picked.name;
+  const lineageCount = useOwnerDrafts(projectId, lineageKey, { enabled: !picked }).drafts?.length;
+  // SourcesBody's context carries this scope: a new object every render would redraw every pane.
+  return useMemo(() => {
+    if (picked) {
+      const name = picked.name;
+      return {
+        work: picked,
+        ownerKey: workOwnerKey(picked),
+        heading: t`Changes in ${name}`,
+        empty: t`Nothing to review in ${name}.`,
+        count: picked.pendingDocumentCount,
+        offered: true,
+      };
+    }
+    const count = lineageCount ?? 0;
     return {
-      work: picked,
-      ownerKey: workOwnerKey(picked),
-      heading: t`Changes in ${name}`,
-      empty: t`Nothing to review in ${name}.`,
-      count: picked.pendingDocumentCount,
-      offered: true,
+      work: lineageKey ? chatWork : null,
+      ownerKey: lineageKey,
+      heading: t`Changes in this chat`,
+      empty: t`Nothing to review in this chat.`,
+      count,
+      offered: Boolean(lineageKey) && count > 0,
     };
-  }
-  const count = lineageDrafts.drafts?.length ?? 0;
-  return {
-    work: lineageKey ? chatWork : null,
-    ownerKey: lineageKey,
-    heading: t`Changes in this chat`,
-    empty: t`Nothing to review in this chat.`,
-    count,
-    offered: Boolean(lineageKey) && count > 0,
-  };
+  }, [picked, chatWork, lineageKey, lineageCount]);
 }
 
 /**
