@@ -67,6 +67,8 @@ export type ContextViewerProps = {
   dockToggle?: PaneHeaderRailToggle;
   /** Whether this persistent surface is currently visible as the active destination. */
   active: boolean;
+  /** Whether the address names a document, so the Editor is the main view; off it the dock may hold the selected tab. */
+  routeDisplayed: boolean;
   layoutSaveFailed?: boolean;
   onNewDocument?: () => void;
   /** Return to the Editor destination's chooser without closing any tab. */
@@ -93,6 +95,7 @@ export function ContextViewer({
   sidebarToggle,
   dockToggle,
   active,
+  routeDisplayed,
   onNewDocument,
   onShowRecents,
   layoutSaveFailed = false,
@@ -195,7 +198,11 @@ export function ContextViewer({
                     trackedTabs={trackedTabs}
                     activeTabId={activeIsEditable ? activeTabId : null}
                     renderTab={(tab, { mountEditor, shown }) => (
-                      <DocumentReviewProvider projectId={projectId} tab={tab}>
+                      <DocumentReviewProvider
+                        projectId={projectId}
+                        tab={tab}
+                        showing={routeDisplayed && shown}
+                      >
                         <EditorTabFrame
                           {...chrome}
                           tab={tab}
@@ -211,7 +218,11 @@ export function ContextViewer({
               </PaintScope>
             ) : null}
             {activeTab?.kind === "viewer" ? (
-              <DocumentReviewProvider projectId={projectId} tab={activeTab}>
+              <DocumentReviewProvider
+                projectId={projectId}
+                tab={activeTab}
+                showing={routeDisplayed}
+              >
                 <DocumentChrome {...chrome} tab={activeTab} />
                 <div className="flex min-h-0 flex-1 flex-col">
                   <ContextViewerHost projectId={projectId} tab={activeTab} />

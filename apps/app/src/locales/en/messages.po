@@ -2267,6 +2267,10 @@ msgstr "Couldn't load the preview."
 msgid "Couldn't load this document."
 msgstr "Couldn't load this document."
 
+#: src/features/project/context/ContextDocumentHost.tsx
+msgid "Couldn't load this draft."
+msgstr "Couldn't load this draft."
+
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."

@@ -20,7 +20,7 @@ import {
   getProjectContextAvailability,
   getProjectDocumentAddress,
 } from "@/client/api/projects-api";
-import { type DraftPin, readDocumentView } from "@/client/project-shell/document-views";
+import { type DraftPin, endPin, readDocumentView } from "@/client/project-shell/document-views";
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
@@ -606,7 +606,9 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   useLayoutEffect(() => {
     if (!reviewGone || !navigation) return;
     const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
-    if (ticket) void navigation.replaceIfCurrent(ticket, withoutReview(address));
+    // `reviewEnded` lets the document say once that the link's draft has ended.
+    if (ticket)
+      void navigation.replaceIfCurrent(ticket, withoutReview(address), { reviewEnded: true });
   }, [reviewGone, navigation, location, address]);
   const removedTitle = documentDestination?.path.split("/").filter(Boolean).at(-1) ?? null;
   const mainIssue = parsed.kind === "invalid" ? "unavailable" : undefined;
@@ -751,6 +753,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         const closed = draftCommands.state(itemKey);
         const live = closed.liveUri ? parseContextUri(closed.liveUri) : null;
         contextRemoval.adoptReviewBinding(projectId);
+        // The view owns the pin: the replace below only rewrites the address to follow it.
+        endPin(user.userId, projectId, closingRef);
         void now.navigation.replaceIfCurrent(now.navigation.capture(), {
           ...now.address,
           ...(live

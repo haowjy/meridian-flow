@@ -79,17 +79,20 @@ export function ReviewLaunchProvider({
   const beside = useContext(BesideChatContext);
   const openEditorReview = useCallback<EditorReviewCommand>(
     async (target) => {
-      setDocumentView(accountId, projectId, target.documentId, {
-        pin: {
-          ownerKey: target.ownerKey,
-          itemKey: target.itemKey,
-          ...(target.focus ? { changeId: target.focus.id } : {}),
-        },
-      });
+      // The pin is written once the document is open, so a cancelled or failed navigation leaves
+      // no other host holding this document switched to the draft.
+      const pin = () =>
+        setDocumentView(accountId, projectId, target.documentId, {
+          pin: {
+            ownerKey: target.ownerKey,
+            itemKey: target.itemKey,
+            ...(target.focus ? { changeId: target.focus.id } : {}),
+          },
+        });
       const tab = contextTabFromDraftGroup(target);
       // Beside the chat the tab store opens and selects; there is no address to route to.
       if (beside && tab) {
-        beside(tab, claimOpenIntent());
+        if (beside(tab, claimOpenIntent()).kind === "opened") pin();
         return;
       }
       const launch = ++sequence.current;
@@ -104,7 +107,9 @@ export function ReviewLaunchProvider({
             tab: tab ?? undefined,
             itemKey: target.itemKey,
             reviewOwner: target.ownerKey,
+            changeId: target.focus?.id,
             canCommit: () => sequence.current === launch,
+            afterCommit: pin,
           },
         );
         reportRouteSettlement(projectId, target, result.kind, attempt + 1);

@@ -53,8 +53,8 @@ export function DockShell({
 }: DockShellProps) {
   const dockDocument = useDockedDocument(projectId, screen);
   // The header's version and review controls and the document below them are one host.
-  const review = useDocumentReview(projectId, dockDocument?.tab ?? null);
   const inDock = placement === "dock";
+  const review = useDocumentReview(projectId, dockDocument?.tab ?? null, inDock && visible);
   const overlay = inDock && dockDocument ? "document" : null;
   const showPrimary = overlay === null;
 

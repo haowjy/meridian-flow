@@ -308,14 +308,16 @@ export function createProjectNavigation(
     async replaceIfCurrent(
       ticket: ProjectNavigationTicket,
       address: ProjectAddress,
+      /** Marks the replaced entry, for what reads its history state. */
+      mark?: Record<string, unknown>,
     ): Promise<ProjectAddressReplacement> {
       // Address ownership effects may race a writer's destination command. A
       // delayed repair must never retire that command or ask its leave guard.
       if (!isCurrent(ticket) || pending || cancelDecision) return { kind: "superseded" };
       const entry = port.read();
-      if (sameEntryAddress(entry, address)) return { kind: "replaced" };
+      if (sameEntryAddress(entry, address) && !mark) return { kind: "replaced" };
       try {
-        port.replaceEntry(projectAddressHref(address), entry.state);
+        port.replaceEntry(projectAddressHref(address), { ...entry.state, ...mark });
         return { kind: "replaced" };
       } catch (error) {
         return { kind: "failed", error, ticket: capture() };

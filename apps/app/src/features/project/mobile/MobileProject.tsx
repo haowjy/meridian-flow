@@ -193,6 +193,7 @@ function renderActiveView(
           key={document?.documentId ?? ""}
           projectId={props.projectId}
           tab={document}
+          showing
         >
           <MobileDocumentHost
             projectId={props.projectId}

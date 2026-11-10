@@ -2,6 +2,7 @@
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
+import type { Editor } from "@tiptap/core";
 import {
   createContext,
   type ReactNode,
@@ -18,7 +19,7 @@ import {
   useOwnerDraftsFrozen,
 } from "@/client/query/useOwnerDrafts";
 import { documentBasename } from "@/client/query/work-branch-files";
-import type { EditorHistoryHandle } from "@/core/editor/editor-history";
+import { editorHistory } from "@/core/editor/editor-history";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import type { CapturedApply, CommandOutcome, DiscardNotice } from "./draft-command-owner";
@@ -46,17 +47,19 @@ export function useWorkBranchCommands({
   work,
   ownerKey,
   threadId = null,
-  history = "notice",
-  editorHistory,
+  reviewEditor,
 }: {
   projectId: string;
   work: Work | null;
   /** Whose drafts the commands act on (`work:<id>` or `lineage:<root>`); "" acts on none. */
   ownerKey: string;
   threadId?: string | null;
-  /** Whose Undo takes a Discard back: the reviewing editor's, or the notice this surface shows. */
-  history?: "editor" | "notice";
-  editorHistory?: (draft: DraftReviewSelection) => EditorHistoryHandle | null;
+  /**
+   * A surface with an editor: the editor reviewing `draft` in this surface, whose own Undo takes
+   * an Apply or Discard back (null: none is reviewing it, so the command is not sent). Without
+   * it the surface has no editor, and the notice it shows takes a Discard back.
+   */
+  reviewEditor?: (draft: DraftReviewSelection) => Editor | null;
 }) {
   const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
@@ -170,7 +173,7 @@ export function useWorkBranchCommands({
         target,
         bringBack,
         (tree && item?.tree) || undefined,
-        editorHistory?.(draft),
+        editorHistoryOf(reviewEditor?.(draft)),
       );
       if (!captured) return null;
       const present = (outcome: CommandOutcome) => {
@@ -227,6 +230,7 @@ export function useWorkBranchCommands({
       if (resetNotice) endNotice();
       if (locked) return blocked();
       const item = row(draft);
+      const history = reviewEditor ? reviewEditor(draft) : "notice";
       if (item && (item.isNew || frozen) && target.kind === "draft") {
         const removed: DiscardNotice = { kind: "removed", end() {} };
         const outcome = owner.discardOnServer(ref(draft), item, frozen).then((answer) => {
@@ -368,19 +372,11 @@ export function useWorkBranchCommands({
         });
       },
     };
-  }, [
-    owner,
-    locked,
-    frozen,
-    projectId,
-    ownerKey,
-    threadId,
-    history,
-    editorHistory,
-    queryClient,
-    notice,
-  ]);
+  }, [owner, locked, frozen, projectId, ownerKey, threadId, reviewEditor, queryClient, notice]);
 }
+
+const editorHistoryOf = (editor: Editor | null | undefined) =>
+  editor ? editorHistory(editor) : null;
 
 const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);
 export function WorkBranchCommandsBoundary({
