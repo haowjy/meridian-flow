@@ -7,7 +7,6 @@ client contracts, stores and server-owned runtime behavior.
   the address, wait for it until a real neutral pending destination exists; don't
   mount a fabricated route to navigate early.
 - New persistent state picks a tier before it ships ([state tiers][state-tiers]).
-  Works and threads have no offline contract yet.
 - Choose a command's lifecycle before wiring it ([writer commands][commands]).
   Command records that outlive their caller, stack per entity, or share one
   failure across surfaces go in a per-domain record store, as Work commands do.
@@ -24,12 +23,12 @@ client contracts, stores and server-owned runtime behavior.
 - Separate adjacent facts with layout, typography, sentences, or parentheses, not
   metadata-style `·`, `•`, `—`, or `|`. A file-detail row may keep `·` with a
   colocated `slop-lint: allow middle-dot file-detail row` comment
-  ([copy separation][copy-separation]).
+  ([copy and feedback][copy-and-feedback]).
 - A row or menu shows only the actions that can succeed now; a fixed toolbar
   greys one instead, with the reason on hover. Feedback doesn't push content down
-  ([offer only what applies][offer-only]).
+  ([copy and feedback][copy-and-feedback]).
 - A list row is one line until it has something to say
-  ([trust the user][trust-the-user]).
+  ([copy and feedback][copy-and-feedback]).
 
 Depth: [architecture and contracts](.context/CONTEXT.md),
 [performance traps](.context/frontend-perf.md),
@@ -38,6 +37,4 @@ Depth: [architecture and contracts](.context/CONTEXT.md),
 
 [state-tiers]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/state-tier-contract.md
 [commands]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/optimistic-commands.md
-[copy-separation]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/copy-and-feedback.md
-[offer-only]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/copy-and-feedback.md
-[trust-the-user]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/copy-and-feedback.md
+[copy-and-feedback]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/copy-and-feedback.md
