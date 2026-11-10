@@ -31,7 +31,7 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 import { useChatNavigation } from "../routing/chat-navigation";
-import type { ContextRouteRequest } from "../routing/project-route";
+import type { ContextRouteTarget } from "../routing/project-route";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { ProjectOwnerNamesProvider } from "./ProjectOwnerNamesProvider";
@@ -43,7 +43,7 @@ export type ChatScreenProps = {
   threadId: string | null;
   activeWork: Work | null;
   availableWorks: readonly Work[];
-  onOpenContextTarget?: (target: ContextRouteRequest) => void;
+  onOpenContextTarget?: (target: ContextRouteTarget) => void;
   /** False while the host keeps the chat mounted but hidden. */
   visible?: boolean;
 };
@@ -126,7 +126,7 @@ function ChatScreenLoaded({
   availableWorks: readonly Work[];
   projectThreads: Thread[];
   onSelectThread: (threadId: string) => void;
-  onOpenContextTarget?: (target: ContextRouteRequest) => void;
+  onOpenContextTarget?: (target: ContextRouteTarget) => void;
   visible: boolean;
 }) {
   const {

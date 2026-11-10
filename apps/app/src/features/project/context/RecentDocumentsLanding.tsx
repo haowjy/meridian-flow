@@ -256,7 +256,6 @@ async function openRecent(
     {
       scheme: "unfiled",
       path: "",
-      workId: ports.editorWorkId ?? undefined,
       documentId: item.documentId,
     },
     {

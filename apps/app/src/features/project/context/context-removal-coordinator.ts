@@ -1,6 +1,5 @@
 /** Account-lifetime effect shell for exact context removal transitions. */
 
-import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import type { LiveDocumentSessionAuthority, WorkingSetRoute } from "@meridian/contracts/protocol";
 import {
   type ContextTab,
@@ -39,7 +38,6 @@ import {
   contextRouteMatchesSearch,
   type ProjectSearch,
   projectSearchEquals,
-  targetInEditorOf,
 } from "../routing/project-route";
 import {
   type ContextAvailabilityLocalBatchPlan,
@@ -48,7 +46,6 @@ import {
 import {
   type ContextRemovalOutcome,
   type ContextRouteIdentity,
-  chooseAdmittedFallback,
   planCandidateRejection,
   planContextRemoval,
   type RouteContinuityVerdict,
@@ -70,7 +67,6 @@ import {
   type SelectionTransition,
   sameLocator,
   selectionAtRoute,
-  supersedeSelectionForWorkChange,
   type TerminalRouteRemoval,
 } from "./context-removal-protocol";
 import type { ProjectDocumentAvailabilityCommand } from "./project-context-availability-coordinator";
@@ -351,7 +347,7 @@ export class ContextRemovalCoordinator {
     if (owner.kind === "workspace") {
       if (!tab || tab.documentId !== activation.identity.documentId || isDraftOnly(tab))
         return false;
-      if (!sameLocator(routeTargetForTab(tab, activation.locator.workId), activation.locator)) {
+      if (!sameLocator(routeTargetForTab(tab), activation.locator)) {
         return false;
       }
     } else {
@@ -359,7 +355,7 @@ export class ContextRemovalCoordinator {
       const search = route?.readSearch(activation.projectId);
       if (
         activation.identity.kind !== "server" ||
-        !contextRouteMatchesSearch(search, activation.locator, state.activeWorkId)
+        !contextRouteMatchesSearch(search, activation.locator)
       ) {
         return false;
       }
@@ -425,8 +421,7 @@ export class ContextRemovalCoordinator {
       selectedDocumentIdOf(this.workspace.read(projectId)) !== documentId ||
       tab?.kind !== "tracked" ||
       tab.origin !== "local-resource" ||
-      !targetInEditorOf(routeTargetForTab(tab, workId), workId) ||
-      !sameLocator(routeTargetForTab(tab, workId), target)
+      !sameLocator(routeTargetForTab(tab), target)
     ) {
       return false;
     }
@@ -465,9 +460,7 @@ export class ContextRemovalCoordinator {
     const token = Symbol(projectId);
     this.routePorts.set(projectId, { token, port });
     state.live = true;
-    if (state.activeWorkId !== activeWorkId) {
-      this.changeWorkSelection(projectId, activeWorkId, null);
-    }
+    state.activeWorkId = activeWorkId;
     this.publish(state);
     return {
       token,
@@ -870,7 +863,7 @@ export class ContextRemovalCoordinator {
     const target =
       plan.routeRepairTarget ??
       (plan.outcome.kind === "active-fallback" && state.activeWorkId
-        ? routeTargetForTab(plan.outcome.fallback, state.activeWorkId)
+        ? routeTargetForTab(plan.outcome.fallback)
         : plan.outcome.kind === "empty-workspace"
           ? { kind: "clear" as const }
           : null);
@@ -946,40 +939,13 @@ export class ContextRemovalCoordinator {
     return this.writerClose(projectId, tab);
   }
 
-  /**
-   * The Work scope changed: the route's selection begins again under the new scope. Nothing is
-   * pruned. A document's owner is its identity, so a Scratch note of the old Work stays open.
-   */
-  changeWorkSelection(
-    projectId: string,
-    activeWorkId: string,
-    locator: ContextRouteTarget | null,
-  ): number | null {
-    if (this.unavailable()) return null;
+  /** The Work scope changed. The route's selection and the tabs stay: a document's owner is its own. */
+  setActiveWork(projectId: string, activeWorkId: string): void {
+    if (this.unavailable()) return;
     const state = this.project(projectId);
-    if (state.activeWorkId === activeWorkId) {
-      throw new Error("changeWorkSelection requires an actual Editor Work transition");
-    }
+    if (state.activeWorkId === activeWorkId) return;
     state.activeWorkId = activeWorkId;
-    const tabs = this.workspace.read(projectId).tabs;
-    const transition = supersedeSelectionForWorkChange(
-      state.selection,
-      locator,
-      locator ? (state.terminalRemovals.get(locatorKey(locator)) ?? null) : null,
-    );
-    state.selection = transition.selection;
-    state.admitted = chooseAdmittedFallback({
-      activeWorkId,
-      tabs,
-      selectedTabId: null,
-      admitted: state.admitted,
-      recentRoutes: this.workingSet.readRecentRoutes(projectId),
-      excluded: null,
-      allowWorkspaceFallback: false,
-    });
-    for (const planning of transition.planning) this.executePlanning(projectId, planning);
     this.publish(state);
-    return transition.selection.status === "none" ? null : transition.selection.revision;
   }
 
   /**
@@ -1025,9 +991,7 @@ export class ContextRemovalCoordinator {
   ): void {
     const state = this.projects.get(projectId);
     if (!state || !reviewEntryOf(tab, ownerKey)) return;
-    const workId = workIdOfDraftOwnerKey(ownerKey) ?? state.activeWorkId;
-    if (!workId) return;
-    state.terminalRemovals.delete(locatorKey(routeTargetForTab(tab, workId)));
+    state.terminalRemovals.delete(locatorKey(routeTargetForTab(tab)));
   }
 
   /** A server-applied draft-only tab becomes the ordinary tab, in place. */
@@ -1132,11 +1096,7 @@ export class ContextRemovalCoordinator {
     if (repair === "allow" && plan.routeRepairTarget && current.kind === "proven-removed") {
       const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
       const search = route?.readSearch(projectId);
-      if (
-        route &&
-        search &&
-        contextRouteMatchesSearch(search, current.locator, state.activeWorkId)
-      ) {
+      if (route && search && contextRouteMatchesSearch(search, current.locator)) {
         const repairPlan: ContextRouteRepair = {
           expectedSearch: {
             screen: "context",
@@ -1213,7 +1173,6 @@ export class ContextRemovalCoordinator {
       rawRouteWork: search?.work,
       revision: rejection.revision,
       rejected: rejection.locator,
-      activeWorkId: state.activeWorkId,
       tabs: slice.tabs,
       selectedTabId: state.activeWorkId ? selectedDocumentIdOf(slice) : null,
       admitted: state.admitted,
@@ -1232,7 +1191,7 @@ export class ContextRemovalCoordinator {
     state.admitted = plan.fallback;
     this.publish(state);
 
-    if (!route || !contextRouteMatchesSearch(search, rejection.locator, state.activeWorkId)) {
+    if (!route || !contextRouteMatchesSearch(search, rejection.locator)) {
       return;
     }
     route.updateSearch(projectId, (latest) =>
@@ -1298,7 +1257,7 @@ function selectedTabIdFor(slice: ProjectTabsSlice, workId: string | null): strin
 }
 
 function locatorKey(locator: ContextRouteTarget): string {
-  return `${locator.scheme}\u0000${locator.path}\u0000${locator.workId}\u0000${locator.rootThreadId ?? ""}`;
+  return `${locator.scheme}\u0000${locator.path}\u0000${locator.workId ?? ""}\u0000${locator.rootThreadId ?? ""}`;
 }
 
 function availabilityDocumentId(command: ProjectDocumentAvailabilityCommand): string {

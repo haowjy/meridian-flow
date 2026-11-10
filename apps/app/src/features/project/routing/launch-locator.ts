@@ -17,14 +17,14 @@ import { parseContextUri } from "@/lib/context-uri";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { canonicalDocumentPath } from "./local-document-address";
 import type { ProjectDestination } from "./project-address";
-import type { ContextRouteRequest } from "./project-route";
+import type { ContextRouteTarget } from "./project-route";
 
 export type LaunchIdentityLookup = (
   documentId: string,
 ) => Promise<ProjectContextIdentityResolution | { kind: "failed" }>;
 
 export async function resolveLaunchLocator(input: {
-  requested: ContextRouteRequest & { workId?: string };
+  requested: ContextRouteTarget & { workId?: string };
   tabs: readonly ContextTab[];
   addressed: ProjectDestination;
   addressNamesIt: boolean;
@@ -38,16 +38,14 @@ export async function resolveLaunchLocator(input: {
    */
   selected: boolean;
   lookup: LaunchIdentityLookup;
-}): Promise<ContextRouteRequest> {
+}): Promise<ContextRouteTarget> {
   const { requested } = input;
   const { documentId } = requested;
   if (!documentId) return requested;
   const tab = input.tabs.find(
     (candidate) => candidate.kind !== "new" && candidate.documentId === documentId,
   );
-  if (tab && tab.kind !== "new" && requested.workId) {
-    return { ...routeTargetForTab(tab, requested.workId), documentId };
-  }
+  if (tab && tab.kind !== "new") return { ...routeTargetForTab(tab), documentId };
   if (input.addressNamesIt && input.addressed.kind === "document") {
     // The address spells its path without the leading slash; routes, tabs and launches spell it with.
     return {
@@ -57,7 +55,7 @@ export async function resolveLaunchLocator(input: {
     };
   }
   if (input.draftOnly) return requested;
-  const locate = (uri: string): ContextRouteRequest | null => {
+  const locate = (uri: string): ContextRouteTarget | null => {
     const parsed = parseContextUri(uri);
     return parsed ? { scheme: parsed.scheme, path: parsed.path } : null;
   };

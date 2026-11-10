@@ -167,7 +167,7 @@ describe("draft tab settlement", () => {
     expect(selectedDocumentIdOf(getContextTabs("project-a"))).toBe("document-a");
     // A writer's close in A drops A's entry the same way.
     store.openTab("project-a", draftTab());
-    coordinator.changeWorkSelection("project-a", "work-a", null);
+    coordinator.setActiveWork("project-a", "work-a");
     coordinator.writerClose("project-a", getContextTabs("project-a").tabs[0] as never);
     expect(inWork("work-a")).toEqual([]);
     expect(inWork("work-b")).toEqual(["document-a"]);

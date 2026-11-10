@@ -23,6 +23,8 @@ import { projectResourceTab } from "./context-tab-from-file";
 export function useFollowOpenDocumentPlacement(input: {
   projectId: string;
   editorWorkId: string | null | undefined;
+  /** A Work's Scratch route: its owning Work. */
+  activeContextWork?: string | null;
   /** The route follows a document only while the selection is bound to it at this route. */
   selection: ContextRouteSelection;
   activeContextScheme: ProjectContextTreeScheme | null;
@@ -43,7 +45,7 @@ export function useFollowOpenDocumentPlacement(input: {
         ? {
             scheme: input.activeContextScheme,
             path: input.activeContextPath,
-            workId: input.editorWorkId,
+            workId: input.activeContextWork ?? undefined,
             rootThreadId: input.activeContextChat ?? undefined,
           }
         : null;
@@ -87,14 +89,14 @@ export function useFollowOpenDocumentPlacement(input: {
         tab.kind !== "new" &&
         projection.tab.kind !== "new" &&
         boundDocumentId === tab.documentId &&
-        !sameContextTarget(routeTargetForTab(projection.tab, route.workId), route);
+        !sameContextTarget(routeTargetForTab(projection.tab), route);
       if (routeFollowsTab && projection.tab.kind !== "new")
         void input
           .onOpenContextTarget(
             {
               scheme: projection.tab.scheme,
               path: projection.tab.path,
-              workId: projection.tab.workId ?? input.editorWorkId ?? undefined,
+              workId: projection.tab.workId,
               ...(projection.tab.rootThreadId ? { rootThreadId: projection.tab.rootThreadId } : {}),
               documentId: projection.tab.documentId,
             },
@@ -116,6 +118,7 @@ export function useFollowOpenDocumentPlacement(input: {
     }
   }, [
     input.activeContextChat,
+    input.activeContextWork,
     input.activeContextPath,
     input.activeContextScheme,
     input.editorWorkId,

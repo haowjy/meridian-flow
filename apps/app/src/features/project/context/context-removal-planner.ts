@@ -1,6 +1,5 @@
 /** Pure eligibility and continuity planning for one exact context-removal intent. */
 
-import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
 import {
@@ -8,7 +7,6 @@ import {
   isDraftOnly,
   isEditorContextTab,
   matchesTabInstance,
-  reviewOwners,
   withoutReviewEntry,
 } from "@/client/stores";
 import {
@@ -20,7 +18,6 @@ import {
   type ContextRouteRepair,
   type ContextRouteTarget,
   sameContextTarget,
-  targetInEditorOf,
 } from "../routing/project-route";
 
 export type ContextRemovalIntent = {
@@ -126,14 +123,13 @@ export function planCandidateRejection(input: {
   rawRouteChat?: string | undefined;
   revision: number;
   rejected: ContextRouteTarget;
-  activeWorkId: string;
   tabs: readonly ContextTab[];
   selectedTabId: string | null;
   admitted: ContextRouteTarget | null;
   recentRoutes: readonly WorkingSetRoute[];
 }): CandidateRejectionPlan {
   const fallback = chooseAdmittedFallback({ ...input, excluded: input.rejected });
-  const fallbackTab = fallback ? tabForTarget(input.tabs, fallback, fallback.workId) : null;
+  const fallbackTab = fallback ? tabForTarget(input.tabs, fallback) : null;
   const rejectedRoute = input.recentRoutes.find((route) =>
     workingSetRouteMatchesTarget(route, input.rejected),
   );
@@ -193,37 +189,32 @@ export function workingSetRouteForTab(tab: ContextTab) {
   return buildWorkingSetRoute(tab.documentId, tab.scheme, tab.path, tab);
 }
 
-export function routeTargetForTab(tab: ContextTab, activeWorkId: string): ContextRouteTarget {
-  if (tab.kind === "new")
-    return { scheme: "unfiled", path: "", workId: activeWorkId, documentId: tab.documentId };
+export function routeTargetForTab(tab: ContextTab): ContextRouteTarget {
+  if (tab.kind === "new") return { scheme: "unfiled", path: "", documentId: tab.documentId };
   if (tab.rootThreadId)
     return {
       scheme: tab.scheme,
       path: tab.path,
-      workId: activeWorkId,
       rootThreadId: tab.rootThreadId,
       documentId: tab.documentId,
     };
-  const reviewers = reviewOwners(tab).flatMap((key) => workIdOfDraftOwnerKey(key) ?? []);
-  let workId = reviewers.includes(activeWorkId) ? activeWorkId : (reviewers[0] ?? activeWorkId);
   if (isWorkScopedScheme(tab.scheme)) {
     if (!tab.workId) throw new Error("Work-scoped tab has no Work owner");
-    workId = tab.workId;
+    return { scheme: tab.scheme, path: tab.path, workId: tab.workId, documentId: tab.documentId };
   }
-  return { scheme: tab.scheme, path: tab.path, workId, documentId: tab.documentId };
+  return { scheme: tab.scheme, path: tab.path, documentId: tab.documentId };
 }
 
 /** The tab a target names: by its document when it carries one, else by locator. */
 export function tabForTarget(
   tabs: readonly ContextTab[],
   target: ContextRouteTarget,
-  activeWorkId: string,
 ): ContextTab | null {
   return (
     tabs.find((tab) =>
       target.documentId !== undefined
         ? tab.documentId === target.documentId
-        : sameTarget(routeTargetForTab(tab, activeWorkId), target),
+        : sameContextTarget(routeTargetForTab(tab), target),
     ) ?? null
   );
 }
@@ -283,7 +274,6 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
       },
     };
   }
-  const activeWorkId = input.activeWorkId;
   const visibleRemaining = remaining.filter(isEditorContextTab);
   const visibleTabs = input.tabs.filter(isEditorContextTab);
   const survives = (documentId: string) =>
@@ -309,15 +299,14 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   const admittedTab = admitted
     ? tabForTarget(
         input.tabs,
-        boundSelection && sameTarget(boundSelection.locator, admitted)
+        boundSelection && sameContextTarget(boundSelection.locator, admitted)
           ? { ...admitted, documentId: boundSelection.identity.documentId }
           : admitted,
-        activeWorkId,
       )
     : null;
   const admittedRoute = admittedTab
     ? workingSetRouteForTab(admittedTab)
-    : input.admitted && boundSelection && sameTarget(boundSelection.locator, input.admitted)
+    : input.admitted && boundSelection && sameContextTarget(boundSelection.locator, input.admitted)
       ? workingSetRouteForTarget(boundSelection.identity.documentId, input.admitted)
       : null;
   const survivingRoutes = remaining.flatMap((tab) => workingSetRouteForTab(tab) ?? []);
@@ -326,12 +315,12 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     .filter((route) => !survivingRoutes.some((survivor) => workingSetRouteEquals(survivor, route)));
   const admittedWasRemoved =
     input.admitted !== null &&
-    ((provenRemoved !== null && sameTarget(provenRemoved.locator, input.admitted)) ||
+    ((provenRemoved !== null && sameContextTarget(provenRemoved.locator, input.admitted)) ||
       (input.route.cleanup !== null &&
-        sameTarget(input.route.cleanup.locator, input.admitted) &&
+        sameContextTarget(input.route.cleanup.locator, input.admitted) &&
         !(
           boundSelection !== null &&
-          sameTarget(boundSelection.locator, input.admitted) &&
+          sameContextTarget(boundSelection.locator, input.admitted) &&
           boundSelection.identity.documentId !== input.route.cleanup.identity.documentId
         )) ||
       removedTabRoutes.some((route) =>
@@ -394,19 +383,19 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     ...(survivingAdmittedRoute ? [survivingAdmittedRoute] : []),
   ];
   const promotedTab = survivingRoutedTab ?? fallback;
-  const promotedTarget = promotedTab ? routeTargetForTab(promotedTab, activeWorkId) : null;
+  const promotedTarget = promotedTab ? routeTargetForTab(promotedTab) : null;
   const promotedTargetIsUnadmittedBinding =
     promotedTarget !== null &&
     boundSelection !== null &&
-    sameTarget(promotedTarget, boundSelection.locator) &&
-    (input.admitted === null || !sameTarget(input.admitted, boundSelection.locator));
+    sameContextTarget(promotedTarget, boundSelection.locator) &&
+    (input.admitted === null || !sameContextTarget(input.admitted, boundSelection.locator));
   const admittedFallback = promotedTargetIsUnadmittedBinding ? null : promotedTarget;
   const promote =
     survivingAdmittedRoute ??
     (admittedFallback && promotedTab ? workingSetRouteForTab(promotedTab) : null);
   const routeRepairTarget = routedDocumentRemoved
     ? fallback
-      ? routeTargetForTab(fallback, activeWorkId)
+      ? routeTargetForTab(fallback)
       : ({ kind: "clear" } as const)
     : null;
 
@@ -464,8 +453,6 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   };
 }
 
-const sameTarget = sameContextTarget;
-
 function workingSetRouteMatchesTarget(route: WorkingSetRoute, target: ContextRouteTarget): boolean {
   return (
     route.scheme === target.scheme &&
@@ -485,7 +472,6 @@ export function workingSetRouteForTarget(
 }
 
 export function chooseAdmittedFallback(input: {
-  activeWorkId: string;
   tabs: readonly ContextTab[];
   selectedTabId: string | null;
   admitted: ContextRouteTarget | null;
@@ -494,62 +480,34 @@ export function chooseAdmittedFallback(input: {
   allowWorkspaceFallback?: boolean;
 }): ContextRouteTarget | null {
   const eligible = (target: ContextRouteTarget | null): target is ContextRouteTarget =>
-    target !== null &&
-    targetInEditorOf(target, input.activeWorkId) &&
-    (!input.excluded || !sameContinuityLocator(target, input.excluded));
+    target !== null && (!input.excluded || !sameContextTarget(target, input.excluded));
   const activeTab =
     input.tabs.find((tab) => tab.documentId === input.selectedTabId && !isDraftOnly(tab)) ?? null;
-  const activeTarget = activeTab ? routeTargetForTab(activeTab, input.activeWorkId) : null;
+  const activeTarget = activeTab ? routeTargetForTab(activeTab) : null;
   if (eligible(activeTarget)) return activeTarget;
-  if (eligible(input.admitted))
-    return contextualizeProjectRoute(input.admitted, input.activeWorkId);
+  if (eligible(input.admitted)) return input.admitted;
   for (const route of input.recentRoutes) {
-    const target = contextualizeWorkingSetRoute(route, input.activeWorkId);
+    const target = contextualizeWorkingSetRoute(route);
     if (eligible(target)) return target;
   }
   if (input.allowWorkspaceFallback !== false) {
     for (const tab of input.tabs) {
       if (isDraftOnly(tab)) continue;
-      const target = routeTargetForTab(tab, input.activeWorkId);
+      const target = routeTargetForTab(tab);
       if (eligible(target)) return target;
     }
   }
   return null;
 }
 
-function contextualizeWorkingSetRoute(
-  route: WorkingSetRoute,
-  activeWorkId: string,
-): ContextRouteTarget | null {
+function contextualizeWorkingSetRoute(route: WorkingSetRoute): ContextRouteTarget | null {
   // A chat's upload has no Editor route; its recency entry only carries its chat.
   if (route.scheme === "uploads") return null;
   if (route.rootThreadId)
-    return {
-      scheme: route.scheme,
-      path: route.path,
-      workId: activeWorkId,
-      rootThreadId: route.rootThreadId,
-    };
-  let workId = activeWorkId;
+    return { scheme: route.scheme, path: route.path, rootThreadId: route.rootThreadId };
   if (isWorkScopedScheme(route.scheme)) {
     if (!route.workId) return null;
-    workId = route.workId;
+    return { scheme: route.scheme, path: route.path, workId: route.workId };
   }
-  return { scheme: route.scheme, path: route.path, workId };
-}
-
-function contextualizeProjectRoute(
-  route: ContextRouteTarget,
-  activeWorkId: string,
-): ContextRouteTarget {
-  return isWorkScopedScheme(route.scheme) ? route : { ...route, workId: activeWorkId };
-}
-
-function sameContinuityLocator(a: ContextRouteTarget, b: ContextRouteTarget): boolean {
-  return (
-    a.scheme === b.scheme &&
-    a.path === b.path &&
-    a.rootThreadId === b.rootThreadId &&
-    (!isWorkScopedScheme(a.scheme) || a.rootThreadId !== undefined || a.workId === b.workId)
-  );
+  return { scheme: route.scheme, path: route.path };
 }

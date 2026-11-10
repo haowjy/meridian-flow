@@ -17,8 +17,8 @@ export type ProjectContextRemovalControllerProps = {
   activeContextChat?: string | null;
   /** The Work scope: the project's active Work. */
   editorWorkId: string;
-  /** The Work that owns the address's locator: a Scratch address's owner, else the scope. */
-  routeWorkId: string;
+  /** A Work's Scratch route names its owning Work here. */
+  activeContextWork?: string | null;
   localDocumentId?: string;
   /** A review address names its document by item: that id is proof, so the route starts bound. */
   reviewDocumentId?: string;
@@ -32,7 +32,7 @@ export function ProjectContextRemovalController({
   activeContextPath,
   activeContextChat,
   editorWorkId,
-  routeWorkId,
+  activeContextWork,
   localDocumentId,
   reviewDocumentId,
   route,
@@ -50,17 +50,16 @@ export function ProjectContextRemovalController({
     }),
     [],
   );
-  const registrationRef = useRef<{
-    token: symbol;
-    release: () => void;
-    editorWorkId: string;
-  } | null>(null);
 
   useLayoutEffect(() => {
     const registration = coordinator.registerRoutePort(projectId, stableRoute, editorWorkId);
-    registrationRef.current = { ...registration, editorWorkId };
     return () => registration.release();
   }, [coordinator, projectId, stableRoute]);
+
+  // A scope pick moves no route: a document's owner is its own, never the scope.
+  useLayoutEffect(() => {
+    coordinator.setActiveWork(projectId, editorWorkId);
+  }, [coordinator, projectId, editorWorkId]);
 
   // A navigation's binding can land after the address was already repaired elsewhere: a selection
   // about another route than the URL begins again here.
@@ -72,27 +71,20 @@ export function ProjectContextRemovalController({
       !selectionAtRoute(selection, {
         scheme: activeContextScheme,
         path: activeContextPath,
-        workId: routeWorkId,
+        workId: activeContextWork ?? undefined,
         rootThreadId: activeContextChat ?? undefined,
       }));
   const previousLocalDocument = useRef(localDocumentId);
   useLayoutEffect(() => {
-    const registration = registrationRef.current;
-    if (!registration) return;
     const locator =
       activeScreen === "context" && activeContextScheme !== null && activeContextPath !== null
         ? {
             scheme: activeContextScheme,
             path: activeContextPath,
-            workId: routeWorkId,
+            ...(activeContextWork ? { workId: activeContextWork } : {}),
             ...(activeContextChat ? { rootThreadId: activeContextChat } : {}),
           }
         : null;
-    if (registration.editorWorkId !== editorWorkId) {
-      coordinator.changeWorkSelection(projectId, editorWorkId, locator);
-      registration.editorWorkId = editorWorkId;
-      return;
-    }
     if (previousLocalDocument.current !== localDocumentId) {
       previousLocalDocument.current = localDocumentId;
       coordinator.clearRouteSelection(projectId);
@@ -107,8 +99,7 @@ export function ProjectContextRemovalController({
     activeContextScheme,
     activeScreen,
     coordinator,
-    editorWorkId,
-    routeWorkId,
+    activeContextWork,
     projectId,
     localDocumentId,
     reviewDocumentId,

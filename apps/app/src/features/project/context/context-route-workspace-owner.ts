@@ -1,7 +1,7 @@
 /** Exact, heuristic-free resolution of the Editor workspace owner for one committed route. */
 
 import { type ContextTab, isEditorContextTab } from "@/client/stores";
-import { type ContextRouteTarget, targetInEditorOf } from "../routing/project-route";
+import type { ContextRouteTarget } from "../routing/project-route";
 import { type ContextRouteIdentity, routeTargetForTab } from "./context-removal-planner";
 import { contextTabMatchesRoute } from "./context-tab-identity";
 
@@ -55,16 +55,8 @@ export function resolveWorkspaceRoute({
       identity: { kind: "local", documentId: selected.documentId },
     };
   }
-  if (
-    selected?.kind === "tracked" &&
-    selected.origin === "local-resource" &&
-    targetInEditorOf(routeTargetForTab(selected, locator.workId), locator.workId)
-  ) {
-    return {
-      kind: "materialized-local",
-      tab: selected,
-      target: routeTargetForTab(selected, locator.workId),
-    };
+  if (selected?.kind === "tracked" && selected.origin === "local-resource") {
+    return { kind: "materialized-local", tab: selected, target: routeTargetForTab(selected) };
   }
   return { kind: "unowned" };
 }

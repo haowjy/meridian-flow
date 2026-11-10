@@ -16,6 +16,7 @@ import {
   selectionAtRoute,
 } from "../context/context-removal-protocol";
 import type { ProjectDestination } from "./project-address";
+import type { ContextRouteTarget } from "./project-route";
 
 export type DocumentAddressBinding =
   | { kind: "plain" }
@@ -68,8 +69,8 @@ export function addressRouteBinding(
   result: DocumentAddressResult | undefined,
   selection: ContextRouteSelection,
   destination: Extract<ProjectDestination, { kind: "document" }> | null,
-  workId: string | null,
-  rootThreadId: string | undefined,
+  /** The Scratch owner the route's locator carries; empty for every other document. */
+  owner: Pick<ContextRouteTarget, "workId" | "rootThreadId">,
   /** The owner the address reviews (`addressReviewOwner`); null when it names none. */
   reviewOwner?: string | null,
 ): { revision: number; documentId: string; by: RouteBindingProof } | null {
@@ -78,12 +79,10 @@ export function addressRouteBinding(
     !result ||
     result.kind === "unavailable" ||
     !destination ||
-    workId === null ||
     !selectionAtRoute(selection, {
       scheme: destination.scheme,
       path: destination.path,
-      workId,
-      rootThreadId,
+      ...owner,
     })
   )
     return null;

@@ -27,6 +27,8 @@ export type MobileDocumentRoute = Readonly<{
   requested: boolean;
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
+  /** A Work's Scratch route names its owning Work here. */
+  workId?: string | null;
   /** A chat's Scratch route names its lineage here, in place of a Work. */
   rootThreadId?: string | null;
   tab: ServerContextTab | null;
@@ -76,6 +78,7 @@ export function resolveMobileDocumentRoute(input: {
       requested: false,
       scheme: input.scheme,
       path: input.path,
+      workId: input.workId ?? null,
       rootThreadId: input.rootThreadId ?? null,
       tab: null,
       catalogResolved: false,
@@ -86,16 +89,19 @@ export function resolveMobileDocumentRoute(input: {
   }
   // Identity before path, exactly as the desktop's route owner reads it.
   const rootThreadId = input.rootThreadId ?? undefined;
-  const owner = input.workId
-    ? resolveRouteDocumentOwner({
-        locator: { scheme: input.scheme, path: input.path, workId: input.workId, rootThreadId },
-        boundDocumentId: input.boundDocumentId,
-        catalog: input.catalog,
-        workspaceTabs: input.workspaceTabs,
-      })
-    : { kind: "absent" as const };
+  const owner = resolveRouteDocumentOwner({
+    locator: {
+      scheme: input.scheme,
+      path: input.path,
+      ...(input.workId ? { workId: input.workId } : {}),
+      rootThreadId,
+    },
+    boundDocumentId: input.boundDocumentId,
+    catalog: input.catalog,
+    workspaceTabs: input.workspaceTabs,
+  });
   const resolved =
-    owner.kind === "live" && input.workId
+    owner.kind === "live"
       ? (() => {
           const projected = contextTabFromFile(
             input.scheme,
@@ -121,6 +127,7 @@ export function resolveMobileDocumentRoute(input: {
     requested: true,
     scheme: input.scheme,
     path: input.path,
+    workId: input.workId ?? null,
     rootThreadId: input.rootThreadId ?? null,
     tab: resolved?.kind === "new" ? null : resolved,
     catalogResolved: input.catalog !== null,
@@ -143,11 +150,11 @@ export function useMobileDocumentRoute(input: {
   const { tabs: workspaceTabs } = useContextTabs(input.projectId);
   const { selection } = useContextRemovalProject(input.projectId);
   const boundDocumentId =
-    input.scheme !== null && input.path !== null && input.workId !== null
+    input.scheme !== null && input.path !== null
       ? routeSelectionDocumentId(selection, {
           scheme: input.scheme,
           path: input.path,
-          workId: input.workId,
+          workId: input.workId ?? undefined,
           rootThreadId: input.rootThreadId ?? undefined,
         })
       : null;
