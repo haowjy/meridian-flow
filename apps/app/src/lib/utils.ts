@@ -19,6 +19,7 @@ import { extendTailwindMerge } from "tailwind-merge";
  */
 const CUSTOM_FONT_SIZE_TOKENS = [
   "meta",
+  "menu",
   "compact",
   "caption",
   "body",
