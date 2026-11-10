@@ -15,12 +15,10 @@ export {
   type OpenEditorTabResult,
   type ProjectTabsSlice,
   type ReviewEntries,
-  type ReviewItemTabIdentity,
   type ReviewPin,
   reconcileEditorWorkspaceBootstrap,
   rehydrateEditorWorkspace,
   replaceOwner,
-  reviewEntriesOf,
   reviewEntryOf,
   reviewOwnerOfTab,
   reviewOwners,
@@ -39,5 +37,3 @@ export {
   useSelectedDocumentId,
   withoutReviewEntry,
 } from "./context-tabs-store";
-
-export { durableContextTab, parseContextTab } from "./editor-workspace-state";

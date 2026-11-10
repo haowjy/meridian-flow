@@ -42,10 +42,8 @@ export {
   matchesTabInstance,
   type ProjectTabsSlice,
   type ReviewEntries,
-  type ReviewItemTabIdentity,
   type ReviewPin,
   replaceOwner,
-  reviewEntriesOf,
   reviewEntryOf,
   reviewOwnerOfTab,
   reviewOwners,
@@ -88,17 +86,16 @@ type ContextTabsActions = {
     addressed: ContextTab,
     metadata: TrackedTabPatch,
   ) => Promise<void>;
-  reorderTabs: (projectId: string, fromIndex: number, toIndex: number) => Promise<void>;
   selectTab: (
     projectId: string,
     documentId: string | null,
     addressed?: ContextTab,
   ) => Promise<void>;
-  /** The writer's choices on one tab (view, preview slot, review pin). */
+  /** The writer's choices on one tab (view, review pin). */
   setTabState: (
     projectId: string,
     key: string,
-    patch: { view?: Partial<TabView>; preview?: boolean; reviewPin?: ReviewPin | null },
+    patch: { view?: Partial<TabView>; reviewPin?: ReviewPin | null },
   ) => void;
   /** Drops pins by owner and/or item (a scope switch, a settled or dropped review); no filter drops all. */
   clearReviewPins: (projectId: string, filter?: { ownerKey?: string; itemKey?: string }) => void;
@@ -204,28 +201,6 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             return tab
               ? { kind: "open", projectId, tab: { ...tab, ...metadata } as typeof tab }
               : null;
-          }),
-
-        reorderTabs: (projectId, fromIndex, toIndex) =>
-          dispatch((base) => {
-            const tabs = sliceFor(base, projectId).tabs;
-            if (
-              fromIndex === toIndex ||
-              fromIndex < 0 ||
-              toIndex < 0 ||
-              fromIndex >= tabs.length ||
-              toIndex >= tabs.length
-            )
-              return null;
-            const next = tabs.map((tab) => tab.tabInstanceId as string);
-            const [moved] = next.splice(fromIndex, 1);
-            next.splice(toIndex, 0, moved);
-            return {
-              kind: "reorder",
-              projectId,
-              expectedTabInstanceIds: tabs.map((tab) => tab.tabInstanceId as string),
-              nextTabInstanceIds: next,
-            };
           }),
 
         selectTab: (projectId, documentId, addressed) => {
@@ -451,7 +426,6 @@ type PublicContextTabsActions = Pick<
   | "openTab"
   | "reconcileResourceTab"
   | "updateTrackedTab"
-  | "reorderTabs"
   | "selectTab"
   | "setTabState"
   | "clearReviewPins"
@@ -463,7 +437,6 @@ export function useContextTabsActions(): PublicContextTabsActions {
       openTab: s.openTab,
       reconcileResourceTab: s.reconcileResourceTab,
       updateTrackedTab: s.updateTrackedTab,
-      reorderTabs: s.reorderTabs,
       selectTab: s.selectTab,
       setTabState: s.setTabState,
       clearReviewPins: s.clearReviewPins,

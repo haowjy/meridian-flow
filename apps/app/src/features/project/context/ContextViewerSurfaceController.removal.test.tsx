@@ -267,7 +267,7 @@ it("persists and admits the real New action without an empty working-set route",
         .filter((write) => write.key === "meridian:editor-workspace:v2")
         .map((write) => JSON.parse(write.value));
       expect(workspaceWrites.length).toBeGreaterThan(0);
-      expect(workspaceWrites.every((workspace) => workspace.version === 2)).toBe(true);
+      expect(workspaceWrites.every((workspace) => workspace.version === 3)).toBe(true);
       expect(workspaceWrites.at(-1)?.payload.project).toMatchObject({
         selectedTabKey: local?.tabInstanceId,
       });
