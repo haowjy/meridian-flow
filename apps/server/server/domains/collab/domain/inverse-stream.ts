@@ -1,5 +1,5 @@
 /**
- * One inverse's ordered steps over one document (D76): each selected original edit becomes one
+ * One inverse's ordered steps over one document: each selected original edit becomes one
  * step, text or tree, planned against the history and states the steps before it leave. The
  * model's undo, redo and revert, the turn card and a reply's rollback all plan through it, and
  * the commit runs the steps in this order.

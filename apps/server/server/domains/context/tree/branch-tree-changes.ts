@@ -1,5 +1,5 @@
 /**
- * A branch's drafted moves and deletes (D26, design-v2 §1): facts on its row, never a change
+ * A branch's drafted moves and deletes (design-v2 §1): facts on its row, never a change
  * to the shared tree. A move places the document in the branch (missing folders are made
  * hidden, as a branch's create makes them); a delete hides it there; an inverse writes back
  * the facts its entry recorded. Live is untouched until the writer applies them.

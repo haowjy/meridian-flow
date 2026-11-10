@@ -79,7 +79,7 @@ export function createHocuspocusCoordinator(deps: CoordinatorDeps): LiveDocument
 }
 
 /**
- * The live agent-edit core's coordinator (D42). A call reads a private copy of the live
+ * The live agent-edit core's coordinator. A call reads a private copy of the live
  * document as others see it (the open room plus committed journal rows). A save appends its
  * kept entries to the journal in the caller's commit scope, and open editors receive them only
  * after the root transaction commits, through `deliver`: a rollback leaves nothing on screen,

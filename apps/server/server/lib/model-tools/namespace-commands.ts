@@ -1,11 +1,11 @@
 /**
- * `write`'s `move` and `delete` (D25, D38): host commands that change where a whole document
- * lives, not what it says. Each runs when called (D66). Live, through the thread's live port,
- * links follow a move (#694) and a delete keeps every Work's drafts (D79). In a draft-mode
+ * `write`'s `move` and `delete`: host commands that change where a whole document
+ * lives, not what it says. Each runs when called. Live, through the thread's live port,
+ * links follow a move (#694) and a delete keeps every Work's drafts. In a draft-mode
  * chat, any move touching a drafted source is a fact in the Work's branch and live is untouched
- * until the writer applies it (D26, D45). Either way the tree entry commits in the mutation's own
+ * until the writer applies it. Either way the tree entry commits in the mutation's own
  * transaction with a handle on the document's counter for this chat, so `undo`, `redo` and
- * `revert` walk it with the text edits (D76), and a reply's rollback reverses it.
+ * `revert` walk it with the text edits, and a reply's rollback reverses it.
  */
 import type { WriteToolInput } from "@meridian/agent-edit/integration";
 import {

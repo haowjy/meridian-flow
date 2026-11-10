@@ -1,11 +1,11 @@
 /**
- * The file policy (file-access §1, §3, §8; D20): one pure function from a
+ * The file policy (file-access §1, §3, §8): one pure function from a
  * principal and a file's facts to its access level, the term that limited it,
  * and where an agent's write lands.
  *
  *   level = min(personLevel, lifecycleCap, agentCap)
  *
- * Skill files (`skills://`, D52) have their own rule, `skillLevel`.
+ * Skill files (`skills://`) have their own rule, `skillLevel`.
  */
 
 import { draftOwnerKey } from "@meridian/contracts";

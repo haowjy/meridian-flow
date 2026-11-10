@@ -1,5 +1,5 @@
 /**
- * Which documents a branch may hold (D20 under 12b): its own project's, and the personal
+ * Which documents a branch may hold: its own project's, and the personal
  * `user://` source of the account that owns its project. A `user://` source lives in that
  * account's personal project, so "same project" alone would refuse it; never widen this to
  * another account's source or another project's documents. Every check that pairs a branch

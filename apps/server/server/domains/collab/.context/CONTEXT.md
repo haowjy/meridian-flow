@@ -103,7 +103,7 @@ closes a created document's drafts and then tombstones it still closes their
 rooms `4208`; any other closed draft's room closes stale and its peers are
 refused with their cause's `discarded_*` reason. Every removal registers its
 documents with the batch (`DraftClose.registerRemoved`); only a discard also
-closes their drafts. A live delete closes no draft (D79): the drafts stay
+closes their drafts. A live delete closes no draft: the drafts stay
 ordinary active drafts and their rooms stay open. A removed document's live
 rooms close `4208`, but only while the
 removal still stands: after every matching room load settles, one batched record

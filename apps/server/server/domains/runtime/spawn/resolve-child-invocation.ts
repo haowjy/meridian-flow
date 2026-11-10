@@ -213,7 +213,7 @@ function permissionRaiseIssue(input: {
 }
 
 /**
- * A child never gets a tool its parent lacks (D13). Naming them in
+ * A child never gets a tool its parent lacks. Naming them in
  * `overrides.disallowed_tools` is the fix, so the refusal says so instead of
  * dropping them silently.
  */

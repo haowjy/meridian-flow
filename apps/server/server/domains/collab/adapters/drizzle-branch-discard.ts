@@ -225,7 +225,7 @@ export function createDrizzleBranchDiscard(
     async discardLocked({ kernel: input, command }) {
       return runInDrizzleTransaction(db, async () => {
         // The branch's owner enters the Work boundary before the branch row and the scope
-        // locks (decision D17).
+        // locks.
         return deps.workProjection.mutate(
           { branches: [input.branchId] },
           async () => {

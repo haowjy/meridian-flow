@@ -1,5 +1,5 @@
 /**
- * One reply, several destinations (D9, D19, D29, D40): a reply that writes live scratch and a drafted document reads its own writes, undoes as one turn, leaves out archived Works at save, and merges live writes into kept drafts.
+ * One reply, several destinations: a reply that writes live scratch and a drafted document reads its own writes, undoes as one turn, leaves out archived Works at save, and merges live writes into kept drafts.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - archive-frozen destinations, ordered multi-Work locking, and cross-destination inverse selection (kb/wiki/architecture/collaboration/draft-store-concurrency.md#an-owners-lifecycle-fences-its-drafts-through-one-boundary)
@@ -692,7 +692,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ctx,
       );
       // The writer owns lore.md, so their grant holds after the archive; the
-      // draft it would change is what the archive froze (D30).
+      // draft it would change is what the archive froze.
       const reverse = (direction: "undo" | "redo") =>
         collab.reverseThreadContext({
           threadId: THREAD_ID as never,

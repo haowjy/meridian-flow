@@ -1,7 +1,7 @@
 /**
- * A write's `from` (D38): resolving and reading a copy's source with `read`'s
- * version rule (D14) and the source's own destination (D20), and the binary
- * copy that duplicates a stored object (D24).
+ * A write's `from`: resolving and reading a copy's source with `read`'s
+ * version rule and the source's own destination, and the binary
+ * copy that duplicates a stored object.
  */
 
 import type {
@@ -59,7 +59,7 @@ export interface CopiedSource {
 
 /**
  * Reads a copy's source through `readDocument`, with `read`'s version rule
- * (D14) and the source's own destination (D20).
+ * and the source's own destination.
  */
 export async function readCopySource(
   deps: ToolWiringDeps,
@@ -170,7 +170,7 @@ export async function readTrackedCopySource(
   };
 }
 
-/** A binary file has no blocks, so a copy of one takes no selection (D49). */
+/** A binary file has no blocks, so a copy of one takes no selection. */
 export function binaryCopySelectionMessage(
   source: CopySource,
   address: ResolvedDocumentAddress,

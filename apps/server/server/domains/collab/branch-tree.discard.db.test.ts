@@ -1,5 +1,5 @@
 /**
- * Discard and purge leave nothing live and release storage (contract §12, §2.6, ledger D-1 to D-3): a hidden document branches share stays while any of them uses it, and the last one's Discard tombstones it and its hidden folders, releasing its live Yjs, every draft on it and a picture's bytes, while links written ahead of it read "Doesn't exist yet" and bind to the next live document; two branches discarding it at once leave one tombstone; a purged Work's branches go through the locked kernel, never the active-Work command.
+ * Discard and purge leave nothing live and release storage (contract §12, §2.6): a hidden document branches share stays while any of them uses it, and the last one's Discard tombstones it and its hidden folders, releasing its live Yjs, every draft on it and a picture's bytes, while links written ahead of it read "Doesn't exist yet" and bind to the next live document; two branches discarding it at once leave one tombstone; a purged Work's branches go through the locked kernel, never the active-Work command.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - kernel-owned Work purge and synchronous repair of detached hidden documents (kb/wiki/architecture/collaboration/drafts-and-branches.md#a-branchs-new-document-is-a-hidden-live-document)
@@ -160,7 +160,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return got.ok ? "stored" : got.error.code;
     }
 
-    it("leaves one tombstone and no orphan when two branches discard a shared document at once (D-2)", async () => {
+    it("leaves one tombstone and no orphan when two branches discard a shared document at once", async () => {
       const { s } = await start();
       const [ascension, beacon] = [
         await s.work("Ascension", "draft"),
@@ -189,7 +189,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(await foldersNamed(s, "lore"), "no hidden folder left behind").toEqual([]);
     });
 
-    it("purges a deleted Work's branches through the kernel, never the public Discard (D-3)", async () => {
+    it("purges a deleted Work's branches through the kernel, never the public Discard", async () => {
       const { runtime, s } = await start();
       const doomed = await s.work("Doomed", "draft");
       const plan = await s.model(doomed).create("notes/plan", "The plan.");
@@ -279,7 +279,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         )
         .toMatchObject([{ level: "warn", payload: { documentIds: [stray] } }]);
     });
-    it("retires only its own draft's peers: another Work's staged reply on the shared document saves (D-R1)", async () => {
+    it("retires only its own draft's peers: another Work's staged reply on the shared document saves", async () => {
       const { s } = await start();
       const [ascension, beacon] = [
         await s.work("Ascension", "draft"),
@@ -319,7 +319,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
     });
 
-    it("purges only inside a verified scope: a move to another source and a create there leave no hidden document under a tombstone (D-R2)", async () => {
+    it("purges only inside a verified scope: a move to another source and a create there leave no hidden document under a tombstone", async () => {
       const { runtime, s } = await start();
       const [doomed, beacon] = [await s.work("Doomed", "draft"), await s.work("Beacon", "draft")];
       await s.writer.mkdir("carry");
@@ -401,7 +401,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .toEqual([]);
     });
 
-    it("warns once a create's candidate picker repairs a hidden document no branch uses (D-R3)", async () => {
+    it("warns once a create's candidate picker repairs a hidden document no branch uses", async () => {
       const eventSink = createInMemoryEventSink();
       const { s } = await start({ eventSink });
       const [first, second] = [await s.work("First", "draft"), await s.work("Second", "draft")];

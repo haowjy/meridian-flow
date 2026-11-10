@@ -4,7 +4,7 @@ This context covers the Agent, system prompt, history, and cache hints sent to a
 model. A thread's cached prefix (system prompt, advertised tools, and history)
 changes only at named prompt epochs, image-removal breaks, and the one `skill`
 tool join after a user's first `/skill`.
-Rationale: the [frozen-prefix decision][kb-frozen-prefix], which also covers
+Rationale: the [frozen prefix][kb-frozen-prefix], which also covers
 cache warmth.
 
 ## Bound Agent and prompt

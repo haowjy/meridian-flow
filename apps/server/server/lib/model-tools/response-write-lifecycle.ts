@@ -1,5 +1,5 @@
 /**
- * The reply's write lifecycle (D42): staged creates to discard, the commit
+ * The reply's write lifecycle: staged creates to discard, the commit
  * that saves every staged write in one transaction, and the rollback.
  */
 import type {
@@ -54,7 +54,7 @@ type ResponseWriteLifecycleCommitResult =
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       /** Host-only: the saved documents' frontiers at the save's after-state, for those that recorded one. */
       frontiers: Array<{ documentId: string; frontier: ObservationFrontier }>;
-      /** Documents the save left out, with the copy their writes' results now carry (D29). */
+      /** Documents the save left out, with the copy their writes' results now carry. */
       refused: Array<{ documentId: string } & SaveRefusal>;
     }
   | { status: "branch_closed"; responseId: string; mode: "draft" };
@@ -67,7 +67,7 @@ type SaveRefusal = {
   removal?: DocumentRemovalRecord;
 };
 
-/** Why the reply's save left out a document's changes (D29, D42). */
+/** Why the reply's save left out a document's changes. */
 function refusedAtSave(
   refusal: Exclude<RefusedResponseDocument, { reason: unknown }>,
 ): SaveRefusal {

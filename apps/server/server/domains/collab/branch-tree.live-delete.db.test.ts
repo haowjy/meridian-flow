@@ -1,5 +1,5 @@
 /**
- * A live delete leaves other branches' drafts alone (D79): the branch with pending changes
+ * A live delete leaves other branches' drafts alone: the branch with pending changes
  * still lists the document, at a freed path, under a deleted folder, or under a move's
  * victim, and its draft stays writable; admission opens only a draft destination in a branch
  * that has an active draft of the document.

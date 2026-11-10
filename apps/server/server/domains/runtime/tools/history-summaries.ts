@@ -1,6 +1,6 @@
 /**
- * What follows a finished call's `→` in a `thread_history` line (D48), read
- * from the call's typed result, never its rendered text (D43). The call's
+ * What follows a finished call's `→` in a `thread_history` line, read
+ * from the call's typed result, never its rendered text. The call's
  * arguments are already on the line, so a summary adds only what came of it.
  */
 import {

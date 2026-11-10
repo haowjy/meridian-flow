@@ -1,5 +1,5 @@
 /**
- * The `grep` result (D65): the typed files the handler returns, and the text the model reads of
+ * The `grep` result: the typed files the handler returns, and the text the model reads of
  * them. In `content` mode each file is its URI, then one `hash|excerpt` line per passage, as
  * `read` prints blocks, so the hash targets `read` and `write`; the excerpt is a window around
  * the match, and `verbose` gives the whole block. `files_with_matches` lists URIs and `count`

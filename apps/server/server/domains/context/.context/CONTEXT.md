@@ -248,7 +248,7 @@ one source's tree contributes.
   series of committed reads, not one database snapshot; a folder moved while it runs lands
   on one side of it. A selection collapses to its outermost roots first: a root inside
   another selected folder, or selected twice, is already in that copy. Everything slow
-  happens before the receipt's transaction opens: the reads, a binary's duplicated object (`prepareBinaryCopy`, D24: a
+  happens before the receipt's transaction opens: the reads, a binary's duplicated object (`prepareBinaryCopy`: a
   store-side `copy`, never through memory), the plan, and the binding. A source room that is not open
   loads through a second connection, so a transaction held across the reads would starve
   the pool. Each put key is released if no transaction commits to name its object (a
@@ -444,7 +444,7 @@ for a drafted delete whose identity is intentionally absent there, which reads
 the live tree by the validated document identity. The item's own draft admits its document the way it admits writes
 (`survivingDraftDocuments`, availability's `admitDrafts`): a no-effect draft of a
 document deleted live is not listed, so its path finds it gone, but its review
-address still opens the open tab's draft (D79). Stale,
+address still opens the open tab's draft. Stale,
 foreign, or mismatched selectors return unavailable rather than falling back
 to live. The address resolver returns the canonical current locator; it never
 makes a path-only URL a capability.

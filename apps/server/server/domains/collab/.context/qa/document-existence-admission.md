@@ -3,7 +3,7 @@
 Runtime checks for W52's write side: live admission refuses a removed document
 under its mutation lock, only a create or explicit repair makes a Yjs head, and
 Apply brings a deleted document back only when the writer knew it was deleted
-(`restore`, D79). Run on an owned mock stack
+(`restore`). Run on an owned mock stack
 (`MODEL_PROVIDER=mock pnpm dev`). A tab is `@hocuspocus/provider` over `ws` on
 `/ws/yjs` with the `./mf` dev cookie and the `meridian.collab.<version>`
 subprotocol; durable state is read with `psql` on this checkout's database.

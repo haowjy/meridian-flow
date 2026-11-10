@@ -163,7 +163,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.close();
     });
 
-    /** The writer's document: people write live (D20), so it seeds through a live port. */
+    /** The writer's document: people write live, so it seeds through a live port. */
     async function seedExisting(fixture: Fixture, path: string) {
       const resolution = await resolveThreadContext(fixture.routeDeps, THREAD_ID);
       if (!resolution) throw new Error("thread did not resolve");

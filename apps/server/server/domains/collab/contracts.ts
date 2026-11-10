@@ -151,12 +151,12 @@ export type CollabTransport = {
   closeHocuspocusDraftRoom(draftId: string): void;
   /**
    * A tab's SyncStep1 on a draft room: reconciles `room` against the committed draft, then
-   * true while the draft is active (decision D27).
+   * true while the draft is active.
    */
   reconcileHocuspocusDraftRoom(input: { draftId: string; room: Y.Doc }): Promise<boolean>;
   /**
    * Called from a draft room's load hook: once Hocuspocus registers the room, brings it up to
-   * what committed while it loaded, or closes it when the draft ended (decision D26).
+   * what committed while it loaded, or closes it when the draft ended.
    */
   enrollHocuspocusDraftRoom(input: { draftId: string; document: HocuspocusDocument }): void;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
@@ -213,7 +213,7 @@ export type AgentTreeHistory = {
   recordAgentTreeChange(input: AgentTreeChange): Promise<{ handle: string }>;
   /** The document's live state now, as a tree entry records it; null while it is hidden. */
   liveState(documentId: DocumentId): Promise<import("@meridian/contracts").LiveTreeState | null>;
-  /** The Works (`Work "‹name›"`) whose active drafts of a document still change it (D79). */
+  /** The Works (`Work "‹name›"`) whose active drafts of a document still change it. */
   survivingDraftWorks(documentId: DocumentId): Promise<string[]>;
   /** The document this chat's latest move or delete took away from `path`, if any. */
   movedAwayFrom(threadId: ThreadId, path: string): Promise<DocumentId | null>;
@@ -361,7 +361,7 @@ export type ResponseWriteCommitFinalizeResult =
       status: "committed";
       documents: ResponseWriteCommitDocument[];
       stagedCreates: ResponseWriteStagedCreates;
-      /** Documents the save left out (D29); their writes were not saved. */
+      /** Documents the save left out; their writes were not saved. */
       refused: RefusedResponseDocument[];
       awarenessDegraded?: boolean;
     }
@@ -492,7 +492,7 @@ export type TurnLiveLineageAccess = {
 
 /**
  * The version an effective read reads, and so the view its links spell in:
- * the version the caller's writes change. `live` never touches a draft (D40);
+ * the version the caller's writes change. `live` never touches a draft;
  * a draft read names its Work.
  */
 export type EffectiveReadVersion =
