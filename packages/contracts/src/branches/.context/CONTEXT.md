@@ -8,7 +8,7 @@ Five names; never let one stand in for another.
 | **item** | One document's reviewable change inside the branch, with or without a text draft (an empty create and a created image have none). | `itemKey` (`${branchId}:${documentId}`) |
 | **draft** | The server's per-document text draft in a branch. Stable for one room lifetime. | addressed `draftId`, `hasDraft` and opaque `reviewRoomName` |
 | **command** | One writer action (Apply or Discard). | a client-made `commandId` |
-| **presented address** | What the writer is looking at: `{ workId, itemKey, changeId? }`. | `item=` and `change=` in the URL, the API review selector `reviewWorkId` + `itemKey` |
+| **presented address** | What the writer is looking at: `{ ownerKey, itemKey, changeId? }`. | `item=` and `change=` in the URL, the API review selector `reviewOwner` + `itemKey` |
 
 The client never reads `branchId` as a document draft id; the server alone maps an `itemKey`
 to a draft (collab `domain/branch-review-identity.ts`). Text Apply instead binds the captured

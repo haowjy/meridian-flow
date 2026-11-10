@@ -14,7 +14,7 @@ import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { useOptionalRemovedNotices } from "./account-feature-context";
-import type { NoticeSurface, RemovedNoticeSnapshot, ShownRemoval } from "./removed-notice-store";
+import type { RemovedNoticeSnapshot, ShownRemoval } from "./removed-notice-store";
 
 /** One removed document as a sentence names it; a null title reads "this document". */
 export type Removal = Readonly<{ title: string | null; record: DocumentRemovalRecord | null }>;
@@ -198,12 +198,12 @@ export function RemovedDocumentSentence({ documents }: { documents: readonly Rem
 const EMPTY_NOTICE: RemovedNoticeSnapshot = { shown: [], waiting: [], version: 0 };
 const subscribeNothing = () => () => undefined;
 
-/** One surface's removed-documents notice. */
-export function useRemovedNotice(projectId: string, surface: NoticeSurface): RemovedNoticeSnapshot {
+/** The Editor's removed-documents notice. */
+export function useRemovedNotice(projectId: string): RemovedNoticeSnapshot {
   const notices = useOptionalRemovedNotices();
   return useSyncExternalStore(
     notices ? (listener) => notices.subscribe(listener) : subscribeNothing,
-    () => notices?.snapshot(projectId, surface) ?? EMPTY_NOTICE,
+    () => notices?.snapshot(projectId) ?? EMPTY_NOTICE,
     () => EMPTY_NOTICE,
   );
 }
@@ -218,9 +218,8 @@ export function useRemovedNotice(projectId: string, surface: NoticeSurface): Rem
  */
 export function useRemovedNoticeLifetime(
   projectId: string,
-  surface: NoticeSurface,
   place: Readonly<{
-    /** Changes with every navigation the writer makes on this surface. */
+    /** Changes with every navigation the writer makes in the Editor. */
     key: string;
     onScreen: boolean;
     /** The document the place shows, by route (Editor) or id (dock). */
@@ -228,7 +227,7 @@ export function useRemovedNoticeLifetime(
   }>,
 ): void {
   const notices = useOptionalRemovedNotices();
-  const notice = useRemovedNotice(projectId, surface);
+  const notice = useRemovedNotice(projectId);
   const anchor = useRef<{ version: number; key: string } | null>(null);
   const { key, onScreen } = place;
   const showing = JSON.stringify(place.showing);
@@ -238,7 +237,7 @@ export function useRemovedNoticeLifetime(
     if (anchor.current) {
       if (anchor.current.key === key) return;
       anchor.current = null;
-      notices?.dismiss(projectId, surface);
+      notices?.dismiss(projectId);
       return;
     }
     const shows: Readonly<{ scheme: string | null; path: string | null }> | string | null =
@@ -250,27 +249,19 @@ export function useRemovedNoticeLifetime(
           trimSlashes(document.route.path) === trimSlashes(shows?.path ?? ""),
     );
     if (onScreen && !onRemovedDocument) anchor.current = { version: notice.version, key };
-  }, [key, notice, notices, onScreen, projectId, showing, surface]);
+  }, [key, notice, notices, onScreen, projectId, showing]);
 }
 
 const trimSlashes = (path: string) => path.replace(/^\/+|\/+$/g, "");
 
 /** The notice's dismiss control, shared by every placement. */
-function DismissNotice({
-  projectId,
-  surface,
-  className,
-}: {
-  projectId: string;
-  surface: NoticeSurface;
-  className?: string;
-}) {
+function DismissNotice({ projectId, className }: { projectId: string; className?: string }) {
   const notices = useOptionalRemovedNotices();
   return (
     <IconButton
       className={className}
       aria-label={t`Dismiss`}
-      onClick={() => notices?.dismiss(projectId, surface)}
+      onClick={() => notices?.dismiss(projectId)}
     >
       <X aria-hidden className="size-3" />
     </IconButton>
@@ -284,27 +275,13 @@ function DismissNotice({
  * ("1 document deleted") otherwise; the tooltip and accessible name always
  * carry the full sentence, every name included.
  */
-export function RemovedDocumentChip({
-  projectId,
-  surface,
-}: {
-  projectId: string;
-  surface: NoticeSurface;
-}) {
-  const { shown } = useRemovedNotice(projectId, surface);
+export function RemovedDocumentChip({ projectId }: { projectId: string }) {
+  const { shown } = useRemovedNotice(projectId);
   if (shown.length === 0) return null;
-  return <Chip projectId={projectId} surface={surface} documents={shown} />;
+  return <Chip projectId={projectId} documents={shown} />;
 }
 
-function Chip({
-  projectId,
-  surface,
-  documents,
-}: {
-  projectId: string;
-  surface: NoticeSurface;
-  documents: readonly ShownRemoval[];
-}) {
+function Chip({ projectId, documents }: { projectId: string; documents: readonly ShownRemoval[] }) {
   useLingui();
   const sentence = removalSentence(documents);
   return (
@@ -322,7 +299,7 @@ function Chip({
       <span aria-hidden className="hidden min-w-0 truncate @max-[13rem]:inline">
         {shortRemovalSentence(documents)}
       </span>
-      <DismissNotice projectId={projectId} surface={surface} className="size-5 shrink-0" />
+      <DismissNotice projectId={projectId} className="size-5 shrink-0" />
     </div>
   );
 }
@@ -351,7 +328,7 @@ export function RemovedDocumentLandingNotice({
   projectId: string;
   className?: string;
 }) {
-  const { shown } = useRemovedNotice(projectId, "editor");
+  const { shown } = useRemovedNotice(projectId);
   if (shown.length === 0) return null;
   return <LandingNotice projectId={projectId} documents={shown} className={className} />;
 }
@@ -376,14 +353,14 @@ function LandingNotice({
       <p className="min-w-0 truncate" title={sentence}>
         {sentence}
       </p>
-      <DismissNotice projectId={projectId} surface="editor" className="size-6 shrink-0" />
+      <DismissNotice projectId={projectId} className="size-6 shrink-0" />
     </div>
   );
 }
 
 /** The phone's placement: its top bar's notice row, the slot a screen's own failures use. */
 export function useRemovedDocumentPhoneNotice(projectId: string) {
-  const { shown } = useRemovedNotice(projectId, "editor");
+  const { shown } = useRemovedNotice(projectId);
   return shown.length > 0 ? <PhoneNotice projectId={projectId} documents={shown} /> : null;
 }
 
@@ -398,11 +375,7 @@ function PhoneNotice({
   return (
     <div role="status" data-removed-document-notice className="flex items-start gap-2 py-1.5">
       <p className="min-w-0 flex-1 py-1 text-foreground text-sm">{removalSentence(documents)}</p>
-      <DismissNotice
-        projectId={projectId}
-        surface="editor"
-        className="shrink-0 [@media(pointer:coarse)]:size-11"
-      />
+      <DismissNotice projectId={projectId} className="shrink-0 [@media(pointer:coarse)]:size-11" />
     </div>
   );
 }
