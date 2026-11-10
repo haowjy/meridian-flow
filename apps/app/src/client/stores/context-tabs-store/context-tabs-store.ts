@@ -12,10 +12,8 @@ import {
   type ProjectTabsSlice,
   type ReviewEntries,
   type ReviewPin,
-  reviewEntryOf,
   selectedDocumentIdOf,
   selectedTabOf,
-  selectingDocument,
   type TabOwner,
   type TabView,
   tabKey,
@@ -356,7 +354,6 @@ export function commitPlannedContextRemoval(
   projectId: string,
   input: {
     documentIds: readonly string[];
-    workspaceSelection?: { documentId: string | null };
     /** A Work's Discard drops only its entry; the tab survives while another Work reviews it. */
     dropReviewOf?: string;
   },
@@ -375,16 +372,11 @@ export function commitPlannedContextRemoval(
   const tabs = input.dropReviewOf
     ? slice.tabs
     : slice.tabs.filter((tab) => !documentIds.has(tab.documentId));
-  const kept = { tabs, selectedTabKey: slice.selectedTabKey };
-  void useContextTabsStore
-    .getState()
-    .applyAvailability(
-      projectId,
-      slice,
-      input.workspaceSelection
-        ? selectingDocument(kept, input.workspaceSelection.documentId)
-        : kept,
-    );
+  // A removed tab's selection is not handed to a neighbour: nothing is selected.
+  const selectedTabKey = tabs.some((tab) => tabKey(tab) === slice.selectedTabKey)
+    ? slice.selectedTabKey
+    : null;
+  void useContextTabsStore.getState().applyAvailability(projectId, slice, { tabs, selectedTabKey });
   return removed;
 }
 

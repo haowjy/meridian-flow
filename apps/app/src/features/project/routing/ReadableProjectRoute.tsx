@@ -1118,8 +1118,6 @@ function ReadableProjectDestination({
                   update,
                   relocated,
                   openContext,
-                  goWorks: () => void go(toDestination({ kind: "works" }), { replace: true }),
-                  goEditor: () => void go(toDestination({ kind: "editor" }), { replace: true }),
                 }),
             }}
             activeLocalDocumentId={editorDocument.localDocumentId}
