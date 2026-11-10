@@ -11,6 +11,7 @@ import { useLingui } from "@lingui/react";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { Info, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
+import { Chip } from "@/components/ui/chip";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { useOptionalRemovedNotices } from "./account-feature-context";
@@ -287,18 +288,25 @@ function DismissNotice({
 export function RemovedDocumentChip({ projectId }: { projectId: string }) {
   const { shown } = useRemovedNotice(projectId);
   if (shown.length === 0) return null;
-  return <Chip projectId={projectId} documents={shown} />;
+  return <RemovedChip projectId={projectId} documents={shown} />;
 }
 
-function Chip({ projectId, documents }: { projectId: string; documents: readonly ShownRemoval[] }) {
+function RemovedChip({
+  projectId,
+  documents,
+}: {
+  projectId: string;
+  documents: readonly ShownRemoval[];
+}) {
   useLingui();
   const sentence = removalSentence(documents);
   return (
-    <div
+    <Chip
+      dashed
       role="status"
       title={sentence}
       data-removed-document-notice
-      className="my-1.5 ml-1 flex min-w-0 max-w-[28rem] items-center gap-1.5 rounded-md border border-border border-dashed pr-0.5 pl-2 text-muted-foreground text-xs"
+      className="my-1.5 ml-1 min-w-0 max-w-[28rem] shrink pr-px font-normal"
     >
       <Info aria-hidden className="size-3.5 shrink-0" />
       <span className="sr-only">{sentence}</span>
@@ -309,7 +317,7 @@ function Chip({ projectId, documents }: { projectId: string; documents: readonly
         {shortRemovalSentence(documents)}
       </span>
       <DismissNotice projectId={projectId} className="size-5 shrink-0" dense />
-    </div>
+    </Chip>
   );
 }
 

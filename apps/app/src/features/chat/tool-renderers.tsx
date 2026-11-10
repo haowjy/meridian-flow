@@ -11,6 +11,7 @@ import {
 } from "@meridian/thread-client";
 import { ChevronRight, FileText, Folder } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { Chip } from "@/components/ui/chip";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
@@ -185,10 +186,10 @@ function GrepHit({ row }: { row: GrepHitRow }) {
 
 function MatchCount({ count }: { count: number }) {
   return (
-    <span className="ml-auto inline-grid min-w-5 shrink-0 place-items-center rounded-full border border-border bg-ink-fill px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+    <Chip kind="count" className="ml-auto">
       <span aria-hidden>{count}</span>
       <span className="sr-only">{matchCountLabel(count)}</span>
-    </span>
+    </Chip>
   );
 }
 

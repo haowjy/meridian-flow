@@ -10,7 +10,7 @@ import {
 } from "@meridian/contracts/threads";
 import { useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import {
   Select,
   SelectContent,
@@ -117,7 +117,7 @@ function ModelRequestView({
               {requestSummary.model ?? "Routing default"}
             </p>
           </div>
-          <Badge>{prefixSummary.label}</Badge>
+          <Chip kind="label">{prefixSummary.label}</Chip>
         </div>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
           <RequestMetric label="messages" value={formatCount(requestSummary.messageCount)} />
