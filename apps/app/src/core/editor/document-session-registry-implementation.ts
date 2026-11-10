@@ -52,20 +52,10 @@ type LiveRoomState = {
   leases: Map<ProjectId, LiveDocumentSessionLease>;
 };
 
-type RetainedLiveDocument = { lease: LiveDocumentSessionLease; detached: boolean };
+/** Longest a released live session waits for acknowledgement from a room that never answers. */
+const UNSENT_EDITS_HOLD_MAX_MS = 10 * 60_000;
 
-/** The room will never accept the session's edits as it is: reset, removed, refused or access lost. */
-function isTerminalRoom(session: DocumentSession): boolean {
-  const { status, connectionState } = session.getSnapshot();
-  return (
-    session.resetDisposition !== null ||
-    status === "destroyed" ||
-    status === "access-lost" ||
-    connectionState?.kind === "reset" ||
-    connectionState?.kind === "unauthorized" ||
-    connectionState?.kind === "terminal"
-  );
-}
+type RetainedLiveDocument = { lease: LiveDocumentSessionLease; detached: boolean };
 
 export class DocumentSessionRegistry
   implements
@@ -251,6 +241,7 @@ export class DocumentSessionRegistry
     }
     this.cancelPendingTeardown(lease.documentId);
     await session.restartTransport(this.transportFactory);
+    this.scheduleTeardownIfUnretained(lease.documentId);
     return true;
   }
 
@@ -290,6 +281,7 @@ export class DocumentSessionRegistry
     if (state?.session !== session) return false;
     this.cancelPendingTeardown(session.documentId as DocumentId);
     await session.restartTransport(this.transportFactory);
+    this.scheduleTeardownIfUnretained(session.documentId as DocumentId);
     return true;
   }
 
@@ -772,16 +764,25 @@ export class DocumentSessionRegistry
   }
 
   private scheduleTeardown(roomKey: string): void {
-    if (this.pendingTeardownTimers.has(roomKey) || this.drainingRooms.has(roomKey)) return;
+    if (this.pendingTeardownTimers.has(roomKey)) return;
     const timer = setTimeout(() => {
       this.pendingTeardownTimers.delete(roomKey);
       const state = this.liveRooms.get(roomKey);
       if (!state?.session || this.isRetained(roomKey)) return;
       // Like draft rooms, a session with unsent edits stays until they are acknowledged.
-      // The other exits (refused, removed or reset room, revoked document, account close)
-      // retire it through `retireDrainedRoom`, `revokeAccess`, `revokeDocument` and `invalidateAll`.
+      // `retireDrainedRoom` ends the hold when the room can no longer take them; a room that
+      // never answers (reconnecting forever, e.g. 1013 admission failures) ends it at the cap.
+      // The other exits (refused room, removed document, revoked access, account close) go
+      // through `dropRefusedRoom`, `drainDocument`, `drainAccess` and `invalidateAll`.
       if (this.mustKeepForUnsentEdits(state.session)) {
         this.drainingRooms.add(roomKey);
+        this.pendingTeardownTimers.set(
+          roomKey,
+          setTimeout(() => {
+            this.pendingTeardownTimers.delete(roomKey);
+            if (!this.isRetained(roomKey)) this.retireLiveSession(roomKey, state);
+          }, UNSENT_EDITS_HOLD_MAX_MS),
+        );
         return;
       }
       this.retireLiveSession(roomKey, state);
@@ -790,14 +791,14 @@ export class DocumentSessionRegistry
   }
 
   private mustKeepForUnsentEdits(session: DocumentSession): boolean {
-    return session.hasUnacknowledgedEdits() && !isTerminalRoom(session);
+    return session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits();
   }
 
   private retireLiveSession(roomKey: string, state: LiveRoomState): void {
     const session = state.session;
     if (!session) return;
     state.session = null;
-    this.drainingRooms.delete(roomKey);
+    this.cancelPendingTeardown(roomKey);
     void this.teardownOwner.retire({ kind: "live", roomKey }, session).catch(() => undefined);
   }
 
@@ -810,6 +811,11 @@ export class DocumentSessionRegistry
     // A refused room is dropped through its leases (`dropRefusedRoom`), which clears its copy.
     if (session.resetDisposition === "refused") return;
     this.retireLiveSession(roomKey, state);
+  }
+
+  // A restart cancels the pending teardown; a room no host retains still needs one.
+  private scheduleTeardownIfUnretained(documentId: DocumentId): void {
+    if (!this.isRetained(documentId)) this.scheduleTeardown(documentId);
   }
 
   private cancelPendingTeardown(roomKey: string): void {

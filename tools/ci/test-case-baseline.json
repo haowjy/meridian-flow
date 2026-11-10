@@ -30,6 +30,7 @@
     "apps/app/src/client/stores/thread-store/thread-store.test.ts": 3,
     "apps/app/src/components/app/composer/composer-document.test.ts": 3,
     "apps/app/src/core/editor/document-session-cross-context-coordination.test.ts": 3,
+    "apps/app/src/core/editor/document-session-live-hold.test.ts": 1,
     "apps/app/src/core/editor/document-session-persistence.test.ts": 6,
     "apps/app/src/core/editor/document-session-teardown-owner.test.ts": 2,
     "apps/app/src/core/editor/document-session.test.ts": 10,

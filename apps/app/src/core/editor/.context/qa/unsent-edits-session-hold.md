@@ -2,8 +2,10 @@
 
 The live registry (`document-session-registry-implementation.ts`) keeps a session with
 unacknowledged edits after its last host leaves, until the server acknowledges them or
-an exit applies: the room was refused or reset, the document was removed or access
-revoked, or the account's session ends. Recipe and the last run's results.
+an exit applies: the room was refused, reset or admitted read-only, the document was
+removed or access revoked, the account's session ends, or 10 minutes pass. The exits
+are listed in `../CONTEXT.md` (Live session teardown); `document-session-live-hold.test.ts`
+guards them. Recipe and the last run's results.
 
 ## Recipe (browser, `agent-browser`, stack from `pnpm dev`)
 

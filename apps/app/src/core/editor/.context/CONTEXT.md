@@ -359,6 +359,27 @@ keyboard, pointer, drop, or draft-recovery answer.
   Eligibility reads document text; do not replace this rule with
   `allowSpaces: false` or a Space key handler.
 
+### Live session teardown
+
+- When the last host releases a live document, the registry retires its session after a
+  3 s grace. A session with unacknowledged edits is held instead, so edits made offline
+  reach the server without the writer reopening the document. Reopening takes the
+  same session back and cancels the hold.
+- `DocumentSession.canDeliverUnsentEdits()` says whether the wait can still end in
+  delivery. It is false for a reset, unauthorized, terminal, destroyed or read-only room
+  (the server drops a read-only room's writes without closing it). The live registry
+  and `DraftRoomPool` both ask it; neither keeps its own list.
+- A held session ends when the server acknowledges its edits, when the predicate turns
+  false, when the room is refused, the document removed or access revoked
+  (`dropRefusedRoom`, `drainDocument`, `drainAccess`), when the account closes
+  (`invalidateAll`), or at `UNSENT_EDITS_HOLD_MAX_MS` (10 min) for a room that
+  reconnects forever without answering (e.g. repeated `1013` admission failures). The
+  edits stay in IndexedDB in every case.
+- A removed room (4208) retires at once, before an availability check can prove a
+  restore and restart it; its edits wait in IndexedDB for the next open.
+- Restarting a removed or unavailable room cancels its pending teardown and schedules
+  it again when no host retains the room.
+
 ### Draft room retirement
 
 - `DraftRoomPool` retains stable `draft:<draftId>` rooms without leases. The last
