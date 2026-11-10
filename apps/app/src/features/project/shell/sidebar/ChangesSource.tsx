@@ -89,8 +89,8 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
  * its × and ✓ discard or apply that document's draft. Discard all and Apply all act on every
  * draft of the scope, new documents, moves and deletes included. Discard all asks first, and so
  * does an Apply all that would delete documents or bring back documents deleted from the
- * manuscript, naming each, and again for any a newer delete held back. The question and
- * the latest command's notice sit in the footer below the rows, so opening one never moves a row.
+ * manuscript, naming each, and again for any a newer delete held back. A question takes the
+ * place of the buttons that asked it; the latest command's notice sits below the rows.
  */
 export function ChangesSource({
   projectId,
@@ -219,7 +219,11 @@ export function ChangesSource({
     <SourcePane
       label={scope.heading}
       bar={
-        hasFiles && !question && !controller.dispositionLocked ? (
+        question ? (
+          <div className="min-w-0 flex-1">
+            <CommandNotice commands={{ notice: null, undoNotice: () => {} }} question={question} />
+          </div>
+        ) : hasFiles && !controller.dispositionLocked ? (
           <ReviewActions
             scope="all"
             density="full"
@@ -263,7 +267,9 @@ export function ChangesSource({
       ) : (
         <SourceHint>{scope.empty}</SourceHint>
       )}
-      <CommandNotice commands={controller} question={question} />
+      <div className="mx-2">
+        <CommandNotice commands={controller} />
+      </div>
     </SourcePane>
   );
 }
@@ -331,7 +337,7 @@ function ChangeRow({
           aria-current={active ? "true" : undefined}
           disabled={!opens}
           onClick={review}
-          className="focus-ring flex min-w-0 flex-1 flex-col items-start rounded-sm px-1.5 py-0.5 text-left"
+          className="focus-ring flex min-w-0 flex-1 flex-col items-start justify-center rounded-sm px-1.5 py-0.5 text-left coarse:min-h-11"
         >
           <span className={cn("w-full truncate", deleted && "line-through")}>{name}</span>
           <ChangeSummary file={file} textChanges={textChanges} />
@@ -366,7 +372,10 @@ function ChangeRow({
   );
 }
 
-/** What the draft does to the document, in a quiet line under its name; nothing to say, no line. */
+/**
+ * What the draft does to the document, in a quiet line under its name; nothing to say, no line.
+ * The row's name is already the draft's, so a rename says what it was.
+ */
 function ChangeSummary({
   file,
   textChanges,
@@ -380,7 +389,7 @@ function ChangeSummary({
     : line?.kind === "delete"
       ? t`Deleted`
       : line?.kind === "rename"
-        ? t`Renaming to ${line.place}`
+        ? t`Was ${line.name}`
         : line?.kind === "move"
           ? t`Moving to ${line.place}`
           : line?.kind === "reorder"
