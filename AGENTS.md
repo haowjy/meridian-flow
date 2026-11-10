@@ -104,8 +104,8 @@ to confirm a model exists. Model facts come from [models.dev](https://models.dev
 budgets:
 [tools/ci/README.md](tools/ci/README.md).
 
-Write few unit tests. A new test protects a named risk that no probe or other test
-already exercises, and asserts what the code produces, not mocks or call counts. Prefer probes
+Keep no new test the user didn't ask for (`/testing`); propose one with the risk it guards.
+A test you keep asserts what the code produces, not mocks or call counts. Prefer probes
 in `.context/qa/` beside their code, indexed in [docs/qa](docs/qa/README.md). A test pinned to a redesignable
 decision lists it under `Pins implementation decisions` in its header; change the
 decision, change the test.
@@ -121,10 +121,10 @@ in several pieces gets one integration branch: each finished piece bases on it a
 it, instead of PRs stacked on each other, and the piece's worktree, stack and processes go as
 soon as it's in. One PR carries the integration branch into `main`.
 
-A PR merges as soon as it is complete and a reviewer has approved it: another model, or the
-owner. Before the merge, CI is green, the regressions the change could cause are tested, and the
+Once a PR is complete and a reviewer (another model, or the owner) has approved it, whoever
+may merge it merges it at once. Before the merge, CI is green, the regressions the change could cause are exercised on the real system (`/testing`), and the
 PR body is reread against the final diff, with evidence from the commit being merged. Don't hold
-a finished PR for the owner: he uses the app, and what he finds wrong becomes a follow-up PR.
+a finished PR for the owner to try first: he uses the app, and what he finds wrong becomes a follow-up PR.
 
 Open a draft PR as soon as a branch has its first commit, and update its body with each push,
 so anyone can see the work's state from the PR. Mark it ready when it's complete.
