@@ -17,14 +17,14 @@ import { parseContextUri } from "@/lib/context-uri";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { canonicalDocumentPath } from "./local-document-address";
 import type { ProjectDestination } from "./project-address";
-import type { ContextRouteTarget } from "./project-route";
+import { type ContextRouteRequest, contextRouteRequest } from "./project-route";
 
 export type LaunchIdentityLookup = (
   documentId: string,
 ) => Promise<ProjectContextIdentityResolution | { kind: "failed" }>;
 
 export async function resolveLaunchLocator(input: {
-  requested: ContextRouteTarget & { workId?: string };
+  requested: ContextRouteRequest;
   tabs: readonly ContextTab[];
   addressed: ProjectDestination;
   addressNamesIt: boolean;
@@ -38,7 +38,7 @@ export async function resolveLaunchLocator(input: {
    */
   selected: boolean;
   lookup: LaunchIdentityLookup;
-}): Promise<ContextRouteTarget> {
+}): Promise<ContextRouteRequest> {
   const { requested } = input;
   const { documentId } = requested;
   if (!documentId) return requested;
@@ -48,23 +48,23 @@ export async function resolveLaunchLocator(input: {
   if (tab && tab.kind !== "new") return { ...routeTargetForTab(tab), documentId };
   if (input.addressNamesIt && input.addressed.kind === "document") {
     // The address spells its path without the leading slash; routes, tabs and launches spell it with.
-    return {
+    return contextRouteRequest({
       ...requested,
       scheme: input.addressed.scheme,
       path: `/${canonicalDocumentPath(input.addressed.path)}`,
-    };
+    });
   }
   if (input.draftOnly) return requested;
-  const locate = (uri: string): ContextRouteTarget | null => {
+  const locate = (uri: string) => {
     const parsed = parseContextUri(uri);
     return parsed ? { scheme: parsed.scheme, path: parsed.path } : null;
   };
   const live = input.catalog?.findDocument(documentId);
   const cached = live ? locate(live.uri) : null;
-  if (cached) return { ...requested, ...cached };
+  if (cached) return contextRouteRequest({ ...requested, ...cached });
   if (input.selected) return requested;
   const resolution = await input.lookup(documentId);
   const location = resolution.kind === "available" ? locate(resolution.entry.uri) : null;
   if (!location) throw new Error("The reviewed document could not be located");
-  return { ...requested, ...location };
+  return contextRouteRequest({ ...requested, ...location });
 }

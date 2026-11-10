@@ -15,6 +15,7 @@ import {
 import type { DocumentSession } from "@/core/editor/document-session";
 import { DocumentSessionAuthorityError } from "@/core/editor/document-session-coordination-contract";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { contextRouteRequest } from "../routing/project-route";
 /**
  * Opening a project document by id — the app's one answer to "take me there".
  *
@@ -593,16 +594,13 @@ export class ProjectDocumentNavigationAdapter {
         throw new Error("Opening a project document requires the project route owner");
       this.current = null;
       const settlement = await this.dependencies.openRoute(
-        {
+        contextRouteRequest({
           scheme: input.scheme,
           path: input.file.path,
-          // The owner is a Scratch note's alone; the scope never travels in a route.
-          ...(isWorkScopedScheme(input.scheme) && !input.rootThreadId && input.workId
-            ? { workId: input.workId }
-            : {}),
-          ...(input.rootThreadId ? { rootThreadId: input.rootThreadId } : {}),
+          workId: input.workId,
+          rootThreadId: input.rootThreadId,
           documentId: input.file.documentId,
-        },
+        }),
         {
           tab,
           ...(input.focus ? { focus: true as const } : {}),

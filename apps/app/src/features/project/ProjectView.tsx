@@ -134,7 +134,7 @@ import {
   type ProjectRouteIssue,
   type ProjectRouteMask,
 } from "./routing/ProjectRouteBoundary";
-import type { ProjectRouteCommands } from "./routing/project-route";
+import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { LeftSidebar } from "./shell/LeftSidebar";
@@ -360,7 +360,7 @@ export function ProjectView(props: ProjectViewProps) {
   const onSelectEditorContextPath = useCallback(
     (path: string, scheme?: ProjectContextTreeScheme, options?: { replace?: boolean }) => {
       if (editorScope.status !== "ready" || !scheme) return;
-      void props.onOpenContextTarget({ path, scheme, workId: editorScope.workId }, options);
+      void props.onOpenContextTarget(contextRouteRequest({ path, scheme }), options);
     },
     [editorWorkId, editorScope.status, props.onOpenContextTarget],
   );

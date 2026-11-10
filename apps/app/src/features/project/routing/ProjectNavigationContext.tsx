@@ -3,7 +3,7 @@ import { createContext, type ReactNode, useContext, useLayoutEffect, useRef } fr
 import type { ContextTab } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
 import type { NavigationSettlement, ProjectLeaveGuard } from "./project-navigation";
-import type { ContextRouteTarget } from "./project-route";
+import type { ContextRouteRequest } from "./project-route";
 
 export type OpenContextOptions = {
   replace?: boolean;
@@ -24,7 +24,7 @@ export type OpenContextOptions = {
 };
 
 export type OpenContextRoute = (
-  target: ContextRouteTarget,
+  target: ContextRouteRequest,
   options?: OpenContextOptions,
 ) => Promise<NavigationSettlement>;
 
@@ -42,7 +42,7 @@ const ProjectNavigationContext = createContext<{
       options?: { replace?: boolean },
     ) => Promise<unknown>;
   };
-  isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
+  isCurrentContextRoute?: (target: ContextRouteRequest) => boolean;
 } | null>(null);
 
 export function ProjectNavigationProvider({
@@ -69,7 +69,7 @@ export function ProjectNavigationProvider({
       options?: { replace?: boolean },
     ) => Promise<unknown>;
   };
-  isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
+  isCurrentContextRoute?: (target: ContextRouteRequest) => boolean;
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
 }) {
   return (

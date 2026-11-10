@@ -8,9 +8,9 @@
  */
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextTab } from "@/client/stores";
-import type { ContextRouteTarget } from "../routing/project-route";
+import type { ContextRouteRequest } from "../routing/project-route";
 
-type RouteLocator = Pick<ContextRouteTarget, "scheme" | "path" | "workId" | "rootThreadId">;
+type RouteLocator = Pick<ContextRouteRequest, "scheme" | "path" | "workId" | "rootThreadId">;
 
 export function contextTabMatchesRoute(tab: ContextTab, target: RouteLocator): boolean {
   if (tab.kind === "new") return false;

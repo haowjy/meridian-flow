@@ -123,7 +123,6 @@ describe("AccountFeatureTestProvider", () => {
         coordinator.beginRouteSelection("project-1", {
           scheme: "kb",
           path: "/strict.md",
-          workId: "work-1",
         });
         const selection = coordinator.getProjectSnapshot("project-1").selection;
         if (selection.status === "candidate") selectionRevisions.push(selection.revision);

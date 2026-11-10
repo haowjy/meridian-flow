@@ -4,8 +4,10 @@
  * has no tab yet shows nothing, so the pane waits for the open command instead of showing the
  * previous document under a new URL.
  */
+
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ContextTab } from "@/client/stores";
+import { contextRouteRequest } from "../routing/project-route";
 import { type ContextRouteSelection, routeSelectionDocumentId } from "./context-removal-protocol";
 import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
 
@@ -38,12 +40,12 @@ export function resolveRouteOwner({
   const selectedDocumentId = localDocumentId ?? selectedTabId ?? undefined;
   const locator =
     editorWorkId && activeContextScheme !== null && activeContextPath !== null
-      ? {
+      ? contextRouteRequest({
           scheme: activeContextScheme,
           path: activeContextPath,
-          ...(activeContextWork ? { workId: activeContextWork } : {}),
-          ...(activeContextChat ? { rootThreadId: activeContextChat } : {}),
-        }
+          workId: activeContextWork,
+          rootThreadId: activeContextChat,
+        })
       : null;
   const boundDocumentId = locator ? routeSelectionDocumentId(selection, locator) : null;
   const workspaceRoute = resolveWorkspaceRoute({

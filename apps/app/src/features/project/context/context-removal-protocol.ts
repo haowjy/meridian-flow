@@ -2,7 +2,7 @@
 
 import type { ContextTab } from "@/client/stores";
 import { canonicalDocumentPath } from "../routing/local-document-address";
-import { type ContextRouteTarget, sameContextTarget } from "../routing/project-route";
+import { type ContextRouteRequest, sameContextTarget } from "../routing/project-route";
 import {
   type ContextRemovalIntent,
   type ContextRouteIdentity,
@@ -14,7 +14,7 @@ import {
 import { contextTabMatchesRoute } from "./context-tab-identity";
 
 export type RouteRemovalProof = {
-  locator: ContextRouteTarget;
+  locator: ContextRouteRequest;
   identity: ContextRouteIdentity;
   witnessedRevision: number;
   intent: ContextRemovalIntent;
@@ -41,21 +41,21 @@ export type ContextRouteSelection =
   | {
       status: "candidate";
       revision: number;
-      locator: ContextRouteTarget;
+      locator: ContextRouteRequest;
       obligations: readonly PendingRouteObligation[];
       reentryGuard: TerminalRouteRemoval | null;
     }
   | {
       status: "bound";
       revision: number;
-      locator: ContextRouteTarget;
+      locator: ContextRouteRequest;
       identity: ContextRouteIdentity;
       by: RouteBindingProof;
     }
   | {
       status: "rejected";
       revision: number;
-      locator: ContextRouteTarget;
+      locator: ContextRouteRequest;
       reason: "fulfilled-absence" | "missing-local-owner";
     };
 
@@ -75,7 +75,7 @@ export type SelectionTransition = {
 
 export const sameLocator = sameContextTarget;
 
-export type RouteOwner = Pick<ContextRouteTarget, "scheme" | "path" | "workId" | "rootThreadId">;
+export type RouteOwner = Pick<ContextRouteRequest, "scheme" | "path" | "workId" | "rootThreadId">;
 
 /** Whether the selection is about exactly this route (paths compare without the leading slash). */
 export function selectionAtRoute(
@@ -148,7 +148,7 @@ function settleObligations(
 
 export function beginSelection(
   selection: ContextRouteSelection,
-  locator: ContextRouteTarget,
+  locator: ContextRouteRequest,
   reentryGuard: TerminalRouteRemoval | null = null,
 ): SelectionTransition {
   // A navigation that named its document, or an answer, already bound this locator. A review's

@@ -5,14 +5,14 @@ import type {
   PreparedWorkspaceNavigation,
 } from "@/features/project/routing/project-navigation";
 import {
-  type ContextRouteTarget,
+  type ContextRouteRequest,
   openContextRouteSearch,
 } from "@/features/project/routing/project-route";
 
 export async function acceptContextTransition(
   this: ContextRemovalRoutePort,
   projectId: string,
-  target: ContextRouteTarget | { kind: "clear" },
+  target: ContextRouteRequest | { kind: "clear" },
   prepared: PreparedWorkspaceNavigation,
 ): Promise<NavigationSettlement> {
   if (!prepared.isCurrent()) return { kind: "superseded" };

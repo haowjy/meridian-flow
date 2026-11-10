@@ -38,16 +38,48 @@ export type NavigationOptions = {
  * Scratch owner, `rootThreadId` a No Work chat's. Every other document has neither, so the
  * Work scope never takes part in its identity.
  */
-export type ContextRouteTarget = {
-  documentId?: string;
+export type ContextRouteTarget = { documentId?: string; path: string } & (
+  | { scheme: "scratch"; workId: string; rootThreadId?: undefined }
+  | { scheme: "scratch"; rootThreadId: string; workId?: undefined }
+  | {
+      scheme: Exclude<ProjectContextTreeScheme, "scratch">;
+      workId?: undefined;
+      rootThreadId?: undefined;
+    }
+);
+
+/**
+ * What a route or a caller names: a Scratch note may leave its owner out (a link without one,
+ * or a caller leaving it to the scope's Work).
+ */
+export type ContextRouteRequest =
+  | ContextRouteTarget
+  | {
+      documentId?: string;
+      path: string;
+      scheme: "scratch";
+      workId?: undefined;
+      rootThreadId?: undefined;
+    };
+
+/** Loose route fields (a URL, a tab, a chat link) to a request: the owner survives for Scratch only. */
+export function contextRouteRequest(parts: {
   scheme: ProjectContextTreeScheme;
   path: string;
-  workId?: string;
-  rootThreadId?: string;
-};
+  documentId?: string | undefined;
+  workId?: string | null | undefined;
+  rootThreadId?: string | null | undefined;
+}): ContextRouteRequest {
+  const { scheme, path, documentId } = parts;
+  const base = documentId ? { path, documentId } : { path };
+  if (scheme !== "scratch") return { ...base, scheme };
+  if (parts.rootThreadId) return { ...base, scheme, rootThreadId: parts.rootThreadId };
+  if (parts.workId) return { ...base, scheme, workId: parts.workId };
+  return { ...base, scheme };
+}
 
 /** Whether two targets name one locator: scheme and path, within the same owner. */
-export function sameContextTarget(a: ContextRouteTarget, b: ContextRouteTarget): boolean {
+export function sameContextTarget(a: ContextRouteRequest, b: ContextRouteRequest): boolean {
   return (
     a.scheme === b.scheme &&
     a.path === b.path &&
@@ -68,7 +100,7 @@ export type ContextRouteRepair = {
     | { kind: "removed-binding"; revision: number; documentId: string }
     | { kind: "rejected-candidate"; revision: number }
     | { kind: "materialized-local"; revision: number; documentId: string };
-  next: ContextRouteTarget | { kind: "clear" };
+  next: ContextRouteRequest | { kind: "clear" };
 };
 
 function isClearContextRouteTarget(
@@ -79,7 +111,7 @@ function isClearContextRouteTarget(
 
 export function openContextRouteSearch(
   search: ProjectSearch,
-  target: ContextRouteTarget,
+  target: ContextRouteRequest,
 ): ProjectSearch {
   return stripEmptySearch({
     ...search,
@@ -94,7 +126,7 @@ export function openContextRouteSearch(
 /** Compare raw route state with a resolved target. */
 export function contextRouteMatchesSearch(
   search: ProjectSearch | null | undefined,
-  target: ContextRouteTarget,
+  target: ContextRouteRequest,
 ): boolean {
   if (!search) return false;
   return (

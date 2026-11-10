@@ -66,7 +66,7 @@ describe("review launch navigation", () => {
     const lookup = vi.fn(async () => ({ kind: "failed" as const }));
     const { open, history } = setup(lookup);
     const result = await open(
-      { scheme: "manuscript", path: "/chapters/new.md", documentId: "doc-1", workId },
+      { scheme: "manuscript", path: "/chapters/new.md", documentId: "doc-1" },
       { replaceIfSameDocument: true, itemKey: "branch-1:doc-1" },
     );
     expect(result.kind).toBe("applied");
@@ -96,10 +96,7 @@ describe("review launch navigation", () => {
       "doc-hidden",
     );
     const live = { ...(hidden as object), documentId: "doc-live", reviews: undefined } as never;
-    await open(
-      { scheme: "manuscript", path: "/Scene.md", documentId: "doc-live", workId },
-      { tab: live },
-    );
+    await open({ scheme: "manuscript", path: "/Scene.md", documentId: "doc-live" }, { tab: live });
     expect(history.location.href).not.toContain("item=");
   });
 
@@ -118,7 +115,7 @@ describe("review launch navigation", () => {
       tabInstanceId: "tab-1",
     } as never;
     const result = await open(
-      { scheme: "manuscript", path: "Scene", documentId: "doc-1", workId },
+      { scheme: "manuscript", path: "Scene", documentId: "doc-1" },
       { tab },
     );
     expect(result.kind).toBe("applied");

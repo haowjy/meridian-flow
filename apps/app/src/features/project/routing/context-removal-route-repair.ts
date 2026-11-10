@@ -1,6 +1,7 @@
 /** The route-side adapter for Editor address repairs: turns a settled search update into a navigation. */
+
 import type { OpenContextRoute } from "./ProjectNavigationContext";
-import { type ProjectSearch, projectSearchEquals } from "./project-route";
+import { contextRouteRequest, type ProjectSearch, projectSearchEquals } from "./project-route";
 
 export function applyContextRemovalSearchUpdate({
   search,
@@ -20,13 +21,13 @@ export function applyContextRemovalSearchUpdate({
   if (projectSearchEquals(next, search)) return;
   if (next.scheme && next.path !== undefined)
     void openContext(
-      {
+      contextRouteRequest({
         scheme: next.scheme,
         path: next.path,
         workId: next.work,
         rootThreadId: next.chat,
-        ...(relocated ? { documentId: relocated.documentId } : {}),
-      },
+        documentId: relocated?.documentId,
+      }),
       // A fallback opens another document, so this address's item names nothing there; the
       // command gives a draft-only tab its own.
       { replace: true },

@@ -16,7 +16,7 @@ const tab = {
   filetype: "markdown",
   schemaType: "document",
 } as ContextTab;
-const locator = { scheme: "manuscript" as const, path: "/old.md", workId: "work" };
+const locator = { scheme: "manuscript" as const, path: "/old.md" };
 
 function plan(by: "navigation" | "review") {
   const selection: ContextRouteSelection = {
@@ -54,7 +54,7 @@ function plan(by: "navigation" | "review") {
     },
     tabs: { tabs: [tab], selectedTabKey: tab.tabInstanceId as string },
     recentRoutes: [],
-    routeSearch: { screen: "context", scheme: "manuscript", path: "/old.md", work: "work" },
+    routeSearch: { screen: "context", scheme: "manuscript", path: "/old.md" },
     appliedGenerations: new Map(),
   } as Parameters<typeof planContextAvailabilityBatch>[0]);
 }

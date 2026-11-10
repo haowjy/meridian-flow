@@ -99,11 +99,12 @@ import {
   type NavigationSettlement,
   type PreparedWorkspaceNavigation,
 } from "./project-navigation";
-import type {
-  ContextRouteTarget,
-  NavigationOptions,
-  ProjectRouteCommands,
-  ProjectSearch,
+import {
+  type ContextRouteRequest,
+  contextRouteRequest,
+  type NavigationOptions,
+  type ProjectRouteCommands,
+  type ProjectSearch,
 } from "./project-route";
 
 function screen(destination: ProjectDestination): ScreenKey {
@@ -269,7 +270,7 @@ function ReadableProjectDestination({
     const ticket = current?.beginIntent();
     return () => !!ticket && !!current?.isCurrent(ticket);
   }, []);
-  const isCurrentContextRoute = useCallback((target: ContextRouteTarget) => {
+  const isCurrentContextRoute = useCallback((target: ContextRouteRequest) => {
     return projectAddressMatchesContextTarget(latest.current.address, target);
   }, []);
 
@@ -282,7 +283,7 @@ function ReadableProjectDestination({
   const lineage = addressLineage(address);
   // The owner a locator carries is a Scratch note's alone; the scope never is one.
   const scratchWork = addressScratchWorkId(address);
-  const locatorOwner: Pick<ContextRouteTarget, "workId" | "rootThreadId"> =
+  const locatorOwner: { workId?: string; rootThreadId?: string } =
     documentDestination?.scheme === "scratch"
       ? lineage
         ? { rootThreadId: lineage }
@@ -366,11 +367,14 @@ function ReadableProjectDestination({
     selection.status === "bound" && selection.by === "review" && !address.itemKey;
   const boundDocumentId =
     documentDestination && !reviewBindingEnded
-      ? routeSelectionDocumentId(selection, {
-          scheme: documentDestination.scheme,
-          path: documentDestination.path,
-          ...locatorOwner,
-        })
+      ? routeSelectionDocumentId(
+          selection,
+          contextRouteRequest({
+            scheme: documentDestination.scheme,
+            path: documentDestination.path,
+            ...locatorOwner,
+          }),
+        )
       : null;
   const localDocumentAddress = useMemo(
     () =>
@@ -473,11 +477,15 @@ function ReadableProjectDestination({
     const ticket = navigation?.capture();
     const current = () => !!ticket && !!navigation?.isCurrent(ticket);
     const unbind = () =>
-      contextRemoval.unbindRoute(projectId, boundDocumentId, {
-        scheme: documentDestination.scheme,
-        path: documentDestination.path,
-        ...locatorOwner,
-      });
+      contextRemoval.unbindRoute(
+        projectId,
+        boundDocumentId,
+        contextRouteRequest({
+          scheme: documentDestination.scheme,
+          path: documentDestination.path,
+          ...locatorOwner,
+        }),
+      );
     void availability.resolveForOpen(projectId, boundDocumentId).then((answer) => {
       const located = answer.kind === "available" ? parseContextUri(answer.entry.uri) : null;
       if (!located) return unbind();
@@ -489,7 +497,7 @@ function ReadableProjectDestination({
         // The server places the document here: the answer that named another is stale.
         return void documentLookup.refetch();
       void openContext(
-        {
+        contextRouteRequest({
           scheme: located.scheme,
           path: located.path,
           // A moved document may live in another Work's Scratch.
@@ -499,7 +507,7 @@ function ReadableProjectDestination({
             ? { workId: answer.authority.workId }
             : locatorOwner),
           documentId: boundDocumentId,
-        },
+        }),
         { replace: true, isCurrent: current },
       );
     }, unbind);
@@ -592,11 +600,14 @@ function ReadableProjectDestination({
       localDocumentAddress ||
       destination.kind !== "document" ||
       selection.status !== "candidate" ||
-      !selectionAtRoute(selection, {
-        scheme: destination.scheme,
-        path: destination.path,
-        ...locatorOwner,
-      })
+      !selectionAtRoute(
+        selection,
+        contextRouteRequest({
+          scheme: destination.scheme,
+          path: destination.path,
+          ...locatorOwner,
+        }),
+      )
     )
       return;
     contextRemoval.rejectRouteCandidate(projectId, selection.revision);
@@ -682,7 +693,7 @@ function ReadableProjectDestination({
     };
   }
   const contextDestination = useCallback(
-    (target: ContextRouteTarget, preparedTab?: ContextTab, itemKey?: string) =>
+    (target: ContextRouteRequest, preparedTab?: ContextTab, itemKey?: string) =>
       prepareEditorDestination(
         {
           projectId,
@@ -786,7 +797,7 @@ function ReadableProjectDestination({
     };
   }, [address.itemKey, closeState.closed, closeState.removed, closeState.liveUri]);
   const closeDestination = useCallback(
-    (target: ContextRouteTarget | { kind: "clear" }, prepared: PreparedWorkspaceNavigation) => {
+    (target: ContextRouteRequest | { kind: "clear" }, prepared: PreparedWorkspaceNavigation) => {
       const current = latest.current;
       if (!current.navigation) return Promise.resolve({ kind: "superseded" as const });
       const next =

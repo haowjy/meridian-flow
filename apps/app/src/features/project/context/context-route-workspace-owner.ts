@@ -1,7 +1,7 @@
 /** Exact, heuristic-free resolution of the Editor workspace owner for one committed route. */
 
 import { type ContextTab, editorHasReview, isDraftOnly, isEditorContextTab } from "@/client/stores";
-import type { ContextRouteTarget } from "../routing/project-route";
+import type { ContextRouteRequest } from "../routing/project-route";
 import { type ContextRouteIdentity, routeTargetForTab } from "./context-removal-planner";
 import { contextTabMatchesRoute } from "./context-tab-identity";
 
@@ -10,7 +10,7 @@ export type WorkspaceRouteResolution =
   | {
       kind: "materialized-local";
       tab: Extract<ContextTab, { kind: "tracked" }>;
-      target: ContextRouteTarget;
+      target: ContextRouteRequest;
     }
   | { kind: "unowned" };
 
@@ -23,7 +23,7 @@ export function resolveWorkspaceRoute({
 }: {
   tabs: readonly ContextTab[];
   selectedDocumentId: string | undefined;
-  locator: ContextRouteTarget | null;
+  locator: ContextRouteRequest | null;
   /**
    * The document this locator is bound to. Its tab owns the route wherever the
    * tab's own path has gone, so a rename that updates the tab before the address

@@ -10,7 +10,7 @@ import {
 } from "@/client/working-set";
 import {
   applyContextRepairIfCurrent,
-  type ContextRouteTarget,
+  type ContextRouteRequest,
   contextRouteMatchesSearch,
   openContextRouteSearch,
   type ProjectSearch,
@@ -36,7 +36,7 @@ export type ContextAvailabilityLocalBatchPlan = Readonly<{
   tabs: readonly ContextTab[];
   selectedDocumentId: string | null;
   selection: ContextRouteSelection;
-  admitted: ContextRouteTarget | null;
+  admitted: ContextRouteRequest | null;
   removalFence: ContextRemovalProjectSnapshot["removalFence"];
   transitionRevision: number;
   recentRoutes: readonly WorkingSetRoute[];
@@ -58,7 +58,7 @@ function documentId(command: ProjectDocumentAvailabilityCommand): string {
   return command.kind === "available" ? command.document.entryId : command.documentId;
 }
 
-function sameTarget(left: ContextRouteTarget | null, right: ContextRouteTarget): boolean {
+function sameTarget(left: ContextRouteRequest | null, right: ContextRouteRequest): boolean {
   return left !== null && sameContextTarget(left, right);
 }
 
@@ -129,7 +129,7 @@ export function planContextAvailabilityBatch(
               : undefined;
           })()
         : undefined;
-      const target: ContextRouteTarget | null = chatId
+      const target: ContextRouteRequest | null = chatId
         ? null
         : lineageId
           ? { scheme, path, rootThreadId: lineageId }
@@ -309,25 +309,25 @@ export function planContextAvailabilityBatch(
   }
 
   if (unavailableWorkIds.size > 0) {
+    const isUnavailable = (workId: string | null | undefined) =>
+      workId != null && unavailableWorkIds.has(workId);
     recentRoutes = recentRoutes.filter(
       (route) => route.workId == null || !unavailableWorkIds.has(route.workId),
     );
-    const activeWorkId = input.project.activeWorkId;
-    if (activeWorkId && unavailableWorkIds.has(activeWorkId)) {
-      if (selection.status !== "none" && selection.locator.workId === activeWorkId) {
-        selection = leaveSelection(selection).selection;
-      }
-      if (admitted?.workId === activeWorkId) admitted = null;
-      if (input.routeSearch?.work === activeWorkId && routeSearch) {
-        routeSearch = {
-          ...routeSearch,
-          screen: "context",
-          work: undefined,
-          chat: undefined,
-          scheme: undefined,
-          path: undefined,
-        };
-      }
+    // Any Work's Scratch note can be on screen, whatever the scope is.
+    if (selection.status !== "none" && isUnavailable(selection.locator.workId)) {
+      selection = leaveSelection(selection).selection;
+    }
+    if (isUnavailable(admitted?.workId)) admitted = null;
+    if (isUnavailable(input.routeSearch?.work) && routeSearch) {
+      routeSearch = {
+        ...routeSearch,
+        screen: "context",
+        work: undefined,
+        chat: undefined,
+        scheme: undefined,
+        path: undefined,
+      };
     }
   }
 
