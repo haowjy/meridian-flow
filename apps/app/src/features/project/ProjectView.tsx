@@ -138,7 +138,7 @@ import type { ScreenKey } from "./shell/screens";
 import { useContextProjectAuthority } from "./use-context-project-authority";
 import { useReviewAddressSync } from "./use-review-address-sync";
 import { useWorkScopeState, type WorkScope } from "./use-work-scope";
-import { ManageWorksProvider } from "./work/ManageWorksDialog";
+import { ManageWorksDialogHost, ManageWorksProvider } from "./work/ManageWorksDialog";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
 const MAIN_MIN_WIDTH = 360;
@@ -374,7 +374,7 @@ export function ProjectView(props: ProjectViewProps) {
   };
   return (
     <DocumentTrashRestoreProvider key={props.projectId} projectId={props.projectId}>
-      <ManageWorksProvider projectId={props.projectId}>
+      <ManageWorksProvider>
         <RefusalToasts projectId={props.projectId} />
         <div className="flex h-full min-h-0 w-full bg-background text-foreground">
           <DocumentTrashDialog projectId={props.projectId} />
@@ -456,6 +456,7 @@ function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentity
           openContextRoute={props.onOpenContextTarget}
         >
           <HydratedReviewScopes {...props} />
+          <ManageWorksDialogHost projectId={props.projectId} />
           {/* Every row drop in the view (rail, Work Files) labels the pointer here. */}
           <DragHint />
         </EditorReviewHandoffProvider>

@@ -35,28 +35,33 @@ import { WorkCollection, type WorksListTab } from "./WorkCollection";
 import { WorkCreationDestination } from "./WorkCreationDestination";
 import { type LeaveGuard, WorkDetail } from "./WorkDetail";
 
-const ManageWorksContext = createContext<{ open: () => void } | null>(null);
+const ManageWorksContext = createContext<{
+  open: () => void;
+  isOpen: boolean;
+  close: () => void;
+} | null>(null);
 
 /** Opens the Manage Works dialog; null outside a project. */
 export function useManageWorks(): { open: () => void } | null {
   return useContext(ManageWorksContext);
 }
 
-export function ManageWorksProvider({
-  projectId,
-  children,
-}: {
-  projectId: string;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const value = useMemo(() => ({ open: () => setOpen(true) }), []);
-  return (
-    <ManageWorksContext.Provider value={value}>
-      {children}
-      {open ? <ManageWorksDialog projectId={projectId} onClose={() => setOpen(false)} /> : null}
-    </ManageWorksContext.Provider>
+/**
+ * The dialog itself. It mounts below the review handoff (a change row opens its review), so it
+ * is separate from the provider the picker reaches.
+ */
+export function ManageWorksDialogHost({ projectId }: { projectId: string }) {
+  const manage = useContext(ManageWorksContext);
+  return manage?.isOpen ? <ManageWorksDialog projectId={projectId} onClose={manage.close} /> : null;
+}
+
+export function ManageWorksProvider({ children }: { children: ReactNode }) {
+  const [isOpen, setOpen] = useState(false);
+  const value = useMemo(
+    () => ({ open: () => setOpen(true), isOpen, close: () => setOpen(false) }),
+    [isOpen],
   );
+  return <ManageWorksContext.Provider value={value}>{children}</ManageWorksContext.Provider>;
 }
 
 type View = { kind: "list" } | { kind: "work"; workId: string };
