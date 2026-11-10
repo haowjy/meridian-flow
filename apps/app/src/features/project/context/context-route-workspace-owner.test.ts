@@ -28,6 +28,7 @@ describe("resolveWorkspaceRoute", () => {
         selectedDocumentId: "other",
         locator: { scheme: "scratch", path: "/old.md", workId: "a" },
         boundDocumentId: "doc",
+        scope: "a",
       }),
     ).toEqual({ kind: "unowned" });
   });
@@ -37,6 +38,7 @@ describe("resolveWorkspaceRoute", () => {
         tabs: [tracked("a", "/same.md", "a"), tracked("b", "/same.md", "b")],
         selectedDocumentId: "a",
         locator: { scheme: "scratch", path: "/same.md", workId: "b" },
+        scope: "a",
       }),
     ).toMatchObject({ kind: "owner", tab: { documentId: "b" } });
   });

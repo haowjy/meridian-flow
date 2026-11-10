@@ -36,7 +36,8 @@ export function resolveLocalDocumentSelection(input: {
   const owner = resolveWorkspaceRoute({
     tabs: input.tabs,
     selectedDocumentId: tab.documentId,
-    locator: { scheme: "unfiled", path: "", workId: input.workId },
+    locator: { scheme: "unfiled", path: "" },
+    scope: input.workId,
   });
   return owner.kind === "unowned"
     ? ({ kind: "unavailable" } as const)

@@ -480,6 +480,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     scheme: props.activeContextScheme,
     path: props.activeContextPath,
     workId: props.activeContextWork,
+    scope: props.editorScope.workId,
     rootThreadId: props.activeContextChat,
     addressState: addressStateOf(props.routeIssues?.editor),
   });

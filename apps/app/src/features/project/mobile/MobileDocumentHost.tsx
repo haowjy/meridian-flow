@@ -123,6 +123,7 @@ function MobileLocalDocumentHost({
       tabs: [tab],
       selectedDocumentId: tab.documentId,
       locator: selected.locator,
+      scope: workId,
     });
     if (workspace.kind === "materialized-local") {
       removal.redirectMaterializedLocal(

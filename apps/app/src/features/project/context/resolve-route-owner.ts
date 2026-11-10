@@ -51,6 +51,7 @@ export function resolveRouteOwner({
     selectedDocumentId,
     locator,
     boundDocumentId,
+    scope: editorWorkId,
   });
   const selected = tabs.find((tab) => tab.documentId === selectedDocumentId) ?? null;
   return {

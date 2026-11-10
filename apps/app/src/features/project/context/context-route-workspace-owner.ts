@@ -1,6 +1,6 @@
 /** Exact, heuristic-free resolution of the Editor workspace owner for one committed route. */
 
-import { type ContextTab, isEditorContextTab } from "@/client/stores";
+import { type ContextTab, editorHasReview, isDraftOnly, isEditorContextTab } from "@/client/stores";
 import type { ContextRouteTarget } from "../routing/project-route";
 import { type ContextRouteIdentity, routeTargetForTab } from "./context-removal-planner";
 import { contextTabMatchesRoute } from "./context-tab-identity";
@@ -19,6 +19,7 @@ export function resolveWorkspaceRoute({
   selectedDocumentId,
   locator,
   boundDocumentId,
+  scope,
 }: {
   tabs: readonly ContextTab[];
   selectedDocumentId: string | undefined;
@@ -29,6 +30,8 @@ export function resolveWorkspaceRoute({
    * follows never leaves the route unowned for a frame.
    */
   boundDocumentId?: string | null;
+  /** The Work scope: a plain path settles on a draft-only tab only if this scope reviews it. */
+  scope: string | null;
 }): WorkspaceRouteResolution {
   if (!locator) return { kind: "unowned" };
   tabs = tabs.filter(isEditorContextTab);
@@ -36,7 +39,12 @@ export function resolveWorkspaceRoute({
   // wherever the tab's path went, and no other tab may own it by holding the path.
   const server = boundDocumentId
     ? tabs.find((tab) => tab.kind !== "new" && tab.documentId === boundDocumentId)
-    : tabs.find((tab) => tab.kind !== "new" && contextTabMatchesRoute(tab, locator));
+    : tabs.find(
+        (tab) =>
+          tab.kind !== "new" &&
+          contextTabMatchesRoute(tab, locator) &&
+          (!isDraftOnly(tab) || editorHasReview(tab, scope)),
+      );
   if (server) {
     return {
       kind: "owner",
