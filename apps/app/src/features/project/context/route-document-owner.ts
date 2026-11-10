@@ -10,8 +10,8 @@
  */
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ContextTab, ServerContextTab } from "@/client/stores";
-import { editorHasReview } from "@/client/stores";
-import type { ContextRouteTarget } from "../routing/project-route";
+import { isDraftOnly } from "@/client/stores";
+import type { ContextRouteRequest } from "../routing/project-route";
 import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
 
 export type RouteDocumentOwner =
@@ -44,11 +44,12 @@ export function resolveLiveRouteDocument(input: {
 }
 
 export function resolveRouteDocumentOwner(input: {
-  locator: ContextRouteTarget;
+  locator: ContextRouteRequest;
   boundDocumentId?: string | null;
   catalog: Pick<CatalogContextView, "findDocument" | "findPath"> | null;
   /** The Editor workspace's tabs; only draft-only review tabs of the locator's Work count. */
   workspaceTabs?: readonly ContextTab[];
+  scope: string | null;
 }): RouteDocumentOwner {
   const live = resolveLiveRouteDocument({
     path: input.locator.path,
@@ -64,18 +65,19 @@ function draftOnlyOwner({
   locator,
   boundDocumentId,
   workspaceTabs,
+  scope,
 }: {
-  locator: ContextRouteTarget;
+  locator: ContextRouteRequest;
   boundDocumentId?: string | null;
   workspaceTabs?: readonly ContextTab[];
+  scope: string | null;
 }): ServerContextTab | null {
   const owner = resolveWorkspaceRoute({
-    tabs: (workspaceTabs ?? []).filter(
-      (tab) => tab.kind !== "new" && editorHasReview(tab, locator.workId ?? null),
-    ),
+    tabs: (workspaceTabs ?? []).filter((tab) => tab.kind !== "new" && isDraftOnly(tab)),
     selectedDocumentId: undefined,
     locator,
     boundDocumentId,
+    scope,
   });
   return owner.kind === "owner" && owner.tab.kind !== "new" ? owner.tab : null;
 }

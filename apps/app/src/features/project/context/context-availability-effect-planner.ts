@@ -9,7 +9,7 @@ import {
   workingSetRouteIdentityEquals,
 } from "@/client/working-set";
 import {
-  type ContextRouteTarget,
+  type ContextRouteRequest,
   contextRouteMatchesSearch,
   openContextRouteSearch,
   type ProjectSearch,
@@ -33,7 +33,7 @@ export type ContextAvailabilityLocalBatchPlan = Readonly<{
   tabs: readonly ContextTab[];
   selectedDocumentId: string | null;
   selection: ContextRouteSelection;
-  admitted: ContextRouteTarget | null;
+  admitted: ContextRouteRequest | null;
   removalFence: ContextRemovalProjectSnapshot["removalFence"];
   transitionRevision: number;
   recentRoutes: readonly WorkingSetRoute[];
@@ -55,7 +55,7 @@ function documentId(command: ProjectDocumentAvailabilityCommand): string {
   return command.kind === "available" ? command.document.entryId : command.documentId;
 }
 
-function sameTarget(left: ContextRouteTarget | null, right: ContextRouteTarget): boolean {
+function sameTarget(left: ContextRouteRequest | null, right: ContextRouteRequest): boolean {
   return left !== null && sameContextTarget(left, right);
 }
 
@@ -126,22 +126,17 @@ export function planContextAvailabilityBatch(
               : undefined;
           })()
         : undefined;
-      const targetWorkId = chatId
+      const target: ContextRouteRequest | null = chatId
         ? null
         : lineageId
-          ? input.project.activeWorkId
+          ? { scheme, path, rootThreadId: lineageId }
           : isWorkScopedScheme(scheme)
             ? entry.scope.kind === "work"
-              ? entry.scope.workId
+              ? { scheme, path, workId: entry.scope.workId }
               : null
-            : input.project.activeWorkId;
-      const target: ContextRouteTarget | null = targetWorkId
-        ? { scheme, path, workId: targetWorkId, ...(lineageId ? { rootThreadId: lineageId } : {}) }
-        : null;
+            : { scheme, path };
       const priorTargets = tabs.flatMap((tab) =>
-        tab.kind !== "new" && tab.documentId === id && input.project.activeWorkId
-          ? [routeTargetForTab(tab, input.project.activeWorkId)]
-          : [],
+        tab.kind !== "new" && tab.documentId === id ? [routeTargetForTab(tab)] : [],
       );
       tabs = tabs.map((tab) => {
         if (tab.kind === "new" || tab.documentId !== id) return tab;
@@ -165,8 +160,8 @@ export function planContextAvailabilityBatch(
             rootThreadId: lineageId,
             rootThreadRef: lineageRef,
           } as ContextTab;
-        return isWorkScopedScheme(scheme) && targetWorkId
-          ? ({ ...withoutOwner, workId: targetWorkId } as ContextTab)
+        return isWorkScopedScheme(scheme) && target?.workId
+          ? ({ ...withoutOwner, workId: target.workId } as ContextTab)
           : (withoutOwner as ContextTab);
       });
       if (
@@ -181,10 +176,7 @@ export function planContextAvailabilityBatch(
         if (selection.by !== "review") {
           const previous = selection.locator;
           selection = { ...selection, locator: target };
-          if (
-            routeSearch &&
-            contextRouteMatchesSearch(routeSearch, previous, input.project.activeWorkId)
-          ) {
+          if (routeSearch && contextRouteMatchesSearch(routeSearch, previous)) {
             routeSearch = openContextRouteSearch(routeSearch, target);
             relocatedRouteDocumentId = id;
           }
@@ -193,7 +185,7 @@ export function planContextAvailabilityBatch(
         admitted = target;
       }
       const replacement = buildWorkingSetRoute(id, scheme, path, {
-        workId: isWorkScopedScheme(scheme) && !lineageId ? targetWorkId : undefined,
+        workId: isWorkScopedScheme(scheme) && !lineageId ? target?.workId : undefined,
         rootThreadId: lineageId,
         chatId,
       });
@@ -271,15 +263,25 @@ export function planContextAvailabilityBatch(
   }
 
   if (unavailableWorkIds.size > 0) {
+    const isUnavailable = (workId: string | null | undefined) =>
+      workId != null && unavailableWorkIds.has(workId);
     recentRoutes = recentRoutes.filter(
       (route) => route.workId == null || !unavailableWorkIds.has(route.workId),
     );
-    const activeWorkId = input.project.activeWorkId;
-    if (activeWorkId && unavailableWorkIds.has(activeWorkId)) {
-      if (selection.status !== "none" && selection.locator.workId === activeWorkId) {
-        selection = leaveSelection(selection).selection;
-      }
-      if (admitted?.workId === activeWorkId) admitted = null;
+    // Any Work's Scratch note can be on screen, whatever the scope is.
+    if (selection.status !== "none" && isUnavailable(selection.locator.workId)) {
+      selection = leaveSelection(selection).selection;
+    }
+    if (isUnavailable(admitted?.workId)) admitted = null;
+    if (isUnavailable(input.routeSearch?.work) && routeSearch) {
+      routeSearch = {
+        ...routeSearch,
+        screen: "context",
+        work: undefined,
+        chat: undefined,
+        scheme: undefined,
+        path: undefined,
+      };
     }
   }
 

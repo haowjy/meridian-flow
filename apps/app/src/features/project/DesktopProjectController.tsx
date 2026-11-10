@@ -42,11 +42,9 @@ export function useDesktopProjectController<
     selectRailScreen(next, () =>
       next === "chat"
         ? chat.showChatScreen()
-        : next === "work"
-          ? commands.showWork()
-          : selected && selected.documentId !== editorPresentation.resolved.tab?.documentId
-            ? openDocumentInEditor(open, selected)
-            : commands.showEditor(),
+        : selected && selected.documentId !== editorPresentation.resolved.tab?.documentId
+          ? openDocumentInEditor(open, selected)
+          : commands.showEditor(),
     );
   };
   return { editorPresentation, selectScreen };

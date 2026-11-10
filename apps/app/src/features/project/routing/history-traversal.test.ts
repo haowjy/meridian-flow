@@ -93,7 +93,7 @@ it("keeps the replacement dirty decision while the old native POP restores", asy
         else history.push(href, options.state, { ignoreBlocker: true });
       },
     },
-    () => ({ work: { kind: "none" } }),
+    () => ({}),
   );
   let held: { run(): void; cancel(): void } | null = null;
   navigation.registerGuard({
@@ -119,8 +119,6 @@ it("keeps the replacement dirty decision while the old native POP restores", asy
       {
         projectId: "550e8400-e29b-41d4-a716-446655440000",
         destination: { kind: "editor" },
-
-        work: { kind: "none" },
       },
       { replace: false },
     );

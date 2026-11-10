@@ -64,17 +64,7 @@ function ImportCard({
   );
   const retry = () => void coordinator.retry(importId);
   const show = () => {
-    const root = summary.root ? catalog?.normalized.entries.get(summary.root.id) : null;
-    const parent = summary.destination.folderId
-      ? catalog?.normalized.entries.get(summary.destination.folderId)
-      : null;
-    const path =
-      root?.kind === "folder"
-        ? root.path.join("/")
-        : parent?.kind === "folder"
-          ? parent.path.join("/")
-          : "";
-    // An import shows one of its files, one that needs a look first; a browse address opens none.
+    // An import shows one of its files, one that needs a look first; otherwise the Editor's recents.
     const file = [...problems, ...(detail?.entries ?? [])]
       .map((entry) => catalog?.findDocument(entry.documentId))
       .find(Boolean);
@@ -83,8 +73,7 @@ function ImportCard({
         projectId: summary.projectId,
         destination: file
           ? { kind: "document", scheme, path: file.path.replace(/^\/+/, "") }
-          : { kind: "browse", scheme, path },
-        work: { kind: "absent" },
+          : { kind: "editor" },
       }),
     });
     onClose();

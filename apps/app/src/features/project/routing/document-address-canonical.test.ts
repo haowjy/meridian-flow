@@ -32,14 +32,7 @@ it("follows a reviewed identity through a rename or cross-source move", () => {
     path: ["Moved", "Withern"],
     scope: { kind: "project", projectId: "project" },
   } as CatalogFileEntry;
-  expect(
-    canonicalDocumentAddress(
-      address,
-      document,
-      "00000000-0000-4000-8000-000000000001",
-      "00000000-0000-4000-8000-000000000002",
-    ),
-  ).toEqual({
+  expect(canonicalDocumentAddress(address, document)).toEqual({
     ...address,
     destination: { kind: "document", scheme: "unfiled", path: "Moved/Withern" },
   });

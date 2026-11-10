@@ -23,7 +23,7 @@ it("replaces a cold live path binding only after the selected review identity is
   const selection = {
     status: "bound" as const,
     revision: 2,
-    locator: { scheme: "kb" as const, path: "/Withern", workId: "work" },
+    locator: { scheme: "kb" as const, path: "/Withern" },
     identity: { kind: "server" as const, documentId: "live" },
     by: "navigation" as const,
   };
@@ -32,18 +32,14 @@ it("replaces a cold live path binding only after the selected review identity is
     kind: "current",
     document: { documentId: "hidden" },
   } as import("@meridian/contracts/protocol").DocumentAddressResult;
-  expect(
-    addressRouteBinding(binding, result, selection, destination, "work", undefined, "work:work"),
-  ).toEqual({
+  expect(addressRouteBinding(binding, result, selection, destination, {}, "work:work")).toEqual({
     revision: 2,
     documentId: "hidden",
     by: "review",
   });
+  expect(addressRouteBinding({ kind: "pending" }, result, selection, destination, {})).toBeNull();
   expect(
-    addressRouteBinding({ kind: "pending" }, result, selection, destination, "work", undefined),
-  ).toBeNull();
-  expect(
-    addressRouteBinding(binding, undefined, selection, destination, "work", undefined, "work:work"),
+    addressRouteBinding(binding, undefined, selection, destination, {}, "work:work"),
   ).toBeNull();
   expect(
     addressRouteBinding(
@@ -51,21 +47,12 @@ it("replaces a cold live path binding only after the selected review identity is
       result,
       { ...selection, identity: { kind: "server", documentId: "hidden" } },
       destination,
-      "work",
-      undefined,
+      {},
       "work:work",
     ),
   ).toBeNull();
   expect(
-    addressRouteBinding(
-      binding,
-      result,
-      selection,
-      destination,
-      "work",
-      undefined,
-      "work:other-work",
-    ),
+    addressRouteBinding(binding, result, selection, destination, {}, "work:other-work"),
   ).toBeNull();
 });
 
@@ -73,7 +60,7 @@ it("a plain answer binds a candidate at its own route and never rebinds a proven
   const candidate = {
     status: "candidate" as const,
     revision: 3,
-    locator: { scheme: "kb" as const, path: "/Withern", workId: "work" },
+    locator: { scheme: "kb" as const, path: "/Withern" },
     obligations: [],
     reentryGuard: null,
   };
@@ -83,12 +70,14 @@ it("a plain answer binds a candidate at its own route and never rebinds a proven
     document: { documentId: "occupant" },
   } as import("@meridian/contracts/protocol").DocumentAddressResult;
   const plain = { kind: "plain" as const };
-  expect(addressRouteBinding(plain, result, candidate, destination, "work", undefined)).toEqual({
+  expect(addressRouteBinding(plain, result, candidate, destination, {})).toEqual({
     revision: 3,
     documentId: "occupant",
     by: "answer",
   });
-  expect(addressRouteBinding(plain, result, candidate, destination, "work", "chat")).toBeNull();
+  expect(
+    addressRouteBinding(plain, result, candidate, destination, { rootThreadId: "chat" }),
+  ).toBeNull();
   expect(
     addressRouteBinding(
       plain,
@@ -101,8 +90,7 @@ it("a plain answer binds a candidate at its own route and never rebinds a proven
         by: "navigation",
       },
       destination,
-      "work",
-      undefined,
+      {},
       "work:work",
     ),
   ).toBeNull();
@@ -119,7 +107,7 @@ it("starts a cold copied URL's selector read while the list is unresolved and ro
   const itemKey = "branch:document";
   const address = parseProjectAddress(
     `/p/${projectId}/editor/kb/Old.md`,
-    `?work=${workId}&item=${encodeURIComponent(itemKey)}&change=class%3Apart`,
+    `?owner=${owner}&item=${encodeURIComponent(itemKey)}&change=class%3Apart`,
   );
   if (address.kind !== "valid" || address.address.destination.kind !== "document")
     throw new Error("Expected a document address");
@@ -143,7 +131,6 @@ it("starts a cold copied URL's selector read while the list is unresolved and ro
       destination: address.address.destination,
       owner: {},
       binding: bindDocumentAddressReview(address.address.itemKey, owner),
-      workResolved: true,
     },
     read,
   );
@@ -168,7 +155,6 @@ it("starts a cold copied URL's selector read while the list is unresolved and ro
             destination: address.address.destination,
             owner: {},
             binding,
-            workResolved: true,
           },
           read,
         ).queryKey,

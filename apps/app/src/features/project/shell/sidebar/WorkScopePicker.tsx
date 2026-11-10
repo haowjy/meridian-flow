@@ -37,7 +37,7 @@ export function WorkScopePicker({
   /** The scoped Work's id, the No Work row's included. */
   workId: string | null;
   onPick: (workId: string) => void;
-  /** Today's Work page, for New Work, rename and archive until they move here. */
+  /** Opens the Manage Works dialog: new, rename, archive, restore, delete, and a Work's changes. */
   onManage: () => void;
 }) {
   const { works, noWork } = useWorks(projectId);

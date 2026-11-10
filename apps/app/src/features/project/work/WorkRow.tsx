@@ -5,7 +5,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
-import type { MouseEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { ruledRowClassName } from "../RuledList";
 import { relativeTime } from "../relative-time";
@@ -13,7 +13,6 @@ import { WorkTitleLine } from "./WorkTitleLine";
 
 export function WorkRow({
   work,
-  href,
   now,
   onOpen,
   actions,
@@ -21,7 +20,6 @@ export function WorkRow({
 }: {
   /** A Work still being created has no status yet. */
   work: Pick<Work, "name" | "goal" | "lastActivityAt"> & Partial<Pick<Work, "status">>;
-  href: string;
   now: number;
   onOpen: () => void;
   /** Trailing menu; absent while the Work has no server identity yet. */
@@ -31,15 +29,10 @@ export function WorkRow({
 }) {
   return (
     <div className={cn(ruledRowClassName, "flex min-h-12 items-center gap-3")}>
-      <a
-        href={href}
-        onClick={(event: MouseEvent<HTMLAnchorElement>) => {
-          if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
-            return;
-          event.preventDefault();
-          onOpen();
-        }}
-        className="focus-ring min-w-0 flex-1 rounded-sm after:absolute after:inset-0"
+      <button
+        type="button"
+        onClick={onOpen}
+        className="focus-ring min-w-0 flex-1 rounded-sm text-left after:absolute after:inset-0"
       >
         <span className="sr-only">
           {work.status ? t`Open ${work.name} (${work.status})` : t`Open ${work.name}`}
@@ -57,7 +50,7 @@ export function WorkRow({
             {work.goal.split("\n").find((line) => line.trim()) ?? ""}
           </span>
         ) : null}
-      </a>
+      </button>
       <div className="shrink-0 text-xs tabular-nums text-muted-foreground">
         {liveState ?? relativeTime(work.lastActivityAt, now)}
       </div>
