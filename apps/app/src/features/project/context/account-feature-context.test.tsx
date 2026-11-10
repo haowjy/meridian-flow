@@ -172,7 +172,6 @@ describe("AccountFeatureTestProvider", () => {
         const revision = coordinator.beginRouteSelection("project-1", {
           scheme: "manuscript",
           path: "/a.md",
-          workId: "work-1",
         });
         coordinator.bindRouteSelection(
           "project-1",
@@ -187,7 +186,7 @@ describe("AccountFeatureTestProvider", () => {
           projectId: "project-1",
           selectionRevision: revision,
           transitionRevision: coordinator.getProjectSnapshot("project-1").transitionRevision,
-          locator: { scheme: "manuscript", path: "/a.md", workId: "work-1" },
+          locator: { scheme: "manuscript", path: "/a.md" },
           identity: { kind: "server", documentId: "a" },
           owner: {
             kind: "workspace",
