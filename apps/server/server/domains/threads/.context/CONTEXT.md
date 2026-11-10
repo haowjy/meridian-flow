@@ -68,9 +68,6 @@ text never enters event logs.
 - Every custom event name the orchestrator projector emits needs an explicit client
   decision in `@meridian/thread-client`'s `src/turns/reduce-turn-event.ts` (apply,
   refetch or ignore); otherwise the app renders an opaque unknown component.
-- The active-document resolver is the sole definition of documents relevant to a
-  thread: explicit `thread_documents` attachments plus documents touched by turns. The
-  same definition drives active-thread notice fan-out and retention.
 - Write-time routing reads the thread's mode over its current primary Work
   (`threadExecutionContext`).
 
