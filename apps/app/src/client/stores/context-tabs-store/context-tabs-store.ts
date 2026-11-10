@@ -5,7 +5,6 @@ import { useShallow } from "zustand/react/shallow";
 import { browserRecord } from "@/client/storage/browser-record";
 import {
   type ContextTab,
-  editorHasReview,
   isDraftOnly,
   isEditorContextTab,
   matchesTabInstance,
