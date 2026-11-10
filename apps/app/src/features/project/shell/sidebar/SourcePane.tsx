@@ -76,7 +76,7 @@ export function SourceHint({
     <p
       role={status ? "status" : undefined}
       aria-live={status ? "polite" : undefined}
-      className={cn("py-1.5 pr-2 pl-3.5 leading-snug", role.hint)}
+      className={cn("pr-2 pl-3.5 leading-snug", role.emptyLine)}
     >
       {children}
     </p>

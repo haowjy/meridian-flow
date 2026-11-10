@@ -154,7 +154,7 @@
    honest end state when the site refuses. */
 .meridian-editor .ProseMirror .meridian-image-importing {
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  background: color-mix(in oklab, var(--color-primary) 12%, transparent);
 }
 
 /* The drop hint: the pane's own box, inset, while a drag carries files. Drawn
@@ -170,8 +170,8 @@
   gap: 0.75rem;
   border: 0.125rem dashed var(--color-focus);
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--color-card) 88%, transparent);
-  color: var(--color-primary);
+  background: color-mix(in oklab, var(--color-card) 88%, transparent);
+  color: var(--color-jade-text);
   font-size: 0.875rem;
   font-weight: 650;
   pointer-events: none;
@@ -181,7 +181,7 @@
    a class the shell would have to set: the drag belongs to this lane, and the
    shell sets no class for it. */
 .meridian-editor:has(> .meridian-editor-drop-overlay) .ProseMirror {
-  background: color-mix(in srgb, var(--color-card) 65%, transparent);
+  background: color-mix(in oklab, var(--color-card) 65%, transparent);
 }
 
 /* The refusal: one pill, over the manuscript, blocking nothing. Top-centre

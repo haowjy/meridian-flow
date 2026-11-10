@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: Earthen Value Ladder
-summary: Meridian Flow writing project UI — one grey-gold chrome family (shelf a shade darker), warm paper, black ink, jade actions, and scarce cinnabar seals.
+summary: Meridian Flow writing project UI — one grey-gold chrome, warm paper, black ink, ink-overlay states, jade actions, and scarce cinnabar seals.
 tokens:
   canonicalPackage: "@meridian/design-tokens"
   canonicalCss: "ink-jade.css"
@@ -21,49 +21,48 @@ Agent-facing visual identity for `@meridian/app`. Token values live in `@meridia
 ## Overview
 
 The writer workspace uses one warm, near-neutral value ladder so the manuscript
-remains the visual center. The whole shell is a single warm grey-gold family:
-the left shelf is that chrome one shade darker, one continuous chrome field
-joins the document band to the right dock, and warm paper is the brightest
-field. One black ink keeps reading consistent across those surfaces. Jade
-appears only where the writer acts; cinnabar is a scarce seal.
+remains the visual center. One warm grey-gold chrome is the sidebar, the
+document band and the dock, and warm paper is the brightest field. One black ink
+keeps reading consistent across those surfaces. Jade appears only where the
+writer acts; cinnabar is a scarce seal.
 
 - **Audience:** fiction writers managing long-running serials, chapters, continuity notes, and agent-assisted revision threads.
-- **Mood:** quiet shelf, warm chrome, lit paper.
+- **Mood:** warm chrome, lit paper.
 - **Density:** comfortable reading/drafting rhythm in the main column; compact but legible metadata in rails and rows.
 - **Scope:** authenticated app shell, project views, chat/thread surfaces, context/document surfaces, and marketing-adjacent pages that share the brand language.
 
-The shell has exactly three region materials. Their separation is tonal—through
-lightness—not a seam border or structural shadow. Internal cards, fields, code
-blocks, overlays, and the composer may still define local steps within a region.
+The shell has two region materials, chrome and page, plus the raised step for
+cards, menus and the composer, and a jade-grey review ground under draft chrome.
+Their separation is tonal—through lightness—not a seam border or structural shadow.
 
 ## Color roles
 
 Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 
-- `shelf` / `shelf-active` — the rail, chrome's grey-gold one shade darker `oklch(0.91 0.012 84)`, and its pressed step `oklch(0.86 0.014 84)`.
-- `sidebar` — grey-gold chrome `oklch(0.945 0.012 84)`, shared pixel-identically by the tab band and dock.
-- `background` — warm paper `oklch(0.977 0.007 95)`, always the brightest shell field.
-- `foreground` — the one black ink, `oklch(0.24 0.009 100)`, for primary text throughout light mode.
-- `primary` / `jade-text` — jade for actions, links, focus, send, and save; never a wall or routine selection.
-- `cinnabar` — scarce seal punctuation for brand and rare favorite/pin semantics; never routine actions or active rows.
-- `card` / `muted` — local raised and recessed steps inside a region.
-- `border` / `border-subtle` / `border-focus` — in-pane controls and hairlines, never shell-region seams.
-- `prose-foreground` / `ink-muted` / `ink-subtle` — editorial hierarchy inside dense UI and prose-adjacent surfaces.
-- `composer-surface` / `composer-border` — the manuscript tone plus a border; the composer does not borrow the chrome or action color.
+- `chrome` — grey-gold `oklch(0.928 0.018 85)`: the sidebar, the tab band and the dock.
+- `background` — warm paper `oklch(0.966 0.015 90)`, the page.
+- `card` — the raised step `oklch(0.978 0.012 92)`: cards, menus, popovers, the composer, bubbles.
+- `review` — chrome with a little jade, under draft chrome and the reviewing tab.
+- `foreground` / `muted-foreground` — the two inks. A hint differs by size, never by a paler ink.
+- `ink-fill` / `ink-fill-strong` — foreground at 5% and 10%: hover and wells, then current, selected, open and pressed. Filled controls take them through the `interactive` layer.
+- `border` / `border-subtle` — foreground at 15% and 9%, for in-pane hairlines, never shell-region seams.
+- `focus` — the one keyboard focus colour, 3:1 or better on every surface.
+- `primary` / `jade-text` — jade fills and icons, and jade text; never a wall or routine selection.
+- `cinnabar` — the brand seal. `gold` — favourites only.
 
-Contrast is part of the palette contract: standard ink measures about 12.6:1 on
-the flat shelf and 10.7:1 on its pressed step; muted and hint tiers measure 6.5:1.
+Contrast is part of the palette contract: `muted-foreground` holds AA in a current
+row (10%) on the darkest surface in both themes.
 See the [Earthen Value Ladder decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/earthen-value-ladder-shell.md)
 for rationale, measurements, and rejected directions rather than duplicating
 them here.
 
 ## Shell shape and atmosphere
 
-- The shelf uses `shelf-surface` so its local surface, hairline, muted, hint, error, and focus roles remain legible without component forks.
-- The document band and dock are one continuous chrome field. The dock uses `dock-surface`. It shows one document or its native occupant, never tabs or a view switch.
+- The sidebar, the document band and the dock are one chrome. The dock uses `dock-surface`. It shows one document or its native occupant, never tabs or a view switch.
 - The page rises from chrome with the same top radius as its active document tab. The centered chat header's title chip is the same tab-chip grammar — the chat page continuing up into the band. Region separation stays tonal: no seam border or structural shadow.
-- Quiet floor atmosphere may lift the dock without creating a fourth shell material; the shelf stays flat so scrolled navigation keeps constant contrast.
-- Dark mode is not active. Its ladder must be designed as a whole-app slice rather than accumulated through partial overrides.
+- Quiet floor atmosphere may lift the dock without creating another shell material.
+- Dark mode re-points surfaces, inks and accents only (`themes.css`); state fills and borders follow the foreground.
+- Headings, group labels, rows, hints, empty lines and fills come from `role` (`apps/app/src/components/ui/roles.ts`).
 
 ## Typography
 

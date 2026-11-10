@@ -69,7 +69,7 @@ export const ComposerCurrentValueStatus = forwardRef<
       title={tooltip}
       value={children}
       chevron={false}
-      className="cursor-default text-muted-foreground opacity-60 shadow-none hover:border-border hover:bg-background hover:text-muted-foreground active:scale-100"
+      className="cursor-default text-muted-foreground opacity-60 shadow-none hover:text-muted-foreground active:scale-100"
     />
   );
 });

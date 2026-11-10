@@ -153,7 +153,7 @@ export function DocumentIdentityBar({
   const renderState = (version: ReactNode, controls: ReactNode) => (
     <>
       {controls ? (
-        <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-x-2 border-b border-border-subtle bg-review px-4 text-sm text-muted-foreground">
+        <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-2 border-b border-border-subtle bg-review px-4 text-sm text-muted-foreground">
           {controls}
         </div>
       ) : null}

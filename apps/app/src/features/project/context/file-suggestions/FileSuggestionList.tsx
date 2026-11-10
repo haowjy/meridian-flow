@@ -6,11 +6,14 @@
  * it marks with `data-file-suggestion` joins the arrow-key walk in visual
  * order, so keyboard users can reach its actions.
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Folder } from "lucide-react";
 import { forwardRef, type KeyboardEvent, type ReactNode, useImperativeHandle, useRef } from "react";
 import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
+import { role } from "@/components/ui/roles";
+import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../context-file-icon";
 import { schemeIcon, schemeLabel } from "../context-schemes";
 import type { FileSuggestion } from "./file-suggestions";
@@ -110,7 +113,7 @@ export const FileSuggestionList = forwardRef<
           ) : null}
           {suggestions.length === 0 ? (
             <li>
-              <p className="px-2.5 py-3 text-center text-muted-foreground text-xs">
+              <p className={cn("px-2", role.emptyLine)}>
                 {emptyMessage ?? <Trans>No matching files</Trans>}
               </p>
             </li>

@@ -64,9 +64,7 @@ export function CreationDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-xl gap-5">
         <DialogHeader className="text-left sm:text-left">
-          <DialogTitle className="text-lg leading-tight font-semibold tracking-tight">
-            {title}
-          </DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription className="sr-only">{nameLabel}</DialogDescription>
         </DialogHeader>
         <form

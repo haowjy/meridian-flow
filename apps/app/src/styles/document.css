@@ -123,7 +123,7 @@
     margin-block: var(--prose-space-rule);
   }
   & a {
-    @apply focus-ring rounded-sm text-primary underline decoration-primary/30 underline-offset-[3px] transition-colors hover:decoration-primary;
+    @apply focus-ring rounded-sm text-jade-text underline decoration-primary/40 underline-offset-[3px] transition-colors hover:decoration-primary;
     font-weight: inherit;
   }
 

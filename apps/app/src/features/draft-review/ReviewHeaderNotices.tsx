@@ -102,7 +102,7 @@ export function ReviewStateInline({
         <ReviewStatusContent {...state} />
       </span>
       {state.finished ? (
-        <ReviewNextAction {...state} className={touch ? "h-11 px-2" : "h-5.5"} />
+        <ReviewNextAction {...state} className={touch ? "h-11 px-2" : "h-6"} />
       ) : null}
     </span>
   );

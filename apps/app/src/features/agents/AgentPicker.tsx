@@ -1,4 +1,5 @@
 /** Compact prospective Agent choices; the composer lists selectable catalog rows only. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { AgentCatalogItem } from "@meridian/contracts/agents";
@@ -10,6 +11,7 @@ import {
   dropdownRowContainerClass,
   dropdownRowVariants,
 } from "@/components/ui/dropdown-presentation";
+import { role } from "@/components/ui/roles";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { CreationAgent } from "./creation-agent";
@@ -145,5 +147,5 @@ export function AgentPickerPanel({
 }
 
 function PickerHint({ children }: { children: ReactNode }) {
-  return <p className="px-3 py-4 text-sm text-muted-foreground">{children}</p>;
+  return <p className={cn("px-2", role.emptyLine)}>{children}</p>;
 }

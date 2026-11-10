@@ -190,7 +190,9 @@ export function SuggestionMenu({
                 ref={active ? activeRef : undefined}
                 tabIndex={-1}
                 className={cn(
-                  dropdownRowVariants({ interactive: false, selected: active }),
+                  dropdownRowVariants({ interactive: false }),
+                  // The highlighted option is the pointer's or keyboard's place: the hover step.
+                  active && "bg-ink-fill",
                   "cursor-default [&_svg]:text-muted-foreground",
                   row.blocked && "text-muted-foreground",
                 )}

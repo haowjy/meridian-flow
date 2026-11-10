@@ -2,9 +2,11 @@
  * Dialog — shadcn/Radix modal primitive. Upstream-managed wrapper; customize at
  * call sites. Added for proto command palette; promote via shadcn CLI for prod.
  */
+
 import { XIcon } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import type * as React from "react";
+import { role } from "@/components/ui/roles";
 
 import { cn } from "@/lib/utils";
 
@@ -61,7 +63,7 @@ function DialogContent({
       >
         {children}
         {showCloseButton ? (
-          <DialogPrimitive.Close className="focus-ring absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 disabled:pointer-events-none data-[state=open]:bg-ink-fill-strong">
+          <DialogPrimitive.Close className="focus-ring absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 disabled:pointer-events-none">
             <XIcon className="size-4" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
@@ -95,7 +97,7 @@ function DialogTitle({ className, ...props }: React.ComponentProps<typeof Dialog
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("text-lg leading-none font-semibold", className)}
+      className={cn(role.sectionHeading, className)}
       {...props}
     />
   );

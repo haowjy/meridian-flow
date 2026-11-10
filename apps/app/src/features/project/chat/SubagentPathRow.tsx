@@ -24,7 +24,7 @@ export function SubagentPathRow({
   return (
     <nav
       aria-label={t`Subagent chat path`}
-      className="flex min-h-9 shrink-0 items-center gap-2 overflow-x-auto border-b border-border-subtle bg-background px-3 pr-5 text-caption"
+      className="flex min-h-10 shrink-0 items-center gap-2 overflow-x-auto border-b border-border-subtle bg-background px-3 pr-5 text-caption"
     >
       <ol className="flex min-w-0 items-center gap-1 whitespace-nowrap">
         {ancestors.map((ancestor, index) => (

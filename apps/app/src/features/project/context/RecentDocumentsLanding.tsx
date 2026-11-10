@@ -10,6 +10,7 @@
  * gates this writer's own openings. The top margin holds the notice for
  * documents that closed under the writer, so the list never moves for it.
  */
+
 import { Trans } from "@lingui/react/macro";
 import { useRouter } from "@tanstack/react-router";
 import { FilePlus } from "lucide-react";
@@ -19,6 +20,7 @@ import type { AccountRecentItem } from "@/client/recents";
 import { readableRecentPath } from "@/client/recents";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
+import { role } from "@/components/ui/roles";
 import { Skeleton } from "@/components/ui/skeleton";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
@@ -84,7 +86,7 @@ export function RecentDocumentsLanding({
         </div>
         <div className="flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-headline-section text-foreground">
+            <h2 className={role.sectionHeading}>
               <Trans>Recently opened</Trans>
             </h2>
           </div>

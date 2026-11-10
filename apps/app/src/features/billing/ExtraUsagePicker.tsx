@@ -67,7 +67,7 @@ export function ExtraUsagePicker({
                 "disabled:cursor-not-allowed disabled:opacity-50",
                 selected
                   ? "border-primary bg-primary/12 text-foreground"
-                  : "border-border bg-card text-muted-foreground hover:border-focus hover:bg-ink-fill hover:text-foreground",
+                  : "border-border bg-card text-muted-foreground hover:bg-ink-fill hover:text-foreground",
               )}
             >
               {formatPreset(preset)}

@@ -198,7 +198,7 @@ function OverflowChats({
               aria-label={t`More chats`}
               onClick={(event) => event.stopPropagation()}
               className={cn(
-                "focus-ring shrink-0 whitespace-nowrap rounded-sm px-1 text-primary",
+                "focus-ring shrink-0 whitespace-nowrap rounded-sm px-1 text-jade-text",
                 touch && "min-h-11 min-w-11",
               )}
             >
@@ -250,7 +250,7 @@ function ChatLink({
             openChat(chat, onOpenThread);
           }}
           className={cn(
-            "focus-ring inline-flex items-center gap-0.5 self-stretch whitespace-nowrap rounded-sm text-primary hover:underline",
+            "focus-ring inline-flex items-center gap-0.5 self-stretch whitespace-nowrap rounded-sm text-jade-text hover:underline",
             truncate ? "min-w-0 shrink" : "shrink-0",
             touch && "min-h-11 min-w-11",
           )}

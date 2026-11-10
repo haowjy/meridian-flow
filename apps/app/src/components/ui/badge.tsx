@@ -22,8 +22,8 @@ const badgeVariants = cva("inline-flex shrink-0 items-center rounded-full text-m
   variants: {
     variant: {
       neutral:
-        "gap-1.5 border border-border-subtle bg-ink-fill px-[7px] py-[3px] pr-[9px] font-semibold tracking-caps text-muted-foreground",
-      status: "gap-1.5 px-[7px] py-[3px] pr-[9px] font-semibold tracking-caps",
+        "gap-1.5 border border-border-subtle bg-ink-fill px-[7px] py-[3px] pr-[9px] font-semibold text-muted-foreground",
+      status: "gap-1.5 px-[7px] py-[3px] pr-[9px] font-semibold",
       count: "bg-ink-fill px-1.5 font-medium tabular-nums text-muted-foreground",
       label:
         "min-w-0 max-w-full shrink border border-border-subtle bg-ink-fill px-2 py-px font-medium text-muted-foreground",

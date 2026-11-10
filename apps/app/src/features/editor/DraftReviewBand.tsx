@@ -137,7 +137,7 @@ export function DraftReviewBand({
           <Button
             variant="quiet"
             size="xs"
-            className="identity-discard h-5.5"
+            className="identity-discard h-6"
             aria-label={t`Discard draft`}
             disabled={locked}
             onClick={header.discardDraft}
@@ -152,7 +152,7 @@ export function DraftReviewBand({
           </Button>
           <Button
             size="xs"
-            className="identity-apply h-5.5"
+            className="identity-apply h-6"
             aria-label={t`Apply draft`}
             disabled={locked || !header.canApply}
             onClick={header.applyDraft}
@@ -237,7 +237,7 @@ function ShowChangesToggle({
           aria-label={name}
           onClick={() => onChange(!visible)}
           className={cn(
-            "focus-ring inline-flex h-5.5 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-ink-fill hover:text-foreground",
+            "focus-ring inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-ink-fill hover:text-foreground",
             visible ? "text-foreground" : "text-muted-foreground",
           )}
         >

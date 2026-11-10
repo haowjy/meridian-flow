@@ -1,4 +1,5 @@
 /** Chat Files combines existing shared Scratch with this chat's uploads and source-chat link. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Thread } from "@meridian/contracts/protocol";
@@ -20,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { role } from "@/components/ui/roles";
 import { MenuScratchSection } from "@/features/project/chat/ChatScratch";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useOpenChatResource } from "@/features/project/context/open-chat-document";
@@ -228,7 +230,7 @@ function FilesDropdown({
               <Trans>Uploads</Trans>
             </h3>
             {rows.length === 0 ? (
-              <p className="px-2 py-1.5 text-sm text-muted-foreground">
+              <p className={cn("px-2", role.emptyLine)}>
                 <Trans>No files attached in this chat yet.</Trans>
               </p>
             ) : (

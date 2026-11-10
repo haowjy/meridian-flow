@@ -6,8 +6,10 @@
 
 import type { Editor } from "@tiptap/core";
 import { useSyncExternalStore } from "react";
+import { role } from "@/components/ui/roles";
 import { closedSuggestionMenu } from "@/core/completion";
 import { SuggestionMenu } from "@/features/editor/chrome";
+import { cn } from "@/lib/utils";
 
 import { type ComposerCommandMenuMeta, getComposerCommandMenu } from "./ComposerCommandExtension";
 import type { ComposerCommandItem } from "./command-catalog";
@@ -49,7 +51,12 @@ export function ComposerCommandMenu({ editor }: { editor: Editor }) {
         key: item.id,
         before:
           grouped && groupLabels && item.group !== snapshot.items[index - 1]?.group ? (
-            <div className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-space-inline)] font-semibold text-muted-foreground text-xs uppercase tracking-caps">
+            <div
+              className={cn(
+                "px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-space-inline)]",
+                role.groupLabel,
+              )}
+            >
               {groupLabels[item.group]}
             </div>
           ) : undefined,

@@ -7,12 +7,14 @@
  * It renders only as the Chat screen's page: the center project root and the
  * phone. The page scrolls as one; the search and filter row sticks.
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { role } from "@/components/ui/roles";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { CreationComposer } from "@/features/chat/CreationComposer";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
@@ -107,7 +109,12 @@ export function ChatIndex({ projectId, namedByChrome = false }: ChatIndexProps) 
           namedByChrome ? "pt-4" : "pt-[clamp(1rem,9vh,5rem)]",
         )}
       >
-        <h1 className="mb-[clamp(0.75rem,3vh,1.25rem)] text-center text-xl font-normal tracking-tight text-balance text-foreground">
+        <h1
+          className={cn(
+            "mb-[clamp(0.75rem,3vh,1.25rem)] text-center text-balance",
+            role.pageHeading,
+          )}
+        >
           <Trans>What will you write next?</Trans>
         </h1>
         <CreationComposer projectId={projectId} variant="hero" autoFocus={finePointer} />
@@ -193,7 +200,7 @@ function ChatIndexBody({
   // data: it may belong to a different filter/search than the one displayed.
   if (!feed.items.length && !feed.hasNextPage && !feed.isPlaceholderData)
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className={role.emptyLine}>
         {search ? (
           <Trans>No chats match “{search}”.</Trans>
         ) : favorites ? (

@@ -188,7 +188,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
             <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
               <div className="flex items-baseline gap-2">
                 <span className="text-xs font-semibold text-foreground">Debug</span>
-                <SectionLabel variant="group">dev only</SectionLabel>
+                <SectionLabel>dev only</SectionLabel>
               </div>
               <button
                 type="button"
