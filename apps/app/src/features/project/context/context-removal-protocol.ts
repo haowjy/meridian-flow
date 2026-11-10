@@ -64,7 +64,6 @@ export type RemovalPlanningEffect = {
   intent: ContextRemovalIntent;
   cleanup: ExactRouteCleanup | null;
   current: RouteContinuityVerdict;
-  repair: "allow" | "never";
 };
 
 export type SelectionTransition = {
@@ -143,7 +142,6 @@ function settleObligations(
             identity: observed ?? proof.identity,
           }
         : current,
-    repair,
   }));
 }
 
@@ -240,7 +238,6 @@ export function bindSelection(
                   locator: selection.locator,
                   identity,
                 },
-                repair: "allow" as const,
               },
             ]
           : []),
@@ -325,9 +322,7 @@ export function rejectSelection(
     selection: next,
     planning: [
       ...settleObligations(selection, null, current, "allow"),
-      ...(guard
-        ? [{ intent: guard.intent, cleanup: guard.cleanup, current, repair: "allow" as const }]
-        : []),
+      ...(guard ? [{ intent: guard.intent, cleanup: guard.cleanup, current }] : []),
     ],
     rejection: guard || selection.obligations.length > 0 ? null : next,
     retireReentryGuard: false,
@@ -393,7 +388,6 @@ export function reduceRepresentedRemoval(
           intent,
           cleanup,
           current: { kind: "proven-removed", ...cleanup },
-          repair: "allow",
         },
       };
     }
@@ -403,7 +397,6 @@ export function reduceRepresentedRemoval(
         intent,
         cleanup: null,
         current: continuityForSelection(selection),
-        repair: "allow",
       },
     };
   }
@@ -425,7 +418,6 @@ export function reduceRepresentedRemoval(
   const cleanup = cleanupForProof(proof);
   let nextSelection = selection;
   let current = continuityForSelection(selection);
-  let repair: "allow" | "never" = "allow";
   if (selection.status === "candidate" && sameLocator(selection.locator, locator)) {
     nextSelection = {
       ...selection,
@@ -440,8 +432,6 @@ export function reduceRepresentedRemoval(
     current = { kind: "proven-removed", revision: selection.revision, locator, identity };
   } else if (selection.status === "rejected" && sameLocator(selection.locator, locator)) {
     current = { kind: "proven-removed", revision: selection.revision, locator, identity };
-  } else if (!sameLocator(selection.locator, locator)) {
-    repair = "never";
   }
-  return { selection: nextSelection, planning: { intent, cleanup, current, repair } };
+  return { selection: nextSelection, planning: { intent, cleanup, current } };
 }
