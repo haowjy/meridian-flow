@@ -64,6 +64,8 @@ export type DraftReviewController = {
    * another change's command are accepted and queued.
    */
   changesLocked: boolean;
+  /** Whether an Apply can be sent at all (`WorkBranchCommands.canApply`). */
+  canApply: boolean;
   /** The presented tab's "Show changes" (`view.showChanges`). The editor paints from it (`useInlineReviewFocus`). */
   marksVisible: boolean;
   setMarksVisible: (visible: boolean) => void;
@@ -253,6 +255,7 @@ export function useDraftReviewController({
       commandChange: commands.commandChange,
       dispositionLocked,
       changesLocked,
+      canApply: commands.canApply,
       marksVisible: marks.visible,
       setMarksVisible: marks.set,
       focus: inlineReview?.focus ?? null,
@@ -279,6 +282,7 @@ export function useDraftReviewController({
       inlineReview,
       dispositionLocked,
       changesLocked,
+      commands.canApply,
       marks.visible,
       marks.set,
       inlineReview?.focus,

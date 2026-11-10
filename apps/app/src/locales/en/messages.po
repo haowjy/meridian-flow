@@ -418,6 +418,10 @@ msgstr "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
 msgid "{count, plural, one {# question:} other {# questions:}}"
 msgstr "{count, plural, one {# question:} other {# questions:}}"
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "{count, plural, one {# text change} other {# text changes}}"
+msgstr "{count, plural, one {# text change} other {# text changes}}"
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{count, plural, one {Redo leaves # part as it is} other {Redo leaves # parts as they are}}"
 msgstr "{count, plural, one {Redo leaves # part as it is} other {Redo leaves # parts as they are}}"
@@ -609,6 +613,10 @@ msgstr "{name} was removed when the reply that created it didn't finish, so this
 #: src/features/project/context/use-rename-entry-form.ts
 #~ msgid "{name} will be renamed {as}"
 #~ msgstr "{name} will be renamed {as}"
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "{name}, {count} to review"
+msgstr "{name}, {count} to review"
 
 #: src/features/draft-review/tree-line.ts
 msgid "{name}: changing position"
@@ -1078,8 +1086,8 @@ msgid "All"
 msgstr "All"
 
 #: src/features/project/work/WorkChanges.tsx
-msgid "All changes"
-msgstr "All changes"
+#~ msgid "All changes"
+#~ msgstr "All changes"
 
 #: src/features/project/chat-index/ChatIndexButton.tsx
 msgid "All chats"
@@ -1168,7 +1176,7 @@ msgid "Apply"
 msgstr "Apply"
 
 #: src/features/draft-review/ReviewActions.tsx
-#: src/features/project/work/WorkChanges.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Apply all"
 msgstr "Apply all"
 
@@ -1180,6 +1188,10 @@ msgstr "Apply all"
 #: src/features/draft-review/ReviewActions.tsx
 msgid "Apply draft"
 msgstr "Apply draft"
+
+#: src/features/draft-review/ReviewActions.tsx
+msgid "Apply draft of {subject}"
+msgstr "Apply draft of {subject}"
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Apply is temporarily unavailable."
@@ -1478,7 +1490,7 @@ msgstr "Can't undo: the folder it would return to is gone."
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/entry-drag/DropChoiceMenu.tsx
-#: src/features/project/work/WorkChanges.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Cancel"
 msgstr "Cancel"
@@ -1573,6 +1585,7 @@ msgid "Changed the position of {source}"
 msgstr "Changed the position of {source}"
 
 #: src/features/project/mobile/MobileChangeSheet.tsx
+#: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Changes"
 msgstr "Changes"
 
@@ -1584,13 +1597,25 @@ msgstr "Changes couldn’t load"
 msgid "Changes couldn't load."
 msgstr "Changes couldn't load."
 
-#: src/features/project/work/WorkChangeFile.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Changes couldn’t load."
+msgstr "Changes couldn’t load."
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Changes in {name}"
 msgstr "Changes in {name}"
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Changes in this chat"
+msgstr "Changes in this chat"
+
 #: src/features/project/work/WorkChanges.tsx
-msgid "Changes to review"
-msgstr "Changes to review"
+#~ msgid "Changes to review"
+#~ msgstr "Changes to review"
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Changing position"
+msgstr "Changing position"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Changing the position of {source}…"
@@ -2711,6 +2736,7 @@ msgid "Delete Work"
 msgstr "Delete Work"
 
 #: src/features/chat/command-descriptor.ts
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted"
 msgstr "Deleted"
@@ -2807,7 +2833,7 @@ msgstr "Diagram"
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/ReviewActions.tsx
 #: src/features/project/ProjectCreationNotice.tsx
-#: src/features/project/work/WorkChanges.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Discard"
 msgstr "Discard"
@@ -2820,7 +2846,7 @@ msgstr "Discard all"
 #~ msgid "Discard all changes"
 #~ msgstr "Discard all changes"
 
-#: src/features/project/work/WorkChanges.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Discard all changes?"
 msgstr "Discard all changes?"
 
@@ -2833,9 +2859,17 @@ msgstr "Discard changes"
 msgid "Discard draft"
 msgstr "Discard draft"
 
+#: src/features/draft-review/ReviewActions.tsx
+msgid "Discard draft of {subject}"
+msgstr "Discard draft of {subject}"
+
 #: src/features/chat/DraftDock.tsx
 msgid "Discard this chat's changes?"
 msgstr "Discard this chat's changes?"
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Discard this chat’s changes?"
+msgstr "Discard this chat’s changes?"
 
 #: src/features/chat/turn-receipt-copy.ts
 #: src/features/draft-review/CommandNotice.tsx
@@ -3597,7 +3631,7 @@ msgid "Just now"
 msgstr "Just now"
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/project/work/WorkChanges.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Keep"
 msgstr "Keep"
 
@@ -3709,7 +3743,6 @@ msgid "Live view"
 msgstr "Live view"
 
 #: src/features/draft-review/DraftImagePreview.tsx
-#: src/features/project/work/WorkFileGroup.tsx
 msgid "Loading"
 msgstr "Loading"
 
@@ -3722,6 +3755,10 @@ msgstr "Loading {0}"
 #: src/features/chat/CreationComposer.tsx
 msgid "Loading agents…"
 msgstr "Loading agents…"
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Loading changes…"
+msgstr "Loading changes…"
 
 #: src/features/project/chat-index/ChatIndexLoading.tsx
 msgid "Loading chats"
@@ -4050,6 +4087,11 @@ msgstr "Moving"
 msgid "Moving {source} to"
 msgstr "Moving {source} to"
 
+#. placeholder {0}: line.place
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Moving to {0}"
+msgstr "Moving to {0}"
+
 #: src/features/project/context/context-entry-name.ts
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Name is required"
@@ -4084,9 +4126,9 @@ msgstr "Names cannot end with '/'"
 msgid "Needs you"
 msgstr "Needs you"
 
-#: src/components/app/NewBadge.tsx
-#~ msgid "New"
-#~ msgstr "New"
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "New"
+msgstr "New"
 
 #: src/features/chat/ChatThreadTitle.tsx
 #: src/features/chat/ChatView.tsx
@@ -4358,6 +4400,14 @@ msgstr "Nothing opened yet"
 msgid "Nothing to redo yet."
 msgstr "Nothing to redo yet."
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Nothing to review in {name}."
+msgstr "Nothing to review in {name}."
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Nothing to review in this chat."
+msgstr "Nothing to review in this chat."
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Nothing to undo yet."
 msgstr "Nothing to undo yet."
@@ -4584,8 +4634,8 @@ msgid "Pending delete"
 msgstr "Pending delete"
 
 #: src/features/project/work/WorkChanges.tsx
-msgid "Pending drafts couldn’t load"
-msgstr "Pending drafts couldn’t load"
+#~ msgid "Pending drafts couldn’t load"
+#~ msgstr "Pending drafts couldn’t load"
 
 #: src/features/draft-review/tree-line.ts
 msgid "Pending move"
@@ -4892,6 +4942,11 @@ msgstr "Rename Work: {0}"
 msgid "Renamed to {confirmed}"
 msgstr "Renamed to {confirmed}"
 
+#. placeholder {0}: line.place
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+#~ msgid "Renaming to {0}"
+#~ msgstr "Renaming to {0}"
+
 #: src/core/editor/diagrams/DiagramBody.tsx
 msgid "Rendering diagram…"
 msgstr "Rendering diagram…"
@@ -5030,6 +5085,7 @@ msgid "Retry"
 msgstr "Retry"
 
 #: src/features/draft-review/DocumentChangeRows.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Retry changes"
 msgstr "Retry changes"
 
@@ -5038,8 +5094,8 @@ msgid "Retry loading"
 msgstr "Retry loading"
 
 #: src/features/project/work/WorkChanges.tsx
-msgid "Retry Pending drafts"
-msgstr "Retry Pending drafts"
+#~ msgid "Retry Pending drafts"
+#~ msgstr "Retry Pending drafts"
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Retry save"
@@ -6096,6 +6152,7 @@ msgid "This chat is in the trash, so its drafts are frozen. Restore the chat to 
 msgstr "This chat is in the trash, so its drafts are frozen. Restore the chat to apply them."
 
 #: src/features/draft-review/TrashedChatNotice.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "This chat is in Trash. Restore it to edit or apply its drafts."
 msgstr "This chat is in Trash. Restore it to edit or apply its drafts."
 
@@ -6354,7 +6411,7 @@ msgstr "This project couldn’t load. It may be unavailable."
 msgid "This project was deleted."
 msgstr "This project was deleted."
 
-#: src/features/project/work/WorkChanges.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "This removes pending changes from every document in this Work."
 msgstr "This removes pending changes from every document in this Work."
 
@@ -6397,6 +6454,10 @@ msgstr "This version of Meridian can't display it."
 #: src/features/project/work/ArchivedWorkNotice.tsx
 msgid "This Work is archived."
 msgstr "This Work is archived."
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "This Work is archived. Unarchive it to apply or discard its changes."
+msgstr "This Work is archived. Unarchive it to apply or discard its changes."
 
 #: src/client/query/work-update-failure.ts
 msgid "This Work is archived. Unarchive it to edit."
@@ -6609,8 +6670,7 @@ msgstr "Untitled chat"
 
 #: src/features/chat/document-display-name.ts
 #: src/features/draft-review/tree-line.ts
-#: src/features/project/work/WorkChangeFile.tsx
-#: src/features/project/work/WorkChanges.tsx
+#: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Untitled document"
 msgstr "Untitled document"
 
@@ -6734,6 +6794,11 @@ msgstr "Waiting for your review"
 #: src/features/import/import-presentation.ts
 msgid "Waiting to organize {name}"
 msgstr "Waiting to organize {name}"
+
+#. placeholder {0}: line.name
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Was {0}"
+msgstr "Was {0}"
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
