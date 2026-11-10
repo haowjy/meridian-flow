@@ -160,6 +160,8 @@ const SOURCES: Record<SourceKey, Source> = {
         useWriteSources();
       return (
         <ChangesSource
+          // A question asked of one Work must not be answered for the next one picked.
+          key={changes.ownerKey}
           projectId={projectId}
           scope={changes}
           controller={changesCommands}

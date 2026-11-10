@@ -295,10 +295,11 @@ export function useWorkBranchCommands({
       /** The owner's drafts are frozen (`ThreadDraftListResponse.frozen`): read-only, no Apply. */
       frozen,
       /**
-       * Whether an Apply can be sent at all. A frozen owner (a lineage with every chat in Trash)
-       * takes no Apply; every surface that offers one reads this.
+       * Whether Apply is offered at all. A frozen owner (a lineage with every chat in Trash)
+       * takes no Apply, so every surface hides it; an archived Work still shows it, disabled by
+       * `dispositionLocked`.
        */
-      canApply: !locked && !frozen,
+      canApply: !frozen,
       commandChange,
       startDraft,
       apply: (documentId: string, itemKey: string) =>

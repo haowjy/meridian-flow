@@ -115,7 +115,6 @@ export function ChangesSource({
   const { work, ownerKey } = scope;
   // Locked with rows to show means archived: no owner key or Work lists nothing.
   const archived = controller.dispositionLocked;
-  const applyOffered = controller.canApply || archived;
   useSyncExternalStore(
     controller.owner.subscribe,
     controller.owner.snapshot,
@@ -240,7 +239,7 @@ export function ChangesSource({
             touch={touch}
             disabled={archived}
             onDiscard={() => setConfirmingDiscard(true)}
-            onApply={applyOffered && files.every(applicable) ? startApplyAll : undefined}
+            onApply={controller.canApply && files.every(applicable) ? startApplyAll : undefined}
             applyDisabled={held.some((read) => read.status !== "ready")}
           />
         ) : null
@@ -267,7 +266,7 @@ export function ChangesSource({
                 readOf(file)?.status === "ready" ? readOf(file)?.listedChanges.length : undefined
               }
               active={isOpen(file)}
-              canApply={applyOffered && applicable(file)}
+              canApply={controller.canApply && applicable(file)}
               controller={controller}
               touch={touch}
               onPicked={onPicked}
