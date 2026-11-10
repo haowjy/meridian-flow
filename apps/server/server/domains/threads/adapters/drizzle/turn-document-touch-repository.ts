@@ -78,7 +78,7 @@ export function createDrizzleTurnDocumentTouchRepository(
           turnId: row.turn_id,
           documentId: row.document_id,
           threadId,
-          touchedAt: toIsoString(row.touched_at),
+          touchedAt: new Date(row.touched_at).toISOString(),
           edited: row.edited,
         }))
         .sort((a, b) => b.touchedAt.localeCompare(a.touchedAt));
