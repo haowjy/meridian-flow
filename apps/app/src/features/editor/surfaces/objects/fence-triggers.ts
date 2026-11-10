@@ -3,8 +3,7 @@
  *
  * The ladder's floor, for the one context the formatting menu deliberately
  * does not own: a fence's verbs are its language, its source, and its shape,
- * and law 4 gives the deepest context the surface. Before the human ruling of
- * 2026-07-29 this right-click fell through to the browser; now it opens the
+ * and law 4 gives the deepest context the surface. This right-click opens the
  * same list the ⋮ chip carries.
  *
  * Pure over the claim target, so the split matrix is testable without a

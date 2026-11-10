@@ -174,7 +174,7 @@ describe("Hocuspocus document transport adapter", () => {
     }
   });
 
-  // D30, design §2.7: a causal gap never ends a draft refused, and an Update
+  // design §2.7: a causal gap never ends a draft refused, and an Update
   // never reaches a socket ahead of that socket's SyncStep2.
   it("reconnects a draft room through prefix-missing closes without writing held updates", async () => {
     const roomName = "draft:draft-1";

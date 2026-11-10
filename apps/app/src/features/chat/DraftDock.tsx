@@ -23,7 +23,7 @@ import type { DraftDockModel } from "./useDraftDock";
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
-  /** What an Apply of several files deletes or brings back (D79), asked about first. */
+  /** What an Apply of several files deletes or brings back, asked about first. */
   const [asking, setAsking] = useState<{
     deleting: readonly DockFile[];
     restoring: readonly DockFile[];

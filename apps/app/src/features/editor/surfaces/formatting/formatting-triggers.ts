@@ -14,7 +14,7 @@
  * - `text-selection` — the writer swept prose and pointed inside it. The menu
  *   acts on that sweep.
  * - `caret` — the ladder's floor. Every right-click in prose that no rung
- *   above wanted lands here (human ruling, 2026-07-29), and the caret moves to
+ *   above wanted lands here, and the caret moves to
  *   where the writer pointed so the verbs act on the block they aimed at.
  *
  * The keyboard twin asks the first question only: Shift+F10 has no pointer, so

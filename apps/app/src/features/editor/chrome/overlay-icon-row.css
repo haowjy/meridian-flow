@@ -1,5 +1,5 @@
 /**
- * The object row's own styles (ruling 8, mockup 03b) — the shape it makes in
+ * The object row's own styles — the shape it makes in
  * the corner that `object-overlay.css` puts it in.
  *
  * Rendered inside the object it decorates or portalled into the manuscript's
@@ -9,8 +9,7 @@
  * rules the moment it does.
  */
 
-/* One line of editor text is the ceiling for anything hovering over an object
-   (human ruling): a one-line fence is ~50px tall, and a row that ate 40px of
+/* One line of editor text is the ceiling for anything hovering over an object: a one-line fence is ~50px tall, and a row that ate 40px of
    it read as a second block squatting on the first. Every control in an object
    overlay is therefore the dense `xs` button size — the ceiling is held by the
    shared button scale, not by heights hand-rolled per surface. */

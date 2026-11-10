@@ -4,7 +4,7 @@
  */
 
 /* A fence scrolls rather than reflows, which is Notion's default and the
-   reference ruling 15 names: an indented block keeps its shape, and a long
+   reference: an indented block keeps its shape, and a long
    line is a long line. Wrap lines in the ⋮ is what turns reflow on. */
 .meridian-editor .ProseMirror [data-node-view-wrapper] pre {
   white-space: pre;
@@ -19,7 +19,7 @@
 }
 
 /* The code block's chip cluster: one card holding a labeled control and two
-   icons, inside the block's top-right bounds (ruling 15). Corner, fade, and
+   icons, inside the block's top-right bounds. Corner, fade, and
    zero footprint come from `.meridian-object-overlay`; what is left here is
    the card the object row does not have.
 

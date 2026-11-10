@@ -5,8 +5,7 @@
  * column, and that is what `width: null` means — the state nearly every picture
  * is in, and the state whose wire form stays plain `![alt](src)`. Dragging a
  * corner writes a number into the document instead, so every peer draws the
- * picture the writer's size rather than their own reading of the file (human
- * ruling, 2026-07-30: the Docs model, and the way a big picture becomes small
+ * picture the writer's size rather than their own reading of the file (the Docs model, and the way a big picture becomes small
  * enough for words to stand beside it in the line).
  *
  * Two rules make the gesture one event rather than a hundred. The drag itself
