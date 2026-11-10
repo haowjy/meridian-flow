@@ -5,9 +5,12 @@ import { Layers, Plus } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
-import { IconButton } from "@/components/ui/icon-button";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
+import { RowIcon, rowPaddingLeft } from "../../context/ContextTreeRows";
+import { contextTreeFileRowClassName, sidebarRole } from "../../context/context-row-geometry";
+import { PaneHeaderActionButton } from "../../context/RailPaneHeader";
+import { SourceHint, SourcePane } from "./SourcePane";
 
 /** Settled chats shown before "Older" hands over to the full list. */
 const SETTLED_SHOWN = 6;
@@ -81,16 +84,15 @@ export function ChatsBody({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-8 shrink-0 items-center justify-between pr-2 pl-4">
-        <span className="text-[12px] font-medium text-ink-muted">
-          <Trans>Chats</Trans>
-        </span>
-        <IconButton size="sm" aria-label={t`New chat`} title={t`New chat`} onClick={onNewChat}>
-          <Plus className="size-4" aria-hidden />
-        </IconButton>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {threads === null ? null : (
+      <SourcePane
+        label={t`Chats`}
+        actions={<PaneHeaderActionButton icon={Plus} label={t`New chat`} onClick={onNewChat} />}
+      >
+        {threads === null ? (
+          <SourceHint status>
+            <Trans>Loading…</Trans>
+          </SourceHint>
+        ) : (
           <>
             <Group label={t`Needs you`} hidden={groups.needsYou.length === 0}>
               {groups.needsYou.map((thread) => row(thread, "needs-you"))}
@@ -104,16 +106,21 @@ export function ChatsBody({
                 <button
                   type="button"
                   onClick={onShowAllChats}
-                  className="focus-ring flex h-7 w-full items-center rounded-md pl-7 text-left text-[13px] text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground"
+                  className={cn(
+                    ROW_BUTTON,
+                    contextTreeFileRowClassName(false),
+                    sidebarRole.secondary,
+                  )}
+                  style={{ paddingLeft: rowPaddingLeft(1) }}
                 >
                   <Trans>Older</Trans>
                 </button>
               ) : null}
             </Group>
             {groups.needsYou.length + groups.running.length + groups.settled.length === 0 ? (
-              <p className="px-2 py-2 text-[13px] text-ink-muted">
+              <SourceHint>
                 <Trans>No chats in this Work yet.</Trans>
-              </p>
+              </SourceHint>
             ) : null}
             <Group label={t`Other Works`} hidden={groups.otherWorks.length === 0}>
               {groups.otherWorks.map((other) => (
@@ -121,14 +128,16 @@ export function ChatsBody({
                   key={other.workId}
                   type="button"
                   onClick={() => onShowWork(other.workId)}
-                  className="focus-ring flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] hover:bg-sidebar-accent/50"
+                  className={cn(ROW_BUTTON, contextTreeFileRowClassName(false))}
+                  style={{ paddingLeft: rowPaddingLeft(0) }}
                 >
-                  <Layers className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
-                  <span className="min-w-0 flex-1 truncate">{workName(other.workId)}</span>
+                  <RowIcon icon={Layers} />
+                  <span className="ml-0.5 min-w-0 flex-1 truncate">{workName(other.workId)}</span>
                   <span
                     className={cn(
-                      "shrink-0 text-[11px]",
-                      other.needsYou > 0 ? "text-primary" : "text-ink-muted",
+                      "shrink-0 pr-1",
+                      sidebarRole.rowSecondary,
+                      other.needsYou > 0 && "text-primary",
                     )}
                   >
                     {other.needsYou > 0 ? (
@@ -142,11 +151,14 @@ export function ChatsBody({
             </Group>
           </>
         )}
-      </div>
+      </SourcePane>
       {footer}
     </div>
   );
 }
+
+/** A row that is one button: the row frame, full width inside its inset. */
+const ROW_BUTTON = "focus-ring w-[calc(100%-1rem)] text-left";
 
 function Group({
   label,
@@ -160,7 +172,7 @@ function Group({
   if (hidden) return null;
   return (
     <section aria-label={label} className="pt-2">
-      <h3 className="px-2 pb-1 text-[11px] font-medium text-ink-subtle">{label}</h3>
+      <h3 className={cn("pr-2 pb-1 pl-3.5", sidebarRole.rowSecondary)}>{label}</h3>
       {children}
     </section>
   );
@@ -187,19 +199,19 @@ function ChatRow({
       type="button"
       onClick={onOpen}
       aria-current={current ? "page" : undefined}
-      className={cn(
-        "focus-ring flex h-7 w-full items-center gap-2 rounded-md pr-2 text-left text-[13px]",
-        nested ? "pl-6" : "pl-2",
-        current
-          ? "bg-sidebar-accent font-medium text-foreground"
-          : "text-foreground/90 hover:bg-sidebar-accent/50",
-      )}
+      className={cn(ROW_BUTTON, "gap-2", contextTreeFileRowClassName(current))}
+      style={{ paddingLeft: rowPaddingLeft(nested ? 1 : 0) }}
     >
-      <StateMark state={state} />
+      <span className="flex h-7 w-4 shrink-0 items-center justify-center">
+        <StateMark state={state} />
+      </span>
       {thread.agentName ? (
         <span
           aria-hidden
-          className="grid size-4 shrink-0 place-items-center rounded bg-foreground/8 text-[10px] font-medium text-ink-muted"
+          className={cn(
+            "grid size-4 shrink-0 place-items-center rounded border border-border-subtle font-medium leading-none",
+            sidebarRole.rowSecondary,
+          )}
           title={thread.agentName}
         >
           {thread.agentName.slice(0, 1).toUpperCase()}

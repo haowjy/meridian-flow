@@ -1,71 +1,39 @@
 /**
- * WorkspaceNavBody — shared project navigation for destination links, an
- * optional desktop body, and the account row.
- *
- * LeftSidebar (desktop persistent rail) and NavigationDrawer (phone Sheet) both
- * compose this; each owns only its chrome — the collapse control / Sheet, the
- * project header, and safe-area padding. `presentation` carries the
- * desktop↔phone touch-target and spacing differences (mirroring how
- * SettingsDialog/PhoneSettings share section bodies), and "close the drawer on
- * select" stays a chrome concern: NavigationDrawer passes `onSelect*` callbacks
- * that close the sheet, so the body never needs to know it lives in one.
+ * WorkspaceNavBody — the phone drawer's body: destination links, the sources
+ * (`children`), and the account row. `NavigationDrawer` owns the Sheet and
+ * closes it on select; this body never needs to know it lives in one.
  */
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Trash2 } from "lucide-react";
-import type { ReactNode, Ref } from "react";
+import { ArrowLeft } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
+import { sidebarIcon, sidebarRole } from "../context/context-row-geometry";
 import { useRailSwitchFailed } from "../routing/document-switch-failure";
 import { SCREENS, type ScreenKey, type ScreenMeta, screenLabel } from "./screens";
-
-export type WorkspaceNavPresentation = "desktop" | "phone";
-
-export type WorkspaceNavBodyProps = {
-  activeScreen: ScreenKey;
-  onSelectScreen: (screen: ScreenKey) => void;
-  presentation: WorkspaceNavPresentation;
-  /** Persistent navigation content between the controls and account row. */
-  children?: ReactNode;
-  /** The pane holding `children`, for a section below that resizes against it. */
-  childrenRef?: Ref<HTMLDivElement>;
-  /** The User section, docked above Scratch: the writer's documents, not the project's. */
-  user?: ReactNode;
-  /** The chat's Scratch section, pinned above the account row. */
-  scratch?: ReactNode;
-  /** Opens the project's Trash; its row sits below Scratch. */
-  onOpenTrash?: () => void;
-};
 
 export function WorkspaceNavBody({
   activeScreen,
   onSelectScreen,
-  presentation,
   children,
-  childrenRef,
-  user,
-  scratch,
-  onOpenTrash,
-}: WorkspaceNavBodyProps) {
-  const phone = presentation === "phone";
+}: {
+  activeScreen: ScreenKey;
+  onSelectScreen: (screen: ScreenKey) => void;
+  /** The sources, between the destinations and the account row. */
+  children?: ReactNode;
+}) {
   const failed = useRailSwitchFailed();
 
   return (
     <>
-      {/* Destination nav */}
-      <div
-        className={cn(
-          "flex shrink-0 flex-col",
-          phone ? "gap-1 px-3 py-3" : "gap-0.5 border-b border-border-subtle px-2 pb-2",
-        )}
-      >
+      <div className="flex shrink-0 flex-col gap-1 px-3 py-3">
         {SCREENS.map((screen) => (
           <div key={screen.key}>
             <ScreenNavItem
               screen={screen}
               active={screen.key === activeScreen}
-              presentation={presentation}
               onClick={() => onSelectScreen(screen.key)}
             />
             {failed === screen.key && (
@@ -77,49 +45,26 @@ export function WorkspaceNavBody({
         ))}
       </div>
 
-      <div ref={childrenRef} className="min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-border-subtle pt-1">
         {children}
       </div>
 
-      {/* Docked sections draw their own dividers, so none shows for an absent one. */}
-      {user}
-      {scratch}
-      {onOpenTrash ? (
-        <div
-          className={cn(
-            "shrink-0 border-t border-border-subtle",
-            phone ? "px-3 py-1" : "px-2 py-1",
-          )}
-        >
-          <button
-            type="button"
-            onClick={onOpenTrash}
-            className={cn(
-              "focus-ring flex w-full items-center gap-2 rounded-md px-2 text-left text-sm text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",
-              phone ? "min-h-11" : "min-h-9",
-            )}
-          >
-            <Trash2 className="size-4 shrink-0" aria-hidden />
-            <Trans>Trash</Trans>
-          </button>
-        </div>
-      ) : null}
-
       <div
-        className={cn("shrink-0 border-t border-border-subtle px-2", phone ? "pt-2" : "py-1.5")}
-        style={phone ? { paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" } : undefined}
+        className="shrink-0 border-t border-border-subtle px-2 pt-2"
+        style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
       >
-        {/* The account sits between Scratch and the way out, so a near miss on
-            Scratch never leaves the project. */}
+        {/* The account sits before the way out, so a near miss never leaves the project. */}
         <AccountMenu />
         <Link
           to="/"
           className={cn(
-            "focus-ring flex items-center gap-2 rounded-md px-2 text-sm text-ink-muted no-underline hover:bg-sidebar-accent/50 hover:text-foreground",
-            phone ? "min-h-11" : "min-h-9",
+            "focus-ring flex min-h-11 items-center gap-2 rounded-md px-2 no-underline hover:text-foreground",
+            sidebarRole.row,
+            sidebarRole.secondary,
+            sidebarRole.hover,
           )}
         >
-          <ArrowLeft className="size-4 shrink-0" aria-hidden />
+          <ArrowLeft className={cn(sidebarIcon.action, "shrink-0")} aria-hidden />
           <Trans>View projects</Trans>
         </Link>
       </div>
@@ -130,12 +75,10 @@ export function WorkspaceNavBody({
 function ScreenNavItem({
   screen,
   active,
-  presentation,
   onClick,
 }: {
   screen: ScreenMeta;
   active: boolean;
-  presentation: WorkspaceNavPresentation;
   onClick: () => void;
 }) {
   const Icon = screen.icon;
@@ -145,19 +88,15 @@ function ScreenNavItem({
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "focus-ring flex w-full items-center gap-2.5 text-left text-sm transition-colors",
-        // Desktop rows share the footer's inset, rounded treatment; keep the
-        // icon and label aligned with their original positions.
-        presentation === "phone"
-          ? "min-h-11 rounded-md px-2 active:scale-[0.98]"
-          : "rounded-md px-2 py-1.5",
+        "focus-ring flex min-h-11 w-full items-center gap-2.5 rounded-md px-2 text-left transition-colors active:scale-[0.98]",
+        sidebarRole.row,
         active
-          ? "bg-sidebar-accent font-medium text-foreground"
-          : "text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",
+          ? cn(sidebarRole.selected, "font-medium text-foreground")
+          : cn(sidebarRole.secondary, sidebarRole.hover, "hover:text-foreground"),
       )}
     >
-      <span className="grid size-5 place-items-center text-muted-foreground">
-        <Icon className="size-4" aria-hidden />
+      <span className="grid size-5 place-items-center">
+        <Icon className={sidebarIcon.action} aria-hidden />
       </span>
       <span className="min-w-0 flex-1 truncate">{screenLabel(screen.key)}</span>
     </button>

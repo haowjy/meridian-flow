@@ -1,20 +1,20 @@
 /**
- * NavigationDrawer — phone project drawer for destinations, the chat's Scratch and account.
+ * NavigationDrawer — the phone project drawer: destinations, Write's source tabs, and the account.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
-import { RailScratchSection } from "../chat/ChatScratch";
-import { ContextTreePanel, UserRailSection } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import type { TreeCreationRequest } from "../context/TreeCreationProvider";
-import { useProjectTrashNavigation } from "../routing/ProjectNavigationContext";
+import { TreeCreationProvider } from "../context/TreeCreationProvider";
 import { InlineProjectTitle, type ProjectTitleEdit } from "../shell/InlineProjectTitle";
 import type { ScreenKey } from "../shell/screens";
+import { SourcesBody } from "../shell/sidebar/SourcesBody";
 import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
+
+/** The drawer is the sidebar: there is nothing to expand. */
+const keepOpen = () => {};
 
 export type NavigationDrawerProps = {
   open: boolean;
@@ -28,7 +28,7 @@ export type NavigationDrawerProps = {
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   onSelectScreen: (screen: ScreenKey) => void;
-  /** The chat on screen, which the Scratch control browses; null hides the control. */
+  /** The chat on screen, whose notes the Scratch tab lists. */
   chatThreadId: string | null;
 };
 
@@ -46,7 +46,6 @@ export function NavigationDrawer({
   onSelectScreen,
   chatThreadId,
 }: NavigationDrawerProps) {
-  const trashNavigation = useProjectTrashNavigation();
   const openDocument = useOpenProjectDocument(projectId);
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
@@ -62,16 +61,8 @@ export function NavigationDrawer({
       if (result.kind === "committed") onOpenChange(false);
     });
   };
-  // The drawer owns its own inline-create state: the desktop shell's shared
-  // creation seam (empty state → sidebar) has no phone counterpart — phone
-  // creation starts from the tree's own hover actions inside this drawer.
-  const [creating, setCreating] = useState<TreeCreationRequest | null>(null);
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen) setCreating(null);
-    onOpenChange(nextOpen);
-  };
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
+    <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="left"
         showCloseButton={false}
@@ -134,46 +125,20 @@ export function NavigationDrawer({
                 onSelectScreen(screen);
                 onOpenChange(false);
               }}
-              presentation="phone"
-              onOpenTrash={() => {
-                void trashNavigation.navigate(true);
-                onOpenChange(false);
-              }}
-              user={
-                contextLive ? (
-                  <UserRailSection
-                    projectId={projectId}
-                    editorWorkId={editorWorkId}
-                    activeScheme={activeContextScheme}
-                    activePath={activeContextPath}
-                    onSelectFile={handleSelectFile}
-                    creating={creating}
-                    onRequestCreate={setCreating}
-                    onCreateDone={() => setCreating(null)}
-                  />
-                ) : null
-              }
-              scratch={
-                <RailScratchSection
-                  projectId={projectId}
-                  threadId={chatThreadId}
-                  editorWorkId={editorWorkId}
-                  onPicked={() => onOpenChange(false)}
-                />
-              }
             >
-              {contextLive ? (
-                <ContextTreePanel
+              {/* The drawer's own creation seam: closing the drawer unmounts it, ending any inline create. */}
+              <TreeCreationProvider expandSidebar={keepOpen}>
+                <SourcesBody
                   projectId={projectId}
                   editorWorkId={editorWorkId}
+                  chatThreadId={chatThreadId}
+                  contextLive={contextLive}
                   activeScheme={activeContextScheme}
                   activePath={activeContextPath}
                   onSelectFile={handleSelectFile}
-                  creating={creating}
-                  onRequestCreate={setCreating}
-                  onCreateDone={() => setCreating(null)}
+                  onPicked={() => onOpenChange(false)}
                 />
-              ) : null}
+              </TreeCreationProvider>
             </WorkspaceNavBody>
           </nav>
         </div>

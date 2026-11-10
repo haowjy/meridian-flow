@@ -7,7 +7,7 @@
  */
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { contextTreeDropTargetClassName } from "../context-row-geometry";
+import { sidebarRole } from "../context-row-geometry";
 import type { DropEdge, TreeDropState } from "./tree-drop";
 
 export function DropRegion({
@@ -26,7 +26,7 @@ export function DropRegion({
           aria-hidden
           className={cn(
             "pointer-events-none absolute inset-x-2 inset-y-0 -z-10 rounded-md",
-            contextTreeDropTargetClassName,
+            sidebarRole.dropTarget,
           )}
         />
       ) : null}

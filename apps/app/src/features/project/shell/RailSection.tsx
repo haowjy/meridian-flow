@@ -1,16 +1,15 @@
 /**
- * RailSection — building blocks for the lists drawn beside the left file tree:
- * the right context rail's Recent and the left rail's Scratch. They are the
- * tree's own parts: section heads are
- * `RailPaneHeader`, file rows wear `contextTreeFileRowClassName` with the
- * tree's `RowIcon` and `Twistie`, and the empty hint takes the tree's. They
- * therefore read as the same surface as the tree.
+ * RailSection — building blocks for lists drawn in the tree's own parts: the
+ * right context rail's Recent and a chat's Scratch. Section heads are
+ * `RailPaneHeader`, rows wear `contextTreeFileRowClassName` with the tree's
+ * `RowIcon`, and the hint takes the sidebar's hint role.
  */
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { RowIcon, rowPaddingLeft, Twistie } from "../context/ContextTreeRows";
-import { contextTreeFileRowClassName } from "../context/context-row-geometry";
+import { cn } from "@/lib/utils";
+import { RowIcon, rowPaddingLeft } from "../context/ContextTreeRows";
+import { contextTreeFileRowClassName, sidebarRole } from "../context/context-row-geometry";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { type RailSectionId, useProjectSurfacePrefsStore } from "../layout/surface-prefs-store";
 
@@ -72,7 +71,6 @@ export function RailFileRow({
         aria-current={active ? "true" : undefined}
         className="focus-ring flex min-w-0 flex-1 items-center self-stretch rounded-md text-left"
       >
-        <span className="h-7 w-4 shrink-0" aria-hidden />
         <RowIcon icon={icon} />
         <span className="ml-0.5 min-w-0 flex-1 truncate">{name}</span>
       </button>
@@ -80,7 +78,7 @@ export function RailFileRow({
   );
 }
 
-/** One folder row, as the tree draws it: a twistie, the folder glyph and its name. */
+/** One folder row, as the tree draws it: the open or closed folder is its disclosure. */
 export function RailFolderRow({
   icon,
   name,
@@ -105,7 +103,6 @@ export function RailFolderRow({
         aria-expanded={expanded}
         className="focus-ring flex min-w-0 flex-1 items-center self-stretch rounded-md text-left"
       >
-        <Twistie expanded={expanded} />
         <RowIcon icon={icon} />
         <span className="ml-0.5 min-w-0 flex-1 truncate">{name}</span>
       </button>
@@ -113,10 +110,20 @@ export function RailFolderRow({
   );
 }
 
-/** Muted placeholder shown when a rail section is empty, indented like a tree row. */
+/** A line standing in for a section's rows (loading, empty), starting where its rows' icons do. */
 export function RailEmptyHint({ children }: { children: ReactNode }) {
-  return <p className="py-1.5 pr-2 pl-6 text-xs leading-snug text-ink-subtle">{children}</p>;
+  return (
+    <p
+      className={cn("py-1.5 pr-2 leading-snug", sidebarRole.hint)}
+      style={{ paddingLeft: ROW_INSET_PX + rowPaddingLeft(1) }}
+    >
+      {children}
+    </p>
+  );
 }
+
+/** The `mx-2` a row sits inside its list with. */
+const ROW_INSET_PX = 8;
 
 /** Error row with a retry link, shown when a rail section fails to load. */
 export function RailErrorRow({ onRetry, label }: { onRetry: () => void; label: ReactNode }) {

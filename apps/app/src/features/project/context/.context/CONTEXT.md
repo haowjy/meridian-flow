@@ -77,7 +77,7 @@ pointer is stored.
 ## Architecture
 
 ```text
-ContextTreePanel (desktop)          MobileContextBrowser (mobile)
+ContextTreePanel (sidebar source)   MobileContextBrowser (mobile)
        │                                     │
        ├─ useContextCatalogViews (batched projection) ┤
        ├─ useCreateEntryForm ────────────────┤
@@ -123,9 +123,9 @@ ContextPaneController
 ```
 
 Document trash is a server snapshot separate from the live catalog projection.
-The tree doesn't read it: the Trash row is a fixed navigation row below Scratch
-(`WorkspaceNavBody`), always shown. The routed `DocumentTrashDialog` owns the
-newest-first list and the selected read-only record in one popup. Desktop keeps
+The tree doesn't read it: Trash is a sidebar source (`shell/sidebar/TrashSource.tsx`)
+listing it newest first, and picking a row opens the routed `DocumentTrashDialog`,
+which owns the list and the selected read-only record in one popup. Desktop keeps
 the list and record side by side; phone shows the list or record, with Back to
 return to the list. The detail reads the server's Markdown, serialized from the document's frozen Yjs, and composes
 `ReadOnlyViewerFrame` with `TextViewer`; it never uses the live path-based read.

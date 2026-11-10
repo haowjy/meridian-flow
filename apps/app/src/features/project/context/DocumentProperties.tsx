@@ -8,6 +8,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { DocumentProperties as DocumentPropertiesDto } from "@meridian/contracts";
+import { ChevronRight } from "lucide-react";
 import { useId } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useDocumentProperties } from "@/client/query/useDocumentProperties";
@@ -16,7 +17,6 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
 import { cn } from "@/lib/utils";
-import { Twistie } from "./ContextTreeRows";
 import { DocumentPropertyValue, YamlBlock } from "./DocumentPropertyValue";
 
 /** The catalog's word on whether a document has properties; false until it has said so. */
@@ -65,7 +65,12 @@ function PropertiesRow({ projectId, documentId }: { projectId: string; documentI
           }}
           className="focus-ring -ml-1 flex h-7 w-full min-w-0 items-center rounded-md pr-1 pl-1 text-left"
         >
-          <Twistie expanded={open} />
+          <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
+            <ChevronRight
+              aria-hidden
+              className={cn("size-3 transition-transform", open && "rotate-90")}
+            />
+          </span>
           <span className="shrink-0 font-medium text-caption text-ink-muted">
             <Trans>Properties</Trans>
           </span>
