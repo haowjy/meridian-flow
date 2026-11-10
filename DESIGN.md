@@ -60,7 +60,7 @@ them here.
 
 ## Shell shape and atmosphere
 
-- The sidebar, the document band and the dock are one chrome. The dock shows one document or its native occupant, never tabs or a view switch.
+- The sidebar, the document band and the dock are one chrome. The dock shows one document or its native occupant on that chrome, never tabs or a view switch. Only the main view's sheet (`page-sheet`) paints page; the editor takes its host's surface.
 - The page rises from chrome with the same top radius as its active document tab. The centered chat header's title chip is the same tab-chip grammar — the chat page continuing up into the band. A hairline (`border-subtle`) separates each side panel from the page; no structural shadow.
 - Dark mode re-points surfaces, inks and accents only (`themes.css`); state fills and borders follow the foreground.
 - Headings, group labels, rows, hints, empty lines and fills come from `role` (`apps/app/src/components/ui/roles.ts`).
