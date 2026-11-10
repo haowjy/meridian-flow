@@ -32,9 +32,9 @@ const buttonVariants = cva(
       size: {
         default: "h-8 px-4 has-[>svg]:px-3",
         xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
-        // Dense inline toolbar action (history/restore/meta actions) — text-meta,
+        // Dense inline toolbar action (history/restore/meta actions) — text-xs,
         // no fixed height so it hugs its label. Pair with variant="quiet".
-        meta: "gap-1 rounded-md px-2 py-1 text-meta [&_svg:not([class*='size-'])]:size-3",
+        meta: "gap-1 rounded-md px-2 py-1 text-xs [&_svg:not([class*='size-'])]:size-3",
         sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5",
         lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
         icon: "size-8",

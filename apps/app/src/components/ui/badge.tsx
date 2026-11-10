@@ -18,7 +18,7 @@ import type * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-const badgeVariants = cva("inline-flex shrink-0 items-center rounded-full text-meta", {
+const badgeVariants = cva("inline-flex shrink-0 items-center rounded-full text-xs", {
   variants: {
     variant: {
       neutral:

@@ -52,7 +52,7 @@ export function ReviewChangeBar({
   const failure = draftFailure ? (
     <p
       role="status"
-      className="flex min-w-0 items-center gap-2 break-words pr-2 text-meta text-destructive"
+      className="flex min-w-0 items-center gap-2 break-words pr-2 text-xs text-destructive"
     >
       <span>
         <ReviewMessageText failure={draftFailure} />

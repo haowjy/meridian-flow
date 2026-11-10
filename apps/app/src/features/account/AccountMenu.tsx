@@ -31,7 +31,7 @@ export function AccountMenu() {
         disabled={loading}
       >
         <span
-          className="grid size-6 place-items-center rounded-full bg-ink-fill-strong text-meta font-medium text-foreground"
+          className="grid size-6 place-items-center rounded-full bg-ink-fill-strong text-xs font-medium text-foreground"
           aria-hidden
         >
           {initials}

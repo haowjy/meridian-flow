@@ -102,7 +102,7 @@ function ResultRows({ results }: { results: GrepResultRows }) {
     <div className="chat-card bg-ink-fill">
       <p
         className={cn(
-          "text-meta text-muted-foreground",
+          "text-xs text-muted-foreground",
           results.rows.length > 0 && "border-border-subtle border-b pb-2",
         )}
       >
@@ -154,7 +154,7 @@ function GrepHit({ row }: { row: GrepHitRow }) {
               event.stopPropagation();
               setOpen((wasOpen) => !wasOpen);
             }}
-            className="focus-ring mt-[var(--chat-space-inline)] inline-flex items-center gap-[var(--chat-space-inline)] rounded-sm text-meta text-muted-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text focus-visible:text-jade-text focus-visible:decoration-jade-text"
+            className="focus-ring mt-[var(--chat-space-inline)] inline-flex items-center gap-[var(--chat-space-inline)] rounded-sm text-xs text-muted-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text focus-visible:text-jade-text focus-visible:decoration-jade-text"
           >
             {moreMatchesLabel(rest.length)}
             <ChevronRight
@@ -185,7 +185,7 @@ function GrepHit({ row }: { row: GrepHitRow }) {
 
 function MatchCount({ count }: { count: number }) {
   return (
-    <span className="ml-auto inline-grid min-w-5 shrink-0 place-items-center rounded-full border border-border bg-ink-fill px-2 py-0.5 text-meta font-semibold text-muted-foreground">
+    <span className="ml-auto inline-grid min-w-5 shrink-0 place-items-center rounded-full border border-border bg-ink-fill px-2 py-0.5 text-xs font-semibold text-muted-foreground">
       <span aria-hidden>{count}</span>
       <span className="sr-only">{matchCountLabel(count)}</span>
     </span>
@@ -573,7 +573,7 @@ function QuotedPreview({ markup, path }: { markup: string; path?: string }) {
 
 function OpenDocumentDoor({ path }: { path: string }) {
   return (
-    <span className="flex min-w-0 text-meta">
+    <span className="flex min-w-0 text-xs">
       <DocumentName path={path} label="open" />
     </span>
   );

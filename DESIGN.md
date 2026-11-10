@@ -75,6 +75,17 @@ root layout:
 |---|---|---|
 | Everything | Inter | UI chrome, manuscript editor, rendered markdown, conversation turns, headings, login |
 
+Four text sizes, each with one job:
+
+| Size | Token | Use |
+|---|---|---|
+| 12px | `text-xs` | labels, group labels, counts, chips, timestamps, the word count |
+| 13px | `text-sm` | every control and row: sidebar rows, menus, pickers, buttons, headers |
+| 14px | chat prose | chat messages, their tables and the composer |
+| 16px | document prose | the manuscript and every document |
+
+Emphasis inside the chrome comes from weight, never from a third UI size.
+
 Headings and emphasis are differentiated by **size + weight only**, never by a
 separate family — matching stock ProseMirror/TipTap (which ship no heading font).
 Long-form text must prioritize readability and stable rhythm (~68ch measure,

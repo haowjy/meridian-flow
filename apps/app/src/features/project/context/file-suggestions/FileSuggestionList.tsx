@@ -151,7 +151,7 @@ export const FileSuggestionList = forwardRef<
                     <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                     <span className="min-w-0 truncate">{displayName}</span>
                     {parent ? (
-                      <span className="ml-auto min-w-0 truncate text-meta text-muted-foreground">
+                      <span className="ml-auto min-w-0 truncate text-xs text-muted-foreground">
                         {parent}
                       </span>
                     ) : null}

@@ -48,7 +48,7 @@ export function SkillInstallSection() {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="flex flex-col gap-0.5 text-meta text-muted-foreground">
+      <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
         slug
         <input
           value={slug}
@@ -56,7 +56,7 @@ export function SkillInstallSection() {
           className="h-7 rounded-sm border border-border bg-transparent px-2 text-xs text-foreground"
         />
       </label>
-      <label className="flex flex-col gap-0.5 text-meta text-muted-foreground">
+      <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
         name
         <input
           value={name}
@@ -64,7 +64,7 @@ export function SkillInstallSection() {
           className="h-7 rounded-sm border border-border bg-transparent px-2 text-xs text-foreground"
         />
       </label>
-      <label className="flex flex-col gap-0.5 text-meta text-muted-foreground">
+      <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
         description
         <input
           value={description}
@@ -72,7 +72,7 @@ export function SkillInstallSection() {
           className="h-7 rounded-sm border border-border bg-transparent px-2 text-xs text-foreground"
         />
       </label>
-      <label className="flex flex-col gap-0.5 text-meta text-muted-foreground">
+      <label className="flex flex-col gap-0.5 text-xs text-muted-foreground">
         body
         <textarea
           value={body}
@@ -100,7 +100,7 @@ export function SkillInstallSection() {
         </button>
       </div>
       {status ? (
-        <p className="text-meta text-muted-foreground" role="status">
+        <p className="text-xs text-muted-foreground" role="status">
           {status}
         </p>
       ) : null}

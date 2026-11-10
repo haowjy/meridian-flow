@@ -44,7 +44,7 @@ export function ModelRequestInspector({
   return (
     <div className="space-y-3">
       {retention && retention.droppedRecords > 0 ? (
-        <p className="rounded-sm border border-border-subtle bg-ink-fill px-3 py-2 text-meta text-muted-foreground">
+        <p className="rounded-sm border border-border-subtle bg-ink-fill px-3 py-2 text-xs text-muted-foreground">
           This capture ring has evicted {retention.droppedRecords} requests totaling{" "}
           {formatBytes(retention.droppedBytes)}. Earlier context may be unavailable.
         </p>
@@ -54,7 +54,7 @@ export function ModelRequestInspector({
           <SelectTrigger
             size="sm"
             aria-label="Model request iteration"
-            className="font-mono text-meta"
+            className="font-mono text-xs"
           >
             <SelectValue />
           </SelectTrigger>
@@ -72,7 +72,7 @@ export function ModelRequestInspector({
       ) : null}
       {view ? <ModelRequestView view={view} retention={retention} /> : null}
       {!view ? (
-        <p className="text-meta text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           No captured model request matches this gateway call.
         </p>
       ) : null}
@@ -113,7 +113,7 @@ function ModelRequestView({
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <h3 className="text-sm font-semibold">Iteration {record.iteration}</h3>
-            <p className="font-mono text-meta text-muted-foreground">
+            <p className="font-mono text-xs text-muted-foreground">
               {requestSummary.model ?? "Routing default"}
             </p>
           </div>
@@ -128,7 +128,7 @@ function ModelRequestView({
           <RequestMetric label="request size" value={formatBytes(requestSummary.requestBytes)} />
         </dl>
         {prefixSummary.detail ? (
-          <p className="text-meta text-muted-foreground">{prefixSummary.detail}</p>
+          <p className="text-xs text-muted-foreground">{prefixSummary.detail}</p>
         ) : null}
       </header>
       <Tabs defaultValue="readable" className="gap-0">
@@ -160,7 +160,7 @@ function ModelRequestView({
 function RequestMetric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-meta text-muted-foreground">{label}</dt>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="font-mono text-xs text-foreground">{value}</dd>
     </div>
   );

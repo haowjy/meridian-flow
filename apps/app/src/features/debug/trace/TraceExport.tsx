@@ -48,18 +48,18 @@ export function TraceExport({ entries }: { entries: readonly EventRecord[] }) {
   return (
     <div className="border-t border-border bg-background">
       <div className="flex flex-wrap items-center gap-2 p-2">
-        <span className="text-meta text-muted-foreground">Filtered JSONL ({entries.length})</span>
-        <Button type="button" variant="outline" size="xs" className="text-meta" onClick={copy}>
+        <span className="text-xs text-muted-foreground">Filtered JSONL ({entries.length})</span>
+        <Button type="button" variant="outline" size="xs" className="text-xs" onClick={copy}>
           {copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy failed" : "Copy"}
         </Button>
-        <Button type="button" variant="outline" size="xs" className="text-meta" onClick={download}>
+        <Button type="button" variant="outline" size="xs" className="text-xs" onClick={download}>
           Download
         </Button>
         <Button
           type="button"
           variant="outline"
           size="xs"
-          className="text-meta"
+          className="text-xs"
           onClick={() => setShow((current) => !current)}
           aria-expanded={show}
         >
@@ -72,7 +72,7 @@ export function TraceExport({ entries }: { entries: readonly EventRecord[] }) {
             role="document"
             aria-label={jsonl || "Empty filtered trace JSONL"}
             data-trace-jsonl-export
-            className="max-h-48 overflow-auto whitespace-pre-wrap break-all border-t border-border bg-ink-fill p-2 font-mono text-meta text-foreground"
+            className="max-h-48 overflow-auto whitespace-pre-wrap break-all border-t border-border bg-ink-fill p-2 font-mono text-xs text-foreground"
           >
             {jsonl}
           </pre>

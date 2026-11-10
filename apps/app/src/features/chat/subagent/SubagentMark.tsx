@@ -22,14 +22,14 @@ export function SubagentMark({
   // The ring is the status: a spinning arc while running, then solid green
   // (finished) or red (failed or stopped). No corner badge, so the mark stays centered.
   const markClassName = cn(
-    "relative grid size-6 shrink-0 place-items-center rounded-full border-[1.5px] bg-background text-meta font-medium text-foreground",
+    "relative grid size-6 shrink-0 place-items-center rounded-full border-[1.5px] bg-background text-xs font-medium text-foreground",
     status === "running" &&
       "border-border after:absolute after:inset-[-1.5px] after:rounded-full after:border-[1.5px] after:border-transparent after:border-t-primary motion-safe:after:animate-spin",
     status === "done" && "border-primary",
     (status === "failed" || status === "cancelled") && "border-destructive",
     status === "unknown" && "border-border",
     className,
-    // After `className`: a size override like `text-meta` would otherwise
+    // After `className`: a size override like `text-xs` would otherwise
     // merge away the line-height, dropping the initial below center. Trimming
     // to cap height centers the capital itself, not its line box.
     "leading-none [text-box:trim-both_cap_alphabetic]",

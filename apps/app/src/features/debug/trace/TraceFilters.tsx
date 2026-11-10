@@ -16,7 +16,7 @@ interface TraceFiltersProps {
   onChange: (filters: TraceFilterState) => void;
 }
 
-const fieldClass = "h-7 min-w-0 px-2 text-meta md:text-meta";
+const fieldClass = "h-7 min-w-0 px-2 text-xs md:text-xs";
 const selectClass = `${fieldClass} focus-ring w-full rounded-md border border-border bg-background text-foreground`;
 
 export function TraceFilters({ entries, filters, onChange }: TraceFiltersProps) {

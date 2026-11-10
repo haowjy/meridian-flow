@@ -195,7 +195,7 @@ function CompactionDocument({ document }: { document: DividerDocument }) {
               <ClippedProse
                 className="text-tier-quoted"
                 footer={
-                  <span className="flex min-w-0 text-meta">
+                  <span className="flex min-w-0 text-xs">
                     <DocumentName path={document.uri} label="open" />
                   </span>
                 }
@@ -247,7 +247,7 @@ function CompactionInfo({ view }: { view: DividerView }) {
 /** Full words on a wide column, the short form narrow; truncates before the row wraps. */
 function DividerLabel({ label, className }: { label: StateLabel; className: string }) {
   return (
-    <span data-compaction-label className={cn("min-w-0 truncate text-meta font-medium", className)}>
+    <span data-compaction-label className={cn("min-w-0 truncate text-xs font-medium", className)}>
       <span className="hidden @lg/divider:inline">{label.full}</span>
       <span className="@lg/divider:hidden">{label.short}</span>
     </span>

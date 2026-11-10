@@ -193,7 +193,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
               <button
                 type="button"
                 onClick={onDisable}
-                className="focus-ring rounded-sm px-2 py-0.5 text-meta text-muted-foreground hover:text-foreground"
+                className="focus-ring rounded-sm px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground"
                 aria-label="Disable debug overlay"
               >
                 disable (⌘⌃D)
@@ -228,7 +228,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
                 </div>
                 <label
                   htmlFor="debug-server-feed"
-                  className="flex shrink-0 items-center gap-1.5 text-meta text-muted-foreground"
+                  className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
                 >
                   <span>Server feed</span>
                   <span
@@ -247,11 +247,11 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
                 </label>
               </div>
               {popupBlocked ? (
-                <p className="text-meta text-warning" role="status">
+                <p className="text-xs text-warning" role="status">
                   Popup blocked — allow popups and try again.
                 </p>
               ) : null}
-              <p className="text-meta text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Alt+click any turn/block to inspect its record. Stores → Redux DevTools.
               </p>
             </div>
@@ -261,7 +261,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="focus-ring flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-meta text-foreground shadow-modal hover:bg-ink-fill"
+          className="focus-ring flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-foreground shadow-modal hover:bg-ink-fill"
           aria-label={open ? "Collapse debug panel" : "Expand debug panel"}
           aria-expanded={open}
         >

@@ -283,7 +283,7 @@ function ThreadSwitchItem({
           {agentName}
         </span>
         {rel ? (
-          <span className="shrink-0 text-meta font-normal tabular-nums text-muted-foreground">
+          <span className="shrink-0 text-xs font-normal tabular-nums text-muted-foreground">
             {rel}
           </span>
         ) : null}

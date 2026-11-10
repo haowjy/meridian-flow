@@ -289,7 +289,7 @@ function LinkFields({
         />
       ) : (
         <div className="flex flex-col gap-1">
-          <span className="text-meta text-muted-foreground">{t`Destination`}</span>
+          <span className="text-xs text-muted-foreground">{t`Destination`}</span>
           <div className="flex items-center justify-between gap-2">
             <span className="min-w-0 break-words">{destinationLabel}</span>
             <Button
@@ -386,7 +386,7 @@ function LinkField({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-meta text-muted-foreground" htmlFor={id}>
+      <label className="text-xs text-muted-foreground" htmlFor={id}>
         {label}
       </label>
       <Input
