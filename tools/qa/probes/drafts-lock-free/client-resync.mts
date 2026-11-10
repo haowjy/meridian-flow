@@ -1,5 +1,5 @@
 /**
- * Phase 4 (design §2.7, R1/D30/G1–G3): a draft tab's reconnect never produces a causal gap the
+ * Phase 4 (design §2.7, R1/G1–G3): a draft tab's reconnect never produces a causal gap the
  * server must refuse. The connection's own SyncStep2 carries every byte the server lacks, held
  * keystrokes follow it, and a prefix-missing close (`4207`) is a plain reconnect.
  *

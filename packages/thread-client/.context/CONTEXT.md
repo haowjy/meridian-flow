@@ -13,8 +13,8 @@ Timers, clocks and randomness stay late-bound globals, preserving reconnect timi
 ## Transcript view model
 
 `viewTranscript(input)` (`view/view-transcript.ts`) is the one pure function that decides which
-rows a chat shows and what each reply's items are. The decision is in the [transcript view model
-decision][view-decision].
+rows a chat shows and what each reply's items are. It is described in the [transcript view
+model][view-decision].
 
 - **The transcript is not a log.** A failed reply a Retry names (`metadata.retryOf` on a stand-in
   or stored turn, or the `retried` input) is not drawn: the Retry takes its place, and a chain of
@@ -181,7 +181,7 @@ injected `cancelTurn` port. Keep these names aligned with `@meridian/contracts/p
 **Every client message except `pong` carries a `requestId`** (`r1`, `r2`, ..., a counter per `ThreadSocketClient`).
 There is no `resume`: a reconnect sends one `subscribe` per thread, which the server handles concurrently.
 
-The delivery contract is in the [socket delivery decision][socket-decision]. A subscription
+The delivery contract is in the [socket delivery][socket-decision]. A subscription
 (`ws-thread-subscription.ts`) holds at most one request in flight, a `waiting` set, the frames `held` for them, a
 `position` (`max(subscribed.after, highest delivered seq)`, which only rises, and which a joining cursor is classified
 against) and its own retry backoff.

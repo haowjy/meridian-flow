@@ -3,9 +3,9 @@
  * events. The append marks its draft dirty; the projection job judges `has_effect` against the
  * stored baseline 250 ms after the last key (at most 1 s after the first unserved one), writes it
  * with its watermark, and reconciles the Work's stored pending count, bumping its revision only
- * when the count moved (W47, D41); a write a key overtook re-judges at once. No keystroke locks
+ * when the count moved (W47); a write a key overtook re-judges at once. No keystroke locks
  * or counts a Work. The badge converges within the max wait once typing pauses and eventually
- * while typing (D34).
+ * while typing.
  *
  * Arms, each on its own draft (the Works badge is the Work's stored `pending_document_count`,
  * its notice is its `entity_revision`):
@@ -50,7 +50,7 @@ import {
 } from "./phase4.mts";
 
 const KEY_MS = 50;
-/** The badge's bound once typing pauses (D34). */
+/** The badge's bound once typing pauses. */
 const MAX_WAIT_MS = 1_000;
 const TYPING_MS = 3_000;
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

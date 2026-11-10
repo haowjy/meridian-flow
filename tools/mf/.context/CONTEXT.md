@@ -29,7 +29,7 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
 - **What `./mf`'s tests cover.** Shared rules are tested once, in their package. `./mf`'s
   tests cover CLI admission assembly, exit codes, replay safety, the deadline and never claiming
   more than it proved; everything else is a live probe or recipe
-  ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/mf-cli.md#few-tests-against-a-scripted-wire)).
+  ([why](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/mf-cli.md#few-tests-against-a-scripted-wire)).
 - **Imports.** Workspace libraries are `@meridian/contracts` and
   `@meridian/thread-client` only. Portless discovery uses the route contract
   `pnpm dev` registers (`../dev/portless-prefix.ts`, `portless-routes.ts`,

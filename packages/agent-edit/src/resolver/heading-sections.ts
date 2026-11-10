@@ -1,6 +1,6 @@
 /**
  * Heading sections without a document model: the `#slug` rule documents use,
- * and the same sections over plain markdown text, for `skills://` files (D60).
+ * and the same sections over plain markdown text, for `skills://` files.
  */
 
 function slugForHeadingText(text: string): string {

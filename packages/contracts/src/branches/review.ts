@@ -1,7 +1,7 @@
 /**
  * Wire contracts for draft review metadata, lists and frozen Apply/Discard commands.
  *
- * Vocabulary (D68): `branchId` is a `branches` row (the Work's whole branch), `itemKey`
+ * Vocabulary: `branchId` is a `branches` row (the Work's whole branch), `itemKey`
  * (`${branchId}:${documentId}`) is the client's only identity for one reviewed document, and a
  * `hasDraft` reports text-room existence; addressed metadata supplies its stable draft id.
  * A command's `commandId` is client-generated; resends reuse it and the server deduplicates.
@@ -33,7 +33,7 @@ export type ApplyClick = {
   /**
    * The writer knew this document was deleted from the manuscript and chose to bring it back:
    * a per-document Apply on an item showing it deleted, or an Apply all for a document its
-   * confirmation named (D79). Without it, a deleted document answers `needs_restore`.
+   * confirmation named. Without it, a deleted document answers `needs_restore`.
    */
   restore?: true;
   /**
@@ -78,7 +78,7 @@ export type ApplyClickResult =
       overrode?: number;
       /**
        * The document had been deleted from the manuscript, and this Apply, sent with
-       * `restore`, brought it back before merging (D79). The client words the notice from
+       * `restore`, brought it back before merging. The client words the notice from
        * this flag, per document.
        */
       restored?: true;
@@ -147,7 +147,7 @@ export interface ThreadDraftListItem {
   contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
   /**
    * Deleted from the manuscript while this draft has it: live doesn't hold the document, and
-   * Apply brings it back at its prior or next free leaf name before merging (D79).
+   * Apply brings it back at its prior or next free leaf name before merging.
    */
   deletedLive: boolean;
   /**
@@ -181,7 +181,7 @@ export interface DocumentDraftHint {
   label: string | null;
   owner: DraftOwnerKey;
   /**
-   * The branch's move or delete of the document, which live doesn't show until Apply (D26):
+   * The branch's move or delete of the document, which live doesn't show until Apply:
    * where the branch puts it, or that it deletes it. Null when the branch only edits its text.
    */
   tree: { movedTo: Pick<ParsedContextUri, "scheme" | "path"> } | { deleted: true } | null;
@@ -271,7 +271,7 @@ export type DraftDiscardRequest = {
 } & ({ ends: "tree" } | { ends: "item"; draftSeenAt?: string | null });
 
 export const BranchDiscardAllRequestSchema = z.object({
-  /** A `branches` row id (D68), never a per-document draft id. */
+  /** A `branches` row id, never a per-document draft id. */
   branchId: z.string().uuid(),
   commandId: BranchCommandIdSchema,
 });

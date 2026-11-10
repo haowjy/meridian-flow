@@ -1,6 +1,6 @@
 # Meridian Flow repo — architecture
 
-Cross-cutting decisions live in the [KB](https://github.com/haowjy/meridian-flow-docs/tree/main/kb).
+Cross-cutting design lives in the [KB](https://github.com/haowjy/meridian-flow-docs/tree/main/kb).
 Server composition and transport: [apps/server](../apps/server/.context/CONTEXT.md).
 
 - **Domains are acyclic.** Threads reference project and Work ownership, never

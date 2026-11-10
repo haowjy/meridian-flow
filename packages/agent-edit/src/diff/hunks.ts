@@ -2,7 +2,7 @@
  * Hunks: what changed between two token sides, as the writer reads it.
  *
  * `align` finds token-level hunks; this file adds whitespace-only differences, classifies hunks, and
- * runs the semantic cleanup (D5) that turns word salad into one replacement. Review uses the cleaned
+ * runs the semantic cleanup that turns word salad into one replacement. Review uses the cleaned
  * hunks; the rebase merge uses `align`'s uncleaned ones to keep word precision.
  */
 import type { Node as PMNode } from "prosemirror-model";

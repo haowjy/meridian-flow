@@ -48,7 +48,7 @@ export interface EventCorrelation {
   /**
    * Canonical Yjs update spans key from `@meridian/yjs-inspect`'s `summarizeUpdate().spansKey`:
    * `s:<client>:<from>-<to>` and `d:<client>:<from>-<to>` tokens joined by `,`.
-   * Same-kind span overlap is the client/server join rule (design D2).
+   * Same-kind span overlap is the client/server join rule.
    */
   yjsSpans?: string;
 }
