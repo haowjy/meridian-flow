@@ -124,7 +124,7 @@ export function describeWriteMode(input: {
     instructions: [
       "Your changes to a document wait in its draft for the writer to review, except scratch:// changes, which are written straight away. " +
         (input.noWork
-          ? "The project's other chats that have no Work share these drafts."
+          ? "These drafts belong to this conversation: its forks and subagents share them, and a handoff starts a fresh set."
           : "This Work's chats share these drafts."),
       "The writer reviews and applies each draft; until then only chats that share the drafts see their changes. When you draft a change, tell the user it is waiting for their review.",
     ],
@@ -212,7 +212,7 @@ export function createWorkContextReader(deps: {
         deps.threads.findByIdIncludingDeleted(thread.rootThreadId),
         deps.readChainPermission(threadId),
       ]);
-      const execution: ThreadExecutionContext = threadExecutionContext(current, thread.aiWriteMode);
+      const execution: ThreadExecutionContext = threadExecutionContext(current, thread);
       return {
         text: renderWorkContext({
           current,

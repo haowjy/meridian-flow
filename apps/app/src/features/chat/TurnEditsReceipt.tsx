@@ -395,7 +395,7 @@ function useDocumentRowDrag(document: TurnEditDocument) {
           name: documentDisplayName(document.uri),
           view:
             document.scope === "draft"
-              ? { kind: "draft", workId: document.workId }
+              ? { kind: "draft", owner: document.owner }
               : { kind: "live" },
         }
       : null,

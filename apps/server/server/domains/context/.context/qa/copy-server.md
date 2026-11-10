@@ -72,11 +72,10 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
    client reconnecting 800 ms after the request) copies on the first send. With
    `view: draft` the vector is compared with the draft room. A `stateVector` on a folder
    source and one that does not decode (`////////`) are `bad_request`.
-8. **Position and order.** Copy two roots with `--position after:<P1>` into a default
+8. **Position and order.** Copy two roots with `--position after:<P1>` into a
    parent holding `P1 P2 P3`: the order is `P1 root-1 root-2 P2 P3` and the parent
-   is manual. Copy a root with no position into that manual parent: it lands last.
-   Copy a manually ordered folder into a default and a manual parent: the copy keeps
-   the source's child order and its manual policy.
+   shows that order. Copy a root with no position into that parent: it lands last.
+   Copy a hand-ordered folder into another parent: the copy keeps the source's child order.
 9. **Refusals.** Uploads as the destination (`bad_request`), a folder into its own
    subtree and into itself ("Can't go inside itself"), a path nothing holds and an
    identity another entry holds (`not_found`), a destination folder identity that was

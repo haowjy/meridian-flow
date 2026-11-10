@@ -17,7 +17,7 @@ import {
   sortLsEntries,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
-import { containerReadonly, withBranchWork } from "./file-access.js";
+import { containerReadonly, withBranchOwner } from "./file-access.js";
 import {
   contextToolError,
   isToolError,
@@ -35,7 +35,7 @@ export async function listingCall(
 ): Promise<ToolCall | ToolErrorOutput> {
   const call = await resolveToolCall(deps, ctx, version);
   if (isToolError(call) || version !== "live") return call;
-  return { ...call, principal: withBranchWork(call.principal, null) };
+  return { ...call, principal: withBranchOwner(call.principal, null) };
 }
 
 /** `ls scratch://@` and `ls uploads://@` list owners, each a distinct container of its own. */

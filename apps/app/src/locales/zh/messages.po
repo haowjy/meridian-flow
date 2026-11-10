@@ -224,8 +224,13 @@ msgstr ""
 
 #. placeholder {0}: others.length
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "{0, plural, other {# Works have drafts for this}}"
-msgstr "{0, plural, other {# 个工作中的草稿修改了此文档}}"
+msgid "{0, plural, other {# sets of drafts for this}}"
+msgstr ""
+
+#. placeholder {0}: others.length
+#: src/features/editor/DocumentDraftHint.tsx
+#~ msgid "{0, plural, other {# Works have drafts for this}}"
+#~ msgstr "{0, plural, other {# 个工作中的草稿修改了此文档}}"
 
 #. placeholder {0}: list( entries.map( ({ name, outcome }) => `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`, ), )
 #: src/features/chat/subagent/DeliveryEventRows.tsx
@@ -878,13 +883,13 @@ msgid "A Work groups the chats and drafts for one piece of writing."
 msgstr ""
 
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "A Work has drafts for this"
-msgstr "一个工作中有此文档的草稿"
+#~ msgid "A Work has drafts for this"
+#~ msgstr "一个工作中有此文档的草稿"
 
 #. placeholder {0}: only.label
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "A Work has drafts for this ({0})"
-msgstr "一个工作中有此文档的草稿（{0}）"
+#~ msgid "A Work has drafts for this ({0})"
+#~ msgstr "一个工作中有此文档的草稿（{0}）"
 
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "a writer"
@@ -2441,6 +2446,10 @@ msgstr ""
 msgid "Couldn't restore {name}. Try again."
 msgstr ""
 
+#: src/features/draft-review/TrashedChatNotice.tsx
+msgid "Couldn't restore the chat. Try again."
+msgstr ""
+
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
 msgstr ""
@@ -2902,6 +2911,15 @@ msgstr ""
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "Drafts ({waiting})"
 msgstr "草稿（{waiting}）"
+
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "Drafts for this"
+msgstr ""
+
+#. placeholder {0}: only.label
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "Drafts for this ({0})"
+msgstr ""
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 #~ msgid "Drop image to insert it"
@@ -4916,6 +4934,7 @@ msgstr ""
 msgid "Response complete"
 msgstr "回复完成"
 
+#: src/features/draft-review/TrashedChatNotice.tsx
 #: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore"
@@ -6058,6 +6077,14 @@ msgstr ""
 msgid "This chat continues without a brief."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This chat is in the trash, so its drafts are frozen. Restore the chat to apply them."
+msgstr ""
+
+#: src/features/draft-review/TrashedChatNotice.tsx
+msgid "This chat is in Trash. Restore it to edit or apply its drafts."
+msgstr ""
+
 #. placeholder {0}: workDisplayName(commit.work)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat now uses {0}."
@@ -6188,12 +6215,20 @@ msgstr ""
 msgid "This document's Work is archived. Unarchive the Work to reverse this change."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This draft changed since you looked. Check it, then discard again."
+msgstr ""
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This draft is archived"
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft is no longer here. It may have been applied or discarded already."
+msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This draft just became read-only, so nothing was discarded. Check it, then try again."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -6541,8 +6576,13 @@ msgstr ""
 
 #: src/features/editor/DocumentDraftHint.tsx
 #: src/features/editor/DocumentVersionMenu.tsx
-msgid "Unnamed Work"
-msgstr "未命名工作"
+msgid "Unnamed draft"
+msgstr ""
+
+#: src/features/editor/DocumentDraftHint.tsx
+#: src/features/editor/DocumentVersionMenu.tsx
+#~ msgid "Unnamed Work"
+#~ msgstr "未命名工作"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx

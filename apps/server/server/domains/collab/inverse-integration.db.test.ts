@@ -78,7 +78,7 @@ describe("inverse integration (postgres)", () => {
 
   const grantFor = (documentId: string, workId: string = WORK_ID, slug = "atomicity-work") => {
     const granted = testFileGrant(
-      { kind: "draft", workId: workId as never, workHandle: slug },
+      { kind: "draft", owner: { kind: "work", workId: workId as never }, ownerHandle: slug },
       documentId,
     );
     return {
@@ -92,7 +92,9 @@ describe("inverse integration (postgres)", () => {
     const { fixture, draftId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
     ]);
-    const branchId = (await fixture.collab.draftReview.items({ workId: WORK_ID })).branchId;
+    const branchId = (
+      await fixture.collab.draftReview.items({ owner: { kind: "work", workId: WORK_ID } })
+    ).branchId;
     if (!branchId) throw new Error("No active branch");
     await claimCreate(branchId, NEW_ID);
     const reply = await createResponse(db, 2);
@@ -296,7 +298,9 @@ describe("inverse integration (postgres)", () => {
     const { fixture } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
     ]);
-    const branchId = (await fixture.collab.draftReview.items({ workId: WORK_ID })).branchId;
+    const branchId = (
+      await fixture.collab.draftReview.items({ owner: { kind: "work", workId: WORK_ID } })
+    ).branchId;
     if (!branchId) throw new Error("No active branch");
     await claimCreate(branchId, NEW_ID);
     const reply = await createResponse(db, 2);
@@ -311,7 +315,7 @@ describe("inverse integration (postgres)", () => {
     expect(await harness.commit(reply)).toMatchObject({ status: "committed" });
     const item = () =>
       fixture.collab.draftReview.resolveItemByDocument({
-        workId: WORK_ID,
+        owner: { kind: "work", workId: WORK_ID },
         documentId: NEW_ID as never,
       });
     expect(await item()).toMatchObject({ item: { origin: "created" } });

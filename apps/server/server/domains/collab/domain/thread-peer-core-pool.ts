@@ -21,7 +21,12 @@ import type { BranchId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DocumentRemovals } from "../../context/ports/document-removal.js";
 import { FileEditRefusedError, runWithEditGrants } from "../../file-policy/edit-confirmation.js";
-import type { FileAccess, FileDestination, FileGrant } from "../../file-policy/index.js";
+import type {
+  FileAccess,
+  FileDestination,
+  FileGrant,
+  OwnerLocks,
+} from "../../file-policy/index.js";
 import {
   asThreadPeerAgentEditCore,
   type LiveAgentEditCore,
@@ -80,7 +85,7 @@ function isSaveAttemptMiss(cause: unknown): boolean {
  * that commits at once, and once for the whole reply at its save (§5.2).
  */
 export function createThreadPeerCorePool(input: {
-  branches: Pick<Branches, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
+  branches: Pick<Branches, "viewForOwner" | "ensureActiveForWrite" | "shareActive">;
   drafts: Pick<ApplicationDraftStore, "getDraft" | "resolveWorkDraftForThread">;
   removals: DocumentRemovals;
   fences: ReplySaveFences;
@@ -115,8 +120,11 @@ export function createThreadPeerCorePool(input: {
    * a reply's save. Authorizes a reversal at the destination its write landed in.
    */
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
-  /** Locks Work rows `FOR NO KEY UPDATE` in one id-ordered select, in the save's transaction. */
-  lockWorks(workIds: readonly string[]): Promise<void>;
+  /**
+   * Locks Work rows `FOR NO KEY UPDATE` in one id-ordered select, then the lineages' draft-owner
+   * locks in root order, in the save's transaction.
+   */
+  lockOwners(locks: OwnerLocks): Promise<void>;
   /** A reply's live documents' mutation locks, sorted, after its Work locks (§5.2). */
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
   maxThreadCores?: number;
@@ -415,7 +423,7 @@ export function createThreadPeerCorePool(input: {
             kind: "branch",
             branchId: (
               await input.branches.ensureActiveForWrite({
-                workId: destination.workId,
+                owner: destination.owner,
                 projectId: grant.facts.projectId,
                 threadId: (context.threadId as ThreadId | undefined) ?? null,
                 userId: grant.principal.accountId,
@@ -613,7 +621,7 @@ export function createThreadPeerCorePool(input: {
       pinnedView ??
       (destination.kind === "live"
         ? { kind: "live" as const }
-        : await input.branches.viewForWork(destination.workId));
+        : await input.branches.viewForOwner(destination.owner));
     return { ...context, linkView, documentVersion: destination.kind };
   }
 

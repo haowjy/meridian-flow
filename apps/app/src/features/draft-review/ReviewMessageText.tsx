@@ -29,6 +29,12 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This document was deleted from the manuscript. Apply again to bring it back.`;
     case "changed":
       return msg`This move or delete changed since you looked. Check it, then apply again.`;
+    case "draft_changed":
+      return msg`This draft changed since you looked. Check it, then discard again.`;
+    case "read_only":
+      return msg`This draft just became read-only, so nothing was discarded. Check it, then try again.`;
+    case "chat_frozen":
+      return msg`This chat is in the trash, so its drafts are frozen. Restore the chat to apply them.`;
     case "ancestor_taken":
       return msg`A document blocks part of this location. Move or rename it, then apply again.`;
     default:

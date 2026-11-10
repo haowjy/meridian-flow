@@ -1,16 +1,16 @@
-import type { BranchId, ThreadId, UserId, WorkId } from "@meridian/contracts";
+import type { BranchId, DraftOwner, ThreadId, UserId, WorkId } from "@meridian/contracts";
 import type { ContextScheme } from "./context-port.js";
 
 export type ContextCommandScope = { scheme: ContextScheme; workId: string | null };
 
 /**
- * A command that writes a Work's branch for a draft-mode chat (contract §2.3): the transaction locks
- * that Work with its other Works, then the Work's active branch (made at this write
+ * A command that writes an owner's branch for a draft-mode chat (contract §2.3): the transaction
+ * locks that owner with its other Works, then the owner's active branch (made at this write
  * boundary for `ensure`, only locked for `existing`), before any namespace lock.
  */
 export type ContextCommandBranch = {
   mode: "ensure" | "existing";
-  workId: WorkId;
+  owner: DraftOwner;
   threadId: ThreadId;
   userId: UserId;
 };
@@ -22,7 +22,11 @@ export type ContextCommandOptions = {
 };
 
 /** A locked active branch as the transaction resolved it. */
-export type ContextCommandActiveBranch = { id: BranchId; originWorkId: WorkId | null };
+export type ContextCommandActiveBranch = {
+  id: BranchId;
+  originWorkId: WorkId | null;
+  originRootThreadId: string | null;
+};
 
 /** What the transaction resolved before the command ran. */
 export type ContextCommandContext = {

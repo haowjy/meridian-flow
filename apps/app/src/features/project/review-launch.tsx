@@ -26,6 +26,7 @@ import {
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { workOwnerKey } from "@/features/draft-review/draft-owner-key";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDestination } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
@@ -34,11 +35,11 @@ import { BesideChatContext } from "./context/open-chat-document";
 import { claimOpenIntent } from "./context/open-intent";
 import { useProjectDocumentNavigationProjectId } from "./context/open-project-document";
 import { FocusOpenedReview, type ReviewFocusRequest } from "./dock/FocusOpenedReview";
-import { type PresentedDocument, reviewAddress, usePresentedDocument } from "./presented-document";
+import { type PresentedDocument, usePresentedDocument } from "./presented-document";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 
 export type AiDraftLaunchTarget = {
-  workId: string;
+  ownerKey: string;
   documentId: string;
   itemKey: string;
   contextLocation: Pick<ContextUri, "scheme" | "path">;
@@ -70,7 +71,7 @@ function reportRouteSettlement(
     payload: {
       kind,
       attempt,
-      workId: target.workId,
+      ownerKey: target.ownerKey,
       documentId: target.documentId,
       itemKey: target.itemKey,
     },
@@ -106,7 +107,10 @@ export function EditorReviewHandoffProvider({
       const tab = contextTabFromDraftGroup(target);
       // Beside the chat the tab store opens, selects and pins; there is no address to route to.
       if (beside && tab) {
-        beside(tab, claimOpenIntent(), undefined, reviewAddress(target.workId, target.itemKey));
+        beside(tab, claimOpenIntent(), undefined, {
+          ownerKey: target.ownerKey,
+          itemKey: target.itemKey,
+        });
         return;
       }
       const staged = { ...target, sequence: ++sequence.current };
@@ -122,13 +126,13 @@ export function EditorReviewHandoffProvider({
           const result = await openContextRoute(
             {
               ...target.contextLocation,
-              workId: target.workId,
               documentId: target.documentId,
             },
             {
               replaceIfSameDocument: true,
               tab: tab ?? undefined,
               itemKey: target.itemKey,
+              reviewOwner: target.ownerKey,
               canCommit: () => latest.current?.sequence === staged.sequence,
             },
           );
@@ -140,7 +144,7 @@ export function EditorReviewHandoffProvider({
             );
             if (opened)
               useContextTabsStore.getState().setTabState(projectId, tabKey(opened), {
-                reviewPin: reviewAddress(target.workId, target.itemKey),
+                reviewPin: { ownerKey: target.ownerKey, itemKey: target.itemKey },
                 view: { version: "draft" },
               });
             if (
@@ -250,7 +254,11 @@ export function admissible(
   intent: EditorReviewIntent,
   host: { editorWorkId: string | null; activeScheme: string | null; documentId: string | null },
 ) {
-  return intent.workId === host.editorWorkId && intent.documentId === host.documentId;
+  return (
+    (intent.ownerKey.startsWith("lineage:") ||
+      intent.ownerKey === workOwnerKey(host.editorWorkId ? { id: host.editorWorkId } : null)) &&
+    intent.documentId === host.documentId
+  );
 }
 export function useRequestedReview(host: {
   container: PresentedDocument["container"];
@@ -305,10 +313,10 @@ export function useAiDraftLauncher() {
 
   /** Opens a listed draft in review. A draft with no address yet (still being written) has nothing to open. */
   const openReviewFile = useCallback(
-    (row: ReviewFileTarget, workId: string, focus?: ReviewFocus) =>
+    (row: ReviewFileTarget, ownerKey: string, focus?: ReviewFocus) =>
       row.contextLocation &&
       openAiDraft({
-        workId,
+        ownerKey,
         documentId: row.documentId,
         itemKey: row.draft.itemKey,
         contextLocation: row.contextLocation,

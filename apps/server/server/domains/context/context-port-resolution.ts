@@ -7,7 +7,8 @@ import type { DocumentVersion } from "@meridian/agent-edit";
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { ResolvedWorkAuthority, Work, WorkHandle } from "@meridian/contracts/works";
-import type { WorkRef } from "../file-policy/index.js";
+import { chatOwner } from "../../shared/draft-owner.js";
+import type { BranchOwnerRef } from "../file-policy/index.js";
 import type { ProjectWorkAuthorityResolver, WorkRepository } from "../projects/index.js";
 import type {
   ThreadRepository,
@@ -26,8 +27,8 @@ export interface ThreadContextResolution {
   primaryWork: Work | null;
   workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>;
   primaryWorkAuthority: ResolvedWorkAuthority | null;
-  /** The thread's Work when the chat writes drafts; null in auto-apply. */
-  primaryBranchWork: WorkRef | null;
+  /** Who owns the drafts the chat writes: its Work, or its lineage with no Work; null in auto-apply. */
+  primaryBranchOwner: BranchOwnerRef | null;
   scratchLineages?: import("./scratch-owner.js").ScratchLineages;
   scratchOwner?: import("./scratch-owner.js").ScratchOwner;
   /** The chat whose uploads this thread's bare `uploads://` names; null for an unknown chat. */
@@ -76,9 +77,9 @@ export async function resolveThreadContext(
     primaryWork,
     workAuthorities,
     primaryWorkAuthority,
-    primaryBranchWork:
+    primaryBranchOwner:
       primaryWork && thread.aiWriteMode === "draft"
-        ? { id: primaryWork.id, handle: primaryWork.handle }
+        ? { owner: chatOwner(thread, primaryWork), handle: primaryWork.handle }
         : null,
   };
 }
@@ -109,7 +110,7 @@ export function contextPortForThread(
       ...(resolution.uploadsOwner ? { uploadsOwner: resolution.uploadsOwner } : {}),
       threadId: resolution.thread.id,
       responseId: options.responseId,
-      branchWork: options.liveWrites ? null : resolution.primaryBranchWork,
+      branchOwner: options.liveWrites ? null : resolution.primaryBranchOwner,
       ...(options.version ? { version: options.version } : {}),
     },
   );

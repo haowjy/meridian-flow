@@ -56,7 +56,11 @@ describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", 
 
     const access = runtime.ports.fileAccess;
     const writer = { accountId: s.project.userId };
-    const draftIn = (workId: WorkId) => ({ kind: "draft" as const, documentId: ch3, workId });
+    const draftIn = (workId: WorkId) => ({
+      kind: "draft" as const,
+      documentId: ch3,
+      owner: { kind: "work", workId } as const,
+    });
     expect
       .soft(isFileAccessDenied(await access.authorize(writer, draftIn(ascension.id), "edit")))
       .toBe(false);

@@ -20,6 +20,8 @@ export type OpenContextOptions = {
   afterCommit?: (installed: ContextTab | undefined) => void;
   /** Persist an inline review in this Editor history entry. Omission opens live. */
   itemKey?: string;
+  /** Whose draft `itemKey` reviews (`work:<id>` or `lineage:<root>`); omitted, the Editor's Work. */
+  reviewOwner?: string;
   changeId?: string;
   isCurrent?: () => boolean;
   canCommit?: () => boolean;

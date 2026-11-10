@@ -195,7 +195,6 @@ try {
     },
   });
   await discard.discardLocked({
-    workId: work.workId,
     kernel: { branchId: work.branchId, selection: { kind: "whole" } },
   });
   const closed =

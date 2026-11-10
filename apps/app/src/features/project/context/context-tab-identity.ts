@@ -8,14 +8,14 @@
  */
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextTab } from "@/client/stores";
-import { isDraftOnly, reviewEntryOf } from "@/client/stores";
+import { editorHasReview, isDraftOnly } from "@/client/stores";
 import type { ContextRouteTarget } from "../routing/project-route";
 
 type RouteLocator = Pick<ContextRouteTarget, "scheme" | "path" | "workId" | "rootThreadId">;
 
 export function contextTabMatchesRoute(tab: ContextTab, target: RouteLocator): boolean {
   if (tab.kind === "new") return false;
-  if (isDraftOnly(tab) && !(target.workId && reviewEntryOf(tab, target.workId))) return false;
+  if (isDraftOnly(tab) && !editorHasReview(tab, target.workId ?? null)) return false;
   if (tab.scheme !== target.scheme || tab.path !== target.path) return false;
   if (!isWorkScopedScheme(target.scheme)) return true;
   return target.rootThreadId !== undefined

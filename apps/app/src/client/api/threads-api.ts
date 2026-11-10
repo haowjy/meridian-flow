@@ -22,6 +22,7 @@ import {
   apiThreadModelRequestsDebugPath,
   apiThreadPath,
   apiThreadRecentDocumentsPath,
+  apiThreadRestorePath,
   apiThreadSkillsPath,
   apiThreadSnapshotPath,
   apiThreadTitlePath,
@@ -256,6 +257,11 @@ export function withdrawThreadControl(
 
 export function deleteThread({ data }: { data: { threadId: string } }): Promise<void> {
   return deleteRequest(apiThreadPath(data.threadId));
+}
+
+/** Brings a chat back from Trash; restoring one that is not in Trash changes nothing. */
+export function restoreThread(threadId: string): Promise<unknown> {
+  return postJson(apiThreadRestorePath(threadId), {});
 }
 
 export async function getThreadSnapshot({

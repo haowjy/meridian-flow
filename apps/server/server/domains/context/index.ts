@@ -16,7 +16,6 @@ export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js"
 export {
   createDrizzleLineageScratchLifecycle,
   type LineageScratchLifecycle,
-  lineageHasLiveMember,
 } from "./adapters/lineage-scratch-lifecycle.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
@@ -116,6 +115,7 @@ export type {
   ContextWriteBinaryOptions,
   ContextWriteOptions,
   ContextWriteResult,
+  CopySourceView,
   DirectoryEntry,
   EditableFileEntry,
   FileEntry,

@@ -1,5 +1,6 @@
 /** Pure selection and represented-removal obligation protocol. */
 
+import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import type { ContextTab } from "@/client/stores";
 import { canonicalDocumentPath } from "../routing/local-document-address";
 import { type ContextRouteTarget, sameContextTarget } from "../routing/project-route";
@@ -407,7 +408,10 @@ export function reduceRepresentedRemoval(
     };
   }
   // A review removal addresses its own Work's route, not whichever Work is routed now.
-  const locator = routeTargetForTab(represented, intent.reviewWorkId ?? selection.locator.workId);
+  const locator = routeTargetForTab(
+    represented,
+    (intent.reviewOwner && workIdOfDraftOwnerKey(intent.reviewOwner)) || selection.locator.workId,
+  );
   const identity: ContextRouteIdentity = {
     kind: represented.kind === "new" ? "local" : "server",
     documentId: represented.documentId,

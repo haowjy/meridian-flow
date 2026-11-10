@@ -22,7 +22,7 @@ export function MobileChangeSheet({
   view: ReviewChangesView;
   controller: Pick<
     DraftReviewController,
-    "projectId" | "workId" | "toast" | "dismissToast" | "exitInlineReview"
+    "projectId" | "ownerKey" | "toast" | "dismissToast" | "exitInlineReview"
   >;
 }) {
   useEffect(() => {

@@ -69,7 +69,7 @@ export function EditorView(props: EditorViewProps) {
   const sharedIdentity = {
     documentId: props.documentId,
     projectId: props.projectId,
-    viewingWorkId: controller.workId || undefined,
+    viewingOwner: controller.ownerKey || undefined,
     schemaType: props.schemaType ?? "document",
     collaborationDecorations: props.showCollaborationDecorations ?? true,
   } as const;
@@ -85,7 +85,7 @@ export function EditorView(props: EditorViewProps) {
           ...sharedIdentity,
           surface: "review",
           roomName: roomOwner.roomName,
-          workId: controller.workId,
+          ownerKey: controller.ownerKey,
           itemKey: review.itemKey,
         }
       : null;

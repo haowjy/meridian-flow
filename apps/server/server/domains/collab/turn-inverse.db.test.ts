@@ -35,7 +35,7 @@ it("a tombstoned draft document with released storage does not stop another docu
     const betaContext = {
       ...context,
       grant: testFileGrant(
-        { kind: "draft", workId: WORK_ID, workHandle: "atomicity-work" },
+        { kind: "draft", owner: { kind: "work", workId: WORK_ID }, ownerHandle: "atomicity-work" },
         BETA_ID,
       ),
     };

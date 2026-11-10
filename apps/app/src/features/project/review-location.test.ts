@@ -10,7 +10,7 @@ import { admissible, requestedReviewItemKey } from "./review-launch";
 
 it.each(CONTEXT_URI_SCHEMES)("admits a %s review in its matching document and Work", (scheme) => {
   const intent = {
-    workId: "work",
+    ownerKey: "work:work",
     documentId: "hero",
     itemKey: "draft",
     sequence: 1,
@@ -30,7 +30,7 @@ it.each(CONTEXT_URI_SCHEMES)("admits a %s review in its matching document and Wo
 
 it("requests a warm Editor before admission, retaining only admitted review after failure", () => {
   const intent = {
-    workId: "work",
+    ownerKey: "work:work",
     documentId: "hero",
     itemKey: "draft",
     sequence: 1,

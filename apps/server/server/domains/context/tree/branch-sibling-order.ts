@@ -15,26 +15,22 @@ import {
   documents,
   folders,
 } from "@meridian/database/schema";
-import { compareDefaultSiblings } from "@meridian/resource-replica";
 import { and, asc, desc, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
+  branchOwnsParent,
   branchRankOverrides,
-  effectiveParentPolicy,
   type SiblingParent,
   siblingParent,
 } from "./effective-order.js";
 import { visibleDocuments, visibleFolders } from "./tree-view-sql.js";
 
-type Sibling = { kind: "document" | "folder"; id: string; name: string; rank: string | null };
+type Sibling = { kind: "document" | "folder"; id: string; rank: string | null };
 type Parent = SiblingParent;
 type ParentKey = Pick<Parent, "kind" | "id">;
 
 const parentOf = siblingParent;
-
-const parentPolicy = (db: Database, branchId: BranchId, parent: Parent) =>
-  effectiveParentPolicy(db, branchId, parent);
 
 async function siblings(db: Database, branchId: BranchId, parent: Parent): Promise<Sibling[]> {
   const tx = currentDrizzleDb(db);
@@ -43,7 +39,7 @@ async function siblings(db: Database, branchId: BranchId, parent: Parent): Promi
   const vf = visibleFolders(view);
   const [documentRows, folderRows, overrides] = await Promise.all([
     tx
-      .select({ id: vd.id, name: vd.name, extension: vd.extension, rank: vd.rank })
+      .select({ id: vd.id, rank: vd.rank })
       .from(vd)
       .where(
         and(
@@ -52,7 +48,7 @@ async function siblings(db: Database, branchId: BranchId, parent: Parent): Promi
         ),
       ),
     tx
-      .select({ id: vf.id, name: vf.name, rank: vf.rank })
+      .select({ id: vf.id, rank: vf.rank })
       .from(vf)
       .where(
         and(
@@ -62,20 +58,10 @@ async function siblings(db: Database, branchId: BranchId, parent: Parent): Promi
       ),
     branchRankOverrides(db, branchId, parent),
   ]);
-  const rankById = overrides;
   return [
-    ...folderRows.map((row) => ({
-      kind: "folder" as const,
-      ...row,
-      rank: rankById.get(row.id) ?? row.rank,
-    })),
-    ...documentRows.map((row) => ({
-      kind: "document" as const,
-      id: row.id,
-      name: row.extension ? `${row.name}.${row.extension}` : row.name,
-      rank: rankById.get(row.id) ?? row.rank,
-    })),
-  ];
+    ...folderRows.map((row) => ({ kind: "folder" as const, ...row })),
+    ...documentRows.map((row) => ({ kind: "document" as const, ...row })),
+  ].map((row) => ({ ...row, rank: overrides.get(row.id) ?? row.rank }));
 }
 
 async function setRank(
@@ -113,16 +99,8 @@ async function ownParent(db: Database, branchId: BranchId, parent: Parent) {
       branchId,
       parentKind: parent.kind,
       parentId: parent.id,
-      orderPolicy: "manual",
     })
-    .onConflictDoUpdate({
-      target: [
-        branchTreeParentOrders.branchId,
-        branchTreeParentOrders.parentKind,
-        branchTreeParentOrders.parentId,
-      ],
-      set: { orderPolicy: "manual", updatedAt: new Date() },
-    });
+    .onConflictDoNothing();
 }
 
 async function materializeOrder(
@@ -130,18 +108,8 @@ async function materializeOrder(
   branchId: BranchId,
   parent: Parent,
   rows: Sibling[],
-  order: "default" | "effective",
 ): Promise<Sibling[]> {
   const ordered = [...rows].sort((left, right) => {
-    if (order === "default")
-      return compareDefaultSiblings(
-        { kind: left.kind === "folder" ? "folder" : "file", name: left.name, identity: left.id },
-        {
-          kind: right.kind === "folder" ? "folder" : "file",
-          name: right.name,
-          identity: right.id,
-        },
-      );
     if (left.rank !== right.rank) return (left.rank ?? "") < (right.rank ?? "") ? -1 : 1;
     return left.id < right.id ? -1 : 1;
   });
@@ -318,13 +286,12 @@ export async function placeBranchSibling(
     documentId: DocumentId;
     sourceId: ContextSourceId;
     parentId: FolderId | null;
-    name: string;
     position?: ContextSiblingPosition;
     arrived: boolean;
   },
 ): Promise<string | null | "stale-anchor"> {
   const parent = parentOf(input.sourceId, input.parentId);
-  let policy = await parentPolicy(db, input.branchId, parent);
+  const branchOwned = await branchOwnsParent(db, input.branchId, parent);
   if (!input.position && !input.arrived) {
     const [override] = await currentDrizzleDb(db)
       .select({ rank: branchTreeRanks.rank })
@@ -343,26 +310,8 @@ export async function placeBranchSibling(
       .where(eq(documents.id, input.documentId));
     return live?.rank ?? null;
   }
-  if (policy.policy === "default" && !input.position) return null;
-
   let rows: Sibling[] | null = null;
-  let moving: Sibling = {
-    kind: "document",
-    id: input.documentId,
-    name: input.name,
-    rank: null,
-  };
-  if (input.position && policy.policy === "default") {
-    rows = await siblings(db, input.branchId, parent);
-    const existing = rows.find((row) => row.id === input.documentId);
-    if (existing) moving = Object.assign(existing, { name: input.name });
-    else rows.push(moving);
-    rows = await materializeOrder(db, input.branchId, parent, rows, "default");
-    moving = rows.find((row) => row.id === input.documentId) as Sibling;
-    policy = { policy: "manual", branchOwned: true };
-  }
-  if (policy.policy !== "manual") return null;
-
+  let moving: Sibling = { kind: "document", id: input.documentId, rank: null };
   let before: string | null = null;
   let after: string | null = null;
   if (!input.position || input.position.kind === "end")
@@ -371,7 +320,7 @@ export async function placeBranchSibling(
         await branchRankBoundary(db, {
           branchId: input.branchId,
           parent,
-          branchOwned: policy.branchOwned,
+          branchOwned: branchOwned,
           movingId: input.documentId,
           direction: "before",
         })
@@ -382,7 +331,7 @@ export async function placeBranchSibling(
         await branchRankBoundary(db, {
           branchId: input.branchId,
           parent,
-          branchOwned: policy.branchOwned,
+          branchOwned: branchOwned,
           movingId: input.documentId,
           direction: "after",
         })
@@ -393,7 +342,7 @@ export async function placeBranchSibling(
       db,
       input.branchId,
       parent,
-      policy.branchOwned,
+      branchOwned,
       input.position.siblingId,
     );
     if (!anchor || anchor.id === input.documentId) return "stale-anchor";
@@ -404,7 +353,7 @@ export async function placeBranchSibling(
           await branchRankBoundary(db, {
             branchId: input.branchId,
             parent,
-            branchOwned: policy.branchOwned,
+            branchOwned: branchOwned,
             movingId: input.documentId,
             direction: "before",
             anchor,
@@ -417,7 +366,7 @@ export async function placeBranchSibling(
           await branchRankBoundary(db, {
             branchId: input.branchId,
             parent,
-            branchOwned: policy.branchOwned,
+            branchOwned: branchOwned,
             movingId: input.documentId,
             direction: "after",
             anchor,
@@ -428,9 +377,9 @@ export async function placeBranchSibling(
   if (before !== null && before === after) {
     rows ??= await siblings(db, input.branchId, parent);
     const existing = rows.find((row) => row.id === input.documentId);
-    if (existing) moving = Object.assign(existing, { name: input.name });
+    if (existing) moving = existing;
     else rows.push(moving);
-    rows = await materializeOrder(db, input.branchId, parent, rows, "effective");
+    rows = await materializeOrder(db, input.branchId, parent, rows);
     moving = rows.find((row) => row.id === input.documentId) as Sibling;
     const others = rows.filter((row) => row.id !== input.documentId);
     let index = others.length;
@@ -518,16 +467,6 @@ export async function syncBranchSiblingFacts(
     if (resolvedSource) {
       const parent = parentOf(resolvedSource, folderId);
       affected.push(parent);
-      const policy = await parentPolicy(db, input.branchId, parent);
-      if (policy.policy === "default") {
-        await materializeOrder(
-          db,
-          input.branchId,
-          parent,
-          await siblings(db, input.branchId, parent),
-          "default",
-        );
-      }
       await setRank(
         db,
         input.branchId,

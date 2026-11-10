@@ -1,4 +1,5 @@
 /** One rule for a chat's Scratch, shared by context dispatch and file policy. */
+import { chatOwner } from "../../shared/draft-owner.js";
 export type ScratchOwner =
   | { scope: "work"; workId: string }
   | { scope: "lineage"; projectId: string; rootThreadId: string };
@@ -7,9 +8,10 @@ export function scratchOwnerFor(
   thread: { id: string; projectId: string; rootThreadId: string },
   work: { id: string; isNoWork: boolean },
 ): ScratchOwner {
-  return work.isNoWork
-    ? { scope: "lineage", projectId: thread.projectId, rootThreadId: thread.rootThreadId }
-    : { scope: "work", workId: work.id };
+  const owner = chatOwner(thread, work);
+  return owner.kind === "lineage"
+    ? { scope: "lineage", projectId: owner.projectId, rootThreadId: owner.rootThreadId }
+    : { scope: "work", workId: owner.workId };
 }
 
 export interface ScratchLineage {

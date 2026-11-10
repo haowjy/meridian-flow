@@ -12,6 +12,7 @@ export { isDrafted, skillLevel, sourceDestination } from "./domain/policy.js";
 export {
   type AgentChain,
   type AgentLink,
+  type BranchOwnerRef,
   type FileAccessDenial,
   type FileAccessDenied,
   type FileDestination,
@@ -19,8 +20,9 @@ export {
   type FileGrant,
   type FileNeed,
   type FileTarget,
-  grantWorkIds,
+  grantOwnerLocks,
   isFileAccessDenied,
+  type OwnerLocks,
   type Principal,
   type SkillFacts,
   targetDocumentId,
@@ -36,4 +38,8 @@ export {
   createFileAccess,
   type FileAccess,
 } from "./file-access.js";
-export type { FileAccessChange, FileAccessChanges } from "./ports/file-access-changes.js";
+export {
+  type FileAccessChange,
+  type FileAccessChanges,
+  fileAccessChangeKey,
+} from "./ports/file-access-changes.js";

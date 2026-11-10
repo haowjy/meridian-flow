@@ -1,6 +1,5 @@
 /** Adds only pending folder roots; catalogs remain the sole owner of every real node. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isManualParent } from "@meridian/resource-replica";
 import { useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useImportsSnapshot, useOptionalImports } from "./ImportProvider";
@@ -45,13 +44,7 @@ export function useImportedTree(
       root: tree.root,
       rows: (parentId) => {
         const roots = pending.get(parentId);
-        return roots
-          ? withPendingRoots(
-              tree.rows(parentId),
-              roots,
-              isManualParent(catalog.normalized.entries.get(parentId)),
-            )
-          : tree.rows(parentId);
+        return roots ? withPendingRoots(tree.rows(parentId), roots) : tree.rows(parentId);
       },
     };
   }, [catalog, scheme, projectId, snapshot, coordinator]);

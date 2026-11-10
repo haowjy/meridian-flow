@@ -28,7 +28,7 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
   const metadataKey = JSON.stringify(
     metadata.map((result, index) => [
       drafts[index].projectId,
-      drafts[index].workId,
+      drafts[index].ownerKey,
       drafts[index].documentId,
       drafts[index].itemKey,
       result.dataUpdatedAt,

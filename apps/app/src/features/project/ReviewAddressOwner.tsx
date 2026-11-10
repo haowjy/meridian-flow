@@ -8,12 +8,10 @@
 import { useEffect, useRef } from "react";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
-import {
-  type PresentedDocument,
-  type ReviewAddress,
-  type ReviewAddressAdmission,
-  reviewAddress,
-  reviewAddressWorkId,
+import type {
+  PresentedDocument,
+  ReviewAddress,
+  ReviewAddressAdmission,
 } from "./presented-document";
 import type { AiDraftLaunchTarget } from "./review-launch";
 
@@ -46,7 +44,6 @@ export function ReviewAddressOwner({
   const settled = useRef<{ focus?: string; pin?: string }>({});
   const { changes, status } = useOpenReviewChanges(review.controller);
   const requested = presented?.review ?? null;
-  const requestedWorkId = requested ? reviewAddressWorkId(requested) : null;
 
   useEffect(() => {
     const inline = review.controller.inlineReview;
@@ -57,7 +54,7 @@ export function ReviewAddressOwner({
       const names =
         requested !== null &&
         presented?.documentId === inline.documentId &&
-        requestedWorkId === review.controller.workId &&
+        requested.ownerKey === review.controller.ownerKey &&
         requested.itemKey === inline.itemKey;
       if (!names) {
         settled.current = {};
@@ -69,7 +66,11 @@ export function ReviewAddressOwner({
         settled.current = { focus: focusId, pin: requested.changeId };
         if (focusId && admission === "admitted" && requested.changeId !== focusId) {
           settled.current.pin = focusId;
-          port.write(reviewAddress(requestedWorkId as string, requested.itemKey, focusId));
+          port.write({
+            ownerKey: requested.ownerKey,
+            itemKey: requested.itemKey,
+            changeId: focusId,
+          });
         }
         return;
       }
@@ -95,12 +96,7 @@ export function ReviewAddressOwner({
       refused.current = null;
       return;
     }
-    if (
-      admission !== "admitted" ||
-      !requestedWorkId ||
-      review.controller.workId !== requestedWorkId
-    )
-      return;
+    if (admission !== "admitted" || review.controller.ownerKey !== requested.ownerKey) return;
     const itemKey = requested.itemKey;
     if (
       restoring.current === itemKey ||
@@ -112,7 +108,7 @@ export function ReviewAddressOwner({
     restoring.current = itemKey;
     void port
       .admit({
-        workId: requestedWorkId,
+        ownerKey: requested.ownerKey,
         documentId: presented.documentId,
         itemKey,
         contextLocation: { scheme: presented.scheme, path: presented.path },

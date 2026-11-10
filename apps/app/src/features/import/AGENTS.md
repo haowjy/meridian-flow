@@ -74,8 +74,8 @@ reveals it. An import refused before it starts toasts (`notifyFailure`) and clos
 account-lifetime navigation. The 30-second catalog bridge starts when it learns
 creation, not when a tree remounts. Pending roots have no URI or document capabilities: activating
 one opens its popup, never an editor. No import state enters the replica.
-A pending root takes the slot its folder will land in (`withPendingRoots`): default-order position in a default
-parent, last in a manual one, so it does not jump at reveal.
+A pending root takes the slot its folder will land in (`withPendingRoots`): last in its parent, so it does not
+jump at reveal.
 
 Copy goes through Lingui and `reason-copy.ts`; server codes are not sentences.
 See [deferred browser coverage](.context/TODO.md) and the [runtime recipe](../../../../../docs/qa/README.md#import).
