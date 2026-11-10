@@ -138,7 +138,7 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
       command: z.literal("switch"),
       work: WorkRefSchema.nullable()
         .optional()
-        .describe('Work handle, e.g. "w3"; omit or null for No Work.'),
+        .describe('Work handle, e.g. "w3"; omit, null or "none" for No Work.'),
     })
     .strict()
     .describe("Move this conversation to another Work."),
