@@ -752,11 +752,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/features/project/context/ContextViewer.tsx",
-        "line": "// Archiving freezes the Editor Work's own files and its drafts (D30). A",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/features/project/work/WorkChanges.tsx",
         "line": "* manuscript (D79), naming each, and again for any a newer delete held back.",
         "count": 1
