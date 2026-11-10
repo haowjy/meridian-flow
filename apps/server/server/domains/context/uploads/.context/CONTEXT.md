@@ -136,4 +136,4 @@ target a replacement at the same path. When admission and delete race, the loser
 gets a factual refusal: `already_used` (a sent message consumed it) or
 `already_deleted`.
 
-[uploads]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/composer/context-upload-intake.md
+[uploads]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/uploads.md

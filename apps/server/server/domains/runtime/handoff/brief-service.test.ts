@@ -2,7 +2,7 @@
  * Handoff brief orchestration releases ownership when settlement cannot start.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - failed brief settlement remains repairable (kb/decisions/agents/conversations/handoff-seed.md)
+ * - failed brief settlement remains repairable (kb/wiki/architecture/agents/conversations.md)
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";

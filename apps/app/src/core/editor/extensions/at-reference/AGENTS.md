@@ -9,5 +9,5 @@ Behavior is in [one predictive browser][at-references] and
   consume it, so a document, asset or folder has one node shape per host.
   Interaction code still owns its own landing, spacing and Undo.
 
-[at-references]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/editor/media/at-references-design.md
+[at-references]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/editor/references.md
 [link-identity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-identity.md

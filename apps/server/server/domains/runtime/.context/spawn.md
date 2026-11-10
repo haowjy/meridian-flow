@@ -103,6 +103,6 @@ Ownership decides the scope:
 | Deleting or archiving a thread, or deleting a Work (`stopThreads`: trash, thread archive, Work delete, the work tool, receipt reversal). Archiving a Work stops nothing | Each thread's run, open asks and owed continuations, and its whole subtree, one lineage per topmost thread. |
 | A child's terminal run | Its whole subtree, before its claim is released. |
 
-[kb-spawn]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/conversations/spawn-child-conversation.md
-[kb-reports]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/conversations/child-execution-reports.md
-[kb-stop]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/composer/stop-ends-the-reply.md
+[kb-spawn]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/agents/conversations.md
+[kb-reports]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/agents/conversations.md
+[kb-stop]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/composer-and-queue.md

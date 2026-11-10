@@ -2,7 +2,7 @@
  * PostgreSQL coverage: every thread-create path persists an authoritative rootThreadId.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - denormalized root identity and distinct fork versus handoff lineage provenance (kb/decisions/agents/conversations/fork-and-handoff-derivation.md)
+ * - denormalized root identity and distinct fork versus handoff lineage provenance (kb/wiki/architecture/agents/conversations.md)
  */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {

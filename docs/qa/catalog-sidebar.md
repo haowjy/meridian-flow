@@ -74,8 +74,7 @@ Use a chat whose `./mf api GET /api/threads/$THREAD/recent-documents --json`
 returns documents for the populated case.
 
 1. On the Chat index with no chat selected and no document open, capture the
-   right panel: its header reads Recent (or the view switch, when Changes is
-   offered), with no browse menu and no hint.
+   right panel: its header reads Recent, with no browse menu and no hint.
 2. Open the untouched chat and capture the same header with an empty list.
 3. Open the chat with recent documents. Capture its file rows (no heading of
    their own); confirm they still open the document beside the chat.
