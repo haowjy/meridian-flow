@@ -1049,7 +1049,6 @@ function ReadableProjectDestination({
     <ProjectNavigationProvider
       screen={activeScreen}
       openContextRoute={openContext}
-      openWork={routeCommands.openWork}
       screenCommands={{
         showEditor: (options) => showScreenDestination("context", options),
         showWork: () => showScreenDestination("work"),
