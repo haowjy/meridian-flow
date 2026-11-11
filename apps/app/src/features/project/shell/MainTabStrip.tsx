@@ -8,7 +8,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import { useRouter } from "@tanstack/react-router";
-import { FileQuestion, Plus, X } from "lucide-react";
+import { ChevronDown, FileQuestion, Plus, X } from "lucide-react";
 import {
   type HTMLAttributes,
   type KeyboardEvent,
@@ -23,6 +23,7 @@ import {
   type WheelEvent,
 } from "react";
 import {
+  closeAllMainTabs,
   closeMainTab,
   type MainTab,
   mainTabKey,
@@ -31,6 +32,13 @@ import {
 } from "@/client/project-shell/main-tabs";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { OpenDocument } from "@/client/stores";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { draftCopyView } from "@/features/draft-review/copy-view";
 import { useScrollEdges } from "@/hooks/use-scroll-edges";
@@ -75,6 +83,11 @@ export function useMainTabCommands({
       const next = closeMainTab(accountId, projectId, key, mainKey);
       if (key === mainKey) show(next);
     },
+    /** Main goes to Recently opened unless it keeps its item (a chat, or the landing itself). */
+    closeAll: ({ keepMain }: { keepMain: boolean }) => {
+      closeAllMainTabs(accountId, projectId);
+      if (!keepMain) onShowRecents({ replace: true });
+    },
     /** Main's item holds no tab: main goes to the tab it showed last, else Recently opened. */
     closeMain: () => {
       const { tabs, selected } = readMainTabs(accountId, projectId);
@@ -103,15 +116,10 @@ export function MainTabStrip({
   /** Absent while no Work is ready to hold an Untitled document. */
   onNewDocument?: () => void;
 }) {
-  const accountId = useAccountId();
-  const tabs = useLiveTabs(projectId, useMainTabs(accountId, projectId).tabs);
+  const { tabs, unrecorded } = useDrawnTabs(projectId, mainKey, mainDocument);
   const commands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
   const stripRef = useRef<HTMLDivElement>(null);
   const more = useScrollEdges(stripRef);
-  const unrecorded =
-    mainDocument && mainKey && !tabs.some((tab) => mainTabKey(tab) === mainKey)
-      ? mainDocument
-      : undefined;
   useActiveTabVisibility(stripRef, mainKey ?? (current ? "current" : null));
   const lastActive =
     unrecorded !== undefined || (tabs.at(-1) && mainTabKey(tabs.at(-1) as MainTab) === mainKey);
@@ -199,6 +207,119 @@ export function MainTabStrip({
       )}
     </div>
   );
+}
+
+/** Every tab of the strip in one list, to jump to one the strip has squeezed or scrolled away. */
+export function MainTabMenu({
+  projectId,
+  open,
+  mainKey,
+  mainDocument,
+  keepMain,
+  onShowRecents,
+}: {
+  projectId: string;
+  open: OpenContextRoute;
+  mainKey: string | null;
+  mainDocument?: OpenDocument;
+  /** Close all leaves main's item where it is: a chat is not a tab, and the landing is the goal. */
+  keepMain: boolean;
+  onShowRecents: (options: { replace: boolean }) => void;
+}) {
+  const { tabs, unrecorded } = useDrawnTabs(projectId, mainKey, mainDocument);
+  const commands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
+  // Each document's page has its own band, so the trigger Radix would refocus is gone.
+  const focusAfter = useRef<(() => HTMLElement | null) | null>(null);
+  const documents = tabs.map((tab) => tab.document);
+  if (unrecorded) documents.push(unrecorded);
+  if (documents.length === 0) return null;
+  const label = t`All open documents`;
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={label}
+              className="focus-ring relative isolate ml-auto grid h-full w-9 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill data-[state=open]:text-foreground data-[state=open]:before:bg-ink-fill"
+            >
+              <ChevronDown className="size-3.5" aria-hidden />
+            </button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{label}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent
+        align="end"
+        className="w-64 max-w-[calc(100vw-1rem)]"
+        onCloseAutoFocus={(event) => {
+          const target = focusAfter.current;
+          if (!target) return;
+          focusAfter.current = null;
+          event.preventDefault();
+          holdFocus(target);
+        }}
+      >
+        <DropdownMenuItem
+          onSelect={() => {
+            focusAfter.current = () =>
+              window.document.querySelector<HTMLElement>("[data-recents-door]");
+            commands.closeAll({ keepMain });
+          }}
+        >
+          <Trans>Close all</Trans>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {documents.map((document) => (
+          <TabMenuItem
+            key={document.documentId}
+            projectId={projectId}
+            document={document}
+            active={mainTabKey({ kind: "document", document }) === mainKey}
+            onSelect={(picked) => {
+              focusAfter.current = () => selectedTabFor(picked.documentId);
+              commands.select(picked);
+            }}
+          />
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function TabMenuItem({
+  projectId,
+  document: opened,
+  active,
+  onSelect,
+}: {
+  projectId: string;
+  document: OpenDocument;
+  active: boolean;
+  onSelect: (document: OpenDocument) => void;
+}) {
+  const document = useLiveTabDocument(projectId, opened);
+  return (
+    <DropdownMenuItem
+      selected={active}
+      onSelect={() => onSelect(document)}
+      title={document.kind === "new" ? document.name : document.path}
+    >
+      <span className="min-w-0 truncate">{document.name}</span>
+    </DropdownMenuItem>
+  );
+}
+
+/** The document tabs the strip draws: the live record, then main's document when it lacks it. */
+function useDrawnTabs(projectId: string, mainKey: string | null, mainDocument?: OpenDocument) {
+  const accountId = useAccountId();
+  const tabs = useLiveTabs(projectId, useMainTabs(accountId, projectId).tabs);
+  const unrecorded =
+    mainDocument && mainKey && !tabs.some((tab) => mainTabKey(tab) === mainKey)
+      ? mainDocument
+      : undefined;
+  return { tabs, unrecorded };
 }
 
 const PROJECT_SCOPED_SCHEMES: ReadonlySet<string> = new Set(PROJECT_SCOPED_CONTEXT_URI_SCHEMES);

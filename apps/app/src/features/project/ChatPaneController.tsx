@@ -43,6 +43,7 @@ export function ChatPaneController({
       projectId={projectId}
       open={open}
       mainKey={null}
+      showsChat
       // The centered chat body is page-sheet: the switcher wears the active-tab chip so the page
       // continues up into the band.
       current={<ChatThreadTitle projectId={projectId} threadId={threadId} variant="tab" />}

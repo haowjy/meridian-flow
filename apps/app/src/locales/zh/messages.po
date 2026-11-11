@@ -989,6 +989,10 @@ msgstr ""
 msgid "All chats"
 msgstr ""
 
+#: src/features/project/shell/MainTabStrip.tsx
+msgid "All open documents"
+msgstr ""
+
 #: src/features/project/shell/ProjectMenu.tsx
 msgid "All projects"
 msgstr ""
@@ -1634,6 +1638,10 @@ msgstr ""
 
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "Close {name}"
+msgstr ""
+
+#: src/features/project/shell/MainTabStrip.tsx
+msgid "Close all"
 msgstr ""
 
 #: src/features/chat/ArtifactGrid.tsx
