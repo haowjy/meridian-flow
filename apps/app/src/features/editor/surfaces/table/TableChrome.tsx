@@ -390,7 +390,7 @@ function GripButton({
     <button
       {...rest}
       type="button"
-      className="meridian-table-grip"
+      className="meridian-table-grip focus-ring"
       data-table-grip={axis}
       aria-label={label}
       title={label}
@@ -419,7 +419,7 @@ function AddTab({
   return (
     <button
       type="button"
-      className="meridian-table-add-tab"
+      className="meridian-table-add-tab focus-ring"
       data-table-add={axis}
       aria-label={label}
       title={label}

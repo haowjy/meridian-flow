@@ -19,8 +19,8 @@ const buttonVariants = cva(
       variant: {
         // Every variant takes its hover, pressed and open states from `interactive`, an
         // ink layer over whatever fill the variant paints.
-        default: "interactive bg-primary text-primary-foreground",
-        destructive: "interactive bg-destructive text-primary-foreground",
+        default: "interactive bg-primary text-primary-foreground focus-ring-on-fill",
+        destructive: "interactive bg-destructive text-primary-foreground focus-ring-on-fill",
         outline: "interactive border border-border bg-card shadow-raise",
         secondary: "interactive bg-ink-fill text-foreground",
         ghost: "interactive",

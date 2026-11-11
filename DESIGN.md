@@ -120,6 +120,9 @@ Core shell expectations:
 - Prefer optimistic local state where the server can reconcile safely.
 - Use skeletons or stable live-status rows instead of spinner-first waiting states.
 - Keep keyboard focus visible, quiet, and consistent.
+  The ring is `focus-ring`, and it draws inside the control's own box, so no scroller,
+  rounded card or filled neighbour can cut it and no site leaves it room. Don't draw a
+  ring outside a box. Over a sticky or pinned bar, give the scroller `scroll-padding`.
 - An icon-only control is `IconButton`. Its required `label` is both its accessible
   name and its tooltip. Under a coarse pointer it and `Button` grow to the 44px touch
   target themselves (the `coarse:` variant), so a call site never adds touch sizing.
