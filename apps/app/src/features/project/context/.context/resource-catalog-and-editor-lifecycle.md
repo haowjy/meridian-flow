@@ -162,7 +162,10 @@ again rather than by a different intent kind. The runner persists immutable requ
 bytes before HTTP, records outcomes before applying them, and resumes after response
 loss or reload. Creation acknowledgement records canonical metadata and transfers the
 same Y.Doc into registry transport. Leaving main leaves the resource in the
-sidebar; explicit Delete is the only writer command that removes it.
+sidebar once it holds a word; explicit Delete is the only writer command that removes it.
+An Untitled document that never held a word goes with its last view in this browser tab
+(`UntitledLifecycle` in `ContextDocumentHost`, `discardUntouched`). It is plain Untitled
+until its create is sent: the server numbers it then.
 
 A foreign-ID create conflict remints under the resource lock, cancels the old
 unsubmitted dependents, and appends a retry plus rebased intentions for the new

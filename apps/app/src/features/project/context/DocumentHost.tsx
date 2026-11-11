@@ -12,7 +12,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
@@ -32,7 +32,6 @@ import { contextRouteRequest } from "../routing/project-route";
 import type { MainDocument } from "../views";
 import {
   useAccountResourceProjection,
-  useAccountResourceReplica,
   useContextRemovalCoordinator,
   useOptionalPresentedDocuments,
 } from "./account-feature-context";
@@ -314,11 +313,6 @@ function EditableDocument({
   loadFocus: boolean;
 }) {
   const freeze = useHostFreeze(projectId, document);
-  const resources = useAccountResourceReplica();
-  const onUntitledBecameNonEmpty = useCallback(async () => {
-    if (document.kind === "new")
-      await resources.markCreateEligible({ handle: document.resourceHandle });
-  }, [resources, document]);
   return (
     <ContextDocumentHost
       projectId={projectId}
@@ -327,7 +321,6 @@ function EditableDocument({
       readOnly={freeze !== null}
       editorClassName={editorClassName}
       loadFocus={loadFocus}
-      onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
     />
   );
 }

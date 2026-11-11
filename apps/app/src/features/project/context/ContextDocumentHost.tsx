@@ -31,8 +31,10 @@ import { EditorView } from "@/features/editor/EditorView";
 import { useHostDocumentPaint } from "../DocumentReview";
 import {
   useAccountResourceProjection,
+  useAccountResourceReplica,
   useContextRemovalCoordinator,
   useLiveDocumentSessionRegistry,
+  useOptionalPresentedDocuments,
 } from "./account-feature-context";
 import { DESKTOP_DOCUMENT_PRESENTATION, type DocumentPresentation } from "./document-presentation";
 import { OpenDocumentSessionBoundary, resourceAvailabilityRevision } from "./open-document-session";
@@ -53,7 +55,6 @@ export type ContextDocumentHostProps = {
    */
   readOnly?: boolean;
   presentation?: DocumentPresentation;
-  onUntitledBecameNonEmpty?: (documentId: string) => Promise<void>;
   /** Overrides the editor shell's own styling, e.g. to take the side's material. */
   editorClassName?: string;
   onCloseDraftOnly?: () => void;
@@ -67,7 +68,6 @@ export function ContextDocumentHost({
   active,
   readOnly = false,
   presentation = DESKTOP_DOCUMENT_PRESENTATION,
-  onUntitledBecameNonEmpty,
   editorClassName,
   onCloseDraftOnly,
   loadFocus = false,
@@ -170,12 +170,8 @@ export function ContextDocumentHost({
             </div>
           ) : null}
           {!failed && !hosted ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
-          {document.kind === "new" && session && onUntitledBecameNonEmpty ? (
-            <UntitledInputObserver
-              documentId={document.documentId}
-              session={session}
-              onBecameNonEmpty={onUntitledBecameNonEmpty}
-            />
+          {document.kind === "new" && session ? (
+            <UntitledLifecycle projectId={projectId} document={document} session={session} />
           ) : null}
           {/* Filename chrome is host-owned: the title chip names the
                   file, so EditorView renders no redundant header bar. */}
@@ -302,15 +298,22 @@ function RoomScopeCatalogCheck({
   return null;
 }
 
-function UntitledInputObserver({
-  documentId,
+/**
+ * An Untitled document's first word makes its create eligible, which sends it to the server. A
+ * view that goes away while it holds no words lets it go (`discardUntouched`): it was never sent.
+ */
+function UntitledLifecycle({
+  projectId,
+  document,
   session,
-  onBecameNonEmpty,
 }: {
-  documentId: string;
-  session: import("@/core/editor/document-session").DocumentSession;
-  onBecameNonEmpty: (documentId: string) => Promise<void>;
+  projectId: string;
+  document: Extract<OpenDocument, { kind: "new" }>;
+  session: DocumentSession;
 }) {
+  const resources = useAccountResourceReplica();
+  const presented = useOptionalPresentedDocuments();
+  const { documentId, resourceHandle } = document;
   useEffect(() => {
     const fragment = session.document.getXmlFragment(session.fragmentName);
     let armed = true;
@@ -320,7 +323,7 @@ function UntitledInputObserver({
     const observe = () => {
       if (!armed || pending || resourceDocumentIsEmpty(fragment)) return;
       pending = true;
-      void onBecameNonEmpty(documentId).then(
+      void resources.markCreateEligible({ handle: resourceHandle }).then(
         () => {
           if (!armed) return;
           armed = false;
@@ -341,6 +344,19 @@ function UntitledInputObserver({
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       if (observing) fragment.unobserveDeep(observe);
     };
-  }, [documentId, onBecameNonEmpty, session]);
+  }, [resourceHandle, resources, session]);
+  useEffect(() => {
+    const fragment = session.document.getXmlFragment(session.fragmentName);
+    return () => {
+      // Only a replayed fragment that is empty means no words were written.
+      if (!session.getSnapshot().localPersistenceSynced || !resourceDocumentIsEmpty(fragment))
+        return;
+      // A move between main and the side, or a remount, mounts it again before this runs.
+      window.setTimeout(() => {
+        if (presented?.isMounted(projectId, documentId)) return;
+        void resources.discardUntouched(projectId, { handle: resourceHandle });
+      });
+    };
+  }, [documentId, presented, projectId, resourceHandle, resources, session]);
   return null;
 }

@@ -53,7 +53,9 @@ Three facts must stay separate:
 
 7. The sidebar's New file and a link's Create carry their destination (scheme, parent identity, missing folders, leaf name) on the create itself. Both await `reserveDocument` before they open the destination ([#836][navigate-first-reserve] tracks opening it first). If a branch's hidden document waits at that name, the server joins it and answers `joined`, or the catalog entry names the reservation in `joinedFrom`. Whichever arrives first runs one transition (`resource-join.ts`): the joined id becomes current, the handle stays, the old id becomes an alias, queued intents are rebased, and the same Y.Doc goes to the joined document's room. The document was hidden only because it is a draft, so there is no draft text to merge: what the writer typed goes live and the draft stays an ordinary draft over it. If another record already holds the joined id, nothing folds; the create reminting as a conflict does.
 
-Closing the view never abandons the resource or cancels synchronization. Explicit Delete is the writer command that changes resource lifecycle.
+Closing the view never abandons the resource or cancels synchronization, with one exception: an Untitled document that never held a word goes when the last view of it in this browser tab does (`discardUntouched`). The editor's leave check sees the text empty once local persistence has loaded; the replica settles the never-sent deletion only while its create is still ineligible, so a word typed anywhere keeps it. Otherwise Explicit Delete is the writer command that changes resource lifecycle.
+
+An Untitled document is reserved as plain Untitled. The server names an untitled create when it arrives (`Untitled N`, by what its folder holds, hidden documents included), which the client can't predict, so the number appears with the first word.
 
 ## Catalogs, addresses, and opening
 
