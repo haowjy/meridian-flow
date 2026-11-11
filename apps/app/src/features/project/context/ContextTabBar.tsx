@@ -268,7 +268,9 @@ function TabChipFrame({
       className={cn(
         // No h-full: items-stretch sizes the chip so the active tab's mt-1
         // subtracts from its height instead of overflowing the strip.
-        "group relative flex w-40 shrink-0 items-center gap-1.5 px-3",
+        // scroll-mx: scrolled into view, the active tab keeps room for its flares,
+        // which the strip's scroller would clip at its edge.
+        "group relative flex w-40 shrink-0 scroll-mx-2 items-center gap-1.5 px-3",
         active
           ? "tab-chip-active text-foreground"
           : "tab-chip-inactive text-muted-foreground hover:text-foreground",
