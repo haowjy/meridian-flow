@@ -1683,6 +1683,7 @@ msgstr ""
 msgid "Chats in this Work share its goal and scratch files."
 msgstr ""
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Chats without a Work"
 msgstr ""

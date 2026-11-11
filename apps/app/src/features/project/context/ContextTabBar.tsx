@@ -1,6 +1,7 @@
 /** ContextTabBar — the tab strip above the context main pane. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { useRouter } from "@tanstack/react-router";
 import {
   Code2,
   File,
@@ -12,7 +13,14 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import { type HTMLAttributes, type ReactNode, useEffect, useRef } from "react";
+import {
+  type HTMLAttributes,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  type WheelEvent,
+} from "react";
 import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useReviewCopy } from "@/features/draft-review/copy-view";
@@ -60,6 +68,8 @@ export function ContextTabBar({
   trailing,
   notice,
 }: ContextTabBarProps) {
+  const stripRef = useRef<HTMLDivElement>(null);
+  useActiveTabVisibility(stripRef, optimisticTab?.id ?? activeTabInstanceId ?? activeTabId);
   return (
     <div
       role="tablist"
@@ -91,10 +101,14 @@ export function ContextTabBar({
           </TooltipContent>
         </Tooltip>
       ) : null}
-      {/* The left padding is room for the first tab's flare, which this scroller would clip;
-          the negative margin takes it back, so the first tab starts where the chip before it
-          ends, as a title tab does after its index door. */}
-      <div className="-ml-1.5 flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden pl-1.5">
+      {/* The padding is room for the end tabs' flares, which this scroller would clip; the
+          negative margins take it back, so the first tab starts where the chip before it
+          ends, as a title tab does after its index door, and New tab follows the last. */}
+      <div
+        ref={stripRef}
+        onWheel={scrollStripWithWheel}
+        className="-mx-1.5 flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden px-1.5"
+      >
         {tabs.map((tab, index) => {
           const isActive = (member: ContextTab) =>
             activeTabInstanceId
@@ -116,35 +130,35 @@ export function ContextTabBar({
           );
         })}
         {optimisticTab ? <OptimisticTabChip key={optimisticTab.id} tab={optimisticTab} /> : null}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={onNewDocument}
-              disabled={!onNewDocument}
-              title={!onNewDocument ? t`Open a Work to create an Untitled document` : undefined}
-              aria-label={t`New tab`}
-              className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
-            >
-              {/* Same divider grammar as between tabs: a line sets the New-tab
-                  control apart from the working set, except when the active
-                  tab's canvas shape already separates it. */}
-              {!optimisticTab &&
-              tabs.length > 0 &&
-              tabs[tabs.length - 1]?.documentId !== activeTabId ? (
-                <span
-                  aria-hidden
-                  className="absolute top-1/2 left-0 h-3.5 w-px -translate-y-1/2 bg-border"
-                />
-              ) : null}
-              <Plus className="size-3.5" aria-hidden />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            <Trans>New tab</Trans>
-          </TooltipContent>
-        </Tooltip>
       </div>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onNewDocument}
+            disabled={!onNewDocument}
+            title={!onNewDocument ? t`Open a Work to create an Untitled document` : undefined}
+            aria-label={t`New tab`}
+            className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
+          >
+            {/* Same divider grammar as between tabs: a line sets the New-tab
+                control apart from the working set, except when the active
+                tab's canvas shape already separates it. */}
+            {!optimisticTab &&
+            tabs.length > 0 &&
+            tabs[tabs.length - 1]?.documentId !== activeTabId ? (
+              <span
+                aria-hidden
+                className="absolute top-1/2 left-0 h-3.5 w-px -translate-y-1/2 bg-border"
+              />
+            ) : null}
+            <Plus className="size-3.5" aria-hidden />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          <Trans>New tab</Trans>
+        </TooltipContent>
+      </Tooltip>
       {/* The strip's free end: tabs keep their width until a notice needs its
           short sentence, then they scroll. */}
       <RemovedNoticeSlot>{notice}</RemovedNoticeSlot>
@@ -233,14 +247,31 @@ function TabChip({
   );
 }
 
-function useActiveTabVisibility(active: boolean) {
-  const chipRef = useRef<HTMLDivElement>(null);
+/**
+ * Keeps the active chip inside the strip's viewport. The router's scroll restoration also
+ * records this scroller and writes a stale offset back after each navigation, so the reveal
+ * runs again once the router has rendered.
+ */
+function useActiveTabVisibility(
+  stripRef: RefObject<HTMLDivElement | null>,
+  activeKey: string | null | undefined,
+) {
+  const router = useRouter();
   useEffect(() => {
-    // Selecting or optimistically restoring a tab must never leave the active
-    // chip outside an overflowing strip's viewport.
-    if (active) chipRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
-  }, [active]);
-  return chipRef;
+    const reveal = () =>
+      stripRef.current
+        ?.querySelector("[data-active-tab]")
+        ?.scrollIntoView({ inline: "nearest", block: "nearest" });
+    reveal();
+    return activeKey ? router.subscribe("onRendered", reveal) : undefined;
+  }, [router, stripRef, activeKey]);
+}
+
+/** A plain mouse wheel only scrolls vertically; the strip turns that into its own scroll. */
+function scrollStripWithWheel(event: WheelEvent<HTMLDivElement>) {
+  if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+  const linePx = event.deltaMode === event.nativeEvent.DOM_DELTA_LINE ? 16 : 1;
+  event.currentTarget.scrollBy({ left: event.deltaY * linePx });
 }
 
 function TabChipFrame({
@@ -256,11 +287,10 @@ function TabChipFrame({
   children: ReactNode;
   tabProps?: HTMLAttributes<HTMLDivElement>;
 }) {
-  const chipRef = useActiveTabVisibility(active);
   return (
     <div
       {...tabProps}
-      ref={chipRef}
+      data-active-tab={active || undefined}
       className={cn(
         // No h-full: items-stretch sizes the chip so the active tab's mt-1
         // subtracts from its height instead of overflowing the strip.
