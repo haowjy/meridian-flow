@@ -24,6 +24,7 @@ import {
   computeInverse,
   type InversePart,
 } from "../undo/forward-inverse.js";
+import type { MinimalRule } from "./minimal-ops.js";
 import { type ResolveWriteParams, resolveWrite } from "./resolve.js";
 
 const schema = buildDocumentSchema();
@@ -628,7 +629,7 @@ function addHistory(room: Y.Doc): void {
 }
 let history = false;
 
-function run(row: Row, modelClient: number, minimalOps: boolean): string {
+function run(row: Row, modelClient: number, minimalOps: false | MinimalRule): string {
   const [, markdown, write, writer] = row;
   const room = new Y.Doc({ gc: false });
   room.clientID = 1;
@@ -672,15 +673,17 @@ it.each([false, true])("prints every case (history %s)", (withHistory) => {
   const lines: string[] = [];
   const failed: string[] = [];
   for (const row of rows) {
+    const fold = (pair: string[]) =>
+      pair[0] === pair[1] ? show(pair[0]) : `${show(pair[0])}  |hi| ${show(pair[1])}`;
     const main = [2, 4].map((client) => run(row, client, false));
-    const ops = [2, 4].map((client) => run(row, client, true));
+    const ops = [2, 4].map((client) => run(row, client, "skip"));
     lines.push(`\n${row[0]}`);
-    lines.push(
-      `  main: ${main[0] === main[1] ? show(main[0]) : `${show(main[0])}  |hi| ${show(main[1])}`}`,
-    );
-    lines.push(
-      `  ops : ${ops[0] === ops[1] ? show(ops[0]) : `${show(ops[0])}  |hi| ${show(ops[1])}`}`,
-    );
+    lines.push(`  main      : ${fold(main)}`);
+    lines.push(`  native    : ${fold([2, 4].map((client) => run(row, client, "native")))}`);
+    lines.push(`  native1352: ${fold([2, 4].map((client) => run(row, client, "native1352")))}`);
+    lines.push(`  native1352r: ${fold([2, 4].map((client) => run(row, client, "native1352r")))}`);
+    lines.push(`  native1352a: ${fold([2, 4].map((client) => run(row, client, "native1352a")))}`);
+    lines.push(`  skip      : ${fold(ops)}`);
     if (row[4] !== undefined)
       for (const result of ops)
         if (result.replace(/ {2}(\[skipped \d+\] {2})?\{[^}]*\}$/, "") !== row[4])
@@ -688,10 +691,10 @@ it.each([false, true])("prints every case (history %s)", (withHistory) => {
   }
   console.log(lines.join("\n"));
   expect(failed).toEqual([]);
-});
+}, 120_000);
 
 /** Undo of the model's write, by the package's forward inverse, must give the writer's text back. */
-function undoRun(row: Row, modelClient: number, minimalOps: boolean): string {
+function undoRun(row: Row, modelClient: number, minimalOps: false | MinimalRule): string {
   const [, markdown, write, writer] = row;
   const room = new Y.Doc({ gc: false });
   room.clientID = 1;
@@ -762,12 +765,13 @@ it("prints undo of every case", () => {
   const lines: string[] = [];
   for (const row of rows) {
     const main = [2, 4].map((client) => undoRun(row, client, false));
-    const ops = [2, 4].map((client) => undoRun(row, client, true));
     const fold = (pair: string[]) => (pair[0] === pair[1] ? pair[0] : `${pair[0]} |hi| ${pair[1]}`);
-    lines.push(`${row[0]}\n  main undo: ${fold(main)}\n  ops  undo: ${fold(ops)}`);
+    lines.push(`${row[0]}\n  main   undo: ${fold(main)}`);
+    for (const rule of ["native", "native1352", "native1352a", "skip"] as const)
+      lines.push(`  ${rule} undo: ${fold([2, 4].map((client) => undoRun(row, client, rule)))}`);
   }
   console.log(lines.join("\n"));
-});
+}, 120_000);
 
 /**
  * Class run: every container x writer edit x model write, at both client orders. A result is
@@ -865,7 +869,17 @@ it.each([false, true])("class run (history %s)", (withHistory) => {
   ];
   const norm = (markdown: string) => codec.serialize(codec.parse(markdown).blocks).trim();
   const zero = () => ({ cases: 0, landed: 0, skipped: 0, garbled: 0, byOrder: 0, error: 0 });
-  const tally = { main: zero(), ops: zero() };
+  const tally = {
+    main: zero(),
+    native: zero(),
+    native1352: zero(),
+    native1352r: zero(),
+    native1352a: zero(),
+    skip: zero(),
+  };
+  const high = { ...tally };
+  for (const key of Object.keys(high)) high[key as keyof typeof high] = zero();
+  const causes = new Map<string, number>();
   const bad: string[] = [];
   for (const [wrapName, wrap] of wrappers)
     for (const [text, gone, typed, cases] of bases)
@@ -880,9 +894,9 @@ it.each([false, true])("class run (history %s)", (withHistory) => {
           const row: Row = [name, wrap(text), write, writer];
           const untouched = norm(wrap(writerText));
           const whole = landed ? norm(wrap(landed(writerText))) : null;
-          for (const lowering of ["main", "ops"] as const) {
+          for (const lowering of Object.keys(tally) as Array<keyof typeof tally>) {
             const results = [2, 4].map((client) =>
-              run(row, client, lowering === "ops").replace(
+              run(row, client, lowering === "main" ? false : lowering).replace(
                 / {2}(\[skipped \d+\] {2})?\{[^}]*\}$/,
                 "",
               ),
@@ -892,19 +906,33 @@ it.each([false, true])("class run (history %s)", (withHistory) => {
             const label = `${lowering} | ${wrapName} | ${editName} | ${name}`;
             if (results.some((r) => /^(ERROR|APPLY|THROW)/.test(r))) {
               t.error += 1;
-              if (lowering === "ops") bad.push(`${label}: ${show(results[0])}`);
+              if (lowering !== "main") bad.push(`${label}: ${show(results[0])}`);
               continue;
             }
             if (results[0] !== results[1]) t.byOrder += 1;
+            const h = high[lowering];
+            h.cases += 1;
+            if (results[1] === whole) h.landed += 1;
+            else if (results[1] === untouched) h.skipped += 1;
+            else h.garbled += 1;
             if (results.every((r) => r === whole)) t.landed += 1;
             else if (results.every((r) => r === untouched)) t.skipped += 1;
             else {
               t.garbled += 1;
-              if (lowering === "ops")
+              const cause = `${lowering} | ${editName} | ${name}${results[0] === results[1] ? "" : " (by order)"}`;
+              causes.set(cause, (causes.get(cause) ?? 0) + 1);
+              if (lowering !== "main" && wrapName === "paragraph")
                 bad.push(`${label}: ${show(results[0])} |hi| ${show(results[1])}`);
             }
           }
         }
   console.log(JSON.stringify(tally));
+  console.log(`model client above the writer's only: ${JSON.stringify(high)}`);
+  console.log(
+    [...causes]
+      .map(([cause, count]) => `${count}  ${cause}`)
+      .sort()
+      .join("\n"),
+  );
   console.log(bad.join("\n"));
-});
+}, 120_000);

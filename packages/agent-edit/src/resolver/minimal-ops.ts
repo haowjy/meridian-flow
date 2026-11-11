@@ -37,7 +37,21 @@ const TOKEN = new RegExp(
   "gu",
 );
 
+/**
+ * SPIKE: which collisions the lowering decides itself.
+ * - `native`: none. Every operation is emitted against the view and Yjs merges it, as it
+ *   would a second person's edit. Only an operation whose node is gone is counted.
+ * - `native1352`: `native`, plus main's flat-text rule: a replace over deleted text and an
+ *   insert in deleted surroundings are not made.
+ * - `native1352r`: only the replace half of that rule; an insert in deleted surroundings lands.
+ * - `native1352a`: `native1352`, and a replace puts its new text before the old instead of
+ *   after it. With a model client id above every person's, no result depends on client order.
+ * - `skip`: the first prototype's rule, which also declines where the room added text.
+ */
+export type MinimalRule = "native" | "native1352" | "native1352r" | "native1352a" | "skip";
+
 interface LowerContext {
+  rule: MinimalRule;
   model: AgentEditModel;
   block: BlockRef;
   current: DocHandle | undefined;
@@ -61,8 +75,9 @@ export function lowerBlock(
   after: Block,
   windows: [TextWindow[] | undefined, TextWindow[] | undefined] | null,
   atomKey: (atom: Block) => string,
+  rule: MinimalRule = "native1352",
 ): LoweredBlock | null {
-  const ctx: LowerContext = { model, block, current, path: [], atoms: new Map(), atomKey };
+  const ctx: LowerContext = { rule, model, block, current, path: [], atoms: new Map(), atomKey };
   const placed =
     windows?.[0] && windows[1] ? leafWindows(before, after, windows[0], windows[1]) : null;
   const out: LoweredBlock = { ops: [], skipped: 0 };
@@ -99,7 +114,7 @@ function lowerNode(
     // The codec never writes these, so a reparsed node always lacks them: not the model's change.
     if (STORED_ONLY_ATTRS.has(key)) continue;
     if (state?.removed) out.skipped += 1;
-    else if (state && key in state.changed) {
+    else if (ctx.rule === "skip" && state && key in state.changed) {
       // The room changed it since the view: its value stands. The same value is no conflict.
       if (JSON.stringify(state.changed[key]) !== JSON.stringify(after.attrs[key] ?? null))
         out.skipped += 1;
@@ -139,7 +154,11 @@ function lowerNode(
         countLeaves(olds[step.old], counter);
         // A delete deletes what the model saw. Where the room added text inside the node,
         // the node stays and only the view's units go.
-        if (ctx.current && ctx.model.roomAddedInside(ctx.block, [...path, step.old], ctx.current))
+        if (
+          ctx.rule === "skip" &&
+          ctx.current &&
+          ctx.model.roomAddedInside(ctx.block, [...path, step.old], ctx.current)
+        )
           emptyTextblocks(ctx, olds[step.old], [...path, step.old], out);
         else out.ops.push({ kind: "delete", path: [...path, step.old] });
         break;
@@ -237,10 +256,9 @@ interface LeafDecision {
 }
 
 /**
- * The stale-view rule for one text leaf, with formatting as its own operation.
- * Text: a change lands only if every unit it replaces survives; an insert lands unless it
- * sits in deleted text; a delete deletes whatever is left. Format: lands on the surviving
- * units of its range and never ends in deleted text; a range with no surviving unit is skipped.
+ * One text leaf's operations, with formatting as its own operation. What is decided here
+ * depends on `ctx.rule`; under every rule a delete deletes whatever is left, and a format
+ * range with no surviving unit is counted instead of written.
  */
 function decideLeaf(
   ctx: LowerContext,
@@ -374,19 +392,40 @@ function decideLeaf(
     }
   }
 
+  // A replace over deleted text inserts only what the old text lacks, as the editor's own
+  // diff does: letters both hold at an edge stay as they are, deleted or not.
+  if (ctx.rule === "native")
+    for (const hunk of hunks) {
+      if (hunk.from === hunk.to || hunk.at === hunk.end || deadIn(hunk.from, hunk.to) === 0)
+        continue;
+      while (hunk.from < hunk.to && hunk.at < hunk.end && a[hunk.from] === b[hunk.at]) {
+        hunk.from += 1;
+        hunk.at += 1;
+      }
+      while (hunk.from < hunk.to && hunk.at < hunk.end && a[hunk.to - 1] === b[hunk.end - 1]) {
+        hunk.to -= 1;
+        hunk.end -= 1;
+      }
+    }
+
   let skipped = 0;
   let skipRunEnd = -1;
   const splices: LeafSplice[] = [];
   for (const hunk of hunks) {
-    let lands: boolean;
-    if (hunk.anchored) lands = alive(hunk.from - 1);
-    else if (hunk.from === hunk.to) lands = alive(hunk.from - 1) || alive(hunk.to);
-    else lands = hunk.at === hunk.end || deadIn(hunk.from, hunk.to) === 0;
-    // An insert where the room also put text has no side to take: Yjs would order the two
-    // by client id, and the room's text may be the rest of a word (`t` + `ears`).
-    if (lands && hunk.from === hunk.to && added.has(hunk.from)) lands = false;
-    // A replace of text the writer typed inside would strand their typing beside the new text.
-    if (lands && hunk.at < hunk.end && addedInside(hunk.from, hunk.to)) lands = false;
+    let lands = true;
+    if (ctx.rule !== "native") {
+      const insertLands = ctx.rule === "native1352r";
+      if (hunk.anchored) lands = insertLands || alive(hunk.from - 1);
+      else if (hunk.from === hunk.to) lands = insertLands || alive(hunk.from - 1) || alive(hunk.to);
+      else lands = hunk.at === hunk.end || deadIn(hunk.from, hunk.to) === 0;
+    }
+    if (ctx.rule === "skip") {
+      // An insert where the room also put text has no side to take: Yjs would order the two
+      // by client id, and the room's text may be the rest of a word (`t` + `ears`).
+      if (lands && hunk.from === hunk.to && added.has(hunk.from)) lands = false;
+      // A replace of text the writer typed inside would strand their typing beside the new text.
+      if (lands && hunk.at < hunk.end && addedInside(hunk.from, hunk.to)) lands = false;
+    }
     if (!lands) {
       const sameRun = skipRunEnd >= 0 && deadIn(skipRunEnd, hunk.from) === hunk.from - skipRunEnd;
       if (!sameRun) skipped += 1;
@@ -399,8 +438,9 @@ function decideLeaf(
       // A replace has two places to anchor its new text: before the range or after it.
       // Take the one where the room added nothing; with room text at both, it is not made.
       const replaces = hunk.from < hunk.to && content.size > 0;
-      const after = replaces && added.has(hunk.to);
-      if (after && added.has(hunk.from)) {
+      const after =
+        replaces && (ctx.rule === "native1352a" || (ctx.rule === "skip" && added.has(hunk.to)));
+      if (ctx.rule === "skip" && after && added.has(hunk.from)) {
         skipped += 1;
         continue;
       }
@@ -422,8 +462,10 @@ function decideLeaf(
       if (dead[at]) continue;
       const last = splices.at(-1);
       if (last && last.to === at && last.content.size === 0 && last.from >= hunk.from) last.to += 1;
-      else splices.push({ from: at, to: at + 1, content });
+      else splices.push({ from: at, to: at + 1, content: Fragment.empty });
     }
+    // The new text goes where the editor would put it: after the range it replaces.
+    if (content.size > 0) splices.push({ from: hunk.to, to: hunk.to, content });
   }
 
   // Formatting is compared only on text the model left alone; new text carries its own.
@@ -468,10 +510,9 @@ function decideLeaf(
   }
   const landedFormats: LeafFormat[] = [];
   for (const format of formats) {
-    let to = format.to;
-    while (to > format.from && dead[to - 1]) to -= 1;
-    if (to === format.from) skipped += 1;
-    else landedFormats.push({ ...format, to });
+    // A range with no surviving unit has nothing to show its mark on: counted, not written.
+    if (deadIn(format.from, format.to) === format.to - format.from) skipped += 1;
+    else landedFormats.push(format);
   }
   return { splices, formats: landedFormats, skipped };
 }

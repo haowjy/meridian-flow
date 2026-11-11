@@ -26,7 +26,7 @@ import {
   type TextWindow,
 } from "./find.js";
 import { type HashLocateContext, hashLocateContext, locateBlockByHash } from "./hash-locator.js";
-import { lowerBlock } from "./minimal-ops.js";
+import { lowerBlock, type MinimalRule } from "./minimal-ops.js";
 import { isFlatText, withoutRemovedUnits } from "./room-removals.js";
 import {
   type BlockScope,
@@ -79,7 +79,7 @@ export interface ResolveWriteContext {
    */
   current?: DocHandle;
   /** SPIKE: lower in-place rewrites as minimal operations (`minimal-ops.ts`). */
-  minimalOps?: boolean;
+  minimalOps?: boolean | MinimalRule;
 }
 
 /** Ref assignment for a write, or `"preassigned"` for nodes whose refs are already assigned. */
@@ -719,6 +719,7 @@ function replaceScope(
             after,
             placed,
             (atom) => ctx.codec.serialize([atom.type.schema.nodes.paragraph.create(null, atom)]),
+            typeof ctx.minimalOps === "string" ? ctx.minimalOps : undefined,
           );
           if (lowered) {
             skipped += lowered.skipped;
@@ -793,8 +794,10 @@ function replaceScope(
 }
 
 /** SPIKE: `SPIKE_MINIMAL_OPS=1` turns the lowering on for a whole test run. */
-function minimalOpsOn(ctx: { minimalOps?: boolean }): boolean {
-  return ctx.minimalOps ?? process.env.SPIKE_MINIMAL_OPS === "1";
+function minimalOpsOn(ctx: { minimalOps?: boolean | MinimalRule }): boolean {
+  return ctx.minimalOps === undefined
+    ? process.env.SPIKE_MINIMAL_OPS === "1"
+    : ctx.minimalOps !== false;
 }
 
 /** A block keeps its element only as the same node type and heading level. */
