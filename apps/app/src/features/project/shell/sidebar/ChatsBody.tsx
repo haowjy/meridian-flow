@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Layers, Plus, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, Layers, Plus, Star, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { runFavoriteCommand, useChatFavorite } from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
@@ -161,7 +161,7 @@ export function ChatsBody({
             </div>
             {groups.needsYou.length + groups.running.length + groups.idle.length === 0 ? (
               <SourceHint>
-                <Trans>No chats in this Work yet.</Trans>
+                <Trans>No chats here yet.</Trans>
               </SourceHint>
             ) : null}
             <Group label={t`Other Works`} hidden={groups.otherWorks.length === 0}>
@@ -291,11 +291,11 @@ function DeletedLine({
     );
   return (
     <div
-      className="flex min-w-0 items-center gap-2 px-3.5 pb-1 text-xs"
+      className="flex min-h-7 coarse:min-h-11 min-w-0 items-center gap-2 pr-2 pl-3.5 text-caption text-muted-foreground"
       role="status"
       data-chat-delete-notice
     >
-      <span className="min-w-0 flex-1 truncate text-muted-foreground">
+      <span className="min-w-0 flex-1 truncate">
         <Trans>Deleted {notice.title}</Trans>
       </span>
       <button
@@ -307,9 +307,9 @@ function DeletedLine({
       >
         <Trans>Undo</Trans>
       </button>
-      <button type="button" className="text-button text-xs coarse:min-h-11" onClick={onDismiss}>
-        <Trans>Dismiss</Trans>
-      </button>
+      <IconButton label={t`Dismiss`} className="shrink-0" onClick={onDismiss}>
+        <X aria-hidden className="size-3" />
+      </IconButton>
     </div>
   );
 }
@@ -437,6 +437,11 @@ function ChatRow({
                   sentence={t`Delete this chat? Its reply is still running and will stop.`}
                   keep={t`Keep`}
                   confirm={t`Delete`}
+                  returnFocus={() =>
+                    document.querySelector<HTMLElement>(
+                      `[data-chat-id="${CSS.escape(chat.id)}"] [data-list-item]`,
+                    )
+                  }
                   onKeep={() => setAsking(false)}
                   onConfirm={() => {
                     setAsking(false);

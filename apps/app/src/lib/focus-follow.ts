@@ -1,3 +1,5 @@
+import { type RefObject, useEffect } from "react";
+
 /**
  * Focus the app moves on the writer's behalf, such as following a Work to the
  * tab it moved to. The keyboard ring paints only when the writer's action came
@@ -120,4 +122,36 @@ export function holdFocus(target: () => HTMLElement | null, onTaken?: () => void
   observer.observe(document.body, { childList: true, subtree: true, attributes: true });
   settle();
   return stop;
+}
+
+/**
+ * Keeps the focus in `container` when a command there removes the control that held it (a
+ * Discard gives way to its notice, an Undo to the changes again): the first enabled button
+ * takes it. A press outside, or focus moved elsewhere, lets go.
+ */
+export function useFocusSuccession(container: RefObject<HTMLElement | null>, mounted = true) {
+  useEffect(() => {
+    const element = container.current;
+    if (!mounted || !element) return;
+    let within = element.contains(document.activeElement);
+    const focused = (event: FocusEvent) => {
+      within = event.target instanceof Node && element.contains(event.target);
+    };
+    const pressed = (event: PointerEvent) => {
+      if (!(event.target instanceof Node && element.contains(event.target))) within = false;
+    };
+    const observer = new MutationObserver(() => {
+      if (!within || !focusIsFree()) return;
+      const next = element.querySelector<HTMLElement>("button:not(:disabled)");
+      if (next) moveFocus(next, { ring: lastInputWasKeyboard() });
+    });
+    document.addEventListener("focusin", focused, true);
+    document.addEventListener("pointerdown", pressed, true);
+    observer.observe(element, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("focusin", focused, true);
+      document.removeEventListener("pointerdown", pressed, true);
+    };
+  }, [container, mounted]);
 }

@@ -110,15 +110,6 @@ export function DraftReviewBand({
       if (first && focusIsFree()) moveFocus(first, { ring: lastInputWasKeyboard() });
     });
   }, [focusOnOpen, onOpenFocused, afterPaintRelease, itemKey]);
-  // Keep closes the question that held the focus; the Discard draft button it replaced takes it back.
-  const keptDraft = useRef(false);
-  const asking = header.asking;
-  useEffect(() => {
-    if (asking || !keptDraft.current) return;
-    keptDraft.current = false;
-    const discard = controlsRef.current?.querySelector<HTMLElement>("[data-review-actions] button");
-    if (discard && focusIsFree()) moveFocus(discard, { ring: lastInputWasKeyboard() });
-  }, [asking]);
   // The pane may swap this band out with its tab when the review closes.
   const pending = useRef({ refocusFor, onFocusDocument });
   pending.current = { refocusFor, onFocusDocument };
@@ -203,10 +194,8 @@ export function DraftReviewBand({
       {finished ? null : header.asking ? (
         <DiscardQuestion
           scope="document"
-          onKeep={() => {
-            keptDraft.current = true;
-            header.keepDraft();
-          }}
+          onKeep={header.keepDraft}
+          returnFocus={() => controlsRef.current?.querySelector("[data-review-actions] button")}
           onConfirm={() => header.confirmDiscard(focusInControls())}
         />
       ) : (

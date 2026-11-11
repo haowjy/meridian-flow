@@ -4433,8 +4433,12 @@ msgid "No changes left"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "No chats in this Work yet."
+msgid "No chats here yet."
 msgstr ""
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+#~ msgid "No chats in this Work yet."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "No chats match “{search}”."
