@@ -809,6 +809,18 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     eventSink: ports.eventSink,
     scheduleAfterCommit: runAfterDrizzleCommit,
+    // A hint is lossy: a missed one leaves a list stale until its next read, never wrong.
+    onLifecycleCommitted: (threadId) =>
+      void ports.threadRepos.threads
+        .findById(threadId)
+        .then((thread) => {
+          if (thread)
+            ports.contextCatalogWakeHub.publish({
+              type: "project-chats-hint",
+              projectId: thread.projectId,
+            });
+        })
+        .catch(() => undefined),
   });
   const importOrganizer = createProductionImportOrganizer({
     db: ports.db,

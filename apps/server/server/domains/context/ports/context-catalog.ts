@@ -1,13 +1,13 @@
 /** Domain ports for durable catalog reads, mutation refresh, and lossy wake hints. */
 import type {
   CatalogChanges,
+  CatalogChannelMessage,
   CatalogChildrenRequest,
   CatalogChildrenResult,
   CatalogLookupRequest,
   CatalogLookupResult,
   CatalogScope,
   CatalogSnapshot,
-  CatalogWakeHint,
   DraftOwnerHint,
 } from "@meridian/contracts/protocol";
 
@@ -48,7 +48,7 @@ export interface WorkAuthorityCatalogMutationPort {
 }
 
 export interface ContextCatalogWakePort {
-  publish(hint: CatalogWakeHint | DraftOwnerHint): void | Promise<void>;
+  publish(hint: CatalogChannelMessage): void | Promise<void>;
 }
 
 /** Exact-document metadata/content changes, without a whole-tree rebuild. */

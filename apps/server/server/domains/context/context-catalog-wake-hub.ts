@@ -1,11 +1,11 @@
 /** Context-owned lossy live fan-out for catalog wake hints over authenticated transports. */
-import type { CatalogWakeHint, DraftOwnerHint } from "@meridian/contracts/protocol";
+import type { CatalogChannelMessage } from "@meridian/contracts/protocol";
 import type { ContextCatalogWakePort } from "./ports/context-catalog.js";
 
 type Subscriber = {
   projectId: string;
   userId: string;
-  listener: (hint: CatalogWakeHint | DraftOwnerHint) => void;
+  listener: (hint: CatalogChannelMessage) => void;
 };
 
 export type ContextCatalogWakeHub = ContextCatalogWakePort & {
@@ -18,7 +18,7 @@ export function createContextCatalogWakeHub(): ContextCatalogWakeHub {
     publish(hint) {
       for (const subscriber of subscribers) {
         const matches =
-          hint.type === "draft-owner-hint"
+          hint.type === "draft-owner-hint" || hint.type === "project-chats-hint"
             ? hint.projectId === subscriber.projectId
             : hint.scope.kind === "user"
               ? hint.scope.userId === subscriber.userId
