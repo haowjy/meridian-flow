@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The view's shell with real React and an injected API, transport and journal: what Stop
+ * The view's shell with real React and an injected API, transport and journal: what Undo
  * announces, and when; how the record's delivery state words a pending switch; and when a
  * change in the record's switches marks the Works reads stale. The display itself is
  * `switch-view.test.ts`.
@@ -127,7 +127,7 @@ afterEach(async () => {
   client.clear();
 });
 
-it("announces a Stop only once its outcome is known, and a failed one only as a card", async () => {
+it("announces an Undo only once its outcome is known, and a failed one only as a card", async () => {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
@@ -192,7 +192,7 @@ it("announces a Stop only once its outcome is known, and a failed one only as a 
       ...announcements.announce.mock.calls.map(([copy]) => `say:${copy}`),
       ...announcements.announceError.mock.calls.map(([copy]) => `error:${copy}`),
     ].map((line) =>
-      /stopped/i.test(line) ? "say:withdrawn" : /already/i.test(line) ? "say:already" : line,
+      line === "say:Switch undone" ? "say:withdrawn" : /already/i.test(line) ? "say:already" : line,
     );
     expect(heard, id).toEqual(expected);
     await show([]);

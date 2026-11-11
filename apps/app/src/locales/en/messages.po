@@ -2603,8 +2603,8 @@ msgid "Couldn't stop the reply."
 msgstr "Couldn't stop the reply."
 
 #: src/features/chat/thread-controls/control-copy.ts
-msgid "Couldn't stop the switch."
-msgstr "Couldn't stop the switch."
+#~ msgid "Couldn't stop the switch."
+#~ msgstr "Couldn't stop the switch."
 
 #: src/components/app/composer/Composer.tsx
 msgid "Couldn't stop. Try again."
@@ -2629,6 +2629,10 @@ msgstr "Couldn't turn this into a document. Kept as a file."
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't undo"
 msgstr "Couldn't undo"
+
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Couldn't undo the switch."
+msgstr "Couldn't undo the switch."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't undo this Apply. Try again."
@@ -5579,7 +5583,7 @@ msgstr "Stayed as you edited it"
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/chat/thread-controls/QueuedControlRows.tsx
+#: src/features/chat/thread-controls/control-copy.ts
 #: src/features/import/ImportPanel.tsx
 msgid "Stop"
 msgstr "Stop"
@@ -5602,12 +5606,12 @@ msgid "Stop compaction"
 msgstr "Stop compaction"
 
 #: src/features/chat/thread-controls/control-copy.ts
-msgid "Stop switch to auto-apply"
-msgstr "Stop switch to auto-apply"
+#~ msgid "Stop switch to auto-apply"
+#~ msgstr "Stop switch to auto-apply"
 
 #: src/features/chat/thread-controls/control-copy.ts
-msgid "Stop switch to draft mode"
-msgstr "Stop switch to draft mode"
+#~ msgid "Stop switch to draft mode"
+#~ msgstr "Stop switch to draft mode"
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Stop the handoff brief"
@@ -5685,8 +5689,8 @@ msgid "Switch screens or manage your account."
 msgstr "Switch screens or manage your account."
 
 #: src/features/chat/thread-controls/control-copy.ts
-msgid "Switch stopped"
-msgstr "Switch stopped"
+#~ msgid "Switch stopped"
+#~ msgstr "Switch stopped"
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Switch to auto-apply queued"
@@ -5695,6 +5699,10 @@ msgstr "Switch to auto-apply queued"
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Switch to draft mode queued"
 msgstr "Switch to draft mode queued"
+
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Switch undone"
+msgstr "Switch undone"
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Switched to auto-apply"
@@ -6689,6 +6697,7 @@ msgstr "Undid"
 msgid "Undid change to Work {0}."
 msgstr "Undid change to Work {0}."
 
+#: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/CommandNotice.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -6708,6 +6717,14 @@ msgstr "Undo is no longer available."
 #: src/features/draft-review/DraftCommandStatus.tsx
 msgid "Undo is waiting for confirmation."
 msgstr "Undo is waiting for confirmation."
+
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Undo switch to auto-apply"
+msgstr "Undo switch to auto-apply"
+
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Undo switch to draft mode"
+msgstr "Undo switch to draft mode"
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 msgid "Undoing Apply"
