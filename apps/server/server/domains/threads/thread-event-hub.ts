@@ -56,7 +56,20 @@ type ThreadEventHubDeps = {
   scheduleAfterCommit?: (callback: () => void | Promise<void>) => void;
   /** In-memory composition: failure records follow this owner's commit instead of a Drizzle transaction's. */
   inMemoryTransactionOwner?: InMemoryTransactionOwner;
+  /** After a reply starts or ends, or an ask opens or closes, has committed: other clients' chat lists go stale. */
+  onLifecycleCommitted?: (threadId: ThreadId) => void;
 };
+
+/** The events that move a chat's Working or Waiting state in a chat list. */
+const LIFECYCLE_EVENT_TYPES: ReadonlySet<OrchestratorEvent["type"]> = new Set([
+  "turn.created",
+  "run_state.changed",
+  "thread.status",
+  "ask.updated",
+  "turn.completed",
+  "turn.cancelled",
+  "turn.error",
+]);
 
 export type ThreadEventHubOptions = {
   /** Grace period before evicting hub state after the last listener unsubscribes. */
@@ -369,9 +382,18 @@ export function createThreadEventHub(
       orchestratorEvents: readonly OrchestratorEvent[],
     ): Promise<bigint> {
       const journalSeq = await deps.journalWriter.appendEvents(threadId, orchestratorEvents);
-      const invalidate = () => invalidateCommittedJournal(threadId);
-      if (deps.scheduleAfterCommit) deps.scheduleAfterCommit(invalidate);
-      else await drainCommittedJournal(threadId);
+      const lifecycle = orchestratorEvents.some((event) => LIFECYCLE_EVENT_TYPES.has(event.type))
+        ? deps.onLifecycleCommitted
+        : undefined;
+      if (deps.scheduleAfterCommit)
+        deps.scheduleAfterCommit(() => {
+          invalidateCommittedJournal(threadId);
+          lifecycle?.(threadId);
+        });
+      else {
+        await drainCommittedJournal(threadId);
+        lifecycle?.(threadId);
+      }
       return journalSeq;
     },
     async appendEvent(threadId: ThreadId, orchestratorEvent: OrchestratorEvent): Promise<bigint> {
