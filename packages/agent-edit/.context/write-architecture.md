@@ -33,10 +33,11 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   addressed by its unit. A unit is one UTF-16 code unit of text, or one inline atom. The
   model's changes come from a find's window, otherwise from the word diff (`wordHunks`;
   an atom is one token, compared by type, and a changed attribute is an attribute set;
-  formatting is not part of a token). Each replace is then trimmed as the editor's binding
-  diffs a keystroke (lib0's `simpleDiff` in y-prosemirror's `updateYText`): the characters
-  its old and new text share at the start and the end stay, and only the middle is
-  written, never splitting a surrogate pair. The trim is per change, not per textblock, so
+  formatting is not part of a token). Each replace is then trimmed to the middle of its old
+  and new text: the characters they share at the start and the end stay, and only the
+  middle is written, never splitting a surrogate pair (lib0's `simpleDiff`, which the
+  editor's binding runs too, but on the text the room holds now, where this runs on the
+  model's view). The trim is per change, not per textblock, so
   the text between two changes is left alone. Every operation is made and Yjs merges it,
   as for two people. The lowering never reads the room, so text the writer deleted since
   the model's read is no input to it: the kept edges are not written, so no deleted letter
@@ -44,7 +45,9 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   trust the model to notice an odd merge in the write's echo and its listing of concurrent
   edits (`He sighedcried.`, `A disciple.3 SIDETEXT`). A model letter can be lost the same
   way: `Gamma` over a deleted `Beta` lands `Gamm`, because the deleted `a` is a shared edge
-  letter. Only the apply step meets the room (`applyOps`' `room`): a splice deletes the
+  letter. Writing the model's whole new text instead would land `Gamma`, but it puts back
+  a deleted word the model's text repeats (`sighed softly` over a deleted `sighed`); the
+  trim was kept for that. Only the apply step meets the room (`applyOps`' `room`): a splice deletes the
   items the room still holds, as an editor's delete cannot reach what is gone, and puts
   its text after the units it replaced. The update, the write's record and turn Undo
   therefore never claim the writer's deletion. An attribute the codec does

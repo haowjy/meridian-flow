@@ -31,8 +31,8 @@ interface Walk {
 
 /**
  * Lower a block rewrite planned on the model's view into the smallest operations on the
- * units and attributes the model saw, as the editor does for a keystroke: a replaced stretch
- * keeps the letters its old and new text share at the edges and changes only the middle.
+ * units and attributes the model saw: a replaced stretch keeps the letters its old and new
+ * text share at the edges and changes only the middle.
  * Every textblock at any depth is lowered by the same code, and the room is never read.
  * `placed` is a find's windows in the two blocks' text. Null for a shape this
  * lowering does not keep (a node added, removed or retyped, an inline atom put inside a run
@@ -214,9 +214,11 @@ function lowerText(
   }
 
   // A replace keeps the characters its old and new text share at the edges and changes only
-  // what lies between: the rule y-prosemirror applies to a keystroke (lib0's simpleDiff,
-  // which also never splits a surrogate pair). The kept edges are not written, so a
-  // letter the writer deleted from them is not put back. An atom is no character.
+  // what lies between (a common prefix and suffix, as lib0's simpleDiff finds them, never
+  // splitting a surrogate pair). The kept edges are not written, so a letter the writer
+  // deleted from them is not put back; the model's own letter there is lost with it
+  // (`Gamma` over a deleted `Beta` lands `Gamm`), because the diff is of the model's view,
+  // not of the text the room holds. An atom is no character.
   const letter = (text: string, unit: number) => !isAtom(text, unit);
   const high = (unit: number) => /[\ud800-\udbff]/.test(a[unit]);
   const low = (unit: number) => /[\udc00-\udfff]/.test(a[unit]);

@@ -7,9 +7,9 @@
  * orders concurrent inserts at one place by client id.
  *
  * Pins implementation decisions: the write never reads the room. A replace keeps the letters
- * its old and new text share at the edges and changes the middle, as the editor's binding
- * does, so a model change to text the writer has since deleted is made as it is and odd
- * merges such as `A disciple.3 SIDETEXT` are accepted (owner's decision: trust the model to
+ * its old and new text share at the edges and changes the middle, so a model change to text
+ * the writer has since deleted is made as it is, a deleted letter at an edge is not put
+ * back, and odd merges such as `A disciple.3 SIDETEXT` are accepted (owner's decision: trust the model to
  * notice a mangled merge in the echo; `write-architecture.md`).
  */
 
