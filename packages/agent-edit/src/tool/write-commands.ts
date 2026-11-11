@@ -8,7 +8,7 @@ import { resolveOverwrite } from "../apply/overwrite.js";
 import type { ResolvedEdit } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
 import { createPlanningView, planningSnapshot } from "../frontier.js";
-import { toDocHandle } from "../handles.js";
+import { type DocHandle, toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import { getTopLevelXmlBlocks } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -340,6 +340,7 @@ export function createWriteCommands(deps: {
       const resolved = resolveOverwrite(
         {
           doc: toDocHandle(planDoc),
+          ...currentRoom(planDoc, room),
           model: options.model,
           codec: links.codec,
           links: boundNodes ? "preassigned" : assigner,
@@ -426,7 +427,12 @@ export function createWriteCommands(deps: {
           // Planning fixes scope, matches and a find's reconstructed groups; what
           // ref assignment will see is only known then, so it loads before assignment runs.
           const plan = planWrite(
-            { doc: toDocHandle(planDoc), model: options.model, codec: links.codec },
+            {
+              doc: toDocHandle(planDoc),
+              ...currentRoom(planDoc, room),
+              model: options.model,
+              codec: links.codec,
+            },
             {
               ...selectors,
               documentAddress: address,
@@ -751,6 +757,11 @@ export function createWriteCommands(deps: {
       documentId,
       options.onObservationFailed,
     );
+  }
+
+  /** A view lowers without what the room deleted since; the room copy is current already. */
+  function currentRoom(planDoc: Y.Doc, room: RoomCopy): { current?: DocHandle } {
+    return planDoc === room.doc ? {} : { current: toDocHandle(room.doc) };
   }
 
   function hasMissingTarget(edits: readonly ResolvedEdit[], current: Y.Doc): boolean {

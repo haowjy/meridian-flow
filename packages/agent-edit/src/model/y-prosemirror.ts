@@ -12,6 +12,7 @@ import type {
   InlineTextReplacement,
   ProjectedBlock,
 } from "../ports/model.js";
+import { itemsInRange } from "../yjs-mutation.js";
 import {
   blockHashesForDoc,
   blockIdentityForItem,
@@ -20,7 +21,6 @@ import {
   getBlockItemId,
   getTopLevelXmlBlocks,
   isLiveXmlElement,
-  lookupBlockHash,
   uniqueHashesForBlocks,
 } from "./block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
@@ -110,6 +110,10 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
 
     applyBlockReplacement(doc, block, replacement) {
       applyBlockDiff(unwrapDoc(doc), unwrapBlock(block), replacement);
+    },
+
+    removedText(_doc, block, current) {
+      return removedText(unwrapBlock(block), unwrapDoc(current));
     },
 
     projectBlocks(doc) {
@@ -364,6 +368,42 @@ function collectVisibleContentLineage(block: Y.XmlElement): ContentLineage[] {
   };
   visit(block);
   return lineage;
+}
+
+/**
+ * Offsets, in `collectText` order, of the block's visible characters that `current` holds
+ * deleted. A clock `current` keeps no item for was collected, so it counts as deleted too.
+ */
+function removedText(block: Y.XmlElement, current: Y.Doc): Span[] {
+  const spans: Span[] = [];
+  let offset = 0;
+  const remove = (from: number, to: number) => {
+    const last = spans.at(-1);
+    if (last && last.to === from) last.to = to;
+    else spans.push({ from, to });
+  };
+  const visit = (type: Y.XmlElement | Y.XmlText) => {
+    if (type instanceof Y.XmlText) {
+      for (let item = type._start; item; item = item.right) {
+        if (item.deleted || !(item.content instanceof Y.ContentString)) continue;
+        const { client, clock } = item.id;
+        let cursor = clock;
+        for (const live of itemsInRange(current, { client, clock, len: item.length })) {
+          if (live.item.deleted) continue;
+          if (live.clock > cursor) remove(offset + cursor - clock, offset + live.clock - clock);
+          cursor = live.clock + live.len;
+        }
+        if (cursor < clock + item.length) remove(offset + cursor - clock, offset + item.length);
+        offset += item.length;
+      }
+      return;
+    }
+    for (const child of type.toArray()) {
+      if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
+    }
+  };
+  visit(block);
+  return spans;
 }
 
 function yTextPlainText(text: Y.XmlText): string {
