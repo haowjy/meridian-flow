@@ -1,9 +1,8 @@
 // Preflight and mutation of resolved inline, whole-block, and structural edits.
 
 import type { ParsedContent } from "@meridian/markup";
-import type { Fragment } from "prosemirror-model";
 import type { BlockRef, DocHandle } from "../handles.js";
-import type { AgentEditModel, InlineTextReplacement } from "../ports/model.js";
+import type { AgentEditModel } from "../ports/model.js";
 import { editSegments } from "./segments.js";
 import type { ApplyErrorCode, ApplyResult, ApplyTransactionOrigin, ResolvedEdit } from "./types.js";
 
@@ -11,9 +10,8 @@ type Ref = BlockRef;
 
 type PlannedEdit =
   | {
-      kind: "textRanges";
-      edit: Extract<ResolvedEdit, { kind: "textRanges" }>;
-      replacements: InlineTextReplacement[];
+      kind: "ops";
+      edit: Extract<ResolvedEdit, { kind: "ops" }>;
       blockId: string;
     }
   | {
@@ -122,8 +120,8 @@ function preflightEdit(
   | { ok: true; plan: PlannedEdit }
   | { ok: false; code: ApplyErrorCode; message: string; details?: Record<string, unknown> } {
   switch (edit.kind) {
-    case "textRanges":
-      return preflightTextRangesEdit(doc, model, edit);
+    case "ops":
+      return preflightOps(doc, model, edit);
     case "insert":
       return preflightInsert(doc, model, edit);
     case "delete":
@@ -133,55 +131,17 @@ function preflightEdit(
   }
 }
 
-function preflightTextRangesEdit(
+function preflightOps(
   doc: DocHandle,
   model: AgentEditModel,
-  edit: Extract<ResolvedEdit, { kind: "textRanges" }>,
+  edit: Extract<ResolvedEdit, { kind: "ops" }>,
 ): ReturnType<typeof preflightEdit> {
   const live = validateLiveBlock(doc, model, edit.block, "target");
   if (!live.ok) return live;
-  if (edit.replacements.length === 0) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: "Text edits require at least one replacement",
-    };
+  if (edit.ops.length === 0) {
+    return { ok: false, code: "invalid_write", message: "Edits require at least one operation" };
   }
-
-  const text = model.getText(edit.block);
-  const replacements: InlineTextReplacement[] = [];
-  let previousEnd = -1;
-  for (const replacement of edit.replacements) {
-    const span = { from: replacement.span.start, to: replacement.span.end };
-    if (span.from < 0 || span.to < span.from || span.to > text.length || span.from < previousEnd) {
-      return {
-        ok: false,
-        code: "invalid_write",
-        message: `Invalid or overlapping text span ${span.from}..${span.to} for block length ${text.length}`,
-      };
-    }
-    const nonInline = findNonInline(replacement.content);
-    if (nonInline) {
-      return {
-        ok: false,
-        code: "invalid_write",
-        message: `Text edit content must be inline, got ${nonInline}`,
-      };
-    }
-    replacements.push({ span, content: replacement.content });
-    previousEnd = span.to;
-  }
-
-  return {
-    ok: true,
-    plan: {
-      kind: "textRanges",
-
-      edit,
-      replacements,
-      blockId: model.getBlockId(edit.block),
-    },
-  };
+  return { ok: true, plan: { kind: "ops", edit, blockId: model.getBlockId(edit.block) } };
 }
 
 function preflightBlockReplacement(
@@ -254,9 +214,9 @@ function executePlan(
   accumulator: ApplyAccumulator,
 ): ApplyFailure | undefined {
   switch (plan.kind) {
-    case "textRanges": {
-      const applied = model.applyInlineReplacements(doc, plan.edit.block, plan.replacements);
-      if (!applied.ok) return applyError(applied.code, applied.message, applied.details);
+    case "ops": {
+      const applied = model.applyOps(doc, plan.edit.block, plan.edit.ops);
+      if (!applied.ok) return applyError(applied.code, applied.message);
       accumulator.touchedHashes.add(plan.blockId);
       break;
     }
@@ -319,7 +279,7 @@ function validateNoSameTurnTombstones(
 
 function referencedElements(edit: ResolvedEdit): Ref[] {
   switch (edit.kind) {
-    case "textRanges":
+    case "ops":
     case "delete":
     case "block":
       return [edit.block];
@@ -338,15 +298,6 @@ function validateLiveBlock(
     return { ok: false, code: "not_found", message: `${label} block is no longer live` };
   }
   return { ok: true };
-}
-
-/** Name of the first top-level node a text edit can't splice into a textblock. */
-function findNonInline(content: Fragment): string | undefined {
-  let found: string | undefined;
-  content.forEach((node) => {
-    if (found === undefined && !node.isInline) found = node.type.name;
-  });
-  return found;
 }
 
 function applyError(

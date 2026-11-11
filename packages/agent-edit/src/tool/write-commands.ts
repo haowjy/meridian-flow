@@ -892,16 +892,7 @@ export function createWriteCommands(deps: {
     return (segment) => {
       const intent = ir.intent;
       if (intent.kind === "fullScopeFreshReplacement") return;
-      const edits = intent.edits.filter(({ edit }) =>
-        segment.some(
-          (part) =>
-            part === edit ||
-            (part.kind === "textRanges" &&
-              edit.kind === "textRanges" &&
-              part.block === edit.block &&
-              part.replacements.some((replacement) => edit.replacements.includes(replacement))),
-        ),
-      );
+      const edits = intent.edits.filter(({ edit }) => segment.includes(edit));
       options.semanticProvenance?.writeCertifiedFacts(
         toDocHandle(doc),
         { ...ir, intent: { ...intent, edits } },

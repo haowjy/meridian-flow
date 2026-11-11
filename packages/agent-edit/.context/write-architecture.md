@@ -22,19 +22,24 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   plus insert ([#111](https://github.com/haowjy/meridian-flow/issues/111)).
 - A find write rewrites only its matches. It splices the content into the serialized
   block group, reparses it, and replaces each match's text window whole at its
-  position (`cutTextWindows`, `windowHunks`); a block that isn't a single run of text,
-  or a find whose windows can't be mapped, is word-diffed or block-diffed instead.
+  position (`cutTextWindows`); a block that isn't a single run of text is block-diffed
+  instead, and a find whose windows can't be mapped is word-diffed.
 - A write is planned on the model's view, so a block it rewrites in place may have
-  lost text in the room since (the writer deleted it). A flat text block (`isFlatText`:
-  a paragraph or heading that is one run of text) is decided against those deletions
-  (`removedUnits`, `withoutRemovedUnits` in `resolver/room-removals.ts`); every other
-  block lowers as if there were no room. A unit is one UTF-16 code unit. The model's
-  changes come from a find's window when it holds no deleted unit, otherwise from a
-  token diff in which a Chinese or Japanese character is one token, a run of other
-  letters is one (so a spaceless Thai phrase is one), and formatting is not part of a
-  token. The rule: a change lands only if every unit it replaces survives; an insert
-  lands unless it sits in deleted text; a delete deletes whatever is left; no deleted
-  unit is put back; every change not made is counted (`skipped` in the result).
+  lost text in the room since (the writer deleted it). A flat text block
+  (`isFlatTextblock`: a paragraph or heading that is one run of text) is lowered by
+  `lowerBlock` (`resolver/lower-block.ts`) into operations (`EditOp`): text splices with
+  format ranges, and attribute sets (a heading's level). They are decided against those
+  deletions (`roomTextblock`, `roomNodeRemoved` on the model port); every other block
+  lowers as a whole-block rewrite as if there were no room. A unit is one UTF-16 code
+  unit. The model's changes come from a find's window when it holds no deleted unit,
+  otherwise from a token diff in which a Chinese or Japanese character is one token, a
+  run of other letters is one (so a spaceless Thai phrase is one), and formatting is not
+  part of a token. The rule: an operation whose target is gone is not made and is
+  counted (`skipped` in the result). A replace lands only if every unit it replaces
+  survives; an insert lands unless it sits in deleted text; a delete deletes whatever is
+  left; a format range lands if one of its units survives; an attribute set lands if the
+  block does; no deleted unit is put back. An attribute the codec does not write is never
+  set: the model's block is compared with what the codec shows of the block it saw.
 - What that guarantees, for a flat text block, and no more:
   - The write's update neither deletes nor re-inserts any unit the room deleted.
   - The model's new text lands only in place of units that all survive, after a find
@@ -49,7 +54,7 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   as exact splices. Never drop the deletions from the view and re-diff: the lowering's
   character diff would then place the model's text at the dropped run's edge, where Yjs
   orders it against what the writer typed there by client id (`He  loudlygroaned.`).
-  That is why the rule stops at flat text
+  That is why the rule stops at flat text until the operations reach nested blocks
   ([#1363](https://github.com/haowjy/meridian-flow/issues/1363)).
 - What the rule does not cover:
   - Quotes, lists, verse, paragraphs with a hard break or an image, code blocks and
@@ -57,9 +62,6 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
     writer deleted since its read can bring that text back, and an insert beside a
     deleted line can land split, by client id
     ([TODO](TODO.md#stale-view-writes-into-structural-blocks)).
-  - A flat paragraph whose formatting or attributes the model changed is lowered as if
-    there were no room: splices carry no format ranges. Text the writer deleted there
-    can come back as the model's.
   - A write that removes a block and adds another (merging or splitting top-level
     paragraphs, a paragraph turned into a heading): the writer's typing in the removed
     block goes, and text deleted from it can come back in the added one.

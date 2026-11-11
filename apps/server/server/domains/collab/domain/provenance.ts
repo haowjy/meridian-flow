@@ -323,7 +323,7 @@ function writeCertifiedProvenanceFacts(
       0,
     );
     const outputLength = runs.at(-1)?.output.to ?? 0;
-    const outputWindow = visibleOutputWindow(edit, ir.intent.edits, outputLength, allInserted);
+    const outputWindow = visibleOutputWindow(edit, outputLength, allInserted);
     const inserted = intersectRangesInOrder(outputWindow, allInserted);
     const insertedLength = inserted.reduce((sum, range) => sum + range.length, 0);
     if (insertedLength !== declaredLength) {
@@ -378,47 +378,19 @@ type MappedEdit = Extract<SemanticEditIRV1["intent"], { kind: "mappedEdits" }>["
 
 function visibleOutputWindow(
   edit: MappedEdit["edit"],
-  declarations: readonly MappedEdit[],
   outputLength: number,
   inserted: readonly LineageRange[],
 ): LineageRange[] {
-  if (edit.kind === "insert" || edit.kind === "delete") {
+  if (edit.kind !== "block") {
     throw new ProvenanceMaterializationError(
       `Certified ${edit.kind} output cannot materialize continuation or restoration facts`,
     );
   }
   const block = unwrapBlock(edit.block);
   const ranges = visibleStringRanges(block);
-  if (edit.kind === "block") {
-    const outputRanges =
-      ranges.length > 0 ? ranges : replacedBlockOutputRanges(block, inserted, outputLength);
-    return sliceRanges(outputRanges, 0, outputLength);
-  }
-  const inputSpan = textEditInputSpan(edit);
-  if (!inputSpan) {
-    throw new ProvenanceMaterializationError("Certified text edit has no output window");
-  }
-  const start = inputSpan.from;
-  const declarationIndex = declarations.findIndex(({ edit: declared }) => declared === edit);
-  let finalStart = start;
-  for (const [otherIndex, { edit: other }] of declarations.entries()) {
-    if (other === edit || !("block" in other) || other.block !== edit.block) continue;
-    const span = textEditInputSpan(other);
-    if (!span) continue;
-    const equalAnchorInsertions =
-      inputSpan.from === inputSpan.to && span.from === span.to && span.from === inputSpan.from;
-    if (
-      span.to < start ||
-      (span.to === start && (!equalAnchorInsertions || otherIndex > declarationIndex))
-    ) {
-      finalStart += textEditOutputLength(other) - (span.to - span.from);
-    } else if (span.from < inputSpan.to && span.to > start) {
-      throw new ProvenanceMaterializationError(
-        "Certified text edits overlap while locating provenance output",
-      );
-    }
-  }
-  return sliceRanges(ranges, finalStart, outputLength);
+  const outputRanges =
+    ranges.length > 0 ? ranges : replacedBlockOutputRanges(block, inserted, outputLength);
+  return sliceRanges(outputRanges, 0, outputLength);
 }
 
 function replacedBlockOutputRanges(
@@ -451,18 +423,6 @@ function nearestVisibleType(item: Y.Item | null, direction: "left" | "right"): u
   let current = item;
   while (current?.deleted) current = current[direction];
   return current?.content instanceof Y.ContentType ? current.content.type : undefined;
-}
-
-function textEditInputSpan(edit: MappedEdit["edit"]): { from: number; to: number } | undefined {
-  if (edit.kind !== "textRanges") return undefined;
-  const first = edit.replacements[0];
-  const last = edit.replacements.at(-1);
-  return first && last ? { from: first.span.start, to: last.span.end } : undefined;
-}
-
-function textEditOutputLength(edit: MappedEdit["edit"]): number {
-  if (edit.kind === "textRanges") return edit.output.length;
-  return 0;
 }
 
 function resolvedRootUnits(

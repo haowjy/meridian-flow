@@ -16,20 +16,31 @@ export interface ContentLineage {
   length: number;
 }
 
-export type InlineReplacementResult =
-  | { ok: true }
-  | {
-      ok: false;
-      code: "invalid_write" | "not_found";
-      message: string;
-      details?: Record<string, unknown>;
-    };
-
-/** Inline nodes, applied as given, that replace one plain-text span. */
-export interface InlineTextReplacement {
-  span: Span;
+/** Replace units `[from, to)` of one textblock with inline `content`, applied as given. */
+export interface TextSplice {
+  from: number;
+  to: number;
   content: Fragment;
 }
+
+/** Set (`attrs`) or clear (`null`) one mark over units `[from, to)` of one textblock. */
+export interface FormatRange {
+  from: number;
+  to: number;
+  mark: string;
+  attrs: Record<string, unknown> | null;
+}
+
+/**
+ * The smallest changes to one top-level block, each addressed to a node the model saw.
+ * `path` is child indexes from that block down to the node, in the model's view; a unit
+ * is one inline position of a textblock (a UTF-16 code unit of text).
+ */
+export type EditOp =
+  | { kind: "text"; path: readonly number[]; splices: TextSplice[]; formats: FormatRange[] }
+  | { kind: "attrs"; path: readonly number[]; attrs: Record<string, unknown> };
+
+export type EditOpsResult = { ok: true } | { ok: false; code: "invalid_write"; message: string };
 
 /**
  * Block-operation seam carrying block semantics and the plain-text and structural mutation verbs.
@@ -77,7 +88,7 @@ export interface DocumentModel {
 
   /**
    * Replace plain text within a block, keeping unchanged text at the span's edges.
-   * Undo repair's verb; agent writes go through `applyInlineReplacements`.
+   * Undo repair's verb; agent writes go through `applyOps`.
    * Mutates doc in place; span must refer to valid offsets in getText(block).
    */
   applyTextEdit(doc: DocHandle, block: BlockRef, span: Span, newText: string): void;
@@ -100,21 +111,25 @@ export interface DocumentModel {
  * y-prosemirror adapter is only one implementation.
  */
 export interface AgentEditModel extends DocumentModel {
-  /** Apply exact disjoint same-block replacements without trimming common edge characters. */
-  applyInlineReplacements(
-    doc: DocHandle,
-    block: BlockRef,
-    replacements: readonly InlineTextReplacement[],
-  ): InlineReplacementResult;
+  /**
+   * Apply operations to one top-level block, addressed on its state before any of them.
+   * Every path and offset is checked before anything changes; a write that does not fit
+   * the block fails and leaves it as it was.
+   */
+  applyOps(doc: DocHandle, block: BlockRef, ops: readonly EditOp[]): EditOpsResult;
 
   /** Replace one same-type block's complete content while preserving its CRDT parent identity. */
   applyBlockReplacement(doc: DocHandle, block: BlockRef, replacement: Block): void;
 
   /**
-   * Runs of a flat text block's characters that `current` has deleted. The block's document
-   * is the model's view of `current`'s room, so the two share item identities.
+   * Runs of units of the textblock at `path` under `block` that `current` has deleted, in
+   * order; all of them when the textblock or a node above it is deleted. The block's
+   * document is the model's view of `current`'s room, so the two share item identities.
    */
-  removedUnits(block: BlockRef, current: DocHandle): Span[];
+  roomTextblock(block: BlockRef, path: readonly number[], current: DocHandle): Span[];
+
+  /** Whether `current` has deleted the node at `path` under `block`, or a node above it. */
+  roomNodeRemoved(block: BlockRef, path: readonly number[], current: DocHandle): boolean;
 
   /**
    * Every top-level block with its display hash and ProseMirror node, built in one walk so
