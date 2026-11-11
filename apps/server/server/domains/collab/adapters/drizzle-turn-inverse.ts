@@ -459,9 +459,18 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         }
         document.history = document.history.map((part) => {
           if (part.origin.kind === "live") return { ...part, disposition: "pending" };
+          const classified = byPart.get(`${part.editId}:${part.ordinal}`);
+          const destination = document.destinationOf(part.origin);
+          // An open draft's unapplied part stays pending: "not pending any more" also means the
+          // writer retyped it, which the receipt must call edited, not discarded.
           return {
             ...part,
-            disposition: byPart.get(`${part.editId}:${part.ordinal}`) ?? "discarded",
+            disposition:
+              classified === "applied"
+                ? classified
+                : destination.kind === "draft" && destination.state !== "gone"
+                  ? "pending"
+                  : (classified ?? "discarded"),
           };
         });
       }
