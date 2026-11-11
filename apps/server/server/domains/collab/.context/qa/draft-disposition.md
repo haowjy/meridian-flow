@@ -34,3 +34,18 @@ The runner creates review fragments, immutable AI receipts, and Apply records
 through production adapters. Receipts retain immutable origins; current text
 and Apply evidence decide disposition. Production seeding and HTTP Apply are
 separate checks.
+
+## Browser: the chat record after a partly applied draft turn
+
+Mock provider, a Work whose chat is in Draft mode, three chapters with a paragraph each. Script one
+turn (`./mf thread send <id> go --mock <steps>`): `read` all three, then a `replace` of one
+paragraph per chapter, the first changing two spots in its paragraph ("lamp" to "lantern" and an
+added ", bright"), plus a `create`. In the chat's Changes list:
+
+1. Press ✓ on "lamp → lantern" only.
+2. Discard ", bright", the other two chapters' changes (one by one) and the created page
+   (it asks first).
+3. Reload, expand "Edited 4 documents". It reads "Can't undo" and the applied part says "Applied to
+   the manuscript"; the created page says "Discarded". The text parts discarded one by one still say
+   "Stayed as you edited it" (#1361). `GET /api/threads/<id>/turns/<turn>/live-lineage` carries the
+   same causes.
