@@ -10,6 +10,7 @@ import {
   resourcePlacementForSnapshot,
   resourceVisibleInProject,
 } from "@meridian/resource-replica";
+import type { QueryClient } from "@tanstack/react-query";
 import {
   createContext,
   useContext,
@@ -49,22 +50,22 @@ const LiveDocumentRegistryAccountContext = createContext<AccountFeatureLifetime[
 
 export function AccountFeatureComposition({
   accountId,
-  repairProjectCatalog,
+  queryClient,
   children,
 }: {
   accountId: string;
-  repairProjectCatalog: (projectId: string) => Promise<void>;
+  queryClient: QueryClient;
   children: React.ReactNode;
 }) {
   const connectivityHints = useConnectivityHints();
-  const desired = useRef({ accountId, repairProjectCatalog });
-  desired.current = { accountId, repairProjectCatalog };
+  const desired = useRef({ accountId, queryClient });
+  desired.current = { accountId, queryClient };
   const invalidationHandler = useRef<(error: Error) => void>(() => undefined);
   const [lifetime, setLifetime] = useState(
     () =>
       new AccountFeatureLifetime(
         accountId,
-        repairProjectCatalog,
+        queryClient,
         (error) => invalidationHandler.current(error),
         connectivityHints,
       ),
@@ -88,7 +89,7 @@ export function AccountFeatureComposition({
         setLifetime(
           new AccountFeatureLifetime(
             next.accountId,
-            next.repairProjectCatalog,
+            next.queryClient,
             (error) => invalidationHandler.current(error),
             connectivityHints,
           ),

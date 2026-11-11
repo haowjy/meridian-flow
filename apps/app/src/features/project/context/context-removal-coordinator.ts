@@ -102,6 +102,17 @@ export type ContextRemovalRoutePort = {
 type PresentedPort = Pick<PresentedDocuments, "documents" | "mainDocumentId" | "forget">;
 
 /** The draft-only documents hosts present (`DraftOnlyPresentations`). */
+/**
+ * The cached answers to "what lives at this address". Kept by a query cache that outlives a
+ * removal: an answer from before it would paint the document again.
+ */
+export type AddressAnswersPort = {
+  /** Live no longer has these documents: an answer naming one is now "unavailable". */
+  removed(projectId: string, documentIds: readonly string[]): void;
+  /** Live has a document again: every answer is read afresh. */
+  available(projectId: string): void;
+};
+
 export type DraftOnlyPort = {
   isDraftOnly(projectId: string, documentId: string): boolean;
   holdRemovedLive(
@@ -229,6 +240,7 @@ export class ContextRemovalCoordinator {
   private readonly notices: RemovedPresentationPort | null;
   private readonly drafts: BoundDraftsPort | null;
   private readonly draftOnly: DraftOnlyPort | null;
+  private readonly addresses: AddressAnswersPort | null;
   private readonly appliedAvailability = new Map<string, AppliedAvailabilityCommand>();
   private readonly terminalAvailability = new Map<string, ProjectDocumentAvailabilityCommand>();
   private readonly pendingSessionEffects = new Map<string, PendingSessionAvailabilityEffect>();
@@ -252,6 +264,7 @@ export class ContextRemovalCoordinator {
           notices?: RemovedPresentationPort;
           drafts?: BoundDraftsPort;
           draftOnly?: DraftOnlyPort;
+          addresses?: AddressAnswersPort;
         }
       | null = null,
     explicitDependencies: {
@@ -262,6 +275,7 @@ export class ContextRemovalCoordinator {
       notices?: RemovedPresentationPort;
       drafts?: BoundDraftsPort;
       draftOnly?: DraftOnlyPort;
+      addresses?: AddressAnswersPort;
     } = {},
   ) {
     const dependencies =
@@ -276,6 +290,7 @@ export class ContextRemovalCoordinator {
     this.notices = dependencies.notices ?? null;
     this.drafts = dependencies.drafts ?? null;
     this.draftOnly = dependencies.draftOnly ?? null;
+    this.addresses = dependencies.addresses ?? null;
   }
 
   /**
@@ -668,13 +683,14 @@ export class ContextRemovalCoordinator {
             kind: record.kind,
           });
         }
-        this.presented.forget(
-          projectId,
-          committed.flatMap((command) => {
-            const id = availabilityDocumentId(command);
-            return command.kind === "available" || held.has(id) ? [] : [id];
-          }),
-        );
+        const gone = committed.flatMap((command) => {
+          const id = availabilityDocumentId(command);
+          return command.kind === "available" || held.has(id) ? [] : [id];
+        });
+        this.presented.forget(projectId, gone);
+        if (gone.length > 0) this.addresses?.removed(projectId, gone);
+        if (committed.some((command) => command.kind === "available"))
+          this.addresses?.available(projectId);
         for (const command of committed) {
           const key = `${projectId}/${availabilityDocumentId(command)}`;
           if (command.kind === "terminal-remove") this.terminalAvailability.set(key, command);

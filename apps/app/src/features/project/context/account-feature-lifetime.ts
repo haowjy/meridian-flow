@@ -1,7 +1,10 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
 
+import type { DocumentAddressResult } from "@meridian/contracts/protocol";
+import type { QueryClient } from "@tanstack/react-query";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { browserRecord } from "@/client/storage/browser-record";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
 import type { DocumentSession } from "@/core/editor/document-session";
@@ -50,7 +53,7 @@ export class AccountFeatureLifetime {
 
   constructor(
     readonly accountId: string,
-    repairProjectCatalog: (projectId: string) => Promise<void>,
+    queryClient: QueryClient,
     onInvalidated: (error: Error) => void = () => undefined,
     connectivityHints?: ConnectivityHintsPort,
   ) {
@@ -92,7 +95,8 @@ export class AccountFeatureLifetime {
         reconcileRecentAvailability(this.accountId, commands);
         await this.removal.reconcileDocumentAvailability(commands).localSettlement;
       },
-      repairProjectCatalog,
+      repairProjectCatalog: (projectId) =>
+        queryClient.invalidateQueries({ queryKey: ["projects", projectId, "context-catalog"] }),
     });
     this.notices = new RemovedNoticeStore(this.availability, this.presented);
     this.removal = new ContextRemovalCoordinator(accountId, {
@@ -110,6 +114,22 @@ export class AccountFeatureLifetime {
         },
       },
       draftOnly: this.draftOnly,
+      addresses: {
+        removed: (projectId, documentIds) =>
+          queryClient.setQueriesData<DocumentAddressResult>(
+            { queryKey: projectQueryKeys.documentAddresses(projectId) },
+            (answer) =>
+              answer?.kind !== "unavailable" &&
+              answer &&
+              documentIds.includes(answer.document.documentId)
+                ? { kind: "unavailable" }
+                : answer,
+          ),
+        available: (projectId) =>
+          void queryClient.invalidateQueries({
+            queryKey: projectQueryKeys.documentAddresses(projectId),
+          }),
+      },
     });
     this.registry.observeRemovedRooms((session, room) => this.followRemovedRoom(session, room));
     dropRetiredTabSession(accountId);

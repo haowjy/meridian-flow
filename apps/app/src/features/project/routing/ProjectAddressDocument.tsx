@@ -1,15 +1,12 @@
 /** An authorized address, made canonical; the document host owns live-session binding. */
 import { contextOwner, type DocumentAddressResult } from "@meridian/contracts/protocol";
-import { resourceForDocumentIdentity } from "@meridian/resource-replica";
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import { useAccountResourceProjection } from "../context/account-feature-context";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import type { AddressedDocument } from "../context/route-document-owner";
-import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { canonicalDocumentAddress } from "./document-address-canonical";
 import { addressReviewOwner } from "./document-address-review";
 import { mergeLocalResourceState } from "./local-document-address";
@@ -23,35 +20,6 @@ export type AddressAdmission = {
   href: string;
   issue: ProjectRouteIssue | undefined;
 };
-
-/**
- * The address stays on a removed document, and its lookup may still hold the answer from
- * before the removal. Main must not paint the document again from that answer: it shows the
- * removed state in place. Two things show the answer is stale. The removal fence names
- * the document until a read taken after the removal arrives (a restore invalidates the
- * lookup). Then the replica's terminal record, which outlives the restore
- * until the catalog republishes the document.
- *
- * A draft held over a document deleted live is exempt (`held`): it keeps painting as the draft.
- */
-export function useAddressResultAfterRemoval(
-  projectId: string,
-  result: DocumentAddressResult | undefined,
-  updatedAt: number,
-  held: (documentId: string) => boolean,
-): DocumentAddressResult | undefined {
-  const { removalFence } = useContextRemovalProject(projectId);
-  const { records } = useAccountResourceProjection(projectId);
-  const fencedAt = useRef<number | null>(null);
-  const documentId = result && result.kind !== "unavailable" ? result.document.documentId : null;
-  const fenced = documentId !== null && removalFence?.removedDocumentIds.includes(documentId);
-  if (!fenced) fencedAt.current = null;
-  else fencedAt.current ??= Date.now();
-  if (documentId === null || held(documentId)) return result;
-  const terminal =
-    resourceForDocumentIdentity(records, documentId)?.resource.lifecycle.kind === "terminal";
-  return terminal || (fenced && updatedAt <= (fencedAt.current ?? 0)) ? undefined : result;
-}
 
 /**
  * The document an answered address names: built from the address's draft row when live lacks it
