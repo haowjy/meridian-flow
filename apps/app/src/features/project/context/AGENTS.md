@@ -34,7 +34,7 @@ Uploads stay chat resources, not documents main opens.
   (`client/project-shell/main-tabs.ts`) are the one record of open documents;
   `PresentedDocuments` only records what hosts mount and show. A new way for the writer or a
   removal to end a document (beyond close, Discard, vanish and the availability batch) must go
-  through the coordinator's `forget`, which also closes its tab, or the desktop keeps it as a
+  through the coordinator's `forget` (or `writerClose`), which also close its tab, or the desktop keeps it as a
   tab and brings it back in the side.
 - The writer's own delete or Discard of a document begins with the removal coordinator's
   `beginOwnRemoval`: it silences the removed notice and sends main back to the document

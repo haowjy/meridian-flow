@@ -3,6 +3,7 @@
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 import { readDocumentView } from "@/client/project-shell/document-views";
+import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { browserRecord } from "@/client/storage/browser-record";
@@ -114,6 +115,9 @@ export class AccountFeatureLifetime {
         },
       },
       draftOnly: this.draftOnly,
+      tabs: {
+        close: (projectId, documentIds) => dropMainTabDocuments(accountId, projectId, documentIds),
+      },
       addresses: {
         removed: (projectId, documentIds) => {
           const queryKey = projectQueryKeys.documentAddresses(projectId);

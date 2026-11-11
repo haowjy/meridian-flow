@@ -6,6 +6,7 @@
 import { t } from "@lingui/core/macro";
 import { History } from "lucide-react";
 import type { ReactNode } from "react";
+import type { OpenDocument } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ export function MainHeader({
   projectId,
   open,
   mainKey,
+  mainDocument,
   landing = false,
   current,
   onShowRecents,
@@ -32,6 +34,8 @@ export function MainHeader({
   open: OpenContextRoute;
   /** The tab main shows; null while main holds no tab. */
   mainKey: string | null;
+  /** The document main shows, if any. */
+  mainDocument?: OpenDocument;
   /** Main is the Recently opened landing: the door is the current place. */
   landing?: boolean;
   /** Main's item when it holds no tab (a chat, an address that names nothing). */
@@ -59,6 +63,7 @@ export function MainHeader({
             projectId={projectId}
             open={open}
             mainKey={mainKey}
+            mainDocument={mainDocument}
             current={current}
             onShowRecents={onShowRecents}
             onNewDocument={onNewDocument}

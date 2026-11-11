@@ -150,17 +150,13 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         editorWorkId={props.editorWorkId}
         focusReview={focusReview}
         onFocusReview={setFocusReview}
-        onCloseMain={
-          place === "main"
-            ? () => tabCommands.close({ kind: "document", document: tab })
-            : undefined
-        }
         header={
           place === "main" ? (
             <MainHeader
               projectId={projectId}
               open={open}
               mainKey={mainKey}
+              mainDocument={tab}
               onShowRecents={onShowRecents}
               onNewDocument={onNewDocument}
               sidebarToggle={sidebarToggle}

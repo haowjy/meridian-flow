@@ -1,10 +1,12 @@
 /**
  * MainTabStrip — main's open items as folder tabs in main's band (`client/project-shell/main-tabs`).
- * The tab main shows is the active chip, joined to the page below it. Main's item when it holds no
- * tab (a chat, or an address that names nothing) is drawn after the tabs as the active chip.
+ * The tab main shows is the active chip, joined to the page below it. Main's item when the record
+ * holds no tab for it (a chat, an address that names nothing, a document back within one history
+ * entry) is drawn after the tabs as the active chip, so what main shows never depends on the record.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import { useRouter } from "@tanstack/react-router";
 import { FileQuestion, Plus, X } from "lucide-react";
 import {
@@ -13,6 +15,7 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   type WheelEvent,
 } from "react";
@@ -80,6 +83,7 @@ export function MainTabStrip({
   projectId,
   open,
   mainKey,
+  mainDocument,
   current,
   onShowRecents,
   onNewDocument,
@@ -87,18 +91,25 @@ export function MainTabStrip({
   projectId: string;
   open: OpenContextRoute;
   mainKey: string | null;
-  /** Main's item when it holds no tab, drawn as the active chip after the tabs. */
+  /** The document main shows, drawn as the active chip after the tabs when the record lacks it. */
+  mainDocument?: OpenDocument;
+  /** Main's item when it is not a document, drawn as the active chip after the tabs. */
   current?: ReactNode;
   onShowRecents: (options: { replace: boolean }) => void;
   /** Absent while no Work is ready to hold an Untitled document. */
   onNewDocument?: () => void;
 }) {
   const accountId = useAccountId();
-  const { tabs } = useMainTabs(accountId, projectId);
+  const tabs = useLiveTabs(projectId, useMainTabs(accountId, projectId).tabs);
   const commands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
   const stripRef = useRef<HTMLDivElement>(null);
+  const unrecorded =
+    mainDocument && mainKey && !tabs.some((tab) => mainTabKey(tab) === mainKey)
+      ? mainDocument
+      : undefined;
   useActiveTabVisibility(stripRef, mainKey ?? (current ? "current" : null));
-  const lastActive = current ? true : tabs.at(-1) && mainTabKey(tabs.at(-1) as MainTab) === mainKey;
+  const lastActive =
+    current || unrecorded ? true : tabs.at(-1) && mainTabKey(tabs.at(-1) as MainTab) === mainKey;
   return (
     <div
       role="tablist"
@@ -128,6 +139,17 @@ export function MainTabStrip({
             />
           );
         })}
+        {unrecorded ? (
+          <DocumentTabChip
+            key={mainKey}
+            projectId={projectId}
+            document={unrecorded}
+            active
+            divider={false}
+            onSelect={(document) => commands.select(document)}
+            onClose={() => commands.close({ kind: "document", document: unrecorded })}
+          />
+        ) : null}
         {current}
       </div>
       <Tooltip>
@@ -154,6 +176,39 @@ export function MainTabStrip({
         </TooltipContent>
       </Tooltip>
     </div>
+  );
+}
+
+const PROJECT_SCOPED_SCHEMES: ReadonlySet<string> = new Set(PROJECT_SCOPED_CONTEXT_URI_SCHEMES);
+
+/**
+ * The tabs whose documents are not deleted. A record read from sessionStorage can name a document
+ * deleted while the window was closed: once the replica holds the project's catalog, a Project's
+ * document it neither places nor knows as removed is gone. Drawing skips such a tab and leaves the
+ * record alone, so a document the replica later shows live again has its tab back.
+ */
+function useLiveTabs(projectId: string, tabs: readonly MainTab[]): readonly MainTab[] {
+  const { records, placement } = useAccountResourceProjection(projectId);
+  const isDraftOnly = useIsDraftOnly(projectId);
+  return useMemo(
+    () =>
+      tabs.filter(({ document }) => {
+        const { kind } = projectResourceDocument(
+          document,
+          records,
+          placement,
+          isDraftOnly(document.documentId),
+        );
+        if (kind === "terminal" || kind === "removed") return false;
+        return (
+          kind !== "none" ||
+          records.length === 0 ||
+          document.kind === "new" ||
+          !PROJECT_SCOPED_SCHEMES.has(document.scheme) ||
+          isDraftOnly(document.documentId)
+        );
+      }),
+    [tabs, records, placement, isDraftOnly],
   );
 }
 

@@ -25,18 +25,23 @@ cost is that DOM (tab) order among documents follows their ids, not main-then-si
 Main holds tabs. `client/project-shell/main-tabs.ts` is the one record of what is open in main: an
 ordered list of documents per project in this browser tab's sessionStorage, so a reload keeps them
 and two windows keep their own. The address still names main's item. Arriving at an address
-(`ProjectView`, once per history entry key) is the one write that opens or selects a tab, a new one
-to the right of the tab main showed last; later descriptor changes only refresh a tab that is still
-open, so a removal that closed it is not undone by a re-render. Selecting a tab opens its document
-on its view's draft or Live (`useOpenInMain`); closing main's tab replaces the entry with its right
-neighbour, else its left, else Recently opened. The coordinator's `forget` (a close, a Discard, a
-removal, a vanished document) also closes the tab. `MainTabStrip` draws the tabs in main's band
-with the inset sheet's folder-tab look; main's item when it holds no tab (a chat, an address that
-names nothing) is the active chip after them, so a chat in main keeps the documents one click
-away and a link to a deleted chapter keeps its URL and shows the removed page in a tab of its own.
-Only documents take a tab: a tab is an item with a kind, and `TAB_KINDS` is the switch for chats.
-A tab's Live or Draft view is its document's view, so it is per tab already. The phone draws no
-strip; it records arrivals the same way.
+(`ProjectView`) opens or selects its tab, a new one to the right of the tab main showed last; the
+address no longer resolving ends the arrival, so a document that comes back at it (restored from
+another window) arrives afresh, and a document main shows always has its tab in the record. Later
+descriptor changes only refresh a tab that is still open. Selecting a tab opens its document on its
+view's draft or Live (`useOpenInMain`); closing main's tab replaces the entry with its right
+neighbour, else its left, else Recently opened. Back and Forward reopen a tab the writer closed, by
+design: the address leads, the tabs follow it. A close, a Discard, a removal or a vanished document
+closes its tab through the coordinator's `tabs` port (`forget`; a draft-only page's own Close
+closes it once main's address has left, so main's page is not drawn without it). `MainTabStrip`
+draws the tabs in main's band with the inset sheet's folder-tab look. What main shows never depends
+on the record: main's document with no tab in it, a chat, or an address that names nothing is the
+active chip after the tabs, so a link to a deleted chapter keeps its URL and shows the removed page
+in a tab of its own. Stored tabs of documents deleted while the window was closed are not drawn
+once the replica holds the catalog (`useLiveTabs`; the record is left alone, so a document that
+comes back has its tab). Only documents take a tab: a tab is an item with a kind, and `TAB_KINDS`
+is the switch for chats. A tab's Live or Draft view is its document's view, so it is per tab
+already. The phone draws no strip; it records arrivals the same way.
 
 Main shows what the address names, resolved by `resolveMainDocument` / `useMainDocument`
 (`views.ts`), the resolver the phone uses too; `MainViewProvider` / `useMainItem` carry

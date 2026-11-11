@@ -5,7 +5,6 @@ import type {
   ProjectContextTreeScheme,
   WorkingSetRoute,
 } from "@meridian/contracts/protocol";
-import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import type { OpenDocument, ServerOpenDocument } from "@/client/stores";
 import {
   type ReconcileContextRoutesInput,
@@ -101,6 +100,11 @@ export type ContextRemovalRoutePort = {
  * no view picks it again and its host unmounts.
  */
 type PresentedPort = Pick<PresentedDocuments, "documents" | "mainDocumentId" | "forget">;
+
+/** The tabs main holds, kept outside the coordinator: a forgotten document's tab closes with it. */
+export type ClosedTabsPort = {
+  close(projectId: string, documentIds: readonly string[]): void;
+};
 
 /**
  * The cached answers to "what lives at this address". Kept by a query cache that outlives a
@@ -242,6 +246,7 @@ export class ContextRemovalCoordinator {
   private readonly drafts: BoundDraftsPort | null;
   private readonly draftOnly: DraftOnlyPort | null;
   private readonly addresses: AddressAnswersPort | null;
+  private readonly tabs: ClosedTabsPort | null;
   private readonly appliedAvailability = new Map<string, AppliedAvailabilityCommand>();
   private readonly terminalAvailability = new Map<string, ProjectDocumentAvailabilityCommand>();
   private readonly pendingSessionEffects = new Map<string, PendingSessionAvailabilityEffect>();
@@ -266,6 +271,7 @@ export class ContextRemovalCoordinator {
           drafts?: BoundDraftsPort;
           draftOnly?: DraftOnlyPort;
           addresses?: AddressAnswersPort;
+          tabs?: ClosedTabsPort;
         }
       | null = null,
     explicitDependencies: {
@@ -277,6 +283,7 @@ export class ContextRemovalCoordinator {
       drafts?: BoundDraftsPort;
       draftOnly?: DraftOnlyPort;
       addresses?: AddressAnswersPort;
+      tabs?: ClosedTabsPort;
     } = {},
   ) {
     const dependencies =
@@ -292,12 +299,13 @@ export class ContextRemovalCoordinator {
     this.drafts = dependencies.drafts ?? null;
     this.draftOnly = dependencies.draftOnly ?? null;
     this.addresses = dependencies.addresses ?? null;
+    this.tabs = dependencies.tabs ?? null;
   }
 
   /** These documents are closed, Discarded or removed: no view picks them again and their tabs close. */
   private forget(projectId: string, documentIds: readonly string[]): void {
     this.presented.forget(projectId, documentIds);
-    if (this.accountId) dropMainTabDocuments(this.accountId, projectId, documentIds);
+    this.tabs?.close(projectId, documentIds);
   }
 
   /**
@@ -876,10 +884,13 @@ export class ContextRemovalCoordinator {
     if (this.unavailable()) return { kind: "noop" };
     const state = this.project(projectId);
     const documentId = addressed.documentId;
-    this.forget(projectId, [documentId]);
+    this.presented.forget(projectId, [documentId]);
     const presented = this.presented.documents(projectId);
     const tab = presented.find((candidate) => candidate.documentId === documentId);
-    if (!tab) return { kind: "noop" };
+    if (!tab) {
+      this.tabs?.close(projectId, [documentId]);
+      return { kind: "noop" };
+    }
     const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
     const transition = reduceRepresentedRemoval(state.selection, [tab], {
       cause: "writer-close",
@@ -931,6 +942,8 @@ export class ContextRemovalCoordinator {
     state.selection = transition.selection;
     const outcome = this.executePlanning(projectId, transition.planning);
     this.publish(state);
+    // After main's address has left the document, so its tab is not drawn again meanwhile.
+    this.tabs?.close(projectId, [documentId]);
     return outcome;
   }
 
