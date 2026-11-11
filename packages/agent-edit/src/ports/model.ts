@@ -16,7 +16,11 @@ export interface ContentLineage {
   length: number;
 }
 
-/** Replace units `[from, to)` of one textblock with inline `content`, applied as given. */
+/**
+ * Replace units `[from, to)` of one textblock with inline `content`, applied as given.
+ * `content` may hold inline atoms (a line break, an image) only where it lands between
+ * runs of text, never inside one.
+ */
 export interface TextSplice {
   from: number;
   to: number;
@@ -34,11 +38,17 @@ export interface FormatRange {
 /**
  * The smallest changes to one top-level block, each addressed to a node the model saw.
  * `path` is child indexes from that block down to the node, in the model's view; a unit
- * is one inline position of a textblock (a UTF-16 code unit of text).
+ * is one inline position of a textblock (a UTF-16 code unit of text, or an inline atom).
  */
 export type EditOp =
   | { kind: "text"; path: readonly number[]; splices: TextSplice[]; formats: FormatRange[] }
-  | { kind: "attrs"; path: readonly number[]; attrs: Record<string, unknown> };
+  | {
+      kind: "attrs";
+      path: readonly number[];
+      attrs: Record<string, unknown>;
+      /** Set for an inline atom: its unit in the textblock at `path`. */
+      unit?: number;
+    };
 
 export type EditOpsResult = { ok: true } | { ok: false; code: "invalid_write"; message: string };
 

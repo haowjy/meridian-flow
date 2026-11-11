@@ -336,10 +336,10 @@ function expectOk(result: ResolveWriteResult): ResolvedEdit[] {
   return result.edits;
 }
 
-it("lowers changed marks as operations and falls back to one block segment for hard breaks", () => {
+it("lowers changed marks and text around hard breaks as operations in one segment", () => {
   for (const [before, after, kind] of [
     ["She carries a sword.", "She carries a **sword**.", "ops"],
-    ["She carries a sword.  \nShe leaves.", "I carry a sword.  \nI leave.", "block"],
+    ["She carries a sword.  \nShe leaves.", "I carry a sword.  \nI leave.", "ops"],
   ]) {
     const doc = createDoc(before);
     const edits = expectOk(resolve(doc, { command: "replace", content: after, in: 1 }));

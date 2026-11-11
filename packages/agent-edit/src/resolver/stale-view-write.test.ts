@@ -8,8 +8,8 @@
  * writer's, since Yjs orders concurrent inserts at one place by client id.
  *
  * Pins implementation decisions: a model change to text the writer has since deleted is
- * skipped; a block that is not flat text is lowered as without a room (`write-architecture.md`). The quote and list
- * rows give `main`'s result.
+ * skipped, in a quote, a list item, a table cell, a code block and a line of verse as in a
+ * paragraph (`write-architecture.md`).
  */
 
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -157,7 +157,7 @@ it.each([
     "He **sighed** loudly.",
   ],
   [
-    "a word changed in a quote before text the writer typed over, as on main",
+    "a word changed in a quote before text the writer typed over",
     `> ${SIGHED}`,
     { command: "replace", find: "sighed", content: "wept" },
     retype(", and then he wept", " loudly"),
@@ -165,12 +165,75 @@ it.each([
     "> He wept loudly.",
   ],
   [
-    "a word changed in a list item before text the writer typed over, as on main",
+    "a word changed in a list item before text the writer typed over",
     `- ${SIGHED}`,
     { command: "replace", find: "sighed", content: "wept" },
     retype(", and then he wept", " loudly"),
     "before",
     "- He wept loudly.",
+  ],
+  [
+    "a find insert in a quote beside a line the writer deleted",
+    `> ${TEXT}`,
+    findInsert,
+    deleteLine,
+    "before",
+    `> ${WHOLE}`,
+  ],
+  [
+    "nothing of a change to text the writer deleted from a list item",
+    `- ${TEXT}`,
+    { command: "replace", find: "DRAFT-B line.", content: "DRAFT-B3 line." },
+    deleteLine,
+    "before",
+    "- A disciple. SIDETEXT",
+  ],
+  [
+    "a line of verse the writer deleted stays deleted",
+    "Line one\\\nLine two\\\nLine three",
+    { command: "replace", find: "three", content: "3" },
+    deleteText("Line two"),
+    "before",
+    "Line one\\\n\\\nLine 3",
+  ],
+  [
+    "a code line the writer deleted stays deleted",
+    "```\nlet a = 1;\nlet b = 2;\nlet c = 3;\n```",
+    rewrite("```\nlet a = 10;\nlet b = 2;\nlet c = 30;\n```"),
+    deleteText("\nlet b = 2;"),
+    "before",
+    "```\nlet a = 10;\nlet c = 30;\n```",
+  ],
+  [
+    "a table cell the writer deleted text from, another cell changed",
+    "| a | b |\n| --- | --- |\n| one two | three four |",
+    { command: "replace", find: "one", content: "1" },
+    deleteText(" four"),
+    "before",
+    [
+      "<table>",
+      "  <thead>",
+      "    <tr>",
+      "      <th>",
+      "        <p>a</p>",
+      "      </th>",
+      "      <th>",
+      "        <p>b</p>",
+      "      </th>",
+      "    </tr>",
+      "  </thead>",
+      "  <tbody>",
+      "    <tr>",
+      "      <td>",
+      "        <p>1 two</p>",
+      "      </td>",
+      "      <td>",
+      "        <p>three</p>",
+      "      </td>",
+      "    </tr>",
+      "  </tbody>",
+      "</table>",
+    ].join("\n"),
   ],
 ] as const)("lands %s", (_, markdown, write, writer, deleted, expected) => {
   for (const modelClient of [2, 4]) {

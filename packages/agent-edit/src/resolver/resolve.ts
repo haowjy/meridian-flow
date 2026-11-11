@@ -19,7 +19,7 @@ import {
   type TextWindow,
 } from "./find.js";
 import { type HashLocateContext, hashLocateContext, locateBlockByHash } from "./hash-locator.js";
-import { isFlatTextblock, lowerBlock } from "./lower-block.js";
+import { lowerBlock } from "./lower-block.js";
 import {
   type BlockScope,
   resolveScope,
@@ -66,7 +66,7 @@ export interface ResolveWriteContext {
   /** Exact revision whose live block handles and source ranges the resolver inspects. */
   inputRevision?: string;
   /**
-   * The current room when `doc` is the model's view of it. A flat text block rewritten in
+   * The current room when `doc` is the model's view of it. A block rewritten in
    * place is then decided against what the room deleted since the view (`lower-block.ts`).
    */
   current?: DocHandle;
@@ -611,7 +611,7 @@ function planSplicedGroup(
  * Rewrite a scope as assigned `newBlocks`: blocks equal to their replacement are
  * left alone, a changed block keeps its identity and is changed in place, and
  * only blocks with no counterpart are inserted or removed. Atoms (pictures,
- * hard breaks) are matched as nodes, never through flat text offsets. With
+ * hard breaks) are units of their textblock, matched as nodes, never as text. With
  * `windows`, a changed block is rewritten only inside them; otherwise it is
  * word-diffed whole.
  */
@@ -723,17 +723,9 @@ function replaceScope(
   return { edits, skipped, ...(keptBlocks ? { keptBlocks: true } : {}) };
 }
 
-/**
- * A block keeps its element as the same node type. A heading's level changes in place only
- * where the lowering sets it as an attribute; any other heading is replaced to change level.
- */
+/** A block keeps its element only as the same node type. */
 function canRewriteInPlace(old: Block, next: Block): boolean {
-  if (old.type !== next.type) return false;
-  return (
-    old.type.name !== "heading" ||
-    old.attrs.level === next.attrs.level ||
-    (isFlatTextblock(old) && isFlatTextblock(next))
-  );
+  return old.type === next.type;
 }
 
 function serializeReplacementBlocks(

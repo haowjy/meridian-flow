@@ -22,29 +22,40 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   plus insert ([#111](https://github.com/haowjy/meridian-flow/issues/111)).
 - A find write rewrites only its matches. It splices the content into the serialized
   block group, reparses it, and replaces each match's text window whole at its
-  position (`cutTextWindows`); a block that isn't a single run of text is block-diffed
-  instead, and a find whose windows can't be mapped is word-diffed.
+  position (`cutTextWindows`); a find whose windows can't be mapped is word-diffed, and a
+  block the lowering does not keep (below) is block-diffed instead.
 - A write is planned on the model's view, so a block it rewrites in place may have
-  lost text in the room since (the writer deleted it). A flat text block
-  (`isFlatTextblock`: a paragraph or heading that is one run of text) is lowered by
-  `lowerBlock` (`resolver/lower-block.ts`) into operations (`EditOp`): text splices with
-  format ranges, and attribute sets (a heading's level). They are decided against those
-  deletions (`roomTextblock`, `roomNodeRemoved` on the model port); every other block
-  lowers as a whole-block rewrite as if there were no room. A unit is one UTF-16 code
-  unit. The model's changes come from a find's window when it holds no deleted unit,
-  otherwise from a token diff in which a Chinese or Japanese character is one token, a
-  run of other letters is one (so a spaceless Thai phrase is one), and formatting is not
-  part of a token. The rule: an operation whose target is gone is not made and is
-  counted (`skipped` in the result). A replace lands only if every unit it replaces
-  survives; an insert lands unless it sits in deleted text; a delete deletes whatever is
-  left; a format range lands if one of its units survives; an attribute set lands if the
-  block does; no deleted unit is put back. An attribute the codec does not write is never
-  set: the model's block is compared with what the codec shows of the block it saw.
-- What that guarantees, for a flat text block, and no more:
+  lost text in the room since (the writer deleted it). `lowerBlock`
+  (`resolver/lower-block.ts`) lowers the rewrite of a block into operations (`EditOp`):
+  per textblock at any depth (a paragraph, heading, code block, or a paragraph in a
+  quote, list item or table cell), text splices with format ranges; per node at any depth,
+  attribute sets (a heading's level, a task item's `checked`, a code block's language);
+  and for an inline atom the model kept (an image, a line break), attribute sets
+  addressed by its unit. They are decided against the room's deletions (`roomTextblock`,
+  `roomNodeRemoved` on the model port), the same way at every depth. A unit is one UTF-16
+  code unit of text, or one inline atom. The model's changes come from a find's window
+  when it holds no deleted unit, otherwise from a token diff in which a Chinese or
+  Japanese character is one token, a run of other letters is one (so a spaceless Thai
+  phrase is one), an atom is one (compared by type; a changed attribute is an attribute
+  set), and formatting is not part of a token. The rule: an operation whose target is
+  gone is not made and is counted (`skipped` in the result); a changed node the room
+  removed, or one under a removed node, counts once. A replace lands only if every unit it
+  replaces survives; an insert lands unless it sits in deleted text; a delete deletes
+  whatever is left; a format range lands if one of its units survives; an attribute set
+  lands if the node does; no deleted unit is put back. An attribute the codec does not
+  write (`uploadToken`) is never set: the model's node is compared with what the codec
+  shows of the node it saw (a round trip of the top-level block), so a model edit to a
+  paragraph leaves an image whose upload is in flight alone.
+- Shapes `lowerBlock` does not keep return null and the block is rewritten whole, as if
+  there were no room: a node added, removed or retyped inside the block (a list item, a
+  table row, a quote paragraph; a paragraph made a heading), and an inline atom put into
+  the middle of a run of text (a verse line broken in two). An atom added or removed at
+  the edge of a run of text is an operation.
+- What that guarantees, for a block it keeps, and no more:
   - The write's update neither deletes nor re-inserts any unit the room deleted.
   - The model's new text lands only in place of units that all survive, after a find
     match whose last unit survives, or as a diff-placed insert with a surviving unit, or
-    the block's end, on at least one side.
+    the textblock's end, on at least one side.
   - A change not made is counted in the result and never marked.
   - Words the writer deleted can still appear as the model's text: the model's new text
     may contain them, and when the model moved text past a deletion, the half of the
@@ -54,11 +65,8 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   as exact splices. Never drop the deletions from the view and re-diff: the lowering's
   character diff would then place the model's text at the dropped run's edge, where Yjs
   orders it against what the writer typed there by client id (`He  loudlygroaned.`).
-  That is why the rule stops at flat text until the operations reach nested blocks
-  ([#1363](https://github.com/haowjy/meridian-flow/issues/1363)).
 - What the rule does not cover:
-  - Quotes, lists, verse, paragraphs with a hard break or an image, code blocks and
-    tables lower exactly as without a room. A model change there that meets text the
+  - A block the lowering does not keep (above): a model change there that meets text the
     writer deleted since its read can bring that text back, and an insert beside a
     deleted line can land split, by client id
     ([TODO](TODO.md#stale-view-writes-into-structural-blocks)).
