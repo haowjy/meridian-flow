@@ -29,12 +29,7 @@ import {
   readAccountRecents,
   subscribeAccountRecents,
 } from "@/client/recents";
-import {
-  getContextTabs,
-  isDraftOnly,
-  useContextTabsStore,
-  useSelectedDocumentId,
-} from "@/client/stores";
+import { useContextTabsStore, useSelectedDocumentId } from "@/client/stores";
 import type { ContextTab } from "@/client/stores/context-tabs-store/context-tabs-store";
 import {
   readRecentRoutes,
@@ -59,6 +54,7 @@ import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import {
   useAccountId,
   useContextRemovalCoordinator,
+  useOptionalDraftOnlyPresentations,
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
@@ -70,6 +66,7 @@ import { ProjectContextRemovalController } from "./context/ProjectContextRemoval
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
 import { useRemovedNoticeLifetime } from "./context/RemovedDocumentNotice";
 import { recentAddressFromTab } from "./context/recent-opening";
+import type { AddressedDocument } from "./context/route-document-owner";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { DragHint } from "./context/tree-drop/drag-hint";
 import { WindowDropGuard } from "./context/tree-drop/WindowDropGuard";
@@ -105,6 +102,7 @@ import {
   type ProjectRouteIssue,
   type ProjectRouteMask,
 } from "./routing/ProjectRouteBoundary";
+import type { LocalDocument } from "./routing/project-local-selection";
 import type { ScreenKey } from "./routing/project-route";
 import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
@@ -144,6 +142,8 @@ export type ProjectViewProps = {
   /** What the Chat screen or the dock currently shows for chat. */
   chatDisplay: ChatDisplay;
   activeLocalDocumentId?: string;
+  /** The untitled document the history entry names, as the replica holds it. */
+  activeLocalDocument?: LocalDocument;
   entryHydration: WorkingSetHydrationPlan;
   routeLocationKey?: string;
   routeIssues?: {
@@ -177,6 +177,11 @@ export type ProjectViewProps = {
   reviewChangeId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
+  /**
+   * The document the answered address names: from its draft row when live lacks it (a page a
+   * draft created), else the server's answer.
+   */
+  addressedDocument?: AddressedDocument;
   /** The route's verdict on an explicit review selector; the owner acts only when admitted. */
   reviewAddressAdmission?: ReviewAddressAdmission;
   /**
@@ -194,6 +199,7 @@ export function ProjectView(props: ProjectViewProps) {
   const accountId = useAccountId();
   const availability = useProjectContextAvailabilityCoordinator();
   const removal = useContextRemovalCoordinator();
+  const draftOnlyDocuments = useOptionalDraftOnlyPresentations();
   const repairColdWork = useCallback(
     (workId: string) => {
       void availability.coldScopeHint(props.projectId, workId);
@@ -245,7 +251,10 @@ export function ProjectView(props: ProjectViewProps) {
         accountId,
         props.projectId,
         tabs.flatMap((tab) => {
-          const address = recentAddressFromTab(tab);
+          const address = recentAddressFromTab(
+            tab,
+            draftOnlyDocuments?.isDraftOnly(props.projectId, tab.documentId) ?? false,
+          );
           return address ? [{ documentId: tab.documentId, name: tab.name, address }] : [];
         }),
       );
@@ -267,15 +276,17 @@ export function ProjectView(props: ProjectViewProps) {
     const stopTabs = useContextTabsStore.subscribe(reportWatches);
     const stopSelection = removal.subscribe(props.projectId, reportWatches);
     const stopRecents = subscribeAccountRecents(reportWatches);
+    const stopDraftOnly = draftOnlyDocuments?.subscribe(reportWatches);
     const stopWorksObservation = observeWorksAvailability(queryClient, props.projectId);
     return () => {
       stopTabs();
       stopSelection();
       stopRecents();
+      stopDraftOnly?.();
       stopWorksObservation();
       lease.release();
     };
-  }, [accountId, availability, props.projectId, queryClient, removal]);
+  }, [accountId, availability, draftOnlyDocuments, props.projectId, queryClient, removal]);
   // A retry answers the entry plan it retried; new route data brings a new one.
   const [retriedHydration, setRetriedHydration] = useState<{
     entry: WorkingSetHydrationPlan;
@@ -415,7 +426,11 @@ export type ReviewScopedProjectProps = ResolvedProjectViewProps &
 
 type MobileEditorPresentation = Pick<
   ResolvedProjectViewProps,
-  "activeContextScheme" | "activeContextPath" | "activeContextChat" | "activeLocalDocumentId"
+  | "activeContextScheme"
+  | "activeContextPath"
+  | "activeContextChat"
+  | "activeLocalDocumentId"
+  | "activeLocalDocument"
 > & { mobileDocumentRoute: MobileDocumentRoute };
 
 function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentityProps) {
@@ -450,8 +465,8 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     scheme: props.activeContextScheme,
     path: props.activeContextPath,
     workId: props.activeContextWork,
-    scope: props.editorScope.workId,
     rootThreadId: props.activeContextChat,
+    addressed: props.addressedDocument,
     addressState: addressStateOf(props.routeIssues?.editor),
   });
   const priorMobile = useRef<{
@@ -486,6 +501,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
           activeContextPath: props.activeContextPath,
           activeContextChat: props.activeContextChat,
           activeLocalDocumentId: props.activeLocalDocumentId,
+          activeLocalDocument: props.activeLocalDocument,
           mobileDocumentRoute: requestedMobileDocumentRoute,
         },
       };
@@ -522,20 +538,21 @@ function HydratedReviewControllers({
     threadId: props.chatThreadId,
   });
   const accountId = useAccountId();
-  // A Work pick returns every document showing a draft to Live. A draft-created page has no
-  // Live version: it keeps its draft.
+  const draftOnly = useOptionalDraftOnlyPresentations();
+  // A Work pick returns every document showing a draft to Live. A draft-only page has no Live
+  // version: it keeps its draft.
   const scopeWorkId = props.editorWorkId;
   const priorScope = useRef(scopeWorkId);
   useEffect(() => {
     if (priorScope.current === scopeWorkId) return;
-    if (priorScope.current !== null) {
-      const tabs = getContextTabs(props.projectId).tabs;
-      returnDraftsToLive(accountId, props.projectId, (documentId) =>
-        tabs.some((tab) => tab.documentId === documentId && isDraftOnly(tab)),
+    if (priorScope.current !== null)
+      returnDraftsToLive(
+        accountId,
+        props.projectId,
+        (documentId) => draftOnly?.isDraftOnly(props.projectId, documentId) ?? false,
       );
-    }
     priorScope.current = scopeWorkId;
-  }, [accountId, props.projectId, scopeWorkId]);
+  }, [accountId, draftOnly, props.projectId, scopeWorkId]);
   const main = props.activeScreen === "context" ? props.reviewAddressDocumentId : undefined;
   useReviewAddressSync({
     projectId: props.projectId,

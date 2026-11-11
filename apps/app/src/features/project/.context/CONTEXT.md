@@ -61,11 +61,11 @@ another document is the path's occupant, so the route waits. The hold asks `reso
 `available` goes to that location; anything else, a rejected lookup included, drops the binding
 (`unbindRoute`, only while the selection is still bound to that document at this route) so the
 address answer decides. The lookup takes a plain navigation ticket, never the writer's intent. A
-failed catalog during a hold shows the error with Retry. A draft-only tab is not found by its
+failed catalog during a hold shows the error with Retry. A draft-only document is not found by its
 cached path on the phone either (`useMobileRouteBinding`): its review binds on arrival, and a
-plain URL there waits for the address answer. The phone resolves a review's document by identity
-from the Editor's tabs when the destination area's catalog lacks it (a draft that moves it to
-another area).
+plain URL there waits for the address answer. The phone never searches the Editor's tabs: it
+resolves a document the destination area's catalog lacks (a draft that creates it, or moves it to
+another area) from the address's answer (`addressedDocument`), as the desktop admission does.
 
 An empty (No Work) Editor selection lives in href-scoped history state, so Back/Forward and reload
 keep it.

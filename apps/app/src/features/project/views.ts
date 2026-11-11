@@ -8,12 +8,12 @@
  * pin set and its item is listed              → that draft
  * pin set and the list lacks its item         → pending, until a fresh read also lacks it and
  *                                               the pin goes (`verifyPin`); then continue
- * a draft-created document                    → its owner's draft
  * otherwise                                   → Live
  * ```
  *
  * The scope never chooses a draft: a document opens on Live, and `scopeDraft` only lets the chip
- * say the picked Work has one.
+ * say the picked Work has one. A draft-created document is always pinned to its draft: every way
+ * of opening one names it, so it never reaches Live.
  */
 import { draftOwnerKey, type ThreadDraftListItem } from "@meridian/contracts/branches";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,7 +27,7 @@ import {
 } from "@/client/project-shell/document-views";
 import { unwrapListQuery } from "@/client/query/list-query";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
-import { type ContextTab, isDraftOnly, reviewEntryOf, reviewOwnerOfTab } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import { useAccountId } from "./context/account-feature-context";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
 
@@ -47,7 +47,8 @@ export type DocumentPaint = {
 type Rows = { status: "loading" | "ready" | "failed"; rows: readonly ThreadDraftListItem[] };
 const NO_ROWS: readonly ThreadDraftListItem[] = [];
 
-function useOwnerRows(projectId: string, ownerKey: string | null): Rows {
+/** One owner's draft rows; a null owner has none. */
+export function useOwnerDraftRows(projectId: string, ownerKey: string | null): Rows {
   const list = unwrapListQuery(
     useQuery({
       ...ownerDraftsQueryOptions(projectId, ownerKey ?? ""),
@@ -74,9 +75,9 @@ export function useDocumentPaint(projectId: string, document: ContextTab | null)
   const view = useDocumentView(accountId, projectId, documentId);
   const { activeWorkId } = useContextRemovalProject(projectId);
   const scopeOwnerKey = activeWorkId ? draftOwnerKey({ kind: "work", workId: activeWorkId }) : null;
-  const scopeRows = useOwnerRows(projectId, scopeOwnerKey);
+  const scopeRows = useOwnerDraftRows(projectId, scopeOwnerKey);
   const pin = view.pin;
-  const pinRows = useOwnerRows(
+  const pinRows = useOwnerDraftRows(
     projectId,
     pin && pin.ownerKey !== scopeOwnerKey ? pin.ownerKey : null,
   );
@@ -112,14 +113,6 @@ export function useDocumentPaint(projectId: string, document: ContextTab | null)
         outOfScope: false,
       };
     }
-    if (document && isDraftOnly(document)) {
-      const ownerKey =
-        scopeOwnerKey && reviewEntryOf(document, scopeOwnerKey)
-          ? scopeOwnerKey
-          : reviewOwnerOfTab(document, activeWorkId);
-      const entry = ownerKey ? reviewEntryOf(document, ownerKey) : undefined;
-      if (ownerKey && entry) return painted({ ownerKey, itemKey: entry.itemKey });
-    }
     return { ...base, showing: "live", draft: null, outOfScope: false };
-  }, [scopeOwnerKey, scopeRow, view, pin, pinList.status, pinListed, document, activeWorkId]);
+  }, [scopeOwnerKey, scopeRow, view, pin, pinList.status, pinListed]);
 }

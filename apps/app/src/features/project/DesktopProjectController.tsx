@@ -7,6 +7,7 @@ import { resolveEditorPresentation } from "./context/editor-presentation";
 import type { VisibleEditorRoute } from "./context/resolve-route-owner";
 import { resolveRouteOwner } from "./context/resolve-route-owner";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
+import { useIsDraftOnly } from "./context/use-draft-only-presentation";
 import type { ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import type { ScreenKey } from "./routing/project-route";
 
@@ -29,6 +30,7 @@ export function useDesktopEditorPresentation<
   const workspace = useContextTabs(input.projectId);
   const removal = useContextRemovalProject(input.projectId);
   const projection = useAccountResourceProjection(input.projectId);
+  const isDraftOnly = useIsDraftOnly(input.projectId);
   const resolved = resolveRouteOwner({
     ...(presentation.mounted ?? {
       editorWorkId: null,
@@ -38,9 +40,16 @@ export function useDesktopEditorPresentation<
     tabs: workspace.tabs,
     selectedTabId: selectedDocumentIdOf(workspace) ?? undefined,
     selection: removal.selection,
+    isDraftOnly,
   });
   const resource = resolved.tab
-    ? projectResourceTab(input.projectId, resolved.tab, projection.records, projection.placement)
+    ? projectResourceTab(
+        input.projectId,
+        resolved.tab,
+        projection.records,
+        projection.placement,
+        isDraftOnly(resolved.tab.documentId),
+      )
     : null;
   const tab =
     resource?.kind === "removed" || resource?.kind === "terminal"

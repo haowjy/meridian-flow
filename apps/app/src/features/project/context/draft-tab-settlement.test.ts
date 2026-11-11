@@ -1,32 +1,10 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  type ContextTab,
-  getContextTabs,
-  isDraftOnly,
-  rehydrateEditorWorkspace,
-  reviewEntryOf,
-  selectedDocumentIdOf,
-  useContextTabsStore,
-} from "@/client/stores";
+import { getContextTabs, selectedDocumentIdOf, useContextTabsStore } from "@/client/stores";
 import type { ProjectSearch } from "../routing/project-route";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 
-function draftTab(token = "tab-a", workId = "work-a", itemKey = "draft-a") {
-  return {
-    kind: "tracked" as const,
-    documentId: "document-a",
-    scheme: "manuscript" as const,
-    path: "/chapter.md",
-    name: "chapter.md",
-    editable: true as const,
-    filetype: "markdown" as const,
-    schemaType: "document" as const,
-    reviews: { [`work:${workId}`]: { itemKey, tabInstanceToken: token } },
-  };
-}
-
-function liveTab(documentId: string, path = `/${documentId}.md`) {
+function documentTab(documentId: string, path = `/${documentId}.md`) {
   return {
     kind: "tracked" as const,
     documentId,
@@ -39,42 +17,15 @@ function liveTab(documentId: string, path = `/${documentId}.md`) {
   };
 }
 
-function rig() {
-  return { coordinator: new ContextRemovalCoordinator("account-a") };
-}
-
-describe("draft tab settlement", () => {
+describe("draft-created document tabs", () => {
   beforeEach(() => {
-    useContextTabsStore.setState({
-      byProject: {},
-      _workspaceHydrated: false,
-    });
-    useContextTabsStore.getState().openTab("project-a", draftTab());
+    useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: false });
   });
 
-  it("promotes only the exact tab instance it was given and leaves a reopened draft-only tab alone", async () => {
-    const { coordinator } = rig();
-    const applied = getContextTabs("project-a").tabs[0];
-    if (applied?.kind !== "tracked") throw new Error("Expected tracked draft tab");
-    await expect(coordinator.promoteAppliedDraft("project-a", applied)).resolves.toBe(true);
-
-    useContextTabsStore.getState().openTab("project-a", draftTab("replacement"));
-    const before = structuredClone(getContextTabs("project-a"));
-    await expect(coordinator.promoteAppliedDraft("project-a", applied)).resolves.toBe(false);
-    expect(getContextTabs("project-a")).toEqual(before);
-  });
-
-  it.each([
-    "draft-only",
-    "promoted first",
-  ])("keeps one tab per document through a join (%s)", async (order) => {
+  it("keeps one tab per document when a device-made document joins a draft-created one", async () => {
     const store = useContextTabsStore.getState();
-    const project = `project-join-${order}`;
-    const distinct = () => {
-      const ids = getContextTabs(project).tabs.map((tab) => tab.documentId);
-      expect(new Set(ids).size).toBe(ids.length);
-    };
-    store.openTab(project, draftTab());
+    const project = "project-join";
+    store.openTab(project, documentTab("document-a", "/chapter.md"));
     await store.selectTab(project, "document-a");
     // New file: the device-minted document N, reserved under handle H.
     store.openTab(project, {
@@ -84,126 +35,15 @@ describe("draft tab settlement", () => {
       resourceHandle: "handle-h",
     });
     await store.selectTab(project, "document-n");
-    distinct();
-    // The join re-identifies N to D; D's tab (draft-only, or already promoted by the
-    // replica showing D) is the same document.
-    if (order === "promoted first") {
-      const draft = getContextTabs(project).tabs[0];
-      if (draft?.kind !== "tracked") throw new Error("Expected the draft tab");
-      await store.settleDraft(project, draft);
-    }
+    // The join re-identifies N to the draft-created document A.
     await store.reconcileResourceTab(project, "handle-h", {
-      ...liveTab("document-a", "/chapter.md"),
+      ...documentTab("document-a", "/chapter.md"),
       resourceHandle: "handle-h",
     });
-    distinct();
     const slice = getContextTabs(project);
     expect(slice.tabs).toHaveLength(1);
     expect(slice.tabs[0]).toMatchObject({ documentId: "document-a", resourceHandle: "handle-h" });
-    expect(slice.tabs[0] && isDraftOnly(slice.tabs[0])).toBe(false);
     expect(selectedDocumentIdOf(slice)).toBe("document-a");
-  });
-
-  it("keeps one tab per document with an entry per Work, so Works neither take nor close each other's", async () => {
-    // Work B's editor is routed to the shared document: A's Discard must not move it.
-    const updateSearch = vi.fn();
-    const search: ProjectSearch = {
-      screen: "context",
-      scheme: "manuscript",
-      path: "/chapter.md",
-      work: "work-b",
-    };
-    const route = {
-      readSearch: () => search,
-      updateSearch,
-      // The one selection moves with the route: closing the selected tab commits when the route does.
-      transition: async (_id: string, _target: unknown, prepared: { commit: () => void }) => {
-        prepared.commit();
-        return { kind: "applied" as const };
-      },
-    };
-    const coordinator = new ContextRemovalCoordinator("account-a", { route });
-    coordinator.registerRoutePort("project-a", route, "work-b");
-    const store = useContextTabsStore.getState();
-    // What a Work's review shows: a live tab, or a draft-only tab holding that Work's entry.
-    const inWork = (workId: string) =>
-      getContextTabs("project-a")
-        .tabs.filter((tab) => !isDraftOnly(tab) || reviewEntryOf(tab, `work:${workId}`))
-        .map((tab) => tab.documentId);
-    store.openTab("project-a", draftTab("tab-b", "work-b", "draft-b"));
-    const tabs = getContextTabs("project-a").tabs;
-    expect(tabs).toHaveLength(1);
-    expect(inWork("work-a")).toEqual(["document-a"]);
-    expect(inWork("work-b")).toEqual(["document-a"]);
-    expect(tabs[0]).toMatchObject({
-      reviews: {
-        "work:work-a": { itemKey: "draft-a", tabInstanceToken: "tab-a" },
-        "work:work-b": { itemKey: "draft-b", tabInstanceToken: "tab-b" },
-      },
-    });
-
-    await store.selectTab("project-a", "document-a");
-    const revision = coordinator.beginRouteSelection("project-a", {
-      scheme: "manuscript",
-      path: "/chapter.md",
-    });
-    coordinator.bindRouteSelection(
-      "project-a",
-      revision,
-      {
-        kind: "server",
-        documentId: "document-a",
-      },
-      "answer",
-    );
-
-    // Discard in A leaves B's entry, tab and routed screen; A no longer shows it.
-    coordinator.discardDraft("project-a", "work:work-a", "draft-a");
-    expect(inWork("work-a")).toEqual([]);
-    expect(inWork("work-b")).toEqual(["document-a"]);
-    expect(updateSearch).not.toHaveBeenCalled();
-    expect(coordinator.getProjectSnapshot("project-a").selection.status).toBe("bound");
-    expect(selectedDocumentIdOf(getContextTabs("project-a"))).toBe("document-a");
-    // A writer's close in A drops A's entry the same way.
-    store.openTab("project-a", draftTab());
-    coordinator.setActiveWork("project-a", "work-a");
-    coordinator.writerClose("project-a", getContextTabs("project-a").tabs[0] as never);
-    expect(inWork("work-a")).toEqual([]);
-    expect(inWork("work-b")).toEqual(["document-a"]);
-    // The last entry's Discard closes the tab.
-    coordinator.discardDraft("project-a", "work:work-b", "draft-b");
-    expect(getContextTabs("project-a").tabs).toEqual([]);
-
-    // Apply in A settles the one tab for every Work.
-    store.openTab("project-a", draftTab());
-    store.openTab("project-a", draftTab("tab-b", "work-b", "draft-b"));
-    const shared = getContextTabs("project-a").tabs[0];
-    if (shared?.kind !== "tracked") throw new Error("Expected tracked draft tab");
-    await coordinator.promoteAppliedDraft("project-a", {
-      ...shared,
-      reviews: {
-        "work:work-a": shared.reviews?.["work:work-a"] as NonNullable<
-          typeof shared.reviews
-        >[string],
-      },
-    });
-    expect(getContextTabs("project-a").tabs).toHaveLength(1);
-    expect(isDraftOnly(getContextTabs("project-a").tabs[0] as ContextTab)).toBe(false);
-    expect(inWork("work-a")).toEqual(["document-a"]);
-    expect(inWork("work-b")).toEqual(["document-a"]);
-  });
-
-  it("persists a draft-only tab with its review entries, so a reload restores it", async () => {
-    await rehydrateEditorWorkspace("account-persist");
-    const store = useContextTabsStore.getState();
-    store.openTab("project-a", draftTab());
-    store.openTab("project-a", liveTab("document-b"));
-    const stored = JSON.stringify(
-      Object.values(sessionStorage).map((value) => JSON.parse(value as string)),
-    );
-    expect(stored).toContain("document-a");
-    expect(stored).toContain("work:work-a");
-    expect(stored).toContain("document-b");
   });
 
   it("lets an explicit Review re-open the draft of a refused Discard at the same address", () => {
@@ -227,28 +67,26 @@ describe("draft tab settlement", () => {
       coordinator.bindRouteSelection(
         "project-a",
         revision,
-        {
-          kind: "server",
-          documentId: "document-a",
-        },
+        { kind: "server", documentId: "document-a" },
         "answer",
       );
     };
+    useContextTabsStore.getState().openTab("project-a", documentTab("document-a", "/chapter.md"));
     select();
-    coordinator.discardDraft("project-a", "work:work-a", "draft-a");
+    coordinator.discardDraft("project-a", "document-a");
     expect(getContextTabs("project-a").tabs).toEqual([]);
     updateSearch.mockClear();
 
-    // The refused draft is still pending: Review installs its overlay again.
-    const opened = useContextTabsStore.getState().openTab("project-a", draftTab("reopened"));
+    // The refused draft is still pending: Review installs its tab again.
+    const opened = useContextTabsStore
+      .getState()
+      .openTab("project-a", documentTab("document-a", "/chapter.md"));
     if (opened.kind !== "opened" || opened.tab.kind !== "tracked") throw new Error("not opened");
-    coordinator.admitDraftReview("project-a", opened.tab, "work:work-a");
+    coordinator.admitDraftReview("project-a", opened.tab);
     select();
 
     // The removal guard no longer repairs the address away from the draft.
     expect(updateSearch).not.toHaveBeenCalled();
-    expect(getContextTabs("project-a").tabs).toMatchObject([
-      { documentId: "document-a", reviews: expect.any(Object) },
-    ]);
+    expect(getContextTabs("project-a").tabs).toMatchObject([{ documentId: "document-a" }]);
   });
 });

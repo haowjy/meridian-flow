@@ -122,20 +122,28 @@ Retry and also retries once each time the resource availability revision
 advances. The phone document host (`MobileDocumentHost`) uses the same binding
 and recovery behavior.
 
-A draft-only tab (a new document proposed in a branch, or one live deleted
+A draft-only document (a new document proposed in a branch, or one live deleted
 while a Work's draft still has it, D79) opens no live binding at
 all: it is absent from the live SQL tree and the server refuses a room for it,
-so review hosts the draft room alone (`liveRoom={!draftOnly}`) and a
-failed draft room offers Retry or closing the tab, never a fallback to an empty
-live editor. The phone hosts it through the same `ContextEditorMountHost`
-(`MobileDraftOnlyDocumentHost`), never its live-acquiring server host; both
-shells find the tab through `route-document-owner.ts`, the bound identity in the
-live catalog and then the draft-only admission before any path occupant.
-The live resource replica says nothing about a draft-only tab
+so review hosts the draft room alone (`liveRoom` only when `useDraftOnlyPresentation`
+answers `live`) and a failed draft room offers Retry or closing the tab, never a
+fallback to an empty live editor. Draft-only is a property of the mounted host, not of
+the tab: the evidence is the draft the document's view pins (its row says `isNew` or
+`deletedLive`), and every way of opening a draft-created document pins its draft. The
+host presents the document in `DraftOnlyPresentations` under a token minted per mount
+and stays draft-only until settlement promotes it, so a Discard never flips it to a live
+room the server refuses. The phone hosts it through `MobileDraftOnlyDocumentHost`, never
+its live-acquiring server host. Both shells find the document through
+`route-document-owner.ts`: the bound identity in the live catalog, then the document the
+answered address names (`addressedDocument`, built from the address's draft row when
+live lacks it), before any path occupant. A plain path never settles on a draft-only
+document (`resolveWorkspaceRoute`'s `isDraftOnly`); only its address with `owner` and
+`item` reaches it.
+The live resource replica says nothing about a draft-only document
 (`projectResourceTab` answers `none`): a deleted document's replica record is
 terminal, often from an earlier session's cache, and treating it as the tab's
 removal hid the editor behind a skeleton that never resolved.
-Once the server confirms Apply the tab is promoted to a durable tab
+Once live has the document (Apply, or a restore), settlement promotes the presentation
 and this host opens its live room like any other document. Whether that open is
 slow, fails, or disconnects is the host's business and never changes whether
 Apply completed.
@@ -319,24 +327,24 @@ and the session binding re-probes when the replica marks the resource terminal.
 
 ### Multi-Work review representations
 
-Review-only tabs are addressed by document, review Work and draft. A captured
-mounted tab adds its instance ID and token; close, rename and Apply settlement
-must retain that fence across asynchronous navigation. Document identity alone
-is reserved for document-wide availability facts, not representation removal.
-The removal coordinator remains the sole close/Discard owner.
+Tabs only mirror documents: a tab names a document and carries no review state.
+Which draft a document shows is its view's pin; whether live lacks it is
+`DraftOnlyPresentations` (`features/draft-review/draft-only-presentations.ts`), fed by
+the hosts that mount it. Settlement (`DraftOnlySettlement`) holds each presentation's
+token, so a late answer about an earlier mount cannot close a newer one: it promotes on
+catalog evidence checked against a fresh catalog read, and closes only when the draft's
+metadata answers `gone`.
 
-The workspace holds one tab per document. A draft-only tab (a hidden draft-created
-document, or a deleted one a Work's draft still has) is that tab with review metadata;
-persistence skips it and selection names the document. When live deletes a document,
-the removal coordinator first asks the draft command owner which drafts of it some
-surface holds open (`boundDrafts`, never the review list, which lags about a second)
-and turns each such tab into a draft-only tab for those Works (`keep-for-drafts`);
-the removal plan then closes only the rest. Promotion back to an ordinary tab needs
+The workspace holds one tab per document. When live deletes a document, the removal
+coordinator first asks the draft command owner which drafts of it some surface holds
+open (`boundDrafts`, never the review list, which lags about a second) and records the
+document as removed-live in the registry (`holdRemovedLive`); the removal plan leaves
+held documents' tabs alone (`held`) and closes the rest. Promotion back to live needs
 the document placed in the live tree: the replica keeps a deleted document's record,
-and knowing the id alone is not "live again". Availability applies a delete
-before the replica hears of it, so while availability answers `removed` a placed
-record is stale and promotes nothing (`DraftOnlySettlement`); otherwise the hold
-was undone within the same second. `editorTabsForWork` projects one Work's strip. Applying the draft
-settles the same tab in place; a join re-identifies the resource's tab to the draft's
-document and absorbs the draft-only tab into it. Dock restoration already queries the saved review Work and matches
+and knowing the id alone is not "live again". Availability applies a delete before the
+replica hears of it, so while availability answers `removed` a placed record is looked
+up again (`resolveForOpen`, once per sighting) and promotes only on `available`; a
+`removed` answer is otherwise final until someone looks again. `editorTabsForWork`
+projects one Work's strip. A join re-identifies the resource's tab to the draft's
+document. Dock restoration already queries the saved review Work and matches
 both draft and document within that list.

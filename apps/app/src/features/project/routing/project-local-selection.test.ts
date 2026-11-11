@@ -1,4 +1,4 @@
-/** History pointers admit only the exact account/project/Work-owned local draft. */
+/** History pointers admit only the exact account/project local document the replica holds. */
 import { describe, expect, it } from "vitest";
 import type { ContextTab } from "@/client/stores";
 import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
@@ -9,12 +9,14 @@ const tab: ContextTab = {
   name: "Untitled",
   resourceHandle: "resource-draft-a",
 };
+const holding =
+  (...documents: Extract<ContextTab, { kind: "new" }>[]) =>
+  (resourceHandle: string) =>
+    documents.find((document) => document.resourceHandle === resourceHandle) ?? null;
 const input = {
   accountId: "account",
   projectId: "project",
-  workId: "work",
-  hydrated: true,
-  tabs: [tab],
+  documentOf: holding(tab),
   pointer: {
     version: 2,
     accountId: "account",
@@ -25,8 +27,9 @@ const input = {
 describe("local document history", () => {
   it("keeps absent distinct from stale, foreign, malformed, pointers", () => {
     expect(resolveLocalDocumentSelection({ ...input, pointer: undefined }).kind).toBe("absent");
+    expect(resolveLocalDocumentSelection({ ...input, documentOf: null }).kind).toBe("loading");
     for (const change of [
-      { tabs: [] },
+      { documentOf: holding() },
       { accountId: "other" },
       { projectId: "other" },
       { pointer: null },
@@ -36,11 +39,9 @@ describe("local document history", () => {
   });
   it("follows a reminted document through its stable resource handle", () => {
     const reminted = { ...tab, documentId: "draft-b" };
-    expect(resolveLocalDocumentSelection({ ...input, tabs: [reminted] })).toMatchObject({
-      kind: "resolved",
-      documentId: "draft-b",
-      owner: { tab: reminted },
-    });
+    expect(
+      resolveLocalDocumentSelection({ ...input, documentOf: holding(reminted) }),
+    ).toMatchObject({ kind: "resolved", documentId: "draft-b", document: reminted });
   });
 });
 

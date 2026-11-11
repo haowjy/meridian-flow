@@ -20,6 +20,7 @@ import {
 import { routeTargetForTab } from "./context-removal-planner";
 import { type ContextRouteSelection, routeSelectionDocumentId } from "./context-removal-protocol";
 import { projectResourceTab } from "./context-tab-from-file";
+import { useIsDraftOnly } from "./use-draft-only-presentation";
 
 export function useFollowOpenDocumentPlacement(input: {
   projectId: string;
@@ -39,6 +40,7 @@ export function useFollowOpenDocumentPlacement(input: {
   const resourceProjection = useAccountResourceProjection(input.projectId);
   const contextRemoval = useContextRemovalCoordinator();
   const availability = useProjectContextAvailabilityCoordinator();
+  const isDraftOnly = useIsDraftOnly(input.projectId);
 
   useEffect(() => {
     const route =
@@ -61,6 +63,7 @@ export function useFollowOpenDocumentPlacement(input: {
         tab,
         resourceProjection.records,
         resourceProjection.placement,
+        isDraftOnly(tab.documentId),
       );
       if (projection.kind === "none") continue;
       if (projection.kind === "terminal") {
@@ -123,6 +126,7 @@ export function useFollowOpenDocumentPlacement(input: {
     input.selection,
     availability,
     contextRemoval,
+    isDraftOnly,
     reconcileResourceTab,
     resourceProjection.records,
     resourceProjection.placement,

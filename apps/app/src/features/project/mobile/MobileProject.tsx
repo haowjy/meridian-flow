@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { MessageSquare } from "lucide-react";
 import { useState } from "react";
-import { type ContextTab, useContextTabs } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
@@ -48,7 +48,6 @@ export function MobileProject(props: MobileProjectProps) {
   };
   useDockReveal(openChatSheet);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { tabs } = useContextTabs(props.projectId);
   const { selection } = useContextRemovalProject(props.projectId);
   useFollowOpenDocumentPlacement({
     projectId: props.projectId,
@@ -61,9 +60,8 @@ export function MobileProject(props: MobileProjectProps) {
     routeDisplayed: props.activeScreen === "context",
     onOpenContextTarget: props.onOpenContextTarget,
   });
-  const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
-  const localTab =
-    selectedLocal?.kind === "new" || selectedLocal?.kind === "tracked" ? selectedLocal : undefined;
+  // The untitled document the history entry names, as the replica holds it.
+  const localTab = props.activeLocalDocument;
   const crumbs = contextBreadcrumbSegments(props, localTab?.name);
   const removedNotice = useRemovedDocumentPhoneNotice(props.projectId);
 
@@ -197,7 +195,6 @@ function renderActiveView(
         >
           <MobileDocumentHost
             projectId={props.projectId}
-            editorWorkId={props.editorScope.workId}
             route={props.mobileDocumentRoute}
             localTab={localTab}
           />

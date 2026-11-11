@@ -221,7 +221,6 @@ it("keeps a draft-only document out of the live view and repairs only its review
       expect(openTab).toHaveBeenCalledOnce();
       expect(openTab.mock.calls[0]?.[1]).toMatchObject({
         documentId: "doc-id",
-        reviews: expect.any(Object),
       });
       expect(onAdmission).not.toHaveBeenCalled();
       expect(replaceEntry).toHaveBeenCalledOnce();

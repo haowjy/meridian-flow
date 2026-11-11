@@ -30,6 +30,7 @@ import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener
 import type { RemovedNoticeStore } from "./removed-notice-store";
 
 const DraftCommandsContext = createContext<AccountFeatureLifetime["draftCommands"] | null>(null);
+const DraftOnlyContext = createContext<AccountFeatureLifetime["draftOnly"] | null>(null);
 
 const AccountEpochContext = createContext<AbortSignal | null>(null);
 const AccountIdContext = createContext<string | null>(null);
@@ -178,7 +179,9 @@ function AccountFeatureProviders({
                   <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
                     <LinkSettlementsProvider value={lifetime.linkSettlements}>
                       <DraftCommandsContext.Provider value={lifetime.draftCommands}>
-                        {children}
+                        <DraftOnlyContext.Provider value={lifetime.draftOnly}>
+                          {children}
+                        </DraftOnlyContext.Provider>
                       </DraftCommandsContext.Provider>
                     </LinkSettlementsProvider>
                   </ProjectDocumentLiveOpenerContext.Provider>
@@ -328,4 +331,9 @@ export function useDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] 
   const owner = useContext(DraftCommandsContext);
   if (!owner) throw new Error("AccountFeatureComposition is required");
   return owner;
+}
+
+/** The draft-only documents mounted hosts present; null outside the authenticated shell. */
+export function useOptionalDraftOnlyPresentations(): AccountFeatureLifetime["draftOnly"] | null {
+  return useContext(DraftOnlyContext);
 }

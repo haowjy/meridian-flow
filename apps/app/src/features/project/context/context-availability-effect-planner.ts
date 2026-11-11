@@ -67,6 +67,8 @@ export function planContextAvailabilityBatch(
     recentRoutes: readonly WorkingSetRoute[];
     routeSearch: ProjectSearch | null;
     appliedGenerations: ReadonlyMap<string, AppliedAvailabilityCommand>;
+    /** Documents a draft keeps on screen: their tabs stay when live loses them. */
+    held?: ReadonlySet<string>;
   }>,
 ): ContextAvailabilityLocalBatchPlan {
   const projectId = input.commands[0]?.projectId ?? "";
@@ -203,6 +205,7 @@ export function planContextAvailabilityBatch(
           ? ("catalog-unavailable" as const)
           : ("authority-unavailable" as const),
       documentIds: [id],
+      held: input.held,
     };
     const transition = reduceRepresentedRemoval(
       selection,
@@ -224,7 +227,7 @@ export function planContextAvailabilityBatch(
       intent,
     });
     if (removal.outcome.kind !== "noop") tabs = [...removal.outcome.remaining];
-    // A draft-only tab the removal leaves open keeps the selection: the draft still paints in it.
+    // A tab a draft holds open keeps the selection: the draft still paints in it.
     if (selectedDocumentId === id && !tabs.some((tab) => tab.documentId === id))
       selectedDocumentId = null;
     const exactRecentRoutes = recentRoutes.filter((route) => route.documentId === id);

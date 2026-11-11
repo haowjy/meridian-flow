@@ -12,7 +12,7 @@ import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ReactNode, useEffect, useRef } from "react";
-import { type ContextTab, isDraftOnly, useSelectedDocumentId } from "@/client/stores";
+import { type ContextTab, useSelectedDocumentId } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
@@ -39,6 +39,7 @@ import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
 import { RemovedDocumentChip } from "./RemovedDocumentNotice";
 import { recentOpening } from "./recent-opening";
 import { useDocumentFreeze } from "./use-document-freeze";
+import { useDocumentLiveness } from "./use-draft-only-presentation";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 import { useRecordOpenedDocument } from "./use-record-opened-document";
 
@@ -118,22 +119,29 @@ export function ContextViewer({
   const openedTabRef = useRef(activeTab);
   openedTabRef.current = activeTab;
   const recordOpenedDocument = useRecordOpenedDocument();
+  // A draft-only document's path dies with its draft; it is recorded once live has it.
+  const liveness = useDocumentLiveness(projectId, activeTab);
   // One open is one record. The effect also re-runs when the recorder's identity
   // changes and when a dev remount replays it; the ref survives both, and clears
   // when the document leaves the front, so reopening it records again.
   const recordedDocumentRef = useRef<string | null>(null);
   useEffect(() => {
     const tab = openedTabRef.current;
-    if (!active || !openedDocumentId || tab?.documentId !== openedDocumentId) {
+    if (
+      !active ||
+      !openedDocumentId ||
+      tab?.documentId !== openedDocumentId ||
+      liveness !== "live"
+    ) {
       recordedDocumentRef.current = null;
       return;
     }
     if (recordedDocumentRef.current === openedDocumentId) return;
-    const opening = recentOpening(projectId, tab, new Date().toISOString());
+    const opening = recentOpening(projectId, tab, new Date().toISOString(), false);
     if (!opening) return;
     recordedDocumentRef.current = openedDocumentId;
     recordOpenedDocument(opening);
-  }, [active, openedDocumentId, projectId, recordOpenedDocument]);
+  }, [active, liveness, openedDocumentId, projectId, recordOpenedDocument]);
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const settledTab = paneState.kind === "optimistic-loading" ? paneState.settledTab : null;
   const activeTabId = (activeTab ?? settledTab)?.documentId ?? null;
@@ -320,6 +328,7 @@ function DocumentChrome({
 }: ChromeProps & { tab: ContextTab }) {
   const { controller } = useDraftReview();
   const freeze = useTabFreeze(projectId, tab);
+  const draftOnly = useDocumentLiveness(projectId, tab) === "draft-only";
   // A chat's Scratch belongs to no Work, so archiving the Editor's Work never freezes it. The
   // reviewed file itself may be project-owned, so only its own Work's archive freezes its
   // identity row.
@@ -335,7 +344,7 @@ function DocumentChrome({
         editorWorkId={editorWorkId}
         tab={tab}
         readOnly={Boolean(fileInWork && freeze?.kind === "work")}
-        onCloseDraftOnly={isDraftOnly(tab) ? () => onCloseTab(tab) : undefined}
+        onCloseDraftOnly={draftOnly ? () => onCloseTab(tab) : undefined}
         onCommitted={onCommitted}
         onOpenExisting={onOpenExisting}
       />

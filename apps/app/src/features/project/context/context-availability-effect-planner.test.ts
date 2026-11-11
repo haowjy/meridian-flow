@@ -72,11 +72,7 @@ it("a live move relocates a navigation's route but leaves a review address on it
   );
 });
 
-it("a document deleted live keeps the selection on the draft-only tab that still holds it", () => {
-  const draftTab = {
-    ...tab,
-    reviews: { "work:work": { itemKey: "work:doc", tabInstanceToken: "t" } },
-  } as ContextTab;
+it("a document deleted live keeps the selection on the tab whose draft still holds it", () => {
   const selection: ContextRouteSelection = {
     status: "bound",
     revision: 1,
@@ -104,10 +100,11 @@ it("a document deleted live keeps the selection on the draft-only tab that still
       transitionRevision: 0,
       live: true,
     },
-    tabs: { tabs: [draftTab], selectedTabKey: draftTab.tabInstanceId as string },
+    tabs: { tabs: [tab], selectedTabKey: tab.tabInstanceId as string },
     recentRoutes: [],
     routeSearch: { screen: "context", scheme: "manuscript", path: "/old.md", work: "work" },
     appliedGenerations: new Map(),
+    held: new Set(["doc"]),
   } as Parameters<typeof planContextAvailabilityBatch>[0]);
   expect(planned.tabs.map((candidate) => candidate.documentId)).toEqual(["doc"]);
   expect(planned.selectedDocumentId).toBe("doc");

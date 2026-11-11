@@ -1,26 +1,30 @@
 /**
  * route-document-owner — the one order in which a route finds its document.
  *
- * Desktop and phone read the same sources: the live catalog and the draft-only
- * admission (the review tab a pending new-document draft installs). A document the
- * route is bound to is found by identity in both, whatever path it now holds. The
- * path occupant is consulted only when the route knows no identity, because an
- * occupant of a path the bound document left or took is some other document. When a
- * known identity resolves nowhere the answer is `pending`, never that occupant.
+ * Desktop and phone read the same sources: the live catalog, and the draft row the address
+ * names with its `owner` and `item` (a page a draft created is hidden from the catalog until
+ * Apply, so its draft row is its only descriptor). A document the route is bound to is found by
+ * identity in both, whatever path it now holds. The path occupant is consulted only when the
+ * route knows no identity, because an occupant of a path the bound document left or took is
+ * some other document. When a known identity resolves nowhere the answer is `pending`, never
+ * that occupant.
  */
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
-import type { ContextTab, ServerContextTab } from "@/client/stores";
-import { isDraftOnly } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import type { ContextRouteRequest } from "../routing/project-route";
-import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
+
+/** The document an answered address names (`addressedDocument`). */
+export type AddressedDocument = { tab: ContextTab; draftOnly: boolean };
 
 export type RouteDocumentOwner =
   | { kind: "live"; file: CatalogFile; byIdentity: boolean }
-  | { kind: "draft-only"; tab: ServerContextTab }
+  /** Live lacks the document: its descriptor is the address's draft row. */
+  | { kind: "draft-only"; tab: ContextTab }
+  /** The bound document the catalog lacks here (a review of a move): the address's answer. */
+  | { kind: "addressed"; tab: ContextTab }
   /** An identity the route holds that no source resolves yet. */
   | { kind: "pending" }
   | { kind: "absent" };
-
 /**
  * The live half of the order: the bound identity wherever its path went, else (only with no
  * bound identity) the path's occupant. A bound identity the catalog lacks is `pending`.
@@ -47,9 +51,7 @@ export function resolveRouteDocumentOwner(input: {
   locator: ContextRouteRequest;
   boundDocumentId?: string | null;
   catalog: Pick<CatalogContextView, "findDocument" | "findPath"> | null;
-  /** The Editor workspace's tabs; only draft-only review tabs of the locator's Work count. */
-  workspaceTabs?: readonly ContextTab[];
-  scope: string | null;
+  addressed?: AddressedDocument | null;
 }): RouteDocumentOwner {
   const live = resolveLiveRouteDocument({
     path: input.locator.path,
@@ -57,27 +59,9 @@ export function resolveRouteDocumentOwner(input: {
     catalog: input.catalog,
   });
   if (live.kind === "live") return live;
-  const tab = draftOnlyOwner(input);
-  return tab ? { kind: "draft-only", tab } : live;
-}
-
-function draftOnlyOwner({
-  locator,
-  boundDocumentId,
-  workspaceTabs,
-  scope,
-}: {
-  locator: ContextRouteRequest;
-  boundDocumentId?: string | null;
-  workspaceTabs?: readonly ContextTab[];
-  scope: string | null;
-}): ServerContextTab | null {
-  const owner = resolveWorkspaceRoute({
-    tabs: (workspaceTabs ?? []).filter((tab) => tab.kind !== "new" && isDraftOnly(tab)),
-    selectedDocumentId: undefined,
-    locator,
-    boundDocumentId,
-    scope,
-  });
-  return owner.kind === "owner" && owner.tab.kind !== "new" ? owner.tab : null;
+  const addressed = input.addressed;
+  if (!addressed || (input.boundDocumentId && addressed.tab.documentId !== input.boundDocumentId))
+    return live;
+  if (addressed.draftOnly) return { kind: "draft-only", tab: addressed.tab };
+  return live.kind === "pending" ? { kind: "addressed", tab: addressed.tab } : live;
 }

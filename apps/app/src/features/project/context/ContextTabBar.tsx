@@ -25,6 +25,7 @@ import { useReferenceDrag } from "./entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "./open-project-document";
 import { RemovedNoticeSlot } from "./RemovedDocumentNotice";
 import { tabSubject } from "./tab-subject";
+import { useIsDraftOnly } from "./use-draft-only-presentation";
 
 export type ContextTabBarProps = {
   tabs: ContextTab[];
@@ -203,7 +204,10 @@ function TabChip({
   // The review is in the active tab; another tab of the same document shows it live.
   const review = useTabReviewCopy(tab);
   const reviewing = active && review.reviewing;
-  const drag = useReferenceDrag(tabSubject(tab, reviewing ? review : NOT_REVIEWING));
+  const isDraftOnly = useIsDraftOnly(useProjectDocumentNavigationProjectId() ?? "");
+  const drag = useReferenceDrag(
+    tabSubject(tab, reviewing ? review : NOT_REVIEWING, isDraftOnly(tab.documentId)),
+  );
   return (
     <TabChipFrame active={active} reviewing={reviewing} divider={divider} tabProps={drag}>
       <button
