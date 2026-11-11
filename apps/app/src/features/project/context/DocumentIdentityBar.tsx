@@ -8,18 +8,18 @@ import "./document-identity-row.css";
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { OpenDocument } from "@/client/stores";
-import { useDocumentNotice } from "@/features/draft-review/CommandNotice";
+import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
 import { DraftReviewBand } from "@/features/editor/DraftReviewBand";
 import { DocumentStatePortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
-import { holdFocus } from "@/lib/focus-follow";
+import { holdFocus, useFocusSuccession } from "@/lib/focus-follow";
 import { useAiDraftLauncher } from "../review-launch";
 import { useAccountResourceProjection } from "./account-feature-context";
 import { schemeLabel } from "./context-schemes";
@@ -67,8 +67,6 @@ export function DocumentIdentityBar({
   focusReview,
   onFocusReview,
 }: DocumentIdentityBarProps) {
-  const rowRef = useRef<HTMLDivElement>(null);
-  useIdentityRowFit(rowRef);
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
@@ -144,19 +142,31 @@ export function DocumentIdentityBar({
   const repairable = location.provisional && !readOnly;
   const manuscriptState = useManuscriptState(projectId, tab);
   const notice = useDocumentNotice(projectId, tab.documentId);
+  const lineFocus = useRef<HTMLDivElement>(null);
+  useFocusSuccession(lineFocus);
 
   // Reviewing a draft is a mode, not a notice: its controls take a line of their own
-  // above the toolbar. The version chip and other state stay on the toolbar row.
+  // above the toolbar, and a Discard's notice takes that line when it ends the review (or
+  // shares it, wrapping, when it does not). The version chip and other state stay on the
+  // toolbar row.
   const renderState = (version: ReactNode, controls: ReactNode) => (
     <>
-      {controls ? (
-        <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-2 border-b border-border-subtle bg-review px-4 text-sm text-muted-foreground">
-          {controls}
-        </div>
-      ) : null}
+      {/* Mounted while the line comes and goes, so a Discard's focus follows to its notice's
+          Undo and an Undo's back to the controls. */}
+      <div ref={lineFocus} className="contents">
+        {controls || notice ? (
+          <div
+            ref={fitReviewLine}
+            data-review-line
+            className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-border-subtle bg-review px-4 py-1 text-sm text-muted-foreground"
+          >
+            {notice ? <DraftNoticeLine notice={notice} className="flex-auto px-0" /> : null}
+            {controls}
+          </div>
+        ) : null}
+      </div>
       <DocumentStatePortal>
         <div
-          ref={rowRef}
           data-document-identity-row
           className="flex min-w-0 shrink items-center gap-1 text-sm text-muted-foreground"
         >
@@ -176,7 +186,7 @@ export function DocumentIdentityBar({
               onOpenExisting={onOpenExisting}
             />
           ) : null}
-          <ManuscriptStateSlot state={manuscriptState} notice={notice} />
+          <ManuscriptStateSlot state={manuscriptState} />
           {repair && !placementOpen ? (
             repairable ? (
               <button
@@ -313,46 +323,31 @@ function focusEditorProseOnceShown(documentId: string, leaving: boolean) {
 }
 
 /**
- * Content-measured fit, after wrapping has done its work. The review controls
- * wrap to their own line before anything shortens; only a line too narrow for
- * them even alone gives up labels, in order (`ACTIONS_DENSITY` and
- * document-identity-row.css), and
- * the path drops its parent crumbs when the leaf, or the path itself, would otherwise be cut.
+ * The review line's ref: it gives up labels, in order (`ACTIONS_DENSITY` and
+ * document-identity-row.css), only while its controls don't fit the line's width.
  */
-function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
-  useLayoutEffect(() => {
-    const row = ref.current;
-    if (!row) return;
-    const fit = () => {
-      const controls = row.querySelector<HTMLElement>("[data-draft-review-controls]");
-      const style = getComputedStyle(row);
-      const available =
-        row.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-      const actions = controls?.querySelector<HTMLElement>("[data-review-actions]");
-      for (let level = 0; level < ACTIONS_DENSITY.length; level++) {
-        row.dataset.collapse = String(level);
-        if (actions) actions.dataset.density = ACTIONS_DENSITY[level];
-        if (!controls || controls.getBoundingClientRect().width <= available) break;
-      }
-      row.removeAttribute("data-path-short");
-      const leaf = row.querySelector<HTMLElement>("[data-path-leaf]");
-      const path = row.querySelector<HTMLElement>("[data-identity-path]");
-      if (
-        (leaf && leaf.scrollWidth > leaf.clientWidth) ||
-        (path && path.scrollWidth > path.clientWidth)
-      )
-        row.setAttribute("data-path-short", "");
-    };
-    fit();
-    const resize = new ResizeObserver(fit);
-    resize.observe(row);
-    const mutations = new MutationObserver(fit);
-    mutations.observe(row, { childList: true, subtree: true, characterData: true });
-    return () => {
-      resize.disconnect();
-      mutations.disconnect();
-    };
-  }, [ref]);
+function fitReviewLine(line: HTMLDivElement) {
+  const fit = () => {
+    const controls = line.querySelector<HTMLElement>("[data-draft-review-controls]");
+    const style = getComputedStyle(line);
+    const available =
+      line.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const actions = controls?.querySelector<HTMLElement>("[data-review-actions]");
+    for (let level = 0; level < ACTIONS_DENSITY.length; level++) {
+      line.dataset.collapse = String(level);
+      if (actions) actions.dataset.density = ACTIONS_DENSITY[level];
+      if (!controls || controls.getBoundingClientRect().width <= available) break;
+    }
+  };
+  fit();
+  const resize = new ResizeObserver(fit);
+  resize.observe(line);
+  const mutations = new MutationObserver(fit);
+  mutations.observe(line, { childList: true, subtree: true, characterData: true });
+  return () => {
+    resize.disconnect();
+    mutations.disconnect();
+  };
 }
 
 /** The review actions' form at each collapse level (document-identity-row.css has the rest). */

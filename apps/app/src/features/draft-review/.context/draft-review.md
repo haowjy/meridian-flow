@@ -166,9 +166,15 @@ the owner's notice holds. Editor Discard is synchronous.
 owner key: the latest Discard with its Undo, or the latest Apply's facts. A newer Apply or
 Discard by the owner replaces it; there is no timer; a reload starts empty. Each notice records
 the surface it was made on (Changes list, a chat's strip, a document's band) and shows only
-there; a band notice shows in that document's identity-row slot, or in the slot of the document
-main went back to, or, when main went to Recently opened, in that landing's top slot (above a
-removed-documents notice). If the writer moved before the go-back resolved, the notice ends. Apply
+there; a band notice shows on that document's review line (above the toolbar, in place of the
+review controls a whole-draft Discard removed; the phone's review header gives it a row), or on
+the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot (above a
+removed-documents notice). Only the document's name shortens in a notice; its verb and Undo
+always show. Focus stays on the surface where the writer pressed: each surface (review line,
+phone review header, Changes list, strip) wraps its notice and controls in one
+`useFocusSuccession` container, so a Discard's focus goes to the notice's Undo and an Undo's to
+the controls that come back (the Changes list prefers the restored row). If the writer moved
+before the go-back resolved, the notice ends. Apply
 facts from a band stay out of the store: the identity row shows them from the owner's per-document
 facts (`useManuscriptState`). Discard all is one notice over several rooms. A room's Undo is done
 once the prose is back in the room, which sends it whenever it can: the notice ends and the row

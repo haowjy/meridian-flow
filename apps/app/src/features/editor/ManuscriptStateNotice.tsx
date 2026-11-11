@@ -21,10 +21,9 @@ import { documentBasename } from "@/client/query/work-branch-files";
 import type { OpenDocument } from "@/client/stores";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { appliedSentence, DraftNoticeLine } from "@/features/draft-review/CommandNotice";
+import { appliedSentence } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
-import type { DraftNotice } from "@/features/draft-review/draft-notices";
 import {
   type PendingTreeChange,
   treeNoticeLabel,
@@ -97,27 +96,17 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
 
 /**
  * The row's free end. Always rendered (it is the row's spacer), so a state that arrives fills
- * space the row already has. A Discard notice made in this document's band, or on the page main
- * left for this one, takes it while it is up (`DraftNotices.forDocument`).
+ * space the row already has.
  */
 export function ManuscriptStateSlot({
   state,
-  notice = null,
   touch = false,
   className,
 }: {
   state: ManuscriptState | null;
-  notice?: DraftNotice | null;
   touch?: boolean;
   className?: string;
 }) {
-  // The notice has actions the writer must reach, so it takes its width instead of truncating.
-  if (notice)
-    return (
-      <div className={cn("flex min-w-0 flex-1 items-center", className)}>
-        <DraftNoticeLine notice={notice} className="min-h-0 px-1.5 text-xs" />
-      </div>
-    );
   return (
     <div className={cn("@container relative min-w-0 flex-1 self-stretch", className)}>
       {state ? (

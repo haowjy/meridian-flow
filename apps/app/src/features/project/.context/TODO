@@ -13,3 +13,8 @@
 - With a document held beside, the kept host never appears: opening Chapter 1 from Chapter 5 and
   returning remounts Chapter 5's editor, so its undo is gone. With a chat beside the kept host
   works. `keptTab` in `DesktopProject.tsx` reads `shown`; find why the previous main isn't in it.
+- At 390 px with a mouse, a panel opened by hand leaves main at its 360 px minimum, so the grid is
+  624 or 720 px wide and the panel runs off-screen (`useNarrowWindowHold` in `DesktopProject.tsx`).
+  Below a panel plus main's minimum, the panel should overlay main and close on a pick.
+- Manage Works opened from the phone drawer returns no focus on close: its opener was in the
+  drawer, which closed. Fall back to "Open navigation" when the dialog's opener is gone.

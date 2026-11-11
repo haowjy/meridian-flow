@@ -97,11 +97,11 @@ two tabs and on a 390px phone viewport.
   sits at the tail. Reload and open a second tab; both show it. Switch back
   before sending and confirm the notice disappears without a turn. Send first
   instead; the notice becomes the transcript line after that message.
-- During a reply, the queued notice sits at the tail with Stop. After the reply
+- During a reply, the queued notice sits at the tail with Undo. After the reply
   ends it becomes “Switched to …” and remains pending until the next reply;
-  Stop removes it. Switching and switching back leaves no control row.
+  Undo removes it. Switching and switching back leaves no control row.
 - Abort `**/controls`, switch, then send. The switch row shows “Couldn't
-  switch…” with Retry and no Stop while the message remains Sending. Restore
+  switch…” with Retry and no Undo while the message remains Sending. Restore
   the route and Retry; the switch queues and can be stopped. Reloading instead
   admits the switch before the message.
 - In two tabs, the other tab sees the queued mode and can Stop it. A hidden tab
