@@ -20,7 +20,7 @@ call `announceError` for a chat failure.
 A terminal socket close or refused subscription supplies an `unavailable` occurrence
 through `ThreadSync`, separate from retryable diagnostic errors. Socket recovery
 alone isn't enough: the affected subscription has to acknowledge catchup. The global
-connection banner only describes transient reconnects.
+connection pill (`ConnectionBanner`) only describes transient reconnects.
 
 ## Failure logging
 

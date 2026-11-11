@@ -1924,10 +1924,14 @@ msgstr "Composer controls"
 msgid "Confirming your purchase…"
 msgstr "Confirming your purchase…"
 
+#: src/components/app/ConnectionBanner.tsx
+msgid "Connection lost. Retrying…"
+msgstr "Connection lost. Retrying…"
+
 #. placeholder {0}: state.attempt
 #: src/components/app/ConnectionBanner.tsx
-msgid "Connection lost. Retrying… attempt {0}"
-msgstr "Connection lost. Retrying… attempt {0}"
+#~ msgid "Connection lost. Retrying… attempt {0}"
+#~ msgstr "Connection lost. Retrying… attempt {0}"
 
 #: src/features/import/ImportPanel.tsx
 msgid "Continue…"
@@ -4826,10 +4830,14 @@ msgstr "Reconnect now"
 msgid "Reconnected"
 msgstr "Reconnected"
 
+#: src/components/app/ConnectionBanner.tsx
+msgid "Reconnecting…"
+msgstr "Reconnecting…"
+
 #. placeholder {0}: state.attempt
 #: src/components/app/ConnectionBanner.tsx
-msgid "Reconnecting… attempt {0}"
-msgstr "Reconnecting… attempt {0}"
+#~ msgid "Reconnecting… attempt {0}"
+#~ msgstr "Reconnecting… attempt {0}"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Redid"

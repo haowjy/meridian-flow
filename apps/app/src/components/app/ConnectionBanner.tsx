@@ -1,7 +1,8 @@
 /**
- * ConnectionBanner — transient banner reflecting the thread transport's
+ * ConnectionBanner — transient status pill reflecting the thread transport's
  * connection state (reconnecting / degraded / terminal, plus a brief
- * "reconnected" confirmation).
+ * "reconnected" confirmation). An open document's own pill says separately that
+ * its edits are saved locally while offline.
  *
  * Subscribes to `ThreadTransport.onConnectionState` and only surfaces after a
  * real disruption. Owns the banner visibility/timer logic; the underlying
@@ -12,7 +13,6 @@ import { Trans } from "@lingui/react/macro";
 import type { ConnectionState } from "@meridian/thread-client";
 import { useEffect, useRef, useState } from "react";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -63,38 +63,39 @@ export function ConnectionBanner() {
   const kind = bannerKind(state, showReconnected);
   if (!kind || kind === "terminal") return null;
 
-  const toneClassName =
-    kind === "reconnected"
-      ? "border-primary/22 bg-primary/12 text-jade-text"
-      : "border-border bg-ink-fill text-muted-foreground";
-
+  // Floats over the app instead of taking a row above it: a row that appears and goes moves
+  // everything under the writer's pointer. Only the button takes clicks.
   return (
-    <Alert
+    <div
       role="status"
       aria-live="polite"
       className={cn(
-        "grid-cols-1 shrink-0 rounded-none border-x-0 border-t-0 border-b px-4 py-2 shadow-none",
-        toneClassName,
+        "pointer-events-none fixed top-[calc(env(safe-area-inset-top)+0.5rem)] left-1/2 z-50 flex w-max max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-2 rounded-full border bg-card py-1 pr-1 pl-2.5 text-xs font-medium shadow-float",
+        kind === "reconnected"
+          ? "border-primary/22 text-jade-text"
+          : "border-border-subtle text-muted-foreground",
+        kind !== "degraded" && "pr-2.5",
       )}
     >
-      <AlertDescription className="col-start-1 text-current">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
-          <span>
-            {kind === "reconnecting" && state.kind === "reconnecting" ? (
-              <Trans>Reconnecting… attempt {state.attempt}</Trans>
-            ) : kind === "degraded" && state.kind === "degraded" ? (
-              <Trans>Connection lost. Retrying… attempt {state.attempt}</Trans>
-            ) : (
-              <Trans>Reconnected</Trans>
-            )}
-          </span>
-          {kind === "degraded" ? (
-            <Button type="button" variant="outline" size="sm" onClick={() => transport.reconnect()}>
-              <Trans>Reconnect now</Trans>
-            </Button>
-          ) : null}
-        </div>
-      </AlertDescription>
-    </Alert>
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />
+      {kind === "reconnecting" ? (
+        <Trans>Reconnecting…</Trans>
+      ) : kind === "degraded" ? (
+        <Trans>Connection lost. Retrying…</Trans>
+      ) : (
+        <Trans>Reconnected</Trans>
+      )}
+      {kind === "degraded" ? (
+        <Button
+          type="button"
+          variant="secondary"
+          size="xs"
+          className="pointer-events-auto rounded-full"
+          onClick={() => transport.reconnect()}
+        >
+          <Trans>Reconnect now</Trans>
+        </Button>
+      ) : null}
+    </div>
   );
 }

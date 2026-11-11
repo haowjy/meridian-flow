@@ -331,7 +331,7 @@ function SourceTabs({
       <div
         role="tablist"
         aria-label={t`Sources`}
-        className="-m-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="-m-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto p-1 coarse:gap-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {shown.map((key) => (
           <SourceTab
@@ -394,7 +394,7 @@ function SourceTabs({
  * The default six tabs and + still fit a default-width sidebar without scrolling the strip.
  */
 const TAB_BUTTON =
-  "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors [@media(hover:none)]:size-9 coarse:size-9";
+  "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors [@media(hover:none)_and_(pointer:fine)]:size-9 coarse:size-11";
 
 /** A source's tab: a drop on it lands at the source's root, and a drag that rests opens it. */
 function SourceTab({
