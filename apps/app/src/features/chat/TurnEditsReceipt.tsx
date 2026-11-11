@@ -93,7 +93,7 @@ export function TurnEditsReceipt({
   const names = useOwnerNames();
   const guardCopy = commandRefusal
     ? reversalRefusalCopy(commandRefusal, names)
-    : undoGuardCopy(receipt);
+    : undoGuardCopy(receipt, skips.length > 0);
   const hasEditedDocuments = documents.length > 0;
   // Reversible Work mutation receipts are content in their own right: their
   // lines list as rows, and their presence is what keeps a Work-only turn's
@@ -271,7 +271,11 @@ export function TurnEditsReceipt({
               data-turn-skips
               role="status"
             >
-              <p>{skipsHeading(skips.length, actionSkips?.direction ?? null, direction)}</p>
+              <p>
+                {undoUnavailable && !actionSkips
+                  ? t`What happened to each part`
+                  : skipsHeading(skips.length, actionSkips?.direction ?? null, direction)}
+              </p>
               <ul>
                 {skips.map((skip, index) => (
                   <li key={`${skip.documentId}:${index}`}>
@@ -331,14 +335,15 @@ export function TurnEditsReceipt({
   );
 }
 
-function undoGuardCopy(receipt: TurnReceiptChip | null): string | undefined {
+function undoGuardCopy(receipt: TurnReceiptChip | null, partsListed: boolean): string | undefined {
   // Same fact as the refused-command copy, so it is the same sentence: a
   // receipt that rests on `cant_undo_dependent` and a command refused with it
   // are the writer's one situation.
   if (receipt?.state === "cant_undo_dependent") {
     return dependentChangeCopy();
   }
-  if (receipt?.control === "view_change" || receipt == null) {
+  // Listed parts already say why nothing can be undone, part by part.
+  if ((receipt?.control === "view_change" || receipt == null) && !partsListed) {
     return t`This change is no longer reversible.`;
   }
   return undefined;

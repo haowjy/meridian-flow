@@ -330,7 +330,14 @@ function prepare(
         inverseParts,
       );
       if (planned.cause) {
-        for (const part of parts) skip(part, planned.cause);
+        // A draft closed after some parts were applied: those parts are in the manuscript.
+        for (const part of parts)
+          skip(
+            part,
+            planned.cause === "discarded" && disposition(part) === "applied"
+              ? "applied"
+              : planned.cause,
+          );
         continue;
       }
       for (const { part, direction: partDirection } of planned.selection) {
