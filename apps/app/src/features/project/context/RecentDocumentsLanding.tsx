@@ -32,6 +32,7 @@ import { relativeTime } from "../relative-time";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { projectAddressHref } from "../routing/project-address";
 import { fileKindIcon } from "./context-file-icon";
+import { schemeLabel } from "./context-schemes";
 import { useReferenceDrag } from "./entry-drag/reference-source";
 import { useOpenProjectDocument } from "./open-project-document";
 import { RemovedDocumentLandingNotice } from "./RemovedDocumentNotice";
@@ -178,7 +179,12 @@ function RecentDocumentRow({
         controlProps={drag}
         leading={<RowIcon icon={fileKindIcon(item.name)} />}
         title={item.name}
-        detail={item.address.kind === "document" ? item.address.path.replace(/\/[^/]+$/, "") : null}
+        // Where it lives: the source, then the folder inside it.
+        detail={
+          item.address.kind === "document"
+            ? `${schemeLabel(item.address.scheme)}${item.address.path.replace(/\/[^/]+$/, "").replaceAll("/", " / ")}`
+            : null
+        }
         meta={relativeTime(item.openedAt, now)}
       />
     </div>
