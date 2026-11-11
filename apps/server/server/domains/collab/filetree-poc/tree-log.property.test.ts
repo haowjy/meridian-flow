@@ -199,6 +199,7 @@ function runSeed(seed: number): {
       const some = random() < 0.5 ? [pick(pending).id] : undefined;
       if (action < 0.93) {
         const shownBefore = fingerprint(materialize(writer.doc, view));
+        const shapeBefore = fingerprint(materialize(writer.doc, view), false);
         const liveBefore = fingerprint(materialize(writer.doc, LIVE));
         // Apply lands what can land and leaves the rest pending.
         const viewBefore = viewOps(writer.doc, view);
@@ -235,27 +236,39 @@ function runSeed(seed: number): {
         // An Apply leaves the draft reading as it did. A record that cannot land may start
         // to take effect once the rest has landed, so with such records the views are compared
         // without them.
-        if (landed.cannot.length === 0)
-          expect(fingerprint(materialize(writer.doc, view)), `seed ${seed} partial apply`).toBe(
-            shownBefore,
-          );
+        // (Why a deleted folder still stands may change: a pending change kept it, and now
+        // what landed inside it does. The shape is what must not change.)
+        if (landed.cannot.length === 0 && landed.superseded.length === 0)
+          expect(
+            fingerprint(materialize(writer.doc, view), false),
+            `seed ${seed} partial apply`,
+          ).toBe(shapeBefore);
         else {
-          const cannot = new Set(landed.cannot.map((op) => op.id));
+          // A record settled as superseded was already overridden in the draft, so the whole
+          // view must read the same once the rest that could land has landed.
+          if (landed.cannot.length === 0)
+            expect(
+              fingerprint(materialize(writer.doc, view), false),
+              `seed ${seed} apply with superseded`,
+            ).toBe(shapeBefore);
+          const cannot = new Set([...landed.cannot, ...landed.superseded].map((op) => op.id));
           const without = (ops: readonly TreeOp[]) =>
             fingerprint(
               replay(
                 ops.filter((op) => !cannot.has(op.id)),
                 { draft: view.draft },
               ),
+              false,
             );
           expect(without(viewOps(writer.doc, view)), `seed ${seed} landing apply`).toBe(
             without(viewBefore),
           );
         }
         if (!some && !landing)
-          expect(fingerprint(materialize(writer.doc, LIVE)), `seed ${seed} WYSIWYG apply`).toBe(
-            shownBefore,
-          );
+          expect(
+            fingerprint(materialize(writer.doc, LIVE), false),
+            `seed ${seed} WYSIWYG apply`,
+          ).toBe(shapeBefore);
         if (random() < 0.1 && applies.length > 1) {
           // Undo of an earlier Apply, which may have been built on since, here or elsewhere.
           const earlier = pick(applies);

@@ -72,7 +72,7 @@ export type TreeOpInput =
   | Omit<RestoreOp, keyof OpBase>;
 
 /** `undone` is set on a live copy whose Apply was taken back: the replay leaves it out. */
-export type Settlement = "applied" | "discarded" | "undone";
+export type Settlement = "applied" | "discarded" | "undone" | "superseded";
 
 export type TreeNode = {
   id: string;
@@ -207,10 +207,11 @@ export function replay(
   // Delete records keyed by node; restore removes the node's record. Which cascade members go
   // with a delete is decided against the final tree, so the outcome doesn't depend on whether a
   // concurrent move out of the folder replayed before or after the delete.
-  const deletes = new Map<string, Set<string>>();
-  // The same record of deletes, for drafted deletes only, and the nodes a drafted record other
-  // than a delete acts on: together they say which live deletes the draft's own work outlives.
-  const draftDeletes = new Map<string, Set<string>>();
+  // One entry per delete record still in force. `own` marks the viewed Work's deletes: with
+  // the nodes a drafted record other than a delete acts on, they say which live deletes the
+  // Work's own pending work outlives.
+  type DeleteInForce = { id: string; from?: string; node: string; cascade: Set<string>; own: boolean };
+  let deletes: DeleteInForce[] = [];
   const pendingOps = new Map<string, Set<string>>();
   // A drafted change and the drafted record that takes it back leave nothing pending.
   const pend = (op: TreeOp) => {
@@ -315,14 +316,13 @@ export function replay(
           continue;
         }
         // Two deletes of one node both count: each takes what its author saw.
-        const record = deletes.get(op.node) ?? new Set<string>();
-        for (const member of op.cascade) record.add(member);
-        deletes.set(op.node, record);
-        if (ownDelete(op)) {
-          const drafted = draftDeletes.get(op.node) ?? new Set<string>();
-          for (const member of op.cascade) drafted.add(member);
-          draftDeletes.set(op.node, drafted);
-        }
+        deletes.push({
+          id: op.id,
+          ...(op.appliedFrom ? { from: op.appliedFrom } : {}),
+          node: op.node,
+          cascade: new Set(op.cascade),
+          own: ownDelete(op),
+        });
         continue;
       }
       case "restore": {
@@ -330,18 +330,24 @@ export function replay(
           skipped.push({ op: op.id, reason: "missing-node" });
           continue;
         }
-        // A restore brings back the node and what its own delete took. Out of a deleted
-        // folder it brings back only the node and what is inside it: they leave that folder's
-        // delete, and the folder stands holding them (kept by a child) with the rest in Trash.
-        deletes.delete(op.node);
-        draftDeletes.delete(op.node);
+        // A restore that takes one delete back lifts that delete alone, so one author's
+        // Undo never reverses another's delete of the same node. A plain restore lifts every
+        // delete of the node. Out of a deleted folder either brings back only the node and
+        // what is inside it: they leave that folder's delete, and the folder stands holding
+        // them (kept by a child) with the rest in Trash.
+        const undone = op.undoes;
+        deletes = deletes.filter((record) =>
+          undone === undefined
+            ? record.node !== op.node
+            : !(record.node === op.node && (record.id === undone || record.from === undone)),
+        );
         const restored = nodes.get(op.node);
         if (restored) restored.arrivedAt = index;
-        for (const records of [deletes, draftDeletes])
-          for (const [top, cascade] of records) {
-            if (!isAncestor(top, op.node)) continue;
-            for (const member of [...cascade])
-              if (member === op.node || isAncestor(op.node, member)) cascade.delete(member);
+        if (undone === undefined)
+          for (const record of deletes) {
+            if (!isAncestor(record.node, op.node)) continue;
+            for (const member of [...record.cascade])
+              if (member === op.node || isAncestor(op.node, member)) record.cascade.delete(member);
           }
         continue;
       }
@@ -349,7 +355,7 @@ export function replay(
   }
 
   const deleted = new Set<string>();
-  for (const [node, cascade] of deletes) {
+  for (const { node, cascade } of deletes) {
     deleted.add(node);
     for (const member of cascade)
       if (nodes.has(member) && isAncestor(node, member)) deleted.add(member);
@@ -357,7 +363,8 @@ export function replay(
   // A live delete does not take a node this Work has a pending change to, unless the Work
   // deleted it too: the node stays in the Work's view, marked, as today's overlay keeps it.
   const draftDeleted = new Set<string>();
-  for (const [node, cascade] of draftDeletes) {
+  for (const { node, cascade, own } of deletes) {
+    if (!own) continue;
     draftDeleted.add(node);
     for (const member of cascade)
       if (nodes.has(member) && isAncestor(node, member)) draftDeleted.add(member);
@@ -620,22 +627,35 @@ export class TreeWriter {
     draft: DraftId,
     appliedBy: Actor,
     only?: readonly string[],
-  ): { copies: TreeOp[]; left: TreeOp[]; cannot: TreeOp[]; blocked: boolean } {
+  ): {
+    copies: TreeOp[];
+    left: TreeOp[];
+    cannot: TreeOp[];
+    superseded: TreeOp[];
+    blocked: boolean;
+  } {
     const view = this.view({ draft });
     const pending = viewOps(this.doc, { draft }).filter((op) => op.draft === draft);
     const skipped = new Set(view.skipped.map((skip) => skip.op));
+    const live = viewOps(this.doc, LIVE);
+    const asCopy = (op: TreeOp) => ({ ...op, draft: null, fromDraft: draft }) as TreeOp;
+    const gone = (op: TreeOp) =>
+      (op.type === "move" || op.type === "rename") && view.nodes.get(op.node)?.keptByPending;
+    // A move or rename of a node live has in Trash cannot land, unless the rest of the Apply
+    // makes the node stand in live (something of this Work's lands inside the folder).
+    const afterRest = replay([
+      ...live,
+      ...pending.filter((op) => !skipped.has(op.id) && !gone(op)).map(asCopy),
+    ]);
     const cannot = pending.filter(
-      (op) =>
-        skipped.has(op.id) ||
-        ((op.type === "move" || op.type === "rename") && view.nodes.get(op.node)?.keptByPending),
+      (op) => skipped.has(op.id) || (gone(op) && afterRest.nodes.get(op.node)?.trashed !== false),
     );
     const leftIds = dependents(pending, cannot.map((op) => op.id));
     const wanted = only ? prerequisites(pending, only) : new Set(pending.map((op) => op.id));
     const landing = new Set([...wanted].filter((id) => !leftIds.has(id)));
     const cannotLand = pending.filter((op) => leftIds.has(op.id));
     if (landing.size === 0)
-      return { copies: [], left: pending, cannot: cannotLand, blocked: false };
-    const live = viewOps(this.doc, LIVE);
+      return { copies: [], left: pending, cannot: cannotLand, superseded: [], blocked: false };
     // What lands must be what the draft's view showed of it: take the selection if the view,
     // read without the records that cannot land, is the same after; else the drafted records
     // up to the last chosen one, less what cannot land; else nothing.
@@ -651,13 +671,24 @@ export class TreeWriter {
       );
       if (keepsView(live, pending, prefix, leftIds)) chosen = prefix;
     }
-    if (!chosen) return { copies: [], left: pending, cannot: cannotLand, blocked: true };
+    if (!chosen)
+      return { copies: [], left: pending, cannot: cannotLand, superseded: [], blocked: true };
     const taken = chosen;
+    // A record that cannot land and that a later landing record on the same fact overrides is
+    // settled as superseded: left pending, it would come back later and undo that later choice.
+    const superseded = cannotLand.filter((op) =>
+      pending
+        .slice(pending.indexOf(op) + 1)
+        .some((later) => taken.has(later.id) && factOf(later) === factOf(op)),
+    );
+    const gone2 = new Set(superseded.map((op) => op.id));
     const copies = this.applyChosen(draft, appliedBy, taken);
+    this.doc.transact(() => this.settle(appliedBy, [...gone2], "superseded"), this.origin);
     return {
       copies,
-      left: pending.filter((op) => !taken.has(op.id)),
-      cannot: cannotLand,
+      left: pending.filter((op) => !taken.has(op.id) && !gone2.has(op.id)),
+      cannot: cannotLand.filter((op) => !gone2.has(op.id)),
+      superseded,
       blocked: false,
     };
   }
@@ -680,6 +711,11 @@ export class TreeWriter {
     const ids = new Set(copies.map((copy) => copy.id));
     const actedOn = new Set(copies.map((copy) => copy.node));
     const created = new Set(copies.flatMap((copy) => (copy.type === "create" ? [copy.node] : [])));
+    // Taken back already, or its drafted records were settled again since (a Discard).
+    for (const copy of copies) {
+      if (settled.get(copy.id) === "undone") return "superseded";
+      if (copy.appliedFrom && settled.get(copy.appliedFrom) !== "applied") return "superseded";
+    }
     for (const node of created) if (writtenSince.has(node)) return "superseded";
     const last = Math.max(...all.flatMap((op, index) => (ids.has(op.id) ? [index] : [])));
     for (const op of all.slice(last + 1)) {
@@ -691,6 +727,9 @@ export class TreeWriter {
         continue;
       }
       if (actedOn.has(op.node) || into) return "superseded";
+      // A later delete acts on everything it took.
+      if (op.type === "delete" && op.cascade.some((member) => actedOn.has(member)))
+        return "superseded";
     }
     this.doc.transact(() => {
       this.settle(by, copies.map((copy) => copy.id), "undone");
@@ -755,12 +794,18 @@ export class TreeWriter {
           extra,
         );
       case "delete": {
-        if (!node.trashed) return "superseded";
-        // Someone deleted or restored it again since: this delete is no longer the one in force.
-        const onNode = viewOps(this.doc, view).filter(
-          (other) => other.node === op.node && (other.type === "delete" || other.type === "restore"),
-        );
-        if (onNode.at(-1)?.id !== op.id && onNode.at(-1)?.appliedFrom !== op.id) return "superseded";
+        // Already lifted, by a restore of the node or by an earlier Undo of this delete.
+        const ops = viewOps(this.doc, view);
+        const at = ops.findIndex((other) => other.id === op.id || other.appliedFrom === op.id);
+        const lifted = ops
+          .slice(at + 1)
+          .some(
+            (other) =>
+              other.type === "restore" &&
+              other.node === op.node &&
+              (other.undoes === undefined || other.undoes === op.id),
+          );
+        if (at < 0 || lifted) return "superseded";
         return this.author(view, actor, { type: "restore", node: op.node }, extra);
       }
       case "restore":
@@ -834,7 +879,7 @@ export function keepsView(
 ): boolean {
   const draft = pending[0]?.draft ?? null;
   const rest = pending.filter((op) => !without.has(op.id));
-  const before = fingerprint(replay([...live, ...rest], { draft }));
+  const before = fingerprint(replay([...live, ...rest], { draft }), false);
   const after = [
     ...live,
     ...rest
@@ -842,7 +887,7 @@ export function keepsView(
       .map((op) => ({ ...op, draft: null, fromDraft: draft ?? undefined }) as TreeOp),
     ...rest.filter((op) => !chosen.has(op.id)),
   ];
-  return fingerprint(replay(after, { draft })) === before;
+  return fingerprint(replay(after, { draft }), false) === before;
 }
 
 /** The chosen ops plus every drafted op that stands on a node one of them creates, transitively. */
@@ -901,14 +946,18 @@ export function treeViolations(
   return problems;
 }
 
-/** A canonical string of the shown tree, for comparing replicas. */
-export function fingerprint(projection: TreeProjection): string {
+/**
+ * A canonical string of the shown tree, for comparing replicas. Without `marks` it leaves out
+ * why a deleted node still stands (kept by a child, kept by a pending change): what a writer
+ * reads as the tree's shape.
+ */
+export function fingerprint(projection: TreeProjection, marks = true): string {
   const lines: string[] = [];
   const walk = (parent: string, depth: number) => {
     if (depth > projection.nodes.size) return;
     for (const child of childrenOf(projection, parent, true)) {
       lines.push(
-        `${"  ".repeat(depth)}${child.trashed ? "~" : ""}${child.keptByChild ? "!" : ""}${child.keptByPending ? "?" : ""}${child.kind[0]}:${child.displayName}#${child.id}@${child.rank}`,
+        `${"  ".repeat(depth)}${child.trashed ? "~" : ""}${marks && child.keptByChild ? "!" : ""}${marks && child.keptByPending ? "?" : ""}${child.kind[0]}:${child.displayName}#${child.id}@${child.rank}`,
       );
       walk(child.id, depth + 1);
     }

@@ -623,6 +623,84 @@ describe("found in review", () => {
   });
 });
 
+describe("found in the second review", () => {
+  it("a chat takes back its drafted delete of a chapter the writer has since deleted in live: it stays deleted, and Apply does not bring it back", () => {
+    const t = start();
+    const x = t.chapter("X");
+    const drafted = t.w.delete(D, CHAT, x);
+    t.w.delete(LIVE, WRITER, x);
+    expect(t.w.undo(D, CHAT, drafted.id)).toMatchObject({ type: "restore", undoes: drafted.id });
+    expect(t.at(x, D)?.trashed).toBe(true);
+    t.w.applyLanding("work-1", WRITER);
+    expect(t.at(x)?.trashed).toBe(true);
+    // The writer's own restore brings it back.
+    t.w.restore(LIVE, WRITER, x);
+    expect(t.at(x)?.trashed).toBe(false);
+  });
+
+  it("a move that cannot land and that the draft later overrode is settled, not left to come back", () => {
+    const t = start();
+    const x = t.folder("X");
+    const b = t.folder("B", x); // live: X/B
+    const c = t.folder("C");
+    const loop = t.w.move(D, CHAT, x, b);
+    t.w.move(D, CHAT, b, ROOT);
+    t.w.move(D, CHAT, x, c);
+    expect(t.at(x, D)?.parent).toBe(c);
+    const before = fingerprint(t.w.view(D));
+    const landed = t.w.applyLanding("work-1", WRITER);
+    expect(landed.superseded.map((op) => op.id)).toEqual([loop.id]);
+    expect(landed.left).toEqual([]);
+    expect(t.at(x)?.parent).toBe(c);
+    expect(fingerprint(t.w.view(D))).toBe(before);
+    expect(t.w.applyLanding("work-1", WRITER).copies).toEqual([]);
+    expect(t.at(x)?.parent).toBe(c);
+  });
+
+  it("Undo of an Apply after the writer deleted a folder holding what it created or moved: refused", () => {
+    const made = start();
+    const p = made.folder("P");
+    const ch = made.chapter("Chapter 50", p, D, CHAT);
+    const copies = made.w.apply("work-1", WRITER);
+    made.w.delete(LIVE, WRITER, p);
+    expect(made.w.undoApply(copies)).toBe("superseded");
+    made.w.restore(LIVE, WRITER, p);
+    expect(made.at(ch)?.trashed).toBe(false);
+
+    const moved = start();
+    const g = moved.folder("G");
+    const x = moved.chapter("X");
+    moved.w.move(D, CHAT, x, g);
+    const copies2 = moved.w.apply("work-1", WRITER);
+    moved.w.delete(LIVE, WRITER, g);
+    expect(moved.w.undoApply(copies2)).toBe("superseded");
+    expect(moved.at(x)).toMatchObject({ parent: g, trashed: true });
+  });
+
+  it("Undo of an Apply cannot run twice, nor bring back what was discarded since", () => {
+    const t = reorganisedOnce();
+    const copies = t.w.apply("work-1", WRITER);
+    expect(t.w.undoApply(copies)).toBe("undone");
+    t.w.discard("work-1", undefined, WRITER);
+    expect(t.w.undoApply(copies)).toBe("superseded");
+    expect(viewOps(t.doc, D).filter((op) => op.draft === "work-1")).toEqual([]);
+  });
+
+  it("a drafted rename of a folder that live deleted lands when the same Apply puts something in the folder", () => {
+    const t = start();
+    const k = t.folder("K");
+    const y = t.chapter("Y");
+    t.w.rename(D, CHAT, k, "K renamed");
+    t.w.move(D, CHAT, y, k);
+    t.w.delete(LIVE, WRITER, k);
+    const landed = t.w.applyLanding("work-1", WRITER);
+    expect(landed.left).toEqual([]);
+    expect(t.at(k)).toMatchObject({ displayName: "K renamed", trashed: false, keptByChild: true });
+    expect(t.at(y)?.parent).toBe(k);
+    t.valid();
+  });
+});
+
 function reorganisedOnce() {
   const t = start();
   const ch = t.chapter("Chapter 1");
