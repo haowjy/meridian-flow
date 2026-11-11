@@ -219,6 +219,17 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     ),
   };
 
+  // Sorted by key, never by place: React moves a keyed child that falls behind a sibling, and a
+  // moved host is re-inserted in the DOM and, under development StrictMode, has its effects
+  // replayed with its editor destroyed (#1351).
+  const documentHosts = [
+    ...(mainTab ? [documentHost(mainTab, "main")] : []),
+    ...(sideTab && sideTab.documentId !== mainTab?.documentId
+      ? [documentHost(sideTab, "side")]
+      : []),
+    ...(keptTab ? [documentHost(keptTab, "kept")] : []),
+  ].sort((a, b) => (a.key < b.key ? -1 : 1));
+
   const hosts: SlotGridHost[] = [
     {
       key: "sidebar",
@@ -235,11 +246,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         />
       ),
     },
-    ...(mainTab ? [documentHost(mainTab, "main")] : []),
-    ...(sideTab && sideTab.documentId !== mainTab?.documentId
-      ? [documentHost(sideTab, "side")]
-      : []),
-    ...(keptTab ? [documentHost(keptTab, "kept")] : []),
+    ...documentHosts,
     chatHost,
   ];
   if (chatIndexShowing)
