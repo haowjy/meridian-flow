@@ -90,10 +90,10 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
 /**
  * The scope's drafted documents, one row each in the one file order. A row opens its draft;
  * its × and ✓ discard or apply that document's draft. Discard all and Apply all act on every
- * draft of the scope, new documents, moves and deletes included. A Discard asks first only when it
- * carries no Undo (`canUndoDiscard`); an Apply all asks when it would delete documents or bring
- * back documents deleted from the manuscript, naming each, and again for any a newer delete held
- * back. A question takes the place of the buttons that asked it. A Discard made here shows its
+ * draft of the scope, new documents, moves and deletes included. A Discard asks first only when
+ * it can't run here and so carries no Undo (`discardAsks`); an Apply all asks when it would
+ * delete documents or bring back documents deleted from the manuscript, naming each, and again
+ * for any a newer delete held back. A question takes the place of the buttons that asked it. A Discard made here shows its
  * notice in the row's place (Discard all: the bar's); an Apply's facts sit below the rows.
  *
  * An archived Work's commands show disabled, with the reason above the rows. A frozen lineage

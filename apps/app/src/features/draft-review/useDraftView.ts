@@ -16,7 +16,7 @@ export function useDraftView(
     enabled = true,
     item,
   }: {
-    controller: Pick<WorkBranchCommands, "commandChange" | "changesLocked">;
+    controller: Pick<WorkBranchCommands, "commandChange" | "changesLocked" | "discardAsks">;
     enabled?: boolean;
     item?: ThreadDraftListItem;
   },
@@ -54,5 +54,6 @@ export function useDraftView(
     discard: async (change) => {
       await controller.commandChange("discard", draft, targetOfChanges([change]));
     },
+    discardAsks: (change) => controller.discardAsks(draft, targetOfChanges([change])),
   };
 }

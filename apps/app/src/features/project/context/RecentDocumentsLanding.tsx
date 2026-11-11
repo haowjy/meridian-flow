@@ -7,8 +7,9 @@
  * rows need no project label: path and time are what is left to disambiguate.
  *
  * Device-local history paints first. The network adds other devices and never
- * gates this writer's own openings. The top margin holds the notice for
- * documents that closed under the writer, so the list never moves for it.
+ * gates this writer's own openings. The top margin holds the notice of a
+ * Discard that sent main here, then the notice for documents that closed under
+ * the writer, so the list never moves for them.
  */
 
 import { Trans } from "@lingui/react/macro";
@@ -23,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { ListRow } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { cn } from "@/lib/utils";
@@ -55,6 +57,9 @@ export function RecentDocumentsLanding({
   const openDocument = useOpenProjectDocument(projectId);
   const openRoute = useOpenContextRoute();
   const now = useMinuteClock();
+  // Its Undo must stay reachable, so it shows here on the phone too, ahead of the removal's.
+  const discarded = useDocumentNotice(projectId, null);
+  const discardNotice = discarded ? <DraftNoticeLine notice={discarded} className="px-0" /> : null;
 
   const documents = recent.documents ?? [];
   // A cached empty list with a refetch in flight is not yet known to be empty.
@@ -67,12 +72,12 @@ export function RecentDocumentsLanding({
   if (recent.status === "empty" && !settling) {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 text-center">
-        {holdsRemovedNotice ? (
-          <RemovedDocumentLandingNotice
-            projectId={projectId}
-            className="absolute inset-x-6 top-4 justify-center"
-          />
-        ) : null}
+        <div className="absolute inset-x-6 top-4 flex flex-col items-center">
+          {discardNotice}
+          {holdsRemovedNotice ? (
+            <RemovedDocumentLandingNotice projectId={projectId} className="justify-center" />
+          ) : null}
+        </div>
         <LandingEmpty onNewDocument={onNewDocument} />
       </div>
     );
@@ -81,7 +86,8 @@ export function RecentDocumentsLanding({
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className={cn(editorColumnChrome, "pb-24")}>
-        <div className="flex h-16 items-center">
+        <div className="flex h-16 flex-col justify-center">
+          {discardNotice}
           {holdsRemovedNotice ? (
             <RemovedDocumentLandingNotice projectId={projectId} className="min-w-0" />
           ) : null}

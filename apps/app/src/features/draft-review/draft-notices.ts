@@ -17,7 +17,10 @@ export type NoticeSubject =
 
 /** One room's share of a Discard's Undo (`startDraftDiscardSession`). */
 export type DiscardUndo = {
-  /** `gone`: nothing is left to take back (the room ended, or the write never landed). */
+  /**
+   * `ok` once the prose is back in the room; `gone`: nothing is left to take back (the room
+   * ended or turned read-only, or the write never landed).
+   */
   undo(): Promise<"ok" | "failed" | "gone">;
   end(): void;
 };
@@ -79,10 +82,10 @@ export class DraftNotices {
 
   /**
    * The Discard notice a document's identity row shows: one made in a document's band, on that
-   * document, or on the one main went back to when the Discard made it leave. A list or strip
-   * keeps its own notice where it was made.
+   * document, or on the one main went back to when the Discard made it leave (null: Recently
+   * opened, whose top slot shows it). A list or strip keeps its own notice where it was made.
    */
-  forDocument(projectId: string, documentId: string): DraftNotice | null {
+  forDocument(projectId: string, documentId: string | null): DraftNotice | null {
     for (const notice of this.notices.values())
       if (
         notice.kind === "discarded" &&
@@ -129,7 +132,6 @@ export class DraftNotices {
     ownerKey: string;
     surface: NoticeSurface;
     parts: readonly DiscardPart[];
-    left?: boolean;
   }): number | null {
     if (this.closed || input.parts.length === 0) {
       for (const part of input.parts) part.handle.end();
@@ -146,7 +148,7 @@ export class DraftNotices {
       projectId: input.projectId,
       ownerKey,
       surface: input.surface,
-      left: input.left ? { landed: null } : null,
+      left: null,
       status: "ready",
       ...this.subjectOf(input.parts),
       undo: () => this.undo(ownerKey, id),
@@ -156,9 +158,13 @@ export class DraftNotices {
     return id;
   }
 
-  /** Where main landed after the Discard made it leave. */
-  landed(ownerKey: string, id: number, documentId: string | null) {
-    this.update(ownerKey, id, () => ({ left: { landed: documentId } }));
+  /**
+   * Where main landed after the Discard made it leave (`documentId` null: Recently opened).
+   * Null: the writer moved first, so no place shows the notice, and its Undo ends.
+   */
+  landed(ownerKey: string, id: number, landing: { documentId: string | null } | null) {
+    if (landing) this.update(ownerKey, id, () => ({ left: { landed: landing.documentId } }));
+    else this.endIf(ownerKey, id);
   }
 
   /** A room's Undo ended on its own: the room closed, its text moved on, or Ctrl+Z took it back. */
@@ -200,10 +206,9 @@ export class DraftNotices {
     // Retry takes back only the rooms that failed: a part that undid has ended and left the list.
     const answers = await Promise.all(
       [...parts].map(async (part) => {
-        // The prose comes back before the server acknowledges it: the row returns with it.
-        const pending = part.handle.undo();
-        part.undone?.();
-        return { part, answer: await pending };
+        const answer = await part.handle.undo();
+        if (answer === "ok") part.undone?.();
+        return { part, answer };
       }),
     );
     const failed = answers.flatMap(({ part, answer }) => (answer === "failed" ? [part] : []));

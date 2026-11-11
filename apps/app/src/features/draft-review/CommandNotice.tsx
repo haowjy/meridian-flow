@@ -40,8 +40,14 @@ export function useDraftNotice(ownerKey: string): DraftNotice | null {
   );
 }
 
-/** The Discard notice a document's identity row shows (`DraftNotices.forDocument`). */
-export function useDocumentNotice(projectId: string, documentId: string): DraftNotice | null {
+/**
+ * The Discard notice a document's identity row shows, or with `documentId` null the one the
+ * Recently opened landing shows (`DraftNotices.forDocument`).
+ */
+export function useDocumentNotice(
+  projectId: string,
+  documentId: string | null,
+): DraftNotice | null {
   const { notices } = useDraftCommandOwner();
   return useSyncExternalStore(
     notices.subscribe,
@@ -131,9 +137,16 @@ export function DraftNoticeLine({
     );
   const undo = () => {
     const { review, left, projectId, ownerKey } = notice;
-    const stays = left ? left.landed : (review?.documentId ?? null);
+    // Where main was when the notice showed (null: Recently opened); the view follows only
+    // if main is still there.
+    const stays = left ? left.landed : review?.documentId;
     void notice.undo().then((answer) => {
-      if (answer === "ok" && review && stays && presented?.mainDocumentId(projectId) === stays)
+      if (
+        answer === "ok" &&
+        review &&
+        stays !== undefined &&
+        presented?.mainDocumentId(projectId) === stays
+      )
         openReviewFile(review, ownerKey);
     });
   };
