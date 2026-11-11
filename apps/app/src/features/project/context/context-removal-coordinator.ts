@@ -870,9 +870,13 @@ export class ContextRemovalCoordinator {
       route: { cleanup: transition.planning.cleanup, current: transition.planning.current },
       intent: transition.planning.intent,
     });
+    // A route that shows no document (Recently opened) has no document to move off: the store's
+    // selection changes, the screen stays.
     const target =
       plan.routeRepairTarget ??
-      (plan.outcome.kind === "active-fallback" && state.activeWorkId
+      (plan.outcome.kind === "active-fallback" &&
+      state.activeWorkId &&
+      state.selection.status !== "none"
         ? routeTargetForTab(plan.outcome.fallback, state.activeWorkId)
         : plan.outcome.kind === "empty-workspace"
           ? { kind: "clear" as const }
