@@ -81,9 +81,10 @@ export type ContextRemovalRoutePort = {
 
 /**
  * What the views present (`PresentedDocuments`). A removal is planned against it; the views
- * follow the address and the replica, so nothing here closes a host.
+ * follow the address and the replica. A close, a Discard or a removal forgets the document, so
+ * no view picks it again and its host unmounts.
  */
-type PresentedPort = Pick<PresentedDocuments, "documents" | "mainDocumentId">;
+type PresentedPort = Pick<PresentedDocuments, "documents" | "mainDocumentId" | "forget">;
 
 /** The draft-only documents hosts present (`DraftOnlyPresentations`). */
 export type DraftOnlyPort = {
@@ -647,6 +648,13 @@ export class ContextRemovalCoordinator {
             kind: record.kind,
           });
         }
+        this.presented.forget(
+          projectId,
+          committed.flatMap((command) => {
+            const id = availabilityDocumentId(command);
+            return command.kind === "available" || held.has(id) ? [] : [id];
+          }),
+        );
         for (const command of committed) {
           const key = `${projectId}/${availabilityDocumentId(command)}`;
           if (command.kind === "terminal-remove") this.terminalAvailability.set(key, command);
@@ -816,8 +824,9 @@ export class ContextRemovalCoordinator {
   ): ContextRemovalOutcome | Promise<NavigationSettlement> {
     if (this.unavailable()) return { kind: "noop" };
     const state = this.project(projectId);
-    const presented = this.presented.documents(projectId);
     const documentId = addressed.documentId;
+    this.presented.forget(projectId, [documentId]);
+    const presented = this.presented.documents(projectId);
     const tab = presented.find((candidate) => candidate.documentId === documentId);
     if (!tab) return { kind: "noop" };
     const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
@@ -875,12 +884,16 @@ export class ContextRemovalCoordinator {
   }
 
   /**
-   * The catalog no longer places a presented document. The notice says why once availability
-   * proves a removal; the address stays where it is, so the view shows the removal in place.
+   * The catalog no longer places a mounted document. A presented one's notice says why once
+   * availability proves a removal; the address stays where it is, so the view shows the removal
+   * in place. A kept one, off screen, just goes.
    */
   closeVanished(projectId: string, tab: ContextTab): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     if (this.heldByDrafts(projectId, [tab.documentId]).has(tab.documentId)) return { kind: "noop" };
+    this.presented.forget(projectId, [tab.documentId]);
+    if (!this.presented.documents(projectId).some((shown) => shown.documentId === tab.documentId))
+      return { kind: "noop" };
     this.notices?.presentedRemoved(projectId, [tab]);
     return this.commitWriterClose(projectId, tab);
   }
@@ -901,6 +914,7 @@ export class ContextRemovalCoordinator {
    */
   discardDraft(projectId: string, documentId: string): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
+    this.presented.forget(projectId, [documentId]);
     const tab = this.presented
       .documents(projectId)
       .find((candidate) => candidate.documentId === documentId);

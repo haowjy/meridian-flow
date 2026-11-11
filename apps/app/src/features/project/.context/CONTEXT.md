@@ -20,11 +20,19 @@ changes its `grid-area`, or parks it; it doesn't portal, reparent or remount a s
 Main shows what the address names, resolved by `resolveMainDocument` / `useMainDocument`
 (`views.ts`), the resolver the phone uses too; `MainViewProvider` / `useMainItem` carry
 `{item, document}`. The side shows one item, never main's (`resolveSideItem`): the last chat beside
-a document, the last document opened beside a chat. Each header renders inside its host
-(`shell/MainHeader.tsx`, `side/SideHeader.tsx`). At most three documents are mounted: main's, the
-side's, and the last one that left main, kept hidden so its undo survives a return. The kept
-document reviews nothing, admits nothing and writes neither pin nor address. Nothing here is
-persisted.
+a document; beside a chat, the newest document shown in main or the side, else the head of
+Recently opened. Each header renders inside its host (`shell/MainHeader.tsx`,
+`side/SideHeader.tsx`).
+
+Which documents are mounted is one list, `PresentedDocuments` (`context/presented-documents.ts`):
+each document host registers its current descriptor there, and `shown` orders them newest on
+screen first. Besides main's and the side's document, the newest one shown that is off screen
+stays mounted as the kept host, hidden so its undo survives a return; beside a document the side
+is a chat, so at most two documents are mounted. The kept document is mounted but not presented:
+it reviews nothing, admits nothing, writes neither pin nor address, raises no removed notice and
+is not on screen for removals or availability. A close, a Discard and a removal `forget` the
+document through the removal coordinator, so nothing picks it again and its host unmounts (taking
+its draft-only presentation with it). Nothing here is persisted.
 
 Slot wrappers paint their material, and document shells stay transparent. The Write | Chat switch is not a mode:
 it stores `sidebarList` (`client/project-shell/store.ts`, per browser tab) and `SIDEBAR_LISTS` picks the

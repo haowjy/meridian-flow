@@ -4,8 +4,9 @@
  * caret, scroll) survives the move. Main's host also binds the address to its document and
  * records the opening; a host off main does neither.
  *
- * A `kept` host is the last document that left main, mounted hidden so its undo survives a
- * return: it reviews nothing, presents nothing, and writes neither a pin nor the address.
+ * A `kept` host is the last document shown that is on screen no longer, mounted hidden so its
+ * undo survives a return: it reviews nothing, presents nothing, and writes neither a pin nor the
+ * address.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -40,7 +41,7 @@ import { DocumentFreezeNotice } from "./DocumentFreezeNotice";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { PHONE_DOCUMENT_PRESENTATION } from "./document-presentation";
-import type { PresentedPlace } from "./presented-documents";
+import type { MountedPlace } from "./presented-documents";
 import { recentOpening } from "./recent-opening";
 import { useContextRemovalProject } from "./use-context-removal-project";
 import { useDocumentFreeze } from "./use-document-freeze";
@@ -55,7 +56,7 @@ import {
 import { useIsDraftOnly } from "./use-is-draft-only";
 import { useRecordOpenedDocument } from "./use-record-opened-document";
 
-export type DocumentPlace = PresentedPlace;
+export type DocumentPlace = MountedPlace;
 
 export type DocumentHostProps = {
   projectId: string;
@@ -75,7 +76,7 @@ export function DocumentHost(props: DocumentHostProps) {
   const { projectId, place } = props;
   const tab = useCurrentDescriptor(projectId, props.tab, place === "main");
   const onScreen = place !== "kept" && props.visible;
-  usePresentDocument(projectId, tab, place);
+  useMountDocument(projectId, tab, place);
   return (
     <DocumentReviewProvider projectId={projectId} tab={tab} showing={onScreen}>
       {place === "main" && props.main ? (
@@ -103,15 +104,13 @@ function useCurrentDescriptor(projectId: string, tab: ContextTab, main: boolean)
 }
 
 /** Main's and the side's documents are what removals, notices and availability act on. */
-function usePresentDocument(projectId: string, tab: ContextTab, place: DocumentPlace) {
+function useMountDocument(projectId: string, tab: ContextTab, place: DocumentPlace) {
   const presented = useOptionalPresentedDocuments();
   const [token] = useState(() => crypto.randomUUID());
   useLayoutEffect(() => {
-    if (!presented) return;
-    if (place === "kept") presented.withdraw(token);
-    else presented.present(token, projectId, tab, place);
+    presented?.mount(token, projectId, tab, place);
   }, [presented, token, projectId, tab, place]);
-  useLayoutEffect(() => () => presented?.withdraw(token), [presented, token]);
+  useLayoutEffect(() => () => presented?.unmount(token), [presented, token]);
 }
 
 /**

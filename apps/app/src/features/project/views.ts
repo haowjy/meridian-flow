@@ -360,16 +360,15 @@ export type SideItem = {
 
 /**
  * The side's fallback beside main, never main's own item: the current chat beside a document
- * (or beside nothing), the last document opened beside a chat. No chat sits beside a chat.
+ * (or beside nothing), the last document shown beside a chat. No chat sits beside a chat.
  */
 export function resolveSideItem(
-  main: Item | null,
   mainIsChat: boolean,
   currentChatId: string | null,
   lastDocumentId: string | null,
 ): SideItem {
   if (!mainIsChat) return { item: { kind: "chat", chatId: currentChatId }, reason: "last-chat" };
-  if (lastDocumentId && !(main?.kind === "document" && main.documentId === lastDocumentId))
+  if (lastDocumentId)
     return { item: { kind: "document", documentId: lastDocumentId }, reason: "last-document" };
   return { item: null, reason: null };
 }

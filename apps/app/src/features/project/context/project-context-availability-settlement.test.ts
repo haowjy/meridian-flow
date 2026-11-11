@@ -24,7 +24,7 @@ const tab: ContextTab = {
 
 function composed() {
   const removal = new ContextRemovalCoordinator("account", {
-    presented: { documents: () => [tab], mainDocumentId: () => documentId },
+    presented: { documents: () => [tab], mainDocumentId: () => documentId, forget: () => {} },
   });
   const availability = new ProjectContextAvailabilityCoordinator({
     lookup: async () => ({ projectId, resolutionId: crypto.randomUUID(), resolutions: [] }),

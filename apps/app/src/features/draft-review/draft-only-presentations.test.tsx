@@ -80,7 +80,11 @@ beforeEach(() => {
   registry = new DraftOnlyPresentations();
   removedNotices = [];
   removal = new ContextRemovalCoordinator("account-a", {
-    presented: { documents: () => [presentedTab], mainDocumentId: () => documentId },
+    presented: {
+      documents: () => [presentedTab],
+      mainDocumentId: () => documentId,
+      forget: () => {},
+    },
     draftOnly: registry,
     drafts: { boundDrafts: () => [{ ownerKey, itemKey }] },
   });

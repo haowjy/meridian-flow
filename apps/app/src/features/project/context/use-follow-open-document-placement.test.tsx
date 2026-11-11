@@ -56,7 +56,7 @@ async function follows(selection: ContextRouteSelection) {
   const open = vi.fn<OpenContextRoute>(async () => ({ kind: "applied" as const }));
   function Present() {
     const presented = useOptionalPresentedDocuments();
-    useLayoutEffect(() => presented?.present("main", "project", tab, "main"), [presented]);
+    useLayoutEffect(() => presented?.mount("main", "project", tab, "main"), [presented]);
     return null;
   }
   function Host() {

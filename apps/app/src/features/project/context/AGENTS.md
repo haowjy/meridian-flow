@@ -58,7 +58,10 @@ chat resources rather than documents main opens.
   and the kept document do not count as opens.
 - Main with no document is a chooser. Selecting a recent document navigates;
   route and removal owners handle continuity and removal. Nothing stores open
-  documents: `PresentedDocuments` only records what hosts show.
+  documents: `PresentedDocuments` only records what hosts mount and show. A
+  new way for the writer or a removal to end a document (beyond close, Discard,
+  vanish and the availability batch) must `forget` it there, or the desktop keeps
+  it mounted as the kept host and brings it back in the side.
 
 ## Child guide
 
