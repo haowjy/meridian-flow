@@ -30,6 +30,11 @@ export function schemeAllowsCreation(scheme: ProjectContextTreeScheme): boolean 
   return scheme !== "uploads" && scheme !== "scratch";
 }
 
+/** Where something lives, for a row's second line: the source, then the folders down to it. */
+export function schemeLocation(scheme: ProjectContextTreeScheme, folders: readonly string[]) {
+  return [schemeLabel(scheme), ...folders].join(" / ");
+}
+
 export function schemeLabel(scheme: ProjectContextTreeScheme): string {
   switch (scheme) {
     case "manuscript":
