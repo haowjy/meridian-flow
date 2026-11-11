@@ -33,8 +33,11 @@ export type DiscardPart = {
   handle: DiscardUndo;
   /** The draft's review, for the view to follow an Undo back to. */
   review?: ReviewFileTarget;
-  /** Right after this room's Undo is written: the caller's caches catch up. */
-  undone?: () => void;
+  /**
+   * Right after this room's Undo is written, given its `landed`: the caller's caches catch up.
+   * Resolves true once the server lists the draft again, so a view may open it.
+   */
+  undone?: (landed: Promise<void>) => Promise<boolean>;
 };
 
 type Base = { id: number; projectId: string; ownerKey: string; surface: NoticeSurface };
@@ -49,7 +52,8 @@ export type DraftNotice =
       status: "ready" | "undoing" | "failed";
       /** The Discard sent main away from the page it was made on; `landed` is where main went. */
       left: { landed: string | null } | null;
-      undo(): Promise<"ok" | "failed">;
+      /** `ok` once the server lists every restored draft again; `unlisted` if one never was. */
+      undo(): Promise<"ok" | "unlisted" | "failed">;
       dismiss(): void;
     })
   | (Base & {
@@ -198,7 +202,7 @@ export class DraftNotices {
     this.publish();
   }
 
-  private async undo(ownerKey: string, id: number): Promise<"ok" | "failed"> {
+  private async undo(ownerKey: string, id: number): Promise<"ok" | "unlisted" | "failed"> {
     const notice = this.notices.get(ownerKey);
     const parts = this.parts.get(id);
     if (notice?.id !== id || notice.kind !== "discarded" || notice.status === "undoing" || !parts)
@@ -206,7 +210,9 @@ export class DraftNotices {
     this.update(ownerKey, id, () => ({ status: "undoing" }));
     // Retry takes back only the rooms that failed: a part that undid has ended and left the list.
     const answers = [...parts].map((part) => ({ part, ...part.handle.undo() }));
-    for (const { part, answer } of answers) if (answer === "ok") part.undone?.();
+    const listed = answers.flatMap(({ part, answer, landed }) =>
+      answer !== "ok" ? [] : [part.undone ? part.undone(landed) : landed.then(() => true)],
+    );
     const failed = answers.flatMap(({ part, answer }) => (answer === "failed" ? [part] : []));
     if (this.notices.get(ownerKey)?.id === id) {
       if (failed.length === 0) {
@@ -219,10 +225,9 @@ export class DraftNotices {
       }
     }
     if (failed.length) return "failed";
-    // A view following the Undo waits for the server to hold the prose: a draft-only document's
-    // review address resolves only once its draft has text again.
-    await Promise.all(answers.map(({ landed }) => landed));
-    return "ok";
+    // A view following the Undo waits until the server lists the draft again: a draft-only
+    // document opened on a draft the list omits closes as discarded.
+    return (await Promise.all(listed)).every(Boolean) ? "ok" : "unlisted";
   }
 
   private subjectOf(parts: readonly DiscardPart[]) {
