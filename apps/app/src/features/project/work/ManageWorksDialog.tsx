@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
 import { CreationDialog } from "@/features/creation/CreationDialog";
+import { lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { useWorkScope } from "../use-work-scope";
 import { useCreateWork, useWorkCreationRecovery } from "./useWorkCreation";
 import { useWorkDeletion } from "./useWorkDeletion";
@@ -125,6 +126,26 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
   };
   const toList = () => setView({ kind: "list" });
 
+  // A view change removes the control that made it, and the dialog itself catches the focus.
+  // It goes on to the new view's first control: an opened Work's name, or the list's tabs.
+  const body = useRef<HTMLDivElement>(null);
+  const { works } = useWorks(projectId);
+  const shown =
+    view.kind === "list"
+      ? "list"
+      : works?.some((work) => work.id === view.workId)
+        ? view.workId
+        : null;
+  const lastShown = useRef(shown);
+  useEffect(() => {
+    if (shown === null || shown === lastShown.current) return;
+    lastShown.current = shown;
+    const active = document.activeElement;
+    if (active && active !== document.body && !active.matches("[role=dialog]")) return;
+    const first = body.current?.querySelector<HTMLElement>("button, [href], input, [tabindex]");
+    if (first) moveFocus(first, { ring: lastInputWasKeyboard() });
+  }, [shown]);
+
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : leaveVia(close))}>
       <DialogContent className="flex h-[80vh] max-w-3xl flex-col gap-3">
@@ -149,7 +170,7 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
             </Trans>
           </DialogDescription>
         </DialogHeader>
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div ref={body} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {view.kind === "list" ? (
             <WorkCollection
               projectId={projectId}
