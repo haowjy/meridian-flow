@@ -6,7 +6,7 @@ import type { CatalogContextView } from "@/client/query/context-catalog-projecti
 import { useContextCatalogView, useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useLineageTitle } from "@/client/query/useLineageTitle";
 import { useWorks } from "@/client/query/useWorks";
-import type { ServerContextTab } from "@/client/stores";
+import type { ServerOpenDocument } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "./context-schemes";
 import {
@@ -22,7 +22,7 @@ import { type ScratchSource, useScratchCatalogs } from "./use-scratch-catalogs";
 
 export type ProjectMenuSource = {
   tree: DrillTree;
-  tabFor(rowId: string): ServerContextTab | null;
+  tabFor(rowId: string): ServerOpenDocument | null;
   /** The trail that opens inside a folder, from whichever area holds it; null when none does. */
   trailInside(folderId: string): DrillNode[] | null;
   /** Resolve an area or folder row into its placement destination. */

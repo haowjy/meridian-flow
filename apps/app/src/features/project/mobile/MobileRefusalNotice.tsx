@@ -8,7 +8,7 @@ import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
-import type { EditableContextTab } from "../context/ContextDocumentHost";
+import type { EditableOpenDocument } from "../context/ContextDocumentHost";
 import { parentContextEntryPath } from "../context/context-entry-name";
 import { EntryDestinationPicker } from "../context/EntryDestinationPicker";
 import { EntryNameField } from "../context/EntryNameField";
@@ -22,7 +22,7 @@ export function MobileRefusalNotice({
   className,
 }: {
   projectId: string;
-  tab: EditableContextTab;
+  tab: EditableOpenDocument;
   className?: string;
 }) {
   // A refused nameless create is listed in Unfiled, like any refused create.

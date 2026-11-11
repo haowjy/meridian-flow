@@ -104,7 +104,6 @@ function ChatComposerComponent({
         onOpenReference={onOpenReference}
         ref={composerRef}
         takeover={takeover}
-        variant="pinned"
         fileDropActive={fileDropActive}
         attached={
           <>

@@ -34,12 +34,13 @@ doesn't (removed, an upload) is skipped for the next candidate, and the picker o
 opens. `fitsBeside` is the one answer to "can this sit beside", for the rule and the picker. While
 a read or a describe is out, the side keeps what it showed and says no reason, since the kept
 reason was about another main. `side/SideView.tsx` holds this state and the commands
-(`useShellCommands`); both shells read it, and the phone's sheet takes chats only. The held pick
+(`useShellCommands`); both shells read it, and the phone's sheet shows the same item. The held pick
 lives per browser tab (`client/project-shell/store.ts`, seeded from the device) and never enters
-history, so Back moves main and leaves the hold alone. A hold ends by the held mark, by Follow in
-the picker, by closing the side, when it can no longer sit beside main (its item becomes main, a
-chat opens in main, or the phone shell meets a held document), when its document no longer opens,
-and when its document is closed, Discarded or removed: a hold the writer can't see never waits.
+history, so Back moves main and leaves the hold alone. Only the writer's own acts release a hold:
+the held mark, For this, the close button, the held item becoming main, and its document being
+closed, Discarded or removed. A fold from a narrow window is not one: the hold survives it and is
+back when the window widens. A held chat also gives way when the writer opens a chat in main (no
+chat sits beside a chat), and a held document that no longer opens is dropped.
 Ctrl/cmd-click or middle-click on a document link holds it beside with the link's Work and opens
 a closed side (`useOptionalHoldBeside`). Each header renders inside its host
 (`shell/MainHeader.tsx`, `side/SideHeader.tsx`); while the side is closed, main's header names it
@@ -134,16 +135,41 @@ on refusal, returns to the origin tab if the user hasn't moved focus elsewhere.
 ## Navigation and chat
 
 `routing/chat-navigation.tsx` is the single command seam for main: `openChat` always navigates
-main to the chat. The side chooses its own chat only through the held pick (the side's picker, or
-a chat created from the side's composer). `display` is the chat main shows (the index or one thread), null when main holds
-no chat; `lastChatId` is the last chat opened (`readLastChat` in `client/project-shell/store.ts`).
-A chat created from the side's composer is held beside. A link followed inside a chat opens the
-page in main, and the entry records that chat as its beside hint. On the phone, chat
-outside the Chat screen reveals the local Sheet.
+main to the chat, and `openNewChat` to `/chats`, main's new-chat composer. The side chooses its
+own chat only through the held pick (the side's picker, or a chat created from the side's
+composer). `display` is the chat main shows (`new` or one thread), null when main holds no chat;
+`lastChatId` is the last chat opened (`readLastChat` in `client/project-shell/store.ts`). A chat
+created from `/chats` takes main; one created from the side's composer is held beside. A link
+followed inside a chat opens the page in main, and the entry records that chat as its beside
+hint. A link or door to a page that chat drafted opens its draft (`useOwnerDraftOpener` in
+`review-launch.tsx`), with or without a passage (a passage door opens the draft at its top: draft
+editors don't register as passage targets yet); a cmd-click, ctrl-click or middle click holds the
+page beside main instead, on that draft when the chat has one. No chat sits beside a chat, so a chat in main takes the side's picker down
+to documents.
 
-The displayed-chat variant is derived from the URL; a chat may stay mounted behind the index
-but isn't the displayed chat. Primary-list lookups may supply Work and header projections but never
-decide the body identity or reject a subagent.
+There is no chat index. The sidebar's Chats list (`shell/sidebar/ChatsBody.tsx`) is how chats are
+found: a find field over the server's chat search, Favourites, the scoped Work's chats, and an
+"All chats" disclosure that pages the whole feed 24 at a time with Show more. Each row renames in
+place, toggles Favourites and deletes with an Undo line in the list.
+
+A chat delete belongs to the project, not the list (`shell/sidebar/chat-deletes.ts`, mounted by
+`ChatDeleteProvider` in `ProjectView`): its notice survives switching the sidebar's list, closing
+the phone's drawer and remounting the sidebar, and ends on the next delete, Dismiss, leaving the
+project, signing out or a reload. The delete takes main to `/chats` and lets go of a held side pick
+at once; the chat's saved composer words and unsent records stay held (`beginOwnChatDelete` in
+`client/chat-submissions/deleted-chat.ts`) until the notice ends without Undo, and then go only if
+the server still says the chat is deleted: no answer keeps them for the next load's sweep, since
+another tab or device may have restored it. Undo returns main to
+the chat only if main is still on `/chats`, and the pick only if nothing has been picked since. A
+chat with a reply running asks first: the server stops the run in the delete and Undo can't
+restart it. Every restore goes through `ChatDeletes` (Undo, and `restore` for a trashed chat's
+Restore line), so a restore of the chat a notice names ends the notice without dropping anything.
+`restoreProjectChat` resets the chat's snapshot query rather than invalidating it: a cached
+"deleted" error would read as proof the chat is gone when it next mounts. Nothing lists
+trashed chats; after a reload a deleted chat is reachable only by its address.
+
+The displayed-chat variant is derived from the URL. Primary-list lookups may supply Work and
+header projections but never decide the body identity or reject a subagent.
 
 ## Document review state
 
@@ -198,4 +224,3 @@ preload the project route loader, which would repeat owner and shell-data reads.
 - [`resource-lifecycle-architecture.md`](resource-lifecycle-architecture.md)
 - [`../mobile/.context/CONTEXT.md`](../mobile/.context/CONTEXT.md)
 - [`../context/.context/CONTEXT.md`](../context/.context/CONTEXT.md)
-- [`../chat-index/.context/CONTEXT.md`](../chat-index/.context/CONTEXT.md)

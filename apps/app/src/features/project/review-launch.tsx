@@ -9,15 +9,16 @@
 import type { EventRecord } from "@meridian/contracts/observability";
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
+import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
+import type { LinkFollowDisposition } from "@/core/editor/links";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDestination } from "@/features/links";
-import { usePhoneShell } from "@/hooks/use-phone-shell";
 import type { ContextUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
-import { contextTabFromDraftGroup } from "./context/context-tab-from-draft";
+import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
 import {
   type BesideHint,
   type OpenContextRoute,
@@ -92,7 +93,7 @@ export function ReviewLaunchProvider({
             ...(target.focus ? { changeId: target.focus.id } : {}),
           },
         });
-      const tab = contextTabFromDraftGroup(target);
+      const tab = openDocumentFromDraftGroup(target);
       const launch = ++sequence.current;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const result = await openContextRoute(
@@ -187,13 +188,12 @@ export function useReviewingLinkDestination(
 ): LinkDestination {
   const openEditorReview = useOptionalOpenEditorReview();
   const holdBeside = useOptionalHoldBeside();
-  // The phone's side holds chats only: a background open there opens in main.
-  const phone = usePhoneShell() === true;
   return useCallback(
     (document, gesture) => {
       const { review } = document;
-      // A cmd-click (or middle click) opens the document beside main, where it is held.
-      if (!review && gesture === "new-tab" && holdBeside && !phone) {
+      // A cmd-click (or middle click) holds the document beside main. A page only a draft has
+      // can't be held there, so it opens in main.
+      if (!review && gesture === "new-tab" && holdBeside) {
         holdBeside({
           kind: "document",
           documentId: document.documentId,
@@ -214,6 +214,42 @@ export function useReviewingLinkDestination(
         console.error("[editor-review] launch failed", error);
       });
     },
-    [open, openEditorReview, holdBeside, workId, phone],
+    [open, openEditorReview, holdBeside, workId],
+  );
+}
+
+/**
+ * A chat's way to a page it drafted, the same from a transcript link and a door: a plain click
+ * opens the owner's draft in main, as its draft strip does, passage or not (the draft opens at
+ * its top); a cmd-click, ctrl-click or middle click holds the page beside main, on that draft.
+ * Null when the owner has no draft of the page: the caller opens Live.
+ */
+export function useOwnerDraftOpener(
+  projectId: string,
+  ownerKey: string | null,
+): (documentId: string, gesture: LinkFollowDisposition) => Promise<void> | null {
+  const { fileForDocument } = useOwnerDrafts(projectId, ownerKey);
+  const openEditorReview = useOptionalOpenEditorReview();
+  const holdBeside = useOptionalHoldBeside();
+  return useCallback(
+    (documentId, gesture) => {
+      const drafted = fileForDocument(documentId);
+      if (!drafted?.contextLocation || !ownerKey) return null;
+      // A page only the draft has can't be held beside: it opens in main like a plain click.
+      if (gesture === "new-tab" && holdBeside && !drafted.draftOnly) {
+        holdBeside({ kind: "document", documentId }, { ownerKey, itemKey: drafted.draft.itemKey });
+        return Promise.resolve();
+      }
+      if (!openEditorReview) return null;
+      return openEditorReview({
+        ownerKey,
+        documentId,
+        itemKey: drafted.draft.itemKey,
+        contextLocation: drafted.contextLocation,
+        documentName: drafted.documentName ?? undefined,
+        draftOnly: drafted.draftOnly,
+      }).catch((error) => console.error("[editor-review] launch failed", error));
+    },
+    [fileForDocument, ownerKey, openEditorReview, holdBeside],
   );
 }

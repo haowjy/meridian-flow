@@ -1,9 +1,9 @@
 import { type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts/branches";
 import { readDocumentView } from "@/client/project-shell/document-views";
-import { type ContextTab, isEditorContextTab } from "@/client/stores";
+import { isEditorOpenDocument, type OpenDocument } from "@/client/stores";
 import { armEditorFocus } from "@/features/editor/focus-on-open";
 import type { RouteBindingProof } from "../context/context-removal-protocol";
-import { contextTabMatchesRoute } from "../context/context-tab-identity";
+import { openDocumentMatchesRoute } from "../context/open-document-identity";
 import { addressReviewOwner } from "./document-address-review";
 import { resolveLaunchLocator } from "./launch-locator";
 import {
@@ -41,11 +41,11 @@ export function createEditorDocumentCommand({
   accountId: string;
   read: () => EditorCommandSnapshot;
   /** What the views present now (`PresentedDocuments`): a renamed document's current locator. */
-  presented: () => readonly ContextTab[];
+  presented: () => readonly OpenDocument[];
   lookup: Parameters<typeof resolveLaunchLocator>[0]["lookup"];
   /** Some host presents this document draft-only (`DraftOnlyPresentations`). */
   isDraftOnly: (documentId: string) => boolean;
-  admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>) => void;
+  admitDraftReview: (tab: Extract<OpenDocument, { kind: "tracked" }>) => void;
   /** Binds the route about to be shown to the document the navigation named. */
   enterRoute: (locator: ContextRouteRequest, documentId: string, by: RouteBindingProof) => void;
 }): OpenContextRoute {
@@ -195,10 +195,10 @@ export function prepareEditorDestination(
     /** The Work scope; null while the Works list has not resolved. */
     scope: string | null;
     /** What the views present, main's document first (`PresentedDocuments`). */
-    presented: readonly ContextTab[];
+    presented: readonly OpenDocument[];
   },
   target: ContextRouteRequest,
-  preparedTab?: ContextTab,
+  preparedTab?: OpenDocument,
   itemKey?: string,
   reviewOwner?: string,
   changeId?: string,
@@ -206,10 +206,10 @@ export function prepareEditorDestination(
   let state: Record<string, unknown> | undefined;
   const documentId =
     target.documentId ?? (target.path === "" && scope ? presented[0]?.documentId : undefined);
-  const eligible = presented.filter(isEditorContextTab);
+  const eligible = presented.filter(isEditorOpenDocument);
   const tab = documentId
     ? eligible.find((tab) => tab.documentId === documentId)
-    : eligible.find((tab) => contextTabMatchesRoute(tab, target));
+    : eligible.find((tab) => openDocumentMatchesRoute(tab, target));
   const selected = preparedTab ?? tab;
   // A locally created document keeps its stable selection even when its
   // readable address is reused or its background placement is rejected.
@@ -260,25 +260,25 @@ export function prepareEditorDestination(
 }
 /** The draft a request's draft-only document is shown on, if the request names one. */
 function draftOnlyDocumentPin(
-  tabs: readonly ContextTab[],
+  tabs: readonly OpenDocument[],
   request: ContextRouteRequest,
   isDraftOnly: (documentId: string) => boolean,
   pinOf: (documentId: string) => ReturnType<typeof readDocumentView>["pin"],
 ) {
   const tab = tabs
-    .filter(isEditorContextTab)
+    .filter(isEditorOpenDocument)
     .find(
       (tab) =>
         tab.kind !== "new" &&
         (request.documentId === undefined || tab.documentId === request.documentId) &&
-        contextTabMatchesRoute(tab, request) &&
+        openDocumentMatchesRoute(tab, request) &&
         isDraftOnly(tab.documentId),
     );
   return tab ? pinOf(tab.documentId) : undefined;
 }
 
 /** A prepared tab states the locator the route will use, not the one it was built from. */
-function tabAtLocator(tab: ContextTab, locator: ContextRouteRequest): ContextTab {
+function tabAtLocator(tab: OpenDocument, locator: ContextRouteRequest): OpenDocument {
   if (tab.kind === "new" || (tab.scheme === locator.scheme && tab.path === locator.path))
     return tab;
   return {

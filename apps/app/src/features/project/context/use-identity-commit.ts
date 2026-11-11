@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { type ProjectContextTreeScheme, storedFilename } from "@meridian/contracts/protocol";
 import { useWorks } from "@/client/query/useWorks";
-import { type ContextTab, replaceOwner, type TabOwner } from "@/client/stores";
+import { type OpenDocument, replaceOwner, type TabOwner } from "@/client/stores";
 import type { OpenContextOptions } from "../routing/ProjectNavigationContext";
 import { type ContextRouteRequest, contextRouteRequest } from "../routing/project-route";
 import { useAccountResourceReplica } from "./account-feature-context";
@@ -34,7 +34,7 @@ export type IdentityCommitOwnership = {
   /** True only for the latest operation started by this identity surface. */
   isLatest: boolean;
   /** The mounted representation captured before the namespace command. */
-  tab: ContextTab;
+  tab: OpenDocument;
 };
 
 export function identityCommitMayNavigate(
@@ -66,7 +66,7 @@ type IdentityCommitPlan =
   | { kind: "commit"; desired: DesiredIdentity };
 
 export function deriveIdentityCommitPlan(
-  tab: ContextTab,
+  tab: OpenDocument,
   target: DesiredIdentity,
   editorWorkId: string | null,
 ): IdentityCommitPlan {
@@ -103,7 +103,7 @@ export function useIdentityCommit({
   onCommitted,
 }: {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   editorWorkId: string | null;
   onCommitted: (
     documentId: string,

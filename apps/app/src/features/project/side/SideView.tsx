@@ -1,13 +1,14 @@
 /**
  * The side's state for one project view: what it shows (`useSideItem`), which chat is on screen,
- * and the held pick's commands (`useShellCommands`). Both shells read it; the phone's sheet holds
- * chats only.
+ * and the held pick's commands (`useShellCommands`). Both shells read it: the phone's side is
+ * its sheet.
  *
  * The held pick is stored per browser tab (`client/project-shell/store.ts`) and never written to
- * history: Back moves main, and the beside hint returns with its entry. A hold ends by the held
- * mark, by "Follow" in the picker, by closing the side, when it can no longer sit beside main (its
- * item becomes main, a chat in main, a document on the phone), when its document no longer opens,
- * and when its document is closed, Discarded or removed.
+ * history: Back moves main, and the beside hint returns with its entry. Only the writer's own acts
+ * release a hold: the held mark, For this, the close button, the held item becoming main, and its
+ * document being closed, Discarded or removed. A fold from a narrow window is not one: the hold
+ * survives it. A held chat gives way to a chat in main, and a held document that no longer opens
+ * is dropped.
  */
 import {
   createContext,
@@ -19,6 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { type DraftPin, setDocumentView } from "@/client/project-shell/document-views";
 import {
   type HeldPick,
   readHeldPick,
@@ -29,7 +31,7 @@ import {
 import { useDocumentRelated } from "@/client/query/useDocumentRelated";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import type { NewChatAbout } from "@/features/chat/CreationComposer";
 import {
   useAccountId,
@@ -38,6 +40,8 @@ import {
   useShownDocuments,
 } from "../context/account-feature-context";
 import { useDescribeProjectDocument } from "../context/open-project-document";
+import { recentOpening } from "../context/recent-opening";
+import { useRecordOpenedDocument } from "../context/use-record-opened-document";
 import type { Item } from "../views";
 import {
   type Candidate,
@@ -56,7 +60,7 @@ import {
 export type SideItem = {
   item: Item | null;
   /** A document item's descriptor. */
-  tab: ContextTab | null;
+  tab: OpenDocument | null;
   source: SideSource | null;
   /** Why it is there; none while the side keeps an earlier item, whose reason was about another main. */
   reason: SideReason | null;
@@ -78,7 +82,8 @@ type SideView = {
   reportNewChatAbout: (about: NewChatAbout) => void;
   /** Bumped by a hold from a link: the desktop opens the side so the hold is seen. */
   revealed: number;
-  holdBeside: (pick: HeldPick) => void;
+  /** With `draft`, the held document shows that draft. */
+  holdBeside: (pick: HeldPick, draft?: DraftPin) => void;
   descriptions: Descriptions;
 };
 
@@ -112,7 +117,7 @@ function useCompanion(
           ? [{ item: { kind: "chat", chatId: lastChatId }, reason: "last-chat" }]
           : [],
       };
-    case "chat-index":
+    case "new-chat":
       return { status: "ready", candidates: lastDocuments };
     case "document": {
       if (mainIsLocal) return { status: "ready", candidates: [] };
@@ -158,7 +163,7 @@ type Descriptions = {
 function useDescriptions(projectId: string): Descriptions {
   const describe = useDescribeProjectDocument(projectId);
   const shown = useShownDocuments(projectId);
-  const [answers, setAnswers] = useState<ReadonlyMap<string, ContextTab | null | "failed">>(
+  const [answers, setAnswers] = useState<ReadonlyMap<string, OpenDocument | null | "failed">>(
     () => new Map(),
   );
   const asked = useRef(new Set<string>());
@@ -171,7 +176,7 @@ function useDescriptions(projectId: string): Descriptions {
   const lifecycle = useRef(lifecycleOf);
   lifecycle.current = lifecycleOf;
   const refused = useRef(new Map<string, string | null>());
-  const store = useCallback((key: string, value: ContextTab | null | "failed" | undefined) => {
+  const store = useCallback((key: string, value: OpenDocument | null | "failed" | undefined) => {
     if (value === null) refused.current.set(key, lifecycle.current(key.split("|")[0] ?? ""));
     else refused.current.delete(key);
     setAnswers((current) => {
@@ -256,14 +261,12 @@ export function SideViewProvider({
   main,
   mainIsLocal,
   besideChatId,
-  chatsOnly,
   children,
 }: {
   projectId: string;
   main: MainForSide;
   mainIsLocal: boolean;
   besideChatId: string | null;
-  chatsOnly: boolean;
   children: ReactNode;
 }) {
   const accountId = useAccountId();
@@ -276,7 +279,6 @@ export function SideViewProvider({
     held,
     besideChatId,
     companion,
-    chatsOnly,
     describe: descriptions.read,
   });
   const describing = resolution.kind === "pending" ? resolution.describing : null;
@@ -294,7 +296,7 @@ export function SideViewProvider({
   const settled =
     resolution.kind === "settled"
       ? resolution.side
-      : kept?.item && fitsBeside(kept.item, main, chatsOnly)
+      : kept?.item && fitsBeside(kept.item, main)
         ? reaimComposer(kept, main)
         : null;
   const sideKey = JSON.stringify([settled, resolution.kind]);
@@ -313,21 +315,24 @@ export function SideViewProvider({
   );
 
   useReleaseHold(accountId, projectId, held, resolution.releaseHeld);
+  useRecordSidePick(projectId, side.source === "held" ? side.tab : null);
 
   const mainChat = main.kind === "chat" ? main.chatId : null;
   const sideChat = side.item?.kind === "chat" ? side.item : null;
-  const chatOnScreen = mainChat ?? (main.kind === "chat-index" ? null : (sideChat?.chatId ?? null));
+  const chatOnScreen = mainChat ?? (main.kind === "new-chat" ? null : (sideChat?.chatId ?? null));
   // The thread the one chat host renders. It keeps the last chat it showed while no chat is on
   // screen, so a stream and the transcript stay warm behind a picked document.
   const showing: string | null | undefined =
-    mainChat ?? (main.kind === "chat-index" ? lastChatId : sideChat ? sideChat.chatId : undefined);
+    mainChat ?? (main.kind === "new-chat" ? null : sideChat ? sideChat.chatId : undefined);
   const [hostChatId, setHostChatId] = useState<string | null>(showing ?? lastChatId);
   if (showing !== undefined && showing !== hostChatId) setHostChatId(showing);
 
   const [newChatAbout, reportNewChatAbout] = useState<NewChatAbout>("follows");
   const [revealed, setRevealed] = useState(0);
   const holdBeside = useCallback(
-    (pick: HeldPick) => {
+    (pick: HeldPick, draft?: DraftPin) => {
+      if (draft && pick.kind === "document")
+        setDocumentView(accountId, projectId, pick.documentId, { pin: draft });
       writeHeldPick(accountId, projectId, pick);
       setRevealed((count) => count + 1);
     },
@@ -358,6 +363,23 @@ export function SideViewProvider({
     ],
   );
   return <SideViewContext.Provider value={value}>{children}</SideViewContext.Provider>;
+}
+
+/** A document the writer picked beside counts as recently opened, once per pick. */
+function useRecordSidePick(projectId: string, picked: OpenDocument | null) {
+  const record = useRecordOpenedDocument();
+  const recorded = useRef<string | null>(null);
+  useEffect(() => {
+    if (!picked) {
+      recorded.current = null;
+      return;
+    }
+    if (recorded.current === picked.documentId) return;
+    const opening = recentOpening(projectId, picked, new Date().toISOString(), false);
+    if (!opening) return;
+    recorded.current = picked.documentId;
+    record(opening);
+  }, [picked, projectId, record]);
 }
 
 /** A kept new-chat composer is about main's document, not the one it was settled beside. */
@@ -445,7 +467,7 @@ export function useNewChatAbout(): {
 }
 
 /** Holds a document beside from a link, and has the side seen; null outside the project view. */
-export function useOptionalHoldBeside(): ((pick: HeldPick) => void) | null {
+export function useOptionalHoldBeside(): SideView["holdBeside"] | null {
   return useContext(SideViewContext)?.holdBeside ?? null;
 }
 

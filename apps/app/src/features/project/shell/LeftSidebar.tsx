@@ -9,7 +9,7 @@ import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { role } from "@/components/ui/roles";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
@@ -33,7 +33,7 @@ type LeftSidebarProps = {
   chatThreadId: string | null;
   contextLive: boolean;
   /** The document whose row reads as current: main's, or beside a chat the side's. */
-  activeDocument: ContextTab | null;
+  activeDocument: OpenDocument | null;
 };
 
 export function LeftSidebar({

@@ -299,7 +299,7 @@ export function ChatView({
     () => composerRef.current?.focus(),
     () => {
       navigation.forgetChat(threadId);
-      void navigation.openNewChat(undefined, { replace: true });
+      void navigation.openNewChat({ replace: true });
     },
     {
       visible: active,
@@ -309,10 +309,10 @@ export function ChatView({
           : activeThread.title,
       leave: (moved) => {
         navigation.forgetChat(threadId);
-        if (moved) void navigation.openNewChat(undefined, { replace: true });
+        if (moved) void navigation.openNewChat({ replace: true });
         // Only main's chat leaving moves main; the side resolves again on its own.
         else if (navigation.display?.kind === "thread" && navigation.display.threadId === threadId)
-          void navigation.openNewChat(undefined, { replace: true });
+          void navigation.openNewChat({ replace: true });
       },
     },
   );

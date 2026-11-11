@@ -4,50 +4,36 @@
  * server takes no text or Apply on its drafts, only a whole Discard.
  * Restore brings back the lineage's first chat. The drafts stay read-only until the server
  * has restored it and the draft list says so: thawing first would let the writer type into a
- * room that still drops their text. A refusal shows here.
+ * room that still drops their text. A refusal shows here. The restore goes through the project's
+ * chat deletes, so a "Deleted" notice for the same chat ends with it.
  */
 import { Trans } from "@lingui/react/macro";
 import { parseDraftOwnerKey } from "@meridian/contracts/branches";
-import { useQueryClient } from "@tanstack/react-query";
 import { ArchiveRestore } from "lucide-react";
 import { useState } from "react";
-import { restoreThread } from "@/client/api/threads-api";
-import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { DocumentNotice } from "@/components/app/DocumentNotice";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
+import { useChatDeletes } from "@/features/project/shell/sidebar/ChatDeleteProvider";
 import { cn } from "@/lib/utils";
 
 export function TrashedChatNotice({
-  projectId,
   ownerKey,
   className,
 }: {
-  projectId: string;
   /** The frozen lineage's owner key. */
   ownerKey: string;
   className?: string;
 }) {
-  const queryClient = useQueryClient();
+  const deletes = useChatDeletes();
   const [state, setState] = useState<"idle" | "restoring" | "failed">("idle");
   const rootThreadId = parseDraftOwnerKey(ownerKey)?.id;
   const restore = () => {
     if (!rootThreadId || state === "restoring") return;
     setState("restoring");
-    restoreThread(rootThreadId)
-      .then(() =>
-        Promise.all([
-          queryClient.invalidateQueries({
-            queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
-          }),
-          invalidateProjectThreadData(queryClient, projectId),
-        ]),
-      )
-      .then(
-        () => setState("idle"),
-        () => setState("failed"),
-      );
+    void deletes
+      .restore(rootThreadId)
+      .then((outcome) => setState(outcome.status === "success" ? "idle" : "failed"));
   };
   return (
     <div className={cn("min-w-0", className)}>

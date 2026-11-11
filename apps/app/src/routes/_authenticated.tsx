@@ -2,7 +2,7 @@ import type { AccountSettings } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
-import { lazy, Suspense, useCallback, useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { getAccountSettings, nextAccountSettingsGeneration } from "@/client/api/account-api";
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
@@ -142,15 +142,8 @@ function AuthenticatedAccountProviderTree({
   };
 }) {
   const queryClient = useQueryClient();
-  const repairProjectCatalog = useCallback(
-    (projectId: string) =>
-      queryClient.invalidateQueries({
-        queryKey: ["projects", projectId, "context-catalog"],
-      }),
-    [queryClient],
-  );
   return (
-    <AccountFeatureComposition accountId={user.userId} repairProjectCatalog={repairProjectCatalog}>
+    <AccountFeatureComposition accountId={user.userId} queryClient={queryClient}>
       <AccountSettingsProvider
         serverValue={user.accountSettings}
         serverReadGeneration={user.accountSettingsReadGeneration}

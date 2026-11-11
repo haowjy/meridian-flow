@@ -1,9 +1,9 @@
 /** Two tabs may cache one locator: the bound document's tab, not the first match, stays admitted. */
 import { expect, it } from "vitest";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { planContextRemoval } from "./context-removal-planner";
 
-function tab(documentId: string, path: string): ContextTab {
+function tab(documentId: string, path: string): OpenDocument {
   return {
     kind: "tracked",
     documentId,

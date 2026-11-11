@@ -1,15 +1,15 @@
 /** Exact, heuristic-free resolution of the Editor workspace owner for one committed route. */
 
-import { type ContextTab, isEditorContextTab } from "@/client/stores";
+import { isEditorOpenDocument, type OpenDocument } from "@/client/stores";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { type ContextRouteIdentity, routeTargetForTab } from "./context-removal-planner";
-import { contextTabMatchesRoute } from "./context-tab-identity";
+import { openDocumentMatchesRoute } from "./open-document-identity";
 
 export type WorkspaceRouteResolution =
-  | { kind: "owner"; tab: ContextTab; identity: ContextRouteIdentity }
+  | { kind: "owner"; tab: OpenDocument; identity: ContextRouteIdentity }
   | {
       kind: "materialized-local";
-      tab: Extract<ContextTab, { kind: "tracked" }>;
+      tab: Extract<OpenDocument, { kind: "tracked" }>;
       target: ContextRouteRequest;
     }
   | { kind: "unowned" };
@@ -21,7 +21,7 @@ export function resolveWorkspaceRoute({
   boundDocumentId,
   isDraftOnly,
 }: {
-  tabs: readonly ContextTab[];
+  tabs: readonly OpenDocument[];
   selectedDocumentId: string | undefined;
   locator: ContextRouteRequest | null;
   /**
@@ -37,7 +37,7 @@ export function resolveWorkspaceRoute({
   isDraftOnly?: (documentId: string) => boolean;
 }): WorkspaceRouteResolution {
   if (!locator) return { kind: "unowned" };
-  tabs = tabs.filter(isEditorContextTab);
+  tabs = tabs.filter(isEditorOpenDocument);
   // Identity before path (see route-document-owner): a bound document's tab owns the route
   // wherever the tab's path went, and no other tab may own it by holding the path.
   const server = boundDocumentId
@@ -45,7 +45,7 @@ export function resolveWorkspaceRoute({
     : tabs.find(
         (tab) =>
           tab.kind !== "new" &&
-          contextTabMatchesRoute(tab, locator) &&
+          openDocumentMatchesRoute(tab, locator) &&
           !isDraftOnly?.(tab.documentId),
       );
   if (server) {

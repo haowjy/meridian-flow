@@ -24,8 +24,6 @@ export type MobileBreadcrumbSegment = {
   onSelect?: () => void;
   /** Interactive control that stands for the current segment (the chat switcher). */
   current?: ReactNode;
-  /** A short fixed label ("Chats") that must never truncate. */
-  keep?: boolean;
 };
 
 /**
@@ -107,13 +105,7 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
             );
           }
           return (
-            <li
-              key={item.key}
-              className={cn(
-                "flex items-center",
-                item.segment.keep ? "shrink-0" : "min-w-9 shrink-[3]",
-              )}
-            >
+            <li key={item.key} className="flex min-w-9 shrink-[3] items-center">
               {separator}
               {item.segment.onSelect ? (
                 // -my-3 keeps the 44px target without growing the 20px trail row

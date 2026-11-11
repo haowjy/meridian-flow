@@ -12,7 +12,7 @@ import { ChevronRight } from "lucide-react";
 import { useId } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useDocumentProperties } from "@/client/query/useDocumentProperties";
-import { type ContextTab, tabContextOwner } from "@/client/stores";
+import { type OpenDocument, tabContextOwner } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { DocumentPropertyValue, YamlBlock } from "./DocumentPropertyValue";
 
 /** The catalog's word on whether a document has properties; false until it has said so. */
-function useHasProperties(projectId: string, tab: ContextTab): boolean {
+function useHasProperties(projectId: string, tab: OpenDocument): boolean {
   const owner = tab.kind === "new" ? {} : tabContextOwner(tab);
   const { catalog } = useContextCatalogView(
     projectId,
@@ -33,7 +33,7 @@ function useHasProperties(projectId: string, tab: ContextTab): boolean {
   return tab.kind !== "new" && catalog?.findDocument(tab.documentId)?.hasProperties === true;
 }
 
-export function DocumentProperties({ projectId, tab }: { projectId: string; tab: ContextTab }) {
+export function DocumentProperties({ projectId, tab }: { projectId: string; tab: OpenDocument }) {
   const hasProperties = useHasProperties(projectId, tab);
   if (!hasProperties) return null;
   return <PropertiesRow key={tab.documentId} projectId={projectId} documentId={tab.documentId} />;

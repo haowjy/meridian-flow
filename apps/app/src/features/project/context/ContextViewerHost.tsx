@@ -13,7 +13,7 @@ import { Trans } from "@lingui/react/macro";
 import { AlertCircle } from "lucide-react";
 import { documentDownloadUrl } from "@/client/api/figures-api";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { cn } from "@/lib/utils";
 import { previewKind } from "./preview-kind";
@@ -25,7 +25,7 @@ import { TextViewer } from "./viewers/TextViewer";
 
 export type ContextViewerHostProps = {
   projectId: string;
-  tab: Extract<ContextTab, { kind: "viewer" }>;
+  tab: Extract<OpenDocument, { kind: "viewer" }>;
   /** The surface's material; the side paints its own and passes `bg-transparent`. */
   className?: string;
 };

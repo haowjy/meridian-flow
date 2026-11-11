@@ -16,7 +16,7 @@ import {
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
 
 export type ProjectDestination =
-  | { kind: "chat-index" | "editor" }
+  | { kind: "new-chat" | "editor" }
   | { kind: "chat"; chatId: string }
   | { kind: "document"; scheme: ProjectContextTreeScheme; path: string };
 
@@ -85,9 +85,9 @@ export function withoutReview(address: ProjectAddress): ProjectAddress {
 /** The path names the kind of main's item, then which one. */
 function parseDestination(parts: string[]): ProjectDestination | null {
   const [screen, ...rest] = parts;
-  if (screen === undefined) return { kind: "chat-index" };
+  if (screen === undefined) return { kind: "new-chat" };
   if (screen === "chats") {
-    if (rest.length === 0) return { kind: "chat-index" };
+    if (rest.length === 0) return { kind: "new-chat" };
     const chatId = rest.length === 1 ? uuid(rest[0]) : null;
     return chatId ? { kind: "chat", chatId } : null;
   }
@@ -163,7 +163,7 @@ export function projectAddressHref(address: ProjectAddress): string {
   const push = (...segments: string[]) => parts.push(...segments.map(encodeURIComponent));
   const d = address.destination;
   switch (d.kind) {
-    case "chat-index":
+    case "new-chat":
       push("chats");
       break;
     case "chat":

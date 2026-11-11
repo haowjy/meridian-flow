@@ -14,9 +14,9 @@
  * itself (the identity row's ladder); React then never resets that attribute.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { Check, Loader2, X } from "lucide-react";
-import { type MouseEventHandler, type ReactNode, useEffect, useRef, useState } from "react";
+import { type MouseEventHandler, type ReactNode, useRef, useState } from "react";
+import { AskOnce } from "@/components/app/AskOnce";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -33,8 +33,7 @@ export function reviewActionLabel(action: "apply" | "discard", scope: ReviewScop
 
 /**
  * A Discard's one question, in the place of the controls that asked it: the Discard carries no
- * Undo. Focus moves to Keep, so Enter keeps the draft and a row that reveals its actions on
- * focus keeps the question shown.
+ * Undo.
  */
 export function DiscardQuestion({
   scope,
@@ -49,29 +48,16 @@ export function DiscardQuestion({
   touch?: boolean;
   className?: string;
 }) {
-  const keep = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    keep.current?.focus();
-  }, []);
-  const button = cn("text-button text-xs", touch ? "min-h-11" : "coarse:min-h-11");
   return (
-    <span
-      data-discard-question={scope}
-      className={cn(
-        "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-caption text-muted-foreground",
-        className,
-      )}
-    >
-      <span className="min-w-0">{discardQuestion(scope)}</span>
-      <span className="flex shrink-0 items-center gap-2">
-        <button ref={keep} type="button" className={button} onClick={onKeep}>
-          <Trans>Keep</Trans>
-        </button>
-        <button type="button" className={button} onClick={onConfirm}>
-          <Trans>Discard</Trans>
-        </button>
-      </span>
-    </span>
+    <AskOnce
+      sentence={discardQuestion(scope)}
+      keep={t`Keep`}
+      confirm={t`Discard`}
+      onKeep={onKeep}
+      onConfirm={onConfirm}
+      touch={touch}
+      className={className}
+    />
   );
 }
 

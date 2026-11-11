@@ -4,13 +4,13 @@
  * - a suspended removal lifetime refuses committed deletes until it resumes
  */
 import { describe, expect, it } from "vitest";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
 
 const projectId = "project-settlement";
 const documentId = "00000000-0000-4000-8000-000000000077";
-const tab: ContextTab = {
+const tab: OpenDocument = {
   kind: "tracked",
   documentId,
   scheme: "scratch",

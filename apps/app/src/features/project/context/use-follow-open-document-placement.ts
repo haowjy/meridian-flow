@@ -21,7 +21,7 @@ import {
 } from "./account-feature-context";
 import { routeTargetForTab } from "./context-removal-planner";
 import { type ContextRouteSelection, routeSelectionDocumentId } from "./context-removal-protocol";
-import { projectResourceTab } from "./context-tab-from-file";
+import { projectResourceTab } from "./open-document-from-file";
 import { useIsDraftOnly } from "./use-is-draft-only";
 
 export function useFollowOpenDocumentPlacement(input: {

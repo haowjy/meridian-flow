@@ -26,7 +26,7 @@ import { Trans } from "@lingui/react/macro";
 import { Eye, EyeOff, List } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, useAfterPaintRelease } from "@/components/app/PaintHold";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -52,7 +52,7 @@ import { DocumentVersionMenu } from "./DocumentVersionMenu";
 
 export type DraftReviewBandProps = {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   documentId: string;
   itemKey: string;
   /** Set for a draft-only document: closes its tab instead of returning to live. */

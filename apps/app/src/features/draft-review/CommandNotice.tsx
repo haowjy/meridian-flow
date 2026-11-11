@@ -9,9 +9,11 @@ import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
+import { setDocumentView } from "@/client/project-shell/document-views";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { IconButton } from "@/components/ui/icon-button";
 import {
+  useAccountId,
   useDraftCommandOwner,
   useOptionalPresentedDocuments,
 } from "@/features/project/context/account-feature-context";
@@ -99,8 +101,9 @@ export function CommandNotice({
 
 /**
  * One notice: "Draft of Chapter 1 discarded." with Undo and a dismiss, or what an Apply did.
- * An Undo that failed stays, with Retry. When main is still on the document the Discard left it
- * on, an Undo returns the page to the draft; anywhere else nothing moves.
+ * An Undo that failed stays, with Retry. When main, the side or the phone's sheet still presents
+ * the document the Discard left there, an Undo returns that view to the draft; anywhere else
+ * nothing moves.
  */
 export function DraftNoticeLine({
   notice,
@@ -111,6 +114,7 @@ export function DraftNoticeLine({
 }) {
   useLingui();
   const presented = useOptionalPresentedDocuments();
+  const accountId = useAccountId();
   const { openReviewFile } = useAiDraftLauncher();
   const dismiss = (
     <IconButton label={t`Dismiss`} className="shrink-0" onClick={notice.dismiss}>
@@ -141,13 +145,13 @@ export function DraftNoticeLine({
     // if main is still there.
     const stays = left ? left.landed : review?.documentId;
     void notice.undo().then((answer) => {
-      if (
-        answer === "ok" &&
-        review &&
-        stays !== undefined &&
-        presented?.mainDocumentId(projectId) === stays
-      )
-        openReviewFile(review, ownerKey);
+      if (answer !== "ok" || !review || stays === undefined || !presented) return;
+      if (presented.mainDocumentId(projectId) === stays) openReviewFile(review, ownerKey);
+      // Beside main the address is main's: only the document's view changes.
+      else if (stays !== null && presented.isPresented(projectId, stays))
+        setDocumentView(accountId, projectId, stays, {
+          pin: { ownerKey, itemKey: review.draft.itemKey },
+        });
     });
   };
   if (notice.status === "failed")

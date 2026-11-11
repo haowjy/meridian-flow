@@ -10,10 +10,10 @@
  */
 import { useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { type DraftPin, useDocumentView } from "@/client/project-shell/document-views";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { useOwnerDraftRows } from "../views";
 import { useAccountId, useOptionalDraftOnlyPresentations } from "./account-feature-context";
-import type { EditableContextTab } from "./ContextDocumentHost";
+import type { EditableOpenDocument } from "./ContextDocumentHost";
 import { useIsDraftOnly } from "./use-is-draft-only";
 
 export type DocumentLiveness = "live" | "draft-only" | "pending";
@@ -23,7 +23,7 @@ const subscribeNothing = () => () => undefined;
 /** The pinned draft's evidence that live lacks the document; `pending` while its row is unread. */
 function usePinnedDraftEvidence(
   projectId: string,
-  tab: ContextTab | null,
+  tab: OpenDocument | null,
 ): { pin: DraftPin | undefined; evidence: boolean; pending: boolean } {
   const accountId = useAccountId();
   const isDraftOnly = useIsDraftOnly(projectId);
@@ -40,7 +40,7 @@ function usePinnedDraftEvidence(
 }
 
 /** For a reader that is not the document's host (the recents record, the identity bar). */
-export function useDocumentLiveness(projectId: string, tab: ContextTab | null): DocumentLiveness {
+export function useDocumentLiveness(projectId: string, tab: OpenDocument | null): DocumentLiveness {
   const { evidence, pending } = usePinnedDraftEvidence(projectId, tab);
   return evidence ? "draft-only" : pending ? "pending" : "live";
 }
@@ -48,7 +48,7 @@ export function useDocumentLiveness(projectId: string, tab: ContextTab | null): 
 /** The host's own: presents its document while draft-only, under a token minted per mount. */
 export function useDraftOnlyPresentation(
   projectId: string,
-  tab: EditableContextTab,
+  tab: EditableOpenDocument,
 ): DocumentLiveness {
   const registry = useOptionalDraftOnlyPresentations();
   const [token] = useState(() => crypto.randomUUID());

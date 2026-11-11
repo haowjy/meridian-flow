@@ -3,10 +3,10 @@ import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Folder, type LucideIcon } from "lucide-react";
 import type { CatalogContextView, CatalogNode } from "@/client/query/context-catalog-projection";
-import type { ServerContextTab } from "@/client/stores";
+import type { ServerOpenDocument } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
 import { fileKindIcon } from "./context-file-icon";
-import { serverTabFromFile } from "./context-tab-from-file";
+import { serverTabFromFile } from "./open-document-from-file";
 
 export type MenuArea = {
   /** A stable folder id for the area itself, never a catalog entry id. */
@@ -79,7 +79,7 @@ export function buildMenuTree({
 }
 
 /** The tab a picked row opens as, from whichever area holds it. */
-export function menuTabFor(areas: readonly MenuArea[], rowId: string): ServerContextTab | null {
+export function menuTabFor(areas: readonly MenuArea[], rowId: string): ServerOpenDocument | null {
   for (const area of areas) {
     const own = area.catalog?.files().find((file) => file.entryId === rowId);
     if (own) return serverTabFromFile(area.scheme, own, area.owner);

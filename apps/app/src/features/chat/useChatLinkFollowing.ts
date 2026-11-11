@@ -51,6 +51,7 @@ import { lookupProjectContextAvailability } from "@/client/query/project-context
 import { useTopChat } from "@/client/query/useTopChat";
 import { useWorks } from "@/client/query/useWorks";
 import { createLinkAnswerCache, createLinkRequester } from "@/core/editor/links";
+import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import {
   type LinkDestination,
   type LinkFollowDialog,
@@ -61,7 +62,7 @@ import {
 } from "@/features/links";
 import type { FolderMenuHost } from "@/features/project/context/FolderMenu";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { useReviewingLinkDestination } from "@/features/project/review-launch";
+import { useOwnerDraftOpener, useReviewingLinkDestination } from "@/features/project/review-launch";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
 import { type ChatDoors, type ContextPassageAnchor, useChatDoors } from "./ChatContextNavigation";
 import { createReferenceAvailability, type ReferenceAvailability } from "./reference-availability";
@@ -159,7 +160,18 @@ export function useChatLinkFollowing({
       }),
     [openReferenceDocument],
   );
-  const open = useReviewingLinkDestination(openLive);
+  const openReviewing = useReviewingLinkDestination(openLive);
+  // A page this chat drafted opens on its draft.
+  const openDrafted = useOwnerDraftOpener(
+    projectId,
+    chatOwnerKey(activeWork, activeThread?.rootThreadId ?? null) || null,
+  );
+  const open = useCallback<LinkDestination>(
+    (document, gesture) =>
+      (!document.review && !document.trashed && openDrafted(document.documentId, gesture)) ||
+      openReviewing(document, gesture),
+    [openDrafted, openReviewing],
+  );
   const folders = useMemo<FolderMenuHost>(
     () => ({ projectId, openDocument: (documentId) => void open({ documentId }, "current") }),
     [open, projectId],
@@ -220,9 +232,9 @@ export function useChatLinkFollowing({
 
   const navigation = useMemo<TranscriptLinkNavigation>(
     () => ({
-      follow: (target) => {
+      follow: (target, gesture) => {
         shellDoors?.retire();
-        follower.follow(target);
+        follower.follow(target, gesture);
       },
       canFollow: follower.canFollow,
       resolution,

@@ -5,7 +5,7 @@ import type {
   ProjectContextTreeScheme,
   WorkingSetRoute,
 } from "@meridian/contracts/protocol";
-import type { ContextTab, ServerContextTab } from "@/client/stores";
+import type { OpenDocument, ServerOpenDocument } from "@/client/stores";
 import {
   type ReconcileContextRoutesInput,
   readRecentRoutes,
@@ -102,6 +102,17 @@ export type ContextRemovalRoutePort = {
 type PresentedPort = Pick<PresentedDocuments, "documents" | "mainDocumentId" | "forget">;
 
 /** The draft-only documents hosts present (`DraftOnlyPresentations`). */
+/**
+ * The cached answers to "what lives at this address". Kept by a query cache that outlives a
+ * removal: an answer from before it would paint the document again.
+ */
+export type AddressAnswersPort = {
+  /** Live no longer has these documents: an answer naming one is now "unavailable". */
+  removed(projectId: string, documentIds: readonly string[]): void;
+  /** Live has a document again: every answer is read afresh. */
+  available(projectId: string): void;
+};
+
 export type DraftOnlyPort = {
   isDraftOnly(projectId: string, documentId: string): boolean;
   holdRemovedLive(
@@ -229,6 +240,7 @@ export class ContextRemovalCoordinator {
   private readonly notices: RemovedPresentationPort | null;
   private readonly drafts: BoundDraftsPort | null;
   private readonly draftOnly: DraftOnlyPort | null;
+  private readonly addresses: AddressAnswersPort | null;
   private readonly appliedAvailability = new Map<string, AppliedAvailabilityCommand>();
   private readonly terminalAvailability = new Map<string, ProjectDocumentAvailabilityCommand>();
   private readonly pendingSessionEffects = new Map<string, PendingSessionAvailabilityEffect>();
@@ -252,6 +264,7 @@ export class ContextRemovalCoordinator {
           notices?: RemovedPresentationPort;
           drafts?: BoundDraftsPort;
           draftOnly?: DraftOnlyPort;
+          addresses?: AddressAnswersPort;
         }
       | null = null,
     explicitDependencies: {
@@ -262,6 +275,7 @@ export class ContextRemovalCoordinator {
       notices?: RemovedPresentationPort;
       drafts?: BoundDraftsPort;
       draftOnly?: DraftOnlyPort;
+      addresses?: AddressAnswersPort;
     } = {},
   ) {
     const dependencies =
@@ -276,6 +290,7 @@ export class ContextRemovalCoordinator {
     this.notices = dependencies.notices ?? null;
     this.drafts = dependencies.drafts ?? null;
     this.draftOnly = dependencies.draftOnly ?? null;
+    this.addresses = dependencies.addresses ?? null;
   }
 
   /**
@@ -583,7 +598,7 @@ export class ContextRemovalCoordinator {
    * exact command to the newly presented document instead of leaving it outside the command's
    * already-settled batch.
    */
-  reconcileInstalledTab(projectId: string, tab: ContextTab): void {
+  reconcileInstalledTab(projectId: string, tab: OpenDocument): void {
     const key = `${projectId}/${tab.documentId}`;
     const command = this.terminalAvailability.get(key);
     if (command?.kind !== "terminal-remove") return;
@@ -668,13 +683,14 @@ export class ContextRemovalCoordinator {
             kind: record.kind,
           });
         }
-        this.presented.forget(
-          projectId,
-          committed.flatMap((command) => {
-            const id = availabilityDocumentId(command);
-            return command.kind === "available" || held.has(id) ? [] : [id];
-          }),
-        );
+        const gone = committed.flatMap((command) => {
+          const id = availabilityDocumentId(command);
+          return command.kind === "available" || held.has(id) ? [] : [id];
+        });
+        this.presented.forget(projectId, gone);
+        if (gone.length > 0) this.addresses?.removed(projectId, gone);
+        if (committed.some((command) => command.kind === "available"))
+          this.addresses?.available(projectId);
         for (const command of committed) {
           const key = `${projectId}/${availabilityDocumentId(command)}`;
           if (command.kind === "terminal-remove") this.terminalAvailability.set(key, command);
@@ -699,7 +715,7 @@ export class ContextRemovalCoordinator {
             if (command.kind !== "terminal-remove") return [];
             const id = command.documentId;
             const tab = presented.find(
-              (candidate): candidate is ServerContextTab =>
+              (candidate): candidate is ServerOpenDocument =>
                 candidate.kind !== "new" && candidate.documentId === id,
             );
             return tab && !settledPlan.tabs.some((candidate) => candidate.documentId === id)
@@ -848,7 +864,7 @@ export class ContextRemovalCoordinator {
    */
   writerClose(
     projectId: string,
-    addressed: ContextTab,
+    addressed: OpenDocument,
   ): ContextRemovalOutcome | Promise<NavigationSettlement> {
     if (this.unavailable()) return { kind: "noop" };
     const state = this.project(projectId);
@@ -893,7 +909,7 @@ export class ContextRemovalCoordinator {
     );
   }
 
-  private commitWriterClose(projectId: string, addressed: ContextTab): ContextRemovalOutcome {
+  private commitWriterClose(projectId: string, addressed: OpenDocument): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     const documentId = addressed.documentId;
     const tab = this.presented
@@ -945,7 +961,7 @@ export class ContextRemovalCoordinator {
    * availability proves a removal; the address stays where it is, so the view shows the removal
    * in place. A kept one, off screen, just goes.
    */
-  closeVanished(projectId: string, tab: ContextTab): ContextRemovalOutcome {
+  closeVanished(projectId: string, tab: OpenDocument): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     if (this.heldByDrafts(projectId, [tab.documentId]).has(tab.documentId)) return { kind: "noop" };
     this.presented.forget(projectId, [tab.documentId]);
@@ -994,7 +1010,7 @@ export class ContextRemovalCoordinator {
    * leaves its draft pending, so the removal guard that keeps Back and late
    * address resolution from resurrecting a discarded address no longer applies.
    */
-  admitDraftReview(projectId: string, tab: Extract<ContextTab, { kind: "tracked" }>): void {
+  admitDraftReview(projectId: string, tab: Extract<OpenDocument, { kind: "tracked" }>): void {
     this.projects.get(projectId)?.terminalRemovals.delete(locatorKey(routeTargetForTab(tab)));
   }
 

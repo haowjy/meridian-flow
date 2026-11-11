@@ -14,11 +14,10 @@
  * fits beside only once it is described and opens in the editor: one that no longer opens (removed,
  * an upload) is skipped, and a hold on one ends. While the companion read or a describe is
  * unanswered the side keeps what it shows; it never paints a fallback and then swaps. No chat sits
- * beside a chat. The phone's side is its chat sheet, which holds chats only. A hold that can no
- * longer sit beside main ends.
+ * beside a chat. A hold that can no longer sit beside main ends.
  */
 import type { HeldPick } from "@/client/project-shell/store";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import type { Item } from "../views";
 
 /** Why the side shows its item: the header and the picker say so. */
@@ -38,7 +37,7 @@ export type SettledSide = {
   /** Null: nothing to show (a chat beside which no document was ever opened). */
   item: Item | null;
   /** A document item's descriptor. */
-  tab: ContextTab | null;
+  tab: OpenDocument | null;
   source: SideSource;
   reason: SideReason | null;
 };
@@ -48,7 +47,7 @@ export type MainForSide =
   | { kind: "document"; documentId: string }
   | { kind: "chat"; chatId: string }
   /** The new-chat composer: main is a chat with none yet. */
-  | { kind: "chat-index" }
+  | { kind: "new-chat" }
   /** Recently opened: main names no document. */
   | { kind: "landing" }
   /** The address names a document that is still resolving. */
@@ -66,7 +65,7 @@ export type Companion =
 export type Described =
   | { status: "pending" }
   | { status: "failed"; retry: () => void }
-  | { status: "ready"; tab: ContextTab | null };
+  | { status: "ready"; tab: OpenDocument | null };
 
 /** A document to describe: a link's held document keeps the link's Work. */
 export type Describing = { documentId: string; workId?: string };
@@ -99,7 +98,7 @@ export function mainItem(main: MainForSide): Item | null {
       : null;
 }
 
-const mainIsChat = (main: MainForSide) => main.kind === "chat" || main.kind === "chat-index";
+const mainIsChat = (main: MainForSide) => main.kind === "chat" || main.kind === "new-chat";
 
 /** The held pick as the side shows it: a new chat's composer is about main's document. */
 function heldItem(held: HeldPick, main: MainForSide): Item {
@@ -110,17 +109,15 @@ function heldItem(held: HeldPick, main: MainForSide): Item {
 }
 
 /**
- * Whether an item may sit beside main, before its descriptor is known: never main's own, no chat
- * beside a chat, chats only on the phone.
+ * Whether an item may sit beside main, before its descriptor is known: never main's own, and no
+ * chat beside a chat.
  */
-export function fitsBeside(item: Item, main: MainForSide, chatsOnly: boolean): boolean {
-  return (
-    !sameItem(item, mainItem(main)) && (item.kind === "document" ? !chatsOnly : !mainIsChat(main))
-  );
+export function fitsBeside(item: Item, main: MainForSide): boolean {
+  return !sameItem(item, mainItem(main)) && (item.kind === "document" || !mainIsChat(main));
 }
 
 type Step =
-  | { kind: "show"; tab: ContextTab | null }
+  | { kind: "show"; tab: OpenDocument | null }
   | { kind: "skip" }
   | { kind: "wait"; resolution: Unsettled };
 
@@ -130,14 +127,12 @@ export function resolveSide(input: {
   /** The chat this history entry was opened from. */
   besideChatId: string | null;
   companion: Companion;
-  /** The phone's sheet holds chats only, and only beside a document or Recently opened. */
-  chatsOnly: boolean;
   describe: (document: Describing) => Described;
 }): SideResolution {
   const { main } = input;
   if (main.kind === "opening") return { kind: "pending", describing: null, releaseHeld: false };
   const step = (item: Item, workId?: string): Step => {
-    if (!fitsBeside(item, main, input.chatsOnly)) return { kind: "skip" };
+    if (!fitsBeside(item, main)) return { kind: "skip" };
     if (item.kind === "chat") return { kind: "show", tab: null };
     const document: Describing = workId
       ? { documentId: item.documentId, workId }
@@ -155,7 +150,7 @@ export function resolveSide(input: {
   let releaseHeld = false;
   const settle = (
     item: Item,
-    tab: ContextTab | null,
+    tab: OpenDocument | null,
     source: SideSource,
     reason: SideReason | null,
   ): SideResolution => ({ kind: "settled", side: { item, tab, source, reason }, releaseHeld });
@@ -169,7 +164,7 @@ export function resolveSide(input: {
   }
   if (input.besideChatId) {
     const item: Item = { kind: "chat", chatId: input.besideChatId };
-    if (fitsBeside(item, main, input.chatsOnly)) return settle(item, null, "beside", "opened-from");
+    if (fitsBeside(item, main)) return settle(item, null, "beside", "opened-from");
   }
   const { companion } = input;
   if (companion.status === "pending") return { kind: "pending", describing: null, releaseHeld };

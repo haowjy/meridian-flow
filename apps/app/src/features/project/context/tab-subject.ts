@@ -1,6 +1,6 @@
 /** What dragging a tab, or the leaf crumb of its path, names. */
 import type { CopyContextEntryView } from "@meridian/contracts/protocol";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import type { ReferenceSubject } from "./entry-drag/reference-source";
 
 /**
@@ -9,7 +9,7 @@ import type { ReferenceSubject } from "./entry-drag/reference-source";
  * reviewed document with no draft text to copy names nothing.
  */
 export function tabSubject(
-  tab: ContextTab,
+  tab: OpenDocument,
   review: { reviewing: boolean; view: CopyContextEntryView | null },
   draftOnly: boolean,
 ): ReferenceSubject | null {
