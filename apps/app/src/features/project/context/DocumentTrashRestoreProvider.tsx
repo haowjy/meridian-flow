@@ -19,7 +19,7 @@ import {
   type RestoreDestination,
   settlePendingRestores,
 } from "@/client/trash-restore/pending-restores";
-import { documentLocationName } from "../../chat/document-display-name";
+import { documentDisplayName, documentLocationName } from "../../chat/document-display-name";
 import {
   useOptionalAccountResourceReplica,
   useOptionalContextRemovalCoordinator,
@@ -154,10 +154,13 @@ export function DocumentTrashRestoreProvider({
         outcomes: Awaited<ReturnType<typeof restoreTrashedDocuments>> | null,
       ) => {
         const restored: DocumentTrashEntry[] = [];
+        let landedAt: string | undefined;
         for (const entry of entries) {
           const outcome = outcomes?.get(entry.documentId) ?? "network";
-          if (await settle(entry, outcome)) restored.push(entry);
-          else putBackInTrash(queryClient, projectId, entry, places.get(entry.documentId) ?? 0);
+          if (await settle(entry, outcome)) {
+            restored.push(entry);
+            if (outcome !== "network" && outcome.kind === "living") landedAt = outcome.landedAt;
+          } else putBackInTrash(queryClient, projectId, entry, places.get(entry.documentId) ?? 0);
         }
         const restoredIds = new Set(restored.map(({ documentId }) => documentId));
         dropPendingRestores(
@@ -172,7 +175,7 @@ export function DocumentTrashRestoreProvider({
         if (restored.length === 0) return;
         setNotice({
           id: Date.now(),
-          text: restoredText(restored, entries.length, destinationName),
+          text: restoredText(restored, entries.length, destinationName, landedAt),
           ...(resources
             ? {
                 undo: () =>
@@ -260,10 +263,14 @@ function restoredText(
   restored: readonly DocumentTrashEntry[],
   requested: number,
   destinationName: string,
+  /** Where the one document landed: the server counts the name up when it is taken. */
+  landedAt: string | undefined,
 ): string {
   const [only] = restored;
-  if (restored.length === 1 && requested === 1 && only)
-    return t`Restored ${only.name} to ${destinationName}.`;
+  if (restored.length === 1 && requested === 1 && only) {
+    const name = landedAt ? documentDisplayName(landedAt) : only.name;
+    return t`Restored ${name} to ${destinationName}.`;
+  }
   if (restored.length === requested)
     return plural(restored.length, {
       one: `Restored # item to ${destinationName}.`,

@@ -14,49 +14,39 @@ export const ALL_SOURCES: readonly SourceKey[] = [
   "changes",
 ];
 
-const DEFAULT_SHOWN: readonly SourceKey[] = [
-  "manuscript",
-  "kb",
-  "scratch",
-  "user",
-  "trash",
-  "changes",
-];
-
 type SidebarTabs = {
   shown: readonly SourceKey[];
   toggle: (source: SourceKey) => void;
+  show: (source: SourceKey) => void;
 };
 
 /** Which sources the sidebar's strip shows: the writer's choice, kept on this device. */
 export const useSidebarTabs = create<SidebarTabs>()(
   persist(
     (set) => ({
-      shown: DEFAULT_SHOWN,
+      shown: ALL_SOURCES,
       toggle: (source) =>
-        set((state) => {
-          const shown = state.shown.includes(source)
+        set((state) => ({
+          shown: state.shown.includes(source)
             ? state.shown.filter((key) => key !== source)
-            : [...state.shown, source];
-          // The strip keeps its order whatever order tabs were added in.
-          return { shown: ALL_SOURCES.filter((key) => shown.includes(key)) };
-        }),
+            : inStripOrder([...state.shown, source]),
+        })),
+      show: (source) =>
+        set((state) =>
+          state.shown.includes(source) ? state : { shown: inStripOrder([...state.shown, source]) },
+        ),
     }),
     {
       name: "meridian.sidebar-tabs.v1",
-      // v1 strips could include Chats, which now lives in the Chat list; strips before v3
-      // predate Changes, so they gain it.
-      version: 3,
-      migrate: (stored, version) => {
-        const shown = (stored as { shown?: readonly string[] }).shown ?? [];
-        const kept = ALL_SOURCES.filter((key) => shown.includes(key));
-        // A strip that was only Chats still needs a list to show.
-        if (kept.length === 0) return { shown: DEFAULT_SHOWN };
-        return { shown: version < 3 ? [...kept, "changes"] : kept };
-      },
+      version: 1,
       partialize: (state) => ({ shown: state.shown }),
       // Rehydrated after mount: the server renders the default strip.
       skipHydration: true,
     },
   ),
 );
+
+/** The strip keeps its order whatever order tabs were added in. */
+function inStripOrder(shown: readonly SourceKey[]): SourceKey[] {
+  return ALL_SOURCES.filter((key) => shown.includes(key));
+}
