@@ -704,7 +704,13 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
     },
 
     async reserveWriteOrdinal(documentId, threadId) {
-      return reserveWriteOrdinal(db, { documentId, threadId });
+      // The ambient transaction's connection: the root handle would take a second pooled
+      // connection while the caller's transaction holds the first, and wait forever on a
+      // drained pool.
+      return reserveWriteOrdinal(currentDrizzleDb(db as Database) as JournalDb, {
+        documentId,
+        threadId,
+      });
     },
 
     async readUpdates(docId, after, through) {
