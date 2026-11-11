@@ -206,7 +206,12 @@ function writeChildren(
         ((flat(current[c0]) && flat(target[t])) || nests(current[c0], target[t]));
       let bestSim = preserve || oneToOne ? -1 : 0.3;
       for (let c = from; c < c1; c++) {
-        const sim = similarity(current[c], target[t], true);
+        // Same type only: a cross-type pair can never be edited in place, and would steal the
+        // slot of the block that can.
+        const sim =
+          current[c].type === target[t].type
+            ? similarity(current[c], target[t], true, Math.max(bestSim, 0))
+            : 0;
         if (
           sim > bestSim ||
           (current[c].textContent === "" &&
