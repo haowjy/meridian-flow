@@ -542,7 +542,7 @@ const ROWS: Row[] = [
     members: [0],
   },
   {
-    name: "a rebase that rebuilds a paragraph with an inline image names no one",
+    name: "a rebase that edits a paragraph with an inline image in place keeps the AI named",
     blocks: [withImage("alpha beta gamma delta epsilon")],
     run: (r) => {
       r.ai((d) =>
@@ -550,8 +550,8 @@ const ROWS: Row[] = [
       );
       r.rebase([withImage("alpha beta gamma delta epsilon LIVE")]);
     },
-    byline: [],
-    members: [],
+    byline: [T()],
+    members: [0],
   },
 ];
 
