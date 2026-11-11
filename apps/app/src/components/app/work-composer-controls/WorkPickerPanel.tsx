@@ -129,7 +129,7 @@ export function WorkPickerPanel({
         onChange={onQueryChange}
         label={t`Search Work`}
       />
-      <PickerResults bound="fill">
+      <PickerResults>
         {view.status === "ready" ? (
           <PickerSection>
             <PickerRow

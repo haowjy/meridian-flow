@@ -13,7 +13,6 @@ const dropdownRow = cva(
       kind: {
         navigation: "h-8 py-1.5 coarse:h-11",
         descriptive: "h-10 py-0.5 coarse:h-11",
-        identity: "min-h-11 flex-col items-start gap-0.5 py-0.5",
       },
       interactive: {
         true: "dropdown-focus-ring transition-colors hover:bg-ink-fill focus-visible:bg-ink-fill data-[highlighted]:bg-ink-fill",
@@ -61,7 +60,7 @@ export const dropdownSurfaceVariants = cva(
 
 export const dropdownSearchClass = "h-8 pl-8 pr-2 text-sm coarse:h-11";
 
-export const dropdownResultsClass = "app-scroll max-h-64";
+export const dropdownResultsClass = "app-scroll max-h-72";
 
 /** Lets a composite row own selected, hover, and descendant-focus geometry. */
 export const dropdownRowContainerClass =
