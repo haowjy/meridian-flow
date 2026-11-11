@@ -321,7 +321,7 @@
   [data-project-slot="rail-l"][data-project-surface-state="active"] {
     animation: panel-in-left var(--motion-duration-panel) var(--motion-ease-shell);
   }
-  [data-project-slot="dock"][data-project-surface-state="active"] {
+  [data-project-slot="side"][data-project-surface-state="active"] {
     animation: panel-in-right var(--motion-duration-panel) var(--motion-ease-shell);
   }
 }

@@ -91,7 +91,7 @@ it("keeps a proven local resource handle on the document an address names", () =
     localFile,
     undefined,
   );
-  expect(addressed?.tab).toMatchObject({
+  expect(addressed?.document).toMatchObject({
     documentId: "doc-id",
     name: "doc",
     path: "/doc",

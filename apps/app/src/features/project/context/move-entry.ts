@@ -7,7 +7,7 @@ import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ParentRef } from "@meridian/resource-replica";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import type { TabOwner } from "@/client/stores";
+import type { OpenDocumentOwner } from "@/client/stores";
 import { destinationOwner } from "./identity-location";
 
 /** An area's top level (its catalog root) or a folder in it. */
@@ -30,7 +30,7 @@ export function destinationParent(
   const { scheme, owner, catalog, entryId } = destination;
   if (entryId !== catalog.root.entryId) return { kind: "folder", folderId: entryId };
   const parsed = parseContextUri(catalog.root.uri);
-  const tabOwner: TabOwner =
+  const tabOwner: OpenDocumentOwner =
     owner.rootThreadId && parsed.ok && parsed.value.authority.kind === "lineage"
       ? { rootThreadId: owner.rootThreadId, rootThreadRef: parsed.value.authority.rootThreadRef }
       : { workId: owner.workId ?? undefined };

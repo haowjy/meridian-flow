@@ -14,14 +14,14 @@ import type { OpenDocument } from "@/client/stores";
 import type { ContextRouteRequest } from "../routing/project-route";
 
 /** The document an answered address names (`addressedDocument`). */
-export type AddressedDocument = { tab: OpenDocument; draftOnly: boolean };
+export type AddressedDocument = { document: OpenDocument; draftOnly: boolean };
 
 export type RouteDocumentOwner =
   | { kind: "live"; file: CatalogFile; byIdentity: boolean }
   /** Live lacks the document: its descriptor is the address's draft row. */
-  | { kind: "draft-only"; tab: OpenDocument }
+  | { kind: "draft-only"; document: OpenDocument }
   /** The bound document the catalog lacks here (a review of a move): the address's answer. */
-  | { kind: "addressed"; tab: OpenDocument }
+  | { kind: "addressed"; document: OpenDocument }
   /** An identity the route holds that no source resolves yet. */
   | { kind: "pending" }
   | { kind: "absent" };
@@ -60,8 +60,11 @@ export function resolveRouteDocumentOwner(input: {
   });
   if (live.kind === "live") return live;
   const addressed = input.addressed;
-  if (!addressed || (input.boundDocumentId && addressed.tab.documentId !== input.boundDocumentId))
+  if (
+    !addressed ||
+    (input.boundDocumentId && addressed.document.documentId !== input.boundDocumentId)
+  )
     return live;
-  if (addressed.draftOnly) return { kind: "draft-only", tab: addressed.tab };
-  return live.kind === "pending" ? { kind: "addressed", tab: addressed.tab } : live;
+  if (addressed.draftOnly) return { kind: "draft-only", document: addressed.document };
+  return live.kind === "pending" ? { kind: "addressed", document: addressed.document } : live;
 }

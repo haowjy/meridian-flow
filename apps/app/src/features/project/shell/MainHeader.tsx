@@ -48,7 +48,7 @@ export function MainHeader({
       leading={<RecentlyOpenedDoor active={document === null} onClick={onShowRecents} />}
       title={
         <div className="flex h-full min-w-0 flex-1 items-stretch">
-          {document ? <DocumentTitleChip projectId={projectId} tab={document} /> : null}
+          {document ? <DocumentTitleChip projectId={projectId} document={document} /> : null}
           <RemovedNoticeSlot>
             <RemovedDocumentChip projectId={projectId} />
           </RemovedNoticeSlot>
@@ -82,27 +82,27 @@ export function MainHeader({
 }
 
 /** The page's own title: the active chip, a drag source for a reference to what it shows. */
-function DocumentTitleChip({ projectId, tab }: { projectId: string; tab: OpenDocument }) {
-  const paint = useDocumentPaint(projectId, tab);
+function DocumentTitleChip({ projectId, document }: { projectId: string; document: OpenDocument }) {
+  const paint = useDocumentPaint(projectId, document);
   const drafts = useOwnerDrafts(projectId, paint.draft?.ownerKey ?? null);
-  const file = paint.draft ? drafts.fileForDocument(tab.documentId) : null;
+  const file = paint.draft ? drafts.fileForDocument(document.documentId) : null;
   const reviewing = paint.showing === "draft";
   const isDraftOnly = useIsDraftOnly(projectId);
   const drag = useReferenceDrag(
     tabSubject(
-      tab,
+      document,
       {
         reviewing,
         view: file && paint.draft ? draftCopyView(file, paint.draft.ownerKey) : null,
       },
-      isDraftOnly(tab.documentId),
+      isDraftOnly(document.documentId),
     ),
   );
-  const Icon = fileKindIcon(tab.name);
+  const Icon = fileKindIcon(document.name);
   return (
     <div
       {...drag}
-      title={tab.kind === "new" ? tab.name : tab.path}
+      title={document.kind === "new" ? document.name : document.path}
       className={cn(
         "min-w-0 max-w-64 shrink gap-1.5",
         tabChipClass(true),
@@ -110,7 +110,7 @@ function DocumentTitleChip({ projectId, tab }: { projectId: string; tab: OpenDoc
       )}
     >
       <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 truncate text-xs">{tab.name}</span>
+      <span className="min-w-0 truncate text-xs">{document.name}</span>
     </div>
   );
 }

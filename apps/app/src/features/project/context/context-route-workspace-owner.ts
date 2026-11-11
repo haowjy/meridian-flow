@@ -6,10 +6,10 @@ import { type ContextRouteIdentity, routeTargetForTab } from "./context-removal-
 import { openDocumentMatchesRoute } from "./open-document-identity";
 
 export type WorkspaceRouteResolution =
-  | { kind: "owner"; tab: OpenDocument; identity: ContextRouteIdentity }
+  | { kind: "owner"; document: OpenDocument; identity: ContextRouteIdentity }
   | {
       kind: "materialized-local";
-      tab: Extract<OpenDocument, { kind: "tracked" }>;
+      document: Extract<OpenDocument, { kind: "tracked" }>;
       target: ContextRouteRequest;
     }
   | { kind: "unowned" };
@@ -26,17 +26,17 @@ export function resolveWorkspaceRoute(
   if (document.kind !== "new" && openDocumentMatchesRoute(document, locator))
     return {
       kind: "owner",
-      tab: document,
+      document: document,
       identity: { kind: "server", documentId: document.documentId },
     };
   if (locator.scheme !== "unfiled" || locator.path !== "") return { kind: "unowned" };
   if (document.kind === "new")
     return {
       kind: "owner",
-      tab: document,
+      document: document,
       identity: { kind: "local", documentId: document.documentId },
     };
   if (document.kind === "tracked" && document.origin === "local-resource")
-    return { kind: "materialized-local", tab: document, target: routeTargetForTab(document) };
+    return { kind: "materialized-local", document: document, target: routeTargetForTab(document) };
   return { kind: "unowned" };
 }

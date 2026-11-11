@@ -22,7 +22,7 @@ export function openDocumentInEditor(
   if ("kind" in target && target.kind === "new")
     return open(
       { scheme: "unfiled", path: "", documentId: target.documentId },
-      { replace: false, tab, ...routeOptions },
+      { replace: false, document: tab, ...routeOptions },
     );
   return open(
     // The owner is a Scratch note's alone; a draft's owner travels as `reviewOwner`.
@@ -30,7 +30,7 @@ export function openDocumentInEditor(
     {
       replace: false,
       ...routeOptions,
-      ...(tab ? { tab } : {}),
+      ...(tab ? { document: tab } : {}),
       ...reviewRouteOptions(review),
     },
   );

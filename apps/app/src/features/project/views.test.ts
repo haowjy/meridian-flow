@@ -40,7 +40,7 @@ describe("main's draft-only review route", () => {
       scheme: "manuscript",
       path: "/new-chapter.md",
       workId: null,
-      addressed: { tab: draftTab, draftOnly: true },
+      addressed: { document: draftTab, draftOnly: true },
       catalog: emptyCatalog,
       isError: false,
       isFetching: false,
@@ -48,8 +48,8 @@ describe("main's draft-only review route", () => {
     });
 
   it("is reached only by the address that names its draft, never by a plain path", () => {
-    expect(route()).toMatchObject({ tab: { documentId: "document-draft" }, draftOnly: true });
-    expect(route({ addressed: null }).tab).toBeNull();
+    expect(route()).toMatchObject({ document: { documentId: "document-draft" }, draftOnly: true });
+    expect(route({ addressed: null }).document).toBeNull();
   });
 
   it("keeps a bound draft-only document when another document now holds its old path", () => {
@@ -63,13 +63,14 @@ describe("main's draft-only review route", () => {
     const resolved = route({
       path: "/old.md",
       boundDocumentId: "document-draft",
-      addressed: { tab: moved, draftOnly: true },
+      addressed: { document: moved, draftOnly: true },
       catalog,
     });
-    expect(resolved.tab).toMatchObject({ documentId: "document-draft" });
+    expect(resolved.document).toMatchObject({ documentId: "document-draft" });
     // A bound document no source resolves is pending, never the occupant.
     expect(
-      route({ path: "/old.md", boundDocumentId: "document-draft", addressed: null, catalog }).tab,
+      route({ path: "/old.md", boundDocumentId: "document-draft", addressed: null, catalog })
+        .document,
     ).toBeNull();
   });
 });

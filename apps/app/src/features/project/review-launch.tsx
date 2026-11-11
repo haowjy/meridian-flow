@@ -103,7 +103,7 @@ export function ReviewLaunchProvider({
           }),
           {
             replaceIfSameDocument: true,
-            tab: tab ?? undefined,
+            document: tab ?? undefined,
             draftOnly: target.draftOnly,
             itemKey: target.itemKey,
             reviewOwner: target.ownerKey,

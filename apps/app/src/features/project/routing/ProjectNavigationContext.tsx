@@ -25,7 +25,7 @@ export type OpenContextOptions = {
   replace?: boolean;
   /** Replace only when the route already names this document; otherwise push. */
   replaceIfSameDocument?: boolean;
-  tab?: OpenDocument;
+  document?: OpenDocument;
   /** Live lacks the document: its draft created it, or live deleted it while the draft keeps it. */
   draftOnly?: boolean;
   /** The destination is a document the writer just made: its editor takes the caret once live. */

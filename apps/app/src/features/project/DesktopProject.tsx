@@ -62,19 +62,19 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const setSlotOpenHere = (slot: PanelSlotId, open: boolean) => {
     if (open) narrowHold.openByHand(slot);
     // Closing the side lets go of a held pick: it reopens following main.
-    else if (slot === "dock") releaseSide();
+    else if (slot === "side") releaseSide();
     setSlotOpen(slot, open);
   };
   const sidebarToggle: PaneHeaderRailToggle = { open: panels["rail-l"].open };
-  const sideToggle: PaneHeaderRailToggle = { open: panels.dock.open };
-  const sideOpen = panels.dock.open;
+  const sideToggle: PaneHeaderRailToggle = { open: panels.side.open };
+  const sideOpen = panels.side.open;
   // A hold made from a link opens the side, so the click has a visible result.
   const revealed = useSideRevealed();
   const seenReveal = useRef(revealed);
   useEffect(() => {
     if (revealed === seenReveal.current) return;
     seenReveal.current = revealed;
-    if (!sideOpen) setSlotOpenHere("dock", true);
+    if (!sideOpen) setSlotOpenHere("side", true);
   });
 
   const main = useMainItem();
@@ -89,18 +89,18 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   };
   const masked = isProjectRouteMasked(mask);
   // A masked address paints no document: a removed one shows its removed state in place.
-  const mainTab = !mainChat && !masked && props.contextLive ? main.document.tab : null;
+  const mainTab = !mainChat && !masked && props.contextLive ? main.document.document : null;
 
   // Each mounted document at its host's current descriptor, newest on screen first.
   const shown = useShownDocuments(projectId);
   const side = useSideItem();
-  const sideTab = side.item?.kind === "document" ? side.tab : null;
+  const sideTab = side.item?.kind === "document" ? side.document : null;
   // While the side is closed, main's header names what it would show; pressing it opens the side.
   const closedSide = sideOpen ? null : (
     <ClosedSideButton
       projectId={projectId}
-      tab={sideTab}
-      onOpen={() => setSlotOpenHere("dock", true)}
+      document={sideTab}
+      onOpen={() => setSlotOpenHere("side", true)}
     />
   );
   // The newest document shown that is off screen stays mounted, hidden. A document moving
@@ -120,11 +120,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const [focusReview, setFocusReview] = useState<string | null>(null);
   const documentHost = (tab: OpenDocument, place: "main" | "side" | "kept"): SlotGridHost => ({
     key: `document:${tab.documentId}`,
-    slot: place === "main" ? "center" : place === "side" && sideOpen ? "dock" : null,
+    slot: place === "main" ? "center" : place === "side" && sideOpen ? "side" : null,
     children: (
       <DocumentHost
         projectId={projectId}
-        tab={tab}
+        document={tab}
         place={place}
         visible={place === "main" || (place === "side" && sideOpen)}
         main={place === "main" ? main.document : undefined}
@@ -146,7 +146,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           ) : place === "side" ? (
             <SideDocumentHeader
               projectId={projectId}
-              tab={tab}
+              document={tab}
               onOpenInMain={() => openInMain(tab)}
             />
           ) : null
@@ -161,7 +161,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const chatInMain = mainChat !== null;
   const chatHost: SlotGridHost = {
     key: "chat",
-    slot: chatInMain ? "center" : sideChat && sideOpen ? "dock" : null,
+    slot: chatInMain ? "center" : sideChat && sideOpen ? "side" : null,
     children: (
       <ProjectRouteBoundary
         destinationKey={props.routeLocationKey}
@@ -271,7 +271,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   if (sideOpen && !sideChat && !(sideTab && sideTab.documentId !== mainTab?.documentId))
     hosts.push({
       key: "side-empty",
-      slot: "dock",
+      slot: "side",
       children: <SideEmpty projectId={projectId} />,
     });
 
@@ -310,7 +310,7 @@ function useNarrowWindowHold() {
     const narrow = window.matchMedia(NARROW_DESKTOP_QUERY);
     const apply = () => {
       const next: PanelSlotId[] = [];
-      if (compact.matches) next.push("dock");
+      if (compact.matches) next.push("side");
       if (narrow.matches) next.push("rail-l");
       setHeld(next.length === 0 ? NO_HELD_PANELS : next);
     };
@@ -323,7 +323,7 @@ function useNarrowWindowHold() {
     };
   }, []);
   const openByHand = useCallback((slot: PanelSlotId) => {
-    const other: PanelSlotId = slot === "dock" ? "rail-l" : "dock";
+    const other: PanelSlotId = slot === "side" ? "rail-l" : "side";
     const onlyOne = window.matchMedia(COMPACT_DESKTOP_QUERY).matches;
     setHeld((current) => {
       const next: PanelSlotId[] = current.filter((held) => held !== slot && held !== other);

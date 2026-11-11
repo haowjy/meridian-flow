@@ -17,16 +17,16 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export type SlotWidths = Record<PanelSlotId, number>;
-/** Whether the left sidebar and the side panel (slot id `dock`) are open. */
+/** Whether the left sidebar and the side panel are open. */
 export type PanelPrefs = { sidebarOpen: boolean; sideOpen: boolean };
 
 export const SLOT_WIDTH_BOUNDS: Record<PanelSlotId, { min: number; max: number }> = {
   "rail-l": { min: 220, max: 380 },
   // Below this the side header's title and Open in main and rename input compress into slivers.
-  dock: { min: 280, max: 520 },
+  side: { min: 280, max: 520 },
 };
 
-export const DEFAULT_SLOT_WIDTHS: SlotWidths = { "rail-l": 264, dock: 360 };
+export const DEFAULT_SLOT_WIDTHS: SlotWidths = { "rail-l": 264, side: 360 };
 
 export const DEFAULT_PANEL_PREFS: PanelPrefs = { sidebarOpen: true, sideOpen: true };
 
@@ -39,7 +39,7 @@ function savedWidth(slot: PanelSlotId, width: unknown): number {
 export function normalizeSlotWidths(widths?: Partial<SlotWidths> | null): SlotWidths {
   return {
     "rail-l": savedWidth("rail-l", widths?.["rail-l"]),
-    dock: savedWidth("dock", widths?.dock),
+    side: savedWidth("side", widths?.side),
   };
 }
 
@@ -66,9 +66,9 @@ const record = (value: unknown): Saved =>
   value && typeof value === "object" ? (value as Saved) : {};
 
 /**
- * Version 4 (`main`) kept a width and collapsed flag per surface and for the dock slot;
- * version 5 kept open/closed per mode, which maps only where every mode agrees. What
- * does not map is left out and `merge` fills it with its default.
+ * Version 4 (`main`) kept a width and collapsed flag per surface and for the dock slot; version 5
+ * kept open/closed per mode, which maps only where every mode agrees; version 6 named the side's
+ * slot `dock`. What does not map is left out and `merge` fills it with its default.
  */
 function migrateSurfacePrefs(persisted: unknown, version: number): PersistedSurfacePrefsBlob {
   const blob = record(persisted);
@@ -76,16 +76,21 @@ function migrateSurfacePrefs(persisted: unknown, version: number): PersistedSurf
     railPrefs: record(blob.railPrefs),
     documentPrefs: record(blob.documentPrefs),
   };
+  const widths = (rail: unknown, side: unknown) => ({
+    "rail-l": rail as number,
+    side: side as number,
+  });
   if (version === 4) {
     const threads = record(record(blob.prefs).threads);
     const dock = record(record(blob.slotPrefs).dock);
     const open = (collapsed: unknown) => (typeof collapsed === "boolean" ? !collapsed : undefined);
     return {
       ...kept,
-      widths: { "rail-l": threads.width as number, dock: dock.width as number },
+      widths: widths(threads.width, dock.width),
       panels: { sidebarOpen: open(threads.collapsed), sideOpen: open(dock.collapsed) },
     };
   }
+  const saved = record(blob.widths);
   if (version === 5) {
     const modes = Object.values(record(blob.modes)).map(record);
     const agreed = (key: string) => {
@@ -95,8 +100,15 @@ function migrateSurfacePrefs(persisted: unknown, version: number): PersistedSurf
     };
     return {
       ...kept,
-      widths: record(blob.widths),
+      widths: widths(saved["rail-l"], saved.dock),
       panels: { sidebarOpen: agreed("railOpen"), sideOpen: agreed("dockOpen") },
+    };
+  }
+  if (version === 6) {
+    return {
+      ...kept,
+      widths: widths(saved["rail-l"], saved.dock),
+      panels: record(blob.panels),
     };
   }
   return {};
@@ -199,7 +211,7 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
       }),
       {
         name: "meridian:project-surface-layout",
-        version: 6,
+        version: 7,
         migrate: migrateSurfacePrefs,
         storage: createJSONStorage(() => ({
           getItem: (key) => {

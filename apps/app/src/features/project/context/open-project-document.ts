@@ -607,7 +607,7 @@ export class ProjectDocumentNavigationAdapter {
         documentId: input.file.documentId,
       }),
       {
-        tab,
+        document: tab,
         ...(input.focus ? { focus: true as const } : {}),
         ...(input.replace ? { replace: true } : {}),
         ...(input.beside ? { beside: input.beside } : {}),

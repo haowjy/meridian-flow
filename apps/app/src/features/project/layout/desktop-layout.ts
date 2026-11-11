@@ -11,7 +11,7 @@ export const DESKTOP_PROJECT_SLOTS: SlotDefinition[] = [
   // them; the page is the `page-sheet` set into it.
   { id: "rail-l", className: "relative bg-chrome" },
   { id: "center", className: "chrome-field" },
-  { id: "dock", className: "relative bg-chrome" },
+  { id: "side", className: "relative bg-chrome" },
 ];
 
 /** One grid template; the file tree lives in `rail-l`, not as its own track. */
@@ -21,8 +21,8 @@ export function getDesktopGridTemplate(): {
   rows?: string;
 } {
   return {
-    areas: '"rail-l left-resize center dock-resize dock"',
+    areas: '"rail-l left-resize center side-resize side"',
     columns:
-      "var(--project-left-width) var(--project-left-handle-width) minmax(var(--project-main-min-width), 1fr) var(--project-dock-handle-width) var(--project-dock-width)",
+      "var(--project-left-width) var(--project-left-handle-width) minmax(var(--project-main-min-width), 1fr) var(--project-side-handle-width) var(--project-side-width)",
   };
 }

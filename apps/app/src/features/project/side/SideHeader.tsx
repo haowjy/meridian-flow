@@ -49,7 +49,7 @@ export function sideReasonText(reason: SideReason | null, mainName: string | nul
 export function useSideChatName(projectId: string, chatId: string | null): string {
   const { threads } = useProjectThreads(projectId);
   const about = useNewChatAbout().about;
-  const mainName = useMainItem().document.tab?.name ?? null;
+  const mainName = useMainItem().document.document?.name ?? null;
   if (chatId === null) {
     const aboutName = about === "follows" ? mainName : (about?.label ?? null);
     return aboutName ? t`New chat about ${aboutName}` : t`New chat`;
@@ -79,7 +79,7 @@ function SideBand({
 }) {
   const side = useSideItem();
   const { releaseSide } = useShellCommands(projectId);
-  const mainName = useMainItem().document.tab?.name ?? null;
+  const mainName = useMainItem().document.document?.name ?? null;
   const reason = side.source === "held" ? null : sideReasonText(side.reason, mainName);
   return (
     <div className="shrink-0">
@@ -132,18 +132,18 @@ function SideBand({
 
 export function SideDocumentHeader({
   projectId,
-  tab,
+  document,
   onOpenInMain,
 }: {
   projectId: string;
-  tab: OpenDocument;
+  document: OpenDocument;
   onOpenInMain: () => void;
 }) {
-  const Icon = fileKindIcon(tab.name);
+  const Icon = fileKindIcon(document.name);
   return (
     <SideBand
       projectId={projectId}
-      name={tab.name}
+      name={document.name}
       icon={<Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
       onOpenInMain={onOpenInMain}
     />

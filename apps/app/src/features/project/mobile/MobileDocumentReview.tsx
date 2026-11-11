@@ -37,17 +37,17 @@ import { MobileReviewHeader } from "./MobileReviewHeader";
 
 export function MobileDocumentReview({
   projectId,
-  tab,
+  document,
   onCloseDraftOnly,
   children,
 }: {
   projectId: string;
-  tab: OpenDocument;
+  document: OpenDocument;
   /** Set for a draft-only document: its review closes the document instead of returning to live. */
   onCloseDraftOnly?: () => void;
   children: ReactNode;
 }) {
-  const { documentId } = tab;
+  const { documentId } = document;
   const { controller } = useDraftReview();
   const review = controller.inlineReview;
   const itemKey = review?.documentId === documentId && review.shown ? review.itemKey : null;
@@ -59,7 +59,7 @@ export function MobileDocumentReview({
     onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.ownerKey),
   });
   const [listOpen, setListOpen] = useState(false);
-  const manuscriptState = useManuscriptState(projectId, tab);
+  const manuscriptState = useManuscriptState(projectId, document);
   const notice = useDocumentNotice(projectId, documentId);
   useEffect(() => {
     if (!itemKey) setListOpen(false);
@@ -71,7 +71,7 @@ export function MobileDocumentReview({
         {itemKey ? (
           <ReviewTop
             projectId={projectId}
-            tab={tab}
+            document={document}
             header={header}
             manuscriptState={manuscriptState}
             notice={notice}
@@ -117,14 +117,14 @@ function ManuscriptStateRow({
 
 function ReviewTop({
   projectId,
-  tab,
+  document,
   header,
   manuscriptState,
   notice,
   onOpenList,
 }: {
   projectId: string;
-  tab: OpenDocument;
+  document: OpenDocument;
   header: ReviewHeaderModel;
   manuscriptState: ManuscriptState | null;
   notice: DraftNotice | null;
@@ -136,7 +136,7 @@ function ReviewTop({
       <PaintCapture surface={status} state={status === "loading" ? "pending" : "painted"} />
       <MobileReviewHeader
         projectId={projectId}
-        tab={tab}
+        document={document}
         header={header}
         manuscriptState={manuscriptState}
         notice={notice}

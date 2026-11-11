@@ -25,7 +25,7 @@ import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTree
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import type { MoveArea } from "../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
-import { serverTabFromFile } from "../context/open-document-from-file";
+import { serverDocumentFromFile } from "../context/open-document-from-file";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { AreaDropRegion } from "../context/tree-drop/AreaDropRegion";
 import { treeFolderIds } from "../context/tree-expansion-state";
@@ -363,8 +363,8 @@ function ScratchCatalog({
       catalog,
       activeScheme: "scratch" as const,
       activePath: catalog.findDocument(openId ?? "")?.path ?? null,
-      onSelectFile: (_scheme: string, file: Parameters<typeof serverTabFromFile>[1]) => {
-        const tab = serverTabFromFile("scratch", file, owner);
+      onSelectFile: (_scheme: string, file: Parameters<typeof serverDocumentFromFile>[1]) => {
+        const tab = serverDocumentFromFile("scratch", file, owner);
         if (!tab) return;
         openNote(tab);
         onPicked?.();

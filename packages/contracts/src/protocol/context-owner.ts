@@ -5,7 +5,7 @@
  * Scratch, by a No Work chat's lineage (the first chat's id). Never both. The
  * handle (`c12`) is what a lineage's URI spells; a query needs only the id, so
  * the handle is optional on a `ContextOwner` (a tab or placement carries it,
- * as `TabOwner` requires). Flatten to `workId` / `rootThreadId` only at the
+ * as `OpenDocumentOwner` requires). Flatten to `workId` / `rootThreadId` only at the
  * HTTP and storage edges.
  */
 

@@ -4194,7 +4194,7 @@ msgstr "Open source chat {name}"
 msgid "Open this document in a project to upload figures."
 msgstr "Open this document in a project to upload figures."
 
-#. placeholder {0}: tab.name
+#. placeholder {0}: document.name
 #: src/features/project/context/DocumentHost.tsx
 msgid "Opening {0}"
 msgstr "Opening {0}"
