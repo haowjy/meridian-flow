@@ -41,9 +41,12 @@ a closed side (`useOptionalHoldBeside`). Each header renders inside its host
 (`side/ClosedSideButton.tsx`).
 
 The side's new-chat composer (`useAttachAbout` in `features/chat/CreationComposer.tsx`) attaches
-main's document only to an empty draft or over the chip it put there itself, and that chip is not
-saved as the writer's draft until they edit it, so `/chats`, which shares the new-chat draft,
-never inherits it. The composer reports what the draft is about (`NewChatAbout`), and the side's
+main's document only to an empty draft or over the chip it put there itself, which it remembers
+with the draft (`AttachedAbout`), so a remount or reload still knows it. Its draft is its own
+(`side-new-chat`, one per project in each browser tab), apart from the one `/chats` and main's new
+chat use: a chip the side attached never reaches `/chats`, and words typed in `/chats` never show
+beside a document. A Send that fails after the chat was made returns its words to main's new
+chat, where the dissolved chat reopens. The composer reports what the draft is about (`NewChatAbout`), and the side's
 name says that, not main's document.
 
 Which documents are mounted is one list, `PresentedDocuments` (`context/presented-documents.ts`):

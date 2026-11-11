@@ -4,6 +4,7 @@ import { isWorkArchived } from "@meridian/contracts/works";
 import type { JSONContent } from "@tiptap/core";
 import { type RefObject, useCallback, useEffect, useMemo, useRef } from "react";
 import { chatUploadPort } from "@/client/api/context-upload-api";
+import type { AttachedAbout } from "@/client/composer-drafts";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useSelectionAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
@@ -92,7 +93,7 @@ export function CreationComposer({
     null,
     creation.draft.chatId,
   );
-  const noteDraft = useAttachAbout(composerRef, references, about, onAboutChange);
+  const noteDraft = useAttachAbout(composerRef, creation.draft, references, about, onAboutChange);
   const openDocument = useOpenProjectDocument(projectId);
   const folders = useMemo<FolderMenuHost>(
     () => ({
@@ -217,20 +218,23 @@ export function CreationComposer({
  */
 export type NewChatAbout = "follows" | { label: string } | null;
 
-type Attached = { documentId: string; label: string };
-
 /**
  * A new chat beside a document starts with that document attached. The writer's own draft is
  * theirs: the chip replaces only an empty draft or the chip this hook put there last, never an
- * upload or a chip the writer picked. Nothing here takes focus.
+ * upload or a chip the writer picked. Which chip it put there is kept with the draft, so a
+ * remounted or reloaded composer still knows. Nothing here takes focus.
  */
 function useAttachAbout(
   composerRef: RefObject<ComposerHandle | null>,
+  draft: Pick<
+    ReturnType<typeof useCreationComposer>["draft"],
+    "attachedAbout" | "setAttachedAbout"
+  >,
   references: ReferenceBrowserCatalog | null,
   about: string | null,
   onAboutChange: ((about: NewChatAbout) => void) | undefined,
 ) {
-  const attached = useRef<Attached | null>(null);
+  const { attachedAbout, setAttachedAbout } = draft;
   const report = useRef(onAboutChange);
   report.current = onAboutChange;
   useEffect(() => {
@@ -241,10 +245,10 @@ function useAttachAbout(
       const row = references.resolveReference({ kind: "file", id: about });
       if (row?.kind !== "file") return false;
       const reference = row.action.reference;
-      if (handle.startWith(reference, row.fileKind, attached.current?.documentId ?? null)) {
-        attached.current = { documentId: about, label: reference.label };
+      if (handle.startWith(reference, row.fileKind, attachedAbout()?.documentId ?? null)) {
+        setAttachedAbout({ documentId: about, label: reference.label });
         report.current?.("follows");
-      } else report.current?.(aboutOf(handle.snapshot().doc, attached.current));
+      } else report.current?.(aboutOf(handle.snapshot().doc, attachedAbout()));
       return true;
     };
     if (attach()) return;
@@ -252,14 +256,18 @@ function useAttachAbout(
       if (attach()) stop();
     });
     return stop;
-  }, [about, references, composerRef]);
-  return useCallback((change: ComposerDraftChange) => {
-    if (attached.current) report.current?.(aboutOf(change.snapshot.doc, attached.current));
-  }, []);
+  }, [about, references, composerRef, attachedAbout, setAttachedAbout]);
+  return useCallback(
+    (change: ComposerDraftChange) => {
+      const attached = attachedAbout();
+      if (attached) report.current?.(aboutOf(change.snapshot.doc, attached));
+    },
+    [attachedAbout],
+  );
 }
 
 /** Whether the draft is the attached chip alone, holds it among the writer's words, or lost it. */
-function aboutOf(doc: JSONContent, chip: Attached | null): NewChatAbout {
+function aboutOf(doc: JSONContent, chip: AttachedAbout | null): NewChatAbout {
   if (!chip) return null;
   const isChip = (node: JSONContent | undefined) =>
     node?.type === "composerReference" &&
