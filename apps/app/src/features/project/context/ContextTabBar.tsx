@@ -80,7 +80,8 @@ export function ContextTabBar({
               // page's top edge rises into, and off it the writer gets the same
               // hover pill an inactive tab wears. Not `h-full` — items-stretch
               // sizes the chip so the active margin subtracts from its height.
-              className={cn("focus-ring shrink-0 gap-1.5", tabChipClass(recentsActive))}
+              // z-1: the scroller's flare room below lies over this chip's right edge.
+              className={cn("focus-ring z-1 shrink-0 gap-1.5", tabChipClass(recentsActive))}
             >
               <History className="size-3.5" aria-hidden />
             </button>
@@ -90,8 +91,10 @@ export function ContextTabBar({
           </TooltipContent>
         </Tooltip>
       ) : null}
-      {/* The left padding is room for the first tab's flare, which this scroller would clip. */}
-      <div className="flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden pl-1.5">
+      {/* The left padding is room for the first tab's flare, which this scroller would clip;
+          the negative margin takes it back, so the first tab starts where the chip before it
+          ends, as a title tab does after its index door. */}
+      <div className="-ml-1.5 flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden pl-1.5">
         {tabs.map((tab, index) => {
           const isActive = (member: ContextTab) =>
             activeTabInstanceId
@@ -121,7 +124,7 @@ export function ContextTabBar({
               disabled={!onNewDocument}
               title={!onNewDocument ? t`Open a Work to create an Untitled document` : undefined}
               aria-label={t`New tab`}
-              className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
+              className="focus-ring-inset relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
             >
               {/* Same divider grammar as between tabs: a line sets the New-tab
                   control apart from the working set, except when the active
@@ -205,7 +208,7 @@ function TabChip({
         // it paints (and clicks) on top. The overlay carries the accessible
         // name; the visible glyph/label siblings are hidden from AT so the
         // strip doesn't announce each filename twice.
-        className="focus-ring absolute inset-0"
+        className="focus-ring-inset absolute inset-0"
         title={tab.kind === "new" ? tab.name : tab.path}
       />
       <FileKindIcon tab={tab} />
