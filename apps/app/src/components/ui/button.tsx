@@ -13,14 +13,14 @@ const buttonVariants = cva(
   // focus-ring, not shadcn's 3px halo: buttons only show focus during
   // keyboard navigation (browser :focus-visible heuristic), and when they do
   // it speaks the app's one focus language.
-  "focus-ring inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-[color,background-color,box-shadow,transform] active:scale-[0.98] disabled:cursor-not-allowed disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "focus-ring inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-[color,background-color,transform] active:scale-[0.98] disabled:cursor-not-allowed disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
         // Every variant takes its hover, pressed and open states from `interactive`, an
         // ink layer over whatever fill the variant paints.
-        default: "interactive bg-primary text-primary-foreground",
-        destructive: "interactive bg-destructive text-primary-foreground",
+        default: "interactive bg-primary text-primary-foreground focus-ring-on-fill",
+        destructive: "interactive bg-destructive text-primary-foreground focus-ring-on-fill",
         outline: "interactive border border-border bg-card shadow-raise",
         secondary: "interactive bg-ink-fill text-foreground",
         ghost: "interactive",
