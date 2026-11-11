@@ -3,10 +3,7 @@ import type { ButtonHTMLAttributes, ReactElement, ReactNode, Ref } from "react";
 
 import {
   dropdownGroupLabelClass,
-  dropdownResultsClass,
-  dropdownRowContainerClass,
   dropdownRowVariants,
-  dropdownSearchClass,
 } from "@/components/ui/dropdown-presentation";
 import { Input } from "@/components/ui/input";
 import { handleListKeys } from "@/components/ui/list-keys";
@@ -66,7 +63,7 @@ export function PickerSearch({
         aria-label={label}
         placeholder={label}
         onChange={(event) => onChange(event.target.value)}
-        className={dropdownSearchClass}
+        className="h-8 pr-2 pl-8 text-sm coarse:h-11"
       />
     </div>
   );
@@ -83,8 +80,8 @@ export function PickerResults({
   return (
     <div
       className={cn(
-        "flex flex-col gap-1",
-        bound === "popover" ? dropdownResultsClass : "app-scroll min-h-0 flex-1",
+        "app-scroll flex flex-col gap-1",
+        bound === "popover" ? "max-h-72" : "min-h-0 flex-1",
       )}
     >
       {children}
@@ -204,8 +201,8 @@ export function PickerRow({
         data-selected={Boolean(current)}
         data-list-row
         className={cn(
-          dropdownRowContainerClass,
-          "flex min-w-0 items-center transition-colors",
+          // The container owns the fills, so a row with actions beside its button lights as one.
+          "dropdown-focus-ring flex min-w-0 items-center rounded-md transition-colors has-[>:focus-visible]:bg-ink-fill data-[selected=true]:bg-ink-fill-strong",
           !current && !disabled && "hover:bg-ink-fill",
         )}
       >
