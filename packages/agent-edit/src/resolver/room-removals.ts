@@ -1,308 +1,338 @@
+import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
 import { Slice } from "prosemirror-model";
 import type { Block, Span } from "../codec-types.js";
 import type { RemovedUnits } from "../ports/model.js";
-import { type WordHunk, wordHunks } from "../word-hunks.js";
+import type { WordHunk } from "../word-hunks.js";
 import type { TextWindow } from "./find.js";
 
-/** A block rewrite lowered without the units the room deleted since the model's view. */
+/** A block rewrite decided against the units the room deleted since the model's view. */
 export interface RoomRebasedRewrite {
-  /** The view's block without any of them: what the room holds, less the writer's typing. */
+  /** The block the lowering starts from: the view's, less the room's deletions iff `drop`. */
   before: Block;
-  /** The model's block without the ones whose delete stands, and without skipped changes. */
+  /** `before` with the changes that land. */
   after: Block;
-  /** For a flat text block, where the rewrite changes `before` into `after`. */
+  /** Flat text only: where each landed change sits in `before` and in `after`. */
   windows: [TextWindow[], TextWindow[]] | null;
-  /** Changes dropped because the room deleted all of the text they change. */
+  /** Changes not made. */
   skipped: number;
+  /**
+   * The view's block must lose the room's deletions before the edit applies: a structural
+   * diff anchors on old units, and a deleted one would bring the model's text back around
+   * it. Flat text keeps them, so each splice keeps its side of a deleted run.
+   */
+  drop: boolean;
+}
+
+/** One diff token: `key` is its identity, `size` its length in content positions. */
+interface Token {
+  key: string;
+  size: number;
+}
+
+/** A model change: base positions [from, to) become the model's positions [at, end). */
+interface Hunk {
+  /** A find insert, which the model put after its match. */
+  anchored?: true;
+  from: number;
+  to: number;
+  at: number;
+  end: number;
+}
+
+const UNSPACED = "\\p{sc=Han}\\p{sc=Hiragana}\\p{sc=Katakana}";
+/**
+ * The rule's one text test: a character of Chinese or Japanese script with its marks; a run
+ * of any other letters, digits and marks (a word, or a spaceless Thai phrase); a run of
+ * whitespace; any other single character.
+ */
+const TOKEN = new RegExp(
+  `[${UNSPACED}]\\p{M}*|(?:(?![${UNSPACED}])[\\p{L}\\p{N}\\p{M}_])+|\\s+|[^]`,
+  "gu",
+);
+
+/** The lowering's test for a block it rewrites as exact text splices. */
+export function isFlatText(block: Block): boolean {
+  return (
+    block.isTextblock &&
+    block.type.name !== "code_block" &&
+    block.content.size === block.textContent.length
+  );
 }
 
 /**
- * Rebase a block rewrite planned on the model's view onto the room's deletions. Units are
- * content positions: a character, an inline atom, or a nested node's open and close token.
- * `placed` is the rewrite's known placement (a find's windows) in a flat text block;
- * otherwise the rewrite is word-diffed, and so is a known change that also covers deleted
- * text, inside its window.
+ * Decide a block rewrite planned on the model's view against what the room deleted since.
+ * A change lands only if every unit it replaces survives; an insert lands unless it sits in
+ * deleted text; a delete deletes whatever is left; no deleted unit is put back; every change
+ * not made is counted. `placed` is a find's known placement in a flat block.
  *
- * The writer's delete stands. A change whose old text the room deleted entirely is skipped:
- * it has no target. An insert lands where it was, at the edge of a deleted run, and brings
- * nothing back; so does a change to surviving text only. A change to both lands, and gets
- * back only what keeps its own words whole.
+ * Null when the rule doesn't decide the block: a flat paragraph whose formatting or
+ * attributes the model changed is lowered as without a room.
  */
 export function withoutRemovedUnits(
   before: Block,
   after: Block,
   removed: readonly RemovedUnits[],
   placed: readonly WordHunk[] | undefined,
-): RoomRebasedRewrite {
-  const old = unitText(before);
-  const next = unitText(after);
-  const flat = old === before.textContent && next === after.textContent;
-  const gone = new Uint8Array(old.length);
-  // Each unit of a deleted node maps to its span, so a change takes it whole or not at all.
-  const node = new Int32Array(old.length).fill(-1);
-  for (const [index, span] of removed.entries()) {
-    gone.fill(1, span.from, span.to);
-    if (span.whole) node.fill(index, span.from, span.to);
-  }
-  const isGone = (at: number) => at >= 0 && at < old.length && gone[at] === 1;
-  // Deleted units that come back, as the model's text, to keep a change's words whole.
-  const restored = new Uint8Array(old.length);
-  const hidden = (at: number) => isGone(at) && restored[at] === 0;
+): RoomRebasedRewrite | null {
+  const size = before.content.size;
+  const dead = new Uint8Array(size);
+  for (const span of removed) dead.fill(1, span.from, span.to);
+  const deadBefore = new Uint32Array(size + 1);
+  for (let at = 0; at < size; at += 1) deadBefore[at + 1] = deadBefore[at] + dead[at];
+  const deadIn = (from: number, to: number) => deadBefore[to] - deadBefore[from];
+  // The block's own edges survive: the block is still there.
+  const alive = (unit: number) => unit < 0 || unit >= size || dead[unit] === 0;
+  const cutsDeadNode = (from: number, to: number) =>
+    removed.some(
+      (span) =>
+        span.whole && span.from < to && from < span.to && !(from <= span.from && span.to <= to),
+    );
+  const flat = isFlatText(before) && isFlatText(after);
 
-  const known = flat ? placed : undefined;
-  /**
-   * What a change that replaces deleted text needs back to keep its words whole: a deleted
-   * node it cuts into, and the one deleted space that kept it off a surviving word. Such a
-   * change is word-diffed, so it never ends inside a word.
-   */
-  const restoreAround = (change: Hunk, lo: number, hi: number) => {
-    for (const edge of [change.from, change.to - 1]) {
-      const span = removed[node[edge]];
-      if (span === undefined) continue;
-      for (let at = Math.max(span.from, lo); at < Math.min(span.to, hi); at += 1)
-        if (at < change.from || at >= change.to) restored[at] = 1;
-    }
-    const { from, to } = change;
-    const first = change.text[0];
-    if (first !== undefined && isWordChar(first) && hidden(from - 1)) {
-      let at = from - 1;
-      while (at >= lo && hidden(at)) at -= 1;
-      if (at >= lo && isWordChar(old[at])) restoreSpace(from - 1, at, -1);
-    }
-    const last = change.text.at(-1);
-    if (last !== undefined && isWordChar(last) && hidden(to)) {
-      let at = to;
-      while (at < hi && hidden(at)) at += 1;
-      if (at < hi && isWordChar(old[at])) restoreSpace(to, at, 1);
-    }
-  };
-  const restoreSpace = (from: number, stop: number, step: 1 | -1) => {
-    for (let at = from; at !== stop; at += step)
-      if (isSpace(old[at]) && node[at] < 0) {
-        restored[at] = 1;
-        return;
+  /** The model's changes inside base [bLo, bHi) and model [tLo, tHi), by token diff. */
+  const diffed = (bLo: number, bHi: number, tLo: number, tHi: number): Hunk[] => {
+    const a = tokens(before.cut(bLo, bHi));
+    const b = tokens(after.cut(tLo, tHi));
+    const aAt = offsets(a);
+    const bAt = offsets(b);
+    const raw = tokenHunks(a, b);
+    return raw.map(([aFrom, aTo, bFrom, bTo], index) => {
+      let moved = 0;
+      if (aFrom === aTo) {
+        // An insert has no old text, so the diff's place for it is one of several that give
+        // the same model text (`A B|X B|C` or `A|B X|B C`). Take the one with the most
+        // surviving neighbours, nearest first.
+        const lo = raw[index - 1]?.[1] ?? 0;
+        const hi = raw[index + 1]?.[0] ?? a.length;
+        const score = (p: number) => Number(alive(bLo + aAt[p] - 1)) + Number(alive(bLo + aAt[p]));
+        let best = score(aFrom);
+        for (let s = 1; s <= bTo - bFrom && best < 2; s += 1) {
+          for (const shift of [-s, s]) {
+            const p = aFrom + shift;
+            if (p < lo || p > hi) continue;
+            const same =
+              shift < 0
+                ? a.slice(p, aFrom).every((t, i) => t.key === b[bTo + shift + i].key)
+                : a.slice(aFrom, p).every((t, i) => t.key === b[bFrom + i].key);
+            if (same && score(p) > best) {
+              moved = aAt[p] - aAt[aFrom];
+              best = score(p);
+            }
+          }
+        }
       }
-  };
-
-  // A known change that also covers deleted text is word-diffed inside its window, so the
-  // rule above applies per word there too: a find over a whole passage the writer cut part
-  // of keeps that part cut.
-  const hunks: (WordHunk & { diffed?: true })[] = known
-    ? known.flatMap((hunk) => {
-        let deleted = 0;
-        for (let at = hunk.from; at < hunk.to; at += 1) deleted += gone[at];
-        if (deleted === 0 || deleted === hunk.to - hunk.from) return [hunk];
-        return wordHunks(old.slice(hunk.from, hunk.to), hunk.text).map((inner) => ({
-          from: hunk.from + inner.from,
-          to: hunk.from + inner.to,
-          text: inner.text,
-          diffed: true as const,
-        }));
-      })
-    : wordHunks(old, next).map((hunk) => ({ ...hunk, diffed: true as const }));
-  const final: Hunk[] = [];
-  let skipped = 0;
-  let shift = 0;
-  for (const [index, hunk] of hunks.entries()) {
-    const lo = final.at(-1)?.to ?? 0;
-    const hi = hunks[index + 1]?.from ?? old.length;
-    const { diffed, ...placed } = hunk;
-    let change: Hunk = { ...placed, at: hunk.from + shift, drop: false };
-    shift += hunk.text.length - (hunk.to - hunk.from);
-    if (change.from === change.to) {
-      if (diffed && (isGone(change.from - 1) || isGone(change.from)))
-        change = slide(old, change, lo, hi, isGone);
-      // Inside a deleted node there is nowhere for it to go.
-      const inNode = change.from > 0 && node[change.from - 1] >= 0;
-      const drop = inNode && node[change.from - 1] === node[change.from];
-      if (drop) skipped += 1;
-      final.push({ ...change, drop });
-      continue;
-    }
-    let deleted = 0;
-    for (let at = change.from; at < change.to; at += 1) deleted += gone[at];
-    if (deleted === change.to - change.from) {
-      skipped += 1;
-      final.push({ ...change, drop: true });
-      continue;
-    }
-    // Only a change that also replaces deleted text gets any of it back.
-    if (deleted > 0) restoreAround(change, lo, hi);
-    final.push(change);
-  }
-  if (old.length + shift !== next.length)
-    throw new Error("A block rewrite's hunks don't produce its new text");
-
-  // The model's block loses what stays deleted: units of the equal text the room deleted,
-  // and the text of skipped changes.
-  const cut: Span[] = [];
-  const cutAt = (from: number, to: number) => {
-    if (from === to) return;
-    const last = cut.at(-1);
-    if (last && last.to === from) last.to = to;
-    else cut.push({ from, to });
-  };
-  let cursor = 0;
-  let offset = 0;
-  const equal = (to: number) => {
-    for (; cursor < to; cursor += 1)
-      if (hidden(cursor)) cutAt(cursor + offset, cursor + offset + 1);
-  };
-  for (const change of final) {
-    equal(change.from);
-    if (change.drop) cutAt(change.at, change.at + change.text.length);
-    cursor = change.to;
-    offset = change.at + change.text.length - change.to;
-  }
-  equal(old.length);
-
-  return {
-    before: withoutUnits(before, removed),
-    after: withoutUnits(after, cut),
-    windows: flat ? windowsOf(final, old.length, removed, next.length, cut, restored) : null,
-    skipped,
-  };
-}
-
-interface Hunk extends WordHunk {
-  /** Where `text` starts in the model's block. */
-  at: number;
-  /** Skipped: its old text is all deleted. */
-  drop: boolean;
-}
-
-/**
- * Where each kept change sits in the rebased blocks, as text windows of each. A window of
- * the model's block takes in the units restored beside its change, which `before` lacks.
- */
-function windowsOf(
-  final: readonly Hunk[],
-  oldLength: number,
-  removed: readonly Span[],
-  nextLength: number,
-  cut: readonly Span[],
-  restored: Uint8Array,
-): [TextWindow[], TextWindow[]] {
-  const goneBefore = prefixCounts(oldLength, removed);
-  const cutBefore = prefixCounts(nextLength, cut);
-  const inRemoved = new Uint8Array(oldLength);
-  for (const span of removed) inRemoved.fill(1, span.from, span.to);
-  const windows: [TextWindow[], TextWindow[]] = [[], []];
-  for (const [index, change] of final.entries()) {
-    if (change.drop) continue;
-    const lo = final[index - 1]?.to ?? 0;
-    const hi = final[index + 1]?.from ?? oldLength;
-    let left = 0;
-    for (let at = change.from - 1; at >= lo && inRemoved[at]; at -= 1) left += restored[at];
-    let right = 0;
-    for (let at = change.to; at < hi && inRemoved[at]; at += 1) right += restored[at];
-    const end = change.at + change.text.length;
-    windows[0].push({
-      from: change.from - goneBefore[change.from],
-      to: change.to - goneBefore[change.to],
-    });
-    windows[1].push({
-      from: change.at - cutBefore[change.at] - left,
-      to: end - cutBefore[end] + right,
-    });
-  }
-  return windows;
-}
-
-/**
- * The text-equal place for an insert that best keeps it whole: with its edges on word
- * boundaries against the text that survives around it, then outside any deleted run, then
- * nearest.
- */
-function slide(
-  old: string,
-  hunk: Hunk,
-  lo: number,
-  hi: number,
-  isGone: (at: number) => boolean,
-): Hunk {
-  const { text } = hunk;
-  const rank = (at: number, moved: string) => {
-    let left = at - 1;
-    while (isGone(left)) left -= 1;
-    let right = at;
-    while (isGone(right)) right += 1;
-    const edges = edgeScore(old[left], moved[0]) + edgeScore(moved.at(-1), old[right]);
-    return edges * 2 + (isGone(at - 1) && isGone(at) ? 0 : 1);
-  };
-  let best = { hunk, rank: rank(hunk.from, text) };
-  const consider = (at: number, moved: string) => {
-    const value = rank(at, moved);
-    if (value > best.rank)
-      best = {
-        hunk: { ...hunk, from: at, to: at, at: hunk.at + at - hunk.from, text: moved },
-        rank: value,
+      return {
+        from: bLo + aAt[aFrom] + moved,
+        to: bLo + aAt[aTo] + moved,
+        at: tLo + bAt[bFrom] + moved,
+        end: tLo + bAt[bTo] + moved,
       };
+    });
   };
-  for (let shift = 1; shift <= text.length; shift += 1) {
-    const left = hunk.from - shift;
-    if (left >= lo && old.slice(left, hunk.from) === text.slice(text.length - shift))
-      consider(left, text.slice(text.length - shift) + text.slice(0, text.length - shift));
-    const right = hunk.to + shift;
-    if (right <= hi && old.slice(hunk.to, right) === text.slice(0, shift))
-      consider(right, text.slice(shift) + text.slice(0, shift));
+
+  // A find's window is one change, placed by the model; only a window that holds deleted
+  // units is split into the changes inside it.
+  const hunks: Hunk[] = [];
+  if (placed && flat) {
+    let shift = 0;
+    for (const window of placed) {
+      const at = window.from + shift;
+      const end = at + window.text.length;
+      shift += window.text.length - (window.to - window.from);
+      if (deadIn(window.from, window.to) > 0)
+        hunks.push(...diffed(window.from, window.to, at, end));
+      else
+        hunks.push({
+          from: window.from,
+          to: window.to,
+          at,
+          end,
+          ...(window.from === window.to ? { anchored: true as const } : {}),
+        });
+    }
+  } else hunks.push(...diffed(0, size, 0, after.content.size));
+
+  // Text the model left alone, as [base from, base to, model from].
+  const equal: [number, number, number][] = [];
+  {
+    let b = 0;
+    let t = 0;
+    for (const hunk of hunks) {
+      equal.push([b, hunk.from, t]);
+      b = hunk.to;
+      t = hunk.end;
+    }
+    equal.push([b, size, t]);
   }
-  return best.hunk;
+  // Formatting moved onto the structural diff lands beside typed-over text by client id
+  // (`He **sighed loudly**.`), and splices carry no format ranges.
+  if (
+    flat &&
+    !(
+      before.sameMarkup(after) &&
+      equal.every(([from, to, at]) =>
+        before.content.cut(from, to).eq(after.content.cut(at, at + to - from)),
+      )
+    )
+  )
+    return null;
+
+  let skipped = 0;
+  let skipRunEnd = -1;
+  const landed = new Set(
+    hunks.filter((hunk) => {
+      let lands: boolean;
+      if (hunk.anchored) lands = alive(hunk.from - 1);
+      else if (hunk.from === hunk.to) lands = alive(hunk.from - 1) || alive(hunk.to);
+      else if (hunk.at === hunk.end) lands = !cutsDeadNode(hunk.from, hunk.to);
+      else lands = deadIn(hunk.from, hunk.to) === 0;
+      if (lands) {
+        skipRunEnd = -1;
+        return true;
+      }
+      // Skipped changes with nothing but deleted text between them count once.
+      const sameRun = skipRunEnd >= 0 && deadIn(skipRunEnd, hunk.from) === hunk.from - skipRunEnd;
+      if (!sameRun) skipped += 1;
+      skipRunEnd = hunk.to;
+      return false;
+    }),
+  );
+
+  if (flat) {
+    // The landed changes go onto the view's text as it is, deleted units included.
+    const pieces: Hunk[] = [];
+    for (const hunk of hunks) {
+      if (!landed.has(hunk)) continue;
+      if (deadIn(hunk.from, hunk.to) === 0) pieces.push(hunk);
+      // A delete that also covers deleted units deletes only what is left of it.
+      else
+        for (let at = hunk.from; at < hunk.to; at += 1) {
+          if (dead[at]) continue;
+          const last = pieces.at(-1);
+          if (last && last.to === at && last.at === last.end && last.from >= hunk.from)
+            last.to += 1;
+          else pieces.push({ from: at, to: at + 1, at: hunk.at, end: hunk.at });
+        }
+    }
+    let result = before;
+    for (const piece of [...pieces].reverse())
+      result = result.replace(piece.from, piece.to, after.slice(piece.at, piece.end));
+    const windows: [TextWindow[], TextWindow[]] = [[], []];
+    let grown = 0;
+    for (const piece of pieces) {
+      const length = piece.end - piece.at;
+      windows[0].push({ from: piece.from, to: piece.to });
+      windows[1].push({ from: piece.from + grown, to: piece.from + grown + length });
+      grown += length - (piece.to - piece.from);
+    }
+    return { before, after: result, windows, skipped, drop: false };
+  }
+
+  // The structural diff's target is the model's block, so its marks and attributes on
+  // surviving text land as formatting, with each skipped change put back as the view had
+  // it, less the deleted units.
+  const base = withoutUnits(before, removed);
+  try {
+    let result = after;
+    for (const hunk of [...hunks].reverse())
+      if (!landed.has(hunk))
+        result = result.replace(hunk.at, hunk.end, before.slice(hunk.from, hunk.to));
+    // Where each deleted unit still in `result` sits in it.
+    const cuts: Span[] = [];
+    let at = 0;
+    let b = 0;
+    const keep = (from: number, to: number) => {
+      for (let unit = from; unit < to; unit += 1) {
+        if (!dead[unit]) continue;
+        const pos = at + unit - from;
+        const last = cuts.at(-1);
+        if (last && last.to === pos) last.to += 1;
+        else cuts.push({ from: pos, to: pos + 1 });
+      }
+      at += to - from;
+    };
+    for (const hunk of hunks) {
+      keep(b, hunk.from);
+      if (landed.has(hunk)) at += hunk.end - hunk.at;
+      else keep(hunk.from, hunk.to);
+      b = hunk.to;
+    }
+    keep(b, size);
+    result = withoutUnits(result, cuts);
+    result.check();
+    return { before: base, after: result, windows: null, skipped, drop: true };
+  } catch {
+    // The landed changes don't make a valid block without the skipped ones: make none.
+    return { before: base, after: base, windows: null, skipped: Math.max(1, skipped), drop: true };
+  }
 }
 
-/** How well a boundary between two characters separates words (edge, space, other, none). */
-function edgeScore(before: string | undefined, after: string | undefined): number {
-  if (before === undefined || after === undefined) return 3;
-  if (isSpace(before) || isSpace(after)) return 2;
-  return joins(before, after) ? 0 : 1;
-}
-
-/**
- * Two characters are one word only in a script that separates words with spaces: Chinese,
- * Japanese and Thai characters stand alone, and punctuation, dashes and quotes never join.
- */
-function joins(left: string, right: string): boolean {
-  return isWordChar(left) && isWordChar(right);
-}
-
-function isWordChar(char: string): boolean {
-  return WORD_CHAR.test(char) && !UNSPACED_SCRIPT.test(char);
-}
-
-const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
-const UNSPACED_SCRIPT =
-  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}\p{Script=Tibetan}]/u;
-
-function isSpace(char: string): boolean {
-  return /\s/u.test(char);
-}
-
-/** `counts[i]`: how many units before offset `i` the spans cover. */
-function prefixCounts(length: number, spans: readonly Span[]): Uint32Array {
-  const counts = new Uint32Array(length + 1);
-  const inSpan = new Uint8Array(length);
-  for (const span of spans) inSpan.fill(1, span.from, span.to);
-  for (let at = 0; at < length; at += 1) counts[at + 1] = counts[at] + inSpan[at];
-  return counts;
-}
-
-/**
- * A block's content as one character per content position: text as itself, an inline atom
- * as U+FFFC, and a nested node's open and close tokens as two private-use characters.
- */
-function unitText(block: Block): string {
-  let text = "";
-  const walk = (node: Block) => {
-    if (node.isText) text += node.text ?? "";
-    else if (node.isLeaf) text += "￼";
-    else {
-      text += "";
-      node.forEach(walk);
-      text += "";
+function tokens(node: Block): Token[] {
+  const out: Token[] = [];
+  const walk = (child: Block) => {
+    if (child.isText) {
+      // Marks are not part of a token: formatting is not a change of text.
+      for (const text of child.text?.match(TOKEN) ?? []) out.push({ key: text, size: text.length });
+    } else if (child.isLeaf) {
+      out.push({ key: `\u0002${child.type.name}${JSON.stringify(child.attrs)}`, size: 1 });
+    } else {
+      out.push({ key: `\u0003${child.type.name}${JSON.stringify(child.attrs)}`, size: 1 });
+      child.forEach(walk);
+      out.push({ key: `\u0004${child.type.name}`, size: 1 });
     }
   };
-  block.forEach(walk);
-  return text;
+  node.forEach(walk);
+  return out;
+}
+
+/** Token-index hunks of a -> b: [aFrom, aTo, bFrom, bTo]. */
+function tokenHunks(a: readonly Token[], b: readonly Token[]): [number, number, number, number][] {
+  const codes = new Map<string, string>();
+  const encode = (list: readonly Token[]) =>
+    list
+      .map(({ key }) => {
+        let code = codes.get(key);
+        if (code === undefined) {
+          // One UTF-16 unit per distinct token, skipping the surrogate range.
+          const index = codes.size + 1;
+          const value = index < 0xd800 ? index : index + 0x800;
+          if (value > 0xffff) throw new RangeError("Too many distinct tokens");
+          code = String.fromCharCode(value);
+          codes.set(key, code);
+        }
+        return code;
+      })
+      .join("");
+  const hunks: [number, number, number, number][] = [];
+  let ai = 0;
+  let bi = 0;
+  let current: [number, number, number, number] | undefined;
+  for (const [op, chunk] of makeDiff(encode(a), encode(b))) {
+    if (op === DIFF_EQUAL) {
+      if (current) hunks.push(current);
+      current = undefined;
+      ai += chunk.length;
+      bi += chunk.length;
+      continue;
+    }
+    current ??= [ai, ai, bi, bi];
+    if (op === DIFF_DELETE) {
+      ai += chunk.length;
+      current[1] = ai;
+    }
+    if (op === DIFF_INSERT) {
+      bi += chunk.length;
+      current[3] = bi;
+    }
+  }
+  if (current) hunks.push(current);
+  return hunks;
+}
+
+function offsets(list: readonly Token[]): number[] {
+  const at = [0];
+  for (const token of list) at.push((at.at(-1) as number) + token.size);
+  return at;
 }
 
 /** `node` without the content positions in `spans`, each a run of whole units. */

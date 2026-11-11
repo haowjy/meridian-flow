@@ -3,11 +3,13 @@
  * stale view lands whole after someone deleted text it shares words with, and the writer's
  * delete stands. The server plans a reply's write on the model's view and merges the update
  * into the current room, which is what this test does with two Yjs docs. A delete the room
- * already holds when the write plans is lowered around (`current`); one that arrives after
- * relies on find windows.
+ * already holds when the write plans is decided against (`current`); one that arrives after
+ * relies on find windows. Every row runs with the model's client id below and above the
+ * writer's, since Yjs orders concurrent inserts at one place by client id.
  *
  * Pins implementation decisions: a model change to text the writer has since deleted is
- * skipped (`write-architecture.md`).
+ * skipped, and a flat paragraph whose formatting the model changed is lowered as without a
+ * room (`write-architecture.md`).
  */
 
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -46,6 +48,18 @@ const findReplace = { command: "replace", find: "disciple.", content: "disciple.
 const rewrite = (markdown: string) =>
   ({ command: "replace", wholeDocument: true, content: markdown }) as const;
 const deleteLine = deleteText(LINE);
+/** The writer selecting `old` and typing `text` in the browser: a delete, then one insert per key. */
+const retype =
+  (old: string, text: string): Writer =>
+  (room) => {
+    const block = room.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement;
+    const ytext = block.get(0) as Y.XmlText;
+    const from = ytext.toString().indexOf(old);
+    ytext.delete(from, old.length);
+    for (const [index, char] of [...text].entries()) ytext.insert(from + index, char);
+  };
+const KEEP = "Keep this. Cut sentence there. Keep end.";
+const SIGHED = "He sighed, and then he wept.";
 
 it.each([
   ["a find insert, deleted after planning", TEXT, findInsert, deleteLine, "after", WHOLE],
@@ -112,37 +126,100 @@ it.each([
     "before",
     "A disciple. SIDETEXT",
   ],
-] as const)("lands %s", (_, markdown, write, writer, deleted, expected) => {
-  const room = new Y.Doc({ gc: false });
-  room.clientID = 1;
-  prosemirrorToYXmlFragment(
-    schema.node("doc", null, codec.parse(markdown).blocks),
-    room.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-  );
-  const view = new Y.Doc({ gc: false });
-  view.clientID = 2;
-  Y.applyUpdate(view, Y.encodeStateAsUpdate(room));
-  const seen = Y.encodeStateVector(view);
-
-  if (deleted === "before") writer(room);
-  const resolved = resolveWrite(
+  [
+    "a find insert after a word the writer deleted",
+    "the slowly moving train",
+    { command: "insert", find: "slowly", content: ", steadily" },
+    deleteText(" slowly"),
+    "before",
+    "the moving train",
+  ],
+  [
+    "nothing of a find's polish of a sentence the writer cut",
+    KEEP,
     {
-      doc: view,
-      model,
-      codec,
-      links: "preassigned",
-      ...(deleted === "before" ? { current: room } : {}),
+      command: "replace",
+      find: KEEP,
+      content: "Keep this. Cut sentence there, polished. Keep end.",
     },
-    {
-      documentAddress: { documentId: "123e4567-e89b-12d3-a456-426614174000", filePath: "c.md" },
-      ...write,
-    } as ResolveWriteParams,
-  );
-  if (!resolved.ok) throw new Error(resolved.error.message);
-  applyEdits(view, model, resolved.edits, { type: "agent", actorTurnId: "turn-1" });
-  if (deleted === "after") writer(room);
-  Y.applyUpdate(room, Y.encodeStateAsUpdate(view, seen));
+    deleteText("Cut sentence there. "),
+    "before",
+    "Keep this. Keep end.",
+  ],
+  [
+    "one character of a Chinese clause the writer cut a phrase from",
+    "他慢慢地走了出去，天黑了。",
+    rewrite("他慢慢地跑了出去，天黑了。"),
+    deleteText("慢慢地"),
+    "before",
+    "他跑了出去，天黑了。",
+  ],
+  [
+    "bold across a passage the writer cut from",
+    "Keep this. Cut it. Keep end.",
+    rewrite("Keep **this. Cut it. Keep** end."),
+    deleteText("Cut it. "),
+    "before",
+    "Keep **this. Keep** end.",
+  ],
+  [
+    "nothing of a merge of a quote paragraph the writer deleted",
+    "> Alpha beta.\n>\n> Gamma delta long.",
+    rewrite("> Alpha beta. Gamma delta long."),
+    editTo("> Alpha beta."),
+    "before",
+    "> Alpha beta.",
+  ],
+  [
+    "a word changed before text the writer typed over",
+    SIGHED,
+    { command: "replace", find: "sighed", content: "groaned" },
+    retype(", and then he wept", " loudly"),
+    "before",
+    "He groaned loudly.",
+  ],
+  [
+    "bold on a word before text the writer typed over",
+    SIGHED,
+    rewrite("He **sighed**, and then he wept."),
+    retype(", and then he wept", " loudly"),
+    "before",
+    "He **sighed** loudly.",
+  ],
+] as const)("lands %s", (_, markdown, write, writer, deleted, expected) => {
+  for (const modelClient of [2, 4]) {
+    const room = new Y.Doc({ gc: false });
+    room.clientID = 1;
+    prosemirrorToYXmlFragment(
+      schema.node("doc", null, codec.parse(markdown).blocks),
+      room.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
+    );
+    const view = new Y.Doc({ gc: false });
+    view.clientID = modelClient;
+    Y.applyUpdate(view, Y.encodeStateAsUpdate(room));
+    const seen = Y.encodeStateVector(view);
+    room.clientID = 3;
 
-  const blocks = model.projectBlocks(room).map((block) => block.node);
-  expect(codec.serialize(blocks).trim()).toBe(expected);
+    if (deleted === "before") writer(room);
+    const resolved = resolveWrite(
+      {
+        doc: view,
+        model,
+        codec,
+        links: "preassigned",
+        ...(deleted === "before" ? { current: room } : {}),
+      },
+      {
+        documentAddress: { documentId: "123e4567-e89b-12d3-a456-426614174000", filePath: "c.md" },
+        ...write,
+      } as ResolveWriteParams,
+    );
+    if (!resolved.ok) throw new Error(resolved.error.message);
+    applyEdits(view, model, resolved.edits, { type: "agent", actorTurnId: "turn-1" });
+    if (deleted === "after") writer(room);
+    Y.applyUpdate(room, Y.encodeStateAsUpdate(view, seen));
+
+    const blocks = model.projectBlocks(room).map((block) => block.node);
+    expect(codec.serialize(blocks).trim(), `model client ${modelClient}`).toBe(expected);
+  }
 });

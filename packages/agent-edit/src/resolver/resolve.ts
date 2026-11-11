@@ -26,7 +26,7 @@ import {
   type TextWindow,
 } from "./find.js";
 import { type HashLocateContext, hashLocateContext, locateBlockByHash } from "./hash-locator.js";
-import { withoutRemovedUnits } from "./room-removals.js";
+import { isFlatText, withoutRemovedUnits } from "./room-removals.js";
 import {
   type BlockScope,
   resolveScope,
@@ -74,8 +74,9 @@ export interface ResolveWriteContext {
   inputRevision?: string;
   /**
    * The current room when `doc` is the model's view of it. A block rewritten in place is
-   * then lowered without what the room deleted since the view, and the resolved write drops
-   * that from `doc` (outside any write capture) before its IR is built.
+   * then decided against what the room deleted since the view (`room-removals.ts`); a block
+   * lowered by a structural diff has that dropped from `doc` (outside any write capture)
+   * before its IR is built.
    */
   current?: DocHandle;
 }
@@ -88,7 +89,7 @@ export type ResolveWriteResult =
       ok: true;
       edits: ResolvedEdit[];
       ir: SemanticEditIRV1;
-      /** Changes left out because the room deleted all of the text they change. */
+      /** Changes not made because the room deleted text they change or sit in. */
       skipped?: number;
     }
   | {
@@ -272,7 +273,7 @@ interface LoweredScope {
   edits: ResolvedEdit[];
   /** Blocks whose room deletions `doc` must drop before the edits apply. */
   rebased: BlockRef[];
-  /** Changes left out because the room deleted all of the text they change. */
+  /** Changes not made because the room deleted text they change or sit in. */
   skipped: number;
   /** Some of the scope's blocks were already equal to their replacement and kept. */
   keptBlocks?: true;
@@ -723,18 +724,21 @@ function replaceScope(
           windows.new[step.next],
         ];
         const removed = ctx.current ? ctx.model.removedUnits(oldBlocks[step.old], ctx.current) : [];
-        if (removed.length > 0) {
-          const rewrite = withoutRemovedUnits(
-            before,
-            after,
-            removed,
-            placed ? windowHunks(before, after, ...placed) : undefined,
-          );
+        const rewrite =
+          removed.length > 0
+            ? withoutRemovedUnits(
+                before,
+                after,
+                removed,
+                placed ? windowHunks(before, after, ...placed) : undefined,
+              )
+            : null;
+        if (rewrite) {
           before = rewrite.before;
           after = rewrite.after;
           placed = rewrite.windows;
           skipped += rewrite.skipped;
-          rebased.push(oldBlocks[step.old]);
+          if (rewrite.drop) rebased.push(oldBlocks[step.old]);
           anchor = oldBlocks[step.old];
           insertionRun = {};
           if (before.eq(after)) {
@@ -993,13 +997,7 @@ function flatReplacements(
   after: Block,
   windows: [TextWindow[] | undefined, TextWindow[] | undefined] | null,
 ): ResolvedInlineReplacement[] | undefined {
-  if (
-    !before.isTextblock ||
-    before.type.name === "code_block" ||
-    before.content.size !== before.textContent.length ||
-    after.content.size !== after.textContent.length
-  )
-    return;
+  if (!isFlatText(before) || !isFlatText(after)) return;
   const hunks =
     (windows && windowHunks(before, after, ...windows)) ??
     wordHunks(before.textContent, after.textContent);
