@@ -27,10 +27,10 @@ import { WriteModeNotice } from "./WriteModeNotice";
 
 export type QueuedControlRowsProps = {
   controls: readonly QueuedControl[];
-  onStop?: (control: QueuedControl) => void;
+  onWithdraw?: (control: QueuedControl) => void;
 };
 
-export function QueuedControlRows({ controls, onStop }: QueuedControlRowsProps) {
+export function QueuedControlRows({ controls, onWithdraw }: QueuedControlRowsProps) {
   const listRef = useRef<HTMLUListElement>(null);
   const focusWithin = useFocusWithinRow(listRef);
   if (controls.length === 0) return null;
@@ -44,7 +44,7 @@ export function QueuedControlRows({ controls, onStop }: QueuedControlRowsProps) 
       className="flex flex-col gap-[var(--chat-space-inline)] py-[var(--chat-space-block)] outline-none"
     >
       {controls.map((control) => (
-        <QueuedControlRow key={control.id} control={control} onStop={onStop} />
+        <QueuedControlRow key={control.id} control={control} onWithdraw={onWithdraw} />
       ))}
     </ul>
   );
@@ -52,31 +52,31 @@ export function QueuedControlRows({ controls, onStop }: QueuedControlRowsProps) 
 
 function QueuedControlRow({
   control,
-  onStop,
+  onWithdraw,
 }: {
   control: QueuedControl;
-  onStop?: (control: QueuedControl) => void;
+  onWithdraw?: (control: QueuedControl) => void;
 }) {
   const { status } = control;
   const failed = status === "failed";
   const label = controlStatusCopy(control.control, status, control.waiting);
   const actions = (
     <>
-      {/* A failed enqueue is a card (Retry in it); the row's Stop still takes the command out. */}
+      {/* A failed enqueue is a card (Retry in it); the row's withdraw button still takes the command out. */}
       {failed ? <AnchoredCards anchor={{ queuedControl: control.id }} /> : null}
       {status === "withdraw_failed" ? (
-        // The row stays, so the failure is a card here (`chatCards`) with the Stop's retry in its place.
+        // The row stays, so the failure is a card here (`chatCards`) with the withdraw's retry in its place.
         <AnchoredCards anchor={{ queuedControl: control.id }} />
-      ) : onStop && !(failed && control.awaitingServer) ? (
+      ) : onWithdraw && !(failed && control.awaitingServer) ? (
         <Button
           type="button"
           variant="quiet"
           size="meta"
-          // The row has Stop from its first frame so it never changes height. While the
-          // post is in flight the server may hold the switch and hasn't said, so Stop waits.
+          // The row has its withdraw button from its first frame so it never changes height. While
+          // the post is in flight the server may hold the switch and hasn't said, so the button waits.
           disabled={control.awaitingServer}
           aria-label={controlWithdrawLabel(control.control)}
-          onClick={() => onStop(control)}
+          onClick={() => onWithdraw(control)}
         >
           {controlWithdrawText(control.control)}
         </Button>

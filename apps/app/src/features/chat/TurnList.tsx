@@ -263,10 +263,10 @@ export function TurnList({
         return (
           <QueuedControlRows
             controls={row.controls}
-            onStop={
+            onWithdraw={
               withdraw
                 ? (control) => {
-                    // Stop removes the row at once. The last one takes the
+                    // Withdrawing removes the row at once. The last one takes the
                     // whole tail with it, so keep focus in the transcript.
                     if (row.controls.length === 1)
                       viewportRef.current?.focus({ preventScroll: true });

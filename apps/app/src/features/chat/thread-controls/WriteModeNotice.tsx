@@ -5,7 +5,7 @@
  *
  * The applied switch is a turn, so it keeps its place on reload. The same line
  * stands for the pending switch at the transcript tail (`QueuedControlRows`),
- * where it carries Stop, Retry and the failure words as `children`.
+ * where it carries Undo, Retry and the failure words as `children`.
  */
 import type { Turn } from "@meridian/contracts/protocol";
 import { readWriteModeSwitch } from "@meridian/contracts/threads";
@@ -29,7 +29,7 @@ export function WriteModeNotice({
     <div
       data-write-mode-notice
       data-write-mode={mode}
-      // Tall as a Stop button's line, so the pending notice, the applied bridge and the
+      // Tall as an Undo button's line, so the pending notice, the applied bridge and the
       // switch turn that replaces them are one height: nothing below moves.
       className="flex min-h-[calc(var(--text-xs--line-height)+0.5rem+var(--chat-space-block)*2)] min-w-0 flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)] py-[var(--chat-space-block)]"
     >
