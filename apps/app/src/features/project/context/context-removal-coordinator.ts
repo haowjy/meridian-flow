@@ -56,7 +56,7 @@ import {
 } from "./context-removal-protocol";
 import { PresentedDocuments } from "./presented-documents";
 import type { ProjectDocumentAvailabilityCommand } from "./project-context-availability-coordinator";
-import type { RemovedNoticeStore } from "./removed-notice-store";
+import type { RemovedNoticeStore, SettleOwnRemoval } from "./removed-notice-store";
 
 type ContextRemovalWorkingSetPort = {
   readRecentRoutes(projectId: string): WorkingSetRoute[];
@@ -143,7 +143,7 @@ export type ContextRouteActivation = {
 /** Where views report documents they presented that vanished (`RemovedNoticeStore`). */
 export type RemovedPresentationPort = Pick<
   RemovedNoticeStore,
-  "presentedRemoved" | "markOwnRemoval"
+  "presentedRemoved" | "markOwnRemoval" | "removalsLanded"
 >;
 
 type CoordinatorProjectState = {
@@ -701,6 +701,14 @@ export class ContextRemovalCoordinator {
               : [];
           }),
         );
+        this.notices?.removalsLanded(
+          projectId,
+          committed.flatMap((command) =>
+            command.kind === "terminal-remove" && !held.has(command.documentId)
+              ? [command.documentId]
+              : [],
+          ),
+        );
         this.publish(state);
         return settledPlan.sessionEffects;
       };
@@ -902,10 +910,7 @@ export class ContextRemovalCoordinator {
    * if it shows one of them, goes at once to the document it showed before, else to Recently
    * opened. Call before the removal; settle the returned mark as `markOwnRemoval` says.
    */
-  beginOwnRemoval(
-    projectId: string,
-    documentIds: readonly string[],
-  ): (outcome: "removed" | "kept") => void {
+  beginOwnRemoval(projectId: string, documentIds: readonly string[]): SettleOwnRemoval {
     const settle = this.notices?.markOwnRemoval(projectId, documentIds) ?? (() => undefined);
     const shown = this.presented.mainDocumentId(projectId);
     const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;

@@ -14,20 +14,20 @@ export function useDeleteContextEntry(projectId: string) {
   const removal = useOptionalContextRemovalCoordinator();
   const requestDelete = useCallback(
     (target: DeleteTarget) =>
-      void runDelete(
-        { resources, projectId, removal },
+      void runDelete({ resources, projectId, removal }, [
         target.kind === "file"
           ? { kind: "file", id: target.documentId, name: target.name }
           : { kind: "folder", id: target.entryId, name: target.name },
-      ),
+      ]),
     [removal, projectId, resources],
   );
   /** Deletes dragged rows at once: a drop onto Trash. */
   const deleteEntries = useCallback(
-    (entries: readonly DragEntry[]) => {
-      for (const { ref, name } of entries)
-        void runDelete({ resources, projectId, removal }, { kind: ref.kind, id: ref.id, name });
-    },
+    (entries: readonly DragEntry[]) =>
+      void runDelete(
+        { resources, projectId, removal },
+        entries.map(({ ref, name }) => ({ kind: ref.kind, id: ref.id, name })),
+      ),
     [removal, projectId, resources],
   );
   return useMemo(() => ({ requestDelete, deleteEntries }), [requestDelete, deleteEntries]);

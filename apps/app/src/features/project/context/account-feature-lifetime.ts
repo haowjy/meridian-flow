@@ -2,7 +2,7 @@
 
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
-import { browserRecord } from "@/client/storage/browser-record";
+import { browserStorage } from "@/client/storage/browser-record";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { RetainedLiveDocumentReference } from "@/core/editor/document-session-registry";
@@ -79,8 +79,10 @@ export class AccountFeatureLifetime {
       closeCreated: (ref) => {
         this.removal.discardDraft(ref.projectId, ref.documentId);
       },
-      markOwnRemoval: (ref): ((outcome: "removed" | "kept") => void) =>
-        this.removal.beginOwnRemoval(ref.projectId, [ref.documentId]),
+      markOwnRemoval: (ref) => {
+        const settle = this.removal.beginOwnRemoval(ref.projectId, [ref.documentId]);
+        return (removed) => settle(removed ? [] : [ref.documentId]);
+      },
     });
     this.availability = new ProjectContextAvailabilityCoordinator({
       lookup: lookupProjectContextAvailability,
@@ -108,7 +110,7 @@ export class AccountFeatureLifetime {
       draftOnly: this.draftOnly,
     });
     this.registry.observeRemovedRooms((session, room) => this.followRemovedRoom(session, room));
-    dropRetiredTabSession(accountId);
+    dropRetiredTabSession();
     this.resources =
       typeof window === "undefined"
         ? null
@@ -215,10 +217,10 @@ export class AccountFeatureLifetime {
 }
 
 /** The retired document-tab session holds tab names and paths nothing reads: the writer's own. */
-function dropRetiredTabSession(accountId: string): void {
-  browserRecord(
-    "session",
-    { key: "meridian:editor-workspace:v2", version: 0, accountId },
-    () => undefined,
-  ).write(undefined);
+function dropRetiredTabSession(): void {
+  try {
+    browserStorage("session")?.removeItem("meridian:editor-workspace:v2");
+  } catch {
+    // Storage the browser denies holds nothing to drop.
+  }
 }
