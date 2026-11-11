@@ -5,24 +5,23 @@
  * "Switched to auto-apply" while the next reply will apply it, "Switch to
  * auto-apply queued" while a reply that held the chat first has to finish. A
  * queued `/compact` sits there as a dashed rule, the divider it will become,
- * with the writer's instructions under it verbatim. Stop is right after the
- * words on every pending row from its first frame (disabled while the switch's
- * post is unanswered), and removes the row at once; it cancels the command the
- * way a switch back does. A Stop that failed on the server is a card in the row with Try
- * again where Stop was; a failed enqueue is a card with Retry. Both come from `chatCards`.
+ * with the writer's instructions under it verbatim. The withdraw button (Undo on a
+ * switch, Stop on a compaction) is right after the words on every pending row from its first
+ * frame (disabled while the switch's post is unanswered), and removes the row at once; it
+ * cancels the command the way a switch back does. A withdraw that failed on the server is a
+ * card in the row with Try again where the button was; a failed enqueue is a card with Retry. Both come from `chatCards`.
  * The rows carry no live region: `useThreadControls` and `useSwitchView` announce
  * each change through the global polite announcer, which also reaches a row
  * scrolled out of the virtualized list.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { FoldVertical } from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { AnchoredCards } from "../ChatCards";
 import { CompactionInstructions } from "../compaction/CompactionInstructions";
 import { useFocusWithinRow } from "../compaction/useFocusWithinRow";
-import { controlStatusCopy, controlStopLabel } from "./control-copy";
+import { controlStatusCopy, controlStopLabel, controlStopText } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
 import { WriteModeNotice } from "./WriteModeNotice";
 
@@ -79,7 +78,7 @@ function QueuedControlRow({
           aria-label={controlStopLabel(control.control)}
           onClick={() => onStop(control)}
         >
-          <Trans>Stop</Trans>
+          {controlStopText(control.control)}
         </Button>
       ) : null}
     </>

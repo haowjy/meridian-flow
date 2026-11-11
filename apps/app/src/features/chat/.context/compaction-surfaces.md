@@ -58,8 +58,9 @@ Queue order is the server's, and the client special-cases none of it.
 `useThreadControls` mints the id and shows the item as queued before the network
 answers. A failed enqueue stays on the item with Retry under the same id, because
 the server treats a repeat as the original. Queued commands render at the
-transcript tail and take no transcript position until they run. A queued row's Stop
-cancels the command before it runs; it is not the Stop of a running divider.
+transcript tail and take no transcript position until they run. A queued row's withdraw button
+(Stop on a compaction, Undo on a write-mode switch) cancels the command before it runs; it is
+not the Stop of a running divider.
 
 Stop on a queued row removes it at once and, once any in-flight enqueue settles,
 always calls the server, even for a row whose enqueue looked failed: only the
