@@ -80,7 +80,8 @@ export function ContextTabBar({
               // page's top edge rises into, and off it the writer gets the same
               // hover pill an inactive tab wears. Not `h-full` — items-stretch
               // sizes the chip so the active margin subtracts from its height.
-              className={cn("focus-ring shrink-0 gap-1.5", tabChipClass(recentsActive))}
+              // z-1: the scroller's flare room below lies over this chip's right edge.
+              className={cn("focus-ring z-1 shrink-0 gap-1.5", tabChipClass(recentsActive))}
             >
               <History className="size-3.5" aria-hidden />
             </button>
@@ -90,8 +91,10 @@ export function ContextTabBar({
           </TooltipContent>
         </Tooltip>
       ) : null}
-      {/* The left padding is room for the first tab's flare, which this scroller would clip. */}
-      <div className="flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden pl-1.5">
+      {/* The left padding is room for the first tab's flare, which this scroller would clip;
+          the negative margin takes it back, so the first tab starts where the chip before it
+          ends, as a title tab does after its index door. */}
+      <div className="-ml-1.5 flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden pl-1.5">
         {tabs.map((tab, index) => {
           const isActive = (member: ContextTab) =>
             activeTabInstanceId
