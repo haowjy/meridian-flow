@@ -79,7 +79,7 @@ function entryLine(entry: LsEntry, folder?: string): string {
   const label =
     entry.title === undefined
       ? name
-      : `${name} (${(entry.title || "New chat").replace(/\s+/g, " ")})`;
+      : `${name} (${(entry.title || "Untitled chat").replace(/\s+/g, " ")})`;
   return notes.length > 0 ? `${label} (${notes.join(", ")})` : label;
 }
 

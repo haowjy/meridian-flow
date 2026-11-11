@@ -75,7 +75,11 @@ export function useComposerWorkBinding({
         target,
         observedProjection: "none",
       };
-      dispatch({ type: "change.started", request, message: t`Changing work to ${target.name}` });
+      dispatch({
+        type: "change.started",
+        request,
+        message: t`Changing work to ${workDisplayName(target)}`,
+      });
       try {
         const outcome = await mutation.mutateAsync({
           workId,

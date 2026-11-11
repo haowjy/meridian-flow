@@ -1661,7 +1661,7 @@ msgstr "Changing the position of {source}…"
 msgid "Changing work"
 msgstr "Changing work"
 
-#. placeholder {0}: target.name
+#. placeholder {0}: workDisplayName(target)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Changing work to {0}"
 msgstr "Changing work to {0}"
