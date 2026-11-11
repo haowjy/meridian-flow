@@ -493,11 +493,6 @@
         "count": 1
       },
       {
-        "path": "packages/agent-edit/demo/fakes.ts",
-        "line": "const run = previous.catch(() => undefined).then(fn);",
-        "count": 1
-      },
-      {
         "path": "packages/agent-edit/src/frontier.ts",
         "line": "} catch {",
         "count": 1
