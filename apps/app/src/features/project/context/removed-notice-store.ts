@@ -133,10 +133,12 @@ export class RemovedNoticeStore {
   }
 
   /**
-   * These documents' removal landed, wherever they are now: a view that had already left one
-   * never sees it vanish, so the marks covering it end here, or at their settling.
+   * The writer's removal of these documents is over, wherever they are now: it landed (a view
+   * that had already left one never sees it vanish), or the server refused it after the local
+   * replica admitted it, so no removal will land. The marks covering them end here, or at their
+   * settling.
    */
-  removalsLanded(projectId: string, documentIds: readonly string[]): void {
+  ownRemovalEnded(projectId: string, documentIds: readonly string[]): void {
     for (const documentId of documentIds) {
       const key = documentKey(projectId, documentId);
       for (const mark of [...(this.ownRemovals.get(key) ?? [])]) {
