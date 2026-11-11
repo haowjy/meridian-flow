@@ -73,6 +73,7 @@ export function ChatSurface({
             availableWorks={availableWorks}
             onOpenContextTarget={onOpenContextTarget}
             visible={visible}
+            focusOnOpen={place === "main"}
           />
         </OpenedFromChat>
       </div>

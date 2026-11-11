@@ -31,6 +31,8 @@ type ChatComposerProps = {
   accountId: string;
   chatId: string;
   active: boolean;
+  /** Focus the box when it mounts; the side's chat, which follows main, doesn't. */
+  focusOnOpen: boolean;
   activeWork: Work | null;
   agentName: string;
   running: boolean;
@@ -56,6 +58,7 @@ function ChatComposerComponent({
   accountId,
   chatId,
   active,
+  focusOnOpen,
   activeWork,
   agentName,
   running,
@@ -96,6 +99,7 @@ function ChatComposerComponent({
       <Composer
         cards={hasComposerCards ? <AnchoredCards anchor="composer" /> : undefined}
         key={draft.key}
+        autoFocus={focusOnOpen}
         initialDraft={draft.initialDraft}
         onDraftChange={draft.updateDraft}
         onOpenReference={onOpenReference}

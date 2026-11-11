@@ -329,7 +329,7 @@ function ActiveSessionEditorView({
   // The paint cover that stands in while this document's surface changes parks focus on its
   // status line. The caret was the writer's, so it goes back to the editor when the cover lifts.
   useEffect(() => {
-    if (!editor || inReview) return;
+    if (!editor || editor.isDestroyed || inReview) return;
     const dom = editor.view.dom;
     const onFocusOut = (event: FocusEvent) => {
       if (

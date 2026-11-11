@@ -149,6 +149,8 @@ export type ChatViewProps = {
   composerStrip?: ReactNode;
   /** False while the chat is mounted but hidden (collapsed side, Settings). */
   active?: boolean;
+  /** Opening the chat focuses its composer; the side's chat, which follows main, doesn't. */
+  focusOnOpen?: boolean;
 };
 
 export function ChatView({
@@ -162,6 +164,7 @@ export function ChatView({
   historySettled,
   composerStrip,
   active = true,
+  focusOnOpen = true,
 }: ChatViewProps) {
   const actions = useThreadActions();
   useThreadWorkProjections({ threadId, projectId });
@@ -621,7 +624,7 @@ export function ChatView({
     projectId,
   ]);
 
-  useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
+  useThreadNavigationAnnounce(threadId, pageTitle, composerRef, focusOnOpen);
 
   useChatThreadSession({
     threadId,
@@ -678,6 +681,7 @@ export function ChatView({
                     accountId={accountId}
                     chatId={topChat.chatId}
                     active={active}
+                    focusOnOpen={focusOnOpen}
                     activeWork={activeWork}
                     agentName={composerAgentName}
                     running={running}

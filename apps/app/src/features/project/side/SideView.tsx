@@ -168,6 +168,19 @@ function useDescriptions(projectId: string): Descriptions {
       return next;
     });
   }, []);
+  // A mounted document's descriptor is its host's; once it unmounts (closed, removed) it is
+  // described afresh rather than from an answer that may predate its removal.
+  useEffect(() => {
+    const mounted = new Set(shown.map((tab) => tab.documentId));
+    const stale = [...asked.current].filter((key) => mounted.has(key.split("|")[0] ?? ""));
+    if (stale.length === 0) return;
+    for (const key of stale) asked.current.delete(key);
+    setAnswers((current) => {
+      const next = new Map(current);
+      for (const key of stale) next.delete(key);
+      return next;
+    });
+  }, [shown]);
   const request = useCallback(
     (documents: readonly Describing[]) => {
       for (const document of documents) {
