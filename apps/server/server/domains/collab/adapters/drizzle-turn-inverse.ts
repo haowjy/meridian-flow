@@ -424,21 +424,19 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     // The reader owns its own root snapshot. Do not nest it inside the capture above:
     // a single-connection caller would wait forever for its own read connection.
     try {
+      // A closed draft keeps its bytes and its Apply record: what was applied before the
+      // close is read from it, so a discarded branch does not make applied parts "discarded".
       const dispositionDraftIds = new Set<string>();
       for (const document of captured.documents) {
-        const destinations = [
-          ...document.history.map((part) => document.destinationOf(part.origin)),
-          ...document.tree.flatMap((entry) =>
-            isTransitionEntry(entry) &&
-            entry.tree.op === "create" &&
-            entry.tree.destination.kind === "draft"
-              ? [document.destinationForBranch(entry.tree.destination.branchId)]
-              : [],
-          ),
-        ];
-        for (const destination of destinations) {
-          if (destination.kind !== "draft" || destination.state === "gone") continue;
-          dispositionDraftIds.add(destination.draftId);
+        for (const part of document.history)
+          if (part.origin.kind === "pending" && document.drafts.has(part.origin.draftId))
+            dispositionDraftIds.add(part.origin.draftId);
+        for (const entry of document.tree) {
+          if (!isTransitionEntry(entry) || entry.tree.op !== "create") continue;
+          if (entry.tree.destination.kind !== "draft") continue;
+          const destination = document.destinationForBranch(entry.tree.destination.branchId);
+          if (destination.kind === "draft" && destination.state === "active")
+            dispositionDraftIds.add(destination.draftId);
         }
       }
       const views = new Map<string, DraftDispositionView | null>();
@@ -461,16 +459,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         }
         document.history = document.history.map((part) => {
           if (part.origin.kind === "live") return { ...part, disposition: "pending" };
-          const classified = byPart.get(`${part.editId}:${part.ordinal}`);
-          const destination = document.destinationOf(part.origin);
           return {
             ...part,
-            disposition:
-              classified === "applied"
-                ? classified
-                : destination.kind === "draft" && destination.state !== "gone"
-                  ? "pending"
-                  : (classified ?? "discarded"),
+            disposition: byPart.get(`${part.editId}:${part.ordinal}`) ?? "discarded",
           };
         });
       }

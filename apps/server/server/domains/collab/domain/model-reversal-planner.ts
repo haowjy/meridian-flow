@@ -73,7 +73,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       ? `draft (${draftId ? (document.drafts.get(draftId)?.name ?? "unavailable") : "unavailable"})`
       : "live";
   };
-  type TextFailure = "draft_archived" | "document_deleted" | "discarded" | "changed";
+  type TextFailure = "draft_archived" | "document_deleted" | "applied" | "discarded" | "changed";
   type TextOmission = {
     ordinal: number;
     cause:
@@ -91,7 +91,8 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   ): TextFailure | null {
     const destination = document.destinationOf(part.origin);
     if (destination.frozen) return "draft_archived";
-    if (destination.kind === "draft" && destination.state === "gone") return "discarded";
+    if (destination.kind === "draft" && destination.state === "gone")
+      return part.disposition === "applied" ? "applied" : "discarded";
     const state = inspection.states([part])[0];
     if (state.state !== (direction === "undo" ? "active" : "undone")) {
       if (part.disposition === "discarded") return "discarded";
@@ -159,7 +160,11 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     const [destination] = destinations;
     if (!destination) throw new Error("One model edit has no destination");
     if (destination.kind === "draft" && destination.state === "gone")
-      return { failure: "discarded" as const };
+      return {
+        failure: entry.parts.every((part) => part.disposition === "applied")
+          ? ("applied" as const)
+          : ("discarded" as const),
+      };
     if (destination.frozen) return { failure: "draft_archived" as const };
     if (destination.kind === "live" && (options.liveRemoved ?? destination.removed))
       return { failure: "document_deleted" as const };

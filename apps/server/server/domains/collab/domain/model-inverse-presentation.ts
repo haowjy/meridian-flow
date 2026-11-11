@@ -12,7 +12,7 @@ export function textPlanRefusal(
   uri: string,
   handle: string,
   direction: Direction,
-  failure: "draft_archived" | "document_deleted" | "discarded" | "changed",
+  failure: "draft_archived" | "document_deleted" | "applied" | "discarded" | "changed",
 ): Exclude<DocumentEditResult, { status: "success" }> {
   if (failure === "draft_archived")
     return {
@@ -26,6 +26,11 @@ export function textPlanRefusal(
     };
   const verb = direction === "revert" ? "undo" : direction;
   const follow = `Use revert on ${uri}, or read it and make a new replace.`;
+  if (failure === "applied")
+    return {
+      status: `cant_${verb}_applied`,
+      message: `The user applied ${handle} to the manuscript, and its draft is closed. Read ${uri} and make a new replace.`,
+    };
   return failure === "discarded"
     ? {
         status: `cant_${verb}_discarded`,
