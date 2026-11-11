@@ -95,13 +95,10 @@ export function ChatsBody({
           </SourceHint>
         ) : (
           <>
-            <Group label={t`Waiting on you`} hidden={groups.needsYou.length === 0}>
+            {/* One list, most urgent first; the mark on a row says its state. */}
+            <div className="pt-1">
               {groups.needsYou.map((thread) => row(thread, "needs-you"))}
-            </Group>
-            <Group label={t`Working`} hidden={groups.running.length === 0}>
               {groups.running.map((thread) => row(thread, "running"))}
-            </Group>
-            <Group label={t`Idle`} hidden={groups.idle.length === 0}>
               {groups.idle.map((thread) => row(thread, "idle"))}
               {groups.older > 0 ? (
                 <button
@@ -113,7 +110,7 @@ export function ChatsBody({
                   <Trans>Older</Trans>
                 </button>
               ) : null}
-            </Group>
+            </div>
             {groups.needsYou.length + groups.running.length + groups.idle.length === 0 ? (
               <SourceHint>
                 <Trans>No chats in this Work yet.</Trans>
@@ -199,9 +196,6 @@ function ChatRow({
       className={cn(ROW_BUTTON, "gap-2", contextTreeFileRowClassName(current))}
       style={{ paddingLeft: rowPaddingLeft(nested ? 1 : 0) }}
     >
-      <span className="flex h-7 w-4 shrink-0 items-center justify-center">
-        <StateMark state={state} />
-      </span>
       {thread.agentName ? (
         <span
           aria-hidden
@@ -215,11 +209,16 @@ function ChatRow({
         </span>
       ) : null}
       <span className="min-w-0 flex-1 truncate">{title}</span>
+      {state === "idle" ? null : (
+        <span className="flex w-5 shrink-0 items-center justify-center">
+          <StateMark state={state} />
+        </span>
+      )}
     </button>
   );
 }
 
-function StateMark({ state }: { state: RowState }) {
+function StateMark({ state }: { state: Exclude<RowState, "idle"> }) {
   if (state === "running")
     return (
       <span
@@ -228,15 +227,13 @@ function StateMark({ state }: { state: RowState }) {
         className="size-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-border-subtle border-t-muted-foreground motion-reduce:animate-none"
       />
     );
-  if (state === "needs-you")
-    return (
-      <span
-        role="img"
-        aria-label={t`Waiting on you`}
-        className="size-2 shrink-0 rounded-full bg-primary"
-      />
-    );
-  return <span aria-hidden className="size-2 shrink-0 rounded-full border border-border" />;
+  return (
+    <span
+      role="img"
+      aria-label={t`Waiting on you`}
+      className="size-2 shrink-0 rounded-full bg-primary"
+    />
+  );
 }
 
 export function groupChats(
