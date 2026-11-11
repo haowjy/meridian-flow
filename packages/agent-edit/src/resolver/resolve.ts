@@ -760,7 +760,7 @@ function semanticIrForResolvedEdits(
       for (const op of edit.ops) {
         if (op.kind !== "text") continue;
         for (const splice of op.splices) {
-          deleted.push(...sliceLineage(lineage, splice.from, splice.to));
+          deleted.push(...ctx.model.textblockLineage(edit.block, op.path, splice.from, splice.to));
           const text = splice.content.textBetween(0, splice.content.size, "");
           if (text.length > 0)
             outputRuns.push({
@@ -830,24 +830,6 @@ function sameLineageRanges(left: readonly LineageRange[], right: readonly Lineag
         range.length === right[index]?.length,
     )
   );
-}
-
-function sliceLineage(lineage: readonly LineageRange[], from: number, to: number): LineageRange[] {
-  const slices: LineageRange[] = [];
-  let cursor = 0;
-  for (const range of lineage) {
-    const start = Math.max(from, cursor);
-    const end = Math.min(to, cursor + range.length);
-    if (start < end) {
-      slices.push({
-        clientID: range.clientID,
-        clock: range.clock + start - cursor,
-        length: end - start,
-      });
-    }
-    cursor += range.length;
-  }
-  return slices;
 }
 
 /** The revision a semantic IR names: the document's state vector, in hex. */

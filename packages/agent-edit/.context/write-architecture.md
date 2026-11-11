@@ -39,7 +39,8 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   phrase is one), an atom is one (compared by type; a changed attribute is an attribute
   set), and formatting is not part of a token. The rule: an operation whose target is
   gone is not made and is counted (`skipped` in the result); a changed node the room
-  removed, or one under a removed node, counts once. A replace lands only if every unit it
+  removed, or one under a removed node, counts once per changed node (an
+  item holding two changed nodes counts 2). A replace lands only if every unit it
   replaces survives; an insert lands unless it sits in deleted text; a delete deletes
   whatever is left; a format range lands if one of its units survives; an attribute set
   lands if the node does; no deleted unit is put back. An attribute the codec does not
@@ -50,7 +51,10 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   there were no room: a node added, removed or retyped inside the block (a list item, a
   table row, a quote paragraph; a paragraph made a heading), and an inline atom put into
   the middle of a run of text (a verse line broken in two). An atom added or removed at
-  the edge of a run of text is an operation.
+  the edge of a run of text is an operation. Deleting an atom between two runs leaves
+  them as two adjacent `Y.XmlText` children, which the editor's binding never writes;
+  merging them would re-insert the writer's text as the model's, so they stay
+  (the minimal-ops design, section 6).
 - What that guarantees, for a block it keeps, and no more:
   - The write's update neither deletes nor re-inserts any unit the room deleted.
   - The model's new text lands only in place of units that all survive, after a find

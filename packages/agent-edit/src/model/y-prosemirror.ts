@@ -80,6 +80,10 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       return collectVisibleContentLineage(unwrapBlock(block));
     },
 
+    textblockLineage(block, path, from, to) {
+      return textblockLineage(nodeAt(unwrapBlock(block), path), from, to);
+    },
+
     transact(doc, fn, origin) {
       unwrapDoc(doc).transact(fn, origin);
     },
@@ -472,6 +476,27 @@ function collectVisibleContentLineage(block: Y.XmlElement): ContentLineage[] {
     }
   };
   visit(block);
+  return lineage;
+}
+
+function textblockLineage(leaf: Y.XmlElement, from: number, to: number): ContentLineage[] {
+  const lineage: ContentLineage[] = [];
+  for (const { child, start, length } of slotsOf(leaf)) {
+    if (!(child instanceof Y.XmlText)) continue;
+    const lo = Math.max(from, start);
+    const hi = Math.min(to, start + length);
+    if (lo >= hi) continue;
+    // Units of a run are its live items' characters, in order.
+    let at = start;
+    for (let item = child._start; item; item = item.right) {
+      if (item.deleted || !(item.content instanceof Y.ContentString)) continue;
+      const a = Math.max(lo, at);
+      const b = Math.min(hi, at + item.length);
+      if (a < b)
+        lineage.push({ clientID: item.id.client, clock: item.id.clock + a - at, length: b - a });
+      at += item.length;
+    }
+  }
   return lineage;
 }
 

@@ -8,8 +8,7 @@
  * writer's, since Yjs orders concurrent inserts at one place by client id.
  *
  * Pins implementation decisions: a model change to text the writer has since deleted is
- * skipped, in a quote, a list item, a table cell, a code block and a line of verse as in a
- * paragraph (`write-architecture.md`).
+ * skipped, in a quote and a list item as in a paragraph (`write-architecture.md`).
  */
 
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";

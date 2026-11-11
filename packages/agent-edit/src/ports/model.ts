@@ -87,6 +87,17 @@ export interface DocumentModel {
   /** Immutable CRDT identities for the currently visible prose units in this block. */
   getVisibleContentLineage(block: BlockRef): ContentLineage[];
 
+  /**
+   * Identities of the text in units [from, to) of the textblock at `path` under `block`, in
+   * the model's view; an inline atom is a unit with no identity.
+   */
+  textblockLineage(
+    block: BlockRef,
+    path: readonly number[],
+    from: number,
+    to: number,
+  ): ContentLineage[];
+
   /** Run a document transaction with the adapter/runtime's native origin. */
   transact(doc: DocHandle, fn: () => void, origin: unknown): void;
 
