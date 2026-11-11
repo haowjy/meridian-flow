@@ -1,7 +1,6 @@
 /** Derives and transports one explicit writer request for a document's final identity. */
 
 import { t } from "@lingui/core/macro";
-import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import { type ProjectContextTreeScheme, storedFilename } from "@meridian/contracts/protocol";
 import { useWorks } from "@/client/query/useWorks";
 import { type ContextTab, replaceOwner, type TabOwner } from "@/client/stores";

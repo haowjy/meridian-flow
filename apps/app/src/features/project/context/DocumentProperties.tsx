@@ -1,7 +1,7 @@
 /**
  * DocumentProperties — a document's imported frontmatter, shown read-only under
  * its path: one quiet line that opens to the keys and values. It is the same
- * row in the Editor and the dock, and only mounts when the catalog says the
+ * row in main and the side, and only mounts when the catalog says the
  * document has properties; the properties themselves load by document id.
  * Nothing here edits them.
  */
@@ -49,7 +49,7 @@ function PropertiesRow({ projectId, documentId }: { projectId: string; documentI
   // Frontmatter with no keys has nothing to show or open.
   if (properties && !properties.unreadable && properties.entries.length === 0) return null;
 
-  // The container measures this pane, so the dock's narrow width reaches the geometry below.
+  // The container measures this pane, so the side's narrow width reaches the geometry below.
   return (
     <div className="@container shrink-0 border-b border-border-subtle">
       <div className={editorColumnChrome}>
@@ -162,7 +162,7 @@ function PropertiesBody({
     <dl
       className={cn(
         "grid grid-cols-[fit-content(10rem)_minmax(0,1fr)] items-baseline gap-x-4 gap-y-1.5 pt-1",
-        // In the narrow dock each key sits above its value.
+        // In the narrow side each key sits above its value.
         "@max-md:grid-cols-1 @max-md:gap-y-0",
       )}
     >

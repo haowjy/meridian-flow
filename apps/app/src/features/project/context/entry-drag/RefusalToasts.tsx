@@ -10,13 +10,13 @@ import { dismissFailure, dismissFailures } from "@/components/app/failure-toast"
 import {
   useAccountResourceProjection,
   useAccountResourceReplica,
-  useOptionalRemovedNotices,
+  useOptionalContextRemovalCoordinator,
 } from "../account-feature-context";
 import { entryFailures, entryToast, failureTitle, showFailure } from "./entry-failure";
 
 export function RefusalToasts({ projectId }: { projectId: string }) {
   const resources = useAccountResourceReplica();
-  const notices = useOptionalRemovedNotices();
+  const removal = useOptionalContextRemovalCoordinator();
   const { records, folders, placement, snapshot } = useAccountResourceProjection(projectId);
   /** Intents with no toast to come: refused before this mount, closed or retried. */
   const handled = useRef<Set<string> | null>(null);
@@ -37,7 +37,7 @@ export function RefusalToasts({ projectId }: { projectId: string }) {
       const said = `${failureTitle(failure)}:${intents.join()}`;
       if (shown.current.get(failure.key) === said) continue;
       shown.current.set(failure.key, said);
-      showFailure({ resources, projectId, notices }, failure, () => {
+      showFailure({ resources, projectId, removal }, failure, () => {
         for (const intent of intents) done.add(intent);
         shown.current.delete(failure.key);
       });
@@ -47,7 +47,7 @@ export function RefusalToasts({ projectId }: { projectId: string }) {
       shown.current.delete(key);
       dismissFailure(key);
     }
-  }, [records, folders, placement, snapshot, projectId, resources, notices]);
+  }, [records, folders, placement, snapshot, projectId, resources, removal]);
 
   useEffect(
     () => () => {

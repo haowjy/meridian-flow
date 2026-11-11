@@ -14,12 +14,7 @@ import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
 import { bindAccountRecents } from "@/client/recents";
-import {
-  loadProjectList,
-  ProjectStoreProvider,
-  rehydrateEditorWorkspace,
-  ThreadStoreProvider,
-} from "@/client/stores";
+import { loadProjectList, ProjectStoreProvider, ThreadStoreProvider } from "@/client/stores";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
 import { FailureToaster } from "@/components/app/failure-toast";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
@@ -183,7 +178,6 @@ function AuthenticatedProviderTree({
   // exists. Constructing these services during SSR crashes the authenticated shell.
   useEffect(() => {
     resources?.start();
-    void rehydrateEditorWorkspace(user.userId);
     void useProjectSurfacePrefsStore.persist.rehydrate();
     useProjectSurfacePrefsStore.getState().setHydrated();
   }, [resources, user.userId]);

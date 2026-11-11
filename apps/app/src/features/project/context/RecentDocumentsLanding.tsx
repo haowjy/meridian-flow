@@ -232,7 +232,8 @@ function RecentDocumentContent({ item, now }: { item: AccountRecentItem; now: nu
   );
 }
 
-async function openRecent(
+/** Opens a Recently opened row in main; false when it did not land. */
+export async function openRecent(
   item: AccountRecentItem,
   ports: {
     projectId: string;
@@ -240,22 +241,25 @@ async function openRecent(
     openDocument: ReturnType<typeof useOpenProjectDocument>;
     openRoute: ReturnType<typeof useOpenContextRoute>;
   },
-): Promise<void> {
+  replace?: true,
+): Promise<boolean> {
   if (item.address.kind !== "local") {
-    await ports.openDocument({
+    const outcome = await ports.openDocument({
       documentId: item.documentId,
       workId: ports.editorWorkId ?? undefined,
+      ...(replace ? { replace } : {}),
     });
-    return;
+    return outcome.kind === "committed";
   }
-  if (!ports.openRoute) return;
-  await ports.openRoute(
+  if (!ports.openRoute) return false;
+  const settlement = await ports.openRoute(
     {
       scheme: "unfiled",
       path: "",
       documentId: item.documentId,
     },
     {
+      ...(replace ? { replace } : {}),
       tab: {
         kind: "new",
         documentId: item.documentId,
@@ -264,6 +268,7 @@ async function openRecent(
       },
     },
   );
+  return settlement.kind === "applied";
 }
 
 function recentDocumentHref(item: AccountRecentItem, projectId: string | undefined): string | null {

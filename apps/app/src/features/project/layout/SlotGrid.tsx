@@ -1,18 +1,17 @@
 /**
  * SlotGrid renders the desktop project as one flat CSS grid.
  *
- * Purpose: keep every stateful surface mounted as a direct child of one grid
- * container for the whole session. Key decision: placement changes only mutate
- * the surface wrapper's grid-area (or park it offscreen when inactive); surfaces
- * are never portaled, reparented, or conditionally removed by screen changes.
- * Slot chrome (background, rounding, shadows, borders) is fully owned by the
- * slot's `className` — this wrapper only handles base layout + parked state.
+ * Every host is a direct child of one grid container for as long as it is mounted, keyed by what
+ * it holds. Moving a host between slots changes only its wrapper's grid-area (or parks it
+ * offscreen), so a host is never portaled, reparented or remounted by a move. Slot chrome
+ * (background, rounding, shadows, borders) is owned by the slot's `className`; this wrapper
+ * handles only base layout and the parked state.
  */
 import { type CSSProperties, type ReactNode, type Ref, useMemo } from "react";
 
 import { cn } from "@/lib/utils";
 
-import type { SlotDefinition, SurfaceId, SurfaceLayoutMap } from "./types";
+import type { DesktopProjectSlotId, SlotDefinition } from "./types";
 
 const PARKED_SURFACE_STYLE: CSSProperties = {
   position: "absolute",
@@ -24,15 +23,17 @@ const PARKED_SURFACE_STYLE: CSSProperties = {
   transform: "translateX(-200vw)",
 };
 
-export type SlotGridSurface = {
-  id: SurfaceId;
+export type SlotGridHost = {
+  /** What the host holds: its identity across moves. */
+  key: string;
+  /** Null parks the host: mounted, off screen. */
+  slot: DesktopProjectSlotId | null;
   children: ReactNode;
 };
 
 export type SlotGridProps = {
   slots: readonly SlotDefinition[];
-  layout: SurfaceLayoutMap;
-  surfaces: readonly SlotGridSurface[];
+  hosts: readonly SlotGridHost[];
   gridTemplateAreas: string;
   gridTemplateColumns: string;
   gridTemplateRows?: string;
@@ -44,8 +45,7 @@ export type SlotGridProps = {
 
 export function SlotGrid({
   slots,
-  layout,
-  surfaces,
+  hosts,
   gridTemplateAreas,
   gridTemplateColumns,
   gridTemplateRows = "minmax(0, 1fr)",
@@ -68,17 +68,12 @@ export function SlotGrid({
       }}
       data-stable-layout-grid
     >
-      {surfaces.map((surface) => {
-        const surfaceLayout = layout[surface.id];
-        const slot =
-          surfaceLayout.slot !== null && !surfaceLayout.collapsed
-            ? slotsById.get(surfaceLayout.slot)
-            : undefined;
-        const active = Boolean(slot);
+      {hosts.map((host) => {
+        const slot = host.slot ? slotsById.get(host.slot) : undefined;
         return (
-          <SurfaceWrapper key={surface.id} surfaceId={surface.id} slot={slot} active={active}>
-            {surface.children}
-          </SurfaceWrapper>
+          <HostWrapper key={host.key} hostKey={host.key} slot={slot}>
+            {host.children}
+          </HostWrapper>
         );
       })}
       {children}
@@ -86,35 +81,24 @@ export function SlotGrid({
   );
 }
 
-function SurfaceWrapper({
-  surfaceId,
+function HostWrapper({
+  hostKey,
   slot,
-  active,
   children,
 }: {
-  surfaceId: SurfaceId;
+  hostKey: string;
   slot: SlotDefinition | undefined;
-  active: boolean;
   children: ReactNode;
 }) {
+  const active = slot !== undefined;
   return (
     <section
       aria-hidden={!active}
       inert={!active}
-      className={cn(
-        "relative flex min-h-0 min-w-0 flex-col overflow-hidden",
-        active && slot?.className,
-      )}
-      style={
-        active && slot
-          ? {
-              gridArea: slot.area ?? slot.id,
-              ...slot.style,
-            }
-          : PARKED_SURFACE_STYLE
-      }
-      data-project-surface={surfaceId}
-      data-project-slot={active ? slot?.id : undefined}
+      className={cn("relative flex min-h-0 min-w-0 flex-col overflow-hidden", slot?.className)}
+      style={slot ? { gridArea: slot.area ?? slot.id, ...slot.style } : PARKED_SURFACE_STYLE}
+      data-project-host={hostKey}
+      data-project-slot={slot?.id}
       data-project-surface-state={active ? "active" : "parked"}
     >
       {children}

@@ -2,16 +2,19 @@
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useLayoutEffect, useMemo, useRef } from "react";
-import type { ScreenKey } from "../routing/project-route";
+import { useRecentDocuments } from "@/client/query/useRecentDocuments";
+import type { AccountRecentItem } from "@/client/recents";
+import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { contextRouteRequest } from "../routing/project-route";
 import { useContextRemovalCoordinator } from "./account-feature-context";
 import type { ContextRemovalRoutePort } from "./context-removal-coordinator";
 import { selectionAtRoute } from "./context-removal-protocol";
+import { useOpenProjectDocument } from "./open-project-document";
+import { openRecent } from "./RecentDocumentsLanding";
 import { useContextRemovalProject } from "./use-context-removal-project";
 
 export type ProjectContextRemovalControllerProps = {
   projectId: string;
-  activeScreen: ScreenKey;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   /** A chat's Scratch route names its lineage here. */
@@ -23,12 +26,11 @@ export type ProjectContextRemovalControllerProps = {
   localDocumentId?: string;
   /** A review address names its document by item: that id is proof, so the route starts bound. */
   reviewDocumentId?: string;
-  route: ContextRemovalRoutePort;
+  route: Omit<ContextRemovalRoutePort, "goBack">;
 };
 
 export function ProjectContextRemovalController({
   projectId,
-  activeScreen,
   activeContextScheme,
   activeContextPath,
   activeContextChat,
@@ -39,15 +41,36 @@ export function ProjectContextRemovalController({
   route,
 }: ProjectContextRemovalControllerProps) {
   const coordinator = useContextRemovalCoordinator();
-  const latestRouteRef = useRef(route);
-  latestRouteRef.current = route;
+  const recent = useRecentDocuments(projectId);
+  const openDocument = useOpenProjectDocument(projectId);
+  const openRoute = useOpenContextRoute();
+  const latest = useRef({ route, recent: recent.documents, openDocument, openRoute, editorWorkId });
+  latest.current = { route, recent: recent.documents, openDocument, openRoute, editorWorkId };
   const stableRoute = useMemo<ContextRemovalRoutePort>(
     () => ({
       transition: (projectId, target, prepared) =>
-        latestRouteRef.current.transition(projectId, target, prepared),
-      readSearch: (registeredProjectId) => latestRouteRef.current.readSearch(registeredProjectId),
+        latest.current.route.transition(projectId, target, prepared),
+      readSearch: (registeredProjectId) => latest.current.route.readSearch(registeredProjectId),
       updateSearch: (registeredProjectId, update, relocated) =>
-        latestRouteRef.current.updateSearch(registeredProjectId, update, relocated),
+        latest.current.route.updateSearch(registeredProjectId, update, relocated),
+      goBack: (projectId, documentId, removing, isCurrent) => {
+        const { recent, ...ports } = latest.current;
+        const toRecents = () =>
+          ports.route.transition(
+            projectId,
+            { kind: "clear" },
+            { isCurrent, commit: () => undefined },
+          );
+        const before = shownBefore(recent, documentId, removing);
+        void (before ? openRecent(before, { projectId, ...ports }, true) : Promise.resolve(false))
+          .then((opened) => (opened || !isCurrent() ? undefined : toRecents()))
+          .then(
+            (settlement) => {
+              if (settlement?.kind === "failed") reportError(settlement.error);
+            },
+            (error: unknown) => reportError(error),
+          );
+      },
     }),
     [],
   );
@@ -78,7 +101,7 @@ export function ProjectContextRemovalController({
   const previousLocalDocument = useRef(localDocumentId);
   useLayoutEffect(() => {
     const locator =
-      activeScreen === "context" && activeContextScheme !== null && activeContextPath !== null
+      activeContextScheme !== null && activeContextPath !== null
         ? contextRouteRequest({
             scheme: activeContextScheme,
             path: activeContextPath,
@@ -98,7 +121,6 @@ export function ProjectContextRemovalController({
     activeContextChat,
     activeContextPath,
     activeContextScheme,
-    activeScreen,
     coordinator,
     activeContextWork,
     projectId,
@@ -108,4 +130,22 @@ export function ProjectContextRemovalController({
   ]);
 
   return null;
+}
+
+/**
+ * Recently opened is main's opening history, newest first: the document main showed before
+ * `documentId` is the next entry after it that stays. One main never recorded (a draft-only
+ * page) was shown after them all, so the first entry that stays is the one before it.
+ */
+function shownBefore(
+  recent: readonly AccountRecentItem[],
+  documentId: string,
+  removing: readonly string[],
+): AccountRecentItem | null {
+  const at = recent.findIndex((item) => item.documentId === documentId);
+  return (
+    recent
+      .slice(at + 1)
+      .find((item) => item.documentId !== documentId && !removing.includes(item.documentId)) ?? null
+  );
 }

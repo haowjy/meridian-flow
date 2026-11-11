@@ -7,9 +7,13 @@
  */
 import "fake-indexeddb/auto";
 
-import { beforeEach, expect, it, vi } from "vitest";
-import { type ContextTab, useContextTabsStore } from "@/client/stores";
-import { AccountFeatureTestProvider } from "@/test-support/account-feature-provider";
+import { useLayoutEffect } from "react";
+import { expect, it, vi } from "vitest";
+import type { ContextTab } from "@/client/stores";
+import {
+  AccountFeatureTestProvider,
+  useOptionalPresentedDocuments,
+} from "@/test-support/account-feature-provider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import type { ContextRouteSelection } from "./context-removal-protocol";
@@ -24,7 +28,6 @@ const tab: ContextTab = {
   editable: true,
   filetype: "markdown",
   schemaType: "document",
-  tabInstanceId: "instance-a",
 };
 const moved = { ...tab, path: "/new.md", name: "new.md" };
 
@@ -49,15 +52,13 @@ const candidate: ContextRouteSelection = {
   reentryGuard: null,
 };
 
-beforeEach(() => {
-  useContextTabsStore.setState({
-    byProject: { project: { tabs: [tab], selectedTabKey: null } },
-    _workspaceHydrated: true,
-  });
-});
-
 async function follows(selection: ContextRouteSelection) {
   const open = vi.fn<OpenContextRoute>(async () => ({ kind: "applied" as const }));
+  function Present() {
+    const presented = useOptionalPresentedDocuments();
+    useLayoutEffect(() => presented?.mount("main", "project", tab, "main"), [presented]);
+    return null;
+  }
   function Host() {
     useFollowOpenDocumentPlacement({
       projectId: "project",
@@ -65,13 +66,13 @@ async function follows(selection: ContextRouteSelection) {
       selection,
       activeContextScheme: "manuscript",
       activeContextPath: "/old.md",
-      routeDisplayed: true,
       onOpenContextTarget: open,
     });
     return null;
   }
   await withReactRoot(
     <AccountFeatureTestProvider accountId="follow-account">
+      <Present />
       <Host />
     </AccountFeatureTestProvider>,
     async () => undefined,

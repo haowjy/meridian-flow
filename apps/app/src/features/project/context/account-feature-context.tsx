@@ -18,9 +18,11 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { scopeCreationRegistry } from "@/client/creation/creation-registry";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
+import type { ContextTab } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { LinkSettlementsProvider } from "@/features/links/link-settlements";
 import { AccountFeatureLifetime } from "./account-feature-lifetime";
@@ -31,6 +33,7 @@ import type { RemovedNoticeStore } from "./removed-notice-store";
 
 const DraftCommandsContext = createContext<AccountFeatureLifetime["draftCommands"] | null>(null);
 const DraftOnlyContext = createContext<AccountFeatureLifetime["draftOnly"] | null>(null);
+const PresentedContext = createContext<AccountFeatureLifetime["presented"] | null>(null);
 
 const AccountEpochContext = createContext<AbortSignal | null>(null);
 const AccountIdContext = createContext<string | null>(null);
@@ -180,7 +183,9 @@ function AccountFeatureProviders({
                     <LinkSettlementsProvider value={lifetime.linkSettlements}>
                       <DraftCommandsContext.Provider value={lifetime.draftCommands}>
                         <DraftOnlyContext.Provider value={lifetime.draftOnly}>
-                          {children}
+                          <PresentedContext.Provider value={lifetime.presented}>
+                            {children}
+                          </PresentedContext.Provider>
                         </DraftOnlyContext.Provider>
                       </DraftCommandsContext.Provider>
                     </LinkSettlementsProvider>
@@ -336,4 +341,35 @@ export function useDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] 
 /** The draft-only documents mounted hosts present; null outside the authenticated shell. */
 export function useOptionalDraftOnlyPresentations(): AccountFeatureLifetime["draftOnly"] | null {
   return useContext(DraftOnlyContext);
+}
+
+/** The documents this browser tab's hosts mount and present; null outside the authenticated shell. */
+export function useOptionalPresentedDocuments(): AccountFeatureLifetime["presented"] | null {
+  return useContext(PresentedContext);
+}
+
+const NOTHING_PRESENTED: readonly ContextTab[] = [];
+
+/** The documents this browser tab's hosts present in a project, main's first. */
+export function usePresentedDocuments(projectId: string): readonly ContextTab[] {
+  const presented = useContext(PresentedContext);
+  return useSyncExternalStore(
+    presented?.subscribe ?? noSubscription,
+    () => presented?.documents(projectId) ?? NOTHING_PRESENTED,
+    () => NOTHING_PRESENTED,
+  );
+}
+
+/** The documents mounted in a project, newest on screen first (`PresentedDocuments.shown`). */
+export function useShownDocuments(projectId: string): readonly ContextTab[] {
+  const presented = useContext(PresentedContext);
+  return useSyncExternalStore(
+    presented?.subscribe ?? noSubscription,
+    () => presented?.shown(projectId) ?? NOTHING_PRESENTED,
+    () => NOTHING_PRESENTED,
+  );
+}
+
+function noSubscription(): () => void {
+  return () => undefined;
 }

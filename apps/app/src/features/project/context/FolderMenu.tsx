@@ -30,7 +30,7 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useProject } from "@/client/query/useProjectList";
 import { DrillInMenuBody, DrillInMenuRoot, type DrillNode } from "@/components/app/DrillInMenu";
 import { DropdownMenuContent, type DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { useDockBrowseScratch } from "../dock/use-dock-browse-scratch";
+import { useOnScreenChatScratchSource } from "../chat/use-chat-scratch-source";
 import { useOwnAreaHeading, useProjectMenuSource } from "./use-project-menu-source";
 
 /** What a surface's folder chips need: the project, and how that surface opens a document. */
@@ -91,7 +91,7 @@ export function FolderMenuBody({
   const own = useMemo(() => (found ? ownArea(found) : null), [found]);
   const heading = useOwnAreaHeading(projectId, own);
   const title = useProject(projectId)?.title ?? "";
-  const scratch = useDockBrowseScratch(projectId);
+  const scratch = useOnScreenChatScratchSource(projectId);
   const source = useProjectMenuSource({
     projectId,
     title,

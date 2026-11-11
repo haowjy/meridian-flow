@@ -1664,8 +1664,8 @@ msgid "Chat away"
 msgstr "Chat away"
 
 #: src/features/project/shell/ContextSidebar.tsx
-msgid "Chat context"
-msgstr "Chat context"
+#~ msgid "Chat context"
+#~ msgstr "Chat context"
 
 #: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "Chat deleted"
@@ -1770,8 +1770,8 @@ msgstr "Close"
 
 #. placeholder {0}: tab.name
 #: src/features/project/context/ContextTabBar.tsx
-msgid "Close {0}"
-msgstr "Close {0}"
+#~ msgid "Close {0}"
+#~ msgstr "Close {0}"
 
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Close artifact preview"
@@ -1782,8 +1782,8 @@ msgid "Close chat"
 msgstr "Close chat"
 
 #: src/features/project/dock/DockDocumentCommands.tsx
-msgid "Close document"
-msgstr "Close document"
+#~ msgid "Close document"
+#~ msgstr "Close document"
 
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/draft-review/ReviewCompletion.tsx
@@ -2284,7 +2284,6 @@ msgid "Couldn't load properties."
 msgstr "Couldn't load properties."
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
-#: src/features/project/shell/ContextSidebar.tsx
 msgid "Couldn't load recent documents."
 msgstr "Couldn't load recent documents."
 
@@ -2380,7 +2379,7 @@ msgid "Couldn't open review mode."
 msgstr "Couldn't open review mode."
 
 #: src/features/project/context/ContextDocumentHost.tsx
-#: src/features/project/mobile/MobileDocumentHost.tsx
+#: src/features/project/context/DocumentHost.tsx
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
 
@@ -2515,8 +2514,8 @@ msgid "Couldn't run that skill"
 msgstr "Couldn't run that skill"
 
 #: src/features/project/context/ContextViewer.tsx
-msgid "Couldn't save the Editor tab layout. Reload may not restore your tabs."
-msgstr "Couldn't save the Editor tab layout. Reload may not restore your tabs."
+#~ msgid "Couldn't save the Editor tab layout. Reload may not restore your tabs."
+#~ msgstr "Couldn't save the Editor tab layout. Reload may not restore your tabs."
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Couldn’t save the goal. Try again."
@@ -3227,7 +3226,6 @@ msgid "File this document"
 msgstr "File this document"
 
 #: src/features/chat/ChatFilesMenu.tsx
-#: src/features/project/context/PendingDocumentPath.tsx
 msgid "Files"
 msgstr "Files"
 
@@ -3764,8 +3762,8 @@ msgstr "Loading"
 
 #. placeholder {0}: tab.name
 #: src/features/project/context/ContextTabBar.tsx
-msgid "Loading {0}"
-msgstr "Loading {0}"
+#~ msgid "Loading {0}"
+#~ msgstr "Loading {0}"
 
 #: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
@@ -3814,8 +3812,8 @@ msgid "Loading recent documents"
 msgstr "Loading recent documents"
 
 #: src/features/project/shell/ContextSidebar.tsx
-msgid "Loading recent documents…"
-msgstr "Loading recent documents…"
+#~ msgid "Loading recent documents…"
+#~ msgstr "Loading recent documents…"
 
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "Loading references…"
@@ -3849,7 +3847,6 @@ msgstr "Loading Works…"
 
 #: src/features/billing/UsageCard.tsx
 #: src/features/project/chat/ChatScratch.tsx
-#: src/features/project/context/DocumentPath.tsx
 #: src/features/project/context/FolderMenu.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Loading…"
@@ -4157,6 +4154,7 @@ msgid "New chat"
 msgstr "New chat"
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
+#: src/features/project/shell/MainHeader.tsx
 msgid "New document"
 msgstr "New document"
 
@@ -4175,8 +4173,8 @@ msgstr "New folder"
 #~ msgstr "New note"
 
 #: src/features/project/context/ContextTabBar.tsx
-msgid "New tab"
-msgstr "New tab"
+#~ msgid "New tab"
+#~ msgstr "New tab"
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "New Work"
@@ -4502,8 +4500,8 @@ msgid "Open {0} in {1}"
 msgstr "Open {0} in {1}"
 
 #: src/features/chat/ChatFilesMenu.tsx
-msgid "Open {name}"
-msgstr "Open {name}"
+#~ msgid "Open {name}"
+#~ msgstr "Open {name}"
 
 #: src/features/chat/DocumentName.tsx
 #: src/features/home/ProjectLibrary.tsx
@@ -4519,7 +4517,7 @@ msgstr "Open a chat to see its Scratch."
 msgid "Open a document from the project tree, or start a new one."
 msgstr "Open a document from the project tree, or start a new one."
 
-#: src/features/project/context/ContextTabBar.tsx
+#: src/features/project/shell/MainHeader.tsx
 msgid "Open a Work to create an Untitled document"
 msgstr "Open a Work to create an Untitled document"
 
@@ -4528,8 +4526,8 @@ msgid "Open chat"
 msgstr "Open chat"
 
 #: src/features/project/context/ContextTabBar.tsx
-msgid "Open context files"
-msgstr "Open context files"
+#~ msgid "Open context files"
+#~ msgstr "Open context files"
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Open conversation"
@@ -4540,8 +4538,12 @@ msgid "Open full screen"
 msgstr "Open full screen"
 
 #: src/features/project/dock/DockDocumentCommands.tsx
-msgid "Open in Editor"
-msgstr "Open in Editor"
+#~ msgid "Open in Editor"
+#~ msgstr "Open in Editor"
+
+#: src/features/project/side/SideHeader.tsx
+msgid "Open in main"
+msgstr "Open in main"
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
@@ -4573,13 +4575,12 @@ msgstr "Open source chat {name}"
 msgid "Open this document in a project to upload figures."
 msgstr "Open this document in a project to upload figures."
 
-#. placeholder {0}: props.document.tab.name
-#: src/features/project/dock/DockDocumentView.tsx
+#. placeholder {0}: tab.name
+#: src/features/project/context/DocumentHost.tsx
 msgid "Opening {0}"
 msgstr "Opening {0}"
 
-#: src/features/project/context/ContextViewer.tsx
-#: src/features/project/mobile/MobileDocumentHost.tsx
+#: src/features/project/context/DocumentHost.tsx
 msgid "Opening {name}"
 msgstr "Opening {name}"
 
@@ -4588,12 +4589,11 @@ msgstr "Opening {name}"
 msgid "Opening checkout…"
 msgstr "Opening checkout…"
 
-#: src/features/project/mobile/MobileDocumentHost.tsx
+#: src/features/project/context/DocumentHost.tsx
 msgid "Opening document…"
 msgstr "Opening document…"
 
-#: src/features/project/context/ContextViewer.tsx
-#: src/features/project/mobile/MobileDocumentHost.tsx
+#: src/features/project/context/DocumentHost.tsx
 msgid "Opening draft"
 msgstr "Opening draft"
 
@@ -4815,15 +4815,15 @@ msgstr "Reason: {0}"
 
 #: src/features/project/dock/DockHeader.tsx
 #: src/features/project/shell/ContextSidebar.tsx
-msgid "Recent"
-msgstr "Recent"
+#~ msgid "Recent"
+#~ msgstr "Recent"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Recent activity"
 msgstr "Recent activity"
 
-#: src/features/project/context/ContextTabBar.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
+#: src/features/project/shell/MainHeader.tsx
 msgid "Recently opened"
 msgstr "Recently opened"
 
@@ -5270,8 +5270,8 @@ msgid "See files"
 msgstr "See files"
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
-msgid "Select a document."
-msgstr "Select a document."
+#~ msgid "Select a document."
+#~ msgstr "Select a document."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Select more than one cell to merge them."

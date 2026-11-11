@@ -3,7 +3,7 @@
 This directory adapts the shared editor to project documents: `SessionEditor`
 binds a session and scope, `EditorView` composes live or review presentation,
 and `chrome/` hosts writer-facing controls. Schemas, Yjs session machinery,
-and ProseMirror extensions belong to `core/editor`; pane and tab composition
+and ProseMirror extensions belong to `core/editor`; pane composition
 belongs to `features/project/context`.
 
 Contextual surfaces are built from the `chrome/` primitives, with the
@@ -30,10 +30,10 @@ selection bubbles and no ad-hoc surfaces.
 - Desktop review is an editable peer in the review room; phone review is
   read-only. The mounted draft and its review base decide changes; attribution
   supplies bylines. See [draft review](../draft-review/AGENTS.md).
-- `SessionEditor` owns device reading memory for live Editor and dock mounts
+- `SessionEditor` owns device reading memory for live main and side mounts
   (`core/editor/use-reading-position.ts`). Review and paint-held mounts stand
   down, and explicit destinations win. Reading position is restored in that one
-  place, never by a second timer or warm-tab path.
+  place, never by a second timer.
 - Chrome wrappers own focus return and Escape. A surface opened over prose
   must return focus through the wrapper and must not install a private handler.
 

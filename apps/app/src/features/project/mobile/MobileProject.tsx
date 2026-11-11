@@ -2,33 +2,29 @@
 
 import { t } from "@lingui/core/macro";
 import { MessageSquare } from "lucide-react";
-import { useState } from "react";
-import type { ContextTab } from "@/client/stores";
+import { useEffect, useState } from "react";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { ChatSurface } from "../chat/ChatSurface";
 import { ChatIndex } from "../chat-index/ChatIndex";
+import { DocumentHost, MainDocumentStatus } from "../context/DocumentHost";
 import { RecentDocumentsLanding } from "../context/RecentDocumentsLanding";
 import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice";
-import { useContextRemovalProject } from "../context/use-context-removal-project";
-import { useFollowOpenDocumentPlacement } from "../context/use-follow-open-document-placement";
-import { DocumentReviewProvider } from "../DocumentReview";
 import type { ReviewScopedProjectProps } from "../ProjectView";
 import {
   chatSurfaceThreadId,
   displayedChatThreadId,
   useChatNavigation,
-  useDockReveal,
 } from "../routing/chat-navigation";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
+import { useMainItem } from "../views";
 import { ChatBreadcrumb } from "./ChatBreadcrumb";
 import { pathLeafName } from "./context-location";
 import { MobileBreadcrumb, type MobileBreadcrumbSegment } from "./MobileBreadcrumb";
 import { MobileChatHost } from "./MobileChatHost";
 import { MobileChatSheetHeader } from "./MobileChatSheetHeader";
-import { MobileDocumentHost } from "./MobileDocumentHost";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
 import { MobileTopBar } from "./MobileTopBar";
 import { NavigationDrawer } from "./NavigationDrawer";
@@ -36,33 +32,22 @@ import { NavigationDrawer } from "./NavigationDrawer";
 type MobileProjectProps = ReviewScopedProjectProps;
 
 export function MobileProject(props: MobileProjectProps) {
-  const { recoveringFirstSend } = useChatNavigation();
-  // The sheet is the phone's dock: it opens over Work or Editor only. On the
-  // Chat screen the chat is already the page. A first send recovering after a
-  // reload opens it at mount.
-  const [chatOpen, setChatOpen] = useState(
-    () => props.activeScreen !== "chat" && recoveringFirstSend,
-  );
-  const openChatSheet = () => {
-    setChatOpen(true);
-  };
-  useDockReveal(openChatSheet);
+  const chat = useChatNavigation();
+  const onChat = props.chatDisplay !== null;
+  // The sheet is the phone's side view: it opens over a document only, since on a chat the chat
+  // is already the page. A first send recovering after a reload opens it at mount.
+  const [chatOpen, setChatOpen] = useState(() => !onChat && chat.recoveringFirstSend);
+  const openChatSheet = () => setChatOpen(true);
+  // Any open goes to main: the sheet closes rather than cover where the writer went.
+  useEffect(() => {
+    if (props.routeLocationKey) setChatOpen(false);
+  }, [props.routeLocationKey]);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { selection } = useContextRemovalProject(props.projectId);
-  useFollowOpenDocumentPlacement({
-    projectId: props.projectId,
-    editorWorkId: props.editorWorkId,
-    activeContextWork: props.activeContextWork,
-    selection,
-    activeContextScheme: props.activeContextScheme,
-    activeContextPath: props.activeContextPath,
-    activeContextChat: props.activeContextChat,
-    routeDisplayed: props.activeScreen === "context",
-    onOpenContextTarget: props.onOpenContextTarget,
-  });
-  // The untitled document the history entry names, as the replica holds it.
-  const localTab = props.activeLocalDocument;
-  const crumbs = contextBreadcrumbSegments(props, localTab?.name);
+  const main = useMainItem();
+  const crumbs = contextBreadcrumbSegments(
+    props,
+    main.document.local ? main.document.tab?.name : undefined,
+  );
   const removedNotice = useRemovedDocumentPhoneNotice(props.projectId);
 
   return (
@@ -71,30 +56,27 @@ export function MobileProject(props: MobileProjectProps) {
       data-phone-shell="true"
     >
       <MobileTopBar
-        activeScreen={props.activeScreen}
+        onChat={onChat}
         projectTitle={props.projectTitle}
         onOpenDrawer={() => setDrawerOpen(true)}
         breadcrumb={
-          props.activeScreen === "chat" ? (
+          props.chatDisplay ? (
             <ChatBreadcrumb projectId={props.projectId} display={props.chatDisplay} />
           ) : crumbs.length > 0 ? (
             <MobileBreadcrumb segments={crumbs} />
           ) : undefined
         }
-        notice={props.activeScreen === "context" ? removedNotice : undefined}
+        notice={onChat ? undefined : removedNotice}
         chatAction={
-          props.activeScreen !== "chat" ? (
+          !onChat ? (
             <IconButton size="sm" label={t`Open chat`} onClick={() => openChatSheet()}>
               <MessageSquare className="size-5" aria-hidden />
             </IconButton>
           ) : undefined
         }
         actions={
-          props.activeScreen === "chat" ? (
-            <ChatFilesMenu
-              projectId={props.projectId}
-              threadId={displayedChatThreadId(props.chatDisplay)}
-            />
+          onChat ? (
+            <ChatFilesMenu projectId={props.projectId} threadId={displayedChatThreadId(chat)} />
           ) : undefined
         }
       />
@@ -104,15 +86,12 @@ export function MobileProject(props: MobileProjectProps) {
           retainWhileLoading={props.retainEditorWhileLoading}
           onRetry={props.routeIssues?.main ? undefined : props.onRetryEditorRoute}
           removed={props.routeIssues?.main ? undefined : props.routeIssues?.removed}
-          issue={
-            props.routeIssues?.main ??
-            (props.activeScreen === "context" ? props.routeIssues?.editor : undefined)
-          }
+          issue={props.routeIssues?.main ?? (onChat ? undefined : props.routeIssues?.editor)}
         >
-          {renderActiveView(props, localTab)}
+          {renderActiveView(props, chat)}
         </ProjectRouteBoundary>
       </main>
-      <Sheet open={chatOpen && props.activeScreen !== "chat"} onOpenChange={setChatOpen}>
+      <Sheet open={chatOpen && !onChat} onOpenChange={setChatOpen}>
         <SheetContent
           side="right"
           showCloseButton={false}
@@ -124,16 +103,20 @@ export function MobileProject(props: MobileProjectProps) {
             <MobileKeyboardAware>
               <ChatSurface
                 projectId={props.projectId}
-                threadId={chatSurfaceThreadId(props.chatDisplay)}
+                threadId={chatSurfaceThreadId(chat)}
                 activeWork={props.chatWork}
                 availableWorks={props.availableWorks}
-                activeScreen={props.activeScreen}
-                placement="dock"
-                renderHeader={(args) => <MobileChatSheetHeader {...args} />}
+                place="side"
+                header={
+                  <MobileChatSheetHeader
+                    projectId={props.projectId}
+                    threadId={chatSurfaceThreadId(chat)}
+                    onClose={() => setChatOpen(false)}
+                  />
+                }
                 // The sheet mounts the surface only while open: it is always
                 // visible, and closing the sheet ends it.
                 visible
-                onCloseDock={() => setChatOpen(false)}
                 onOpenContextTarget={props.onOpenContextTarget}
               />
             </MobileKeyboardAware>
@@ -150,65 +133,61 @@ export function MobileProject(props: MobileProjectProps) {
         contextLive={props.contextLive}
         activeContextScheme={props.activeContextScheme}
         activeContextPath={props.activeContextPath}
-        chatThreadId={displayedChatThreadId(props.chatDisplay)}
+        chatThreadId={displayedChatThreadId(chat)}
       />
     </div>
   );
 }
 
-function renderActiveView(
-  props: MobileProjectProps,
-  localTab?: Extract<ContextTab, { kind: "new" | "tracked" }>,
-) {
-  switch (props.activeScreen) {
-    case "chat":
-      if (props.chatDisplay.kind === "index")
-        return <ChatIndex projectId={props.projectId} namedByChrome />;
-      return (
-        <WorkBranchCommandsBoundary value={props.chatCommands}>
-          <MobileChatHost
-            projectId={props.projectId}
-            threadId={displayedChatThreadId(props.chatDisplay)}
-            activeWork={props.chatWork}
-            availableWorks={props.availableWorks}
-            onOpenContextTarget={props.onOpenContextTarget}
-          />
-        </WorkBranchCommandsBoundary>
-      );
-    case "context": {
-      if (!props.contextLive || props.editorScope.status !== "ready") return null;
-      // A masked cold address must not mount a host that repairs it to Files.
-      // A warm pending address still owns its retained document presentation.
-      if (props.routeIssues?.editor && !props.retainEditorWhileLoading) return null;
-      if (!props.activeContextPath && !localTab)
-        return (
-          <RecentDocumentsLanding projectId={props.projectId} editorWorkId={props.editorWorkId} />
-        );
-      // The phone's one document host reviews the document its own route names.
-      const document = localTab ?? props.mobileDocumentRoute.tab;
-      return (
-        <DocumentReviewProvider
-          key={document?.documentId ?? ""}
+function renderActiveView(props: MobileProjectProps, chat: ReturnType<typeof useChatNavigation>) {
+  if (props.chatDisplay) {
+    if (props.chatDisplay.kind === "index")
+      return <ChatIndex projectId={props.projectId} namedByChrome />;
+    return (
+      <WorkBranchCommandsBoundary value={props.chatCommands}>
+        <MobileChatHost
           projectId={props.projectId}
-          tab={document}
-          showing
-        >
-          <MobileDocumentHost
-            projectId={props.projectId}
-            route={props.mobileDocumentRoute}
-            localTab={localTab}
-          />
-        </DocumentReviewProvider>
-      );
-    }
+          threadId={displayedChatThreadId(chat)}
+          activeWork={props.chatWork}
+          availableWorks={props.availableWorks}
+          onOpenContextTarget={props.onOpenContextTarget}
+        />
+      </WorkBranchCommandsBoundary>
+    );
   }
+  return <PhoneMain {...props} />;
+}
+
+/** The phone's one view on a document address: main's document host, its status, or Recents. */
+function PhoneMain(props: MobileProjectProps) {
+  const main = useMainItem();
+  if (!props.contextLive || props.editorScope.status !== "ready") return null;
+  // A masked cold address must not mount a host that repairs it.
+  // A warm pending address still owns its retained document presentation.
+  if (props.routeIssues?.editor && !props.retainEditorWhileLoading) return null;
+  if (!main.document.requested)
+    return <RecentDocumentsLanding projectId={props.projectId} editorWorkId={props.editorWorkId} />;
+  const tab = main.document.tab;
+  if (!tab) return <MainDocumentStatus projectId={props.projectId} main={main.document} />;
+  return (
+    <DocumentHost
+      key={tab.documentId}
+      projectId={props.projectId}
+      tab={tab}
+      place="main"
+      visible
+      main={main.document}
+      presentation="phone"
+      editorWorkId={props.editorWorkId}
+    />
+  );
 }
 
 function contextBreadcrumbSegments(
   props: ReviewScopedProjectProps,
   localName?: string,
 ): MobileBreadcrumbSegment[] {
-  if (props.activeScreen !== "context") return [];
+  if (props.chatDisplay) return [];
   if (props.activeLocalDocumentId) return [{ label: localName ?? t`Untitled` }];
   return props.activeContextPath ? [{ label: pathLeafName(props.activeContextPath) }] : [];
 }

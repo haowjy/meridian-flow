@@ -1,7 +1,7 @@
 /**
  * Device-local project chrome preferences.
  *
- * Widths belong to slots (the left rail and the dock), so whatever surface sits in
+ * Widths belong to slots (the left rail and the side), so whatever surface sits in
  * a slot reads one width. Whether the sidebar and the side panel are open is one
  * choice for the device, whatever main shows. Placement is not stored here: it follows the kind
  * of item the address names.
@@ -17,12 +17,12 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export type SlotWidths = Record<PanelSlotId, number>;
-/** Whether the left sidebar and the side panel (the dock until phase 8) are open. */
+/** Whether the left sidebar and the side panel (slot id `dock`) are open. */
 export type PanelPrefs = { sidebarOpen: boolean; sideOpen: boolean };
 
 export const SLOT_WIDTH_BOUNDS: Record<PanelSlotId, { min: number; max: number }> = {
   "rail-l": { min: 220, max: 380 },
-  // Below this the dock header's chat picker and rename input compress into slivers.
+  // Below this the side header's title and Open in main and rename input compress into slivers.
   dock: { min: 280, max: 520 },
 };
 
@@ -74,17 +74,15 @@ export function normalizeDocumentPrefs(prefs?: Partial<DocumentPrefs> | null): D
   };
 }
 
-export type RailSectionId = "scratch" | "recent";
+export type RailSectionId = "scratch";
 /** The rail sections docked under a list, each trading height with it. */
 export type DockedRailSectionId = "scratch";
 export type RailPrefs = {
   scratchExpanded: boolean;
-  recentExpanded: boolean;
   scratchHeight: number | null;
 };
 export const DEFAULT_RAIL_PREFS: RailPrefs = {
   scratchExpanded: false,
-  recentExpanded: true,
   scratchHeight: null,
 };
 
@@ -97,7 +95,6 @@ function savedHeight(height: unknown): number | null {
 export function normalizeRailPrefs(prefs?: Partial<RailPrefs> | null): RailPrefs {
   return {
     scratchExpanded: typeof prefs?.scratchExpanded === "boolean" ? prefs.scratchExpanded : false,
-    recentExpanded: typeof prefs?.recentExpanded === "boolean" ? prefs.recentExpanded : true,
     scratchHeight: savedHeight(prefs?.scratchHeight),
   };
 }

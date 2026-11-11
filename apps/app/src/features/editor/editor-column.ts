@@ -16,7 +16,7 @@
  *   >= @3xl (48rem)    64                       64
  *
  * Every step answers to the PANE (EditorSurfaceFrame's `@container`), not the
- * viewport: the dock's document, a narrow Editor window and the phone all get
+ * viewport: the side's document, a narrow window and the phone all get
  * the narrow tiers because their pane is narrow, whatever the screen.
  *
  * Both gutters are load-bearing, because chrome drawn past the text edge lives
@@ -36,7 +36,7 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Chrome rows aligned to the prose edges (the document toolbar row). In a pane narrower than `@md` (the dock) the row stops aligning to the
+ * Chrome rows aligned to the prose edges (the document toolbar row). In a pane narrower than `@md` (the side) the row stops aligning to the
  * prose and takes the identity bar's 16px inset, which is all the width a
  * toolbar has.
  */

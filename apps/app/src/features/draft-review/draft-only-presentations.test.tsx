@@ -2,7 +2,8 @@
 /**
  * Which presentations keep a document draft-only, and what ends them: a late answer about an old
  * host mount, the document coming back live, the held draft ending. Real registry, removal
- * coordinator and tab store; the server answers (draft lists, draft metadata, catalog) are stubs.
+ * coordinator; the presented document, the removed notice and the server answers (draft lists,
+ * draft metadata, catalog) are stubs.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - one registry token per host mount, and one per draft held open by a live delete
@@ -13,7 +14,7 @@ import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
-import { getContextTabs, useContextTabsStore } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import type { ProjectDocumentAvailabilityCommand } from "@/features/project/context/project-context-availability-coordinator";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -30,6 +31,17 @@ const draft = { projectId, documentId, ownerKey, itemKey, contextLocation };
 let registry: DraftOnlyPresentations;
 let removal: ContextRemovalCoordinator;
 const metadataAnswers: Array<(answer: { status: "gone" | "active" }) => void> = [];
+/** What the removed notice was told the writer lost. */
+let removedNotices: string[] = [];
+const presentedTab: ContextTab = {
+  kind: "tracked",
+  documentId,
+  ...contextLocation,
+  name: "Chapter.md",
+  editable: true,
+  filetype: "markdown",
+  schemaType: "document",
+};
 
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useAccountId: () => "account-a",
@@ -40,7 +52,10 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
   }),
   useObservedResourceProjection: () => ({ records: [], placement: null }),
   useOptionalProjectContextAvailabilityCoordinator: () => null,
-  useOptionalRemovedNotices: () => null,
+  useOptionalRemovedNotices: () => ({
+    presentedRemoved: (_project: string, tabs: readonly ContextTab[]) =>
+      removedNotices.push(...tabs.map((tab) => tab.documentId)),
+  }),
 }));
 vi.mock("@/client/query/useOwnerDrafts", () => ({
   useOwnerDrafts: () => ({ status: "ready", drafts: [] }),
@@ -62,25 +77,19 @@ vi.mock("@/features/project/use-work-scope", () => ({
 }));
 
 beforeEach(() => {
-  useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: false });
   registry = new DraftOnlyPresentations();
+  removedNotices = [];
   removal = new ContextRemovalCoordinator("account-a", {
+    presented: {
+      documents: () => [presentedTab],
+      mainDocumentId: () => documentId,
+      forget: () => {},
+    },
     draftOnly: registry,
     drafts: { boundDrafts: () => [{ ownerKey, itemKey }] },
   });
   metadataAnswers.length = 0;
-  useContextTabsStore.getState().openTab(projectId, {
-    kind: "tracked",
-    documentId,
-    ...contextLocation,
-    name: "Chapter.md",
-    editable: true,
-    filetype: "markdown",
-    schemaType: "document",
-  });
 });
-
-const openDocuments = () => getContextTabs(projectId).tabs.map((tab) => tab.documentId);
 
 async function settling(run: () => Promise<void>) {
   await withReactRoot(
@@ -103,7 +112,7 @@ it("a late gone answer about an old mount leaves a newer mount of the same item 
     await vi.waitFor(() => expect(metadataAnswers).toHaveLength(2));
     await act(async () => metadataAnswers[0]?.({ status: "gone" }));
     expect(registry.state("mount-2")).toBe("draft-only");
-    expect(openDocuments()).toEqual([documentId]);
+    expect(removedNotices).toEqual([]);
   });
 });
 
@@ -140,18 +149,18 @@ function command(kind: "terminal-remove" | "available", generation: string) {
 it("a live delete's hold ends when live has the document again", async () => {
   await removal.reconcileDocumentAvailability([command("terminal-remove", "1")]).localSettlement;
   expect(registry.isDraftOnly(projectId, documentId)).toBe(true);
-  expect(openDocuments()).toEqual([documentId]);
+  expect(removedNotices).toEqual([]);
 
   await removal.reconcileDocumentAvailability([command("available", "2")]).localSettlement;
   expect(registry.isDraftOnly(projectId, documentId)).toBe(false);
 });
 
-it("a live delete's hold ends with its draft, and the document closes", async () => {
+it("a live delete's hold ends with its draft, and the document is said removed", async () => {
   await removal.reconcileDocumentAvailability([command("terminal-remove", "1")]).localSettlement;
   await settling(async () => {
     await vi.waitFor(() => expect(metadataAnswers).toHaveLength(1));
     await act(async () => metadataAnswers[0]?.({ status: "gone" }));
-    await vi.waitFor(() => expect(openDocuments()).toEqual([]));
+    await vi.waitFor(() => expect(removedNotices).toEqual([documentId]));
     expect(registry.isDraftOnly(projectId, documentId)).toBe(false);
   });
 });

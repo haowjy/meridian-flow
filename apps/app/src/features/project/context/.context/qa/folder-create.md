@@ -186,8 +186,8 @@ folder as its anchored predecessor.
 
 ## Routes into a refused folder
 
-Working-set routes name documents, never folders: a folder has no tab or route of its own.
+Working-set routes name documents, never folders: a folder has no document host or route of its own.
 A document opened inside a refused folder carries its own document identity, so E1's route
-rule applies: the route follows the document back to Unfiled, its tab keeps the text and the
+rule applies: the route follows the document back to Unfiled, its host keeps the text and the
 mark, and it never reads "This destination is unavailable." The folder row itself simply
 lists in Unfiled with its mark until the writer repairs it.

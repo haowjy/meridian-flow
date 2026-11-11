@@ -191,7 +191,7 @@ omitted, explicit No Work, valid Work, and malformed values remain distinct, and
 duplicate keys or malformed encodings are invalid rather than normalized.
 Slug-shaped project routes and older shapes (`/project/<UUID>`, `screen`/`thread`/
 `scheme`/`folder`/`path` queries) have no alias and render the unavailable state.
-Inside the client, No Work is the locked row's id and Work-scoped tabs always
+Inside the client, No Work is the locked row's id and Work-scoped documents always
 carry their Work id; only `workSelectionFor` spells it `none`, for
 project-content addresses. The full grammar is in
 [`features/project/.context/CONTEXT.md`](../src/features/project/.context/CONTEXT.md).
@@ -200,8 +200,8 @@ project-content addresses. The full grammar is in
 `createProjectNavigation` owns history admission; keep route parsing and browser
 history out of `routing/project-route.ts`. Chat UUIDs resolve by snapshot
 identity, including subagents absent from the primary list. Main-destination
-navigation pushes; dock chat selection updates browser-local current chat without
-writing history; canonicalization and repair replace only while their captured
+navigation pushes; the current chat (the side's chat beside a document) is browser-local and
+writes no history; canonicalization and repair replace only while their captured
 entry is still current. An unavailable explicit
 target parks the requested host rather than falling through to a remembered
 default. Desktop retains inactive child surfaces; phone may mount/unmount its

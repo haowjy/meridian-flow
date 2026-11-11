@@ -1,4 +1,10 @@
 /**
+ * What main and the side show, and what a document paints in whichever of them holds it.
+ *
+ * Main is the address: `resolveMainDocument` is the one order in which an address finds its
+ * document, on the desktop and the phone. The side is a fallback beside main, never main's own
+ * item: the current chat beside a document, the last document opened beside a chat.
+ *
  * What a document paints, in whichever host holds it: its view on this device (`document-views`),
  * the pinned owner's draft list, and the Work scope's list for the version chip.
  *
@@ -16,8 +22,9 @@
  * of opening one names it, so it never reaches Live.
  */
 import { draftOwnerKey, type ThreadDraftListItem } from "@meridian/contracts/branches";
+import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import {
   type DocumentView,
@@ -25,12 +32,20 @@ import {
   useDocumentView,
   verifyPin,
 } from "@/client/project-shell/document-views";
+import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { unwrapListQuery } from "@/client/query/list-query";
+import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import type { ContextTab } from "@/client/stores";
 import { useAccountId } from "./context/account-feature-context";
+import { routeSelectionDocumentId } from "./context/context-removal-protocol";
+import { contextTabFromFile } from "./context/context-tab-from-file";
+import { type AddressedDocument, resolveRouteDocumentOwner } from "./context/route-document-owner";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
 import { useIsDraftOnly } from "./context/use-is-draft-only";
+import type { ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
+import type { LocalDocument } from "./routing/project-local-selection";
+import { contextRouteRequest } from "./routing/project-route";
 
 export type DocumentPaint = {
   showing: "pending" | "failed" | "draft" | "live";
@@ -129,4 +144,231 @@ export function useDocumentPaint(projectId: string, document: ContextTab | null)
     }
     return { ...base, showing: "live", draft: null, outOfScope: false };
   }, [scopeOwnerKey, scopeRow, view, pin, pinList.status, pinListed]);
+}
+
+/** What a view holds. A chat with no id is a new chat's composer. */
+export type Item =
+  | { kind: "document"; documentId: string }
+  | { kind: "chat"; chatId: string | null };
+
+export type AddressState = "pending" | "failed" | "settled";
+
+/** The address verdict a route issue states: only loading is pending and only error failed. */
+export function addressStateOf(issue: ProjectRouteIssue | undefined): AddressState {
+  return issue === "loading" ? "pending" : issue === "error" ? "failed" : "settled";
+}
+
+/** The document main's address names, as its host paints and binds it. */
+export type MainDocument = Readonly<{
+  /** The address names a document (a locator, or an untitled document's history pointer). */
+  requested: boolean;
+  scheme: ProjectContextTreeScheme | null;
+  path: string | null;
+  /** A Work's Scratch route names its owning Work here. */
+  workId?: string | null;
+  /** A chat's Scratch route names its lineage here, in place of a Work. */
+  rootThreadId?: string | null;
+  tab: ContextTab | null;
+  /** The history entry's pointer names an untitled document: the replica holds it, not a path. */
+  local: boolean;
+  /** Live lacks the document: the descriptor is built from the address's draft row. */
+  draftOnly: boolean;
+  catalogResolved: boolean;
+  /**
+   * The readable address's own verdict on its document. It is the only evidence for or
+   * against a document the live catalog lacks, such as a pending new-document draft's, so
+   * absence proves nothing until the address is `settled`. `failed` is a verdict the route
+   * boundary shows with its retry; the host neither waits on it nor rejects the route.
+   */
+  addressState: AddressState;
+  isError: boolean;
+  isFetching: boolean;
+}>;
+
+export function resolveMainDocument(input: {
+  enabled: boolean;
+  scheme: ProjectContextTreeScheme | null;
+  path: string | null;
+  workId: string | null;
+  rootThreadId?: string | null;
+  /** The untitled document the history entry names, as the replica holds it. */
+  local?: LocalDocument | null;
+  /**
+   * The document this route is bound to. A rename of it or a folder above it (or that
+   * rename's rollback) changes its projected path at once, so the host finds it by identity
+   * while the readable route repairs the URL to the same projected path.
+   */
+  boundDocumentId?: string | null;
+  /** The document the answered address names (`addressedDocument`). */
+  addressed?: AddressedDocument | null;
+  addressState?: AddressState;
+  catalog: CatalogContextView | null;
+  isError: boolean;
+  isFetching: boolean;
+}): MainDocument {
+  const base = {
+    scheme: input.scheme,
+    path: input.path,
+    workId: input.workId ?? null,
+    rootThreadId: input.rootThreadId ?? null,
+  };
+  if (input.enabled && input.local)
+    return {
+      ...base,
+      requested: true,
+      tab: input.local,
+      local: true,
+      draftOnly: false,
+      catalogResolved: true,
+      addressState: "settled",
+      isError: false,
+      isFetching: false,
+    };
+  const requested = input.enabled && input.scheme !== null && input.path !== null;
+  if (!requested || !input.scheme || !input.path) {
+    return {
+      ...base,
+      requested: false,
+      tab: null,
+      local: false,
+      draftOnly: false,
+      catalogResolved: false,
+      addressState: "settled",
+      isError: false,
+      isFetching: false,
+    };
+  }
+  // Identity before path: a bound document is found wherever its path went.
+  const rootThreadId = input.rootThreadId ?? undefined;
+  const owner = resolveRouteDocumentOwner({
+    locator: contextRouteRequest({
+      scheme: input.scheme,
+      path: input.path,
+      workId: input.workId,
+      rootThreadId,
+    }),
+    boundDocumentId: input.boundDocumentId,
+    catalog: input.catalog,
+    addressed: input.addressed,
+  });
+  const resolved =
+    owner.kind === "live"
+      ? contextTabFromFile(input.scheme, owner.file, contextOwner(input.workId, rootThreadId))
+      : owner.kind === "draft-only" || owner.kind === "addressed"
+        ? owner.tab
+        : null;
+  return {
+    ...base,
+    requested: true,
+    tab: resolved?.kind === "new" ? null : resolved,
+    local: false,
+    draftOnly: owner.kind === "draft-only",
+    catalogResolved: input.catalog !== null,
+    addressState: input.addressState ?? "settled",
+    isError: input.isError,
+    isFetching: input.isFetching,
+  };
+}
+
+export function useMainDocument(input: {
+  enabled: boolean;
+  projectId: string;
+  scheme: ProjectContextTreeScheme | null;
+  path: string | null;
+  workId: string | null;
+  rootThreadId?: string | null;
+  local?: LocalDocument | null;
+  addressed?: AddressedDocument | null;
+  addressState?: AddressState;
+}): MainDocument {
+  const requested = input.enabled && input.scheme !== null && input.path !== null;
+  const { selection } = useContextRemovalProject(input.projectId);
+  const boundDocumentId =
+    input.scheme !== null && input.path !== null
+      ? routeSelectionDocumentId(selection, {
+          scheme: input.scheme,
+          path: input.path,
+          workId: input.workId ?? undefined,
+          rootThreadId: input.rootThreadId ?? undefined,
+        })
+      : null;
+  const { catalog, isError, isFetching } = useContextCatalogView(
+    input.projectId,
+    input.scheme ?? "kb",
+    { enabled: requested, ...contextOwner(input.workId, input.rootThreadId) },
+  );
+  return useMemo(
+    () =>
+      resolveMainDocument({
+        enabled: input.enabled,
+        scheme: input.scheme,
+        path: input.path,
+        workId: input.workId,
+        rootThreadId: input.rootThreadId,
+        local: input.local,
+        boundDocumentId,
+        addressed: input.addressed,
+        addressState: input.addressState,
+        catalog,
+        isError,
+        isFetching,
+      }),
+    [
+      boundDocumentId,
+      input.addressed,
+      catalog,
+      input.addressState,
+      input.enabled,
+      input.local,
+      input.path,
+      input.scheme,
+      input.workId,
+      input.rootThreadId,
+      isError,
+      isFetching,
+    ],
+  );
+}
+
+export type MainView = {
+  /** What main holds; null while its document is still opening or the address names nothing. */
+  item: Item | null;
+  /** Main's document as its address resolves it; `requested` is false off a document address. */
+  document: MainDocument;
+};
+
+const MainViewContext = createContext<MainView | null>(null);
+export const MainViewProvider = MainViewContext.Provider;
+
+/** What main shows, inside the project view. */
+export function useMainItem(): MainView {
+  const main = useContext(MainViewContext);
+  if (!main) throw new Error("useMainItem requires the project view");
+  return main;
+}
+
+/** Main's item outside the project view's own tree (the provider may not be mounted). */
+export function useOptionalMainItem(): MainView | null {
+  return useContext(MainViewContext);
+}
+
+export type SideItem = {
+  item: Item | null;
+  /** Why the side shows it: the header and, later, the picker say so. */
+  reason: "last-chat" | "last-document" | null;
+};
+
+/**
+ * The side's fallback beside main, never main's own item: the current chat beside a document
+ * (or beside nothing), the last document shown beside a chat. No chat sits beside a chat.
+ */
+export function resolveSideItem(
+  mainIsChat: boolean,
+  currentChatId: string | null,
+  lastDocumentId: string | null,
+): SideItem {
+  if (!mainIsChat) return { item: { kind: "chat", chatId: currentChatId }, reason: "last-chat" };
+  if (lastDocumentId)
+    return { item: { kind: "document", documentId: lastDocumentId }, reason: "last-document" };
+  return { item: null, reason: null };
 }

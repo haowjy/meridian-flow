@@ -4,3 +4,6 @@
   coordinator replays the move history one repair at a time. Repair straight to the current locator.
 - `context/ContextTreePanel.tsx` and `mobile/MobileContextBrowser.tsx` still thread an `editorWorkId`
   that only Scratch and Uploads used; it feeds no tree query. Drop it.
+- Desktop has no door for two things the companion shell dropped: viewing an upload from a chat
+  (uploads have no editor address) and cmd-click opening a document in the background. Add both
+  back.

@@ -183,7 +183,6 @@ export type ResourceTabProjection =
  * hiding or closing its tab on it would strand the draft. Its draft settlement owns it.
  */
 export function projectResourceTab(
-  projectId: string,
   tab: ContextTab,
   records: readonly ResourceRecord[],
   placement: ResourcePlacement,
@@ -231,12 +230,7 @@ export function projectResourceTab(
   const located = placement.resourceLocation(record);
   if (located && !tabOwnerOf(located)) return { kind: "none" };
   const projected = contextTabFromResource(record, placement);
-  // The projection re-describes the resource, not the open: the instance id is the open's own.
   return projected
-    ? {
-        kind: "projected",
-        resourceHandle: record.resource.handle,
-        tab: tab.tabInstanceId ? { ...projected, tabInstanceId: tab.tabInstanceId } : projected,
-      }
+    ? { kind: "projected", resourceHandle: record.resource.handle, tab: projected }
     : { kind: "removed" };
 }

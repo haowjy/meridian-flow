@@ -4,7 +4,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { isHandoffSeed, readHandoffSeed } from "@meridian/contracts/threads";
-import { FileImage, FileText, FileType, PanelRightOpen, Paperclip, Trash2 } from "lucide-react";
+import { FileImage, FileText, FileType, Paperclip, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { deleteChatUpload } from "@/client/api/context-upload-api";
 import { type ChatUpload, useChatUploads } from "@/client/query/useChatUploads";
@@ -25,7 +25,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { role } from "@/components/ui/roles";
 import { MenuScratchSection } from "@/features/project/chat/ChatScratch";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
-import { useOpenChatResource } from "@/features/project/context/open-chat-document";
 import {
   type EntriesRoute,
   TreeDropScope,
@@ -77,7 +76,6 @@ function FilesDropdown({
 }) {
   const { uploads } = useChatUploads(projectId, chatId);
   const continuesFrom = useContinuesFrom(chatThread);
-  const openResource = useOpenChatResource(projectId);
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   const now = useThreadStore((state) => state.now);
   const [open, setOpen] = useState(false);
@@ -209,17 +207,6 @@ function FilesDropdown({
                     canDelete={upload.deletion !== null && !used.has(upload.documentId)}
                     failed={failed.has(upload.documentId)}
                     onInsert={() => insert(upload)}
-                    onOpen={
-                      openResource
-                        ? () => {
-                            close(false);
-                            void openResource({
-                              documentId: upload.documentId,
-                              disposition: "current",
-                            });
-                          }
-                        : null
-                    }
                     onDelete={() => remove(upload)}
                   />
                 ))}
@@ -238,7 +225,6 @@ function UploadRow({
   canDelete,
   failed,
   onInsert,
-  onOpen,
   onDelete,
 }: {
   upload: ChatUpload;
@@ -246,8 +232,6 @@ function UploadRow({
   canDelete: boolean;
   failed: boolean;
   onInsert: () => void;
-  /** Null where this host has no viewer for an upload. */
-  onOpen: (() => void) | null;
   onDelete: () => void;
 }) {
   const Icon = iconFor(upload);
@@ -292,11 +276,6 @@ function UploadRow({
         {canDelete ? (
           <IconButton size="xs" label={t`Delete ${name}`} onClick={onDelete}>
             <Trash2 className="size-3.5" aria-hidden />
-          </IconButton>
-        ) : null}
-        {onOpen ? (
-          <IconButton size="xs" label={t`Open ${name}`} onClick={onOpen} className="mr-1">
-            <PanelRightOpen className="size-3.5" aria-hidden />
           </IconButton>
         ) : null}
       </div>

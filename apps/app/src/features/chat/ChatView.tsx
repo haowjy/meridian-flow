@@ -150,7 +150,7 @@ export type ChatViewProps = {
   historySettled: boolean;
   /** A notice framed onto the composer's top edge; the composer stays usable under it. */
   composerStrip?: ReactNode;
-  /** False while the chat is mounted but hidden (collapsed dock, Settings). */
+  /** False while the chat is mounted but hidden (collapsed side, Settings). */
   active?: boolean;
 };
 
@@ -313,7 +313,7 @@ export function ChatView({
       leave: (moved) => {
         navigation.forgetChat(threadId);
         if (moved) void navigation.openNewChat(undefined, { replace: true });
-        else if (displayedChatThreadId(navigation.display) === threadId)
+        else if (displayedChatThreadId(navigation) === threadId)
           void navigation.openNewChat(undefined, { replace: true });
       },
     },

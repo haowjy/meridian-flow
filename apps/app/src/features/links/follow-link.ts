@@ -136,8 +136,8 @@ export async function followProjectLink({
     settle();
     reporter.clear();
     const documentId = goneLinkDocumentId(known, link);
-    // Trash is one routed auxiliary surface, not an Editor tab. A modified
-    // follow therefore opens that surface instead of inventing a background tab.
+    // Trash is one routed auxiliary surface, not a document. A modified
+    // follow therefore opens that surface instead of a second place.
     if (documentId) await open({ documentId, trashed: true }, "current");
     return;
   }

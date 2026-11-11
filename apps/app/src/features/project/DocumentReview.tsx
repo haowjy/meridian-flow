@@ -1,6 +1,6 @@
 /**
  * One document host's review: its own controller, room owner and inline runtime, following what
- * that document paints. Every host that holds a document (an Editor tab, the dock, the phone)
+ * that document paints. Every host that holds a document (main, the side, the phone)
  * gets one, so two documents on screen review two drafts without sharing state. Commands stay
  * account-wide and queued per item (`DraftCommandOwner`), so two hosts cannot interleave
  * commands on one item.
@@ -8,10 +8,9 @@
  * Admission is the host's too: a closed draft is reconciled with the server, and a hidden one (a
  * Discard in flight) is refused, for this host's document alone.
  *
- * Only a host on screen reviews. Off Write the Editor's frame stays mounted with its selected tab
- * while the dock holds the same document, and warm tabs sit behind the selected one: a host that
- * is not showing paints nothing of a draft, admits nothing, holds no draft room and writes no pin,
- * so one document has at most one review, and Discard's Undo lands in the editor the writer sees.
+ * Only a host on screen reviews. The kept document's host and a closed side's host stay mounted
+ * hidden: a host that is not showing paints nothing of a draft, admits nothing, holds no draft
+ * room and writes no pin, so Discard's Undo lands in the editor the writer sees.
  */
 import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { useQueryClient } from "@tanstack/react-query";

@@ -176,8 +176,8 @@ export function createLocalPresence(awareness: Awareness): LocalPresence {
 }
 
 /**
- * One session can be edited from two views at once: an Editor tab kept warm
- * behind the screen, and the dock's document. Both write the same `cursor`
+ * One session can be edited from two views at once: main and the side both
+ * showing it. Both write the same `cursor`
  * field, and the view that is not in front would clear the caret of the one
  * that is (y-prosemirror clears a caret it did not just place whenever its
  * own editor updates unfocused), so the two ping-pong awareness writes.

@@ -1,12 +1,6 @@
 import { type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts/branches";
 import { readDocumentView } from "@/client/project-shell/document-views";
-import {
-  type ContextTab,
-  getContextTabs,
-  isEditorContextTab,
-  selectedDocumentIdOf,
-  useContextTabsStore,
-} from "@/client/stores";
+import { type ContextTab, isEditorContextTab } from "@/client/stores";
 import { armEditorFocus } from "@/features/editor/focus-on-open";
 import type { RouteBindingProof } from "../context/context-removal-protocol";
 import { contextTabMatchesRoute } from "../context/context-tab-identity";
@@ -29,10 +23,15 @@ export type EditorCommandSnapshot = {
   addressDocumentId?: string;
   documentCatalog: Parameters<typeof resolveLaunchLocator>[0]["catalog"];
 };
+/**
+ * Opening a document in main is one navigation: the address names the document, and main's host
+ * follows it. Nothing is installed or selected.
+ */
 export function createEditorDocumentCommand({
   projectId,
   accountId,
   read,
+  presented,
   lookup,
   isDraftOnly,
   admitDraftReview,
@@ -41,6 +40,8 @@ export function createEditorDocumentCommand({
   projectId: string;
   accountId: string;
   read: () => EditorCommandSnapshot;
+  /** What the views present now (`PresentedDocuments`): a renamed document's current locator. */
+  presented: () => readonly ContextTab[];
   lookup: Parameters<typeof resolveLaunchLocator>[0]["lookup"];
   /** Some host presents this document draft-only (`DraftOnlyPresentations`). */
   isDraftOnly: (documentId: string) => boolean;
@@ -69,7 +70,7 @@ export function createEditorDocumentCommand({
       if (options?.replaceIfSameDocument === true) {
         target = await resolveLaunchLocator({
           requested,
-          tabs: getContextTabs(projectId).tabs,
+          tabs: presented(),
           addressed: current.address.destination,
           addressNamesIt: sameDocument,
           draftOnly:
@@ -89,7 +90,7 @@ export function createEditorDocumentCommand({
       // resolves, so every re-select or restore of it (a repair's fallback, a tab click) carries
       // the draft its view pins.
       const draftOnlyPin = draftOnlyDocumentPin(
-        options?.tab ? [options.tab] : getContextTabs(projectId).tabs,
+        options?.tab ? [options.tab] : presented(),
         requested,
         isDraftOnly,
         (documentId) => readDocumentView(accountId, projectId, documentId).pin,
@@ -103,7 +104,7 @@ export function createEditorDocumentCommand({
         draftOnlyPin?.itemKey ??
         (sameDocument ? current.address.itemKey : undefined);
       const next = prepareEditorDestination(
-        { projectId, accountId, address: current.address, scope },
+        { projectId, accountId, address: current.address, scope, presented: presented() },
         target,
         preparedTab,
         itemKey,
@@ -113,22 +114,11 @@ export function createEditorDocumentCommand({
             ? current.address.changeId
             : undefined),
       );
-      const tab = next.tab;
       if (!navigation.isCurrent(ticket)) return { kind: "superseded" };
-      let installedTab: ContextTab | undefined;
       const commit = () => {
-        let selected = tab;
-        if (preparedTab) {
-          const installed = useContextTabsStore.getState().openTab(projectId, preparedTab);
-          if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
-          if (installed.tab.kind === "tracked" && itemKey) admitDraftReview(installed.tab);
-          selected = installed.tab;
-          installedTab = installed.tab;
-          if (options?.focus && installed.tab.tabInstanceId)
-            armEditorFocus(installed.tab.tabInstanceId);
-        }
-        if (selected && scope)
-          void useContextTabsStore.getState().selectTab(projectId, selected.documentId, selected);
+        if (preparedTab?.kind === "tracked" && itemKey) admitDraftReview(preparedTab);
+        const focused = target.documentId ?? preparedTab?.documentId;
+        if (options?.focus && focused) armEditorFocus(focused);
         // The writer opened this document: the route is its own from the first frame, whatever
         // another document holds at its cached path. A pasted or reloaded URL names none.
         if (target.documentId && target.path && scope && !next.state)
@@ -156,7 +146,7 @@ export function createEditorDocumentCommand({
             : { kind: "superseded" };
         try {
           commit();
-          options?.afterCommit?.(installedTab);
+          options?.afterCommit?.();
           return { kind: "applied" };
         } catch (error) {
           return { kind: "failed", error, ticket: navigation.capture(), stage: "workspace-commit" };
@@ -166,14 +156,9 @@ export function createEditorDocumentCommand({
         next.address,
         { replace: options?.replace ?? false, state: next.state },
         {
-          isCurrent: () =>
-            options?.canCommit?.() !== false &&
-            (!tab ||
-              getContextTabs(projectId).tabs.some(
-                (member) => member.tabInstanceId === tab.tabInstanceId,
-              )),
+          isCurrent: () => options?.canCommit?.() !== false,
           commit,
-          afterCommit: () => options?.afterCommit?.(installedTab),
+          afterCommit: () => options?.afterCommit?.(),
         },
       );
     } catch (error) {
@@ -197,12 +182,15 @@ export function prepareEditorDestination(
     accountId,
     address,
     scope,
+    presented,
   }: {
     projectId: string;
     accountId: string;
     address: ProjectAddress;
     /** The Work scope; null while the Works list has not resolved. */
     scope: string | null;
+    /** What the views present, main's document first (`PresentedDocuments`). */
+    presented: readonly ContextTab[];
   },
   target: ContextRouteRequest,
   preparedTab?: ContextTab,
@@ -211,11 +199,9 @@ export function prepareEditorDestination(
   changeId?: string,
 ) {
   let state: Record<string, unknown> | undefined;
-  const workspace = getContextTabs(projectId);
   const documentId =
-    target.documentId ??
-    (target.path === "" && scope ? (selectedDocumentIdOf(workspace) ?? undefined) : undefined);
-  const eligible = workspace.tabs.filter(isEditorContextTab);
+    target.documentId ?? (target.path === "" && scope ? presented[0]?.documentId : undefined);
+  const eligible = presented.filter(isEditorContextTab);
   const tab = documentId
     ? eligible.find((tab) => tab.documentId === documentId)
     : eligible.find((tab) => contextTabMatchesRoute(tab, target));
@@ -256,7 +242,6 @@ export function prepareEditorDestination(
       : scratchOwner;
   const { owner: _previousOwner, ...previous } = address;
   return {
-    tab,
     address: {
       ...previous,
       destination,
@@ -268,7 +253,7 @@ export function prepareEditorDestination(
     state,
   };
 }
-/** The draft a request's draft-only document is open on, if the request names one. */
+/** The draft a request's draft-only document is shown on, if the request names one. */
 function draftOnlyDocumentPin(
   tabs: readonly ContextTab[],
   request: ContextRouteRequest,
