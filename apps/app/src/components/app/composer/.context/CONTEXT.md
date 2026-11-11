@@ -36,6 +36,10 @@
   stack above attached strips, never between a strip and the box.
 - A host's `takeover` (an open ask) draws in the box's place; the editor stays
   mounted and hidden so the draft comes back as it was. No Stop while it shows.
+  A box that has the focus when it arrives is only hidden from sight, so the
+  writer's keys keep landing in the draft natively; nothing sends meanwhile, and
+  the takeover takes the focus after a one-second pause. Forwarding keys into the
+  draft was tried and lost every key that wasn't a plain character.
 - A context row drop resolves through the same live catalog as `@` and
   inserts the same `composerReference` atom. The shared editor drop extension
   owns word snapping, spacing, one-step Undo, and the drop caret.

@@ -8,6 +8,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  useMenuActionDispatch,
 } from "@/components/ui/dropdown-menu";
 import { initialsFromName } from "@/features/account/initials";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
@@ -15,6 +16,7 @@ import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 export function AccountMenu() {
   const { user, loading } = useAuth();
   const { open } = useSettingsNavigation();
+  const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
 
   const email = user?.email ?? null;
   const label = email ?? t`Signed in`;
@@ -37,11 +39,13 @@ export function AccountMenu() {
           {initials}
         </span>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent align="end" className="w-56" onCloseAutoFocus={onCloseAutoFocus}>
         <DropdownMenuLabel className="truncate">{email ?? t`Signed in`}</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => open("profile")}>{t`Profile`}</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => open()}>{t`Settings`}</DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => dispatch(() => open("profile"))}
+        >{t`Profile`}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => dispatch(() => open())}>{t`Settings`}</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           {/* signOut() redirects to api.workos.com; a client-side <Link> would fetch it and fail CORS. */}

@@ -24,16 +24,9 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Eye, EyeOff, List } from "lucide-react";
-import {
-  type FocusEvent,
-  type ReactNode,
-  type RefObject,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import { PaintCapture } from "@/components/app/PaintHold";
+import { PaintCapture, useAfterPaintRelease } from "@/components/app/PaintHold";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -53,7 +46,7 @@ import {
   useReviewHeader,
 } from "@/features/draft-review/useReviewHeader";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
-import { lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
+import { focusIsFree, lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 
 export type DraftReviewBandProps = {
@@ -61,12 +54,15 @@ export type DraftReviewBandProps = {
   itemKey: string;
   /** Set for a draft-only document: closes its tab instead of returning to live. */
   onCloseDraftOnly?: () => void;
-  /** Opens another draft of the Work in review (the editor's launcher). */
-  onOpenDraft: (row: ReviewFileTarget) => void;
+  /** Opens another draft of the Work in review (the editor's launcher); `takeFocus` as in `useReviewHeader`. */
+  onOpenDraft: (row: ReviewFileTarget, takeFocus?: boolean) => void;
   /** Opens the identity row's rename field; absent when the document cannot be renamed. */
   onRename?: () => void;
   /** Puts the caret back in the document when the review closes under the writer's focus. */
   onFocusDocument: () => void;
+  /** Opened by Apply or Next draft from the previous draft's controls: take the focus once they show. */
+  focusOnOpen?: boolean;
+  onOpenFocused?: () => void;
 };
 
 /**
@@ -81,7 +77,15 @@ export function DraftReviewBand({
 }: DraftReviewBandProps & {
   children: (parts: { version: ReactNode; controls: ReactNode }) => ReactNode;
 }) {
-  const header = useReviewHeader(props);
+  const controlsRef = useRef<HTMLSpanElement>(null);
+  // The draft whose Apply or Discard ran with focus in the controls and opened
+  // nothing: focus follows to what replaces them until the writer moves it.
+  const [refocusFor, setRefocusFor] = useState<string | null>(null);
+  const header = useReviewHeader({
+    ...props,
+    onEndedWithFocus: () => setRefocusFor(props.itemKey),
+  });
+  const focusInControls = () => controlsRef.current?.contains(document.activeElement) === true;
   const { controller, view, locked, finished } = header;
   const { status } = view;
   // The stepper walks the text changes; a pending move or delete is listed, not stepped to.
@@ -91,12 +95,44 @@ export function DraftReviewBand({
   // version menu carries Show changes, and the list and stepper give way before
   // Discard and Apply do (document-identity-row.css, collapse 4).
   const coarse = useCoarsePointer();
-  const controlsRef = useRef<HTMLSpanElement>(null);
-  const focusTracking = useFocusFollowsReviewEnd(
-    controlsRef,
-    { itemKey: props.itemKey, finished, completing: !!header.completing },
-    props.onFocusDocument,
+  const { itemKey, focusOnOpen, onOpenFocused, onFocusDocument } = props;
+  const afterPaintRelease = useAfterPaintRelease();
+  useEffect(() => {
+    if (!focusOnOpen || !controlsRef.current) return;
+    onOpenFocused?.();
+    // The pane may still be covered while the draft paints.
+    afterPaintRelease(() => {
+      // The change list button acts on nothing, unlike Apply and Discard.
+      const first = controlsRef.current?.querySelector<HTMLElement>("button:not(:disabled)");
+      if (first && focusIsFree()) moveFocus(first, { ring: lastInputWasKeyboard() });
+    });
+  }, [focusOnOpen, onOpenFocused, afterPaintRelease, itemKey]);
+  // The pane may swap this band out with its tab when the review closes.
+  const pending = useRef({ refocusFor, onFocusDocument });
+  pending.current = { refocusFor, onFocusDocument };
+  useEffect(
+    () => () => {
+      if (pending.current.refocusFor !== null && focusIsFree()) pending.current.onFocusDocument();
+    },
+    [],
   );
+  useEffect(() => {
+    if (refocusFor === null) return;
+    const controls = controlsRef.current;
+    if (!focusIsFree() && !controls?.contains(document.activeElement)) {
+      setRefocusFor(null);
+    } else if (!itemKey) {
+      // The review closed: Back to live or the last change took the controls away.
+      setRefocusFor(null);
+      onFocusDocument();
+    } else if (itemKey !== refocusFor) {
+      setRefocusFor(null);
+    } else if (finished) {
+      const next = controls?.querySelector<HTMLElement>("[data-review-next]");
+      if (next && next !== document.activeElement)
+        moveFocus(next, { ring: lastInputWasKeyboard() });
+    }
+  }, [refocusFor, itemKey, finished, onFocusDocument]);
   if (!props.itemKey) return children({ version: null, controls: null });
 
   const version = (
@@ -120,7 +156,6 @@ export function DraftReviewBand({
       ref={controlsRef}
       className="ml-auto flex shrink-0 items-center gap-1.5 font-sans text-xs"
       data-draft-review-controls
-      {...focusTracking}
     >
       <ChangeListPopover header={header} />
       {listed ? (
@@ -147,7 +182,7 @@ export function DraftReviewBand({
         completing={header.completing}
         next={header.next}
         draftOnly={header.draftOnly}
-        onOpenNext={header.openDraft}
+        onOpenNext={(row) => header.openDraft(row, focusInControls())}
         onShowLive={header.showLive}
       />
       {finished ? null : (
@@ -156,86 +191,13 @@ export function DraftReviewBand({
           disabled={locked}
           applyDisabled={!header.canApply}
           applying={header.completing === "apply"}
-          onDiscard={header.discardDraft}
-          onApply={header.applyDraft}
+          onDiscard={() => header.discardDraft(focusInControls())}
+          onApply={() => header.applyDraft(focusInControls())}
         />
       )}
     </span>
   );
   return children({ version, controls });
-}
-
-/**
- * When the review's controls lost the writer's focus by going away: Apply or
- * Discard closing the draft, or opening the next one in another pane. A
- * moment later it lapses, so a stale loss never pulls focus.
- */
-let focusLostAt: number | null = null;
-const FOCUS_CLAIM_MS = 3000;
-
-const focusIsLost = () => {
-  const active = document.activeElement;
-  return !active || active === document.body || !active.isConnected;
-};
-
-/**
- * Apply draft and Discard draft take the focus with them when they go. It lands
- * on what replaced them: the next draft's first control (its change list, which
- * acts on nothing), Next draft or Back to live, or the document once the review
- * has closed. The next key then acts where the writer was, not at the top of
- * the page.
- */
-function useFocusFollowsReviewEnd(
-  controls: RefObject<HTMLElement | null>,
-  { itemKey, finished, completing }: { itemKey: string; finished: boolean; completing: boolean },
-  focusDocument: () => void,
-) {
-  // Removing the focused button fires no blur, so "still here" is the last word.
-  const holding = useRef(false);
-  const lostHere = useRef(false);
-  useEffect(
-    () => () => {
-      if (holding.current) focusLostAt = Date.now();
-    },
-    [],
-  );
-  useEffect(() => {
-    if (holding.current && focusIsLost()) {
-      holding.current = false;
-      lostHere.current = true;
-      focusLostAt = Date.now();
-    }
-    if (focusLostAt === null || completing) return;
-    if (Date.now() - focusLostAt > FOCUS_CLAIM_MS || !focusIsLost()) {
-      focusLostAt = null;
-      return;
-    }
-    if (!itemKey) {
-      if (!lostHere.current) return;
-      // The pane may be opening the next draft: give that review the first claim.
-      const timer = window.setTimeout(() => {
-        lostHere.current = false;
-        if (focusLostAt === null || !focusIsLost()) return;
-        focusLostAt = null;
-        focusDocument();
-      }, 400);
-      return () => window.clearTimeout(timer);
-    }
-    const target = controls.current?.querySelector<HTMLElement>(
-      finished ? "[data-review-next]" : "button:not(:disabled)",
-    );
-    if (!target) return;
-    focusLostAt = null;
-    moveFocus(target, { ring: lastInputWasKeyboard() });
-  });
-  return {
-    onFocus: () => {
-      holding.current = true;
-    },
-    onBlur: (event: FocusEvent) => {
-      if (event.relatedTarget) holding.current = false;
-    },
-  };
 }
 
 /**

@@ -28,9 +28,8 @@ export function useChatRowCommands(projectId: string) {
   const { announce, announceError } = useAnnouncement();
   const [target, setTarget] = useState<DeleteChatTarget | null>(null);
   const [deleteFailure, setDeleteFailure] = useState<ChatRowDeleteFailure | null>(null);
-  // The dialog opens from a menu item that is gone when it closes: Cancel goes
-  // back to the row's Actions button, Delete to the row beside the deleted one.
-  const returnFocus = useRef<{ rowId: string; selector: string } | null>(null);
+  // A confirmed delete takes the row whose Actions button opened the dialog.
+  const neighbour = useRef<string | null>(null);
 
   const onFavorite = useCallback(
     (item: ProjectChatItem, value: boolean) => {
@@ -62,7 +61,6 @@ export function useChatRowCommands(projectId: string) {
   );
 
   const onDelete = useCallback((item: ProjectChatItem) => {
-    returnFocus.current = { rowId: item.id, selector: ':scope button[aria-haspopup="menu"]' };
     setDeleteFailure(null);
     setTarget({ id: item.id, title: displayThreadTitle(item.title) });
   }, []);
@@ -83,17 +81,14 @@ export function useChatRowCommands(projectId: string) {
         onConfirm={() => {
           if (!target) return;
           const { id, title } = target;
-          const neighbour = neighbourRowId(id);
-          returnFocus.current = neighbour
-            ? { rowId: neighbour, selector: ":scope > button" }
-            : null;
+          neighbour.current = neighbourRowId(id);
           setTarget(null);
           runDelete(id, title);
         }}
         onCloseAutoFocus={(event) => {
-          const to = returnFocus.current;
-          returnFocus.current = null;
-          const element = to ? rowElement(to.rowId)?.querySelector<HTMLElement>(to.selector) : null;
+          const rowId = neighbour.current;
+          neighbour.current = null;
+          const element = rowId ? rowOpenButton(rowId) : null;
           if (!element) return;
           event.preventDefault();
           moveFocus(element, { ring: lastInputWasKeyboard() });
@@ -103,8 +98,8 @@ export function useChatRowCommands(projectId: string) {
   };
 }
 
-const rowElement = (id: string) =>
-  document.querySelector<HTMLElement>(`[data-project-chat-row="${CSS.escape(id)}"]`);
+const rowOpenButton = (id: string) =>
+  document.querySelector<HTMLElement>(`[data-project-chat-row="${CSS.escape(id)}"] > button`);
 
 /** The next row in the list, or the previous one when the deleted chat was last. */
 function neighbourRowId(id: string): string | null {
