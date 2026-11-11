@@ -202,7 +202,7 @@ export function PickerRow({
     <li>
       <div
         data-selected={Boolean(current)}
-        data-list-row={actions ? true : undefined}
+        data-list-row
         className={cn(
           dropdownRowContainerClass,
           "flex min-w-0 items-center transition-colors",
