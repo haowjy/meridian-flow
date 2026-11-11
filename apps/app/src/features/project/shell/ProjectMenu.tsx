@@ -3,7 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, MoreHorizontal, Settings, Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
+  useMenuActionDispatch,
 } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
@@ -28,7 +29,7 @@ export function ProjectMenu({
   const accountSignal = useAccountEpochSignal();
   const settings = useSettingsNavigation();
   const [exporting, setExporting] = useState(false);
-  const selecting = useRef(false);
+  const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
   return (
     <>
       <DropdownMenu>
@@ -37,34 +38,16 @@ export function ProjectMenu({
             <MoreHorizontal aria-hidden />
           </IconButton>
         </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="end"
-          onCloseAutoFocus={(event) => {
-            if (selecting.current) {
-              event.preventDefault();
-              selecting.current = false;
-            }
-          }}
-        >
-          <DropdownMenuItem
-            onSelect={() => {
-              selecting.current = true;
-              onRename();
-            }}
-          >
+        <DropdownMenuContent align="end" onCloseAutoFocus={onCloseAutoFocus}>
+          <DropdownMenuItem onSelect={() => dispatch(onRename)}>
             <Trans>Rename project</Trans>
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => {
-              selecting.current = true;
-              setExporting(true);
-            }}
-          >
+          <DropdownMenuItem onSelect={() => dispatch(() => setExporting(true))}>
             <Upload aria-hidden className="size-3.5" />
             <Trans>Export project…</Trans>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => settings.open()}>
+          <DropdownMenuItem onSelect={() => dispatch(() => settings.open())}>
             <Settings aria-hidden className="size-3.5" />
             <Trans>Settings</Trans>
             <DropdownMenuShortcut>Ctrl ,</DropdownMenuShortcut>

@@ -97,10 +97,39 @@ export function AskTakeover({
   );
 }
 
+/** How long the keys must rest before a takeover that arrived mid-typing takes the focus. */
+const TYPING_PAUSE_MS = 1000;
+
 function TakeoverFrame({ labelledBy, children }: { labelledBy: string; children: ReactNode }) {
   const frame = useRef<HTMLDivElement>(null);
-  // The box this replaces may have held focus; hiding it would drop focus on the page.
-  useEffect(() => focusControls(frame.current), []);
+  // The box this replaces may hold the writer's focus mid-word: it stays typeable, out of sight,
+  // and the takeover takes the focus once the keys pause, so no key meant for the message lands
+  // on an option.
+  useEffect(() => {
+    const root = frame.current;
+    const box = document.activeElement?.closest<HTMLElement>("[data-composer]");
+    if (!box) return focusControls(root);
+    let pause = window.setTimeout(take, TYPING_PAUSE_MS);
+    function onKey() {
+      window.clearTimeout(pause);
+      pause = window.setTimeout(take, TYPING_PAUSE_MS);
+    }
+    function take() {
+      stop();
+      focusControls(root);
+    }
+    function stop() {
+      window.clearTimeout(pause);
+      box?.removeEventListener("keydown", onKey, true);
+      box?.removeEventListener("focusout", onLeave);
+    }
+    function onLeave(event: FocusEvent) {
+      if (!box?.contains(event.relatedTarget as Node | null)) stop();
+    }
+    box.addEventListener("keydown", onKey, true);
+    box.addEventListener("focusout", onLeave);
+    return stop;
+  }, []);
   return (
     <section
       ref={frame}

@@ -14,3 +14,5 @@
 - Uploads from a chat: uploads have no editor address and no desktop door opens them; a chat-launched Uploads viewer with intake controls is still deferred (#625, #631).
 
 - Review the inherited session-authority exception that terminalizes adopted local-origin lineage from availability; it is explicitly out of scope for PR #754.
+
+- Router scroll restoration (`scrollRestoration: true` in `src/router.tsx`) tracks every element that scrolls by its DOM path and writes its old offset back after each navigation, shell scrollers included (file tree, sidebar). The tab strip that re-revealed its active tab is gone; the shell scrollers are not checked. If one misbehaves, decide whether shell chrome should be outside restoration altogether rather than fixing each.

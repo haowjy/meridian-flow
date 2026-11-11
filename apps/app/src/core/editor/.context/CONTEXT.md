@@ -351,6 +351,13 @@ keyboard, pointer, drop, or draft-recovery answer.
   the manuscript and discard later keystrokes. Tab uses one ladder: table
   cells, indent in a fence, sink/lift in a list, then `\t` in prose. A leading
   prose tab is written `&#x9;`; the `packages/markup` codec test keeps it safe.
+  The way out is Escape, then Tab or Shift-Tab: an Escape that finds nothing to
+  close arms the next key, and the kernel's capture listener hands that one Tab
+  to the browser before ProseMirror sees it. Any other key, a pointer press or
+  focus leaving the editor disarms it; inside a table cell or a selected object,
+  the first Escapes step out of that before one arms. The editor's accessible
+  description (a hidden element named by `aria-describedby`) says so; there is
+  no visible hint.
   Enter in cell prose splits the paragraph; Shift-Enter is the hard break.
 - A node view that hides its own text derives that face from the selection and
   never restructures around it. A caret inside a rendered diagram fence shows

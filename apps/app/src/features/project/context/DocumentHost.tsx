@@ -331,6 +331,9 @@ function DesktopDocumentChrome({
   const removal = useContextRemovalCoordinator();
   const openRoute = useOpenContextRoute();
   const draftOnly = useDocumentLiveness(projectId, tab) === "draft-only";
+  // The identity bar remounts per document, so the draft that takes the focus when its controls
+  // show is held here.
+  const [focusReview, setFocusReview] = useState<string | null>(null);
   // A chat's Scratch belongs to no Work, so archiving the scope's Work never freezes it. The
   // reviewed file itself may be project-owned, so only its own Work's archive freezes its
   // identity row.
@@ -364,6 +367,8 @@ function DesktopDocumentChrome({
         onCloseDraftOnly={
           draftOnly ? () => settleWriterClose(removal.writerClose(projectId, tab)) : undefined
         }
+        focusReview={focusReview}
+        onFocusReview={setFocusReview}
         onCommitted={onCommitted}
         onOpenExisting={(scheme, path, owner) => {
           void openRoute?.(
