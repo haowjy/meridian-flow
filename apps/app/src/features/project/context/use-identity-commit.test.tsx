@@ -102,7 +102,7 @@ describe("deriveIdentityCommitPlan", () => {
     expect(plan).toMatchObject({ kind: "commit", desired: { name: "Chapter 14" } });
   });
 
-  it("keeps a dotted name whole and a visible extension on a bare rename (D13)", () => {
+  it("keeps a dotted name whole and a visible extension on a bare rename", () => {
     expect(
       deriveIdentityCommitPlan(tabNamed("Chapter 13"), { destination, name: "Vol. 2" }, null),
     ).toMatchObject({ kind: "commit", desired: { name: "Vol. 2" } });

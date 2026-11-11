@@ -2,7 +2,7 @@
  * Strict model stacks, immutable history and bounded receipts.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - card-target eligibility for model inverses and bounded receipt context (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - card-target eligibility for model inverses and bounded receipt context (kb/wiki/architecture/collaboration/turn-receipts.md#reversal-availability-is-the-servers)
  */
 import { randomUUID } from "node:crypto";
 import {

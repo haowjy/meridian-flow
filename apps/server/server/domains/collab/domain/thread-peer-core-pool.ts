@@ -79,7 +79,7 @@ function isSaveAttemptMiss(cause: unknown): boolean {
 
 /**
  * The single entry point for model reads and writes in both destinations
- * (D19). Each call carries the grant the caller got from the file policy: its
+ *. Each call carries the grant the caller got from the file policy: its
  * destination routes the call, and the write is confirmed under lock where it
  * becomes durable (file-access §5): in the seam's own transaction for a write
  * that commits at once, and once for the whole reply at its save (§5.2).
@@ -113,7 +113,7 @@ export function createThreadPeerCorePool(input: {
   attemptScope<T>(operation: () => Promise<T>): Promise<T>;
   responseTransactionSettlement: ResponseTransactionSettlement;
   responseTransactions: ResponseTransactionHooks;
-  /** Runs after an AI write commits to a live document, e.g. to merge it into Work drafts (D40). */
+  /** Runs after an AI write commits to a live document, e.g. to merge it into Work drafts. */
   afterLiveCommit?(documentId: DocumentId): void;
   /**
    * Confirms grants under lock: at a seam for a write that commits now, once at
@@ -217,7 +217,7 @@ export function createThreadPeerCorePool(input: {
   }
 
   /**
-   * A draft-mode write's identity before its room read (decision 3): the thread's peer,
+   * A draft-mode write's identity before its room read: the thread's peer,
    * ensured, never read. An existing active peer is returned as is, never replaced.
    */
   async function threadPeerIdentity(

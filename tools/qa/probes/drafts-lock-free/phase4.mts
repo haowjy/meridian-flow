@@ -30,7 +30,7 @@ import {
 } from "../../../../packages/agent-edit/src/diff/index.ts";
 import { gate, type Harness, settled, Y } from "./harness.mts";
 
-/** The resync close: not a refusal, never counted by the client (design §2.7, D30). */
+/** The resync close: not a refusal, never counted by the client (design §2.7). */
 export const PREFIX_MISSING_CLOSE = WS_CLOSE.DRAFT_PREFIX_MISSING;
 
 export type EffectWrite = Awaited<ReturnType<DraftStore["writeEffect"]>>;

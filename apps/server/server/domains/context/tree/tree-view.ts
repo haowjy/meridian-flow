@@ -114,7 +114,7 @@ export type PathResolution<N> =
   | { kind: "found"; node: N }
   /**
    * Two or more visible nodes at one path in this view. `outlived`: one is a document deleted
-   * live that this branch still has (D79), which a store reports so the fault can say so.
+   * live that this branch still has, which a store reports so the fault can say so.
    */
   | { kind: "ambiguous"; nodes: readonly [NodeRef, NodeRef, ...NodeRef[]]; outlived?: true }
   | { kind: "not_found" };
@@ -148,7 +148,7 @@ export type IdentityStatus =
       usedBy: readonly BranchUse[];
       address: NodeAddress;
     }
-  /** Soft-deleted while visible, or deleted in this branch; the last address it held (decision 15). */
+  /** Soft-deleted while visible, or deleted in this branch; the last address it held. */
   | { kind: "deleted"; documentId: DocumentId; lastAddress: NodeAddress | null }
   /** A tombstone, a hidden node no branch uses, a missing id, or an address that can't be spelled. */
   | { kind: "gone"; documentId: DocumentId };

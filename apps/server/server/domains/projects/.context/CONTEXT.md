@@ -1,7 +1,16 @@
 # domains/projects — project and Work contracts
 
 Work lifecycle is in the [archive and delete][archive], [lifecycle
-fence][fence] and [pending count][count] decisions.
+fence][fence] and [pending count][count] rules.
+
+## New-account bootstrap
+
+A new account's default project, its locked No Work and its first `Chapter 1`
+commit together with a durable readiness flag. Authenticated entry reads that
+flag lock-free (`ensureDefaultBootstrapReady`), and only an incomplete workspace
+re-enters the locked bootstrap: running it on every request made the warm path
+pay for work it no longer needed. A failed seed leaves the flag unset for a
+later repair and doesn't fail the request that found it.
 
 ## Work operations
 
@@ -38,6 +47,6 @@ Delete and purge lock the thread tree before the Work, then recheck the full
 membership set; a concurrent join retries. Restore locks the threads carrying
 that Work's deletion marker and clears exactly that set.
 
-[archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/work/management/work-archive-and-delete.md
-[fence]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/work-lifecycle-fences-drafts.md
-[count]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/works-notice-follows-pending-count.md
+[archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/work/lifecycle.md#archive-freezes-the-works-own-material
+[fence]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-store-concurrency.md#an-owners-lifecycle-fences-its-drafts-through-one-boundary
+[count]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-store-concurrency.md#pending-counts-announce-only-when-they-move

@@ -7,7 +7,7 @@
  * `ink-fill-strong` (10%) for current, selected, open and pressed. Borders are ink
  * overlays too. Because overlays follow `foreground`, the dark theme re-points only
  * surfaces, inks and accents (`themes.css`). Design rationale:
- * https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/earthen-value-ladder-shell.md
+ * https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/design-language-foundations.md
  *
  * Accents: jade = do/go and "changes waiting on you"; `primary` is for fills and icons,
  * `jade-text` for jade text. Cinnabar is the brand seal; gold is favourites only.

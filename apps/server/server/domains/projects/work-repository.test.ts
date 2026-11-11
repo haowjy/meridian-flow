@@ -1,7 +1,7 @@
-/** WorkRepository lifecycle and D17 deletion contract at the domain port boundary.
+/** WorkRepository lifecycle and deletion contract at the domain port boundary.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - No Work is an immutable special Work (kb/decisions/work/model/no-work-locked-work.md)
+ * - No Work is an immutable special Work (kb/wiki/product/work/model.md#no-work-is-a-locked-work)
  */
 import { describe, expect, it } from "vitest";
 import { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";

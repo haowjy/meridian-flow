@@ -49,7 +49,7 @@ describe("validateContextEntryName", () => {
     ).toBe("error");
   });
 
-  it("lets a folder and a document not share a name (D15, D16)", () => {
+  it("lets a folder and a document not share a name", () => {
     expect(
       validateContextEntryName("Lore", [{ entryId: "sibling", name: "Lore", kind: "dir" }], "file")
         ?.level,

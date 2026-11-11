@@ -1,5 +1,5 @@
 /**
- * The paste policy for `[[Name]]` (D15): which pastes convert, and the
+ * The paste policy for `[[Name]]`: which pastes convert, and the
  * catalog they convert against. The conversion itself is `wikilink-paste.ts`.
  *
  * It hooks `transformPasted`, the one prop every paste kind (Markdown through

@@ -3,7 +3,7 @@
  * Stop answer it needs, and checks what ./mf posted and how it read them. Server policy is not tested here.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - CLI request assembly and live-view exit policy (kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md)
+ * - CLI request assembly and live-view exit policy (kb/wiki/architecture/mf-cli.md#every-exit-is-proven-a-failure-or-unproven)
  */
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

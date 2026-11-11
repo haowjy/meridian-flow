@@ -2,7 +2,7 @@
  * Business mutations, durable Work notice history, and request-boundary replay against Postgres.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - transactional notice coalescing, visibility parking, and run-boundary materialization (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
+ * - transactional notice coalescing, visibility parking, and run-boundary materialization (kb/wiki/architecture/server-runtime.md#one-delivery-boundary-and-one-run-claim)
  */
 
 import { eq } from "drizzle-orm";

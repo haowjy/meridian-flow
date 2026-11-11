@@ -1,9 +1,9 @@
 /**
  * Canonical immutable turn targets shared by authorization, lineage and inverse admission:
  * documents the turn edited that are not tombstoned, plus draft-scoped edits of a document
- * deleted live, whose drafts may outlive the delete (D79; the inverse decides from the draft
+ * deleted live, whose drafts may outlive the delete (the inverse decides from the draft
  * row), plus every document the turn moved or deleted, deleted or not: its tree entry is how
- * the card's Undo brings it back (D77). Each draft-scoped target names the Work whose branch
+ * the card's Undo brings it back. Each draft-scoped target names the Work whose branch
  * held the draft (a text part's draft row, or a tree entry's destination branch), where it is
  * read and reversed. Final address liveness stays with the lineage reader.
  */

@@ -1,5 +1,5 @@
 /**
- * Production-composed model tools in a Work: scratch stays live while drafted writes name the draft (D9, D19), read, search and ls follow the version the writes change (D41), copies of text and binary files (D24), and a chat's write-mode switch against real repositories (D62).
+ * Production-composed model tools in a Work: scratch stays live while drafted writes name the draft, read, search and ls follow the version the writes change, copies of text and binary files, and a chat's write-mode switch against real repositories.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - scheme-specific write destinations, queued mode switches, and no-op write suppression
@@ -144,7 +144,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Drafted lore needle.",
       });
       expect(lore.result).toMatchObject({ destination: "draft" });
-      // Scratch is live in every Work (D9).
+      // Scratch is live in every Work.
       const notes = await call("write", {
         command: "create",
         path: "scratch://notes",
@@ -231,7 +231,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await script.text("new-chapter")).toContain("The new chapter.");
     });
 
-    // D62: auto-apply writes live, but an explicit `draft` still reads what the Work kept.
+    // auto-apply writes live, but an explicit `draft` still reads what the Work kept.
     it("reads a kept draft when asked for draft in auto-apply, and live otherwise", async () => {
       const script = await startWithChapter("Writer live content.");
       const first = await script.begin();
@@ -265,7 +265,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(noDraft.result).toMatchObject({ read: { version: "live" } });
     });
 
-    describe("write-mode switch (D62)", () => {
+    describe("write-mode switch", () => {
       const SIBLING = {
         threadId: "00000000-0000-4000-8000-000000000e15",
         turnId: "00000000-0000-4000-8000-000000000e16",
@@ -444,8 +444,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    // D31: a create or copy would make its file in the archived Work's frozen drafts.
-    it("refuses a draft-mode chat's create or copy into its archived Work with D31's copy", async () => {
+    // a create or copy would make its file in the archived Work's frozen drafts.
+    it("refuses a draft-mode chat's create or copy into its archived Work with the frozen-drafts copy", async () => {
       const script = await startWithChapter("Writer live content.");
       await db
         .update(schema.works)
@@ -469,7 +469,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("copies the section a #fragment names (D49)", async () => {
+    it("copies the section a #fragment names", async () => {
       const script = await startWithChapter(
         "# Opening\n\nDawn.\n\n# The Midnight Duel\n\nSteel rang.\n\n# Aftermath\n\nQuiet.",
       );
@@ -711,7 +711,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
     });
 
-    // D24 with 12b-Q2: a binary copy duplicates the stored object; in a draft-mode Work it
+    // a binary copy duplicates the stored object; in a draft-mode Work it
     // is the branch's own hidden row, never shared and not live.
     it("copies a binary file into the branch as its own hidden row and stored object", async () => {
       const runtime = await runtimes.compose();

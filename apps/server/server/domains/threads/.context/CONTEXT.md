@@ -140,5 +140,5 @@ handle minting through the project advisory lock.
   frontier or closes open segments, and rejects a missing block so a vanished card is
   not re-created. Orphan repair is the only path that settles a dead unsettled turn.
 
-[kb-derivation]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/conversations/fork-and-handoff-derivation.md
-[kb-system-updates]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/system-update-notification-framework.md
+[kb-derivation]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/conversations.md
+[kb-system-updates]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/request-prefix.md

@@ -56,7 +56,7 @@ Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 
 Contrast is part of the palette contract: `muted-foreground` holds AA in a current
 row (10%) on the darkest surface in both themes.
-See the [Earthen Value Ladder decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/earthen-value-ladder-shell.md)
+See the [design language foundations](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/design-language-foundations.md)
 for rationale, measurements, and rejected directions rather than duplicating
 them here.
 

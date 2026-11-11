@@ -2,7 +2,7 @@
  * Control queue ordering, start consumption, and withdrawal against PostgreSQL.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - one-per-run ordered controls, request-boundary adoption, and claim-owned crash repair (kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md)
+ * - one-per-run ordered controls, request-boundary adoption, and claim-owned crash repair (kb/wiki/architecture/server-runtime.md#one-delivery-boundary-and-one-run-claim)
  */
 
 import type { Turn } from "@meridian/contracts/threads";

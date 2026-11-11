@@ -1,7 +1,7 @@
 /**
- * The model `skill` tool (D58) and every other model tool's `skills://`
- * branch. Skills are read-only files (D52): `read` returns a file, one of its
- * `#heading` sections or its outline (D60), `ls` lists folders, and `write`
+ * The model `skill` tool and every other model tool's `skills://`
+ * branch. Skills are read-only files: `read` returns a file, one of its
+ * `#heading` sections or its outline, `ls` lists folders, and `write`
  * and `grep` refuse.
  */
 import {
@@ -72,7 +72,7 @@ export function createSkillToolRegistrations(deps: SkillFilesDeps): ToolRegistra
   ];
 }
 
-/** `skill` (D58): `read`'s result for the skill's `SKILL.md`, or the skills it could load instead. */
+/** `skill`: `read`'s result for the skill's `SKILL.md`, or the skills it could load instead. */
 async function invokeSkill(deps: SkillFilesDeps, threadId: string, name: string) {
   const file = await readSkillMd(deps, threadId, name);
   if (file.kind === "text") return renderSkillFile(file.skill, file.path, file.text);

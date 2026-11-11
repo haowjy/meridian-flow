@@ -310,7 +310,7 @@ type ResponseWriteCommitOutcome =
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       /** The saved documents' frontiers at the save's after-state, for those that recorded one. */
       frontiers?: Array<{ documentId: string; frontier: ObservationFrontier }>;
-      /** Documents the save left out; their writes did not land (D29). */
+      /** Documents the save left out; their writes did not land. */
       refused: Array<{
         documentId: string;
         message: string;

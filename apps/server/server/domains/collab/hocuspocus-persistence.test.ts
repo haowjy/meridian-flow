@@ -1,7 +1,7 @@
 /** Tests for Hocuspocus room persistence: draft guards and deferred live checkpoints.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Draft admission queue and checkpoint coalescing (kb/decisions/concurrent-safety/journal/checkpoint-capture-from-journal.md)
+ * - Draft admission queue and checkpoint coalescing (kb/wiki/architecture/collaboration/durability-and-honest-outcomes.md#journal-first-then-live)
  */
 
 import { Hocuspocus } from "@hocuspocus/server";

@@ -2,7 +2,7 @@
  * Postgres file facts (file-access §2, §5): follows
  * `documents → folders → context_sources → (project | work → project)` with
  * every lifecycle on the way. The tree view supplies branch locations and
- * lineage (D56); hidden identities outside the caller's branch have no facts.
+ * lineage; hidden identities outside the caller's branch have no facts.
  */
 
 import type { DraftOwner } from "@meridian/contracts";

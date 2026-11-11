@@ -98,7 +98,7 @@ describe("document revision settlement", () => {
     expect(JSON.stringify(gateway.requests)).not.toContain("documentRevisions");
   });
 
-  it("replaces a write's result with the refusal when the save left its document out (D29)", async () => {
+  it("replaces a write's result with the refusal when the save left its document out", async () => {
     const documentId = "44444444-4444-4444-8444-444444444444";
     const uri = "scratch://notes.md";
     const message = "Work @rewrite is archived and read-only. Ask the user to unarchive @rewrite.";

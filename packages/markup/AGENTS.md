@@ -9,18 +9,9 @@ imports `@meridian/agent-edit` or an app or server shell. The link rules ship at
 keep both out of the root barrel so neither pulls in codecs, Yjs or the schema
 builder.
 
-## Mental model
+Consumers use `markdownCodec` and `mdxCodec`; codec and plugin composition stays internal.
 
-Consumers use `markdownCodec` and `mdxCodec`. Codec and plugin composition
-stays internal; agent-edit's hash-prefixed echo and view formatting lives
-outside this package.
 
-## Contracts
-
-- One codec name per ProseMirror node/mark. Duplicate block or mark
-  registrations are build-time errors.
-- Every schema mark must have a mark codec and both presets validate block
-  schema coverage during construction.
 - MDX component registries are closure-captured by MDX block codec factories, not
   threaded through parse/serialize contexts.
 - MDX accepts lowercase HTML void elements without JSX closing slashes at the
@@ -40,7 +31,5 @@ outside this package.
 
 Public API contract: [`.context/CONTEXT.md`](.context/CONTEXT.md). Image wire
 format: [`.context/image-wire-format.md`](.context/image-wire-format.md).
-
-## Import/export text seams
 
 Wiki-style link parsing uses the shared scanner for editor ingress, import conversion, and export spelling; do not add a second grammar in an adapter. Frontmatter splitting preserves the raw body and property text so an import/export round trip does not normalize writer-authored YAML.

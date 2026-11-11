@@ -11,4 +11,4 @@ contracts: [server architecture](.context/CONTEXT.md).
 - Run independent reads with `Promise.all`, inside a transaction too. Work meant
   to outlive the transaction leaves it with `runAfterDrizzleCommit` or
   `runOutsideWrite`; other database work still running after it ends throws.
-- DB tests follow the [isolation policy](server/test-support/AGENTS.md).
+- DB tests: [isolation policy](server/test-support/AGENTS.md).

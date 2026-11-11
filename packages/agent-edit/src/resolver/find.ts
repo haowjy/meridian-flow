@@ -84,13 +84,6 @@ function matchSerializedText(
   };
 }
 
-export function serializePmBlockBody(
-  ctx: Pick<FindContext, "codec">,
-  block: Parameters<AgentEditCodec["serialize"]>[0][number],
-): string {
-  return ctx.codec.serializeBlockBodies([block])[0] ?? "";
-}
-
 function serializeScopeBlocks(ctx: FindContext, scope: BlockScope): SerializedBlockEntry[] {
   // A scope is a contiguous run of top-level blocks starting at `startIndex`.
   const selected = ctx.projected.slice(scope.startIndex, scope.startIndex + scope.blocks.length);
@@ -179,6 +172,13 @@ function invalid(message: string): FindResult {
 export interface SplicedGroup {
   text: string;
   splice: FindSplice;
+  /** Each match's splice in order: where it sits in the old group text and in `text`. */
+  cuts: SpliceCut[];
+}
+
+export interface SpliceCut {
+  old: { start: number; end: number };
+  new: { start: number; end: number };
 }
 
 /**
@@ -193,21 +193,104 @@ export function spliceFindMatches(
   content: string,
   command: "insert" | "replace" | "remove",
 ): SplicedGroup {
-  let result = source;
-  let start = source.length;
-  let oldEnd = 0;
-  for (const match of [...matches].reverse()) {
-    const matchStart = match.rangeStart + match.matchStart - rangeStart;
+  let text = "";
+  let cursor = 0;
+  const cuts: SpliceCut[] = [];
+  for (const match of matches) {
     const end = match.rangeStart + match.matchEnd - rangeStart;
-    const spliceStart = command === "insert" ? end : matchStart;
-    result = result.slice(0, spliceStart) + content + result.slice(end);
-    start = Math.min(start, spliceStart);
-    oldEnd = Math.max(oldEnd, end);
+    const start = command === "insert" ? end : match.rangeStart + match.matchStart - rangeStart;
+    text += source.slice(cursor, start);
+    cuts.push({
+      old: { start, end },
+      new: { start: text.length, end: text.length + content.length },
+    });
+    text += content;
+    cursor = end;
   }
+  text += source.slice(cursor);
+  const first = cuts[0];
+  const last = cuts.at(-1);
   // Text between several splices is inside the union too: the suffix after
   // the last splice is the only text that shifts.
   return {
-    text: result,
-    splice: { start, oldEnd, newEnd: oldEnd + result.length - source.length },
+    text,
+    splice: {
+      start: first?.old.start ?? source.length,
+      oldEnd: last?.old.end ?? 0,
+      newEnd: (last?.old.end ?? 0) + text.length - source.length,
+    },
+    cuts,
   };
+}
+
+export interface TextWindow {
+  from: number;
+  to: number;
+}
+
+const CUT_OPEN = "";
+const CUT_CLOSE = "";
+
+/**
+ * Where each cut of `markdown` lands in the text of the blocks it parses to:
+ * per block, the text windows the cuts cover. Found by parsing the markdown with
+ * a private-use mark at each cut edge, so syntax never has to be mapped by hand.
+ * Null when the marks changed the parse or landed outside text (a link target),
+ * so the windows can't be trusted.
+ */
+export function cutTextWindows(
+  ctx: Pick<FindContext, "codec">,
+  markdown: string,
+  cuts: readonly { start: number; end: number }[],
+  blocks: readonly Parameters<AgentEditCodec["serialize"]>[0][number][],
+): TextWindow[][] | null {
+  let marked = "";
+  let cursor = 0;
+  for (const cut of cuts) {
+    marked += `${markdown.slice(cursor, cut.start)}${CUT_OPEN}${markdown.slice(cut.start, cut.end)}${CUT_CLOSE}`;
+    cursor = cut.end;
+  }
+  marked += markdown.slice(cursor);
+  let parsed: ReturnType<AgentEditCodec["parse"]>["blocks"];
+  try {
+    parsed = ctx.codec.parse(marked).blocks;
+  } catch {
+    return null;
+  }
+  if (parsed.length !== blocks.length) return null;
+  const windows: TextWindow[][] = [];
+  let open: number | null = null;
+  let closed = 0;
+  for (const [index, block] of parsed.entries()) {
+    let text = "";
+    const blockWindows: TextWindow[] = [];
+    if (open !== null) open = 0;
+    for (const char of block.textContent) {
+      if (char === CUT_OPEN) {
+        if (open !== null) return null;
+        open = text.length;
+      } else if (char === CUT_CLOSE) {
+        if (open === null) return null;
+        blockWindows.push({ from: open, to: text.length });
+        open = null;
+        closed += 1;
+      } else text += char;
+    }
+    if (open !== null) blockWindows.push({ from: open, to: text.length });
+    const real = blocks[index]?.textContent;
+    if (text === real) {
+      windows.push(blockWindows);
+      continue;
+    }
+    // A mark at the block's edge keeps whitespace the real parse trims there.
+    // Clamp the windows to the trimmed text; when that whitespace sat outside
+    // them, the text around the windows no longer matches and the caller drops them.
+    const lead = text.length - text.trimStart().length;
+    if (text.trim() !== real) return null;
+    const clamp = (at: number) => Math.min(Math.max(at - lead, 0), real.length);
+    windows.push(
+      blockWindows.map((window) => ({ from: clamp(window.from), to: clamp(window.to) })),
+    );
+  }
+  return open === null && closed === cuts.length ? windows : null;
 }

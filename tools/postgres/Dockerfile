@@ -1,7 +1,7 @@
 # Meridian Flow Postgres: postgres:16 plus pg_bigm (btree_gin and pg_trgm ship with contrib).
 # Writer project search needs all three. Dev (tools/dev/docker-compose.yml) builds this
 # image; the release pipeline builds the same file and promotes it by digest
-# (kb/decisions/platform/hosting/release-promotion.md). The image tag in docker-compose.yml
+# (kb/wiki/architecture/hosting.md#releases-promote-the-same-images-from-staging-to-production). The image tag in docker-compose.yml
 # carries the pg_bigm version, so bumping the pin in install-pg-bigm.sh means bumping that tag.
 FROM postgres:16
 

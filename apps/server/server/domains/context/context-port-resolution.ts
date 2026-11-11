@@ -90,7 +90,7 @@ export function contextPortForThread(
   options: {
     responseId?: string | null;
     version?: DocumentVersion;
-    /** Write live whatever the chat's mode, as a binary copy does (D24). */
+    /** Write live whatever the chat's mode, as a binary copy does. */
     liveWrites?: boolean;
   } = {},
 ): ContextPort {

@@ -2,7 +2,7 @@
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - submission owner handoff and rewrite protocol
- * - chat-owned write-mode ordering (kb/decisions/work/write-mode/chat-write-mode.md)
+ * - chat-owned write-mode ordering (kb/wiki/product/work/write-mode.md)
  */
 import type { Thread } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";

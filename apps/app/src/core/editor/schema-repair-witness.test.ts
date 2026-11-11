@@ -2,7 +2,7 @@
 /** Contract coverage for bind-time schema repair observation and evidence.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - schema-repair witness batching (kb/decisions/collab/schema/repair-first-never-disable.md)
+ * - schema-repair witness batching (kb/wiki/architecture/collaboration/overview.md#document-schema)
  */
 
 import { Editor } from "@tiptap/core";

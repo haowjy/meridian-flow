@@ -4,7 +4,7 @@ This recipe covers removal records, which removals close drafts, creation
 admission and server room retirement. The two removals differ:
 
 - **A live delete** (a document's or folder's delete, a move's victim) changes
-  live only (D79). It closes the document's live rooms `4208` and no draft:
+  live only. It closes the document's live rooms `4208` and no draft:
   every active draft, its draft rooms and its pending parts stay, and the
   drafting Work's branch keeps the document.
 - **A discarded creation** (Discard, reply retraction, repair) closes the

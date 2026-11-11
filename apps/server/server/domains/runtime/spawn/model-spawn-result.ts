@@ -1,5 +1,5 @@
 /**
- * The model's text for a `spawn` or `thread_message` result (D8), rendered
+ * The model's text for a `spawn` or `thread_message` result, rendered
  * from the typed `SpawnResult` the executor keeps beside it. A report reads
  * as it does in `thread_report` and `thread_history`. The text names the
  * child by its handle only: execution and thread ids stay in the typed result

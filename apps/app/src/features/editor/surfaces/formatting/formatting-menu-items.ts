@@ -44,7 +44,7 @@ export type FormattingMenuModel = {
   link: FormattingItemState;
   /**
    * The caret is inside a table, so the menu carries the table's own lists
-   * too (human ruling, 2026-07-29). A cell's text is prose either way (§5.4);
+   * too. A cell's text is prose either way (§5.4);
    * what changes is that a right-click in a cell is now the writer's way to
    * the table without hunting for a grip.
    */

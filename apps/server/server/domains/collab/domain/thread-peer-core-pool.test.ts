@@ -1,4 +1,4 @@
-/** Pool routing per document (D19, D42), live undo routing, and peer-cache lifecycle.
+/** Pool routing per document, live undo routing, and peer-cache lifecycle.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Reply destination pins
@@ -97,7 +97,7 @@ describe("thread-peer pool", () => {
     expect(liveCore.write).not.toHaveBeenCalled();
   });
 
-  it("keeps a document's first destination for the rest of the reply (D19, D42)", async () => {
+  it("keeps a document's first destination for the rest of the reply", async () => {
     const { pool, liveCore, threadCore } = createPool();
     await pool.write(insertCh12, context(draftA, "reply-1"));
     await pool.write(insertCh12, context(live, "reply-1"));

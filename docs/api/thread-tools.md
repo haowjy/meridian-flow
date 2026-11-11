@@ -76,7 +76,7 @@ In progress
 [4] spawn({"agent":"general","name":"Summarize conversation test"}) → running
 ```
 
-- **Call lines** (D48). Every tool call, on a page, under `routine_calls` and
+- **Call lines**. Every tool call, on a page, under `routine_calls` and
   in `expand: N`, is one line: the tool name and the arguments as the model
   sent them, as compact JSON, then ` → ` and a short result. Postgres `jsonb`
   drops key order, so keys follow the tool's input schema (the matching
@@ -102,7 +102,7 @@ In progress
   `return_result(…)`: its saved report stands in for its arguments.
 
 - **Turn numbers** count conversation turns only (writer and agent requests
-  and assistant replies), from 1, with no gaps (D10). One count query gives
+  and assistant replies), from 1, with no gaps. One count query gives
   the page's first number; the walk numbers the rest by the same rule. A
   number never changes across pages, `order` or compaction, so an `expand`
   written earlier still names the same turn. System turns (completion
@@ -168,7 +168,7 @@ re-task). Otherwise, for example a run the writer started in the child or a
 sibling reading the report, the line ends "You won't be notified when it
 finishes."
 
-The model reads a text rendering of that typed result (D8), never JSON: the
+The model reads a text rendering of that typed result, never JSON: the
 report as history shows it (`Report (completed)`, a `reason:` line when there
 is one, then the summary with real newlines, `payload:` and `artifact:`
 lines), then the running-again line; an unavailable result is just its line.

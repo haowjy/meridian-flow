@@ -408,7 +408,7 @@ async function placeAncestors(
       filename: row.name,
     });
     if (holder.kind === "found" && holder.node.kind === "folder") {
-      // One folder per path (decision 10): a hidden one folds into the visible holder; a
+      // One folder per path: a hidden one folds into the visible holder; a
       // deleted one stays deleted and the walk continues under the holder.
       if (row.hidden && !row.deleted)
         await absorbHiddenFolder(db, { hidden: row.id, into: holder.node.id });

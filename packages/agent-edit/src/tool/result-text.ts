@@ -1,4 +1,4 @@
-// The one renderer from a `read` or `write` result to the text the model sees (D43).
+// The one renderer from a `read` or `write` result to the text the model sees.
 //
 // Hosts keep the typed result beside this text; nothing parses the text back.
 import { splitDocumentFile } from "../document-address.js";

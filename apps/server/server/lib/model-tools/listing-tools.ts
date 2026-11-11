@@ -2,7 +2,7 @@
  * The `ls` tool (file-access §6): rows the file policy lets the
  * agent see, each marked read-only when it can't edit it. A `live` listing
  * reads no draft, so its rows are decided live. `ls` returns a typed listing
- * the model reads as plain text (D61).
+ * the model reads as plain text.
  */
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";

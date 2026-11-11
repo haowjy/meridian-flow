@@ -54,7 +54,7 @@ export type DraftReviewController = {
   /** A command on this presented draft only. */
   /**
    * Every Apply and Discard control disables on this: a disposition is in
-   * flight, or the Work is archived and its drafts are frozen (D30). Review
+   * flight, or the Work is archived and its drafts are frozen. Review
    * stays available on a frozen Work.
    */
   dispositionLocked: boolean;

@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: staging
-      url: ${{ vars.STAGING_URL || 'https://staging.meridianflow.app' }}
+      url: ${{ vars.STAGING_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

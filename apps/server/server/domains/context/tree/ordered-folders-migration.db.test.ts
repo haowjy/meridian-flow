@@ -4,7 +4,7 @@
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - rank order equals `compareDefaultSiblings` for a name-ordered parent, and a manual parent's
- *   unranked children go before its first ranked child (kb/decisions/documents/lifecycle/sibling-order-is-placement.md)
+ *   unranked children go before its first ranked child (kb/wiki/architecture/documents/placement-and-naming.md#sibling-order-is-part-of-placement)
  */
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";

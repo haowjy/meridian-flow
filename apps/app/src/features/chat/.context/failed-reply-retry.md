@@ -1,10 +1,10 @@
 # Failed-reply Retry
 
 Nothing retries a failed reply in the background, so the writer retries it from the
-reply itself. Card copy and lifetimes are in the
-[Chat Failures catalog](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/chat-failures.md#chat-cards);
+reply itself. Who sees a failure and for how long is in
+[Failures](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/failures.md);
 what forgetting does is in
-[A Failed Attempt Is Forgotten](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/turns/forgotten-failed-attempt.md).
+[A Failed Attempt Is Forgotten](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/turns.md).
 
 ## Who decides
 

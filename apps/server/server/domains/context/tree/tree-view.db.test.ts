@@ -2,7 +2,7 @@
  * Postgres proof for the tree view: the live and branch relations, identity status and tree state.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - relational live and branch tree projection with identity status (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ * - relational live and branch tree projection with identity status (kb/wiki/architecture/collaboration/drafts-and-branches.md#a-branchs-tree-is-an-sql-change-set-over-live)
  */
 import type { BranchId, DocumentId, FolderId } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
@@ -257,7 +257,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await move(ch2, "book/ch2b")).ok).toBe(true);
       expect((await move(ch1, "book/ch2")).ok).toBe(true);
       expect(await shownAt("book/ch1")).toBe("not_found");
-      // A live rename of the destination folder shows in the branch (D80).
+      // A live rename of the destination folder shows in the branch.
       await db
         .update(folders)
         .set({ name: "volume" })
