@@ -60,7 +60,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // narrow-window hold on it, so the control can never write a pref that changes nothing.
   const { releaseSide } = useShellCommands(projectId);
   const setSlotOpenHere = (slot: PanelSlotId, open: boolean) => {
-    if (open) narrowHold.release(slot);
+    if (open) narrowHold.openByHand(slot);
     // Closing the side lets go of a held pick: it reopens following main.
     else if (slot === "dock") releaseSide();
     setSlotOpen(slot, open);
@@ -294,8 +294,9 @@ function SideEmpty({ projectId }: { projectId: string }) {
 
 /**
  * A window too narrow for a panel holds it closed while it stays narrow, without writing prefs,
- * so the writer's own choice returns when the window widens. Opening the panel by hand releases
- * the hold until the window narrows again.
+ * so the writer's own choice returns when the window widens. Opening a panel by hand releases
+ * its hold until the window narrows again; in a window too narrow for both, it holds the other
+ * one closed instead, so main keeps its minimum.
  */
 function useNarrowWindowHold() {
   const [held, setHeld] = useState<readonly PanelSlotId[]>(NO_HELD_PANELS);
@@ -316,13 +317,14 @@ function useNarrowWindowHold() {
       narrow.removeEventListener("change", apply);
     };
   }, []);
-  const release = useCallback(
-    (slot: PanelSlotId) =>
-      setHeld((current) => {
-        const next = current.filter((held) => held !== slot);
-        return next.length === 0 ? NO_HELD_PANELS : next;
-      }),
-    [],
-  );
-  return { held, release };
+  const openByHand = useCallback((slot: PanelSlotId) => {
+    const other: PanelSlotId = slot === "dock" ? "rail-l" : "dock";
+    const onlyOne = window.matchMedia(COMPACT_DESKTOP_QUERY).matches;
+    setHeld((current) => {
+      const next: PanelSlotId[] = current.filter((held) => held !== slot && held !== other);
+      if (onlyOne) next.push(other);
+      return next.length === 0 ? NO_HELD_PANELS : next;
+    });
+  }, []);
+  return { held, openByHand };
 }
