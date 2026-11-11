@@ -53,7 +53,7 @@ export function isDiagramFence(node: PMNode): boolean {
  * An inline image lives inside a wrapper TipTap lays out as text, so that
  * wrapper's box is a line box a fraction of the picture's height — anchoring
  * the row to it would float the controls somewhere down the image's side. The
- * picture's own bounds are what ruling 8 means by "inside the object's
+ * picture's own bounds are what "inside the object's
  * top-right". A figure keeps its card, caption and all.
  */
 function renderedBounds(node: PMNode, dom: HTMLElement): HTMLElement {

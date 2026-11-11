@@ -1,5 +1,5 @@
 /**
- * The one server read path (D18): the `read` tool, a copy's source read and
+ * The one server read path: the `read` tool, a copy's source read and
  * reference loading all call `readDocument`. Tool and reference reads share
  * the tracked-document adapter; private copy-source reads supply their own grant.
  */
@@ -19,7 +19,7 @@ export type ReadSelection = Pick<ReadToolInput, "in" | "around" | "before">;
 
 /**
  * Omitted `version` reads where this thread's writes go; `live` never touches
- * a draft (D3, D14).
+ * a draft.
  */
 export async function readDocument(
   deps: Pick<ToolWiringDeps, "documentSync">,

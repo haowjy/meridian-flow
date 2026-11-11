@@ -38,7 +38,7 @@ export interface ProjectContextAvailabilityPort {
        * In a branch view, the identities were addressed through their drafts (a review
        * address): a document deleted live whose draft in this branch outlived the delete is
        * available even when the branch has nothing pending to list it (a no-effect draft left
-       * open; D79). Paths and links still follow the listing.
+       * open). Paths and links still follow the listing.
        */
       admitDrafts?: true;
     },

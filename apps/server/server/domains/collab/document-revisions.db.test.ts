@@ -2,7 +2,7 @@
  * Revision identity across live rooms, Work peers, response settlement and rebinding.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - snapshot-derived freshness tokens across content, tree, receipt, peer, and flush boundaries (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - snapshot-derived freshness tokens across content, tree, receipt, peer, and flush boundaries (kb/wiki/architecture/collaboration/draft-store-concurrency.md)
  */
 
 import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";
@@ -290,7 +290,7 @@ describe("document revisions (postgres and collab)", () => {
     await f.read();
     await f.stage("00000000-0000-4000-8000-000000000893");
     let injected = false;
-    // The live apply runs on a private copy inside the save transaction (D42);
+    // The live apply runs on a private copy inside the save transaction;
     // a writer edit after it and before commit must not move the receipt.
     const committed = await f.core.commitResponse("00000000-0000-4000-8000-000000000893", {
       beforeTransactionCommit: async () => {

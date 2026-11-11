@@ -1,8 +1,8 @@
 /**
- * The one tool policy (D13, D34): which tools an agent has. It never narrows a
+ * The one tool policy: which tools an agent has. It never narrows a
  * tool's commands and never encodes access; permission and the file and action
  * policies decide what a call may change. Advertisement filters by it, dispatch
- * refuses a call outside it (D53), and a child never has a tool its parent lacks.
+ * refuses a call outside it, and a child never has a tool its parent lacks.
  */
 import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
@@ -58,7 +58,7 @@ export function advertiseTools(tools: Tool[] | undefined, policy: ToolPolicy): T
   return (tools ?? []).filter((tool) => policy.has(tool.name));
 }
 
-/** What the model reads when it calls a tool outside its policy (D53). */
+/** What the model reads when it calls a tool outside its policy. */
 export function missingToolRefusal(toolName: string): string {
   return `This agent has no "${toolName}" tool. Tell the user you can't do this here.`;
 }

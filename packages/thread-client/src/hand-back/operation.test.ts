@@ -1,7 +1,7 @@
 /** The hand-back operation over in-memory ports: the state transitions the app and ./mf share.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Shared hand-back lifecycle (kb/decisions/chat/composer/stop-hands-back-waiting-messages.md)
+ * - Shared hand-back lifecycle (kb/wiki/product/chat/composer-and-queue.md)
  */
 import type { HandBackResult, PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
@@ -184,7 +184,7 @@ describe("hand-back operation", () => {
       outcome: "ambiguous",
     },
   ])("$row", async ({ reply, outcome }) => {
-    // Risk: the shared lifecycle diverging between clients (#861 D1, L2): retirement, replay, and
+    // Risk: the shared lifecycle diverging between clients (#861): retirement, replay, and
     // the one order that prevents loss (the command is saved before it is posted).
     const r = rig();
     r.answer(reply);
@@ -212,7 +212,7 @@ describe("hand-back operation", () => {
   });
 
   it("a malformed answer (unreadable JSON, or a valid envelope whose runState is only { version }) is ambiguous and changes nothing", async () => {
-    // Risk: D1, a half-read record applied, or the replay request lost on an unreadable answer.
+    // Risk: a half-read record applied, or the replay request lost on an unreadable answer.
     const envelope = {
       handedBack: handedBack([M1]),
       answered: [],

@@ -34,7 +34,7 @@ collapses Apply to its icon; parent crumbs drop only when the leaf would be cut.
 Coarse pointers give each control a 44px box and grow the row to fit, and the
 filename yields its width (see [CONTEXT.md](CONTEXT.md)). Renaming and
 moving a homed document belong to the lists (Files, Scratch section, phone
-browser); see the KB's path-navigates-lists-edit decision.
+browser); see the KB's path-navigates-lists-edit page.
 
 Contracts:
 

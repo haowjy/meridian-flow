@@ -196,7 +196,7 @@ export interface WriteContext {
   includeNodes?: boolean;
   /**
    * The blocks a `from` or `copy` write copies, read by the host from the
-   * source (D23, D24). They become the command's content as nodes.
+   * source. They become the command's content as nodes.
    */
   copiedNodes?: readonly Block[];
   /**

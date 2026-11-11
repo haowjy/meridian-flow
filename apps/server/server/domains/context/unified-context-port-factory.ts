@@ -153,7 +153,7 @@ type BranchPlacements = {
 /**
  * Where an adapter's creates land (contract §2.3): a draft-mode thread's drafted source
  * is a draft placement, exactly as `sourceDestination` decides; people and auto-apply
- * Works are live (D20).
+ * Works are live.
  */
 function placementFor(
   assembly: AdapterAssembly,

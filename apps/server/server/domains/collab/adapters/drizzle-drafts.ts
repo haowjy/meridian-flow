@@ -107,7 +107,7 @@ export function createDrizzleDraftStore(
   db: Database,
   deps: {
     live?: { journal: UpdateJournal };
-    /** The one owner of Work-first order and the Works' projection (decision D17). */
+    /** The one owner of Work-first order and the Works' projection. */
     workProjection: WorkProjectionMutation;
     /** Every close retires what it closed after commit. */
     close: DraftClose;
@@ -192,7 +192,7 @@ export function createDrizzleDraftStore(
     if (current) return current;
     const seeded = seedDraftState(input.liveDoc, input.liveRoom, input.livePosition ?? 0);
     const { seed, ...checkpoint } = seeded;
-    // Creating a draft is a write the Work's lifecycle orders (decision D12): the branch's
+    // Creating a draft is a write the Work's lifecycle orders: the branch's
     // Work is locked first, so an Archive either fences the new draft or committed before it.
     // Both fragments start equal at revision 0; live shares content, never Yjs items.
     return workProjection.mutate({ branches: [input.branchId] }, async () => {

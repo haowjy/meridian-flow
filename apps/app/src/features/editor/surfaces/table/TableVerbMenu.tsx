@@ -13,8 +13,7 @@
  * should not be behind it: the grips are the surface a writer already found.
  *
  * `TableCaretMenuItems` is the fifth arrangement and adds no verb: a
- * right-click inside a cell now opens the formatting menu (human ruling,
- * 2026-07-29), and these are the two submenus it carries so the writer can
+ * right-click inside a cell now opens the formatting menu, and these are the two submenus it carries so the writer can
  * reach the table without finding a grip first.
  */
 import type { Editor } from "@tiptap/core";

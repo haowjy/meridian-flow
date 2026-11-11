@@ -19,7 +19,7 @@ export type DocumentRef = Pick<DocumentRevisionEvidence, "documentId" | "uri">;
 export interface DocumentTextPolicy {
   /** Whether the tool's results hold document text it read or text it wrote. */
   kind: "read" | "write";
-  /** `output` is what the model read; `result` the typed value beside it (D43), when stored. */
+  /** `output` is what the model read; `result` the typed value beside it, when stored. */
   elide(
     block: { input?: JsonObject; output?: JsonValue; result?: JsonValue },
     changed: readonly DocumentRef[],

@@ -1,11 +1,11 @@
 /**
- * Skills as files at the wired model tools (D52) and the `skill` tool (D58), on
+ * Skills as files at the wired model tools and the `skill` tool, on
  * the built-in launch agents: Critic is offered `story-review` and
  * `writing-principles`, so it loads and reads those folders under `skills://`
  * and nothing else.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Extensionless, read-only skill addresses (kb/decisions/agents/tools/skills-as-files.md)
+ * - Extensionless, read-only skill addresses (kb/wiki/architecture/agents/definitions.md)
  */
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";

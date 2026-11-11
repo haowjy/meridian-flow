@@ -134,7 +134,7 @@ const lowlight = createLowlight(common);
  * Order is precedence. The kernel comes first because it resolves the context
  * everything below reads; object physics next because it is the deepest thing
  * in the document. Above all of it, unlisted, sits `UndoRedoKeymapExtension`
- * at TipTap priority 1100 (ruling 17) — undo is the writer's recovery over LLM
+ * at TipTap priority 1100 — undo is the writer's recovery over LLM
  * writes and no surface may shadow it.
  */
 const EDITOR_CHROME_EXTENSIONS: Extensions = [

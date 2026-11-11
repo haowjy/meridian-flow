@@ -17,17 +17,13 @@ edited or created, as soon as the reply finishes. Apply and Discard never create
 or change it, and Undo never erases its turn-owned record. Pending draft lineage
 shows the same “Edited N documents” card before Apply.
 
-Created-document counts currently violate that contract ([#843][issue-843]):
-the count reads edit targets that resolve to a live address, and a document the
-reply created in a draft has none until Apply reveals it. A reply that only
-creates draft documents shows no card until Apply makes one appear. Pending draft rows
+A document the reply created in a draft counts at once, and pending draft rows
 name the edited files.
 
 The receipt reads server lineage, never tool results. A binary copy (an upload
 such as a PDF, copied at once with no write handle) leaves no journal row, so it
-is not counted as an edit and offers no Undo. Undoing a text copy reverses its
-staged create content and leaves the created document empty (#843: a create has
-no tree entry yet); the receipt shows it as undone and the document stays openable.
+is not counted as an edit and offers no Undo. Undoing a text copy reverses it like any create (a tree entry
+plus its initial text; see the collab `reversal.md`), and the receipt shows it as undone.
 
 A document the turn moved, deleted or copied carries its net tree line in lineage,
 and its row says so: "Moved ch4 to ch4-old" (the folder, section or owner kept only
@@ -117,5 +113,3 @@ turn that never arrives still leaves them in the thread. Nothing copies the pend
 component state — display without the lifecycle is what let a request outlive
 everything that could complete it. A stage deadline in the controller is only a
 backstop for the case no surface can report: a stage whose surface never mounts.
-
-[issue-843]: https://github.com/haowjy/meridian-flow/issues/843

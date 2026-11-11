@@ -3,7 +3,7 @@
  * the one gesture that gives it back to the browser.
  *
  * Every right-click inside the editor opens an editor menu, and the context
- * picks which one (human ruling, 2026-07-29, superseding ruling 11's fall
+ * picks which one (it replaces the earlier fall
  * through to the browser at a bare caret). A writer who right-clicked in a
  * table cell and got the browser's list of nothing they wanted is what settled
  * it: the editor's verbs are the answer the gesture is asking for.

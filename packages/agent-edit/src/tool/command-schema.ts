@@ -81,7 +81,7 @@ const INVERSE_COUNT = z
   .describe("How many edits to undo or redo, all or nothing. Default 1.");
 
 /**
- * Which version of a document to read (D3, D14). It has no default: omitted
+ * Which version of a document to read. It has no default: omitted
  * means the version this thread's writes change, which the host decides per
  * document. `read`, `grep`, `ls` and `from` share this one description.
  */
@@ -98,7 +98,7 @@ export const DOCUMENT_NAMES_DESCRIPTION =
 const SOURCE_PATH = z.string().min(1).describe(DOCUMENT_NAMES_DESCRIPTION);
 
 /**
- * `from`, the source of a block copy (D23) or a document copy (D24, D49): one
+ * `from`, the source of a block copy or a document copy: one
  * shape for every command. It keeps the model's own path: the host resolves
  * and reads it, and the engine only names it in the receipt.
  */
@@ -187,7 +187,7 @@ const MUTATION_BRANCHES = {
   },
 } as const;
 
-/** The host's whole-document commands (D25, D38): `path` is what the command changes. */
+/** The host's whole-document commands: `path` is what the command changes. */
 const NAMESPACE_BRANCHES = {
   move: {
     description:

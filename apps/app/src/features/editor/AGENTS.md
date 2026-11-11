@@ -1,55 +1,30 @@
-# features/editor — app-facing editor surface
+# features/editor
 
-This directory adapts the shared editor to project documents: `SessionEditor`
-binds a session and scope, `EditorView` composes live or review presentation,
-and `chrome/` hosts writer-facing controls. Schemas, Yjs session machinery,
-and ProseMirror extensions belong to `core/editor`; pane composition
-belongs to `features/project/context`.
+The app side of the editor: `SessionEditor` binds a session and scope, `EditorView`
+composes live or review presentation, and `chrome/` and `surfaces/` hold the
+writer-facing controls. Schemas, Yjs sessions and ProseMirror extensions belong to
+`core/editor`; pane composition to `features/project/context`.
 
-Contextual surfaces are built from the `chrome/` primitives, with the
-persistent document toolbar owning the command layer they share. There are no
-selection bubbles and no ad-hoc surfaces.
-
-## Rules
-
-- Mount every control surface through `chrome/chrome-surfaces.tsx` and the
-  single `EditorChromeHost` in `SessionEditor`; do not add ad-hoc portals or
-  surfaces to `EditorView`.
+- Mount every control surface through `chrome/chrome-surfaces.tsx` and the single
+  `EditorChromeHost` in `SessionEditor`. No ad-hoc portals or surfaces in `EditorView`,
+  no selection bubbles, and contextual surfaces never become a second toolbar.
 - Keep prose geometry in `editor-column.ts` and caret placement in
-  `core/editor/landing`. Layout components do not answer presses or
-  choose selection policy.
-- `EditorScopeProvider` is the sole app-to-editor scope seam. Consumers read
-  `{ projectId, workId, rootThreadId }` with `useEditorScope`; scope is runtime
-  context and is not part of editor mount identity.
-- Link and image concerns mount one null-rendering runtime each. Visible
-  outcomes are chrome surfaces, so runtimes must not render their own Radix
-  roots.
-- Clipboard access goes through [`clipboard.ts`](clipboard.ts), which owns
-  capability, the rich/plain fallback and what a refusal means. Surfaces choose
-  a payload and destination; they do not call `navigator.clipboard` directly.
-- Desktop review is an editable peer in the review room; phone review is
-  read-only. The mounted draft and its review base decide changes; attribution
-  supplies bylines. See [draft review](../draft-review/AGENTS.md).
-- `SessionEditor` owns device reading memory for live main and side mounts
-  (`core/editor/use-reading-position.ts`). Review and paint-held mounts stand
-  down, and explicit destinations win. Reading position is restored in that one
-  place, never by a second timer.
-- Chrome wrappers own focus return and Escape. A surface opened over prose
-  must return focus through the wrapper and must not install a private handler.
+  `core/editor/landing`. Layout components don't answer presses or choose selection
+  policy.
+- `EditorScopeProvider` is the only app-to-editor scope seam; read
+  `{ projectId, workId, rootThreadId }` with `useEditorScope`. Scope stays out of editor
+  mount identity, or moving a holder destroys its editor and undo manager.
+- The link and image runtimes render nothing. Visible outcomes are chrome surfaces; a
+  runtime with its own Radix root is a surface the kernel can't subordinate.
+- Clipboard access goes through [`clipboard.ts`](clipboard.ts), which owns capability,
+  the rich/plain fallback and what a refusal means. Surfaces never call
+  `navigator.clipboard`.
+- `SessionEditor` is the one place that restores reading position for live main and
+  side mounts (`core/editor/use-reading-position.ts`). Review and paint-held mounts
+  stand down and explicit destinations win; don't add a second timer.
+- Review is an editable peer on desktop and read-only on phone; the draft and its review
+  base decide changes. See [draft review](../draft-review/AGENTS.md).
 
-## Child guides
-
-- [`chrome/AGENTS.md`](chrome/AGENTS.md)
-- [`surfaces/blocks/AGENTS.md`](surfaces/blocks/AGENTS.md)
-- [`surfaces/formatting/AGENTS.md`](surfaces/formatting/AGENTS.md)
-- [`surfaces/images/AGENTS.md`](surfaces/images/AGENTS.md)
-- [`surfaces/link/AGENTS.md`](surfaces/link/AGENTS.md)
-- [`surfaces/objects/AGENTS.md`](surfaces/objects/AGENTS.md)
-- [`surfaces/peer-marks/AGENTS.md`](surfaces/peer-marks/AGENTS.md)
-- [`surfaces/slash/AGENTS.md`](surfaces/slash/AGENTS.md)
-- [`surfaces/table/AGENTS.md`](surfaces/table/AGENTS.md)
-- [`surfaces/toolbar/AGENTS.md`](surfaces/toolbar/AGENTS.md)
-
-Read [`.context/CONTEXT.md`](.context/CONTEXT.md) for review/session edge
-cases and the editor-to-project boundary.
-Deferred editor work is tracked in [`.context/TODO.md`](.context/TODO.md).
+Review, scope and schema-repair edge cases:
+[`.context/CONTEXT.md`](.context/CONTEXT.md). Deferred work:
+[`.context/TODO.md`](.context/TODO.md).

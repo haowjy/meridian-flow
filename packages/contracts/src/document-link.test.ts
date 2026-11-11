@@ -1,7 +1,7 @@
 /** Stored-link resolution and spelling rules, and written-link classification.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Lineage link spelling policy (kb/decisions/documents/identity/link-identity.md)
+ * - Lineage link spelling policy (kb/wiki/architecture/documents/links.md#stored-identity-and-spelling)
  */
 import { expect, it } from "vitest";
 import {

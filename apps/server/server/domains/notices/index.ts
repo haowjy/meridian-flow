@@ -29,20 +29,18 @@ export interface NoticePort {
   record(input: NoticeInput): Promise<void>;
   peek(threadId: string): Promise<Notice[]>;
   consume(ids: readonly number[]): Promise<void>;
-  /** Withdraws the unconsumed notices recorded for pushes that never reached live. */
-  retractForPushes(pushIds: readonly string[]): Promise<void>;
 }
 
-export type WriterWorkSwitchedNoticeData = {
+export type WorkSwitchedNoticeData = {
   previousWorkId: WorkId;
   previousWorkName: string;
   workId: WorkId;
   workName: string;
-  actor: "writer";
+  actor: "writer" | "model";
   previousScratchUri?: string;
 };
 
-export type WriterWorkSwitchedNotice = Extract<NoticeInput, { kind: "work_switched" }>;
+export type WorkSwitchedNotice = Extract<NoticeInput, { kind: "work_switched" }>;
 
 export function parseNoticeInput(value: unknown): NoticeInput {
   if (!isRecord(value) || !isRecord(value.scope) || value.scope.kind !== "thread") {
@@ -75,7 +73,7 @@ export function parseNoticeInput(value: unknown): NoticeInput {
     typeof data.previousWorkName === "string" &&
     typeof data.workId === "string" &&
     typeof data.workName === "string" &&
-    data.actor === "writer"
+    (data.actor === "writer" || data.actor === "model")
   ) {
     return {
       kind,
@@ -86,7 +84,7 @@ export function parseNoticeInput(value: unknown): NoticeInput {
         previousWorkName: data.previousWorkName,
         workId: data.workId as WorkId,
         workName: data.workName,
-        actor: "writer",
+        actor: data.actor,
         ...(typeof data.previousScratchUri === "string"
           ? { previousScratchUri: data.previousScratchUri }
           : {}),
@@ -100,21 +98,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function createWriterWorkSwitchedNotice(input: {
+export function createWorkSwitchedNotice(input: {
   threadId: ThreadId;
   previousWorkId: WorkId;
   previousWorkName: string;
   workId: WorkId;
   workName: string;
   previousScratchUri?: string;
-}): WriterWorkSwitchedNotice {
-  const data: WriterWorkSwitchedNoticeData = {
+  actor: "writer" | "model";
+}): WorkSwitchedNotice {
+  const data: WorkSwitchedNoticeData = {
     previousWorkId: input.previousWorkId,
     previousWorkName: input.previousWorkName,
     workId: input.workId,
     workName: input.workName,
     ...(input.previousScratchUri ? { previousScratchUri: input.previousScratchUri } : {}),
-    actor: "writer",
+    actor: input.actor,
   };
   return {
     kind: "work_switched",
@@ -125,7 +124,7 @@ export function createWriterWorkSwitchedNotice(input: {
 }
 
 export function formatWorkSwitchedNotice(data: Record<string, unknown>): string | null {
-  if (data.actor !== "writer") return null;
+  if (data.actor !== "writer" && data.actor !== "model") return null;
   const previousWorkName = nonEmptyString(data.previousWorkName);
   const workName = nonEmptyString(data.workName);
   return previousWorkName && workName

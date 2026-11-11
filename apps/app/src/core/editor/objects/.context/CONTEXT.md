@@ -26,3 +26,13 @@ selected plain code fence takes the caret to its start and always consumes the k
 because Enter reaching the base keymap would split the block. A fence isn't an object,
 so that binding sits at `block` scope; the arrow walk does too, because walking onto
 an object starts from the prose beside it.
+
+## Selection details
+
+Esc and printable input step over an opaque object to the next writable position. A
+press or drop beside a fence is not a dead end: its facing edge takes the caret when
+no prose is on the other side. An adjacent object of the same type takes a restored
+node selection; the ring shows it. A newly created object may open ready to edit,
+while an existing one shows its state. A structural drop must resolve inside a cell
+rather than manufacture a column. `typeBesideObjectTransaction` inserts beside a
+selected object.

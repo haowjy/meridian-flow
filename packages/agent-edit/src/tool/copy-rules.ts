@@ -1,4 +1,4 @@
-// Cross-field rules for `from`, the source of a block copy or a document copy (D23, D24, D49).
+// Cross-field rules for `from`, the source of a block copy or a document copy.
 //
 // They run inside the `write` contract (`superRefine`) beside the selector
 // rule, and the field descriptions state them, since refinements don't export

@@ -17,7 +17,7 @@
  * cap, the internal scroll, the fades on the list's own edges, the
  * announcement the caret's own element has to carry — is one behavior both
  * menus share, so neither lane can drift from the other on a Radix upgrade
- * (§5.7's height ruling).
+ * (§5.7's height rule).
  *
  * A row a lane cannot take is shown greyed rather than hidden, with the reason
  * in `note` (law 5: absent beats disabled, disabled beats dead, and a writer

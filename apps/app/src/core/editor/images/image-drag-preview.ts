@@ -3,7 +3,7 @@
  *
  * A writer who clicked a big uploaded screenshot and then dragged it got the
  * picture at its FULL NATURAL SIZE following the pointer, covering the paragraph
- * they were aiming at (human ruling, 2026-07-30: keep the drag, lose the ghost).
+ * they were aiming at.
  *
  * Two different things produce a preview, and which one depends on where the
  * browser decides the drag started:

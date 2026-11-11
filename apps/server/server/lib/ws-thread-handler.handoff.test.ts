@@ -1,7 +1,7 @@
 /** Ordered and cancellable socket handoff over the real journal hub.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - One replaceable lease per subscribed thread (kb/decisions/concurrent-safety/journal/committed-thread-journal-delivery.md)
+ * - One replaceable lease per subscribed thread (kb/wiki/architecture/thread-event-journal.md#committed-events-cross-ordered-handoffs)
  */
 
 import type { WsServerMessage } from "@meridian/contracts/protocol";

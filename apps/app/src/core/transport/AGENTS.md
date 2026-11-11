@@ -1,8 +1,7 @@
 # core/transport — Client transport seams
 
-Browser transport primitives for collaborative documents and thread socket adapters.
-The thread socket client lives in `@meridian/thread-client`; `TransportProvider` owns
-the app composition.
+Browser transport for collaborative documents and thread socket adapters. The
+thread socket client lives in `@meridian/thread-client`.
 
 - The outbox listener registers on the `Y.Doc` before `HocuspocusProvider` is
   constructed, and only its empty-to-pending edge publishes. Moving the registration

@@ -2,52 +2,31 @@
 
 Export reads live documents, not Work drafts. A request captures the inventory,
 canonical addresses and ahead settlements before reading any content. Layout
-and link spelling use that captured identity map for the entire ZIP, even if
-files move while it streams.
+and link spelling use that captured identity map for the whole ZIP, even if
+files move while it streams. Mechanism, routes and preview:
+[.context/CONTEXT.md](.context/CONTEXT.md).
 
-- Documents arrive in tree order: sources by canonical address, each walked depth first with
-  every folder's children in the project's sibling order (the shared
-  `compareCatalogSiblings`, from `export-inventory.ts`). `buildExportLayout` does not sort
-  documents: the first sibling to claim a name keeps it, and the ZIP streams in that order.
-- `ports/` owns the inventory boundary; the Drizzle adapter takes a short
-  repeatable-read snapshot, not a transaction spanning a download.
-- The service filters through file policy and live manifest membership.
-  Archived Work files remain readable and are included when selected.
-- ZIP output is incremental, with browser/network backpressure. A stored binary is
-  piped from `ObjectStorePort.getStream` into its zip entry, so a 200 MiB file costs
-  a chunk, not its size; never gather a file's or the project's bytes.
-- A stored file is opened before its zip entry is added. One the store reports `not_found`
-  is left out and named in `Missing files.txt` at the zip's root; any other failure cuts
-  the connection. fflate has no ZIP64, so `download` refuses (413, plain message) when the
-  stored sizes in the snapshot add up to near 4 GiB, rather than send a corrupt zip.
-- Ordinary/model serialization must never use the export codec. Export owns
-  `ExportLinkScope` (archive spelling, beside `export-layout`) and reads
-  through its `ExportDocumentReader` port, adapted from Collab's explicit
-  export read door in `lib/compose.ts`; Collab owns the codec, not archive policy.
-- The snapshot adapter reads canonical addresses through Context's public
-  index (`loadDocumentAddresses`), never its private adapters.
-- The export codec writes wiki-style literals verbatim (wikilinks and
-  embeds, callout markers, footnote references and definitions) so the
-  exported folder reopens in a Markdown note app; everything else that could form a link stays escaped.
-  Reparsing an export must find exactly the document's links.
-- The visible `meridian-export.json` marker carries `formatVersion`, `areas`,
-  `works`, and the count of internal link occurrences excluded from the export.
-  Its shape, filename, default area names and the one parser live in
-  `packages/contracts/src/export-marker.ts`; import (server and app) reads it
-  through that parser.
+- Documents stream in tree order (project sibling order, `compareCatalogSiblings`
+  from `@meridian/resource-replica`, applied in
+  `../context/tree/export-inventory.ts`). `buildExportLayout` does not sort: the
+  first sibling to claim a name keeps it.
+- The snapshot adapter takes a short repeatable-read snapshot, never a transaction
+  spanning a download. It reads canonical addresses through Context's public
+  index (`loadDocumentAddresses`), not its private adapters.
+- The service filters through file policy and live manifest membership. Archived
+  Work files stay readable and are included when selected.
+- Never gather a file's or the project's bytes: a stored binary is piped from
+  `ObjectStorePort.getStream` into its zip entry.
+- Ordinary and model serialization must never use the export codec. Export owns
+  `ExportLinkScope` and reads through `ExportDocumentReader`, adapted from
+  Collab's export read door in `lib/compose.ts`; Collab owns the codec, not
+  archive policy.
+- The export codec writes wiki-style literals verbatim (wikilinks, embeds, callout
+  markers, footnotes) so the folder reopens in a Markdown note app; everything else
+  that could form a link stays escaped. Reparsing an export must find exactly the
+  document's links.
+- The `meridian-export.json` marker's shape, filename, default area names and
+  parser live in `packages/contracts/src/export-marker.ts`; import (server and
+  app) reads it through that parser.
 
-Project export is one session-authenticated GET `/api/projects/:id/export.zip`
-with `scratch=0|1&uploads=0|1`. Every request rechecks document/Work file policy,
-freezes the paths, and streams. There is no ticket, prepared state or process
-lifetime dependency. Marker counts come from the streamed serialization pass.
-GET `/api/projects/:id/export/preview` returns advisory current-state outside-link
-and unapplied-draft counts. It runs the same `ExportLinkScope` pass the ZIP
-uses over current collab content rather than `document_links`: those rows are a
-lagging certified-cut hint, omit ref-less internal hrefs, and would need a second
-outside-link classifier (settlements, ahead paths, contextual hrefs) that could
-drift from the export. The request's abort signal stops that pass between
-documents, so a superseded or closed-dialog preview does not keep reading. Preview
-and download can differ when content changes. Browser owns download progress/failure; preview errors
-belong in the dialog and do not prevent Export.
-
-See [`.context/TODO.md`](.context/TODO.md) for deferred export work.
+Deferred work: [TODO](.context/TODO.md).

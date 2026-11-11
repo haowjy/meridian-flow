@@ -331,7 +331,7 @@ it("carries what a copied link names across the clipboard", async () => {
   const uploadSerialized = uploadSource.view.serializeForClipboard(uploadSource.state.doc.slice(0));
   uploadSource.destroy();
   // A completed upload copied before the catalog holds it: the clipboard
-  // carries its recorded `asset:` identity with no address (decision L42).
+  // carries its recorded `asset:` identity with no address.
   const early = pictureEditor("project-a", []);
   registerImageIngressHost(early, {
     upload: async () => ({ src: `asset:${UPLOAD}`, alt: null }),
