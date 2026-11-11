@@ -67,7 +67,7 @@ export function MainHeader({
               disabled={!onNewDocument}
               title={!onNewDocument ? t`Open a Work to create an Untitled document` : undefined}
               aria-label={t`New document`}
-              className="focus-ring-inset relative isolate grid size-8 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-0 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
+              className="focus-ring relative isolate grid size-8 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-0 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
             >
               <Plus className="size-3.5" aria-hidden />
             </button>

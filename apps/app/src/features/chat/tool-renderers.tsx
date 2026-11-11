@@ -155,7 +155,7 @@ function GrepHit({ row }: { row: GrepHitRow }) {
               event.stopPropagation();
               setOpen((wasOpen) => !wasOpen);
             }}
-            className="focus-ring mt-[var(--chat-space-inline)] inline-flex items-center gap-[var(--chat-space-inline)] rounded-sm text-xs text-muted-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text focus-visible:text-jade-text focus-visible:decoration-jade-text"
+            className="focus-ring focus-ring-outside mt-[var(--chat-space-inline)] inline-flex items-center gap-[var(--chat-space-inline)] rounded-sm text-xs text-muted-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text focus-visible:text-jade-text focus-visible:decoration-jade-text"
           >
             {moreMatchesLabel(rest.length)}
             <ChevronRight
