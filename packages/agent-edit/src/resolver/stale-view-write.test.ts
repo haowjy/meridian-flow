@@ -8,8 +8,7 @@
  * writer's, since Yjs orders concurrent inserts at one place by client id.
  *
  * Pins implementation decisions: a model change to text the writer has since deleted is
- * skipped; a flat paragraph whose formatting the model changed, and every block that is not
- * flat text, is lowered as without a room (`write-architecture.md`). The quote and list
+ * skipped; a block that is not flat text is lowered as without a room (`write-architecture.md`). The quote and list
  * rows give `main`'s result.
  */
 

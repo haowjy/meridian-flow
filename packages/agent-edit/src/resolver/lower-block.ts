@@ -63,11 +63,13 @@ export function lowerBlock(
   let skipped = 0;
 
   const attrs = changedAttrs(ctx.codec, before, after);
-  if (Object.keys(attrs).length > 0) {
-    if (current && model.roomNodeRemoved(block, [], current)) skipped += 1;
-    else ops.push({ kind: "attrs", path: [], attrs });
+  const changesText = !before.content.eq(after.content);
+  // A block the room removed has no target for any change: it counts once.
+  if (current && (changesText || Object.keys(attrs).length > 0)) {
+    if (model.roomNodeRemoved(block, [], current)) return { ops, skipped: 1 };
   }
-  if (!before.content.eq(after.content)) {
+  if (Object.keys(attrs).length > 0) ops.push({ kind: "attrs", path: [], attrs });
+  if (changesText) {
     const removed = current ? model.roomTextblock(block, [], current) : [];
     const text = lowerText(before, after, removed, placed);
     skipped += text.skipped;
@@ -116,7 +118,7 @@ function lowerText(
   const deadBefore = new Uint32Array(size + 1);
   for (let at = 0; at < size; at += 1) deadBefore[at + 1] = deadBefore[at] + dead[at];
   const deadIn = (from: number, to: number) => deadBefore[to] - deadBefore[from];
-  // The block's own edges survive: the block is still there.
+  // The block's own edges survive: a removed block was dealt with above.
   const alive = (unit: number) => unit < 0 || unit >= size || dead[unit] === 0;
 
   /** The model's changes inside base [bLo, bHi) and model [tLo, tHi), by token diff. */

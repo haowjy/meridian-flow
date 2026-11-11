@@ -277,9 +277,9 @@ function invalidOp(message: string): EditOpsResult {
 function opProblem(node: Y.XmlElement, op: EditOp): string | undefined {
   if (op.kind === "attrs") return undefined;
   const children = node.toArray();
-  if (node.nodeName === "code_block" || children.length > 1 || !children.every(isXmlText))
-    return "text edits require one flat run of text";
-  const size = node.length === 0 ? 0 : (children[0] as Y.XmlText).length;
+  if (node.nodeName === "code_block" || !children.every(isXmlText))
+    return "text edits require flat text";
+  const size = children.reduce((sum, run) => sum + (run as Y.XmlText).length, 0);
   let cursor = 0;
   for (const { from, to, content } of op.splices) {
     if (from < cursor || to < from || to > size) return `invalid splice ${from}..${to} of ${size}`;
@@ -300,20 +300,36 @@ function isXmlText(child: unknown): child is Y.XmlText {
   return child instanceof Y.XmlText;
 }
 
+/** Units are addressed across the element's consecutive text runs, as `roomTextblock` reads them. */
 function applyTextOp(leaf: Y.XmlElement, op: Extract<EditOp, { kind: "text" }>): void {
   if (leaf.length === 0) leaf.insert(0, [new Y.XmlText()]);
-  const text = leaf.get(0) as Y.XmlText;
+  const runs: Array<{ text: Y.XmlText; start: number }> = [];
+  let start = 0;
+  for (const child of leaf.toArray() as Y.XmlText[]) {
+    runs.push({ text: child, start });
+    start += child.length;
+  }
   // Formats don't move offsets, so they go first.
   for (const { from, to, mark, attrs } of op.formats)
-    text.format(from, to - from, { [mark]: attrs });
+    for (const run of runs) {
+      const lo = Math.max(from, run.start);
+      const hi = Math.min(to, run.start + run.text.length);
+      if (lo < hi) run.text.format(lo - run.start, hi - lo, { [mark]: attrs });
+    }
   // Right to left, so earlier offsets stay where they were planned. Each splice deletes, then
   // inserts after its deleted units, as the editor's binding places a replacement.
   for (const { from, to, content } of [...op.splices].reverse()) {
-    if (to > from) text.delete(from, to - from);
-    let offset = from;
+    for (const run of [...runs].reverse()) {
+      const lo = Math.max(from, run.start);
+      const hi = Math.min(to, run.start + run.text.length);
+      if (lo < hi) run.text.delete(lo - run.start, hi - lo);
+    }
+    // The first run that reaches the offset, so an insert at a boundary joins the earlier run.
+    const target = runs.find((run) => from <= run.start + run.text.length) ?? runs[runs.length - 1];
+    let offset = from - target.start;
     content.forEach((node) => {
       const attributes = Object.fromEntries(node.marks.map((mark) => [mark.type.name, mark.attrs]));
-      text.insert(offset, node.text ?? "", attributes);
+      target.text.insert(offset, node.text ?? "", attributes);
       offset += node.text?.length ?? 0;
     });
   }
