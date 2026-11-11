@@ -1,5 +1,5 @@
 diff --git a/dist/cjs/index.cjs b/dist/cjs/index.cjs
-index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..7d3614ba367a1160ea1b620f2009b662ded128fc 100644
+index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..cc344b9f4edfa7a45203726af75bea220b21a46a 100644
 --- a/dist/cjs/index.cjs
 +++ b/dist/cjs/index.cjs
 @@ -142,6 +142,7 @@ function createHistory(opts) {
@@ -26,7 +26,7 @@ index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..7d3614ba367a1160ea1b620f2009b662
  	let skipBlockerNextPop = false;
  	let ignoreNextBeforeUnload = false;
  	const getLocation = () => currentLocation;
-@@ -206,8 +214,24 @@ function createBrowserHistory(opts) {
+@@ -206,8 +214,26 @@ function createBrowserHistory(opts) {
  		next = void 0;
  		rollbackLocation = void 0;
  	};
@@ -38,6 +38,8 @@ index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..7d3614ba367a1160ea1b620f2009b662
 +		if (sameEntry(actual, currentLocation)) return;
 +		const delta = currentLocation.state[stateIndexKey] - actual.state[stateIndexKey];
 +		if (delta === 0) return Promise.resolve(false);
++		// An entry this router did not write (no index, another build's) or a distance the stack cannot hold: go() would reload or leave the page.
++		if (!Number.isInteger(delta) || Math.abs(delta) >= win.history.length) return;
 +		let finish;
 +		const promise = new Promise((resolve) => { finish = resolve; });
 +		restoration = { source: currentLocation, promise, finish };
@@ -51,7 +53,7 @@ index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..7d3614ba367a1160ea1b620f2009b662
  		const hasPendingAction = !!next;
  		if (!hasPendingAction) rollbackLocation = currentLocation;
  		currentLocation = parseHref(destHref, state);
-@@ -219,17 +243,32 @@ function createBrowserHistory(opts) {
+@@ -219,17 +245,32 @@ function createBrowserHistory(opts) {
  		if (!hasPendingAction) queueMicrotask(() => flush());
  	};
  	const onPushPop = (type) => {
@@ -88,7 +90,7 @@ index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..7d3614ba367a1160ea1b620f2009b662
  		const isForward = delta === 1;
  		const isBack = delta === -1;
  		const isGo = !isForward && !isBack || nextPopIsGo;
-@@ -243,19 +282,23 @@ function createBrowserHistory(opts) {
+@@ -243,19 +284,23 @@ function createBrowserHistory(opts) {
  		else {
  			const blockers = _getBlockers();
  			if (typeof document !== "undefined" && blockers.length) {
@@ -122,7 +124,7 @@ index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..7d3614ba367a1160ea1b620f2009b662
  		history.notify(notify);
  	};
  	const onBeforeUnload = (e) => {
-@@ -310,7 +353,10 @@ function createBrowserHistory(opts) {
+@@ -310,7 +355,10 @@ function createBrowserHistory(opts) {
  		},
  		createHref: (href) => createHref(href),
  		flush,
@@ -174,7 +176,7 @@ index a4ea04442bdc4a09bd8cc8066d679ee71356c12b..24031067526a00a51061e06b77075ecd
      onBlocked?: () => void;
      getBlockers?: () => Array<NavigationBlocker>;
 diff --git a/dist/esm/index.js b/dist/esm/index.js
-index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..707010067bf1c753a29370f87cc0b04cba6aa443 100644
+index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..e634ad26690ed867ac50ee7545d7d9c58b6d070b 100644
 --- a/dist/esm/index.js
 +++ b/dist/esm/index.js
 @@ -141,6 +141,7 @@ function createHistory(opts) {
@@ -201,7 +203,7 @@ index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..707010067bf1c753a29370f87cc0b04c
  	let skipBlockerNextPop = false;
  	let ignoreNextBeforeUnload = false;
  	const getLocation = () => currentLocation;
-@@ -205,8 +213,24 @@ function createBrowserHistory(opts) {
+@@ -205,8 +213,26 @@ function createBrowserHistory(opts) {
  		next = void 0;
  		rollbackLocation = void 0;
  	};
@@ -213,6 +215,8 @@ index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..707010067bf1c753a29370f87cc0b04c
 +		if (sameEntry(actual, currentLocation)) return;
 +		const delta = currentLocation.state[stateIndexKey] - actual.state[stateIndexKey];
 +		if (delta === 0) return Promise.resolve(false);
++		// An entry this router did not write (no index, another build's) or a distance the stack cannot hold: go() would reload or leave the page.
++		if (!Number.isInteger(delta) || Math.abs(delta) >= win.history.length) return;
 +		let finish;
 +		const promise = new Promise((resolve) => { finish = resolve; });
 +		restoration = { source: currentLocation, promise, finish };
@@ -226,7 +230,7 @@ index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..707010067bf1c753a29370f87cc0b04c
  		const hasPendingAction = !!next;
  		if (!hasPendingAction) rollbackLocation = currentLocation;
  		currentLocation = parseHref(destHref, state);
-@@ -218,17 +242,32 @@ function createBrowserHistory(opts) {
+@@ -218,17 +244,32 @@ function createBrowserHistory(opts) {
  		if (!hasPendingAction) queueMicrotask(() => flush());
  	};
  	const onPushPop = (type) => {
@@ -263,7 +267,7 @@ index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..707010067bf1c753a29370f87cc0b04c
  		const isForward = delta === 1;
  		const isBack = delta === -1;
  		const isGo = !isForward && !isBack || nextPopIsGo;
-@@ -242,19 +281,23 @@ function createBrowserHistory(opts) {
+@@ -242,19 +283,23 @@ function createBrowserHistory(opts) {
  		else {
  			const blockers = _getBlockers();
  			if (typeof document !== "undefined" && blockers.length) {
@@ -297,7 +301,7 @@ index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..707010067bf1c753a29370f87cc0b04c
  		history.notify(notify);
  	};
  	const onBeforeUnload = (e) => {
-@@ -309,7 +352,10 @@ function createBrowserHistory(opts) {
+@@ -309,7 +354,10 @@ function createBrowserHistory(opts) {
  		},
  		createHref: (href) => createHref(href),
  		flush,
