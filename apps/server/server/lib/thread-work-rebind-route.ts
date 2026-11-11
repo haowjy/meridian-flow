@@ -74,10 +74,7 @@ export async function handleRebindThreadWorkRequest(
   try {
     const claimed = await deps.runClaim.withExclusiveThread(thread.id, () =>
       deps.transaction(async () => {
-        return switchThreadWork(deps, {
-          threadId: thread.id,
-          workId,
-        });
+        return switchThreadWork(deps, { threadId: thread.id, workId }, "writer");
       }),
     );
     if (!claimed) {

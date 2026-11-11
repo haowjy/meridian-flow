@@ -1,8 +1,8 @@
 /**
  * The review projection: one `BlockDiff` read as the changes a writer reviews.
  *
- * Hunks join into a change when only a short run of unchanged words separates them (`CHANGE_MARGIN`,
- * D1), across paragraph breaks. A block removed in one place and added in another pairs as a move and
+ * Hunks join into a change when only a short run of unchanged words separates them (`CHANGE_MARGIN`),
+ * across paragraph breaks. A block removed in one place and added in another pairs as a move and
  * joins both places into one group, so Apply and Discard can never take half of a move. Each group
  * carries a content-derived id, the draft positions the editor decorates, and a short excerpt.
  *

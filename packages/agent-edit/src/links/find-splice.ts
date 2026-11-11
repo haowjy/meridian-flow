@@ -1,7 +1,7 @@
 /**
  * Restoring link identity outside a find splice (contract §5.4).
  *
- * The formatted find path splices written Markdown into the serialized block
+ * The find path splices written Markdown into the serialized block
  * group and reparses the whole group, which rebuilds every link in the group
  * from text. Occurrences entirely before or after the splice are the ones the
  * write did not touch: each takes its old twin's attrs verbatim. Only the

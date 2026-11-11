@@ -435,7 +435,7 @@ export interface WriteLinkAssigner {
   /** Assign refs to the nodes written over `old` (empty for an insert or a create). */
   assignSpan(old: readonly PMNode[], written: readonly PMNode[]): PMNode[];
   /**
-   * Assign refs in a formatted find's parsed spliced group: occurrences outside the
+   * Assign refs in a find's parsed spliced group: occurrences outside the
    * splice keep their old attrs, only the inside ones are assigned (§5.4).
    */
   assignSplice(input: Omit<SpliceRestoreInput, "assignOccurrences">): PMNode[];

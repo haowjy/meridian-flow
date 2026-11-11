@@ -63,7 +63,7 @@ before that release deploys. Releases before it run on either image.
 1. **Back up first.** Take a dump or a platform snapshot of the database you can restore from.
 2. **Build and publish the image.** Railway pulls a database image from a registry, so push
    the image built from `tools/postgres/Dockerfile` to one Railway can reach. Per
-   [release promotion](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/hosting/release-promotion.md),
+   [release promotion](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/hosting.md#releases-promote-the-same-images-from-staging-to-production),
    the release pipeline builds that file and promotes it by digest.
 3. **Change only the image.** Stay on Postgres 16 and keep the existing data volume. A major
    version change or a new, empty service means a dump and restore instead.
@@ -85,8 +85,9 @@ drain, run both commands above, then start the new release. If a migration fails
 fix the cause and rerun it with writers still stopped; never restart the old
 release on a partly migrated schema. Current stop-the-writers ranges: 0075–0081
 (draft review conversion), 0082–0083 (owner handles), 0090–0092 (branch
-tree ownership), 0111–0112 (multi-question asks) and 0113–0114 (unused pricing fields:
-the old release reads and writes the dropped column), and 0125 (folder document alias).
+tree ownership), 0111–0112 (multi-question asks), 0113–0114 (unused pricing fields:
+the old release reads and writes the dropped column), 0125–0126 (folder document alias; upload intake columns), 0129 (`push_lineage` and
+connector columns), 0130 (ordered folders) and 0131 (No Work branches).
 
 ## Environment variables
 

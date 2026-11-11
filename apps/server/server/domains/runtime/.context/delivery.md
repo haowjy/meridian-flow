@@ -143,10 +143,10 @@ The removal notice turn owns the decisions it reports, so a decision and its
 explanation fall on the same side of any fork cutoff. Blocks retain identity, never
 bytes or inclusion state.
 
-[kb-delivery]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/runtime-delivery-and-run-claim.md
-[kb-run-prep]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/run-preparation-protocol.md
-[kb-run-identity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/run-identity.md
-[kb-run-state]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/client/run-state-record.md
-[kb-stop]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/composer/stop-hands-back-waiting-messages.md
-[kb-graph]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/turns/conversation-and-graph-reads.md
-[kb-forget]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/turns/forgotten-failed-attempt.md
+[kb-delivery]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/runtime.md#one-delivery-boundary-and-one-run-claim
+[kb-run-prep]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/runtime.md#preparing-a-run-select-prepare-validate-commit
+[kb-run-identity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/runtime.md#run-identity-is-written-once-by-the-server
+[kb-run-state]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/sync.md#one-run-state-record-per-chat
+[kb-stop]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/composer-and-queue.md
+[kb-graph]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/turns.md
+[kb-forget]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/turns.md

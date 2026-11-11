@@ -84,7 +84,7 @@ export interface ToolWiringDeps {
   branches: Pick<CollabBranches, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
-  /** Binary copies duplicate the stored object (D24). */
+  /** Binary copies duplicate the stored object. */
   objectStore: ObjectStorePort;
   /** Deletes the duplicate when the copy's destination write fails. */
   release: ObjectRelease;
@@ -94,11 +94,11 @@ export interface ToolWiringDeps {
   documentRemovals: DocumentRemovals;
   /** Retained project Trash, used to confirm a history-resolved missing document still exists. */
   documentTrash: Pick<DocumentTrash, "retained">;
-  /** The calling thread's bound skills, read as files under `skills://` (D52). */
+  /** The calling thread's bound skills, read as files under `skills://`. */
   agentRevisions: SkillFilesDeps["agentRevisions"];
   /** The calling thread's delegation chain, read fresh per call (file-access §8). */
   readAgentChain(threadId: ThreadId): Promise<AgentChain>;
-  /** The chain's effective permission, for the action policy (D39). */
+  /** The chain's effective permission, for the action policy. */
   readChainPermission(threadId: ThreadId): Promise<AgentPermission>;
   /**
    * Links shown to the model, per thread and document; writes bind to them

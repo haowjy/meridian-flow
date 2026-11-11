@@ -30,7 +30,7 @@
  *     structured error, output extracted directly.
  *
  * A refusal (`MeridianError`) reaches the model as its message and code, never
- * as JSON (D65); the typed error stays on `result`. Any other result is the
+ * as JSON; the typed error stays on `result`. Any other result is the
  * registration's `renderResult` text, or the value itself.
  *
  * Either return shape may carry `shown`, the host-only shown-link candidates

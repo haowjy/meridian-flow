@@ -2,7 +2,7 @@
  * Chat scratch owner behavior.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - chat Scratch ownership (kb/decisions/work/model/lineage-scratch.md)
+ * - chat Scratch ownership (kb/wiki/product/work/scratch.md)
  */
 import { describe, expect, it } from "vitest";
 import { chatScratchOwner } from "./chat-scratch-owner";

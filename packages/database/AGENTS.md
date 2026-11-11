@@ -23,8 +23,7 @@ transaction propagation live in the server.
 - `db:migrate` owns migration application and function sync; run the guarded
   `db:apply-functions` alone only when function sync is the whole operation.
   Divergent applied history is a refusal, not a skip.
-- Before launch, resetting a dev database is a standing option. Reset only the
-  current checkout's own database.
+- Reset only the current checkout's own database.
 - Application repositories and projectors maintain rollup columns; the thread
   activity projection is the one trigger-maintained rollup. Triggers on draft
   journal and edit-receipt inserts run inside a writer keystroke's row lock:

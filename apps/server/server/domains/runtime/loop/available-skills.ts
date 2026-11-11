@@ -2,7 +2,7 @@
  * User slash catalog (installed packages ∪ account), model-available catalog
  * (Agent available), preloaded skill bodies (Agent load), and the thread's
  * bound and user-invoked skills with the facts `skillLevel` reads
- * `skills://` by (D52, D64).
+ * `skills://` by.
  */
 import type { RetainedSkillReference } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
@@ -103,7 +103,7 @@ interface ThreadSkills {
 
 /**
  * Every skill the thread's binding names (`load` and `available`) and every
- * packaged skill its user invoked (D64), from one binding read (D52). A slug
+ * packaged skill its user invoked, from one binding read. A slug
  * both bound and invoked keeps the binding's reference. Empty when the thread
  * has no binding.
  */
@@ -137,7 +137,7 @@ export async function readThreadSkills(
   };
 }
 
-/** Whether a thread can see a skill at all, so it is offered the `skill` tool (D64). */
+/** Whether a thread can see a skill at all, so it is offered the `skill` tool. */
 export function bindingNamesSkills(
   binding: Pick<AgentRevisionBinding, "configuration" | "invokedSkills">,
 ): boolean {
@@ -176,7 +176,7 @@ export function unavailableActivatedSkillSlugs(
 
 /**
  * A writer `/skill` body. Invoking a packaged skill pins it on the thread
- * (D64), so its files are readable for the rest of the thread and its header
+ *, so its files are readable for the rest of the thread and its header
  * names `skills://`. An account-install skill has no files: body only.
  */
 export async function loadUserSkillBody(input: {

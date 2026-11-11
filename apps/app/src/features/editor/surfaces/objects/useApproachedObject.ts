@@ -75,7 +75,7 @@ export function useApproachedObject(
   }, [chrome, editor, holdHovered]);
 
   // `object` is a selected diagram or image; `source-block` is a caret inside a
-  // plain fence, which ruling 15 gives the same persistent chip cluster.
+  // plain fence, which gets the same persistent chip cluster.
   const selectedPos =
     context.owner === "object" || context.owner === "source-block" ? context.pos : null;
   // Re-taken on every change rather than remembered: the selection is the

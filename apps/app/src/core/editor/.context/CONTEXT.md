@@ -314,8 +314,10 @@ keyboard, pointer, drop, or draft-recovery answer.
   that inside code`). A picture over a fence is refused (`Can’t put a picture
   inside code`) and a tree row too (`Can’t mention inside code`), each with no
   caret. Inline code is not a fence: a tree row or picture there snaps to the
-  span's edge; a text slice stays in the span. A file that is not a picture
-  shows `Only pictures can be dropped here` while dragging. A drop never changes
+  span's edge; a text slice stays in the span. A dragged file over a fence is
+  refused (`Can’t put a file inside code`); a file the editor can't place shows
+  `A file can’t go there.` while dragging, and a picture that can't stand at the
+  caret shows `A picture cannot go there.` A drop never changes
   the rows or columns of any table (nested ones too) or spills out of its cell.
   One that would is refused: `Can’t put that in a
   table cell` when it lands in a cell, `Can’t move part of a table` when a

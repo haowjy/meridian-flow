@@ -485,7 +485,7 @@ export function createRunSessions(deps: {
         const [persisted, firstTurn, thread] = await Promise.all([
           deps.repos.turns.findById(input.replyTurnId),
           deps.repos.turns.findById(prepared.executionTurnId),
-          // A Retry is a new reply, so it runs in the chat's current mode (D62).
+          // A Retry is a new reply, so it runs in the chat's current mode.
           deps.repos.threads.findById(input.threadId),
         ]);
         return (

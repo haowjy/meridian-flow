@@ -1,5 +1,5 @@
 /**
- * A draft room as a delivery recipient (decision D26), over the real gateway hooks and the
+ * A draft room as a delivery recipient, over the real gateway hooks and the
  * real Hocuspocus room lifecycle: each room loads through `createDocument`, the call a socket
  * connection makes, and each frame goes through the gateway's `admitWriterSync`, which asks for
  * the `1008` close a refused frame gets.
@@ -9,7 +9,7 @@
  * - `dropped-delivery`: the delivery of a pull is dropped on purpose; the next frame finds its
  *   room behind, reconciles it, and is admitted with no `1008`.
  * - `read-only-handshake`: the same dropped delivery, then a tab that may only read joins; its
- *   SyncStep1, run through Hocuspocus's own sync receiver, reconciles the room first (D27), so
+ *   SyncStep1, run through Hocuspocus's own sync receiver, reconciles the room first, so
  *   the tab receives the committed text with no keystroke anywhere.
  */
 

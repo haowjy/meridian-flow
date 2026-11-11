@@ -5,7 +5,7 @@
  * an infrastructure failure rolls back the whole answer.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - durable permission requests execute in a savepoint of the answer transaction (kb/decisions/agents/tools/ask-settles-the-run.md)
+ * - durable permission requests execute in a savepoint of the answer transaction (kb/wiki/architecture/agents/tools.md)
  */
 
 import { randomUUID } from "node:crypto";

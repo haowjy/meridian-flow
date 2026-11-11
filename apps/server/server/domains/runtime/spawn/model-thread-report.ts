@@ -49,7 +49,7 @@ export async function readModelThreadReport(input: {
 }
 
 /**
- * The model's text for a `thread_report` result (D8): the report as history
+ * The model's text for a `thread_report` result: the report as history
  * shows it, then the running or unavailable line. The typed result stays
  * beside it for the app and code mode.
  */

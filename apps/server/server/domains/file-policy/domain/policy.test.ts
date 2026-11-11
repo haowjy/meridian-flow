@@ -2,9 +2,9 @@
  * Tests policy behavior.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - File lifecycle and scheme access exceptions (kb/decisions/documents/access/file-access-policy.md)
+ * - File lifecycle and scheme access exceptions (kb/wiki/architecture/documents/access.md)
  * - Draft routing and Work caps
- * - Skill admission channels (kb/decisions/agents/tools/skills-as-files.md)
+ * - Skill admission channels (kb/wiki/architecture/agents/definitions.md)
  */
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { describe, expect, it } from "vitest";
@@ -86,7 +86,7 @@ describe("file policy", () => {
     ["a stranger gets nothing", { accountId: "stranger" }, file("manuscript"), "none", "not_found"],
     ["a deleted document is gone", person, file("manuscript", null, { deleted: true }), "none", "not_found"],
     ["a deleted project is gone", person, file("kb", null, { projectDeleted: true }), "none", "not_found"],
-    // A draft that outlived its document's live delete opens its draft destination only (D79).
+    // A draft that outlived its document's live delete opens its draft destination only.
     ["a surviving draft stays writable", person, file("manuscript", null, { deleted: true, survivingDraft: true, target: { kind: "draft", documentId: "doc", owner: { kind: "work", workId: "a" } }, branchOwner: ownerFacts(A) }), "edit", null],
     ["a surviving draft opens nothing live", person, file("manuscript", null, { deleted: true, survivingDraft: true, branchOwner: ownerFacts(A) }), "none", "not_found"],
     ["a surviving draft of a deleted project is gone", person, file("manuscript", null, { deleted: true, survivingDraft: true, projectDeleted: true, target: { kind: "draft", documentId: "doc", owner: { kind: "work", workId: "a" } }, branchOwner: ownerFacts(A) }), "none", "not_found"],
@@ -142,7 +142,7 @@ describe("file policy", () => {
     expect(live.level).toBe("edit");
     const frozen = decide(...drafting(archived), ownerGrants);
     expect([frozen.level, frozen.limitedBy]).toEqual(["read", "work_archived"]);
-    // Scratch and uploads stay live in draft mode (D9).
+    // Scratch and uploads stay live in draft mode.
     const [principal] = drafting(archived);
     expect(decide(principal, file("scratch", A), ownerGrants).destination).toEqual({
       kind: "live",

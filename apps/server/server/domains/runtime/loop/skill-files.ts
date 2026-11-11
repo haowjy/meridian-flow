@@ -1,7 +1,7 @@
 /**
- * Skill files under `skills://` (D52): the read-only folders of the skills an
+ * Skill files under `skills://`: the read-only folders of the skills an
  * agent's own binding offers it, and of the skills its user invoked in the
- * thread (D64). `skills://` is model-facing only; it is not a context scheme,
+ * thread. `skills://` is model-facing only; it is not a context scheme,
  * so the writer's file tree, catalog and routes never see it.
  *
  * `skills://<skill>/<path>` names a file in the skill's package folder. A
@@ -49,7 +49,7 @@ export interface SkillListing {
 /**
  * The header over a skill file's text: its address, and the folder its
  * relative paths start from. Shared by `read`, `skill`, and preloaded or
- * activated bodies the model can read (D58).
+ * activated bodies the model can read.
  */
 export function skillFileHeader(skill: string, path: string): string {
   const folder = `${SKILLS_URI_ROOT}${skill}/`;

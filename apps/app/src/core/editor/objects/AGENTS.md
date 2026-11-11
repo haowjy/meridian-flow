@@ -1,51 +1,34 @@
 # core/editor/objects — registration-driven object physics
 
-This directory answers what an editor object is, how it is selected, where
-keys apply, and whether Enter engages a surface. It is headless; object
-surfaces, dialogs, and block-drag UI live in features.
+What an editor object is, how it is selected, where keys apply, and whether Enter
+engages a surface. Headless; object surfaces, dialogs and block-drag UI live in
+features.
 
-## Mental model
+`EDITOR_OBJECT_TYPES` is the only object-ness and physics authority: never branch on
+a node type elsewhere. A row also drives selection, pointer refusal, arrow walk,
+Escape, drag mode and chrome context. Diagram rows are generated from the provider
+catalog. Tables are selected with the full-cell `CellSelection` spelling that
+`selectedObject` consumes; other objects use `NodeSelection`.
 
-`EDITOR_OBJECT_TYPES` is the sole object-ness and physics authority. A row names
-the node/registration ID, body mode (`text`, `block-drag`, or `inline-drag`),
-engagement, surface fields, and optional matches predicate. Diagram rows are
-generated from the provider catalog. Never branch on a node type elsewhere.
-
-The row also drives selection, pointer refusal, arrow walk, Escape, drag mode,
-and resolved chrome context. `NodeSelection` selects ordinary objects;
-tables use the full-cell `CellSelection` spelling consumed by
-`selectedObject`.
-
-## Rules
-
-- Surface-bearing rows register their engagement handler by registration ID,
-  not node type. Enter and double-click use the same engagement door; a newly
-  created object may open ready to edit, while an existing one shows its state.
-  A row's `clickEngages` lets a click use that door too: a capped picture opens
-  on click, because the page is showing less than the picture has. Every other
-  object, a picture shown whole included, only selects.
-- Object keymaps register with Chrome's scope and `appliesTo`; they do not
-  inspect selection again or create a priority-based TipTap extension.
-- A pointer on a non-editable object body selects on press so hidden source is
-  never exposed. Inline-drag rows opt out so native inline dragging remains
-  possible. Click selection still uses ProseMirror's normal mouse path.
-- Selection rings are decorations derived from current selection. Node-view
+- Surface-bearing rows register their engagement handler by registration ID, not
+  node type. Enter and double-click share one engagement door; `clickEngages` lets a
+  click use it too (a capped picture opens on click). Every other object only
+  selects.
+- Object keymaps register with Chrome's scope and `appliesTo`; they don't inspect the
+  selection again or create a priority-based TipTap extension.
+- A press on a non-editable object body selects, so hidden source is never exposed.
+  Inline-drag rows opt out so native inline dragging works.
+- Selection rings are decorations derived from the current selection. Node-view
   `selectNode`/`deselectNode` cannot survive a remote whole-document rebuild.
-- A rebuild restores a node selection by position alone. When it lands on a
-  different node type, the object has gone and physics turns it into a caret,
-  because a keystroke would replace the text it landed on. An adjacent object
-  of the same type takes the selection: the ring shows it.
-- The arrow walk lands on an object or prose, never inside an opaque rendered
-  body. Esc and printable input step over an opaque object to the next writable
-  position; a dead end is a refusal rather than a backward jump. A press or drop beside a fence is not a dead end: its facing edge takes the caret when no prose is on the other side.
-- `typeBesideObjectTransaction` inserts beside a selected object. Destructive
-  commands remove the registered node, not a table's cell selection. A block
-  drag uses the block surface and `NodeHold`; inline drag uses ProseMirror.
+- A rebuild restores a node selection by position alone. When it lands on a different
+  node type, the object has gone and physics turns the selection into a caret, since
+  a keystroke would replace the text it landed on.
+- The arrow walk lands on an object or prose, never inside an opaque rendered body.
+  A dead end is a refusal, not a backward jump.
+- Destructive commands remove the registered node, not a table's cell selection. A
+  block drag uses the block surface and `NodeHold`; inline drag uses ProseMirror.
 - Keep table landing and press landing decisions in their shared helpers.
-  A structural drop must resolve inside a cell rather than manufacture a
-  column.
 
-→ [`.context/CONTEXT.md`](.context/CONTEXT.md) — row schema, selection, and walk
-→ [`../chrome/AGENTS.md`](../chrome/AGENTS.md) — key and Escape policy
-→ [`../diagrams/AGENTS.md`](../diagrams/AGENTS.md) — generated diagram rows
-→ [`../images/AGENTS.md`](../images/AGENTS.md) — image object surface
+Row schema, selection and walk: [`.context/CONTEXT.md`](.context/CONTEXT.md). Related:
+[chrome](../chrome/AGENTS.md), [diagrams](../diagrams/AGENTS.md),
+[images](../images/AGENTS.md).

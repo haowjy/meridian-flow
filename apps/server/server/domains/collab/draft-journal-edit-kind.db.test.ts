@@ -2,7 +2,7 @@
  * B1 (contract §2.6 case 20): the journal read carries the inverse evidence B+ replays against.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - journal-origin edit-kind evidence for inverse replay (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - journal-origin edit-kind evidence for inverse replay (kb/wiki/architecture/collaboration/agent-editing-and-reversal.md#reversal-is-a-forward-edit)
  */
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import { documentEditParts, documentEdits, draftWriteJournal } from "@meridian/database/schema";

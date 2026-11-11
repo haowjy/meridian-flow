@@ -22,7 +22,7 @@ export type WriterFrameInput = {
 export type WriterFrameDiagnostics = {
   /** The background tail fold failed; the tail stays until the next append crosses the bound. */
   compactionFailed(input: { draftId: string; cause: unknown }): void;
-  /** A room lacked committed content and was brought up to the replica (decision D26). */
+  /** A room lacked committed content and was brought up to the replica. */
   roomReconciled(input: {
     draftId: string;
     revision: number;
@@ -45,7 +45,7 @@ export function createWriterFrames(runtime: DraftRuntime) {
    * at whatever revision the draft is at. A concurrent writer costs the frame one row-lock
    * wait, never a second judgement: what landed meanwhile is folded into the committed prefix
    * under the lock. The room is checked against the replica first, and a room that lacks it
-   * missed a delivery: it is reconciled and the frame goes on (decision D26). Only a closed
+   * missed a delivery: it is reconciled and the frame goes on. Only a closed
    * draft, a frozen Work refuses the frame; an update
    * whose prefix the journal lacks throws `DraftPrefixMissingError` for the gateway's resync.
    */

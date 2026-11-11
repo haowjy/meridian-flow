@@ -48,7 +48,7 @@ export interface EventCorrelation {
   /**
    * Canonical Yjs update spans key from `@meridian/yjs-inspect`'s `summarizeUpdate().spansKey`:
    * `s:<client>:<from>-<to>` and `d:<client>:<from>-<to>` tokens joined by `,`.
-   * Same-kind span overlap is the client/server join rule (design D2).
+   * Same-kind span overlap is the client/server join rule.
    */
   yjsSpans?: string;
 }
@@ -70,7 +70,7 @@ export interface TraceStreamRef {
    * yjs: `sync.step1` | `sync.step2` | `sync.update` | `sync.status` | `awareness` |
    *   `stateless` | `auth` | `close` | `ping` | `pong` | `unknown`
    * gateway: `start` | `text.delta` | `reasoning.delta` | `tool_call.delta` |
-   *   `custom.delta` | `usage` | `end` | `error`
+   *   `usage` | `end` | `error`
    */
   messageClass?: string;
   bytes?: number;

@@ -65,9 +65,8 @@ more than the clones it would save (about 0.1 s each, created in parallel).
 reporter rejects a run with no passed or failed DB test, so a unit-only result
 is not combined-run evidence.
 
-Unit and DB suites shuffle files and cases by default. A failure prints its
-seed; replay it with `pnpm test --sequence.seed=<n>` or
-`pnpm test:db --sequence.seed=<n>`. Server DB workers share their module
+Suites shuffle by default; seed replay is in
+[`tools/ci/README.md`](../../ci/README.md). Server DB workers share their module
 cache, so the server setup drains the runtime's detached-work tracker after
 each case, after file-local teardown and before suite pool closers, with a
 file-level drain as the next-file backstop. The shared `closeTestDatabase`

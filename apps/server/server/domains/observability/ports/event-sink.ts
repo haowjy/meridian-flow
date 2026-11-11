@@ -15,7 +15,7 @@ export type {
 } from "@meridian/contracts/observability";
 
 /**
- * Unified emission port (D15). Every observable signal funnels through one sink
+ * Unified emission port. Every observable signal funnels through one sink
  * so dev (local stdout/JSONL) and prod swaps stay at the composition root.
  */
 export interface EventSink {

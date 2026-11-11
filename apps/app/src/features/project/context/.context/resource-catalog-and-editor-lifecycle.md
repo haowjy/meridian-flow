@@ -122,7 +122,7 @@ advances. The phone's document host (`DocumentHost`, phone presentation) uses th
 and recovery behavior.
 
 A draft-only document (a new document proposed in a branch, or one live deleted
-while a Work's draft still has it, D79) opens no live binding at
+while a Work's draft still has it) opens no live binding at
 all: it is absent from the live SQL tree and the server refuses a room for it,
 so review hosts the draft room alone (`liveRoom` only when `useDraftOnlyPresentation`
 answers `live`) and a failed draft room offers Retry or closing the document, never a

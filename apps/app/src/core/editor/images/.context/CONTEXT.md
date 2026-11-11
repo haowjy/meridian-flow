@@ -26,3 +26,20 @@ asset. Raw `asset:` sources and arbitrary browser URLs don't enter the document.
 
 All source allow-listing and signed URL resolution sits in `browserPictureSource`
 and the asset render state.
+
+## Size, cap and states
+
+A drag that changes nothing on screen writes nothing, and a grip stops at the height
+cap. A table-cell paragraph needs size containment before the picture can be capped
+by its column. A very tall picture would push the writer's text out of view, hence
+the cap. Clicking a picture the cap is holding back opens the viewer, as does the
+object row's Open full screen. A phone keyboard shrinks the pane, so on touch screens
+the cap holds through a height drop at the same width while the editor has focus
+(`holdPictureCapThroughKeyboard`). The box narrows to keep the ratio, so the node
+view needs the shape: an upload's frame, or the natural size once the picture draws.
+
+Inline images use the same baseline and line-box behavior in prose and cells; a big
+picture mid-sentence makes a tall line, up to the cap. A structural picture drop never
+manufactures a table column. An unresolved stored source draws unavailable without
+Retry, and a 404 from the signed-URL route draws gone. Renderers classify failures
+through the render policy.

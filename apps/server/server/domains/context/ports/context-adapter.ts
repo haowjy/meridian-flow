@@ -164,7 +164,7 @@ export interface ContextTreeAdapter {
 }
 
 /**
- * A draft placement's moves and deletes in its Work's branch (D26): facts on the branch's
+ * A draft placement's moves and deletes in its Work's branch: facts on the branch's
  * row, never live. `record` runs in the same transaction, after the row is written.
  */
 export interface ContextBranchTreeAdapter {

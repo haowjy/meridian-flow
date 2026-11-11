@@ -365,7 +365,10 @@ function classify(index: Lineage, part: InversePart): PartClassification {
     }
     for (const item of allItems(index.doc)) {
       if (!inFragment(index.doc, item) || !index.isVisible(key(item.id))) continue;
-      const refs = [item.origin, item.rightOrigin, ancestorItems(item)[0]?.id ?? null]
+      // The right origin only records what lay beside the item when it was created. An
+      // item placed ahead of this edit (as Apply places a concurrent draft's block or
+      // words) rests on nothing of it; its left neighbour and its parent do.
+      const refs = [item.origin, ancestorItems(item)[0]?.id ?? null]
         .filter((id): id is Y.ID => !!id)
         .map(key);
       if (!refs.some((k) => members.has(k))) continue;

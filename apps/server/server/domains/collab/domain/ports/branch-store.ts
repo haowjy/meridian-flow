@@ -18,7 +18,7 @@ export type Branch = {
   /** The owner is one of these: a Work, or a lineage. Both null: a purged Work's closed branch. */
   originWorkId: WorkId | null;
   originRootThreadId: ThreadId | null;
-  /** Provenance, not ownership (decision 3): the chat that created the branch. */
+  /** Provenance, not ownership: the chat that created the branch. */
   originThreadId: ThreadId | null;
   createdBy: UserId;
   createdAt: Date;

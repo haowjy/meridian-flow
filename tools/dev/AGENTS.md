@@ -1,10 +1,7 @@
 # tools/dev
 
-Local-development utilities: per-worktree environment and databases,
-migrations and SQL-function sync, `pnpm dev` orchestration with readiness and
-Tailscale, managed DB tests, worktree cleanup, migration lint and history
-checks, and bootstrap. Production code never imports this directory, and this
-directory never imports application packages. The `./mf` CLI lives in
+Local-development utilities. Production code never imports this directory, and
+this directory never imports application packages. The `./mf` CLI lives in
 [`tools/mf`](../mf/AGENTS.md).
 
 ## Rules
@@ -29,7 +26,8 @@ directory never imports application packages. The `./mf` CLI lives in
   `db:reset`) starts a missing server and never reconciles a running one. Bump
   the image tag in `docker-compose.yml` with the pg_bigm pin, then run
   `pnpm dev:infra:upgrade` from a checkout that has merged `main`; compose
-  recreates the container onto the tag and the named volume keeps the data. `pnpm db:check-extensions` proves the extensions work.
+  recreates the container onto the tag and the named volume keeps the data.
+  `pnpm db:check-extensions` proves the extensions work.
 - Change schemas with `pnpm db:generate` plus `pnpm db:migrate`, never `push`. Migration lint
   has one `RULES` list; a skip must be safe on populated tables.
 - No secret value appears in the tmux command, stdout or
@@ -42,24 +40,17 @@ directory never imports application packages. The `./mf` CLI lives in
   reset all Tailscale routes, and never infer staleness from a branch name.
   Cleanup removes only what it can prove is merged; when it refuses a branch
   you believe is safe, follow [`WORKTREE-CLEANUP.md`](WORKTREE-CLEANUP.md).
-- `pnpm dev` sweeps managed sessions for missing checkouts before start/reuse,
-  but never for `--print` or `--stop`. Inspect them with
-  `pnpm dev:prune-worktrees -- --orphans --dry-run`. Orphan teardown requires
-  path/pane ownership and process identity, never cwd or a name prefix alone.
+- Orphan teardown requires path/pane ownership and process identity, never cwd
+  or a name prefix alone. Inspect orphans with
+  `pnpm dev:prune-worktrees -- --orphans --dry-run`.
 - `tools/mf` and `apps/app/e2e` import the Portless helpers
   (`portless-prefix.ts`, `portless-routes.ts`, `dev-readiness.ts`,
   `dev-session-state.ts`). Keep those free of import-time side effects, with
   Node built-ins as their only runtime dependencies.
 - DB tests use owned databases and rollback or FK-ordered reset. Never add
   per-case truncation or share a managed database between workers.
-- The dev server doesn't watch `node_modules`; run `pnpm dev:restart` after an
-  install.
-- `pnpm dev:production-client` replaces only the Vite app process with a fresh
-  production build and a same-origin gateway. The server and database remain
-  the normal checkout-scoped dev stack. Keep its API and WebSocket ownership in
-  the app launcher; do not add a second route inventory here.
-- Dev stacks use more memory than the tests. `pnpm dev:stacks` reports each
-  stack's memory and idle time.
+- Keep `pnpm dev:production-client`'s API and WebSocket ownership in the app
+  launcher; do not add a second route inventory here.
 
 ## Cleaning up
 

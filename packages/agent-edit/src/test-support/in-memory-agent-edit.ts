@@ -1,4 +1,4 @@
-// Canonical in-memory agent-edit journal for tests and demos.
+// Canonical in-memory agent-edit journal for tests.
 import * as Y from "yjs";
 import { type SavePrecondition, SavePreconditionRefused } from "../ports/document-coordinator.js";
 import type {
@@ -39,7 +39,7 @@ export interface JournalEntry {
 /**
  * Drizzle-compatible in-memory implementation of UpdateJournal.
  *
- * This is deliberately shared by package tests, demos, and the server in-memory
+ * This is deliberately shared by package tests and the server in-memory
  * adapter so write-ordinal allocation and compaction semantics do not
  * drift away from the production adapter.
  */

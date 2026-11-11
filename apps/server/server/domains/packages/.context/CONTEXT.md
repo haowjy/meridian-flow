@@ -2,7 +2,7 @@
 
 This domain parses and retains Mars packages, publishes immutable Agent
 definitions, and resolves skills and execution configuration. The model is in
-the [Agent definition][definitions] and [package][packages] decisions.
+the [Agent definition][definitions] and [package][packages] pages.
 
 ## Contracts
 
@@ -18,5 +18,5 @@ the [Agent definition][definitions] and [package][packages] decisions.
 - Project availability filters prospective selection only: bound execution and
   same-ID creation recovery do not recheck it.
 
-[definitions]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/definitions/immutable-bound-profiles.md
-[packages]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/definitions/agent-packages.md
+[definitions]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/definitions.md
+[packages]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/definitions.md

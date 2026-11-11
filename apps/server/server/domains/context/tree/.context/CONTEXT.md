@@ -14,8 +14,8 @@ over it: live rows it neither moved nor deleted; the hidden documents and
 folders it created or needs as ancestors, at their row-owned location; the
 documents it moved, at its effective placement (`moved_folder_id`'s current
 source, or `moved_root_source_id`, so a live rename or cross-source move of that
-folder carries them, D80); and the deleted documents it has pending changes to
-and no move or delete of (D79) with the deleted folders above them. A document
+folder carries them); and the deleted documents it has pending changes to
+and no move or delete of with the deleted folders above them. A document
 the branch deletes is in no arm; its identity is `deleted` there. Identity,
 lineage and file facts read the effective placement, so a drafted manuscript→kb
 move takes kb's grants.
@@ -49,7 +49,7 @@ hidden folder records `absorbed_into`, and the inverse service reads recorded
 placements through `resolveAbsorbedFolders`, so an entry recorded against the
 hidden folder still matches and writes back the live one. A create joins a hidden
 candidate only while no branch using it moved it away. A live removal clears
-each branch's `created` fact and keeps `moved` and `deleted` (D79, D80).
+each branch's `created` fact and keeps `moved` and `deleted`.
 
 The live folder arm is its own `UNION ALL` branch so live
 lookups keep their partial indexes; the hidden and deleted folders share one
@@ -195,14 +195,14 @@ included, before the split updates any document row. Rollback delivers nothing.
 ## Restoring one document
 
 `restoreDocument` is the one restore of a deleted document: Apply of a draft
-that outlived the delete (D79), a reply's rollback, the turn card's Undo, and
+that outlived the delete, a reply's rollback, the turn card's Undo, and
 writer Undo or Trash Restore through the project restore endpoint. Interactive restores share
 `context/tree-edit-admission.ts`: bound grants enter the Work projection seam
 before `acquireTreeScope`; each caller owns the transaction retry. A reversing
 caller names the removal it reverses (its
 time and the `location_version` it wrote), so a later, different removal
 answers `superseded`; Apply names none, and calls it only for a click that
-carries the writer's `restore` (D79); a click without it that meets a deleted
+carries the writer's `restore`; a click without it that meets a deleted
 document answers `needs_restore` and changes nothing. A draft that a removal
 closes stores `closed_cause` `document_removed` (a writer's Discard stores
 `discarded`). A living document answers

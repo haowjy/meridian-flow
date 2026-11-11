@@ -130,7 +130,7 @@ export async function resolveAgentThreadTurnContext(
 }
 
 /**
- * A thread that can see no skill isn't offered `skill` (D64). It reads only
+ * A thread that can see no skill isn't offered `skill`. It reads only
  * the binding already in hand, so an agent whose listed skills are all hidden
  * from the model keeps the tool and gets a refusal instead.
  */

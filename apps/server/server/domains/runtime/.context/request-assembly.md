@@ -4,7 +4,7 @@ This context covers the Agent, system prompt, history, and cache hints sent to a
 model. A thread's cached prefix (system prompt, advertised tools, and history)
 changes only at named prompt epochs, image-removal breaks, and the one `skill`
 tool join after a user's first `/skill`.
-Rationale: the [frozen-prefix decision][kb-frozen-prefix], which also covers
+Rationale: the [frozen prefix][kb-frozen-prefix], which also covers
 cache warmth.
 
 ## Bound Agent and prompt
@@ -75,4 +75,4 @@ forks/subagents at the first-chat handle. Named-Work Scratch remains the
 Work's. A writer rebind writes a Work-switch notice and never moves notes or
 rebakes the prompt.
 
-[kb-frozen-prefix]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/frozen-request-prefix.md
+[kb-frozen-prefix]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/request-prefix.md
