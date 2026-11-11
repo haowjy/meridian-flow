@@ -27,6 +27,8 @@ export type ReviewChangeBarProps = {
   canApply?: boolean;
   onApply: () => void;
   onDiscard: () => void;
+  /** The Discard can't run here, so it carries no Undo and asks first. */
+  discardAsks: boolean;
   touch?: boolean;
   /** Drawn in the manuscript's flow, after the change's paragraph. */
   inFlow?: boolean;
@@ -42,6 +44,7 @@ export function ReviewChangeBar({
   canApply = true,
   onApply,
   onDiscard,
+  discardAsks,
   touch = false,
   inFlow = false,
   className,
@@ -93,6 +96,7 @@ export function ReviewChangeBar({
           <ReviewActions
             scope="change"
             touch={touch}
+            discardAsks={discardAsks}
             onDiscard={onDiscard}
             onApply={canApply ? onApply : undefined}
           />

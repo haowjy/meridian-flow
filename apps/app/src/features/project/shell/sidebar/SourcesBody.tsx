@@ -234,6 +234,7 @@ export function SourcesBody({
     projectId,
     work: changes.work,
     ownerKey: changes.ownerKey,
+    surface: "changes",
   });
 
   const catalogs = useContextCatalogViews(projectId, EDITOR_CONTEXT_SCHEMES, {

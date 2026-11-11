@@ -22,6 +22,7 @@ export function DraftedDeleteNotice({ documentId }: { documentId: string }) {
           <ReviewActions
             scope="change"
             disabled={view.locked}
+            discardAsks={view.discardAsks(deletion)}
             onDiscard={() => void view.discard(deletion)}
             onApply={() => void view.apply(deletion)}
           />

@@ -62,14 +62,19 @@ export function ProjectContextRemovalController({
             { isCurrent, commit: () => undefined },
           );
         const before = shownBefore(recent, documentId, removing);
-        void (before ? openRecent(before, { projectId, ...ports }, true) : Promise.resolve(false))
-          .then((opened) => (opened || !isCurrent() ? undefined : toRecents()))
-          .then(
-            (settlement) => {
-              if (settlement?.kind === "failed") reportError(settlement.error);
-            },
-            (error: unknown) => reportError(error),
-          );
+        return (before ? openRecent(before, { projectId, ...ports }, true) : Promise.resolve(false))
+          .then(async (opened) => {
+            if (opened && before) return { documentId: before.documentId };
+            if (!isCurrent()) return null;
+            const settlement = await toRecents();
+            if (settlement.kind === "applied") return { documentId: null };
+            if (settlement.kind === "failed") reportError(settlement.error);
+            return null;
+          })
+          .catch((error: unknown) => {
+            reportError(error);
+            return null;
+          });
       },
     }),
     [],

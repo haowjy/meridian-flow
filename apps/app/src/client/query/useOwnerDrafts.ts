@@ -67,6 +67,29 @@ export function patchOwnerDrafts(
   );
 }
 
+/**
+ * Waits for the server to list an item again, then caches that list. The list omits a draft
+ * until the server re-judges its effect after a write (a short debounce, longer on retry), so a
+ * read made sooner would drop the row. Reads go straight to the server, leaving the cached rows
+ * alone meanwhile; false when the server still omits the item after the retries.
+ */
+export async function relistedOwnerDraft(
+  queryClient: QueryClient,
+  projectId: string,
+  owner: string,
+  itemKey: string,
+): Promise<boolean> {
+  for (const delayMs of [250, 500, 1_000, 2_000, 4_000]) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    // slop-lint: allow swallowed-error a failed read is one more retry, not an answer
+    const response = await listOwnerDrafts(projectId, owner).catch(() => null);
+    if (!response?.items.some((row) => row.itemKey === itemKey)) continue;
+    queryClient.setQueryData(projectQueryKeys.ownerDrafts(projectId, owner), response);
+    return true;
+  }
+  return false;
+}
+
 /** Whether the owner's drafts are frozen (a lineage with every chat in Trash), as last read. */
 export function useOwnerDraftsFrozen(projectId: string, owner: string): boolean {
   return (

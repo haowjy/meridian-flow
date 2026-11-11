@@ -24,7 +24,6 @@ import type { DraftDockModel } from "./useDraftDock";
 
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
-  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   /** What an Apply of several files deletes or brings back, asked about first. */
   const [asking, setAsking] = useState<{
     deleting: readonly DockFile[];
@@ -42,7 +41,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 
   const multi = dock.files.length > 1;
   const only = dock.files[0];
-  const confirming = confirmingDiscard && dock.showCommands;
   const askingApply = asking !== null && dock.showCommands;
   const ids = (files: readonly DockFile[]) => new Set(files.map((file) => file.row.documentId));
   // A delete the strip hadn't shown yet holds those files back; several ask again by name.
@@ -74,20 +72,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         },
         disabled: !dock.canCommand,
       }
-    : confirming
-      ? {
-          kind: "discard",
-          sentence: <Trans>Discard this chat's changes?</Trans>,
-          keep: <Trans>Keep</Trans>,
-          confirm: <Trans>Discard</Trans>,
-          onKeep: () => setConfirmingDiscard(false),
-          onConfirm: () => {
-            setConfirmingDiscard(false);
-            dock.discard();
-          },
-          disabled: !dock.canCommand,
-        }
-      : null;
+    : null;
   const commands = (
     // biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row.
     // biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own.
@@ -95,12 +80,13 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       className="ml-auto flex max-w-full shrink-0 items-center justify-end gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1"
       onClick={(event) => event.stopPropagation()}
     >
-      {confirming || askingApply ? null : dock.showCommands ? (
+      {askingApply ? null : dock.showCommands ? (
         <ReviewActions
           scope="all"
           density="short"
           disabled={!dock.canCommand}
-          onDiscard={() => (multi ? setConfirmingDiscard(true) : dock.discard())}
+          discardAsks={dock.discardAsks}
+          onDiscard={dock.discard}
           onApply={dock.canApply ? startApply : undefined}
         />
       ) : null}
@@ -113,14 +99,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
-        onClick={
-          confirming || askingApply
-            ? undefined
-            : () => {
-                dock.controller.dismissNotice();
-                setExpanded((value) => !value);
-              }
-        }
+        onClick={askingApply ? undefined : () => setExpanded((value) => !value)}
         className={cn(
           "flex min-h-7 items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-caption @max-[20rem]/dock:text-xs text-foreground",
           multi && "cursor-pointer transition-colors hover:bg-ink-fill",
@@ -134,7 +113,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
               onClick={(event) => {
                 event.stopPropagation();
-                dock.controller.dismissNotice();
                 setExpanded((value) => !value);
               }}
               className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground coarse:min-h-11 coarse:min-w-11"
@@ -179,7 +157,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           />
         ))}
       </div>
-      <CommandNotice commands={dock.controller} question={question} />
+      <CommandNotice notice={dock.notice} question={question} />
       <DraftImagePreview target={dock.imagePreview} onClose={dock.closeImagePreview} />
     </div>
   );

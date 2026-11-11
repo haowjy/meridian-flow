@@ -33,7 +33,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { changeListLabel, DocumentChanges } from "@/features/draft-review/DocumentChanges";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { ReviewActions } from "@/features/draft-review/ReviewActions";
+import { DiscardQuestion, ReviewActions } from "@/features/draft-review/ReviewActions";
 import {
   ReviewFailureNotices,
   ReviewStateInline,
@@ -138,7 +138,13 @@ export function DraftReviewBand({
         onOpenNext={header.openDraft}
         onShowLive={header.showLive}
       />
-      {finished ? null : (
+      {finished ? null : header.asking ? (
+        <DiscardQuestion
+          scope="document"
+          onKeep={header.keepDraft}
+          onConfirm={header.confirmDiscard}
+        />
+      ) : (
         <ReviewActions
           scope="document"
           disabled={locked}

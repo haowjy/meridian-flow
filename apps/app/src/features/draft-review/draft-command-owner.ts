@@ -37,6 +37,7 @@ import {
 import type { EditorHistoryHandle } from "@/core/editor/editor-history";
 import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./apply-click-queue";
 import { startDraftDiscardSession } from "./draft-discard-session";
+import { type DiscardUndo, DraftNotices } from "./draft-notices";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
 import type { ChangeTarget, ReviewChange, TextTarget } from "./review-model";
@@ -117,12 +118,6 @@ export type CapturedApply = {
     outcome: Promise<CommandOutcome>;
   };
 };
-export type DiscardNotice = {
-  itemKey?: string;
-  kind: "discarded" | "removed";
-  undo?: () => Promise<void>;
-  end(): void;
-};
 /**
  * A refusal the screen already explains reverts silently (offer only what
  * applies): an archived Work removes its commands and shows its own notice with
@@ -170,6 +165,8 @@ export class DraftCommandOwner {
   private readonly renamedDocuments = new Map<string, string>();
   private active = true;
   private revision = 0;
+  /** One notice per draft owner, outliving the surface that made it. */
+  readonly notices = new DraftNotices();
   constructor(
     private readonly registry: DraftRoomRegistry & {
       closeDraftRoom(roomKey: string): Promise<void>;
@@ -798,19 +795,29 @@ export class DraftCommandOwner {
     return outcomes;
   }
 
-  /** The caller names whose history takes it back: its own editor, or its notice. */
+  /** Whether a local text Discard can start on the item now: its room is read, bound and has changes. */
+  canDiscardLocally(itemKey: string): boolean {
+    const review = this.byItem.get(itemKey)?.binding?.runtime.state();
+    return this.active && Boolean(review?.ready && review.frame?.groups.length);
+  }
+
+  /**
+   * The caller names whose history also holds it: its own editor (Ctrl+Z), or none (`notice`).
+   * The returned handle is the notice's Undo; the caller shows it or ends it.
+   */
   discard(
     ref: DraftRef,
     target: TextTarget,
     history: Editor | "notice" | null,
-    onNoticeEnd?: () => void,
-  ): { notice: DiscardNotice; outcome: Promise<CommandOutcome> } | null {
+  ): { handle: DiscardUndo | null; outcome: Promise<CommandOutcome> } | null {
     const entry = this.byItem.get(ref.itemKey);
-    return startDraftDiscardSession({
-      ref,
+    let handle: DiscardUndo | null = null;
+    const started = startDraftDiscardSession({
       target,
       history,
-      onNoticeEnd,
+      onNoticeEnd: () => {
+        if (handle) this.notices.partEnded(handle);
+      },
       entry,
       registry: this.registry,
       active: () => this.active,
@@ -821,6 +828,8 @@ export class DraftCommandOwner {
         if (entry) this.releaseIdle(entry);
       },
     });
+    handle = started?.handle ?? null;
+    return started;
   }
 
   retry(itemKey: string) {
@@ -828,9 +837,10 @@ export class DraftCommandOwner {
     this.items.get(itemKey)?.queue.retry();
   }
   /**
-   * Discards a whole item on the server: a created document, which the draft alone holds, or
-   * a frozen owner's draft, whose room refuses the writer's text. No Undo. A created document
-   * leaves at once; a frozen draft stays in review, discarding, until the server answers, so
+   * Discards a whole item on the server: a created document, which the draft alone holds, a
+   * picture, a frozen owner's draft, whose room refuses the writer's text, a move or delete
+   * with its text, or a draft whose room isn't read (`canDiscardLocally`). No Undo. A created
+   * document leaves at once; any other stays in review, discarding, until the server answers, so
    * a refusal shows on it. A Discard decided on the frozen reading names the draft the writer
    * saw, so the server refuses it if the chat came back and the draft moved on. Server-only
    * lifecycle commands share this account owner, never the Apply-all route.
@@ -858,7 +868,13 @@ export class DraftCommandOwner {
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") {
         settleOwn?.(true);
-        this.setState(ref.itemKey, { hidden: true, discarding: null });
+        // State held under the item key itself (no draft room ever bound, as for a picture)
+        // would hide the document's next item in this branch too; the caller drops the row.
+        const hides = item.isNew || this.generation(ref.itemKey) !== ref.itemKey;
+        this.setState(
+          ref.itemKey,
+          hides ? { hidden: true, discarding: null } : { discarding: null },
+        );
         return { kind: "done" };
       }
       settleOwn?.(false);
@@ -895,7 +911,10 @@ export class DraftCommandOwner {
     if (!this.active || !item.tree) return Promise.resolve({ kind: "blocked" });
     const text =
       item.hasDraft && target.kind !== "tree" ? this.discard(ref, target, history) : null;
-    text?.notice.end();
+    // The chosen text couldn't be written: the move or delete stays with it.
+    if (item.hasDraft && target.kind !== "tree" && !text)
+      return Promise.resolve({ kind: "blocked" });
+    text?.handle?.end();
     return Promise.all([this.discardTree(ref, item), text?.outcome]).then(([tree, discarded]) =>
       tree.kind === "done" && discarded ? discarded : tree,
     );
@@ -946,6 +965,7 @@ export class DraftCommandOwner {
   }
   close() {
     this.active = false;
+    this.notices.close();
     for (const item of this.items.values()) item.queue.close();
   }
 }

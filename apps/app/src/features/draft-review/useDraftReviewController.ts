@@ -101,6 +101,8 @@ export type DraftReviewController = {
   registerInlineReviewRuntime: (runtime: InlineReviewRuntime) => void;
   releaseInlineReviewRuntime: (editor: Editor) => void;
   startDraft: (mode: "apply" | "discard", draft: DraftReviewSelection) => CommandStart;
+  /** Whether the draft's Discard asks first: it carries no Undo. */
+  discardAsks: WorkBranchCommands["discardAsks"];
   apply: (documentId: string, itemKey: string) => Promise<BranchCommandOutcome>;
   discard: (documentId: string, itemKey: string) => Promise<BranchCommandOutcome>;
   disposeDrafts: (
@@ -136,6 +138,7 @@ export function useDraftReviewController({
     work,
     ownerKey,
     threadId,
+    surface: "band",
     reviewEditor: (draft) => {
       const runtime = inlineRuntimeRef.current;
       return runtime?.documentId === draft.documentId && runtime.itemKey === draft.itemKey
@@ -244,7 +247,7 @@ export function useDraftReviewController({
     dispatch({ type: "toastDismissed", id });
   }, []);
 
-  const { disposeDrafts, startDraft, apply, discard } = commands;
+  const { disposeDrafts, startDraft, apply, discard, discardAsks } = commands;
 
   return useMemo(
     () => ({
@@ -270,6 +273,7 @@ export function useDraftReviewController({
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
       startDraft,
+      discardAsks,
       apply,
       discard,
       disposeDrafts,
@@ -297,6 +301,7 @@ export function useDraftReviewController({
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
       startDraft,
+      discardAsks,
       apply,
       discard,
       disposeDrafts,

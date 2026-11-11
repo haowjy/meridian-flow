@@ -271,13 +271,17 @@ function ReviewError({ props }: { props: EditorViewProps }) {
               <Trans>Retry</Trans>
             </Button>
           ) : null}
-          {/* A text draft is discarded in its editor (Ctrl+Z undoes it); with none open only a whole item can be. */}
+          {/* With no review read, the Discard goes to the server and has no Undo: it asks first. */}
           {props.reviewItemKey &&
           controller.inlineReview?.documentId === props.documentId &&
           controller.inlineReview.itemKey === props.reviewItemKey ? (
             <ReviewActions
               scope="document"
               disabled={controller.dispositionLocked}
+              discardAsks={controller.discardAsks({
+                documentId: props.documentId,
+                itemKey: props.reviewItemKey,
+              })}
               onDiscard={() =>
                 void controller.discard(props.documentId, props.reviewItemKey as string)
               }

@@ -1,20 +1,27 @@
 /**
- * A surface's command footer below its rows. It shows the latest command feedback (a Discard offers Undo; an
- * Apply that brought deleted documents back names them), or, while one is open, the
- * question a command asks first (Discard all, an Apply all that deletes or brings back
- * documents).
+ * A draft owner's notice (`DraftNotices`) where a surface shows it: a Discard with its Undo, or
+ * the documents an Apply brought back. `CommandNotice` is a surface's footer, which shows the
+ * question an Apply all asks first in the notice's place while it is open.
  */
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
-import { type ReactNode, useEffect, useRef } from "react";
-import { DraftCommandStatus } from "./DraftCommandStatus";
-import type { WorkBranchCommands } from "./useWorkBranchCommands";
+import { X } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { IconButton } from "@/components/ui/icon-button";
+import {
+  useDraftCommandOwner,
+  useOptionalPresentedDocuments,
+} from "@/features/project/context/account-feature-context";
+import { useAiDraftLauncher } from "@/features/project/review-launch";
+import { cn } from "@/lib/utils";
+import type { DraftNotice } from "./draft-notices";
 
-/** A command's question: the sentence, a way out, and the command itself. */
+/** Apply all's question: the sentence, a way out, and the command itself. */
 export type CommandQuestion = {
-  kind: "discard" | "apply-all";
+  kind: "apply-all";
   sentence: ReactNode;
   keep: ReactNode;
   confirm: ReactNode;
@@ -23,14 +30,39 @@ export type CommandQuestion = {
   disabled?: boolean;
 };
 
+/** The owner's notice, wherever it was made; the caller shows it if it was made there. */
+export function useDraftNotice(ownerKey: string): DraftNotice | null {
+  const { notices } = useDraftCommandOwner();
+  return useSyncExternalStore(
+    notices.subscribe,
+    () => (ownerKey ? notices.get(ownerKey) : null),
+    () => null,
+  );
+}
+
+/**
+ * The Discard notice a document's identity row shows, or with `documentId` null the one the
+ * Recently opened landing shows (`DraftNotices.forDocument`).
+ */
+export function useDocumentNotice(
+  projectId: string,
+  documentId: string | null,
+): DraftNotice | null {
+  const { notices } = useDraftCommandOwner();
+  return useSyncExternalStore(
+    notices.subscribe,
+    () => notices.forDocument(projectId, documentId),
+    () => null,
+  );
+}
+
 export function CommandNotice({
-  commands,
+  notice,
   question = null,
 }: {
-  commands: Pick<WorkBranchCommands, "notice" | "undoNotice">;
+  notice: DraftNotice | null;
   question?: CommandQuestion | null;
 }) {
-  const { notice } = commands;
   const footer = useRef<HTMLDivElement>(null);
   // The group's menu may sit far above a long list: bring the question into view.
   const asking = question?.kind;
@@ -39,58 +71,123 @@ export function CommandNotice({
   }, [asking]);
   if (!question && !notice) return null;
   const button = "text-button shrink-0 disabled:opacity-50 coarse:min-h-11 coarse:min-w-11";
+  if (!question && notice) return <DraftNoticeLine notice={notice} />;
   return (
     <div
       ref={footer}
       className="flex min-h-7 coarse:min-h-11 flex-wrap items-center gap-x-2 gap-y-0.5 px-2 py-0.5 text-caption text-muted-foreground"
       role="status"
-      data-command-notice={question ? undefined : notice?.kind}
       data-command-question={question?.kind}
     >
-      {question ? (
-        <>
-          <span className="min-w-0 flex-1 basis-48">{question.sentence}</span>
-          <span className="ml-auto flex shrink-0 items-center gap-2">
-            <button type="button" className={button} onClick={question.onKeep}>
-              {question.keep}
-            </button>
-            <button
-              type="button"
-              className={button}
-              disabled={question.disabled}
-              onClick={question.onConfirm}
-            >
-              {question.confirm}
-            </button>
-          </span>
-        </>
-      ) : (
-        <>
-          {notice?.itemKey ? <DraftCommandStatus itemKey={notice.itemKey} /> : null}
-          {notice?.kind === "applied" ? (
-            <AppliedSentence
-              restored={notice.restored}
-              renamed={notice.renamed}
-              alsoApplied={notice.alsoApplied}
-            />
-          ) : notice ? (
-            <>
-              <span>
-                {notice.kind === "removed" ? <Trans>Removed</Trans> : <Trans>Discarded</Trans>}
-              </span>
-              {notice.undo ? (
-                <button
-                  type="button"
-                  className="text-button coarse:min-h-11"
-                  onClick={commands.undoNotice}
-                >
-                  <Trans>Undo</Trans>
-                </button>
-              ) : null}
-            </>
-          ) : null}
-        </>
+      <span className="min-w-0 flex-1 basis-48">{question?.sentence}</span>
+      <span className="ml-auto flex shrink-0 items-center gap-2">
+        <button type="button" className={button} onClick={question?.onKeep}>
+          {question?.keep}
+        </button>
+        <button
+          type="button"
+          className={button}
+          disabled={question?.disabled}
+          onClick={question?.onConfirm}
+        >
+          {question?.confirm}
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * One notice: "Draft of Chapter 1 discarded." with Undo and a dismiss, or what an Apply did.
+ * An Undo that failed stays, with Retry. When main is still on the document the Discard left it
+ * on, an Undo returns the page to the draft; anywhere else nothing moves.
+ */
+export function DraftNoticeLine({
+  notice,
+  className,
+}: {
+  notice: DraftNotice;
+  className?: string;
+}) {
+  useLingui();
+  const presented = useOptionalPresentedDocuments();
+  const { openReviewFile } = useAiDraftLauncher();
+  const dismiss = (
+    <IconButton label={t`Dismiss`} className="shrink-0" onClick={notice.dismiss}>
+      <X aria-hidden className="size-3" />
+    </IconButton>
+  );
+  if (notice.kind === "applied")
+    return (
+      <div
+        role="status"
+        data-command-notice="applied"
+        className={cn(
+          "flex min-h-7 coarse:min-h-11 min-w-0 items-center gap-x-2 px-2 py-0.5 text-caption text-muted-foreground",
+          className,
+        )}
+      >
+        <AppliedSentence
+          restored={notice.restored}
+          renamed={notice.renamed}
+          alsoApplied={notice.alsoApplied}
+        />
+        {dismiss}
+      </div>
+    );
+  const undo = () => {
+    const { review, left, projectId, ownerKey } = notice;
+    // Where main was when the notice showed (null: Recently opened); the view follows only
+    // if main is still there.
+    const stays = left ? left.landed : review?.documentId;
+    void notice.undo().then((answer) => {
+      if (
+        answer === "ok" &&
+        review &&
+        stays !== undefined &&
+        presented?.mainDocumentId(projectId) === stays
+      )
+        openReviewFile(review, ownerKey);
+    });
+  };
+  if (notice.status === "failed")
+    return (
+      <div role="status" data-command-notice="undo-failed" className={className}>
+        <InlineErrorRow
+          message={t`Couldn't undo. Try again.`}
+          onRetry={undo}
+          onDismiss={notice.dismiss}
+        />
+      </div>
+    );
+  const { subject } = notice;
+  const sentence =
+    subject.kind === "drafts"
+      ? t`${subject.count} drafts discarded.`
+      : subject.kind === "draft"
+        ? t`Draft of ${subject.name} discarded.`
+        : t`Change to ${subject.name} discarded.`;
+  return (
+    <div
+      role="status"
+      data-command-notice="discarded"
+      className={cn(
+        "flex min-h-7 coarse:min-h-11 min-w-0 items-center gap-x-2 px-2 py-0.5 text-caption text-muted-foreground",
+        className,
       )}
+    >
+      <span className="min-w-0 truncate" title={sentence}>
+        {sentence}
+      </span>
+      <button
+        type="button"
+        className="text-button shrink-0 disabled:opacity-50 coarse:min-h-11"
+        disabled={notice.status === "undoing"}
+        onClick={undo}
+      >
+        <Trans>Undo</Trans>
+      </button>
+      {dismiss}
     </div>
   );
 }
