@@ -16,6 +16,11 @@ rail-l | left-resize | center | dock-resize | dock
 `dock` is the side's slot id. Each host (`SlotGrid` `hosts`: `{key, slot, children}`) is keyed by
 what it holds, a document (`document:<id>`) or the chat. Moving an item between main and the side
 changes its `grid-area`, or parks it; it doesn't portal, reparent or remount a stateful surface.
+`DesktopProject` lists the document hosts sorted by key, never by place: React moves a keyed child
+that falls behind a sibling, and a moved host's DOM is re-inserted (scroll and caret reset) and,
+in development, its effects are replayed (the app runs under TanStack Start's default
+`StrictMode`), which destroys a live editor while its child effects still hold it (#1351). The
+cost is that DOM (tab) order among documents follows their ids, not main-then-side.
 
 Main shows what the address names, resolved by `resolveMainDocument` / `useMainDocument`
 (`views.ts`), the resolver the phone uses too; `MainViewProvider` / `useMainItem` carry
