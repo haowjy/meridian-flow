@@ -38,7 +38,7 @@ export function useDraftDock({
   // The owner's notice, if this chat's strip made it.
   const owned = useDraftNotice(controller.ownerKey);
   const notice =
-    active && owned?.surface.kind === "dock" && owned.surface.threadId === threadId ? owned : null;
+    active && owned?.surface.kind === "strip" && owned.surface.threadId === threadId ? owned : null;
   const listedFiles = useOwnerDrafts(controller.projectId, controller.ownerKey).files ?? [];
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;

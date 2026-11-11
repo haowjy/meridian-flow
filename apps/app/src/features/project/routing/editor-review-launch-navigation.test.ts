@@ -93,7 +93,10 @@ describe("review launch navigation", () => {
       [hidden],
     );
     const live = { ...(hidden as object), documentId: "doc-live" } as never;
-    await open({ scheme: "manuscript", path: "/Scene.md", documentId: "doc-live" }, { tab: live });
+    await open(
+      { scheme: "manuscript", path: "/Scene.md", documentId: "doc-live" },
+      { document: live },
+    );
     expect(history.location.href).not.toContain("item=");
   });
 
@@ -119,7 +122,7 @@ describe("review launch navigation", () => {
     } as never;
     const result = await open(
       { scheme: "manuscript", path: "Scene", documentId: "doc-1" },
-      { tab },
+      { document: tab },
     );
     expect(result.kind).toBe("applied");
     expect(history.location.href).toContain("item=branch-1");

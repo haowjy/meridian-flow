@@ -1,6 +1,7 @@
 /** Renders the mobile project workspace. */
 
 import { t } from "@lingui/core/macro";
+import { useBlocker } from "@tanstack/react-router";
 import { type LucideIcon, Maximize2, MessageSquare, Pin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { isThreadAwaitingCreation } from "@/client/chat-submissions";
@@ -56,14 +57,14 @@ export function MobileProject(props: MobileProjectProps) {
   const main = useMainItem();
   const crumbs = contextBreadcrumbSegments(
     props,
-    main.document.local ? main.document.tab?.name : undefined,
+    main.document.local ? main.document.document?.name : undefined,
   );
   const removedNotice = useRemovedDocumentPhoneNotice(props.projectId);
   // The sheet shows the side's item: a document or a chat, with the desktop's held pick and picker.
   const side = useSideItem();
   const sheetChat = useHostChatId();
   const sideChat = side.item?.kind === "chat" ? side.item : null;
-  const sideTab = side.item?.kind === "document" ? side.tab : null;
+  const sideTab = side.item?.kind === "document" ? side.document : null;
   const chatName = useSideChatName(props.projectId, sideChat?.chatId ?? sheetChat);
   const sheetName = sideTab?.name ?? (sideChat ? chatName : null);
   const chatOnScreen = useChatOnScreen();
@@ -72,6 +73,16 @@ export function MobileProject(props: MobileProjectProps) {
   const SheetIcon = sideTab ? fileKindIcon(sideTab.name) : MessageSquare;
   const sheet = useDismissalFocus(setSheetOpen);
   const closeSheet = () => sheet.onOpenChange(false);
+  const sheetVisible = sheetOpen && sheetName !== null;
+  // The sheet is no history entry, so Back while it is open dismisses it and leaves main where it is.
+  useBlocker({
+    shouldBlockFn: ({ action }) => {
+      if (action !== "BACK" || !sheetVisible) return false;
+      closeSheet();
+      return true;
+    },
+    enableBeforeUnload: false,
+  });
   const sheetTitle = sheetName ? (
     <PhoneSideTitle projectId={props.projectId} name={sheetName} icon={SheetIcon} />
   ) : null;
@@ -125,7 +136,7 @@ export function MobileProject(props: MobileProjectProps) {
           {renderActiveView(props)}
         </ProjectRouteBoundary>
       </main>
-      <Sheet open={sheetOpen && sheetName !== null} onOpenChange={sheet.onOpenChange}>
+      <Sheet open={sheetVisible} onOpenChange={sheet.onOpenChange}>
         <SheetContent
           side="right"
           showCloseButton={false}
@@ -140,7 +151,7 @@ export function MobileProject(props: MobileProjectProps) {
             <DocumentHost
               key={sideTab.documentId}
               projectId={props.projectId}
-              tab={sideTab}
+              document={sideTab}
               place="side"
               visible
               presentation="phone"
@@ -230,7 +241,7 @@ function PhoneSideTitle({
 }) {
   const side = useSideItem();
   const { releaseSide } = useShellCommands(projectId);
-  const mainName = useMainItem().document.tab?.name ?? null;
+  const mainName = useMainItem().document.document?.name ?? null;
   const reason = side.source === "held" ? null : sideReasonText(side.reason, mainName);
   return (
     <>
@@ -287,13 +298,13 @@ function PhoneMain(props: MobileProjectProps) {
         onNewDocument={onNewDocument}
       />
     );
-  const tab = main.document.tab;
+  const tab = main.document.document;
   if (!tab) return <MainDocumentStatus projectId={props.projectId} main={main.document} />;
   return (
     <DocumentHost
       key={tab.documentId}
       projectId={props.projectId}
-      tab={tab}
+      document={tab}
       place="main"
       visible
       main={main.document}

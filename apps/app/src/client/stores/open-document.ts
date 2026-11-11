@@ -14,7 +14,7 @@ import type {
  * lineage, or a chat (uploads), each with the handle its URI spells. Project
  * schemes have none.
  */
-export type TabOwner =
+export type OpenDocumentOwner =
   | {
       workId?: string;
       rootThreadId?: undefined;
@@ -38,7 +38,7 @@ export type TabOwner =
     };
 
 /** A patch's owner, with the absent arm spelled out so a spread replaces the old owner. */
-export function replaceOwner(owner: TabOwner): TabOwner {
+export function replaceOwner(owner: OpenDocumentOwner): OpenDocumentOwner {
   const absent = { chatId: undefined, chatRef: undefined } as const;
   if (owner.chatId !== undefined)
     return {
@@ -59,7 +59,7 @@ export function replaceOwner(owner: TabOwner): TabOwner {
 }
 
 /** The owner a tab names, for catalog and request lookups. */
-export function tabContextOwner(owner: TabOwner): ContextOwner {
+export function documentContextOwner(owner: OpenDocumentOwner): ContextOwner {
   if (owner.chatId !== undefined) return { chatThreadId: owner.chatId, chatRef: owner.chatRef };
   return owner.rootThreadId !== undefined
     ? { rootThreadId: owner.rootThreadId, rootThreadRef: owner.rootThreadRef }
@@ -86,7 +86,7 @@ export type OpenDocument =
        * names only held documents: one for this tab makes the server refuse the whole snapshot.
        */
       localOnly?: true;
-    } & TabOwner)
+    } & OpenDocumentOwner)
   | ({
       kind: "viewer";
       documentId: string;
@@ -98,7 +98,7 @@ export type OpenDocument =
       mimeType?: string;
       /** Stable resource identity for namespace operations and local cache lookup. */
       resourceHandle?: string;
-    } & TabOwner)
+    } & OpenDocumentOwner)
   | {
       kind: "new";
       documentId: string;

@@ -16,18 +16,13 @@ import {
 } from "@meridian/resource-replica";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 
-import type { OpenDocument, ServerOpenDocument, TabOwner } from "@/client/stores";
-
-/** Work-scoped tabs retain their row identity, including No Work. */
-export function editorTabWorkId(location: ResourceOwner): string | undefined {
-  return location.workId ?? undefined;
-}
+import type { OpenDocument, OpenDocumentOwner, ServerOpenDocument } from "@/client/stores";
 
 /**
  * What a tab holds of its owner: a Work row id, a lineage or a chat with the handle its URI
  * spells. Null for a chat's upload whose chat has no handle yet: no tab can name it.
  */
-export function tabOwnerOf(location: ResourceOwner): TabOwner | null {
+export function documentOwnerOf(location: ResourceOwner): OpenDocumentOwner | null {
   if (location.chatId !== undefined)
     return location.chatRef ? { chatId: location.chatId, chatRef: location.chatRef } : null;
   return location.rootThreadId !== undefined
@@ -70,7 +65,7 @@ export function openDocumentFromFile(
     throw new Error("A chat's upload tab requires its chat");
   if (isWorkScopedScheme(scheme) && !owner.workId && !owner.rootThreadId)
     throw new Error("Scratch tabs require a Work row id or a lineage");
-  const tabOwner: TabOwner =
+  const tabOwner: OpenDocumentOwner =
     scheme === "uploads" && owner.chatThreadId
       ? { chatId: owner.chatThreadId, chatRef: chatRefOf(file) }
       : scheme === "scratch" && owner.rootThreadId
@@ -112,7 +107,7 @@ export function openDocumentFromFile(
 }
 
 /** The tab for a file the server holds; null for a document still local to this device. */
-export function serverTabFromFile(
+export function serverDocumentFromFile(
   scheme: ProjectContextTreeScheme,
   file: CatalogFile,
   owner: ContextOwner = {},
@@ -127,7 +122,7 @@ export function openDocumentFromResource(
   placement: ResourcePlacement,
 ): Extract<OpenDocument, { kind: "new" | "tracked" }> | null {
   const location = placement.resourceLocation(record);
-  const tabOwner = location ? tabOwnerOf(location) : null;
+  const tabOwner = location ? documentOwnerOf(location) : null;
   if (!location || !tabOwner) return null;
   const { resource } = record;
   if (!resource.classification.editable) return null;
@@ -161,7 +156,7 @@ export function openDocumentFromResource(
   };
 }
 
-export type ResourceTabProjection =
+export type ResourceDocumentProjection =
   | { kind: "none" }
   | { kind: "removed" }
   | {
@@ -173,7 +168,7 @@ export type ResourceTabProjection =
   | {
       kind: "projected";
       resourceHandle: string;
-      tab: OpenDocument;
+      document: OpenDocument;
     };
 
 /**
@@ -182,12 +177,12 @@ export type ResourceTabProjection =
  * record of a document live deleted while a Work's draft survives is terminal, and
  * hiding or closing its tab on it would strand the draft. Its draft settlement owns it.
  */
-export function projectResourceTab(
+export function projectResourceDocument(
   tab: OpenDocument,
   records: readonly ResourceRecord[],
   placement: ResourcePlacement,
   draftOnly: boolean,
-): ResourceTabProjection {
+): ResourceDocumentProjection {
   if (draftOnly) return { kind: "none" };
   const record =
     (tab.resourceHandle
@@ -204,7 +199,7 @@ export function projectResourceTab(
   if (record.resource.content.kind === "unacquired") {
     const location = placement.resourceLocation(record);
     if (!location || tab.kind === "new") return { kind: "removed" };
-    const tabOwner = tabOwnerOf(location);
+    const tabOwner = documentOwnerOf(location);
     if (!tabOwner) return { kind: "none" };
     const {
       resourceHandle: _resourceHandle,
@@ -224,13 +219,13 @@ export function projectResourceTab(
       ...tabOwner,
       ...(existing.kind === "tracked" ? { provisionalName: location.provisional } : {}),
     } as Extract<OpenDocument, { kind: "tracked" | "viewer" }>;
-    return { kind: "projected", resourceHandle: record.resource.handle, tab: projected };
+    return { kind: "projected", resourceHandle: record.resource.handle, document: projected };
   }
   // A chat's upload cached before its chat had a handle names no tab owner: the tab keeps its own.
   const located = placement.resourceLocation(record);
-  if (located && !tabOwnerOf(located)) return { kind: "none" };
+  if (located && !documentOwnerOf(located)) return { kind: "none" };
   const projected = openDocumentFromResource(record, placement);
   return projected
-    ? { kind: "projected", resourceHandle: record.resource.handle, tab: projected }
+    ? { kind: "projected", resourceHandle: record.resource.handle, document: projected }
     : { kind: "removed" };
 }

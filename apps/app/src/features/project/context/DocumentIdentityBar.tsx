@@ -38,7 +38,7 @@ import { useRepairOnFreshFailure } from "./use-repair-on-fresh-failure";
 export type DocumentIdentityBarProps = {
   projectId: string;
   editorWorkId: string | null;
-  tab: OpenDocument;
+  document: OpenDocument;
   /** The document can't be renamed or moved (its Work is archived). */
   readOnly?: boolean;
   onCloseDraftOnly?: () => void;
@@ -59,7 +59,7 @@ export type DocumentIdentityBarProps = {
 export function DocumentIdentityBar({
   projectId,
   editorWorkId,
-  tab,
+  document,
   readOnly = false,
   onCommitted,
   onOpenExisting,
@@ -67,16 +67,16 @@ export function DocumentIdentityBar({
   focusReview,
   onFocusReview,
 }: DocumentIdentityBarProps) {
-  const location = tabLocation(tab);
+  const location = tabLocation(document);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
   const { remember } = useRenameOperation(projectId, {
     kind: "file",
-    id: tab.documentId,
+    id: document.documentId,
   });
   const commitIdentity = useIdentityCommit({
     projectId,
-    tab,
+    document,
     editorWorkId: editorWorkId,
     onCommitted,
   });
@@ -92,9 +92,9 @@ export function DocumentIdentityBar({
   // Only provisional placement can be repaired here; homed refusals stay in lists.
   const { records, placement } = useAccountResourceProjection(projectId);
   const resource = records.find(({ resource }) =>
-    tab.resourceHandle
-      ? resource.handle === tab.resourceHandle
-      : resource.identity.documentId === tab.documentId,
+    document.resourceHandle
+      ? resource.handle === document.resourceHandle
+      : resource.identity.documentId === document.documentId,
   );
   const failed = resource ? projectResourceNeedsRepair(projectId, resource) : null;
   // A refused delete has no placement to repair here; a refused create and a refused move do.
@@ -125,10 +125,10 @@ export function DocumentIdentityBar({
   const { openReviewFile } = useAiDraftLauncher();
   const review = controller.inlineReview;
   const reviewItemKey =
-    review?.documentId === tab.documentId && review.shown ? review.itemKey : null;
+    review?.documentId === document.documentId && review.shown ? review.itemKey : null;
   // A review that has been entered but not yet painted is a review destination in flight:
   // it must not read as the live document's chip until its preview answers.
-  const reviewPending = review?.documentId === tab.documentId && !review.shown;
+  const reviewPending = review?.documentId === document.documentId && !review.shown;
   const openDraft = (row: ReviewFileTarget, takeFocus?: boolean) => {
     if (takeFocus) onFocusReview?.(row.draft.itemKey);
     openReviewFile(row, controller.ownerKey);
@@ -140,8 +140,8 @@ export function DocumentIdentityBar({
   const placementOpen = fieldOpen && showChip;
   // Only a provisional placement can be repaired here.
   const repairable = location.provisional && !readOnly;
-  const manuscriptState = useManuscriptState(projectId, tab);
-  const notice = useDocumentNotice(projectId, tab.documentId);
+  const manuscriptState = useManuscriptState(projectId, document);
+  const notice = useDocumentNotice(projectId, document.documentId);
   const lineFocus = useRef<HTMLDivElement>(null);
   useFocusSuccession(lineFocus);
 
@@ -174,14 +174,14 @@ export function DocumentIdentityBar({
             <IdentityPlacementField
               projectId={projectId}
               editorWorkId={editorWorkId}
-              tab={tab}
+              document={document}
               location={location}
               failure={identityFailure}
               commit={commit}
               onExit={(reason) => {
                 setFieldOpen(false);
                 if (repair) setDismissedRepairId(repair.intentId);
-                if (reason === "escape") focusEditorProse(tab.documentId);
+                if (reason === "escape") focusEditorProse(document.documentId);
               }}
               onOpenExisting={onOpenExisting}
             />
@@ -208,14 +208,14 @@ export function DocumentIdentityBar({
           ) : null}
           <IdentityChipSlot
             projectId={projectId}
-            tab={tab}
+            document={document}
             show={showChip && !placementOpen}
             onChooseHome={() => setFieldOpen(true)}
           />
           {/* The version chip holds one place: Live, or Draft while reviewing. */}
           {version ??
             (reviewItemKey || reviewPending ? null : (
-              <DocumentVersionMenu projectId={projectId} tab={tab} />
+              <DocumentVersionMenu projectId={projectId} document={document} />
             ))}
         </div>
       </DocumentStatePortal>
@@ -224,13 +224,13 @@ export function DocumentIdentityBar({
   return (
     <DraftReviewBand
       projectId={projectId}
-      tab={tab}
-      documentId={tab.documentId}
+      document={document}
+      documentId={document.documentId}
       itemKey={reviewItemKey ?? ""}
       onOpenDraft={openDraft}
       onCloseDraftOnly={onCloseDraftOnly}
       onFocusDocument={() =>
-        focusEditorProseOnceShown(tab.documentId, onCloseDraftOnly !== undefined)
+        focusEditorProseOnceShown(document.documentId, onCloseDraftOnly !== undefined)
       }
       focusOnOpen={reviewItemKey !== null && focusReview === reviewItemKey}
       onOpenFocused={() => onFocusReview?.(null)}
@@ -243,16 +243,16 @@ export function DocumentIdentityBar({
 /** Chip slot at the bar's right edge. */
 function IdentityChipSlot({
   projectId,
-  tab,
+  document,
   show,
   onChooseHome,
 }: {
   projectId: string;
-  tab: OpenDocument;
+  document: OpenDocument;
   show: boolean;
   onChooseHome: () => void;
 }) {
-  const deviceOnly = useDeviceOnly(projectId, tab);
+  const deviceOnly = useDeviceOnly(projectId, document);
   if (!deviceOnly && !show) return null;
   return (
     <>

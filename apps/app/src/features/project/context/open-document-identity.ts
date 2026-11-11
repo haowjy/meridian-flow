@@ -20,11 +20,3 @@ export function openDocumentMatchesRoute(tab: OpenDocument, target: RouteLocator
     ? tab.rootThreadId === target.rootThreadId
     : tab.rootThreadId === undefined && tab.workId === target.workId;
 }
-
-export function openDocumentRouteKey(projectId: string, target: RouteLocator): string {
-  if (isWorkScopedScheme(target.scheme)) {
-    const owner = target.rootThreadId ? `chat:${target.rootThreadId}` : target.workId;
-    return `${projectId}:${target.scheme}:${owner}:${target.path}`;
-  }
-  return `${projectId}:${target.scheme}:${target.path}`;
-}

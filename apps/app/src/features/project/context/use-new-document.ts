@@ -25,7 +25,7 @@ export function useNewDocument(
         {
           isCurrent,
           focus: true,
-          tab: {
+          document: {
             kind: "new",
             documentId,
             name: reservation.name,

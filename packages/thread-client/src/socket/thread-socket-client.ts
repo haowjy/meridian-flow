@@ -198,7 +198,7 @@ export class ThreadSocketClient implements ThreadTransport {
 
     const message = parseWsServerMessage(data);
     if (!message) return;
-    if (message.type === "draft-owner-hint") {
+    if (message.type === "draft-owner-hint" || message.type === "project-chats-hint") {
       for (const listener of this.catalogSubscriptions.get(message.projectId) ?? [])
         listener(message);
       return;

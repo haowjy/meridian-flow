@@ -5,7 +5,7 @@
 import type { CSSProperties } from "react";
 
 /** Desktop slot topology: `rail-l` is the sidebar, `center` main, `dock` the side. */
-export type DesktopProjectSlotId = "rail-l" | "center" | "dock";
+export type DesktopProjectSlotId = "rail-l" | "center" | "side";
 
 /** The slots a writer opens, closes and resizes. */
 export type PanelSlotId = Exclude<DesktopProjectSlotId, "center">;

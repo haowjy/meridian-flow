@@ -55,7 +55,7 @@ here is a known defect.
 - Sidebar rows are `role="button"` and report a multi-row selection with
   `aria-pressed`. The ARIA tree pattern (`role="tree"`/`treeitem`,
   `aria-selected`, arrow-key navigation) would describe the selection natively;
-  it changes every tree surface (Files, Scratch, Work Files), so it is its own
+  it changes every tree surface (Files, Scratch, Changes), so it is its own
   change.
 
 ## Row-edge drops

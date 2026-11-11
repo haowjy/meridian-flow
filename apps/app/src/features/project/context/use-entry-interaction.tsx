@@ -3,7 +3,7 @@ import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ReactNode, useState } from "react";
 import type { CatalogNode } from "@/client/query/context-catalog-projection";
-import type { TabOwner } from "@/client/stores";
+import type { OpenDocumentOwner } from "@/client/stores";
 import { ContextEntryMenu, type DeleteTarget, type EntryAction } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
@@ -73,7 +73,7 @@ export function useEntryInteraction({
   const kind: "file" | "folder" = node.kind === "file" ? "file" : "folder";
   const { operationId, remember } = useRenameOperation(projectId, { kind, id });
   const parsed = parseContextUri(node.uri);
-  let resolvedOwner: TabOwner = { workId: owner.workId ?? undefined };
+  let resolvedOwner: OpenDocumentOwner = { workId: owner.workId ?? undefined };
   if (owner.rootThreadId) {
     const rootThreadRef =
       owner.rootThreadRef ??

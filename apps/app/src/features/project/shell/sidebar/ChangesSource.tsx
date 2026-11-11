@@ -2,9 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { ListRow } from "@/components/ui/list-row";
@@ -20,7 +18,6 @@ import { draftCopyView } from "@/features/draft-review/copy-view";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
-import { chatOwnerKey, workOwnerKey } from "@/features/draft-review/draft-owner-key";
 import { DiscardQuestion, ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { hasTreeLine, reviewHasNoRoom, treeLineOf } from "@/features/draft-review/tree-line";
@@ -34,7 +31,7 @@ import { RowIcon } from "../../context/ContextTreeRows";
 import { fileKindIcon } from "../../context/context-file-icon";
 import { useReferenceDrag } from "../../context/entry-drag/reference-source";
 import { useAiDraftLauncher } from "../../review-launch";
-import { useWorkScope } from "../../use-work-scope";
+import { useScopeDraftOwner } from "../../use-work-scope";
 import { SourceHint, SourcePane } from "./SourcePane";
 
 /**
@@ -55,23 +52,17 @@ export type ChangesScope = {
 };
 
 export function useChangesScope(projectId: string, chatThreadId: string | null): ChangesScope {
-  const { workId } = useWorkScope(projectId);
-  const { works, noWork } = useWorks(projectId);
-  const thread = useDisplayedThread(projectId, chatThreadId);
-  const snapshot = noWork ? { works: works ?? [], noWork } : null;
-  const picked = workId && workId !== noWork?.id ? workFromSnapshot(snapshot, workId) : null;
-  const chatWork = thread?.workId ? workFromSnapshot(snapshot, thread.workId) : null;
-  // A chat on a named Work has no drafts of its own under None: its Work holds them.
-  const lineageKey =
-    !picked && chatWork?.isNoWork ? chatOwnerKey(chatWork, thread?.rootThreadId ?? null) : "";
-  const lineageCount = useOwnerDrafts(projectId, lineageKey, { enabled: !picked }).drafts?.length;
+  const { picked, work, ownerKey } = useScopeDraftOwner(projectId, chatThreadId);
+  const lineageCount = useOwnerDrafts(projectId, picked ? "" : ownerKey, {
+    enabled: !picked,
+  }).drafts?.length;
   // SourcesBody's context carries this scope: a new object every render would redraw every pane.
   return useMemo(() => {
     if (picked) {
       const name = picked.name;
       return {
-        work: picked,
-        ownerKey: workOwnerKey(picked),
+        work,
+        ownerKey,
         heading: t`Changes in ${name}`,
         empty: t`Nothing to review in ${name}.`,
         count: picked.pendingDocumentCount,
@@ -80,14 +71,14 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
     }
     const count = lineageCount ?? 0;
     return {
-      work: lineageKey ? chatWork : null,
-      ownerKey: lineageKey,
+      work,
+      ownerKey,
       heading: t`Changes in this chat`,
       empty: t`Nothing to review in this chat.`,
       count,
-      offered: Boolean(lineageKey) && count > 0,
+      offered: Boolean(ownerKey) && count > 0,
     };
-  }, [picked, chatWork, lineageKey, lineageCount]);
+  }, [picked, work, ownerKey, lineageCount]);
 }
 
 /**

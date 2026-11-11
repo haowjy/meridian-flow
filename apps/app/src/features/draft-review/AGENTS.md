@@ -24,7 +24,7 @@ partitions the text.
 - Unknown attribution isn't known-empty membership: show the text without a byline, and
   don't erase the side while it loads.
 - A draft's failure shows once per surface: the focused change's bar while it shows, else
-  the identity row's notices; a file's status line in Work Files and the side. Fix
+  the identity row's notices; a file's status line in the Changes source and the side. Fix
   displacement with one feedback surface outside the manuscript, not per-width fixes
   ([TODO](.context/TODO.md)).
 

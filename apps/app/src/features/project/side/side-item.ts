@@ -37,7 +37,7 @@ export type SettledSide = {
   /** Null: nothing to show (a chat beside which no document was ever opened). */
   item: Item | null;
   /** A document item's descriptor. */
-  tab: OpenDocument | null;
+  document: OpenDocument | null;
   source: SideSource;
   reason: SideReason | null;
 };
@@ -65,7 +65,7 @@ export type Companion =
 export type Described =
   | { status: "pending" }
   | { status: "failed"; retry: () => void }
-  | { status: "ready"; tab: OpenDocument | null };
+  | { status: "ready"; document: OpenDocument | null };
 
 /** A document to describe: a link's held document keeps the link's Work. */
 export type Describing = { documentId: string; workId?: string };
@@ -117,7 +117,7 @@ export function fitsBeside(item: Item, main: MainForSide): boolean {
 }
 
 type Step =
-  | { kind: "show"; tab: OpenDocument | null }
+  | { kind: "show"; document: OpenDocument | null }
   | { kind: "skip" }
   | { kind: "wait"; resolution: Unsettled };
 
@@ -133,7 +133,7 @@ export function resolveSide(input: {
   if (main.kind === "opening") return { kind: "pending", describing: null, releaseHeld: false };
   const step = (item: Item, workId?: string): Step => {
     if (!fitsBeside(item, main)) return { kind: "skip" };
-    if (item.kind === "chat") return { kind: "show", tab: null };
+    if (item.kind === "chat") return { kind: "show", document: null };
     const document: Describing = workId
       ? { documentId: item.documentId, workId }
       : { documentId: item.documentId };
@@ -145,7 +145,7 @@ export function resolveSide(input: {
         kind: "wait",
         resolution: { kind: "failed", failed: { read: "document", retry: described.retry } },
       };
-    return described.tab ? { kind: "show", tab: described.tab } : { kind: "skip" };
+    return described.document ? { kind: "show", document: described.document } : { kind: "skip" };
   };
   let releaseHeld = false;
   const settle = (
@@ -153,12 +153,16 @@ export function resolveSide(input: {
     tab: OpenDocument | null,
     source: SideSource,
     reason: SideReason | null,
-  ): SideResolution => ({ kind: "settled", side: { item, tab, source, reason }, releaseHeld });
+  ): SideResolution => ({
+    kind: "settled",
+    side: { item, document: tab, source, reason },
+    releaseHeld,
+  });
 
   if (input.held) {
     const item = heldItem(input.held, main);
     const held = step(item, input.held.kind === "document" ? input.held.workId : undefined);
-    if (held.kind === "show") return settle(item, held.tab, "held", "held");
+    if (held.kind === "show") return settle(item, held.document, "held", "held");
     if (held.kind === "wait") return { ...held.resolution, releaseHeld };
     releaseHeld = true;
   }
@@ -173,7 +177,7 @@ export function resolveSide(input: {
   for (const candidate of companion.candidates) {
     const next = step(candidate.item);
     if (next.kind === "show")
-      return settle(candidate.item, next.tab, "companion", candidate.reason);
+      return settle(candidate.item, next.document, "companion", candidate.reason);
     if (next.kind === "wait") return { ...next.resolution, releaseHeld };
   }
   if (main.kind === "document")
@@ -187,7 +191,7 @@ export function resolveSide(input: {
     return settle({ kind: "chat", chatId: null }, null, "empty", "new-chat");
   return {
     kind: "settled",
-    side: { item: null, tab: null, source: "empty", reason: null },
+    side: { item: null, document: null, source: "empty", reason: null },
     releaseHeld,
   };
 }

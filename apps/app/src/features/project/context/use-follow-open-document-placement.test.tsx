@@ -2,7 +2,7 @@
 /**
  * The route follows an open document's placement only while the selection is bound to it.
  *
- * Pins implementation decisions: `projectResourceTab` is mocked to place the document at a new
+ * Pins implementation decisions: `projectResourceDocument` is mocked to place the document at a new
  * path, since building a resource replica snapshot adds nothing to these cases.
  */
 import "fake-indexeddb/auto";
@@ -33,7 +33,11 @@ const moved = { ...tab, path: "/new.md", name: "new.md" };
 
 vi.mock("./open-document-from-file", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./open-document-from-file")>()),
-  projectResourceTab: () => ({ kind: "projected", resourceHandle: "handle-a", tab: moved }),
+  projectResourceDocument: () => ({
+    kind: "projected",
+    resourceHandle: "handle-a",
+    document: moved,
+  }),
 }));
 
 const locator = { scheme: "manuscript" as const, path: "/old.md" };

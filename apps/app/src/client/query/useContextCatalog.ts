@@ -609,6 +609,15 @@ export function useContextCatalogWake(
     () =>
       projectId
         ? transport?.subscribeCatalog(projectId, (hint) => {
+            if (hint.type === "project-chats-hint") {
+              // Another client's reply or question: the chat list's marks follow it. A refetch
+              // already under way answers for this hint too.
+              void queryClient.invalidateQueries(
+                { queryKey: projectQueryKeys.threads(projectId), exact: true },
+                { cancelRefetch: false },
+              );
+              return;
+            }
             if (hint.type === "draft-owner-hint") {
               void queryClient.invalidateQueries({
                 queryKey: projectQueryKeys.ownerDrafts(projectId, hint.owner),

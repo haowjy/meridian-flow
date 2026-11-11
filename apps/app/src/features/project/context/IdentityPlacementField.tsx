@@ -54,7 +54,7 @@ type IdentityNote = { kind: "error"; message: string } | null;
 export function IdentityPlacementField({
   projectId,
   editorWorkId,
-  tab,
+  document,
   location,
   failure,
   commit,
@@ -63,7 +63,7 @@ export function IdentityPlacementField({
 }: {
   projectId: string;
   editorWorkId: string | null;
-  tab: OpenDocument;
+  document: OpenDocument;
   location: TabLocation;
   failure: QueuedIdentityFailure | null;
   commit: (target: IdentityCommitTarget) => Promise<IdentityCommitOutcome>;
@@ -113,15 +113,15 @@ export function IdentityPlacementField({
   }, []);
 
   useEffect(() => {
-    if (!provisionalPlacement || tab.kind !== "new") return;
+    if (!provisionalPlacement || document.kind !== "new") return;
     const abort = new AbortController();
     let release: (() => void) | null = null;
     let unobserve: (() => void) | null = null;
     void resources
       .openDocument(
         projectId,
-        { handle: tab.resourceHandle },
-        `identity-field:${tab.resourceHandle}`,
+        { handle: document.resourceHandle },
+        `identity-field:${document.resourceHandle}`,
         abort.signal,
       )
       .then((result) => {
@@ -134,7 +134,7 @@ export function IdentityPlacementField({
           if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
           suggestionTimer.current = window.setTimeout(() => {
             suggestionTimer.current = null;
-            setGhost(suggestionForSession(tab, session));
+            setGhost(suggestionForSession(document, session));
           }, 300);
         };
         fragment.observeDeep(refresh);
@@ -147,7 +147,7 @@ export function IdentityPlacementField({
       release?.();
       if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
     };
-  }, [projectId, provisionalPlacement, resources, tab]);
+  }, [projectId, provisionalPlacement, resources, document]);
 
   // The document's own owner scopes its Scratch suggestions, collisions and "Open
   // existing"; the Editor's selected Work does not (a chat's Scratch has none).
@@ -235,7 +235,7 @@ export function IdentityPlacementField({
             destination?.scheme ?? location.scheme,
             destination?.folderPath ?? location.parentPath,
           )
-            .filter((entry) => entry.entryId !== tab.documentId)
+            .filter((entry) => entry.entryId !== document.documentId)
             .map((entry) => entry.name),
         ),
         "file",

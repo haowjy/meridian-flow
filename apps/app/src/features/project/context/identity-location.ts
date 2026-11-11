@@ -8,7 +8,7 @@ import {
   resourceWorkAuthorityFor,
 } from "@meridian/resource-replica";
 
-import { type OpenDocument, replaceOwner, type TabOwner } from "@/client/stores";
+import { type OpenDocument, type OpenDocumentOwner, replaceOwner } from "@/client/stores";
 import { parentPath as parentFolderPath } from "./file-suggestions";
 
 export type TabLocation = {
@@ -22,14 +22,14 @@ export type TabLocation = {
   editable: boolean;
   /** Server path (leading slash), or null for a not-yet-materialized tab. */
   path: string | null;
-} & TabOwner;
+} & OpenDocumentOwner;
 
 export type IdentityDestination = {
   parent?: ParentRef;
   scheme: ProjectContextTreeScheme;
   /** Tree-style parent folder path: `/`, `/Act 2`. */
   folderPath: string;
-} & TabOwner;
+} & OpenDocumentOwner;
 
 export type DesiredIdentity = {
   destination: IdentityDestination;
@@ -70,7 +70,7 @@ export function identityDestination(
  * from the project snapshot; null while no known Work owns it.
  */
 export function destinationOwner(
-  destination: { scheme: ProjectContextTreeScheme } & TabOwner,
+  destination: { scheme: ProjectContextTreeScheme } & OpenDocumentOwner,
   works: readonly { id: string; handle: string | null }[] | null | undefined,
   noWork: { id: string } | null | undefined,
 ): ResourceOwner | null {

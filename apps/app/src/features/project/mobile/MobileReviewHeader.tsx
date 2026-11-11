@@ -21,14 +21,14 @@ import { type ManuscriptState, ManuscriptStateSlot } from "@/features/editor/Man
 
 export function MobileReviewHeader({
   projectId,
-  tab,
+  document,
   header,
   manuscriptState,
   notice,
   onOpenList,
 }: {
   projectId: string;
-  tab: OpenDocument;
+  document: OpenDocument;
   header: ReviewHeaderModel;
   /** What live did to this document; it takes the row's free end. */
   manuscriptState: ManuscriptState | null;
@@ -55,7 +55,7 @@ export function MobileReviewHeader({
         <div className="min-w-0">
           <DocumentVersionMenu
             projectId={projectId}
-            tab={tab}
+            document={document}
             touch
             review={{
               draftOnly: header.draftOnly,

@@ -75,14 +75,14 @@ export function createEditorDocumentCommand({
           addressNamesIt: sameDocument,
           draftOnly:
             options.draftOnly === true ||
-            (options.tab !== undefined && isDraftOnly(options.tab.documentId)),
+            (options.document !== undefined && isDraftOnly(options.document.documentId)),
           catalog: current.documentCatalog,
           selected: !!options.itemKey && scope !== null,
           lookup,
         });
         if (options.isCurrent?.() === false) return { kind: "superseded" };
       }
-      const preparedTab = options?.tab ? tabAtLocator(options.tab, target) : undefined;
+      const preparedTab = options?.document ? tabAtLocator(options.document, target) : undefined;
       // Re-opening the document the address names (a rename or move following
       // its own placement, a review re-launch) keeps the review the address
       // carries; any other document starts without one.
@@ -90,7 +90,7 @@ export function createEditorDocumentCommand({
       // resolves, so every re-select or restore of it (a repair's fallback, a tab click) carries
       // the draft its view pins.
       const draftOnlyPin = draftOnlyDocumentPin(
-        options?.tab ? [options.tab] : presented(),
+        options?.document ? [options.document] : presented(),
         requested,
         isDraftOnly,
         (documentId) => readDocumentView(accountId, projectId, documentId).pin,

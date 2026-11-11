@@ -20,7 +20,7 @@ import { useRenameProject } from "@/client/query/useRenameProject";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { observeWorksAvailability } from "@/client/query/works-availability-observer";
 import {
-  patchAccountRecentsFromTabs,
+  patchAccountRecentsFromDocuments,
   readAccountRecents,
   subscribeAccountRecents,
 } from "@/client/recents";
@@ -203,7 +203,7 @@ export function ProjectView(props: ProjectViewProps) {
         "recent-routes",
         readRecentRoutes(props.projectId).slice(0, 64).map(availabilityWatchRecord),
       );
-      patchAccountRecentsFromTabs(
+      patchAccountRecentsFromDocuments(
         accountId,
         props.projectId,
         shown.flatMap((tab) => {
@@ -409,8 +409,8 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
         ? props.chatDisplay.kind === "thread"
           ? { kind: "chat", chatId: props.chatDisplay.threadId }
           : null
-        : document.tab
-          ? { kind: "document", documentId: document.tab.documentId }
+        : document.document
+          ? { kind: "document", documentId: document.document.documentId }
           : null,
       document,
     }),
@@ -435,7 +435,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
       onDocument &&
       props.editorScope.status === "ready" &&
       !props.routeIssues?.editor &&
-      requestedMain.document.tab
+      requestedMain.document.document
     ) {
       prior.current = {
         projectId: props.projectId,
@@ -468,7 +468,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
       <SideViewProvider
         projectId={props.projectId}
         main={mainForSide}
-        mainIsLocal={main.document.local || main.document.tab?.kind === "new"}
+        mainIsLocal={main.document.local || main.document.document?.kind === "new"}
         besideChatId={props.besideChatId}
       >
         <HydratedReviewControllers
@@ -503,7 +503,7 @@ function HydratedReviewControllers({
     work: chatWork,
     ownerKey: chatOwnerKey(chatWork, chatThread?.rootThreadId ?? null),
     threadId: chatThreadId,
-    surface: "dock",
+    surface: "strip",
   });
   const accountId = useAccountId();
   const draftOnly = useOptionalDraftOnlyPresentations();

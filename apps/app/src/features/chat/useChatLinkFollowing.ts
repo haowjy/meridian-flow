@@ -50,7 +50,11 @@ import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState 
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { useTopChat } from "@/client/query/useTopChat";
 import { useWorks } from "@/client/query/useWorks";
-import { createLinkAnswerCache, createLinkRequester } from "@/core/editor/links";
+import {
+  createLinkAnswerCache,
+  createLinkRequester,
+  type LinkFollowDisposition,
+} from "@/core/editor/links";
 import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import {
   type LinkDestination,
@@ -62,7 +66,7 @@ import {
 } from "@/features/links";
 import type { FolderMenuHost } from "@/features/project/context/FolderMenu";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { useOwnerDraftOpener, useReviewingLinkDestination } from "@/features/project/review-launch";
+import { useLinkPlacement } from "@/features/project/review-launch";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
 import { type ChatDoors, type ContextPassageAnchor, useChatDoors } from "./ChatContextNavigation";
 import { createReferenceAvailability, type ReferenceAvailability } from "./reference-availability";
@@ -160,17 +164,15 @@ export function useChatLinkFollowing({
       }),
     [openReferenceDocument],
   );
-  const openReviewing = useReviewingLinkDestination(openLive);
   // A page this chat drafted opens on its draft.
-  const openDrafted = useOwnerDraftOpener(
+  const place = useLinkPlacement(
     projectId,
     chatOwnerKey(activeWork, activeThread?.rootThreadId ?? null) || null,
   );
+  const linkWorkId = activeWork?.id ?? null;
   const open = useCallback<LinkDestination>(
-    (document, gesture) =>
-      (!document.review && !document.trashed && openDrafted(document.documentId, gesture)) ||
-      openReviewing(document, gesture),
-    [openDrafted, openReviewing],
+    (document, gesture) => place(document, gesture, openLive, linkWorkId),
+    [place, openLive, linkWorkId],
   );
   const folders = useMemo<FolderMenuHost>(
     () => ({ projectId, openDocument: (documentId) => void open({ documentId }, "current") }),
@@ -221,9 +223,13 @@ export function useChatLinkFollowing({
       shellDoors
         ? {
             canOpen: shellDoors.canOpen,
-            open: (uri: string, passage?: ContextPassageAnchor) => {
+            open: (
+              uri: string,
+              passage?: ContextPassageAnchor,
+              gesture: LinkFollowDisposition = "current",
+            ) => {
               const door = shellDoors.prepare(uri, passage);
-              if (door) follower.follow(door.link, "current", null, door.policy);
+              if (door) follower.follow(door.link, gesture, null, door.policy);
             },
           }
         : null,

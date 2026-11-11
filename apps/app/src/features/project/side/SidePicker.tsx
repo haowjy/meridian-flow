@@ -134,7 +134,7 @@ function SidePickerLists({
   onDone: () => void;
 }) {
   const main = useMainForSide();
-  const mainDocument = useMainItem().document.tab;
+  const mainDocument = useMainItem().document.document;
   const side = useSideItem();
   const descriptions = useSideDescriptions();
   const { pickSide, releaseSide } = useShellCommands(projectId);
@@ -214,7 +214,7 @@ function SidePickerLists({
         ? touched
             .filter((row) => {
               const described = descriptions.read({ documentId: row.documentId });
-              return described.status === "ready" && described.tab !== null;
+              return described.status === "ready" && described.document !== null;
             })
             .map((row) => ({
               key: `document:${row.documentId}`,

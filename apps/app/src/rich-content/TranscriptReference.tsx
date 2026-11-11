@@ -31,6 +31,7 @@ import {
 
 import {
   classifyLinkTarget,
+  followDisposition,
   type LinkAnswerCache,
   type LinkFollowDisposition,
   type LinkRequester,
@@ -39,6 +40,7 @@ import {
   linkChip,
   linkChipAttributes,
   linkTargetHref,
+  MIDDLE_BUTTON,
   referenceChip,
 } from "@/core/editor/links";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
@@ -204,9 +206,9 @@ export function TranscriptReference({
       title={chip?.state === "draft" ? missing : undefined}
       {...(chip ? linkChipAttributes(chip) : {})}
       {...drag}
-      onClick={(event) => follow?.(event.ctrlKey || event.metaKey ? "new-tab" : "current")}
+      onClick={(event) => follow?.(followDisposition(event))}
       onAuxClick={(event) => {
-        if (event.button === 1) follow?.("new-tab");
+        if (event.button === MIDDLE_BUTTON) follow?.("new-tab");
       }}
       onKeyDown={(event) => {
         if (event.key === "Enter") {

@@ -11,18 +11,18 @@ import { useSideItem } from "./SideView";
 
 export function ClosedSideButton({
   projectId,
-  tab,
+  document,
   onOpen,
 }: {
   projectId: string;
   /** The side's document, when it shows one. */
-  tab: OpenDocument | null;
+  document: OpenDocument | null;
   onOpen: () => void;
 }) {
   const side = useSideItem();
   const chat = side.item?.kind === "chat" ? side.item : null;
   const chatName = useSideChatName(projectId, chat?.chatId ?? null);
-  const name = chat ? chatName : tab?.name;
+  const name = chat ? chatName : document?.name;
   if (!name) return null;
   const Icon = chat ? MessageSquare : fileKindIcon(name);
   return (

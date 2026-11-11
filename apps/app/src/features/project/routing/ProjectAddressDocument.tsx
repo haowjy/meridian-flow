@@ -39,7 +39,7 @@ export function addressedDocument(
       contextLocation: draftOnly.contextLocation,
       documentName: draftOnly.documentName,
     });
-    return tab ? { tab, draftOnly: true } : null;
+    return tab ? { document: tab, draftOnly: true } : null;
   }
   const canonical = canonicalDocumentAddress(address, result.document.entry);
   if (!canonical) return null;
@@ -53,7 +53,7 @@ export function addressedDocument(
       scope.kind === "lineage" ? scope.rootThreadId : undefined,
     ),
   );
-  return { tab, draftOnly: false };
+  return { document: tab, draftOnly: false };
 }
 
 /**

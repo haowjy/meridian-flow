@@ -5,6 +5,7 @@ import { parseContextUri } from "@meridian/contracts";
 import type { UploadIntakeResult } from "@meridian/contracts/protocol";
 import { imageCapable } from "@meridian/thread-client";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
+import { TextSelection } from "@tiptap/pm/state";
 import { type Editor, EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ArrowUp, Paperclip } from "lucide-react";
@@ -456,15 +457,24 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         // Not `editor.isEmpty`: it counts a paragraph holding only an upload in flight as empty.
         const empty = only?.type.name === "paragraph" && only.childCount === 0;
         if (!empty && (chipOf === null || chipOf !== replaces)) return false;
-        editor.commands.setContent({
-          type: "doc",
-          content: [
-            {
-              type: "paragraph",
-              content: [composerReferenceContent(pickedReferenceAttrs(reference, fileKind))],
-            },
-          ],
-        });
+        // `setContent` leaves the whole draft selected, so the next keystroke would replace the
+        // chip; the caret goes after it instead.
+        editor
+          .chain()
+          .setContent({
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [composerReferenceContent(pickedReferenceAttrs(reference, fileKind))],
+              },
+            ],
+          })
+          .command(({ tr }) => {
+            tr.setSelection(TextSelection.atEnd(tr.doc));
+            return true;
+          })
+          .run();
         return true;
       },
       attachFiles: (entries) => attachFilesRef.current(entries),

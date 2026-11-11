@@ -15,7 +15,7 @@ export type MountedPlace = PresentedPlace | "kept";
 
 type Mount = {
   projectId: string;
-  tab: OpenDocument;
+  document: OpenDocument;
   place: MountedPlace;
   /** When it was last put on screen; null once forgotten. */
   shownAt: number | null;
@@ -44,12 +44,17 @@ export class PresentedDocuments {
 
   mount(token: string, projectId: string, tab: OpenDocument, place: MountedPlace): void {
     const prior = this.mounts.get(token);
-    const sameDocument = prior?.projectId === projectId && prior.tab.documentId === tab.documentId;
-    if (sameDocument && prior.place === place && JSON.stringify(prior.tab) === JSON.stringify(tab))
+    const sameDocument =
+      prior?.projectId === projectId && prior.document.documentId === tab.documentId;
+    if (
+      sameDocument &&
+      prior.place === place &&
+      JSON.stringify(prior.document) === JSON.stringify(tab)
+    )
       return;
     const arrives = place !== "kept" && (!sameDocument || prior.place === "kept");
     const shownAt = arrives ? ++this.clock : sameDocument ? prior.shownAt : null;
-    this.mounts.set(token, { projectId, tab, place, shownAt });
+    this.mounts.set(token, { projectId, document: tab, place, shownAt });
     this.changed(projectId);
     if (prior && prior.projectId !== projectId) this.changed(prior.projectId);
     if (arrives) this.presented(projectId, tab);
@@ -69,7 +74,7 @@ export class PresentedDocuments {
       if (
         mount.projectId === projectId &&
         mount.shownAt !== null &&
-        documentIds.includes(mount.tab.documentId)
+        documentIds.includes(mount.document.documentId)
       ) {
         mount.shownAt = null;
         changed = true;
@@ -98,7 +103,7 @@ export class PresentedDocuments {
   /** The document main presents, if any. */
   mainDocumentId(projectId: string): string | null {
     for (const mount of this.mounts.values())
-      if (mount.projectId === projectId && mount.place === "main") return mount.tab.documentId;
+      if (mount.projectId === projectId && mount.place === "main") return mount.document.documentId;
     return null;
   }
 
@@ -116,9 +121,9 @@ export class PresentedDocuments {
     if (cached) return cached;
     const seen = new Set<string>();
     const next = select().flatMap((mount) => {
-      if (seen.has(mount.tab.documentId)) return [];
-      seen.add(mount.tab.documentId);
-      return [mount.tab];
+      if (seen.has(mount.document.documentId)) return [];
+      seen.add(mount.document.documentId);
+      return [mount.document];
     });
     const list = next.length === 0 ? NONE : next;
     lists.set(projectId, list);

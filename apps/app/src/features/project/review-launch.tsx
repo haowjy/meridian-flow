@@ -15,7 +15,7 @@ import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import type { LinkFollowDisposition } from "@/core/editor/links";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
-import type { LinkDestination } from "@/features/links";
+import type { LinkDestination, LinkDocumentRef } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
 import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
@@ -103,7 +103,7 @@ export function ReviewLaunchProvider({
           }),
           {
             replaceIfSameDocument: true,
-            tab: tab ?? undefined,
+            document: tab ?? undefined,
             draftOnly: target.draftOnly,
             itemKey: target.itemKey,
             reviewOwner: target.ownerKey,
@@ -177,78 +177,67 @@ export function useAiDraftLauncher() {
 }
 
 /**
- * A link destination that sends a document living only in a draft to that
- * Work's review (by item identity, as the review launch does), and every
- * other document to the surface's own live opener.
+ * Where one followed link goes. `live` is the surface's own opener for a plain click on a live
+ * page; `workId` is the Work the link names, which a hold beside keeps.
  */
-export function useReviewingLinkDestination(
-  open: LinkDestination,
-  /** The Work the link's surface opens documents in; a hold beside keeps it. */
-  workId?: string,
-): LinkDestination {
-  const openEditorReview = useOptionalOpenEditorReview();
-  const holdBeside = useOptionalHoldBeside();
-  return useCallback(
-    (document, gesture) => {
-      const { review } = document;
-      // A cmd-click (or middle click) holds the document beside main. A page only a draft has
-      // can't be held there, so it opens in main.
-      if (!review && gesture === "new-tab" && holdBeside) {
-        holdBeside({
-          kind: "document",
-          documentId: document.documentId,
-          ...(workId ? { workId } : {}),
-        });
-        return Promise.resolve();
-      }
-      if (!review) return open(document, gesture);
-      // A hidden target exists only in the draft: it is a draft-only review, never a live tab.
-      const target: AiDraftLaunchTarget = {
-        documentId: document.documentId,
-        ...review,
-        draftOnly: true,
-      };
-      if (!openEditorReview)
-        throw new Error("Opening a draft requires the project review handoff owner");
-      return openEditorReview(target).catch((error) => {
-        console.error("[editor-review] launch failed", error);
-      });
-    },
-    [open, openEditorReview, holdBeside, workId],
-  );
-}
+export type LinkPlacement = (
+  document: LinkDocumentRef,
+  gesture: LinkFollowDisposition,
+  live: LinkDestination,
+  workId?: string | null,
+) => Promise<unknown>;
 
 /**
- * A chat's way to a page it drafted, the same from a transcript link and a door: a plain click
- * opens the owner's draft in main, as its draft strip does, passage or not (the draft opens at
- * its top); a cmd-click, ctrl-click or middle click holds the page beside main, on that draft.
- * Null when the owner has no draft of the page: the caller opens Live.
+ * What a followed link opens: the one rule for links in a chat or a page, a chat's doors and its
+ * "Drafted N documents" rows.
+ * - A page only a draft holds (`document.review`) opens in main on that draft, whatever the
+ *   gesture: it can't be held beside.
+ * - A page `ownerKey` drafted opens on that draft: a plain click in main, as the draft strip does;
+ *   a cmd-click, ctrl-click or middle click holds it beside, on that draft (a page only the draft
+ *   has opens in main).
+ * - Any other page: a plain click goes to `live`; the other gestures hold it beside, in the
+ *   link's Work. A page in the trash opens in main.
  */
-export function useOwnerDraftOpener(
-  projectId: string,
-  ownerKey: string | null,
-): (documentId: string, gesture: LinkFollowDisposition) => Promise<void> | null {
+export function useLinkPlacement(projectId: string | null, ownerKey: string | null): LinkPlacement {
   const { fileForDocument } = useOwnerDrafts(projectId, ownerKey);
   const openEditorReview = useOptionalOpenEditorReview();
   const holdBeside = useOptionalHoldBeside();
   return useCallback(
-    (documentId, gesture) => {
-      const drafted = fileForDocument(documentId);
-      if (!drafted?.contextLocation || !ownerKey) return null;
-      // A page only the draft has can't be held beside: it opens in main like a plain click.
-      if (gesture === "new-tab" && holdBeside && !drafted.draftOnly) {
-        holdBeside({ kind: "document", documentId }, { ownerKey, itemKey: drafted.draft.itemKey });
+    (document, gesture, live, workId) => {
+      const hold = gesture === "new-tab" ? holdBeside : null;
+      const launch = (target: AiDraftLaunchTarget) => {
+        if (!openEditorReview)
+          throw new Error("Opening a draft requires the project review handoff owner");
+        return openEditorReview(target).catch((error) => {
+          console.error("[editor-review] launch failed", error);
+        });
+      };
+      if (document.review)
+        return launch({ documentId: document.documentId, ...document.review, draftOnly: true });
+      if (document.trashed) return live(document, gesture);
+      const drafted = ownerKey ? fileForDocument(document.documentId) : null;
+      if (ownerKey && drafted?.contextLocation) {
+        if (hold && !drafted.draftOnly) {
+          hold(
+            { kind: "document", documentId: document.documentId },
+            { ownerKey, itemKey: drafted.draft.itemKey },
+          );
+          return Promise.resolve();
+        }
+        return launch({
+          ownerKey,
+          documentId: document.documentId,
+          itemKey: drafted.draft.itemKey,
+          contextLocation: drafted.contextLocation,
+          documentName: drafted.documentName ?? undefined,
+          draftOnly: drafted.draftOnly,
+        });
+      }
+      if (hold) {
+        hold({ kind: "document", documentId: document.documentId, ...(workId ? { workId } : {}) });
         return Promise.resolve();
       }
-      if (!openEditorReview) return null;
-      return openEditorReview({
-        ownerKey,
-        documentId,
-        itemKey: drafted.draft.itemKey,
-        contextLocation: drafted.contextLocation,
-        documentName: drafted.documentName ?? undefined,
-        draftOnly: drafted.draftOnly,
-      }).catch((error) => console.error("[editor-review] launch failed", error));
+      return live(document, gesture);
     },
     [fileForDocument, ownerKey, openEditorReview, holdBeside],
   );

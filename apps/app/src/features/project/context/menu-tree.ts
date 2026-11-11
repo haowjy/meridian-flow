@@ -6,7 +6,7 @@ import type { CatalogContextView, CatalogNode } from "@/client/query/context-cat
 import type { ServerOpenDocument } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
 import { fileKindIcon } from "./context-file-icon";
-import { serverTabFromFile } from "./open-document-from-file";
+import { serverDocumentFromFile } from "./open-document-from-file";
 
 export type MenuArea = {
   /** A stable folder id for the area itself, never a catalog entry id. */
@@ -82,10 +82,10 @@ export function buildMenuTree({
 export function menuTabFor(areas: readonly MenuArea[], rowId: string): ServerOpenDocument | null {
   for (const area of areas) {
     const own = area.catalog?.files().find((file) => file.entryId === rowId);
-    if (own) return serverTabFromFile(area.scheme, own, area.owner);
+    if (own) return serverDocumentFromFile(area.scheme, own, area.owner);
     const old = area.earlier?.catalog?.files().find((file) => file.entryId === rowId);
     if (old && area.earlier)
-      return serverTabFromFile("scratch", old, { rootThreadId: area.earlier.rootThreadId });
+      return serverDocumentFromFile("scratch", old, { rootThreadId: area.earlier.rootThreadId });
   }
   return null;
 }
