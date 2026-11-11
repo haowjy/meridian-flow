@@ -9,6 +9,7 @@
 import type { EventRecord } from "@meridian/contracts/observability";
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
+import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
@@ -215,5 +216,32 @@ export function useReviewingLinkDestination(
       });
     },
     [open, openEditorReview, holdBeside, workId, phone],
+  );
+}
+
+/**
+ * Opens a document on its owner's draft when that owner has one: a chat's link to a page it
+ * drafted lands on the draft, as its draft strip does. Null when the owner has no draft of it.
+ */
+export function useOwnerDraftOpener(
+  projectId: string,
+  ownerKey: string | null,
+): (documentId: string) => Promise<void> | null {
+  const { fileForDocument } = useOwnerDrafts(projectId, ownerKey);
+  const openEditorReview = useOptionalOpenEditorReview();
+  return useCallback(
+    (documentId) => {
+      const drafted = fileForDocument(documentId);
+      if (!drafted?.contextLocation || !ownerKey || !openEditorReview) return null;
+      return openEditorReview({
+        ownerKey,
+        documentId,
+        itemKey: drafted.draft.itemKey,
+        contextLocation: drafted.contextLocation,
+        documentName: drafted.documentName ?? undefined,
+        draftOnly: drafted.draftOnly,
+      }).catch((error) => console.error("[editor-review] launch failed", error));
+    },
+    [fileForDocument, ownerKey, openEditorReview],
   );
 }

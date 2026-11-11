@@ -16,6 +16,7 @@
  * stands between the answer and the open.
  */
 
+import { draftOwnerKey } from "@meridian/contracts/branches";
 import { type ReactNode, useCallback, useMemo } from "react";
 import { useLineage } from "@/client/query/useLineageTitle";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -35,7 +36,7 @@ import {
   canOpenContextUri as isContextUriRoutable,
 } from "@/lib/context-uri";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import { useReviewingLinkDestination } from "../review-launch";
+import { useOwnerDraftOpener, useReviewingLinkDestination } from "../review-launch";
 import { type ContextRouteRequest, contextRouteRequest } from "../routing/project-route";
 import { canonicalDoorUri } from "./canonical-door-uri";
 import { usePassageDoors } from "./usePassageDoors";
@@ -129,13 +130,25 @@ export function ProjectChatContextNavigationProvider({
   );
   // Only a hidden document reaches the review handoff, so its live fallback is never used.
   const openReviewing = useReviewingLinkDestination(reviewOnly);
+  // The chat's own drafts: its Work's, or under No Work its lineage's. A link to a document the
+  // chat drafted opens that draft, the way its draft strip does.
+  const ownerKey = !activeWork
+    ? null
+    : activeWork.id !== noWorkId
+      ? draftOwnerKey({ kind: "work", workId: activeWork.id })
+      : rootThreadId
+        ? draftOwnerKey({ kind: "lineage", rootThreadId })
+        : null;
+  const openDrafted = useOwnerDraftOpener(projectId, ownerKey);
   // A hidden document is a review: the review handoff opens it in main, on its draft.
   const openFound = useCallback(
     (door: Placement, document: LinkDocumentRef, gesture: Parameters<LinkDestination>[1]) => {
-      if (!document.review) return Promise.resolve(openLive(door, document));
-      return openReviewing(document, gesture);
+      if (document.review) return openReviewing(document, gesture);
+      // A passage lands in live text.
+      const drafted = door.passage ? null : openDrafted(document.documentId);
+      return drafted ?? Promise.resolve(openLive(door, document));
     },
-    [openLive, openReviewing],
+    [openLive, openReviewing, openDrafted],
   );
   // Only a route-backed door overrides the follower's missing outcome: its route says so in
   // place. A resource door has no route, so it keeps the follower's shared outcome.
