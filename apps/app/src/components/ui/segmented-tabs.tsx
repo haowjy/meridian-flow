@@ -5,7 +5,8 @@
  * Deliberately not underline tabs: the recessed track gives the control a
  * complete boundary, so it reads as a switch inside chrome or a heading row
  * rather than a tab strip with its base cut off. The active segment surfaces
- * the paper tone inside the track; selection is tonal, never an outline.
+ * the paper tone inside the track; selection is tonal, never an outline. In dark the
+ * paper tone is within a few points of the track, so it takes the selected overlay.
  *
  * A tablist (ARIA tabs pattern): Tab enters on the selected segment, Left/Right
  * and Home/End move and select.
@@ -99,7 +100,7 @@ export function SegmentedTabs<T extends string>({
               role.row,
               fill && "flex-1",
               active
-                ? "bg-background font-medium text-foreground shadow-raise"
+                ? "bg-background font-medium text-foreground shadow-raise dark:bg-ink-fill-strong"
                 : cn(role.secondary, "hover:text-foreground"),
               option.disabled && "cursor-not-allowed opacity-50 hover:text-muted-foreground",
             )}

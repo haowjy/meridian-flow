@@ -2,19 +2,20 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contracts/protocol";
 import { ChevronDown, ChevronRight, Layers, Plus, Star } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useRenameThread } from "@/client/query/useRenameThread";
 import { useWorks } from "@/client/query/useWorks";
 import { announce } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem, useMenuActionDispatch } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
 import { ListRow } from "@/components/ui/list-row";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { role } from "@/components/ui/roles";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
+import { lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import { RowIcon } from "../../context/ContextTreeRows";
@@ -243,6 +244,12 @@ function FeedRows({ feed, rows, empty }: { feed: Feed; rows: RowContext; empty: 
 /** The chat the writer just deleted, with its Undo. */
 function DeletedLine({ commands }: { commands: Commands }) {
   const { deleted, undoDelete, dismissDeleted } = commands;
+  const undo = useRef<HTMLButtonElement>(null);
+  // The row whose menu deleted the chat is gone: focus goes to its Undo.
+  const deletedId = deleted?.id;
+  useEffect(() => {
+    if (deletedId && undo.current) moveFocus(undo.current, { ring: lastInputWasKeyboard() });
+  }, [deletedId]);
   if (!deleted) return null;
   if (deleted.restore === "failed")
     return (
@@ -256,6 +263,7 @@ function DeletedLine({ commands }: { commands: Commands }) {
         <Trans>Deleted {deleted.title}</Trans>
       </span>
       <button
+        ref={undo}
         type="button"
         className="text-button text-xs"
         onClick={undoDelete}
@@ -307,6 +315,7 @@ function ChatRow({
   const title = displayThreadTitle(chat.title);
   const favorite = favorites.has(chat.id);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
   const rename = useRenameThread(projectId, chat.id, (confirmed) => {
     announce(t`Renamed to ${confirmed}`);
   });
@@ -359,15 +368,19 @@ function ChatRow({
               <OverflowMenu
                 open={menuOpen}
                 onOpenChange={setMenuOpen}
+                onCloseAutoFocus={onCloseAutoFocus}
                 label={t`Actions for ${title}`}
               >
-                <DropdownMenuItem onSelect={() => start(title)}>
+                <DropdownMenuItem onSelect={() => dispatch(() => start(title))}>
                   <span>{t`Rename`}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => commands.onFavorite(chat, !favorite)}>
                   <span>{favorite ? t`Remove from Favourites` : t`Add to Favourites`}</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem variant="destructive" onSelect={() => commands.onDelete(chat)}>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={() => dispatch(() => commands.onDelete(chat))}
+                >
                   <span>{t`Delete chat`}</span>
                 </DropdownMenuItem>
               </OverflowMenu>

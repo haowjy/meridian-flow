@@ -13,6 +13,7 @@ import {
   type UIEventHandler,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -296,14 +297,16 @@ function ActiveSessionEditorView({
   // Surface config: applied to the running editor, never a reason to rebuild it.
   // Only the prose node's own attributes live here; a lane that answers a press
   // does it in its own extension, where the state it reads already is.
+  const leaveHintId = useId();
   const editorProps = useMemo<NonNullable<EditorOptions["editorProps"]>>(
     () => ({
       attributes: {
         class: editorProseClass(showToolbar ? "docked" : "none"),
         "aria-label": ariaLabel ?? t`Collaborative document editor`,
+        "aria-describedby": leaveHintId,
       },
     }),
-    [ariaLabel, showToolbar],
+    [ariaLabel, showToolbar, leaveHintId],
   );
 
   const editor = useMountedEditor({
@@ -436,6 +439,9 @@ function ActiveSessionEditorView({
         {/* The one chrome mount host. Every surface registers in
           `chrome/chrome-surfaces.tsx`; nothing new is added to this file. */}
         <EditorChromeHost editor={editor} active={active} />
+        <span id={leaveHintId} hidden>
+          <Trans>Tab types a tab. To leave the document, press Escape, then Tab.</Trans>
+        </span>
         {/* Where an internal link goes, and where a picture's bytes go. Ports, not
           surfaces: each renders nothing, and what a writer sees from either lane
           mounts through the host above. */}
@@ -453,7 +459,12 @@ function ActiveSessionEditorView({
   );
 }
 
-export function PendingEditorShell({ className, showToolbar = true }: EditorSurfaceOptions) {
+export function PendingEditorShell({
+  className,
+  showToolbar = true,
+  active = true,
+  held = false,
+}: EditorSurfaceOptions) {
   usePaintPending();
   return (
     <section
@@ -463,7 +474,7 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
           document opens, greyed and saying so, rather than popping in. */}
       <EditorCanvas
         editor={null}
-        active
+        active={active && !held}
         toolbar={showToolbar ? <DocumentToolbar editor={null} /> : undefined}
       />
     </section>

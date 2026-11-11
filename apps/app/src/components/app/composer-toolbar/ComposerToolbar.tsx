@@ -8,6 +8,7 @@ import {
   dropdownRowVariants,
   dropdownSurfaceVariants,
 } from "@/components/ui/dropdown-presentation";
+import { handleListKeys } from "@/components/ui/list-keys";
 import { OverflowMenuTrigger } from "@/components/ui/overflow-menu";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -326,6 +327,20 @@ export function ComposerToolbar({
               });
             else dispatch({ type: "root.dismissRequested", cause: "outside" });
           }}
+          // A menu that opens on pointerdown (Radix's dropdown trigger) stacks a modal layer
+          // before the outside pointerdown reaches this one, so only the focus it takes says
+          // the writer moved on. That focus stays where it went.
+          onFocusOutside={(event) => {
+            event.preventDefault();
+            if (root.current?.contains(event.target as Node)) return;
+            if (state.surface.kind === "panel")
+              dispatch({
+                type: "panel.dismissRequested",
+                panel: state.surface.panel,
+                cause: "focus",
+              });
+            else dispatch({ type: "root.dismissRequested", cause: "focus" });
+          }}
           onOpenAutoFocus={(event) => event.preventDefault()}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
@@ -351,7 +366,7 @@ export function ComposerToolbar({
               {panel.render(commands(state.surface.panel))}
             </>
           ) : (
-            <ul>
+            <ul onKeyDown={handleListKeys}>
               {overflow.map((control) => (
                 <li key={control.id}>
                   {control.kind === "status" ? (
@@ -361,6 +376,7 @@ export function ComposerToolbar({
                     </div>
                   ) : (
                     <Button
+                      data-list-item
                       {...triggerBinding(control, "root-row").buttonProps}
                       ref={triggerBinding(control, "root-row").ref}
                       variant="ghost"
