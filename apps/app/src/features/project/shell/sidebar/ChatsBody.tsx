@@ -13,13 +13,13 @@ import { contextTreeFileRowClassName } from "../../context/context-row-geometry"
 import { PaneHeaderActionButton } from "../../context/RailPaneHeader";
 import { SourceHint, SourcePane } from "./SourcePane";
 
-/** Settled chats shown before "Older" hands over to the full list. */
-const SETTLED_SHOWN = 6;
+/** Idle chats shown before "Older" hands over to the full list. */
+const IDLE_SHOWN = 6;
 
 type ChatGroups = {
   needsYou: ThreadListItem[];
   running: ThreadListItem[];
-  settled: ThreadListItem[];
+  idle: ThreadListItem[];
   older: number;
   helpers: Map<string, ThreadListItem[]>;
   otherWorks: { workId: string; running: number; needsYou: number }[];
@@ -27,7 +27,7 @@ type ChatGroups = {
 
 /**
  * Chat mode's sidebar: the scoped Work's chats by what they need from the
- * writer. Running helpers sit under their parent. Other Works keep one row each
+ * writer. Working helpers sit under their parent. Other Works keep one row each
  * while one of their chats needs the writer or is running.
  */
 export function ChatsBody({
@@ -95,14 +95,14 @@ export function ChatsBody({
           </SourceHint>
         ) : (
           <>
-            <Group label={t`Needs you`} hidden={groups.needsYou.length === 0}>
+            <Group label={t`Waiting on you`} hidden={groups.needsYou.length === 0}>
               {groups.needsYou.map((thread) => row(thread, "needs-you"))}
             </Group>
-            <Group label={t`Running`} hidden={groups.running.length === 0}>
+            <Group label={t`Working`} hidden={groups.running.length === 0}>
               {groups.running.map((thread) => row(thread, "running"))}
             </Group>
-            <Group label={t`Settled`} hidden={groups.settled.length === 0}>
-              {groups.settled.map((thread) => row(thread, "settled"))}
+            <Group label={t`Idle`} hidden={groups.idle.length === 0}>
+              {groups.idle.map((thread) => row(thread, "idle"))}
               {groups.older > 0 ? (
                 <button
                   type="button"
@@ -114,7 +114,7 @@ export function ChatsBody({
                 </button>
               ) : null}
             </Group>
-            {groups.needsYou.length + groups.running.length + groups.settled.length === 0 ? (
+            {groups.needsYou.length + groups.running.length + groups.idle.length === 0 ? (
               <SourceHint>
                 <Trans>No chats in this Work yet.</Trans>
               </SourceHint>
@@ -138,9 +138,9 @@ export function ChatsBody({
                     )}
                   >
                     {other.needsYou > 0 ? (
-                      <Trans>{other.needsYou} needs you</Trans>
+                      <Trans>{other.needsYou} waiting on you</Trans>
                     ) : (
-                      <Trans>{other.running} running</Trans>
+                      <Trans>{other.running} working</Trans>
                     )}
                   </span>
                 </button>
@@ -175,7 +175,7 @@ function Group({
   );
 }
 
-type RowState = "needs-you" | "running" | "settled";
+type RowState = "needs-you" | "running" | "idle";
 
 function ChatRow({
   thread,
@@ -224,7 +224,7 @@ function StateMark({ state }: { state: RowState }) {
     return (
       <span
         role="img"
-        aria-label={t`Running`}
+        aria-label={t`Working`}
         className="size-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-border-subtle border-t-muted-foreground motion-reduce:animate-none"
       />
     );
@@ -232,7 +232,7 @@ function StateMark({ state }: { state: RowState }) {
     return (
       <span
         role="img"
-        aria-label={t`Needs you`}
+        aria-label={t`Waiting on you`}
         className="size-2 shrink-0 rounded-full bg-primary"
       />
     );
@@ -260,7 +260,7 @@ export function groupChats(
     .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
   const needsYou: ThreadListItem[] = [];
   const running: ThreadListItem[] = [];
-  const settled: ThreadListItem[] = [];
+  const idle: ThreadListItem[] = [];
   const others = new Map<string, { workId: string; running: number; needsYou: number }>();
   for (const thread of recent) {
     const busy = thread.runningTurnId !== null;
@@ -276,13 +276,13 @@ export function groupChats(
     }
     if (thread.actionRequired) needsYou.push(thread);
     else if (busy) running.push(thread);
-    else settled.push(thread);
+    else idle.push(thread);
   }
   return {
     needsYou,
     running,
-    settled: settled.slice(0, SETTLED_SHOWN),
-    older: Math.max(0, settled.length - SETTLED_SHOWN),
+    idle: idle.slice(0, IDLE_SHOWN),
+    older: Math.max(0, idle.length - IDLE_SHOWN),
     helpers,
     otherWorks: [...others.values()],
   };
