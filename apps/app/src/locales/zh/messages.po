@@ -1632,6 +1632,10 @@ msgstr "清除状态"
 msgid "Close"
 msgstr ""
 
+#: src/features/project/shell/MainTabStrip.tsx
+msgid "Close {name}"
+msgstr ""
+
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Close artifact preview"
 msgstr ""
@@ -3844,7 +3848,7 @@ msgid "New chat about {mainName}"
 msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
-#: src/features/project/shell/MainHeader.tsx
+#: src/features/project/shell/MainTabStrip.tsx
 msgid "New document"
 msgstr ""
 
@@ -4167,12 +4171,16 @@ msgstr ""
 msgid "Open a document from the project tree, or start a new one."
 msgstr ""
 
-#: src/features/project/shell/MainHeader.tsx
+#: src/features/project/shell/MainTabStrip.tsx
 msgid "Open a Work to create an Untitled document"
 msgstr ""
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Open conversation"
+msgstr ""
+
+#: src/features/project/shell/MainTabStrip.tsx
+msgid "Open documents"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
@@ -6154,6 +6162,7 @@ msgid "workReceipt.unarchived"
 msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx
+#: src/features/project/DesktopProject.tsx
 msgid "Unavailable"
 msgstr ""
 

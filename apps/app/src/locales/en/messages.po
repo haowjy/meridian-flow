@@ -1632,6 +1632,10 @@ msgstr "Clear the status"
 msgid "Close"
 msgstr "Close"
 
+#: src/features/project/shell/MainTabStrip.tsx
+msgid "Close {name}"
+msgstr "Close {name}"
+
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Close artifact preview"
 msgstr "Close artifact preview"
@@ -3844,7 +3848,7 @@ msgid "New chat about {mainName}"
 msgstr "New chat about {mainName}"
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
-#: src/features/project/shell/MainHeader.tsx
+#: src/features/project/shell/MainTabStrip.tsx
 msgid "New document"
 msgstr "New document"
 
@@ -4167,13 +4171,17 @@ msgstr "Open a chat to see its Scratch."
 msgid "Open a document from the project tree, or start a new one."
 msgstr "Open a document from the project tree, or start a new one."
 
-#: src/features/project/shell/MainHeader.tsx
+#: src/features/project/shell/MainTabStrip.tsx
 msgid "Open a Work to create an Untitled document"
 msgstr "Open a Work to create an Untitled document"
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Open conversation"
 msgstr "Open conversation"
+
+#: src/features/project/shell/MainTabStrip.tsx
+msgid "Open documents"
+msgstr "Open documents"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Open full screen"
@@ -6154,6 +6162,7 @@ msgid "workReceipt.unarchived"
 msgstr "Unarchived Work {name}"
 
 #: src/features/chat/ComposerWorkControl.tsx
+#: src/features/project/DesktopProject.tsx
 msgid "Unavailable"
 msgstr "Unavailable"
 
