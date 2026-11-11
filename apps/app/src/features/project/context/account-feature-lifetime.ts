@@ -17,6 +17,7 @@ import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { PresentedDocuments } from "./presented-documents";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
 import { reconcileRecentAvailability } from "./recent-availability";
+import { observeRefusedDeletes } from "./refused-delete-observer";
 import { RemovedNoticeStore } from "./removed-notice-store";
 import { renameOperationLifecycle } from "./rename-operation-lifecycle";
 
@@ -37,6 +38,7 @@ export class AccountFeatureLifetime {
   readonly opener;
   readonly renameOperations;
   private readonly continuity: IdentityContinuity | null;
+  private readonly stopRefusedDeletes: (() => void) | null;
   /** What the account has learned its projects' ahead refs settled on; never cleared while it lives. */
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
@@ -125,6 +127,9 @@ export class AccountFeatureLifetime {
           );
     this.renameOperations = this.resources ? renameOperationLifecycle(this.resources) : null;
     this.continuity = this.resources ? new IdentityContinuity(accountId, this.resources) : null;
+    this.stopRefusedDeletes = this.resources
+      ? observeRefusedDeletes(this.resources, this.notices)
+      : null;
     if (this.resources) this.runtime.connectLocalResources(this.resources);
     this.opener = new ProjectDocumentLiveOpener({
       availability: this.availability,
@@ -188,6 +193,7 @@ export class AccountFeatureLifetime {
     for (const stop of [...this.removedRooms]) stop();
     this.renameOperations?.dispose();
     this.continuity?.dispose();
+    this.stopRefusedDeletes?.();
     this.resources?.beginClose();
     this.draftCommands.close();
     this.runtime.beginClose();

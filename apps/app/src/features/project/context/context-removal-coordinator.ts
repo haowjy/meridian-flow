@@ -143,7 +143,7 @@ export type ContextRouteActivation = {
 /** Where views report documents they presented that vanished (`RemovedNoticeStore`). */
 export type RemovedPresentationPort = Pick<
   RemovedNoticeStore,
-  "presentedRemoved" | "markOwnRemoval" | "removalsLanded"
+  "presentedRemoved" | "markOwnRemoval" | "ownRemovalEnded"
 >;
 
 type CoordinatorProjectState = {
@@ -701,7 +701,7 @@ export class ContextRemovalCoordinator {
               : [];
           }),
         );
-        this.notices?.removalsLanded(
+        this.notices?.ownRemovalEnded(
           projectId,
           committed.flatMap((command) =>
             command.kind === "terminal-remove" && !held.has(command.documentId)

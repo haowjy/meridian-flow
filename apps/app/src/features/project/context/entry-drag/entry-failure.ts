@@ -174,7 +174,7 @@ export async function runCopy(
 }
 
 /** The documents deleting `entry` takes away. */
-async function ownRemovals(context: EntryContext, entry: EntryRef): Promise<string[]> {
+export async function ownRemovals(context: EntryContext, entry: EntryRef): Promise<string[]> {
   if (entry.kind === "file") return [entry.id];
   const view = await currentView(context);
   return view.records.flatMap(({ resource }) => {
