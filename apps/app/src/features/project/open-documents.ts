@@ -23,12 +23,10 @@ import {
   DEFAULT_TAB_VIEW,
   getContextTabs,
   isDraftOnly,
-  isEditorContextTab,
   reviewEntryOf,
   reviewOwnerOfTab,
   type TabView,
   tabKey,
-  useContextTabs,
   useContextTabsStore,
   useSelectedContextTab,
 } from "@/client/stores";
@@ -207,56 +205,40 @@ function openDocumentTab(
   };
 }
 
-export function useOpenDocuments(projectId: string): {
-  tabs: readonly OpenDocumentTab[];
-  selected: OpenDocumentTab | null;
-} {
-  const slice = useContextTabs(projectId);
-  const scope = useResolveScope(projectId);
-  const pinned = usePinnedDraftRows(projectId, pinOwnerKeys(slice.tabs, scope.ownerKey));
-  // A pin names a draft. A cached list lacking the item may only be stale (the draft was made a
-  // moment ago), so the pin goes only once a fresh read of the owner's list also lacks it: the
-  // draft has ended (Applied, Discarded, or gone in another tab). A failed read clears nothing.
-  // The address sync then drops `item=`. The effect keys on the pins that look missing, so its
-  // own fetch cannot re-trigger it.
-  const queryClient = useQueryClient();
-  const missingPins = slice.tabs.flatMap(({ reviewPin: pin }) => {
-    if (!pin) return [];
-    const list = pin.ownerKey === scope.ownerKey ? scope.drafts : pinned.get(pin.ownerKey);
-    return list?.status === "ready" &&
-      !list.failed &&
-      !list.rows.some((r) => r.itemKey === pin.itemKey)
-      ? [JSON.stringify([pin.ownerKey, pin.itemKey])]
-      : [];
-  });
-  const missingKey = [...new Set(missingPins)].join();
-  useEffect(() => {
-    for (const key of new Set(missingPins)) {
-      const [ownerKey, itemKey] = JSON.parse(key) as [string, string];
-      const queryKey = projectQueryKeys.ownerDrafts(projectId, ownerKey);
-      void queryClient.refetchQueries({ queryKey }).then(() => {
-        // A failed refetch keeps the old rows and sets status "error": it proves nothing.
-        if (queryClient.getQueryState(queryKey)?.status !== "success") return;
-        if (
-          !cachedOwnerDrafts(queryClient, projectId, ownerKey)?.some((r) => r.itemKey === itemKey)
-        )
-          useContextTabsStore.getState().clearReviewPins(projectId, { ownerKey, itemKey });
-      });
-    }
-  }, [projectId, queryClient, missingKey]);
-  return useMemo(() => {
-    const tabs = slice.tabs
-      .filter(isEditorContextTab)
-      .map((tab) => openDocumentTab(tab, scope, pinned));
-    return { tabs, selected: tabs.find((t) => t.key === slice.selectedTabKey) ?? null };
-  }, [slice, scope, pinned]);
-}
-
-/** The selected tab only: the document surface re-renders for its tab, not for the strip. */
+/**
+ * The selected tab only: the document surface re-renders for its tab, not for the strip.
+ *
+ * A pin names a draft. A cached list lacking the item may only be stale (the draft was made a
+ * moment ago), so the pin goes only once a fresh read of the owner's list also lacks it: the
+ * draft has ended (Applied, Discarded, or gone in another tab). A failed read clears nothing.
+ * The address sync then drops `item=`. The effect keys on the pin that looks missing, so its own
+ * fetch cannot re-trigger it.
+ */
 export function useSelectedOpenDocument(projectId: string): OpenDocumentTab | null {
   const tab = useSelectedContextTab(projectId);
   const scope = useResolveScope(projectId);
   const pinned = usePinnedDraftRows(projectId, tab ? pinOwnerKeys([tab], scope.ownerKey) : []);
+  const queryClient = useQueryClient();
+  const pin = tab?.reviewPin;
+  const list = pin && (pin.ownerKey === scope.ownerKey ? scope.drafts : pinned.get(pin.ownerKey));
+  const missingKey =
+    pin &&
+    list?.status === "ready" &&
+    !list.failed &&
+    !list.rows.some((r) => r.itemKey === pin.itemKey)
+      ? JSON.stringify([pin.ownerKey, pin.itemKey])
+      : null;
+  useEffect(() => {
+    if (!missingKey) return;
+    const [ownerKey, itemKey] = JSON.parse(missingKey) as [string, string];
+    const queryKey = projectQueryKeys.ownerDrafts(projectId, ownerKey);
+    void queryClient.refetchQueries({ queryKey }).then(() => {
+      // A failed refetch keeps the old rows and sets status "error": it proves nothing.
+      if (queryClient.getQueryState(queryKey)?.status !== "success") return;
+      if (!cachedOwnerDrafts(queryClient, projectId, ownerKey)?.some((r) => r.itemKey === itemKey))
+        useContextTabsStore.getState().clearReviewPins(projectId, { ownerKey, itemKey });
+    });
+  }, [projectId, queryClient, missingKey]);
   return useMemo(() => (tab ? openDocumentTab(tab, scope, pinned) : null), [tab, scope, pinned]);
 }
 

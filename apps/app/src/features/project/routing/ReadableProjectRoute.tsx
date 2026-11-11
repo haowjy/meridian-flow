@@ -79,7 +79,6 @@ import {
   canonicalDocumentPath,
   gateLiveView,
   holdsBoundDocument,
-  projectAddressMatchesContextTarget,
   reconcileDocumentAddress,
   resolveLocalDocumentAddress,
 } from "./local-document-address";
@@ -338,15 +337,6 @@ function ReadableProjectDestination({
     const current = latest.current.navigation;
     const ticket = current?.beginIntent();
     return () => !!ticket && !!current?.isCurrent(ticket);
-  }, []);
-  const isCurrentContextRoute = useCallback((target: ContextRouteTarget) => {
-    return projectAddressMatchesContextTarget(
-      latest.current.address,
-      target,
-      latest.current.noWorkId,
-      undefined,
-      latest.current.editorWorkId,
-    );
   }, []);
   const reportSelection = useCallback(
     ({ editorWorkId: workId }: { editorWorkId: ParsedRequestId | null }) => {
@@ -1051,7 +1041,6 @@ function ReadableProjectDestination({
     <ProjectNavigationProvider
       screen={activeScreen}
       openContextRoute={openContext}
-      openWork={routeCommands.openWork}
       screenCommands={{
         showEditor: (options) => showScreenDestination("context", options),
         showWork: () => showScreenDestination("work"),
@@ -1060,7 +1049,6 @@ function ReadableProjectDestination({
       isCurrentNavigation={(ticket) => latest.current.navigation?.isCurrent(ticket) ?? false}
       captureNavigation={captureNavigation}
       trash={{ destination: trashDestination, navigate: navigateTrash }}
-      isCurrentContextRoute={isCurrentContextRoute}
       registerLeaveGuard={navigation?.registerGuard}
     >
       <ChatNavigationProvider value={chat}>
