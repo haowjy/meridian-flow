@@ -1,7 +1,7 @@
 /** The document the Chat screen's dock shows: the selected tab, as the resource projection places it. */
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { projectResourceTab } from "../context/context-tab-from-file";
-import { useIsDraftOnly } from "../context/use-draft-only-presentation";
+import { useIsDraftOnly } from "../context/use-is-draft-only";
 import { type OpenDocumentTab, useSelectedOpenDocument } from "../open-documents";
 import type { ScreenKey } from "../routing/project-route";
 

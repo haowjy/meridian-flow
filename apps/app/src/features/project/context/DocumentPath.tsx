@@ -28,7 +28,7 @@ import { folderChain } from "./entry-drag/move-plan";
 import { type ReferenceSubject, useReferenceDrag } from "./entry-drag/reference-source";
 import type { TabLocation } from "./identity-location";
 import { tabSubject } from "./tab-subject";
-import { useIsDraftOnly } from "./use-draft-only-presentation";
+import { useIsDraftOnly } from "./use-is-draft-only";
 import { useOwnAreaHeading, useProjectMenuSource } from "./use-project-menu-source";
 
 export function DocumentPath({

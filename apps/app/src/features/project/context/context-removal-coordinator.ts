@@ -1,6 +1,10 @@
 /** Account-lifetime effect shell for exact context removal transitions. */
 
-import type { LiveDocumentSessionAuthority, WorkingSetRoute } from "@meridian/contracts/protocol";
+import type {
+  LiveDocumentSessionAuthority,
+  ProjectContextTreeScheme,
+  WorkingSetRoute,
+} from "@meridian/contracts/protocol";
 import {
   type ContextTab,
   commitContextAvailability,
@@ -103,10 +107,24 @@ type EditorWorkspacePort = {
 /** The draft-only documents hosts present (`DraftOnlyPresentations`). */
 export type DraftOnlyPort = {
   isDraftOnly(projectId: string, documentId: string): boolean;
-  holdRemovedLive(projectId: string, documentId: string): void;
+  holdRemovedLive(
+    projectId: string,
+    documentId: string,
+    drafts: readonly {
+      projectId: string;
+      documentId: string;
+      ownerKey: string;
+      itemKey: string;
+      contextLocation: { scheme: ProjectContextTreeScheme; path: string };
+    }[],
+  ): void;
+  promote(projectId: string, documentId: string): void;
 };
 
-/** The drafts of a document some surface holds open (`DraftCommandOwner.boundDrafts`). */
+/**
+ * The drafts of a document some surface holds open and its view shows: only those keep it when
+ * live deletes it. A draft held open but not shown paints nothing.
+ */
 export type BoundDraftsPort = {
   boundDrafts(
     projectId: string,
@@ -268,8 +286,8 @@ export class ContextRemovalCoordinator {
   /**
    * The documents among `documentIds` whose tabs stay when live loses them: a host presents the
    * document draft-only, or a draft held open still has it: a live delete must not strand the
-   * draft. The draft paints in them; a held live document becomes draft-only in its hosts until a
-   * restore promotes it.
+   * draft. The draft paints in them; a held live document stays draft-only while a held draft has
+   * it, until it ends or live has the document again.
    */
   private heldByDrafts(projectId: string, documentIds: readonly string[]): Set<string> {
     const held = new Set<string>();
@@ -278,9 +296,21 @@ export class ContextRemovalCoordinator {
         held.add(documentId);
         continue;
       }
-      if (!this.drafts?.boundDrafts(projectId, documentId).length) continue;
+      const drafts = this.drafts?.boundDrafts(projectId, documentId) ?? [];
+      if (!drafts.length) continue;
       held.add(documentId);
-      this.draftOnly?.holdRemovedLive(projectId, documentId);
+      const tab = this.workspace
+        .read(projectId)
+        .tabs.find((candidate) => candidate.documentId === documentId);
+      const contextLocation =
+        tab?.kind === "tracked" ? { scheme: tab.scheme, path: tab.path } : null;
+      this.draftOnly?.holdRemovedLive(
+        projectId,
+        documentId,
+        contextLocation
+          ? drafts.map((draft) => ({ ...draft, projectId, documentId, contextLocation }))
+          : [],
+      );
     }
     return held;
   }
@@ -672,6 +702,9 @@ export class ContextRemovalCoordinator {
           const key = `${projectId}/${availabilityDocumentId(command)}`;
           if (command.kind === "terminal-remove") this.terminalAvailability.set(key, command);
           else this.terminalAvailability.delete(key);
+          // Live has the document again (a restore, or an Apply that brought it back): its holds end.
+          if (command.kind === "available")
+            this.draftOnly?.promote(projectId, availabilityDocumentId(command));
         }
         if (route && routeSearch && settledPlan.routeSearch) {
           const nextRouteSearch = settledPlan.routeSearch;

@@ -8,30 +8,17 @@
  * draft-only until settlement promotes it: a draft that ends (a Discard) must not send the host
  * to a live room the server refuses before settlement closes it.
  */
-import { useCallback, useLayoutEffect, useState, useSyncExternalStore } from "react";
+import { useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { type DraftPin, useDocumentView } from "@/client/project-shell/document-views";
 import type { ContextTab } from "@/client/stores";
 import { useOwnerDraftRows } from "../views";
 import { useAccountId, useOptionalDraftOnlyPresentations } from "./account-feature-context";
 import type { EditableContextTab } from "./ContextDocumentHost";
+import { useIsDraftOnly } from "./use-is-draft-only";
 
 export type DocumentLiveness = "live" | "draft-only" | "pending";
 
 const subscribeNothing = () => () => undefined;
-
-/** Whether a document is draft-only now (`DraftOnlyPresentations`); re-renders when that changes. */
-export function useIsDraftOnly(projectId: string): (documentId: string) => boolean {
-  const registry = useOptionalDraftOnlyPresentations();
-  const version = useSyncExternalStore(
-    registry?.subscribe ?? subscribeNothing,
-    () => registry?.version ?? 0,
-    () => 0,
-  );
-  return useCallback(
-    (documentId: string) => registry?.isDraftOnly(projectId, documentId) ?? false,
-    [registry, projectId, version],
-  );
-}
 
 /** The pinned draft's evidence that live lacks the document; `pending` while its row is unread. */
 function usePinnedDraftEvidence(

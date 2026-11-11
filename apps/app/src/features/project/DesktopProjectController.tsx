@@ -7,7 +7,7 @@ import { resolveEditorPresentation } from "./context/editor-presentation";
 import type { VisibleEditorRoute } from "./context/resolve-route-owner";
 import { resolveRouteOwner } from "./context/resolve-route-owner";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
-import { useIsDraftOnly } from "./context/use-draft-only-presentation";
+import { useIsDraftOnly } from "./context/use-is-draft-only";
 import type { ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import type { ScreenKey } from "./routing/project-route";
 

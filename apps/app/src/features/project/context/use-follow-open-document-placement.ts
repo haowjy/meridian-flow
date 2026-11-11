@@ -20,7 +20,7 @@ import {
 import { routeTargetForTab } from "./context-removal-planner";
 import { type ContextRouteSelection, routeSelectionDocumentId } from "./context-removal-protocol";
 import { projectResourceTab } from "./context-tab-from-file";
-import { useIsDraftOnly } from "./use-draft-only-presentation";
+import { useIsDraftOnly } from "./use-is-draft-only";
 
 export function useFollowOpenDocumentPlacement(input: {
   projectId: string;

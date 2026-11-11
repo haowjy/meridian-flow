@@ -1,31 +1,36 @@
 /**
  * The draft-only documents on screen: documents live lacks (a page a draft created, or one deleted
- * live while a draft still has it) that a mounted host presents through their draft. Each host
- * mount presents under a token of its own, so a late answer about an earlier presentation of the
- * same item cannot settle a newer one. `DraftOnlySettlement` settles every presentation: promoted
- * when live has the document again, removed when the draft is gone.
+ * live while a draft still has it) that are shown through their draft. Two things present one:
+ * a host mount, under a token of its own, so a late answer about an earlier presentation of the
+ * same item cannot settle a newer one; and a live delete of a document a draft held open, one
+ * entry per held draft, so the hold lasts exactly as long as its draft or the live delete.
+ * `DraftOnlySettlement` settles every presentation: promoted when live has the document again,
+ * removed when the draft is gone.
  */
 import type { ContextUri } from "@/lib/context-uri";
 import type { DraftRef } from "./review-command-types";
 
 export type DraftOnlyPresentation = DraftRef & {
-  /** Minted per host mount. */
+  /** Minted per host mount, or derived from the held draft for a live delete's hold. */
   token: string;
   contextLocation: Pick<ContextUri, "scheme" | "path">;
 };
+
+/** A draft held open when live deleted its document, and where that document was. */
+export type HeldDraft = DraftRef & { contextLocation: Pick<ContextUri, "scheme" | "path"> };
 
 /** What one mount's presentation is now: never presented, draft-only, or live again. */
 export type PresentationState = "absent" | "draft-only" | "promoted";
 
 const NONE: readonly DraftOnlyPresentation[] = [];
-const documentKey = (projectId: string, documentId: string) =>
-  JSON.stringify([projectId, documentId]);
+const holdToken = (draft: DraftRef) =>
+  `hold:${JSON.stringify([draft.projectId, draft.documentId, draft.ownerKey, draft.itemKey])}`;
 
 export class DraftOnlyPresentations {
   private readonly entries = new Map<string, DraftOnlyPresentation>();
+  /** Mount tokens whose document live has again; a hold is deleted instead. */
   private readonly promoted = new Set<string>();
-  /** Documents live deleted while a draft held open still has them. */
-  private readonly removedLive = new Set<string>();
+  private readonly holds = new Set<string>();
   private readonly listeners = new Set<() => void>();
   private readonly byProject = new Map<string, readonly DraftOnlyPresentation[]>();
   /** Bumped on every change: a snapshot for readers of `isDraftOnly`. */
@@ -48,12 +53,13 @@ export class DraftOnlyPresentations {
     this.changed(entry.projectId);
   }
 
-  /** The mount ended. */
+  /** The mount ended, or the held draft did. */
   withdraw(token: string): void {
     const entry = this.entries.get(token);
     if (!entry) return;
     this.entries.delete(token);
     this.promoted.delete(token);
+    this.holds.delete(token);
     this.changed(entry.projectId);
   }
 
@@ -62,33 +68,47 @@ export class DraftOnlyPresentations {
     return this.promoted.has(token) ? "promoted" : "draft-only";
   }
 
-  /** Live has the document (again): every presentation of it opens the live document. */
+  /** Whether `token` is a live delete's hold rather than a host mount. */
+  isHold(token: string): boolean {
+    return this.holds.has(token);
+  }
+
+  /** Live has the document (again): its holds end and every mount of it opens the live document. */
   promote(projectId: string, documentId: string): void {
-    let changed = this.removedLive.delete(documentKey(projectId, documentId));
+    let changed = false;
     for (const [token, entry] of this.entries) {
       if (entry.projectId !== projectId || entry.documentId !== documentId) continue;
-      if (this.promoted.has(token)) continue;
-      this.promoted.add(token);
-      changed = true;
+      if (this.holds.has(token)) {
+        this.entries.delete(token);
+        this.holds.delete(token);
+        changed = true;
+      } else if (!this.promoted.has(token)) {
+        this.promoted.add(token);
+        changed = true;
+      }
     }
     if (changed) this.changed(projectId);
   }
 
   /**
-   * Live deleted a document that a draft held open still has: the hosts showing it keep painting
-   * the draft, without its live room, until a restore promotes them again.
+   * Live deleted a document that these drafts, held open, still have: each keeps it draft-only
+   * until it ends or live has the document again, and the hosts showing it paint the draft,
+   * without its live room.
    */
-  holdRemovedLive(projectId: string, documentId: string): void {
-    this.removedLive.add(documentKey(projectId, documentId));
+  holdRemovedLive(projectId: string, documentId: string, drafts: readonly HeldDraft[]): void {
+    for (const draft of drafts) {
+      const token = holdToken(draft);
+      this.entries.set(token, { ...draft, token });
+      this.holds.add(token);
+    }
     for (const [token, entry] of this.entries)
       if (entry.projectId === projectId && entry.documentId === documentId)
         this.promoted.delete(token);
     this.changed(projectId);
   }
 
-  /** Some host presents this document draft-only now, or live deleted it while a draft holds it. */
+  /** Something presents this document draft-only now. */
   isDraftOnly(projectId: string, documentId: string): boolean {
-    if (this.removedLive.has(documentKey(projectId, documentId))) return true;
     for (const [token, entry] of this.entries)
       if (
         entry.projectId === projectId &&

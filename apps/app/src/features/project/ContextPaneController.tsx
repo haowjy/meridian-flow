@@ -28,12 +28,12 @@ import { selectionAtRoute } from "./context/context-removal-protocol";
 import { contextTabRouteKey } from "./context/context-tab-identity";
 import type { resolveRouteOwner } from "./context/resolve-route-owner";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
-import { useIsDraftOnly } from "./context/use-draft-only-presentation";
 import {
   settleWriterClose,
   useFollowOpenDocumentPlacement,
 } from "./context/use-follow-open-document-placement";
 import { identityCommitMayNavigate, identityCommitRoute } from "./context/use-identity-commit";
+import { useIsDraftOnly } from "./context/use-is-draft-only";
 import {
   type OpenContextRoute,
   useCaptureProjectNavigation,
