@@ -226,7 +226,6 @@ function UploadRow({
   canDelete: boolean;
   failed: boolean;
   onInsert: () => void;
-  /** Null where this host has no viewer for an upload. */
   onDelete: () => void;
 }) {
   const Icon = iconFor(upload);
