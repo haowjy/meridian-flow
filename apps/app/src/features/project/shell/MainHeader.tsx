@@ -64,7 +64,6 @@ export function MainHeader({
       }
       actions={
         <>
-          {closedSide}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -82,6 +81,8 @@ export function MainHeader({
               <Trans>New document</Trans>
             </TooltipContent>
           </Tooltip>
+          {/* Last, beside the toggle that opens it. */}
+          {closedSide}
         </>
       }
     />
