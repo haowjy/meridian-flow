@@ -63,7 +63,7 @@ test.describe("project shell selection", () => {
     }
   });
 
-  test("bare project address replaces itself with the chat index", async ({ page }) => {
+  test("bare project address replaces itself with a new chat", async ({ page }) => {
     test.skip(!DATABASE_URL, "MOBILE_SHELL_DATABASE_URL or DATABASE_URL is required");
 
     const db = openE2eDb(DATABASE_URL ?? "");

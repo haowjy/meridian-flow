@@ -73,7 +73,7 @@ Use the owned stack's existing project, plus `./mf thread create --project
 Use a chat whose `./mf api GET /api/threads/$THREAD/recent-documents --json`
 returns documents for the populated case.
 
-1. On the Chat index with no chat selected and no document open, capture the
+1. On a new chat (`/chats`) with no document open, capture the
    right panel: its header reads Recent, with no browse menu and no hint.
 2. Open the untouched chat and capture the same header with an empty list.
 3. Open the chat with recent documents. Capture its file rows (no heading of
