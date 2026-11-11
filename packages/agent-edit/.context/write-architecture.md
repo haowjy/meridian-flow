@@ -30,11 +30,15 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   loses it and lands split (`A disciple.B2 SIDETEXT`). So, before capture, those
   characters are dropped from the view's block and from the model's new block, and the
   lowering runs on what is left, whatever its path. A deleted run stays deleted unless
-  the model's inserted text joins it inside a word; a diff-placed insert is first slid
-  along equal text to a word boundary, and a run still joined is restated as the
-  model's text. Resolution (find, hashes, windows) still reads the full view, so the
-  model's references mean what it saw, and the writer's new words, which the view
-  doesn't hold, can't be deleted.
+  the model's inserted text sits inside it, continues into it within a word, or would
+  lose the only space before the next word; a diff-placed insert is first slid along
+  equal text to the best word boundary, and a run still touched that way is restated as
+  the model's text. The drop happens before capture, so the write's update never
+  deletes what the room already deleted, and its Undo returns to the writer's text.
+  Resolution (find, hashes, windows) still reads the full view, so the model's
+  references mean what it saw, and the writer's new words, which the view doesn't hold,
+  can't be deleted. A delete that lands after the call read its room isn't covered
+  ([TODO](TODO.md#deletes-that-land-after-a-write-read-its-room)).
 - Equal serialized content does not preserve Yjs identity, tombstones or authorship,
   so rebuilding an existing replica from Markdown as a merge path loses all three.
 

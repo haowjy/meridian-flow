@@ -14,6 +14,15 @@ save-time "only if empty" precondition, which only `saveNow` passes.
 Unify them: have `saveNow` run the reply path's prepare, persist and report inside
 one transaction the host owns, and route inverses through `prepareSave`.
 
+## Deletes that land after a write read its room
+
+A block rewrite is lowered around the characters its room copy has deleted
+(`withoutRemovedText`), but only those the copy holds when the call reads it. A delete
+that lands later (a draft write staged until the step's save, or one racing a direct
+save) still meets a lowering that kept those characters. Find writes into a paragraph
+or heading are placed by their windows and survive it; other rewrites can split. Fix
+by lowering the staged update again at save time against the room it merges into.
+
 ## Deferred until earned
 
 - Remove the remaining ProseMirror shape coupling from parsed-content types;

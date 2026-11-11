@@ -7,7 +7,7 @@ import {
   type ResolvedInlineReplacement,
 } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
-import type { Block } from "../codec-types.js";
+import type { Block, Span } from "../codec-types.js";
 import type { DocumentAddress } from "../document-address.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { LineageRange } from "../lineage/range-set.js";
@@ -26,6 +26,7 @@ import {
   type TextWindow,
 } from "./find.js";
 import { type HashLocateContext, hashLocateContext, locateBlockByHash } from "./hash-locator.js";
+import { withoutRemovedText } from "./room-removals.js";
 import {
   type BlockScope,
   resolveScope,
@@ -71,6 +72,12 @@ export interface ResolveWriteContext {
   links: WriteLinks;
   /** Exact revision whose live block handles and source ranges the resolver inspects. */
   inputRevision?: string;
+  /**
+   * The current room when `doc` is the model's view of it. A block rewritten in place is
+   * then lowered without the characters the room deleted since the view, and the resolved
+   * write drops them from `doc` (outside any write capture) before its IR is built.
+   */
+  current?: DocHandle;
 }
 
 /** Ref assignment for a write, or `"preassigned"` for nodes whose refs are already assigned. */
@@ -154,6 +161,18 @@ export function planWrite(
     assign(links) {
       const resolved = assignPlannedWrite(concreteCtx, normalized, steps, links);
       if (!resolved.ok) return resolved;
+      // The lowering runs on what is left once the room's deletions are dropped.
+      if (resolved.removed.length > 0) {
+        ctx.model.transact(
+          doc,
+          () => {
+            for (const { block, spans } of resolved.removed)
+              for (const span of [...spans].reverse())
+                ctx.model.applyTextEdit(doc, block, span, "");
+          },
+          "room-removals",
+        );
+      }
       return {
         ok: true,
         edits: resolved.edits,
@@ -209,6 +228,7 @@ function assignPlannedWrite(
   links: WriteLinks,
 ): ResolveWriteResultWithoutIr {
   const edits: ResolvedEdit[] = [];
+  const removed: RoomRemoval[] = [];
   let keptBlocks = false;
   for (const step of steps) {
     switch (step.kind) {
@@ -230,12 +250,19 @@ function assignPlannedWrite(
           step.kind === "spliced" ? step.windows : null,
         );
         edits.push(...lowered.edits);
+        removed.push(...lowered.removed);
         keptBlocks ||= lowered.keptBlocks === true;
         break;
       }
     }
   }
-  return { ok: true, edits, ...(keptBlocks ? { keptBlocks: true } : {}) };
+  return { ok: true, edits, removed, ...(keptBlocks ? { keptBlocks: true } : {}) };
+}
+
+/** A rewritten block's characters the room deleted since the view, to drop before lowering. */
+interface RoomRemoval {
+  block: BlockRef;
+  spans: Span[];
 }
 
 /** Assigned before alignment, so an unchanged block stays `.eq` and is kept. */
@@ -267,6 +294,7 @@ type ResolveWriteResultWithoutIr =
   | {
       ok: true;
       edits: ResolvedEdit[];
+      removed: RoomRemoval[];
       /** Some of the scope's blocks were already equal to their replacement and kept. */
       keptBlocks?: true;
     }
@@ -628,8 +656,9 @@ function replaceScope(
   scope: BlockScope,
   newBlocks: readonly Block[],
   windows: CutWindows | null = null,
-): { edits: ResolvedEdit[]; keptBlocks?: true } {
+): { edits: ResolvedEdit[]; removed: RoomRemoval[]; keptBlocks?: true } {
   const edits: ResolvedEdit[] = [];
+  const removed: RoomRemoval[] = [];
   const oldBlocks = scope.blocks;
   const oldNodes = scopeNodes(ctx, scope);
   let anchor: BlockRef | undefined =
@@ -681,13 +710,34 @@ function replaceScope(
         break;
       case "change": {
         flushStructural();
-        const before = oldNodes[step.old];
-        const after = newBlocks[step.next];
-        const replacements = flatReplacements(
-          before,
-          after,
-          windows && [windows.old[step.old], windows.new[step.next]],
-        );
+        let before = oldNodes[step.old];
+        let after = newBlocks[step.next];
+        let placed: [TextWindow[] | undefined, TextWindow[] | undefined] | null = windows && [
+          windows.old[step.old],
+          windows.new[step.next],
+        ];
+        const spans = ctx.current
+          ? ctx.model.removedText(ctx.doc, oldBlocks[step.old], ctx.current)
+          : [];
+        if (spans.length > 0) {
+          const rebased = withoutRemovedText(
+            before,
+            after,
+            spans,
+            placed ? windowHunks(before, after, ...placed) : undefined,
+          );
+          before = rebased.before;
+          after = rebased.after;
+          placed = rebased.windows;
+          removed.push({ block: oldBlocks[step.old], spans });
+          anchor = oldBlocks[step.old];
+          insertionRun = {};
+          if (before.eq(after)) {
+            keptBlocks = true;
+            break;
+          }
+        }
+        const replacements = flatReplacements(before, after, placed);
         edits.push({
           documentId: params.documentAddress.documentId,
           file: params.documentAddress.filePath,
@@ -715,7 +765,7 @@ function replaceScope(
   }
   flushStructural();
 
-  return { edits, ...(keptBlocks ? { keptBlocks: true } : {}) };
+  return { edits, removed, ...(keptBlocks ? { keptBlocks: true } : {}) };
 }
 
 /** A block keeps its element only as the same node type and heading level. */
