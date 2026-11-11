@@ -19,6 +19,7 @@ import {
 } from "@/components/app/composer-toolbar";
 import { Button } from "@/components/ui/button";
 import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
+import { handleListKeys } from "@/components/ui/list-keys";
 
 export function useWriteModeToolbarControl({
   projectId,
@@ -74,10 +75,12 @@ export function useWriteModeToolbarControl({
           role="radiogroup"
           aria-label={t`AI write mode`}
           className="space-y-[var(--chat-space-inline)]"
+          onKeyDown={handleListKeys}
         >
           {(["draft", "direct"] as const).map((mode) => (
             <Button
               key={mode}
+              data-list-item
               ref={mode === "draft" ? draftRef : directRef}
               role="radio"
               aria-checked={value === mode}

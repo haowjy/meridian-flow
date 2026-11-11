@@ -98,6 +98,10 @@ export const ChromeKernelExtension = Extension.create({
       return merged[reach];
     };
 
+    // Tab writes in the prose, so the way out is Escape at home, then Tab or
+    // Shift-Tab: that next key is the browser's focus move.
+    let leaveArmed = false;
+
     let sweepOrigin: { x: number; y: number } | null = null;
     const endSweep = () => {
       sweepOrigin = null;
@@ -217,6 +221,23 @@ export const ChromeKernelExtension = Extension.create({
           };
           document.addEventListener("keydown", backstopEscape, true);
 
+          // Capture on the document, so neither the Tab ladder nor TipTap's
+          // own list and table keys hear it; the default is left alone.
+          const leaveOnTab = (event: KeyboardEvent) => {
+            if (!leaveArmed || event.key === "Shift") return;
+            leaveArmed = false;
+            if (event.key !== "Tab" || event.ctrlKey || event.metaKey || event.altKey) return;
+            if (event.target instanceof Node && view.dom.contains(event.target)) {
+              event.stopPropagation();
+            }
+          };
+          const disarmLeave = () => {
+            leaveArmed = false;
+          };
+          document.addEventListener("keydown", leaveOnTab, true);
+          view.dom.addEventListener("focusout", disarmLeave);
+          view.dom.addEventListener("pointerdown", disarmLeave);
+
           return {
             update(updatedView, previousState) {
               if (
@@ -238,13 +259,20 @@ export const ChromeKernelExtension = Extension.create({
               document.removeEventListener("contextmenu", routeMenu, true);
               document.removeEventListener("keydown", layerKeys, true);
               document.removeEventListener("keydown", backstopEscape, true);
+              document.removeEventListener("keydown", leaveOnTab, true);
+              view.dom.removeEventListener("focusout", disarmLeave);
+              view.dom.removeEventListener("pointerdown", disarmLeave);
             },
           };
         },
 
         props: {
           handleKeyDown(view, event) {
-            if (event.key === "Escape") return performEscStep(view, chrome, controller, "prose");
+            if (event.key === "Escape") {
+              const handled = performEscStep(view, chrome, controller, "prose");
+              leaveArmed = !handled;
+              return handled;
+            }
             return keydownHandler(bindingsFor("prose"))(view, event);
           },
 

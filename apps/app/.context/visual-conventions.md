@@ -12,6 +12,14 @@ pressed. A control that paints its own fill takes the same steps through the
 the active tab chip, menus, floating pills) keeps an opaque surface and lays the
 overlay on top. Overlays stack, so an ellipsis on a hovered row stays a visible target.
 
+Forced colours (Windows high contrast) drop every fill and shadow, so a state shown
+only by a fill vanishes. `globals.css` paints `SelectedItem` on whatever carries the
+state in ARIA (`aria-selected` tab, `aria-current`, `aria-pressed`, a checked radio,
+`ListRow`'s `data-selected` frame): a new selected or current state sets one of those,
+not only a class. Draft marks have their own forced-colours treatment in
+`inline-review.css`. Hide a resting outline with `outline-none`, never Tailwind's
+`outline-hidden`, which forced colours draw as a solid box on every row.
+
 Headings, group labels, rows, hints, empty lines and fills come from `role` in
 [`components/ui/roles.ts`](../src/components/ui/roles.ts). A call site adds layout,
 never type or colour. Jade text is `text-jade-text`; `primary` is for fills and icons.
