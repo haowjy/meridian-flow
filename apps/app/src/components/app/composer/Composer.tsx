@@ -177,7 +177,10 @@ export type ComposerHandle = {
   focus: () => void;
   /** Adds a file the writer picked outside the `@` menu (the chat's uploads list) at the caret. */
   insertReference: (reference: DocumentReference, fileKind: "document" | "asset") => void;
-  /** Makes the draft this one file's chip alone, without taking focus (a new chat about a page). */
+  /**
+   * Makes the draft this one file's chip alone, without taking focus (a new chat about a page),
+   * when the draft is empty or one chip alone; anything the writer wrote stays.
+   */
   startWith: (reference: DocumentReference, fileKind: "document" | "asset") => void;
   /** Attaches files to this chat's Uploads, as the paperclip does: one chip each at the caret. */
   attachFiles: (entries: readonly DroppedEntry[]) => void;
@@ -431,6 +434,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       },
       startWith: (reference, fileKind) => {
         if (!editor || editor.isDestroyed) return;
+        const doc = editor.state.doc;
+        const only = doc.childCount === 1 ? doc.firstChild : null;
+        const chipAlone =
+          only?.type.name === "paragraph" &&
+          only.childCount === 1 &&
+          only.firstChild?.type.name === "composerReference";
+        if (!editor.isEmpty && !chipAlone) return;
         editor.commands.setContent({
           type: "doc",
           content: [
