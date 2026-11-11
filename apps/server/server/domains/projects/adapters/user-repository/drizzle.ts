@@ -3,7 +3,7 @@
 import type { UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { users } from "@meridian/database/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   AccountLinkConflictError,
   type EnsureUserInput,
@@ -20,6 +20,27 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
 
   return {
     async ensureUser(input: EnsureUserInput): Promise<UserId> {
+      // Every authenticated request lands here, and auth never takes a key-exclusive lock on
+      // `users` unless the email changes: naming a unique column in an UPDATE's SET (even to
+      // its current value) locks the row `FOR UPDATE`, which queues behind any open
+      // transaction holding a key-share on it through a foreign key, with a pooled
+      // connection held meanwhile. A plain read and a non-key UPDATE never wait there.
+      const [current] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            eq(users.externalId, input.externalId),
+            eq(users.email, input.email),
+            input.name === null ? isNull(users.name) : eq(users.name, input.name),
+            input.avatarUrl === null
+              ? isNull(users.avatarUrl)
+              : eq(users.avatarUrl, input.avatarUrl),
+          ),
+        )
+        .limit(1);
+      if (current) return current.id as UserId;
+
       return db.transaction(async (tx) => {
         // The lock serializes exact database email keys only; unique indexes
         // remain integrity backstops rather than expected control flow.
@@ -37,6 +58,14 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
         }
 
         const now = new Date().toISOString();
+        if (emailOwner) {
+          const [updated] = await tx
+            .update(users)
+            .set({ name: input.name, avatarUrl: input.avatarUrl, updatedAt: now })
+            .where(eq(users.externalId, input.externalId))
+            .returning({ id: users.id });
+          if (updated) return updated.id as UserId;
+        }
         const [row] = await tx
           .insert(users)
           .values({
