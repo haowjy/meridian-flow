@@ -1,5 +1,4 @@
 import { CodecParseError, type ParsedContent, type ParsedContentWithSpans } from "@meridian/markup";
-import { walkLinkOccurrences } from "@meridian/markup/links";
 import { Fragment } from "prosemirror-model";
 import {
   type EditResolutionErrorCode,
@@ -16,14 +15,15 @@ import { normalizeLineageRanges } from "../lineage/range-set.js";
 import type { WriteLinkAssigner } from "../links/assign-refs.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticEditIRV1, SemanticOutputRun } from "../semantic-edit-ir.js";
-import { wordHunks } from "../word-hunks.js";
+import { type WordHunk, wordHunks } from "../word-hunks.js";
 import { alignBlocks } from "./block-alignment.js";
 import {
+  cutTextWindows,
   findTextMatches,
   type SplicedGroup,
-  serializePmBlockBody,
   spliceFindMatches,
   type TextFindMatch,
+  type TextWindow,
 } from "./find.js";
 import { type HashLocateContext, hashLocateContext, locateBlockByHash } from "./hash-locator.js";
 import {
@@ -174,12 +174,12 @@ export function resolveWrite(
 
 /** One planned piece of a write, in edit order. */
 type PlannedStep =
-  /** Edits that need no ref assignment: removes, copies, the plain-text find shortcut. */
+  /** Edits that need no ref assignment: removes and copies. */
   | { kind: "edits"; edits: ResolvedEdit[] }
   | { kind: "insert"; after: BlockRef | undefined; blocks: Block[]; assign: boolean }
   /** Rewrite `scope` as `blocks`, assigned against the scope's old nodes. */
   | { kind: "replace"; scope: BlockScope; blocks: Block[] }
-  /** A formatted find's reconstructed group: only the splice's occurrences are assigned. */
+  /** A find's reconstructed group: only the splice's occurrences are assigned. */
   | {
       kind: "spliced";
       scope: BlockScope;
@@ -189,7 +189,14 @@ type PlannedStep =
       newText: string;
       parsed: ParsedContentWithSpans;
       splice: SplicedGroup["splice"];
+      /** Each block's text windows the find's cuts cover, old and new; null when unmappable. */
+      windows: CutWindows | null;
     };
+
+interface CutWindows {
+  old: TextWindow[][];
+  new: TextWindow[][];
+}
 
 interface PlannedWrite {
   steps: PlannedStep[];
@@ -215,7 +222,13 @@ function assignPlannedWrite(
       }
       case "replace":
       case "spliced": {
-        const lowered = replaceScope(ctx, params, step.scope, assignScope(ctx, step, links));
+        const lowered = replaceScope(
+          ctx,
+          params,
+          step.scope,
+          assignScope(ctx, step, links),
+          step.kind === "spliced" ? step.windows : null,
+        );
         edits.push(...lowered.edits);
         keptBlocks ||= lowered.keptBlocks === true;
         break;
@@ -275,7 +288,7 @@ function planInsert(
     if (!scope.ok) return scopeError(scope);
     const found = findTextMatches(ctx, scope.scope, params.find, params.all === true);
     if (!found.ok) return findError(found);
-    return planFindMatches(ctx, params, parsed, found.matches, "insert");
+    return planFindMatches(ctx, params, found.matches, "insert");
   }
 
   const lowered = lowerInsertPosition(ctx, params);
@@ -340,7 +353,7 @@ function planReplace(
     if (!scope.ok) return scopeError(scope);
     const found = findTextMatches(ctx, scope.scope, params.find, params.all === true);
     if (!found.ok) return findError(found);
-    return planFindMatches(ctx, params, parsed, found.matches, "replace");
+    return planFindMatches(ctx, params, found.matches, "replace");
   }
 
   const target = params.in ?? fragmentScope(params);
@@ -482,13 +495,9 @@ interface FindMatchGroup {
 function planFindMatches(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
-  parsed: ParsedContent,
   matches: readonly TextFindMatch[],
   command: WriteCommandName,
 ): PlannedWrite | ResolveWriteFailure {
-  const plainTextEdits = lowerPlainTextFindMatches(ctx, params, parsed, matches, command);
-  if (plainTextEdits) return { steps: [{ kind: "edits", edits: plainTextEdits }] };
-
   const steps: PlannedStep[] = [];
   // Structural groups can replace their predecessor block. Lower from the end
   // so every insert anchor remains live until its group executes.
@@ -518,54 +527,6 @@ function planFindMatches(
   return { steps };
 }
 
-function lowerPlainTextFindMatches(
-  ctx: ConcreteResolveContext,
-  params: NormalizedParams,
-  parsed: ParsedContent,
-  matches: readonly TextFindMatch[],
-  command: WriteCommandName,
-): ResolvedEdit[] | null {
-  const content = plainTextInline(ctx, params.content, parsed);
-  if (!content) return null;
-  const byBlock = new Map<BlockRef, TextFindMatch[]>();
-  for (const match of matches) {
-    if (match.elements.length !== 1) return null;
-    const [element] = match.elements;
-    if (match.rangeSource !== ctx.model.getText(element)) return null;
-    // A block holding a link goes through ref assignment, so a ref- or title-only
-    // change is never filtered out as equal text.
-    const node = ctx.projected[match.startIndex]?.node;
-    if (!node || walkLinkOccurrences([node]).length > 0) return null;
-    const existing = byBlock.get(element);
-    if (existing) existing.push(match);
-    else byBlock.set(element, [match]);
-  }
-  const edits: ResolvedEdit[] = [];
-  for (const [element, blockMatches] of byBlock) {
-    const blockText = ctx.model.getText(element);
-    const replacements = blockMatches
-      .map((match) => ({
-        span: {
-          start: command === "insert" ? match.matchEnd : match.matchStart,
-          end: match.matchEnd,
-        },
-        content,
-      }))
-      // Replacing a match with itself changes nothing, so it makes no edit.
-      .filter(({ span }) => blockText.slice(span.start, span.end) !== params.content);
-    if (replacements.length === 0) continue;
-    edits.push({
-      documentId: params.documentAddress.documentId,
-      file: params.documentAddress.filePath,
-      kind: "textRanges",
-      block: element,
-      replacements,
-      output: replacementWindowOutput(blockText, replacements),
-    });
-  }
-  return edits;
-}
-
 function replacementWindowOutput(
   source: string,
   replacements: readonly ResolvedInlineReplacement[],
@@ -580,25 +541,6 @@ function replacementWindowOutput(
     sourceCursor = replacement.span.end;
   }
   return output;
-}
-
-/**
- * The parsed write's inline content when it is one plain-text paragraph whose
- * markup is its text; null when the write needs structural lowering.
- */
-function plainTextInline(
-  ctx: ConcreteResolveContext,
-  content: string,
-  parsed: ParsedContent,
-): Fragment | null {
-  if (content.length === 0) return Fragment.empty;
-  if (parsed.blocks.length !== 1) return null;
-  const [block] = parsed.blocks;
-  const plain =
-    block.isTextblock &&
-    block.textContent === content &&
-    serializePmBlockBody(ctx, block) === content;
-  return plain ? block.content : null;
 }
 
 function groupFindMatches(matches: readonly TextFindMatch[]): FindMatchGroup[] {
@@ -639,15 +581,30 @@ function planSplicedGroup(
 ): PlannedStep | ResolveWriteFailure {
   if (spliced.text.length === 0) return { kind: "replace", scope, blocks: [] };
   try {
+    const oldGroup = scopeNodes(ctx, scope);
+    const parsed = ctx.codec.parseWithSpans(spliced.text);
+    const oldWindows = cutTextWindows(
+      ctx,
+      oldText,
+      spliced.cuts.map((cut) => cut.old),
+      oldGroup,
+    );
+    const newWindows = cutTextWindows(
+      ctx,
+      spliced.text,
+      spliced.cuts.map((cut) => cut.new),
+      parsed.blocks,
+    );
     return {
       kind: "spliced",
       scope,
-      oldGroup: scopeNodes(ctx, scope),
+      oldGroup,
       oldText,
       oldSpans: ctx.codec.parseWithSpans(oldText).spans,
       newText: spliced.text,
-      parsed: ctx.codec.parseWithSpans(spliced.text),
+      parsed,
       splice: spliced.splice,
+      windows: oldWindows && newWindows ? { old: oldWindows, new: newWindows } : null,
     };
   } catch (cause) {
     if (cause instanceof CodecParseError) {
@@ -659,15 +616,18 @@ function planSplicedGroup(
 
 /**
  * Rewrite a scope as assigned `newBlocks`: blocks equal to their replacement are
- * left alone, a changed block keeps its identity and is diffed in place, and
+ * left alone, a changed block keeps its identity and is changed in place, and
  * only blocks with no counterpart are inserted or removed. Atoms (pictures,
- * hard breaks) are matched as nodes, never through flat text offsets.
+ * hard breaks) are matched as nodes, never through flat text offsets. With
+ * `windows`, a changed block is rewritten only inside them; otherwise it is
+ * word-diffed whole.
  */
 function replaceScope(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
   scope: BlockScope,
   newBlocks: readonly Block[],
+  windows: CutWindows | null = null,
 ): { edits: ResolvedEdit[]; keptBlocks?: true } {
   const edits: ResolvedEdit[] = [];
   const oldBlocks = scope.blocks;
@@ -723,7 +683,11 @@ function replaceScope(
         flushStructural();
         const before = oldNodes[step.old];
         const after = newBlocks[step.next];
-        const replacements = flatWordReplacements(before, after);
+        const replacements = flatReplacements(
+          before,
+          after,
+          windows && [windows.old[step.old], windows.new[step.next]],
+        );
         edits.push({
           documentId: params.documentAddress.documentId,
           file: params.documentAddress.filePath,
@@ -938,10 +902,41 @@ function error(
   return { ok: false, error: { code, message, ...(details ? { details } : {}) } };
 }
 
-/** Fall back to block replacement unless exact splices reproduce structure and marks too. */
-function flatWordReplacements(
+/**
+ * A known cut's text is replaced whole at its position. Re-deriving it by diffing
+ * the block would keep words the cut shares with text around it, anchor the new
+ * text to those, and a concurrent delete of them would split and reorder it.
+ * Undefined when the text outside the windows differs, so they don't describe this pair.
+ */
+function windowHunks(
   before: Block,
   after: Block,
+  oldWindows: readonly TextWindow[] | undefined,
+  newWindows: readonly TextWindow[] | undefined,
+): WordHunk[] | undefined {
+  if (!oldWindows || !newWindows || oldWindows.length !== newWindows.length) return;
+  const oldText = before.textContent;
+  const newText = after.textContent;
+  const hunks: WordHunk[] = [];
+  let oldCursor = 0;
+  let newCursor = 0;
+  for (const [index, old] of oldWindows.entries()) {
+    const next = newWindows[index];
+    if (oldText.slice(oldCursor, old.from) !== newText.slice(newCursor, next.from)) return;
+    // A cut that rewrites its text unchanged (marks included) is no edit.
+    if (!before.content.cut(old.from, old.to).eq(after.content.cut(next.from, next.to)))
+      hunks.push({ from: old.from, to: old.to, text: newText.slice(next.from, next.to) });
+    oldCursor = old.to;
+    newCursor = next.to;
+  }
+  return oldText.slice(oldCursor) === newText.slice(newCursor) ? hunks : undefined;
+}
+
+/** Fall back to block replacement unless exact splices reproduce structure and marks too. */
+function flatReplacements(
+  before: Block,
+  after: Block,
+  windows: [TextWindow[] | undefined, TextWindow[] | undefined] | null,
 ): ResolvedInlineReplacement[] | undefined {
   if (
     !before.isTextblock ||
@@ -950,7 +945,9 @@ function flatWordReplacements(
     after.content.size !== after.textContent.length
   )
     return;
-  const hunks = wordHunks(before.textContent, after.textContent);
+  const hunks =
+    (windows && windowHunks(before, after, ...windows)) ??
+    wordHunks(before.textContent, after.textContent);
   if (!hunks.length) return;
   const replacements = hunks.map((h) => ({
     span: { start: h.from, end: h.to },

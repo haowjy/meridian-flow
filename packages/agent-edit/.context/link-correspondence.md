@@ -32,12 +32,10 @@ following scope:
 - block replacement uses the old scope;
 - insert/append has no old occurrence;
 - create-overwrite uses whole-document correspondence;
-- formatted or cross-block find uses the affected splice;
-- plain same-block find uses exact text ranges and only blocks without link
-  occurrences;
+- find uses the affected splice;
 - copies, inverse edits, and reply-save bytes already carry refs.
 
-A formatted splice preserves occurrences outside the written span. If reparsing
+A find splice preserves occurrences outside the written span. If reparsing
 changes surrounding syntax so spans cannot be trusted, assign the whole group
 and emit a fallback diagnostic; identity remains safe even when formatting
 churns.
