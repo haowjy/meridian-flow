@@ -46,7 +46,7 @@ Contracts:
 - **Placement grammar** (any Unfiled document or provisional document): the jade chip opens
   an EMPTY field — the content-derived suggestion is ghost placeholder text
   (Tab/→ accepts it; Enter on an empty field accepts it implicitly). The
-  popover opens on the scheme roots (Manuscript / Knowledge Base / User —
+  popover opens on the scheme roots (Manuscript / Knowledge / User —
   the roots ARE the context choice); picking drills into folders, building the
   home as read-only spans left of the name. Enter with a home built moves
   (+renames); name-only Enter renames in place — naming isn't homing.
