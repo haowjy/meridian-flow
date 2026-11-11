@@ -2,7 +2,10 @@
 /** Resource-session fallback and recovery behavior at the desktop editor host.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - context session opener fallback policy
+ * - context session opener fallback policy: a local-resource failure falls through to server
+ *   admission, and a server failure is retried once catalog authority advances (call counts)
+ * - a cached editor stays mounted while its availability is reprobed, and is released once
+ *   the answer is terminal
  */
 
 import { act, useState } from "react";
