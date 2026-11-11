@@ -5,7 +5,6 @@
 import { t } from "@lingui/core/macro";
 import { MessageSquare, Pin } from "lucide-react";
 import type { ContextTab } from "@/client/stores";
-import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../context/context-file-icon";
 import { useMainItem } from "../views";
 import { useSideChatName } from "./SideHeader";
@@ -33,9 +32,7 @@ export function ClosedSideButton({
       type="button"
       onClick={onOpen}
       aria-label={t`Show ${name} beside`}
-      className={cn(
-        "focus-ring flex h-8 max-w-56 min-w-0 shrink items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-ink-fill hover:text-foreground",
-      )}
+      className="focus-ring flex h-8 max-w-56 min-w-0 shrink items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-ink-fill hover:text-foreground"
     >
       <Icon className="size-3.5 shrink-0" aria-hidden />
       <span className="min-w-0 truncate">{name}</span>

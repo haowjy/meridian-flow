@@ -10,7 +10,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { ChevronsUpDown, MessageSquare, Pin, Plus, Undo2 } from "lucide-react";
-import { type ReactNode, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { HeldPick } from "@/client/project-shell/store";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
@@ -41,6 +41,11 @@ import { useMainForSide, useShellCommands, useSideItem } from "./SideView";
 import { sameItem } from "./side-item";
 
 const RECENT_LIMIT = 6;
+/**
+ * A pick can move the side to another host (a document's in place of the chat's), whose header
+ * mounts a new trigger: the focus the popover returns has nowhere to go, so the new one takes it.
+ */
+let focusNextTrigger = false;
 const FIND_LIMIT = 12;
 const FIND_SCHEMES: readonly ProjectContextTreeScheme[] = ["manuscript", "kb", "user"];
 
@@ -68,6 +73,12 @@ export function SidePicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!focusNextTrigger) return;
+    focusNextTrigger = false;
+    triggerRef.current?.focus();
+  }, []);
   const changeOpen = (next: boolean) => {
     setOpen(next);
     if (!next) setQuery("");
@@ -76,6 +87,7 @@ export function SidePicker({
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           aria-label={t`Choose what sits beside, now ${name}`}
           aria-expanded={open}
@@ -281,6 +293,7 @@ function SidePickerLists({
     : [];
 
   const choose = (pick: HeldPick) => {
+    if (!sameItem(pick, shownNow)) focusNextTrigger = true;
     pickSide(pick);
     onDone();
   };
