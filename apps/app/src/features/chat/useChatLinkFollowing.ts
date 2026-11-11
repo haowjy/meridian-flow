@@ -51,6 +51,7 @@ import { lookupProjectContextAvailability } from "@/client/query/project-context
 import { useTopChat } from "@/client/query/useTopChat";
 import { useWorks } from "@/client/query/useWorks";
 import { createLinkAnswerCache, createLinkRequester } from "@/core/editor/links";
+import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import {
   type LinkDestination,
   type LinkFollowDialog,
@@ -61,7 +62,7 @@ import {
 } from "@/features/links";
 import type { FolderMenuHost } from "@/features/project/context/FolderMenu";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
-import { useReviewingLinkDestination } from "@/features/project/review-launch";
+import { useOwnerDraftOpener, useReviewingLinkDestination } from "@/features/project/review-launch";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
 import { type ChatDoors, type ContextPassageAnchor, useChatDoors } from "./ChatContextNavigation";
 import { createReferenceAvailability, type ReferenceAvailability } from "./reference-availability";
@@ -150,15 +151,21 @@ export function useChatLinkFollowing({
   );
 
   const openReferenceDocument = useOpenChatDocument(projectId);
+  // A page this chat drafted opens on its draft.
+  const openDrafted = useOwnerDraftOpener(
+    projectId,
+    chatOwnerKey(activeWork, activeThread?.rootThreadId ?? null) || null,
+  );
   const openLive = useCallback<LinkDestination>(
     (document, gesture) =>
+      (!document.trashed && openDrafted(document.documentId, gesture)) ||
       openReferenceDocument({
         documentId: document.documentId,
         ...(document.trashed ? { trashed: true as const } : {}),
         ...(document.focus ? { focus: true as const } : {}),
         disposition: gesture === "new-tab" ? "background" : "current",
       }),
-    [openReferenceDocument],
+    [openReferenceDocument, openDrafted],
   );
   const open = useReviewingLinkDestination(openLive);
   const folders = useMemo<FolderMenuHost>(
