@@ -327,11 +327,11 @@ function SourceTabs({
 }) {
   const toggle = useSidebarTabs((state) => state.toggle);
   return (
-    <div className="flex shrink-0 items-center gap-1 px-2 py-1">
+    <div className="flex shrink-0 items-center gap-1 px-2 py-1 coarse:gap-0 coarse:px-1">
       <div
         role="tablist"
         aria-label={t`Sources`}
-        className="-m-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="-m-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto p-1 coarse:gap-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {shown.map((key) => (
           <SourceTab
@@ -390,11 +390,12 @@ function SourceTabs({
 }
 
 /**
- * A tab and the strip's + button: 28px, 36px where the pointer is a finger.
- * The default six tabs and + still fit a default-width sidebar without scrolling the strip.
+ * A tab and the strip's + button: 28px, 44px under a finger. With a mouse the six tabs and +
+ * fit a default-width sidebar; under a finger they fit the 320px phone drawer only because
+ * the row drops its gaps and half its inset, and a narrower sidebar scrolls the strip.
  */
 const TAB_BUTTON =
-  "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors [@media(hover:none)]:size-9 coarse:size-9";
+  "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors [@media(hover:none)_and_(pointer:fine)]:size-9 coarse:size-11";
 
 /** A source's tab: a drop on it lands at the source's root, and a drag that rests opens it. */
 function SourceTab({
