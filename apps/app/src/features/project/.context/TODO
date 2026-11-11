@@ -2,14 +2,9 @@
 
 - Reloading a document's old address steps through its earlier names before settling: the removal
   coordinator replays the move history one repair at a time. Repair straight to the current locator.
-- `context/ContextTreePanel.tsx` and `mobile/MobileContextBrowser.tsx` still thread an `editorWorkId`
-  that only Scratch and Uploads used; it feeds no tree query. Drop it.
+- `context/ContextTreePanel.tsx` still threads an `editorWorkId` that only Scratch and Uploads
+  used; it feeds no tree query. Drop it.
 - A chat's upload has no viewer on desktop: the Files menu only inserts it. Showing it beside
   needs the side's describe (`open-project-document.ts`) to accept the `uploads` scheme with its
   chat, and a decision on what "Open in main" and Recently opened mean for a file with no editor
   address.
-- Between 960 and 983 px, a side opened by hand runs about 24 px past the window: the sidebar,
-  main's minimum width and the dock don't fit. The narrow hold only keeps it closed until opened.
-- With a document held beside, the kept host never appears: opening Chapter 1 from Chapter 5 and
-  returning remounts Chapter 5's editor, so its undo is gone. With a chat beside the kept host
-  works. `keptTab` in `DesktopProject.tsx` reads `shown`; find why the previous main isn't in it.

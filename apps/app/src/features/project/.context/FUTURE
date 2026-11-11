@@ -9,5 +9,3 @@
 - More than main and one side item: a split-view design first defines focus, history and session
   retention; stretching the one-main, one-side, one-kept hosts into more implicit selections won't
   hold.
-- Work page tab search: switching between Chats and Files resets each tab's search. Keeping it means
-  putting the Work chat search in the project address.

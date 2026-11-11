@@ -22,7 +22,9 @@ with the switch view's intents laid over it. `effectiveAiWriteMode` is the queue
 switch's mode, so a reload shows a pending switch before the snapshot lands. A
 choice dispatches a `write_mode` control through the chat's submission journal,
 posted in order with the messages around it. In the new-chat composer, `aiWriteMode`
-is sent with the first message only if the writer picked one there.
+is sent with the first message only if the writer picked one there. A pick
+stays when the writer then picks a Work; the Work's default shows only until they
+pick a mode (a departure from PR #1369's decision 3, which reset the pick).
 
 Each assistant turn records the chat's write mode when it is created. Tool
 vocabulary and receipts read that recorded mode, so a later switch can't rewrite
