@@ -118,8 +118,8 @@ two tabs and on a 390px phone viewport.
   message, and the toolbar does not revert. The live region announces a switch
   once, stays silent on reload and apply, and clears a failed-switch sentence
   on Retry or Stop. A delayed control response still leaves the applied mode
-  and transcript turn in place. Draft count reads “Drafts (2)” for two waiting
-  document drafts and “Draft” for none.
+  and transcript turn in place. The chip reads “Draft” whether or not drafts
+  wait.
 
 ### SY-07: the network drops mid-reply and returns
 

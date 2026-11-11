@@ -3,7 +3,6 @@ import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import { ComposerToolbar, createComposerToolbarModel } from "@/components/app/composer-toolbar";
 import { useWriteModeToolbarControl } from "@/components/app/work-composer-controls";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
-import { useBoundWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { useComposerWorkToolbarControl } from "./ComposerWorkControl";
 
 export function ChatComposerToolbar({
@@ -23,10 +22,7 @@ export function ChatComposerToolbar({
   onWriteModeChange(mode: AiWriteMode): void;
 }) {
   const agent = useComposerAgentToolbarControl({ mode: "readonly", name: agentName });
-  const { ownerKey } = useBoundWorkBranchCommands();
   const writeModeControl = useWriteModeToolbarControl({
-    projectId,
-    ownerKey,
     value: writeMode,
     onChoose: onWriteModeChange,
   });

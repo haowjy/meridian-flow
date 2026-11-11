@@ -16,7 +16,9 @@ import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { showDocumentLive } from "@/features/project/tab-view-commands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
+import { focusIsFree } from "@/lib/focus-follow";
 import { useDraftReview } from "./DraftReviewProvider";
+import { useDraftCommandState } from "./draft-changes";
 import type { BranchCommandFailure } from "./review-command-types";
 import { nextReviewFile } from "./review-files";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
@@ -151,6 +153,27 @@ export function useReviewHeader({
       shown.current = null;
     };
   }, [itemKey]);
+  // The writer's Apply took the last change: the page returns to live, as a whole Discard
+  // does, unless another draft waits (Apply draft opens it; a change's Apply offers it).
+  const wasApplying = useRef(false);
+  const endApplied = useRef(() => {});
+  endApplied.current = () => {
+    if (next || shown.current !== itemKey) return;
+    if (focusIsFree()) onEndedWithFocus?.();
+    showLive();
+  };
+  useEffect(() => {
+    wasApplying.current = false;
+  }, [itemKey]);
+  // An Apply holds the item pending until the server answers; a local Discard never does.
+  const applying = useDraftCommandState(itemKey).pending || completing === "apply";
+  useEffect(() => {
+    if (applying || completing === "discard") wasApplying.current = applying;
+    else if (finished && wasApplying.current) {
+      wasApplying.current = false;
+      endApplied.current();
+    }
+  }, [applying, completing, finished]);
   // Local Discard stays in this draft. Only an Apply that landed advances to another file: a
   // refusal shows on the draft the writer applied, so it must not move them first.
   const dispose = (mode: "apply" | "discard", takeFocus: boolean) => {

@@ -45,8 +45,10 @@ authority to Discard.
   replacements disable router scroll restoration so the editor owns the jump.
 - "No changes left" shows once the item has no tree line either: focus and the stepper
   walk only text changes, so a text-only Discard can leave Discard draft and Apply draft
-  beside the Work notice. Only the close contract can end the draft room or send the
-  editor to live.
+  beside the Work notice. Only the close contract can end the draft room. The page
+  goes to live on its own only after an Apply empties the review (the item was pending,
+  then finished, and no other draft waits), never after a local Discard, which stays so
+  editor history can bring the text back.
 
 `useReviewRefresh` discovers from semantic membership (any differences, pending
 owner-thread ids, unknown attribution), so a new frame with the same membership doesn't

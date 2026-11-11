@@ -100,11 +100,6 @@ export function TurnEditsReceipt({
   // lines list as rows, and their presence is what keeps a Work-only turn's
   // Undo on screen.
   const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkReceipt);
-  // Chrome counts, never names. A document name here would sit inside the
-  // disclosure toggle, competing for the click at the moment the writer is
-  // reaching to open it — and the names it would compete with are the ones in
-  // the expanded rows below, which already navigate.
-  const headerDocumentCount = new Set(documents.map((document) => document.documentId)).size;
   const undoUnavailable = receipt == null || receipt.control === "view_change";
 
   useEffect(() => {
@@ -226,11 +221,8 @@ export function TurnEditsReceipt({
           </span>
           <span className="flex min-w-0 flex-1 items-baseline">
             <span className="min-w-0 truncate font-medium text-foreground">
-              {headerDocumentCount > 0
-                ? documentCountLabel(
-                    headerDocumentCount,
-                    documents.some((document) => document.tree),
-                  )
+              {hasEditedDocuments
+                ? documentCountLabel(documents)
                 : workCountLabel(reversibleWorkReceipts.length)}
             </span>
           </span>
@@ -449,9 +441,23 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
   return <DocumentName path={document.uri} insideDoor />;
 }
 
-/** "Edited" while the turn only changed text; "Changed" once it moved or deleted a document. */
-function documentCountLabel(count: number, tree: boolean) {
-  if (tree)
+/**
+ * "Drafted" when every change went into a draft, so the manuscript is as it was until the writer
+ * applies it; else "Edited" while the turn only changed text, "Changed" once it moved or deleted
+ * a document or wrote both drafts and the manuscript. The part lines say what became of each.
+ * It counts, never names: a name inside the toggle would compete for the click with the
+ * expanded rows, which already open each document.
+ */
+function documentCountLabel(documents: readonly TurnEditDocument[]) {
+  const count = new Set(documents.map((document) => document.documentId)).size;
+  const drafted = documents.filter((document) => document.scope === "draft").length;
+  if (drafted === documents.length)
+    return count === 1 ? (
+      <Trans>Drafted 1 document</Trans>
+    ) : (
+      <Trans>Drafted {count} documents</Trans>
+    );
+  if (drafted > 0 || documents.some((document) => document.tree))
     return count === 1 ? (
       <Trans>Changed 1 document</Trans>
     ) : (

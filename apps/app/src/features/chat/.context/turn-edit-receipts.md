@@ -3,8 +3,12 @@
 This page defines the chat contract for turn-edit records and reversal.
 
 The per-turn receipt is a quiet, default-collapsed record for live and pending draft
-document edits, moves and deletes. Its header counts documents ("Edited 1 document",
-or "Changed 1 document" once the turn moved or deleted one) and never names one; document names belong to the expanded rows, which navigate.
+document edits, moves and deletes. Its header counts documents and never names one;
+document names belong to the expanded rows, which navigate. It reads "Drafted 1
+document" when every change went into a draft (the manuscript is unchanged until
+an Apply, and the heading stays true after one: the part lines say what became of
+each), else "Edited 1 document", or "Changed 1 document" once the turn moved or
+deleted one or wrote both a draft and the manuscript.
 Expanding shows one row per edited document and shows no per-change detail: the
 card has no Before/After excerpts or word totals. A conversation reveal opened
 from an editor peer mark lands on the owning turn.
@@ -15,7 +19,7 @@ direct and draft lineage may produce the same receipt. The receipt is a record o
 what the reply wrote: it counts every document the reply wrote to, live or draft,
 edited or created, as soon as the reply finishes. Apply and Discard never create
 or change it, and Undo never erases its turn-owned record. Pending draft lineage
-shows the same “Edited N documents” card before Apply.
+shows the same “Drafted N documents” card before and after Apply.
 
 A document the reply created in a draft counts at once, and pending draft rows
 name the edited files.

@@ -17,7 +17,7 @@
  * the sheet is open, and supplies its own header via `renderHeader`.
  */
 import type { Work } from "@meridian/contracts/protocol";
-import type { ReactNode } from "react";
+import { type ReactNode, useRef } from "react";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
 import { cn } from "@/lib/utils";
 import { DockHeader, type DockHeaderProps } from "../dock/DockHeader";
@@ -48,6 +48,12 @@ export type ChatSurfaceProps = {
   onOpenContextTarget?: (target: ContextRouteRequest) => void;
   /** Dock header renderer; omit for the default desktop header. The phone chat sheet supplies its own. */
   renderHeader?: (args: DockHeaderProps) => ReactNode;
+  /**
+   * The surface mounts with the page, not at the writer's request. Docked, the chat it
+   * mounts with leaves focus to the page's own content (the Editor's document); a chat
+   * the writer opens there afterwards takes it.
+   */
+  mountsWithPage?: boolean;
 };
 
 export function ChatSurface({
@@ -61,7 +67,10 @@ export function ChatSurface({
   onCloseDock,
   onOpenContextTarget,
   renderHeader,
+  mountsWithPage = false,
 }: ChatSurfaceProps) {
+  const pageChat = useRef(mountsWithPage && placement === "dock" ? threadId : null);
+  if (pageChat.current !== threadId) pageChat.current = null;
   const threadSelect = <ChatThreadTitle projectId={projectId} threadId={threadId} />;
   return (
     <div
@@ -99,6 +108,7 @@ export function ChatSurface({
             availableWorks={availableWorks}
             onOpenContextTarget={onOpenContextTarget}
             visible={visible && showPrimary}
+            takeFocus={pageChat.current === null}
           />
         )}
       </DockShell>

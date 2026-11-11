@@ -746,8 +746,8 @@ msgid "{unanswered, plural, one {# unanswered} other {# unanswered}}"
 msgstr "{unanswered, plural, other {# 个未回答}}"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-msgid "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
-msgstr "{waiting, plural, one {草稿，# 篇文档待处理} other {草稿，# 篇文档待处理}}"
+#~ msgid "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
+#~ msgstr "{waiting, plural, one {草稿，# 篇文档待处理} other {草稿，# 篇文档待处理}}"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{who} deleted {name} before this reply saved its change."
@@ -1070,8 +1070,12 @@ msgid "AI write mode"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-msgid "AI write mode: {spokenValue}"
+msgid "AI write mode: {localizedValue}"
 msgstr ""
+
+#: src/components/app/work-composer-controls/WriteModeControl.tsx
+#~ msgid "AI write mode: {spokenValue}"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Align center"
@@ -2953,13 +2957,21 @@ msgstr ""
 msgid "Draft review"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {count} documents"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted 1 document"
+msgstr ""
+
 #: src/features/editor/DocumentVersionMenu.tsx
 msgid "Drafts"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-msgid "Drafts ({waiting})"
-msgstr "草稿（{waiting}）"
+#~ msgid "Drafts ({waiting})"
+#~ msgstr "草稿（{waiting}）"
 
 #: src/features/editor/DocumentDraftHint.tsx
 msgid "Drafts for this"

@@ -10,7 +10,7 @@
 [data-document-identity-row][data-path-short] [data-identity-path] > :not(:first-child) {
   display: none;
 }
-/* The review actions' own form (short, then icon) is set by useIdentityRowFit. */
+/* The review actions' own form (their names, then icons) is set by useIdentityRowFit. */
 [data-document-identity-row]:not([data-collapse="0"]) .identity-show-label {
   display: none;
 }
@@ -68,7 +68,7 @@
   gap: 2px;
 }
 [data-document-identity-row]:not([data-collapse="0"])
-  :is([data-review-actions][data-density="short"] button, [role="switch"]) {
+  :is([data-review-actions][data-density="full"] button, [role="switch"]) {
   padding-inline: 3px;
 }
 
