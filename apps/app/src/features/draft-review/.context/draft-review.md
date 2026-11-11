@@ -167,8 +167,13 @@ owner key: the latest Discard with its Undo, or the latest Apply's facts. A newe
 Discard by the owner replaces it; there is no timer; a reload starts empty. Each notice records
 the surface it was made on (Changes list, a chat's strip, a document's band) and shows only
 there; a band notice shows in that document's identity-row slot, or in the slot of the document
-main went back to. Discard all is one notice over several rooms; an Undo that fails keeps the
-notice with Retry, and Retry takes back only the rooms that failed.
+main went back to, or, when main went to Recently opened, in that landing's top slot (above a
+removed-documents notice). If the writer moved before the go-back resolved, the notice ends. Apply
+facts from a band stay out of the store: the identity row shows them from the owner's per-document
+facts (`useManuscriptState`). Discard all is one notice over several rooms. A room's Undo is done
+once the prose is back in the room, which sends it whenever it can; a room that turned read-only
+(its Work archived) ends the notice. An Undo that throws keeps the notice with Retry, and Retry
+takes back only the rooms that failed.
 
 A notice's Undo holds while the draft's prose is as the Discard left it. Any other transaction on
 the `prosemirror` fragment (writer typing, a model write), the room closing or resetting
@@ -180,8 +185,9 @@ Both paths record restorations, so marks after an Undo match marks before the Di
 handle holds a room lease and entry user until it ends, so one notice per owner bounds the rooms
 kept open; `DraftCommandOwner.close()` ends every notice.
 
-A whole-draft text Discard on a draft-only page (live deleted it elsewhere) sends main back at
-once through `ContextRemovalCoordinator.beginOwnRemoval`; the go-back reports where main landed,
+A whole-draft text Discard on a draft-only page (live deleted it elsewhere) sends main back
+through `ContextRemovalCoordinator.beginOwnRemoval` once the Discard is written, so a refused
+Discard leaves main on the page that shows the refusal; the go-back reports where main landed,
 and an Undo while main is still there returns it to the draft's review address. Chat-strip and Work Discard publish their notice and a projection-scoped `discarding` target first, so the row
 and notice paint before the indivisible write-back. Hidden pages drain on visibility
 change rather than waiting for animation frames. Changed base or prose refuses the stale
@@ -191,14 +197,18 @@ Direct writes never impersonate the binding origin: its delete-only transactions
 writer ProseMirror transaction are schema-repair evidence. The draft-only editor plugin
 installs restoration recording when its view mounts, before any writer Undo/Redo; live
 editors never install it. A side or Work notice owns a separate manager and pool lease.
-Undo captures its own session acknowledgement barrier before releasing notice ownership,
-because a later item lookup can't prove that retired session's edits landed. The notice
+The notice
 belongs to its exact session binding, so replacement documents never inherit the manager.
 
-Created-document removal, move or delete Discards, and a frozen owner's Discard go through the
-server, which has no Undo (#763): `canUndoDiscard` says so before the click, and those ask once
-and show no notice. A Discard all of only text drafts is local, one notice; any other Discard
-all is the server's branch Discard. Their optimistic
+One rule decides where a Discard runs (`discardsLocally` in `useWorkBranchCommands`, read by
+every surface through `discardAsks`/`discardAllAsks`): a change in a read frame, or a whole text
+draft that is not a whole item (created document, picture), has no move or delete, and whose
+room is read now (`DraftCommandOwner.canDiscardLocally`), is a local text Discard with an Undo.
+Anything else asks once, shows no notice, and goes to the server, which has no Undo (#763): a
+whole draft as an item Discard (`discardOnServer`, everything the branch holds on the
+document), a move or delete as `discardItem`. A Discard all of only local drafts is local, one
+notice; any other Discard all (rows still loading, a room in error) is the server's branch
+Discard. A Discard never reports success for a draft it didn't discard. Their optimistic
 visibility is lifecycle state, never text-group hiding. `4205` maps to terminal `closed`,
 including in-band code-1000 delivery, and `4208` to `removed`.
 

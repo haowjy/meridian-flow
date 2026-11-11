@@ -139,16 +139,22 @@ export function startDraftDiscardSession(input: {
     if (!undoing && stackItem === item) end();
   };
   let watching = false;
+  let stopAccess = () => {};
   const watch = () => {
     watching = true;
     fragment.observeDeep(onProse);
     history.on("stack-item-popped", onPopped);
+    // A room that turns read-only (its Work was archived) drops an Undo written into it.
+    stopAccess = binding.session.subscribe((snapshot) => {
+      if (snapshot.access === "read") queueMicrotask(end);
+    });
   };
   const unwatch = () => {
     if (!watching) return;
     watching = false;
     fragment.unobserveDeep(onProse);
     history.off("stack-item-popped", onPopped);
+    stopAccess();
   };
   const lease = readDraftRoom(input.registry, binding.session.roomKey);
   entry.users++;
@@ -194,11 +200,16 @@ export function startDraftDiscardSession(input: {
         end();
         return "ok";
       }
-      if (!item || !input.active() || entry.binding !== binding || input.state().closed) {
+      if (
+        !item ||
+        !input.active() ||
+        entry.binding !== binding ||
+        input.state().closed ||
+        binding.session.getSnapshot().access === "read"
+      ) {
         end();
         return "gone";
       }
-      if (binding.session.getSnapshot().access === "read") return "failed";
       const stackItem = item;
       undoing = true;
       try {
@@ -211,12 +222,10 @@ export function startDraftDiscardSession(input: {
         undoing = false;
       }
       binding.runtime.projectNow();
-      const acknowledged = binding.session.whenCurrentChangesAcknowledged();
+      // The prose is back in the room, which sends it whenever it can and drains unsent edits
+      // before it closes; its acknowledgement fails only once the room itself has ended.
       end();
-      return acknowledged.then(
-        () => "ok" as const,
-        () => "failed" as const,
-      );
+      return "ok";
     },
   };
   if (editor) {

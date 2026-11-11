@@ -64,6 +64,9 @@ type ContextRemovalWorkingSetPort = {
   replaceRecentRoutes(projectId: string, routes: readonly WorkingSetRoute[]): WorkingSetRoute[];
 };
 
+/** Where main went: a document, or Recently opened (`documentId` null). */
+export type MainLanding = { documentId: string | null };
+
 export type ContextRemovalRoutePort = {
   readSearch(projectId: string): ProjectSearch;
   updateSearch(
@@ -80,15 +83,15 @@ export type ContextRemovalRoutePort = {
   /**
    * The writer is removing `documentId`, which main shows: main opens the document it showed
    * before, one that still exists and is not among `removing`, else Recently opened. Nothing
-   * moves once `isCurrent` turns false. Resolves to the document main landed on; null when it
-   * went to Recently opened or did not move.
+   * moves once `isCurrent` turns false. Resolves to where main landed (`documentId` null:
+   * Recently opened); null when it did not move.
    */
   goBack(
     projectId: string,
     documentId: string,
     removing: readonly string[],
     isCurrent: () => boolean,
-  ): Promise<string | null>;
+  ): Promise<MainLanding | null>;
 };
 
 /**
@@ -910,12 +913,12 @@ export class ContextRemovalCoordinator {
    * The writer is deleting or Discarding these documents: their removal says nothing, and main,
    * if it shows one of them, goes at once to the document it showed before, else to Recently
    * opened. Call before the removal; settle the returned mark as `markOwnRemoval` says. `landed`
-   * hears where main went, if it moved.
+   * hears where main went, or null when it did not move; nothing when main did not show them.
    */
   beginOwnRemoval(
     projectId: string,
     documentIds: readonly string[],
-    landed?: (documentId: string | null) => void,
+    landed?: (landing: MainLanding | null) => void,
   ): SettleOwnRemoval {
     const settle = this.notices?.markOwnRemoval(projectId, documentIds) ?? (() => undefined);
     const shown = this.presented.mainDocumentId(projectId);
@@ -928,7 +931,7 @@ export class ContextRemovalCoordinator {
         documentIds,
         () => !this.unavailable() && this.presented.mainDocumentId(projectId) === shown,
       )
-      .then((documentId) => landed?.(documentId));
+      .then((landing) => landed?.(landing));
     return settle;
   }
 

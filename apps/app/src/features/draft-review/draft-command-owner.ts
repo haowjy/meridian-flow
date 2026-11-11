@@ -795,6 +795,12 @@ export class DraftCommandOwner {
     return outcomes;
   }
 
+  /** Whether a local text Discard can start on the item now: its room is read, bound and has changes. */
+  canDiscardLocally(itemKey: string): boolean {
+    const review = this.byItem.get(itemKey)?.binding?.runtime.state();
+    return this.active && Boolean(review?.ready && review.frame?.groups.length);
+  }
+
   /**
    * The caller names whose history also holds it: its own editor (Ctrl+Z), or none (`notice`).
    * The returned handle is the notice's Undo; the caller shows it or ends it.
@@ -831,9 +837,10 @@ export class DraftCommandOwner {
     this.items.get(itemKey)?.queue.retry();
   }
   /**
-   * Discards a whole item on the server: a created document, which the draft alone holds, or
-   * a frozen owner's draft, whose room refuses the writer's text. No Undo. A created document
-   * leaves at once; a frozen draft stays in review, discarding, until the server answers, so
+   * Discards a whole item on the server: a created document, which the draft alone holds, a
+   * picture, a frozen owner's draft, whose room refuses the writer's text, a move or delete
+   * with its text, or a draft whose room isn't read (`canDiscardLocally`). No Undo. A created
+   * document leaves at once; any other stays in review, discarding, until the server answers, so
    * a refusal shows on it. A Discard decided on the frozen reading names the draft the writer
    * saw, so the server refuses it if the chat came back and the draft moved on. Server-only
    * lifecycle commands share this account owner, never the Apply-all route.
@@ -898,6 +905,9 @@ export class DraftCommandOwner {
     if (!this.active || !item.tree) return Promise.resolve({ kind: "blocked" });
     const text =
       item.hasDraft && target.kind !== "tree" ? this.discard(ref, target, history) : null;
+    // The chosen text couldn't be written: the move or delete stays with it.
+    if (item.hasDraft && target.kind !== "tree" && !text)
+      return Promise.resolve({ kind: "blocked" });
     text?.handle?.end();
     return Promise.all([this.discardTree(ref, item), text?.outcome]).then(([tree, discarded]) =>
       tree.kind === "done" && discarded ? discarded : tree,

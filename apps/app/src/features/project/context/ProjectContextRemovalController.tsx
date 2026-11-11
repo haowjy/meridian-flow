@@ -64,9 +64,11 @@ export function ProjectContextRemovalController({
         const before = shownBefore(recent, documentId, removing);
         return (before ? openRecent(before, { projectId, ...ports }, true) : Promise.resolve(false))
           .then(async (opened) => {
-            if (opened && before) return before.documentId;
-            const settlement = isCurrent() ? await toRecents() : undefined;
-            if (settlement?.kind === "failed") reportError(settlement.error);
+            if (opened && before) return { documentId: before.documentId };
+            if (!isCurrent()) return null;
+            const settlement = await toRecents();
+            if (settlement.kind === "applied") return { documentId: null };
+            if (settlement.kind === "failed") reportError(settlement.error);
             return null;
           })
           .catch((error: unknown) => {

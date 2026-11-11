@@ -29,22 +29,6 @@ export type BranchCommandOutcome = CommandOutcome;
 export type CommandStart = { sent: boolean; outcome: Promise<CommandOutcome> };
 export type WorkBranchCommands = ReturnType<typeof useWorkBranchCommands>;
 
-/**
- * Whether a Discard of `target` carries an Undo, known before the click: only a local text
- * Discard does. A created document, a move or delete, and a trashed chat's draft are discarded
- * on the server, which has no Undo (#763), so those ask first.
- */
-export function canUndoDiscard(
-  item: ThreadDraftListItem | undefined,
-  frozen: boolean,
-  target: ChangeTarget = { kind: "draft" },
-): boolean {
-  if (frozen || target.kind === "tree") return false;
-  if (!item) return true;
-  if (item.isNew && target.kind === "draft") return false;
-  return !(item.tree && (target.kind === "draft" || target.tree));
-}
-
 export function useWorkBranchCommands({
   projectId,
   work,
@@ -115,12 +99,26 @@ export function useWorkBranchCommands({
           ? { kind: "dock", threadId }
           : { kind: "changes" };
     const endNotice = () => notices.end(ownerKey);
-    // Apply facts join the owner's notice until its next action.
+    /**
+     * The one Discard rule: whether this Discard runs here as a local text Discard, the only
+     * kind with an Undo. That is a change the writer sees in a read frame, or a whole text
+     * draft (not a created document or a picture, with no move or delete) whose room is read
+     * now. Any other Discard asks first and goes to the server, which has no Undo (#763).
+     */
+    const discardsLocally = (draft: DraftReviewSelection, target: ChangeTarget) => {
+      if (locked || frozen || target.kind === "tree") return false;
+      if (target.kind === "groups") return !target.tree;
+      const item = row(draft);
+      return !item?.wholeItem && !item?.tree && owner.canDiscardLocally(draft.itemKey);
+    };
+    // Apply facts join the owner's notice until its next action. A band's go to the document's
+    // identity row (`useManuscriptState`), never to the store, where no surface would show them.
     const applied = (
       draft: DraftReviewSelection,
       item: ThreadDraftListItem | undefined,
       outcome: Extract<CommandOutcome, { kind: "done" }>,
     ) => {
+      if (surface === "band") return;
       const held = notices.appliedFacts(ownerKey);
       const title = item?.documentName ?? documentBasename(item?.contextLocation?.path) ?? null;
       const restored = [...(held?.restored ?? []), ...(outcome.restored && title ? [title] : [])];
@@ -232,35 +230,29 @@ export function useWorkBranchCommands({
       // A new Discard replaces the owner's notice, with its own or with none.
       if (resetNotice) endNotice();
       // A draft-only page (live deleted it elsewhere) has nothing left to show once its draft is
-      // discarded: main goes back at once to the document it showed before, and the notice
-      // follows it there.
+      // discarded: once the Discard is written, main goes back to the document it showed before,
+      // and the notice follows it there. A refused Discard leaves main on the page, which shows
+      // the refusal.
       const leaves =
-        !locked &&
         target.kind === "draft" &&
-        canUndoDiscard(row(draft), frozen, target) &&
+        discardsLocally(draft, target) &&
         (draftOnly?.isDraftOnly(projectId, draft.documentId) ?? false);
-      let shown: number | null = null;
-      let landedOn: string | null | undefined;
-      const settle =
-        leaves && removal
-          ? removal.beginOwnRemoval(projectId, [draft.documentId], (documentId) => {
-              landedOn = documentId;
-              if (shown !== null) notices.landed(ownerKey, shown, documentId);
-            })
-          : null;
       const { start, part } = dispatchDiscard(draft, target);
-      if (part)
-        shown = notices.showDiscard({
-          projectId,
-          ownerKey,
-          surface: noticeSurface(draft),
-          parts: [part],
+      const shown = part
+        ? notices.showDiscard({
+            projectId,
+            ownerKey,
+            surface: noticeSurface(draft),
+            parts: [part],
+          })
+        : null;
+      if (leaves && removal && shown !== null)
+        void start.outcome.then((outcome) => {
+          if (outcome.kind !== "done") return;
+          removal.beginOwnRemoval(projectId, [draft.documentId], (landing) =>
+            notices.landed(ownerKey, shown, landing),
+          )([]);
         });
-      if (shown !== null && landedOn !== undefined) notices.landed(ownerKey, shown, landedOn);
-      if (settle)
-        void start.outcome.then((outcome) =>
-          settle(outcome.kind === "done" ? [] : [draft.documentId]),
-        );
       return start;
     };
     /** Several Discards as one notice with one Undo, when every one of them carries an Undo. */
@@ -268,9 +260,7 @@ export function useWorkBranchCommands({
       items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
     ): Promise<CommandOutcome[]> => {
       endNotice();
-      const undoable = items.every(({ draft, target }) =>
-        canUndoDiscard(row(draft), frozen, target),
-      );
+      const undoable = items.every(({ draft, target }) => discardsLocally(draft, target));
       const started = items.map(({ draft, target }) => dispatchDiscard(draft, target));
       const parts = started.flatMap(({ part }) => (part ? [part] : []));
       const [first] = items;
@@ -288,7 +278,9 @@ export function useWorkBranchCommands({
       if (locked) return none(blocked());
       const item = row(draft);
       const history = reviewEditor ? reviewEditor(draft) : "notice";
-      if (item && (item.isNew || frozen) && target.kind === "draft") {
+      // A whole draft that can't be discarded here ends on the server, everything it holds.
+      if (target.kind === "draft" && !discardsLocally(draft, target)) {
+        if (!item) return none(blocked());
         const outcome = owner.discardOnServer(ref(draft), item, frozen).then((answer) => {
           refresh([draft.documentId]);
           return answer;
@@ -296,7 +288,7 @@ export function useWorkBranchCommands({
         return none({ sent: true, outcome });
       }
       // A move or delete is discarded on the server, with the item's chosen text, as one command.
-      if (target.kind === "tree" || (item?.tree && (target.kind === "draft" || target.tree))) {
+      if (target.kind === "tree" || (target.kind === "groups" && target.tree)) {
         if (!item?.tree) return none(blocked());
         // The line goes at once; the refetch after the answer restores it if the server refused.
         dropTreeLine(item);
@@ -355,12 +347,12 @@ export function useWorkBranchCommands({
       ownerKey,
       threadId,
       owner,
-      /** Whether this Discard asks first: it carries no Undo (`canUndoDiscard`). */
+      /** Whether this Discard asks first: it can't run here, so it carries no Undo. */
       discardAsks: (draft: DraftReviewSelection, target: ChangeTarget = { kind: "draft" }) =>
-        !canUndoDiscard(row(draft), frozen, target),
-      /** Whether a Discard of all these drafts asks first: one of them carries no Undo. */
+        !discardsLocally(draft, target),
+      /** Whether a Discard of all these drafts asks first: one of them can't run here. */
       discardAllAsks: (drafts: readonly DraftReviewSelection[]) =>
-        drafts.some((draft) => !canUndoDiscard(row(draft), frozen)),
+        drafts.some((draft) => !discardsLocally(draft, { kind: "draft" })),
       dispositionLocked: locked,
       /** A frozen owner's draft takes no single-change command: only the whole draft's Discard. */
       changesLocked: locked || frozen,
@@ -435,9 +427,9 @@ export function useWorkBranchCommands({
           });
           return outcomes;
         }
-        // Undoable drafts are discarded here, one notice over their rooms; any other Discard
-        // all asked first, and the server ends every draft of the branch.
-        if (drafts.every((draft) => canUndoDiscard(row(draft), frozen)))
+        // Drafts that can all be discarded here are, one notice over their rooms; any other
+        // Discard all asked first, and the server ends every draft of the branch.
+        if (drafts.every((draft) => discardsLocally(draft, { kind: "draft" })))
           return discardMany(
             drafts.map((draft) => ({ draft, target: { kind: "draft" as const } })),
           );

@@ -33,7 +33,8 @@ export function reviewActionLabel(action: "apply" | "discard", scope: ReviewScop
 
 /**
  * A Discard's one question, in the place of the controls that asked it: the Discard carries no
- * Undo. Focus moves to it, so a row that reveals its actions on focus keeps it shown.
+ * Undo. Focus moves to Keep, so Enter keeps the draft and a row that reveals its actions on
+ * focus keeps the question shown.
  */
 export function DiscardQuestion({
   scope,
@@ -48,9 +49,9 @@ export function DiscardQuestion({
   touch?: boolean;
   className?: string;
 }) {
-  const confirm = useRef<HTMLButtonElement>(null);
+  const keep = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    confirm.current?.focus();
+    keep.current?.focus();
   }, []);
   const button = cn("text-button", touch ? "min-h-11" : "coarse:min-h-11");
   return (
@@ -63,10 +64,10 @@ export function DiscardQuestion({
     >
       <span className="min-w-0">{discardQuestion(scope)}</span>
       <span className="flex shrink-0 items-center gap-2">
-        <button type="button" className={button} onClick={onKeep}>
+        <button ref={keep} type="button" className={button} onClick={onKeep}>
           <Trans>Keep</Trans>
         </button>
-        <button ref={confirm} type="button" className={button} onClick={onConfirm}>
+        <button type="button" className={button} onClick={onConfirm}>
           <Trans>Discard</Trans>
         </button>
       </span>
