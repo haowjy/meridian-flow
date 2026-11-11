@@ -13,6 +13,8 @@ import type { LucideIcon } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { tabChipClass } from "./tab-chip";
+
 export function IndexTabChip({
   icon: Icon,
   label,
@@ -32,12 +34,7 @@ export function IndexTabChip({
           onClick={onClick}
           aria-label={label}
           aria-current={active ? "page" : undefined}
-          className={cn(
-            "focus-ring relative flex shrink-0 items-center px-3 [--tab-chip-surface:var(--color-background)]",
-            active
-              ? "tab-chip-active text-foreground"
-              : "tab-chip-inactive text-muted-foreground hover:text-foreground",
-          )}
+          className={cn("focus-ring shrink-0", tabChipClass(active))}
         >
           <Icon className="size-3.5" aria-hidden />
         </button>
@@ -55,7 +52,7 @@ export function ReturnTabChip({ title, onClick }: { title: string; onClick: () =
       type="button"
       onClick={onClick}
       aria-label={t`Back to ${title}`}
-      className="focus-ring tab-chip-inactive relative flex min-w-0 max-w-64 items-center self-stretch px-3 text-muted-foreground hover:text-foreground [--tab-chip-surface:var(--color-background)]"
+      className={cn("focus-ring min-w-0 max-w-64", tabChipClass(false))}
     >
       <span className="truncate px-1 text-sm font-medium">{title}</span>
     </button>
