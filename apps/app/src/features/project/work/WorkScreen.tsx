@@ -74,6 +74,7 @@ export function WorkScreen({ projectId, routeWork, routeCommands, deletion }: Wo
         work={routeWork.work}
         routeCommands={routeCommands}
         focusTitle={created === routeWork.work.id}
+        onTitleFocused={() => setCreated(null)}
       />
     );
 

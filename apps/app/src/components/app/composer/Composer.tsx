@@ -169,7 +169,9 @@ export type ComposerProps = {
   fileDropActive?: boolean;
   /**
    * Drawn in the box's place (an open ask). The editor stays mounted and hidden, so the draft,
-   * its atoms and its uploads come back as they were when this clears.
+   * its atoms and its uploads come back as they were when this clears. A box that has the focus
+   * is only hidden from sight, so typing goes on into the draft until the takeover takes the
+   * focus; it sends nothing meanwhile.
    */
   takeover?: ReactNode;
 };
@@ -192,8 +194,6 @@ export type ComposerHandle = {
   restoreSnapshot: (snapshot: ComposerDraftSnapshot, expectedRevision?: number) => boolean;
   /** Adds plain text after the draft, as its own paragraph when the draft holds anything. */
   appendText: (text: string) => void;
-  /** Types text at the caret, as the writer's own keys would, even while the box is hidden. */
-  typeText: (text: string) => void;
 };
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(props, ref) {
@@ -240,6 +240,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   /** This Composer, as the upload store's holder of its chips. */
   const [holder] = useState(() => crypto.randomUUID());
   const [submitFailure, setSubmitFailure] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
   const [hasContent, setHasContent] = useState(() => {
     if (!initialDraft) return false;
     const projection = serializeComposerDraft(initialDraft.doc);
@@ -459,10 +460,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         if (hasContent) editor.commands.insertContentAt(editor.state.doc.content.size, paragraph);
         else editor.commands.setContent({ type: "doc", content: [paragraph] });
       },
-      typeText: (text) => {
-        if (!editor || editor.isDestroyed || !text) return;
-        editor.view.dispatch(editor.state.tr.insertText(text));
-      },
     }),
     [editor, hasContent, restoreSnapshot, snapshot],
   );
@@ -504,7 +501,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }, []);
 
   async function submit() {
-    if (!editor || submitDisabled || uploadsHeld || inFlight.current || !hasContent) return;
+    if (!editor || takeover || submitDisabled || uploadsHeld || inFlight.current || !hasContent)
+      return;
     const envelope = serializeComposerDraft(
       editor.getJSON(),
       revision.current,
@@ -654,11 +652,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       <div
         data-composer=""
         {...fileDrop.dropProps}
-        hidden={takeover ? true : undefined}
+        hidden={takeover && !focusWithin ? true : undefined}
+        onFocusCapture={() => setFocusWithin(true)}
+        onBlurCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) setFocusWithin(false);
+        }}
         className={cn(
           "border border-border bg-card px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-card-pad-y)] focus-within:border-focus",
           "rounded-xl",
           (fileDrop.over || fileDropActive) && "border-focus bg-ink-fill-strong",
+          takeover && "sr-only",
         )}
         aria-busy={busy || uploadsHeld === "sending" || undefined}
       >

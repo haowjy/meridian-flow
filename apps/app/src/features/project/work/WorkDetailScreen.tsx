@@ -38,6 +38,7 @@ export type WorkDetailScreenProps = {
   routeCommands: ProjectRouteCommands;
   /** Just created here: its title takes the focus the creation dialog let go. */
   focusTitle?: boolean;
+  onTitleFocused?: () => void;
 };
 
 /**
@@ -94,6 +95,7 @@ export function WorkDetailScreen({
   work,
   routeCommands,
   focusTitle = false,
+  onTitleFocused,
 }: WorkDetailScreenProps) {
   const mutations = useWorkMutations(projectId);
   const controller = useWorkMetadataController(work, async (data) => {
@@ -105,8 +107,10 @@ export function WorkDetailScreen({
   useEffect(() => {
     if (!focusTitle) return;
     const title = scrollOwner.current?.querySelector<HTMLElement>("h1 button");
-    if (title) moveFocus(title, { ring: lastInputWasKeyboard() });
-  }, [focusTitle]);
+    if (!title) return;
+    moveFocus(title, { ring: lastInputWasKeyboard() });
+    onTitleFocused?.();
+  }, [focusTitle, onTitleFocused]);
   useProjectLeaveGuard({
     request: controller.request,
     dirty: () => controller.dirty,

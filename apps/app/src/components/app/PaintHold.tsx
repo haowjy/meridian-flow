@@ -169,6 +169,7 @@ export class PaintHold extends Component<FrameProps, Hold> {
       <FrameContext.Provider value={this}>
         <div
           ref={this.frame}
+          data-paint-frame
           className={`${this.props.className ?? ""} outline-none`}
           tabIndex={-1}
         >

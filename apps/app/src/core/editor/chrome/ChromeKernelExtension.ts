@@ -236,6 +236,7 @@ export const ChromeKernelExtension = Extension.create({
           };
           document.addEventListener("keydown", leaveOnTab, true);
           view.dom.addEventListener("focusout", disarmLeave);
+          view.dom.addEventListener("pointerdown", disarmLeave);
 
           return {
             update(updatedView, previousState) {
@@ -260,6 +261,7 @@ export const ChromeKernelExtension = Extension.create({
               document.removeEventListener("keydown", backstopEscape, true);
               document.removeEventListener("keydown", leaveOnTab, true);
               view.dom.removeEventListener("focusout", disarmLeave);
+              view.dom.removeEventListener("pointerdown", disarmLeave);
             },
           };
         },

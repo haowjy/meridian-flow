@@ -78,9 +78,11 @@ metadata, order, presentation, and dispatch actions therefore cannot drift.
 The ellipsis stops propagation so it doesn't trigger the row's click handler.
 `EntryAction` is five actions in fixed order — New file, New folder,
 separator, Rename, Move…, Delete (creation first, destructive last) —
-identical in both triggers. Each list declares which of them it supports. Actions dispatch from `onCloseAutoFocus`, after the menu has
-fully closed with its focus return suppressed: menu teardown otherwise blurs
-a freshly mounted inline row, and blur commits/cancels it.
+identical in both triggers. Each list declares which of them it supports. Actions dispatch through `useMenuActionDispatch`
+(`components/ui/dropdown-menu.tsx`): they run once the menu has closed and put
+focus back on its trigger. Run from the item, menu teardown would blur a freshly
+mounted inline row (blur commits or cancels it), and a dialog the action opens
+would return focus to an item that is gone.
 
 ## Creation targeting
 

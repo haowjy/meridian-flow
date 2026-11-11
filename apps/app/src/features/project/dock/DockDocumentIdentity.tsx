@@ -5,7 +5,7 @@
  * wrap under it (DocumentIdentityBar). It takes the place a tab strip has in
  * the Editor, so the document's name shows once.
  */
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { isDraftOnly } from "@/client/stores";
 import {
   DraftReviewBoundary,
@@ -50,6 +50,7 @@ function DockIdentityBody({
   const openInEditor = useOpenDocumentInEditor();
   // The identity bar renames and moves the file, which only the file's own Work freezes.
   const fileFrozen = useDocumentFreeze(projectId, tab, null) !== null;
+  const [focusReview, setFocusReview] = useState<string | null>(null);
   return (
     <DocumentIdentityBar
       key={tab.documentId}
@@ -61,6 +62,8 @@ function DockIdentityBody({
       tab={tab}
       readOnly={fileFrozen}
       onCloseDraftOnly={isDraftOnly(tab) ? () => close(dockDocument.key) : undefined}
+      focusReview={focusReview}
+      onFocusReview={setFocusReview}
       // The dock follows a rename through the resource projection; it keeps no tab to patch.
       onCommitted={noopCommitted}
       onOpenExisting={(scheme, path, owner) => openInEditor({ scheme, path, ...owner })}

@@ -16,13 +16,14 @@ import {
   Trash2,
 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
-import { Fragment, useCallback, useRef } from "react";
+import { Fragment } from "react";
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
+  useMenuActionDispatch,
 } from "@/components/ui/dropdown-menu";
 import {
   dropdownMenuContentClass,
@@ -127,7 +128,8 @@ export function ContextEntryMenu({
   allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
 }) {
-  const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
+  const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
+  const dispatchAction = (action: EntryAction) => dispatch(() => onAction(action));
   if (allowedActions.length === 0) return children;
   return (
     <ContextMenuPrimitive.Root>
@@ -141,29 +143,11 @@ export function ContextEntryMenu({
           )}
           onCloseAutoFocus={onCloseAutoFocus}
         >
-          <ContextActionItems allowedActions={allowedActions} onAction={dispatch} />
+          <ContextActionItems allowedActions={allowedActions} onAction={dispatchAction} />
         </ContextMenuPrimitive.Content>
       </ContextMenuPrimitive.Portal>
     </ContextMenuPrimitive.Root>
   );
-}
-
-function useMenuActionDispatch(onAction: (action: EntryAction) => void) {
-  const pendingRef = useRef<EntryAction | null>(null);
-  const dispatch = useCallback((action: EntryAction) => {
-    pendingRef.current = action;
-  }, []);
-  const onCloseAutoFocus = useCallback(
-    (event: Event) => {
-      const action = pendingRef.current;
-      if (action === null) return;
-      pendingRef.current = null;
-      event.preventDefault();
-      onAction(action);
-    },
-    [onAction],
-  );
-  return { dispatch, onCloseAutoFocus };
 }
 
 // ─── Hover kebab button + dropdown ──────────────────────────────────────────
@@ -177,7 +161,8 @@ export function EntryKebabButton({
   onAction: (action: EntryAction) => void;
   className?: string;
 }) {
-  const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
+  const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
+  const dispatchAction = (action: EntryAction) => dispatch(() => onAction(action));
   if (allowedActions.length === 0) return null;
   return (
     <OverflowMenu
@@ -186,7 +171,7 @@ export function EntryKebabButton({
       onCloseAutoFocus={onCloseAutoFocus}
       triggerClassName={cn(contextTreeOverflowTriggerClassName, className)}
     >
-      <DropdownActionItems allowedActions={allowedActions} onAction={dispatch} />
+      <DropdownActionItems allowedActions={allowedActions} onAction={dispatchAction} />
     </OverflowMenu>
   );
 }

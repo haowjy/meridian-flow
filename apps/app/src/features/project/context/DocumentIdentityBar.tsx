@@ -18,6 +18,7 @@ import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/Dr
 import { DocumentStatePortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
+import { focusIsFree } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { useAiDraftLauncher } from "../review-launch";
 import { useAccountResourceProjection } from "./account-feature-context";
@@ -53,6 +54,12 @@ export type DocumentIdentityBarProps = {
   /** Header only: a persistent line under the row (the dock's failed Open in Editor). */
   notice?: ReactNode;
   onCloseDraftOnly?: () => void;
+  /**
+   * The draft whose review controls take the focus when they show: one opened from
+   * the previous draft's controls. Held above this bar, which remounts per document.
+   */
+  focusReview?: string | null;
+  onFocusReview?: (itemKey: string | null) => void;
   onCommitted: (
     documentId: string,
     next: IdentityCommitted,
@@ -73,6 +80,8 @@ export function DocumentIdentityBar({
   onCommitted,
   onOpenExisting,
   onCloseDraftOnly,
+  focusReview,
+  onFocusReview,
 }: DocumentIdentityBarProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   useIdentityRowFit(rowRef);
@@ -138,7 +147,10 @@ export function DocumentIdentityBar({
   // A review that has been entered but not yet painted is a review destination in flight:
   // it must not read as the live document's chip until its preview answers.
   const reviewPending = review?.documentId === tab.documentId && !review.shown;
-  const openDraft = (row: ReviewFileTarget) => openReviewFile(row, controller.ownerKey);
+  const openDraft = (row: ReviewFileTarget, takeFocus?: boolean) => {
+    if (takeFocus) onFocusReview?.(row.draft.itemKey);
+    openReviewFile(row, controller.ownerKey);
+  };
   // A document in Unfiled, untitled or named, is invited to choose a home. Once it
   // has one, renaming and moving belong to the lists. Uploads aren't writing material.
   const showChip =
@@ -329,7 +341,9 @@ export function DocumentIdentityBar({
       itemKey={reviewItemKey ?? ""}
       onOpenDraft={openDraft}
       onCloseDraftOnly={onCloseDraftOnly}
-      onFocusDocument={() => focusEditorProse(tab.documentId)}
+      onFocusDocument={() => focusEditorProseOnceShown(tab.documentId)}
+      focusOnOpen={reviewItemKey !== null && focusReview === reviewItemKey}
+      onOpenFocused={() => onFocusReview?.(null)}
     >
       {({ version, controls }) =>
         variant === "state" ? renderState(version, controls) : renderRow(version, controls)
@@ -391,13 +405,43 @@ function useDeviceOnly(projectId: string, tab: ContextTab): boolean {
   return sustained;
 }
 
+/** The document's live prose; a warm copy kept out of sight is inert. */
+const editorProse = (documentId: string) =>
+  [
+    ...document.querySelectorAll<HTMLElement>(
+      `[data-context-editor-document-id="${escapeCssIdent(documentId)}"] [contenteditable="true"]`,
+    ),
+  ].find((prose) => !prose.closest("[inert]")) ?? null;
+
 /** Esc hands focus back to the prose (the bar is one tab stop). */
 function focusEditorProse(documentId: string) {
-  document
-    .querySelector<HTMLElement>(
-      `[data-context-editor-document-id="${escapeCssIdent(documentId)}"] [contenteditable="true"]`,
-    )
-    ?.focus();
+  editorProse(documentId)?.focus();
+}
+
+/**
+ * A closing review swaps the document's editor once the live one has painted, so the
+ * prose may not be there yet. Waits for it while nothing else holds the focus, and
+ * gives up at the writer's next key or press.
+ */
+function focusEditorProseOnceShown(documentId: string) {
+  const settle = () => {
+    if (!focusIsFree()) return true;
+    const prose = editorProse(documentId);
+    prose?.focus();
+    return prose !== null && document.activeElement === prose;
+  };
+  if (settle()) return;
+  const observer = new MutationObserver(() => {
+    if (settle()) stop();
+  });
+  const stop = () => {
+    observer.disconnect();
+    window.removeEventListener("pointerdown", stop, true);
+    window.removeEventListener("keydown", stop, true);
+  };
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+  window.addEventListener("pointerdown", stop, true);
+  window.addEventListener("keydown", stop, true);
 }
 
 /**

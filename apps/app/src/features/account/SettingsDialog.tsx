@@ -37,7 +37,6 @@ import { Switch } from "@/components/ui/switch";
 import { UsageCard } from "@/features/billing/UsageCard";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useTextSize } from "@/hooks/use-text-size";
-import { lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { SUPPORTED_LOCALES, type SupportedLocale } from "@/lib/i18n";
 import { changeTextSize, TEXT_SIZES, type TextSize } from "@/lib/text-size";
 import { UI_THEMES, type UiTheme } from "@/lib/ui-theme";
@@ -54,28 +53,6 @@ import { WorkingSetSyncPreferenceRow } from "./WorkingSetSyncPreferenceRow";
  * identically from any shell. Shared by the account menu, the ⌘, shortcut, and
  * the dialog's own rail/close affordances.
  */
-/**
- * What Escape returns to. The dialog opens from a menu item that is gone by the
- * time it closes, so that item stands for its menu's trigger.
- */
-let opener: HTMLElement | null = null;
-
-function rememberOpener() {
-  const active = document.activeElement;
-  if (!(active instanceof HTMLElement) || active === document.body) return;
-  const menu = active.closest<HTMLElement>('[role="menu"]');
-  opener = menu?.id
-    ? document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(menu.id)}"]`)
-    : active;
-}
-
-function returnFocusToOpener(event: Event) {
-  if (!opener?.isConnected) return;
-  event.preventDefault();
-  moveFocus(opener, { ring: lastInputWasKeyboard() });
-  opener = null;
-}
-
 export function useSettingsNavigation() {
   const navigate = useNavigate();
   const defaultSection: SettingsSection = "preferences";
@@ -93,10 +70,7 @@ export function useSettingsNavigation() {
   );
 
   const open = useCallback(
-    (section?: SettingsSection) => {
-      rememberOpener();
-      setSection(section ?? defaultSection, false);
-    },
+    (section?: SettingsSection) => setSection(section ?? defaultSection, false),
     [setSection],
   );
   // Section switches replace history so a single Back closes the overlay
@@ -193,10 +167,7 @@ export function SettingsDialog() {
           <SectionContent section={section} presentation="phone" />
         </PhoneSettingsContent>
       ) : (
-        <DialogContent
-          className="@container/settings flex h-[540px] max-w-[min(48rem,calc(100%-2rem))] gap-0 overflow-hidden rounded-lg p-0"
-          onCloseAutoFocus={returnFocusToOpener}
-        >
+        <DialogContent className="@container/settings flex h-[540px] max-w-[min(48rem,calc(100%-2rem))] gap-0 overflow-hidden rounded-lg p-0">
           {/* A container can't query itself, so the direction switch lives one level in. */}
           <div className="flex min-w-0 flex-1 flex-col @[40rem]/settings:flex-row">
             <aside className="flex shrink-0 flex-col gap-3 border-b border-border-subtle bg-ink-fill px-3 pt-4 pb-2 @[40rem]/settings:w-52 @[40rem]/settings:gap-4 @[40rem]/settings:border-r @[40rem]/settings:border-b-0 @[40rem]/settings:py-4">
