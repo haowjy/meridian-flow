@@ -96,7 +96,9 @@ function OwnerSettlement({
             if (view.entries.get(draft.documentId)?.kind === "file") {
               registry.promote(projectId, draft.documentId);
               // Every surface naming the item (main's address) learns that its draft ended.
-              void fetchCurrentDraftMetadata(queryClient, draft).catch(() => undefined);
+              void fetchCurrentDraftMetadata(queryClient, draft).catch((error: unknown) =>
+                reportError(error),
+              );
               continue;
             }
             void fetchCurrentDraftMetadata(queryClient, draft)

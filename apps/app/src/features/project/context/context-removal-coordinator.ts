@@ -267,8 +267,9 @@ export class ContextRemovalCoordinator {
 
   /**
    * The documents among `documentIds` whose tabs stay when live loses them: a host presents the
-   * document draft-only, or a draft held open still has it (D79). The draft paints in them; a
-   * held live document becomes draft-only in its hosts until a restore promotes it.
+   * document draft-only, or a draft held open still has it: a live delete must not strand the
+   * draft. The draft paints in them; a held live document becomes draft-only in its hosts until a
+   * restore promotes it.
    */
   private heldByDrafts(projectId: string, documentIds: readonly string[]): Set<string> {
     const held = new Set<string>();
