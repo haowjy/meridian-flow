@@ -47,7 +47,7 @@ certificates are not written into journal metadata.
 
 Apply has one HTTP door per document: `draft/apply`. It compiles the frozen
 snapshot off-lock, then commits live, the prefix-authored review base and Apply
-record, lineage and terminal command outcome atomically. A stored result
+record and terminal command outcome atomically. A stored result
 wins over every fresh refusal, including a retry after close. See [Apply](apply.md)
 for the storage boundary and diagnostic timing contract. Work Apply all is a
 browser loop of per-document clicks; there is no settlement executor or recovery
@@ -103,7 +103,7 @@ closes a created document's drafts and then tombstones it still closes their
 rooms `4208`; any other closed draft's room closes stale and its peers are
 refused with their cause's `discarded_*` reason. Every removal registers its
 documents with the batch (`DraftClose.registerRemoved`); only a discard also
-closes their drafts. A live delete closes no draft (D79): the drafts stay
+closes their drafts. A live delete closes no draft: the drafts stay
 ordinary active drafts and their rooms stay open. A removed document's live
 rooms close `4208`, but only while the
 removal still stands: after every matching room load settles, one batched record
@@ -652,16 +652,11 @@ the extractor bumps its version, and no second post-write writer exists.
 
 ## Selective disposition and response retirement
 
-Apply and Discard parse required-field selection variants and thread them
-through revision-fenced attempts. Only an absent
-selection chooses whole Discard; a present but incomplete or malformed selection
-is HTTP 400, never a whole Discard. Class IDs,
-immutable part keys, live revisions, and admission tokens are evidence for the
-clicked class only; they never admit a replacement class. A missing selected
-class is `stale` if a listed immutable member survives, and `gone` only when
-none does and the request says its member list is complete
-(`memberPartKeysComplete`): a client sends at most 500 members, an even sample
-of a longer selection, and a sample cannot prove that no member survives.
+Discard takes a selection: the whole branch, or items each naming a document,
+its origin, what it ends, and optionally `draftSeenAt`. What the kernel ended
+decides the answer: nothing left to end is `gone`, an applicable state that
+changed since the writer looked is `stale`, and a text draft that moved on is
+`draft_changed` (`work-branch-review-service.ts`).
 
 A reply's save applies ordered per-segment journal rows to a provisional Work-draft
 clone and never regenerates durable rows from a raw state-vector diff, which
@@ -692,8 +687,8 @@ retires the addressed peer and does not roll back unrelated documents in the rep
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
 
-[kb-archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/work/management/work-archive-and-delete.md
-[eventual]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/eventual-consistency-over-latency.md
+[kb-archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/work/lifecycle.md#archive-freezes-the-works-own-material
+[eventual]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-store-concurrency.md
 
 ## Producer shutdown
 

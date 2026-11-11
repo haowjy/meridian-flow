@@ -1,7 +1,7 @@
 /**
  * The tooltip a greyed control answers with.
  *
- * Law 5 says grey must say why; the ruling of 2026-07-29 says it says so on
+ * Law 5 says grey must say why, and it says so on
  * demand. A reason printed under every refused row is standing information the
  * writer never asked for — three of them turn a menu into a paragraph — so the
  * control keeps its label alone and the reason waits for hover or focus. Every

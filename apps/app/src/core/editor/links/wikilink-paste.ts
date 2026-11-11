@@ -1,5 +1,5 @@
 /**
- * Pasted `[[Name]]` becomes a standard link (D15). Writers bring notes over
+ * Pasted `[[Name]]` becomes a standard link. Writers bring notes over
  * from note apps, whose links would otherwise arrive as dead brackets. Only
  * paste converts: a typed `[[`, what the AI writes, and text already stored
  * stay text.

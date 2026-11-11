@@ -31,7 +31,7 @@ export interface ActivatedSkillBody {
   slug: string;
   description: string;
   body: string;
-  /** Whether the model can read the skill's files; if so the body takes `skill`'s header (D58). */
+  /** Whether the model can read the skill's files; if so the body takes `skill`'s header. */
   readable: boolean;
 }
 

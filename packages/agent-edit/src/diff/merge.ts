@@ -7,7 +7,7 @@
  * are merged (`merge-hunks.ts`, `merge-settle.ts`). Hunks from one side apply. Overlapping hunks with
  * equal results apply once. Insertions at one point keep both (live first). Anything else is a
  * conflict: the draft's version stays, so the conflict shows in review as diff(new base = live, draft).
- * It works on `align`'s uncleaned hunks (D5) for word precision. No Yjs here: the minimal Yjs writer is
+ * It works on `align`'s uncleaned hunks for word precision. No Yjs here: the minimal Yjs writer is
  * `writer.ts`.
  */
 import type { Node as PMNode, Schema } from "prosemirror-model";

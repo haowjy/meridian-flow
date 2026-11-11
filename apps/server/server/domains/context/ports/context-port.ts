@@ -46,7 +46,7 @@ export type ContextScheme = ContextUriScheme;
 
 /**
  * How one thread reads every source through its port. Reads follow the
- * version that thread's writes change, per document (D14, D20), or the
+ * version that thread's writes change, per document, or the
  * live text, without draft changes, when `version` is `live`.
  */
 export interface ThreadContextView {
@@ -254,7 +254,7 @@ interface BaseFileRef {
   readonly?: boolean;
   /**
    * Imported frontmatter stored with the document; `copy` carries it to the copy.
-   * Host-only: the model never sees properties in v1 (ruling I6, #778). Copy
+   * Host-only: the model never sees properties in v1 (#778). Copy
    * inheriting metadata is not model visibility; no tool output may render this.
    */
   properties?: StoredDocumentProperties;
@@ -605,7 +605,7 @@ export interface ContextPort {
   ): Promise<Result<ContextBinaryWriteResult, ContextError>>;
 
   /**
-   * A draft-mode chat's move or delete (D26, D45): facts in its Work's branch, never the
+   * A draft-mode chat's move or delete: facts in its Work's branch, never the
    * shared tree and never the mover. Each end must participate in the branch tree; its content
    * placement may remain live, as Scratch's does. `record` runs in the same transaction. A move
    * to where the branch already has the document answers `moved: false` and records nothing.

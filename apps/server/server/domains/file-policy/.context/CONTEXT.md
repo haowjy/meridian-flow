@@ -1,8 +1,8 @@
 # domains/file-policy — file access decisions
 
 Every route, tool, live room, and write seam asks this domain before touching
-document state. The rules are in the [file policy][file-policy] and [agent
-permission][agent-permission] decisions.
+document state. The rules are in [file policy][file-policy] and [agent
+permission][agent-permission].
 
 ## Policy
 
@@ -46,5 +46,5 @@ Measure statement count and peak connection usage with the current fixtures
 before narrowing confirmation, adding a cache, or changing lock ownership. A
 cache must not hide Work switches or branch-view changes.
 
-[file-policy]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/access/file-access-policy.md
-[agent-permission]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/access/agent-file-permission.md
+[file-policy]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/access.md
+[agent-permission]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/access.md#agent-permission-is-separate-from-tools

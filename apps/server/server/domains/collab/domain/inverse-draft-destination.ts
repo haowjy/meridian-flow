@@ -10,7 +10,7 @@ export type LiveInverseDestination = {
   view: Y.Doc;
   /** A live file owned by an archived or deleted Work is not writable. */
   frozen: boolean;
-  /** Live removal does not close an active draft that survived it (D79). */
+  /** Live removal does not close an active draft that survived it. */
   removed: boolean;
 };
 export type ActiveInverseDestination = {

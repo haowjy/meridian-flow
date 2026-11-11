@@ -1,7 +1,7 @@
 /**
  * The destination hint: what this link goes to, shown on approach.
  *
- * Ruled with the click (ruling 4): a click follows the link, so hover has to
+ * Hover pairs with the click: a click follows the link, so hover has to
  * say where before it does. Approach chrome, not a surface (law 7) — it takes
  * no focus, claims no layer, and never blocks the words under it, so it hangs
  * below the link's left edge and lets pointer events pass through.

@@ -11,9 +11,8 @@ permissions:
   contents: read
   pull-requests: read
 
-concurrency:
-  group: pr-body-${{ github.ref }}
-  cancel-in-progress: true
+# No concurrency group: a push, a body edit and "ready for review" often arrive together,
+# and a cancelled run of this required check blocks the merge even when another run passed.
 
 jobs:
   pr-body-lint:

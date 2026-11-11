@@ -64,8 +64,8 @@ evicting existing inclusions. Missing or transiently unresolved assets keep prio
 decisions; unexpected resolution errors fail preparation. C owns these decisions,
 so a fork inherits them only when its cutoff includes C.
 
-[kb-run-prep]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/run-preparation-protocol.md
-[kb-summarizer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/compaction-summarizer-and-overflow.md
-[kb-notes]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/compaction/notes-step-before-compaction.md
-[kb-reshow]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/compaction/compaction-document-reshow.md
-[kb-commands]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/transcript-commands.md
+[kb-run-prep]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/runtime.md#preparing-a-run-select-prepare-validate-commit
+[kb-summarizer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/compaction.md#two-summary-paths
+[kb-notes]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/compaction.md#update-scratch-then-summarize
+[kb-reshow]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/compaction.md#re-show-only-the-text-that-fits
+[kb-commands]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/runtime.md#only-history-rewriting-work-waits-between-replies

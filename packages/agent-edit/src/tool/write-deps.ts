@@ -45,7 +45,7 @@ export interface CreateWriteToolOptions {
   defaultSessionId?: string;
   defaultThreadId?: string;
   /**
-   * A formatted find could not tell the links outside its splice apart and
+   * A find could not tell the links outside its splice apart and
    * assigned the whole block group instead: identity still follows
    * correspondence, but unchanged links there may churn their formatting.
    */

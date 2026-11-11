@@ -26,7 +26,7 @@ export interface LostEdit {
  * whose parent chain reaches a deleted item, and deletions of items that are already deleted. Each edit
  * carries the id of the item it touched, which recovery needs to find the blocks the edits belong to.
  *
- * Typed text is net of the update's own delete set (D33): characters the same frame also deletes were
+ * Typed text is net of the update's own delete set: characters the same frame also deletes were
  * revised away by the peer (an Undo manager keeps their structs, so they still travel), and only what
  * survives in the peer's view is lost. One edit per surviving run of an incoming struct: a browser sends
  * one struct per keystroke, so recovery regroups the runs by what the peer sees side by side.

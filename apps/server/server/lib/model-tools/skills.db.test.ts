@@ -1,5 +1,5 @@
 /**
- * A user-invoked skill's files (D64) on Postgres: the invocation pins the skill on the thread's binding, so the wired `read`, `ls` and `skill` see it on a General thread that doesn't name it, and a spawned child doesn't.
+ * A user-invoked skill's files on Postgres: the invocation pins the skill on the thread's binding, so the wired `read`, `ls` and `skill` see it on a General thread that doesn't name it, and a spawned child doesn't.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - thread-scoped invoked-skill visibility

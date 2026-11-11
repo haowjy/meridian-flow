@@ -97,7 +97,7 @@ export function CommandNotice({
 
 /**
  * The question an Apply all asks first, naming every document it will delete from the
- * manuscript and every one it brings back (D79).
+ * manuscript and every one it brings back.
  */
 export function ApplyAllQuestion({
   deleting,

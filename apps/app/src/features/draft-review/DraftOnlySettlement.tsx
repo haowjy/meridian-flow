@@ -133,7 +133,7 @@ function OwnerSettlement({
   // looking at stays on screen over the live document.
   // Availability can apply a live delete before the replica hears of it: while
   // it says the document is removed, a still-placed record is stale and must
-  // not undo the hold that just made the tab draft-only (D79).
+  // not undo the hold that just made the tab draft-only.
   useEffect(() => {
     if (drafts.status !== "ready") return;
     const identities = resourceIdentityIndex(projection.records);

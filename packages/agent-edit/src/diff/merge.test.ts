@@ -3,7 +3,7 @@
  * case table's regressions. Seeded, so a failure replays.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Contested merge ownership and parent-replacement fallback (kb/decisions/collab/drafts/review/draft-live-content-rebase.md)
+ * - Contested merge ownership and parent-replacement fallback (kb/wiki/architecture/collaboration/drafts-and-branches.md#draft-and-live-are-separate-yjs-identity-spaces)
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";

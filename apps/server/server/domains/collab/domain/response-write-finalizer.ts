@@ -22,7 +22,7 @@ export function createResponseWriteFinalizer(input: {
   });
 
   return {
-    /** One save step for every reply, live and drafted documents together (D42). */
+    /** One save step for every reply, live and drafted documents together. */
     async finalizeResponseCommit(responseIdentity, ctx, beforeTransactionCommit) {
       const result = await input.agentEdit.commitResponse(responseIdentity.editScopeId, {
         ...(ctx.recordingFrontier ? { recordingFrontier: ctx.recordingFrontier } : {}),

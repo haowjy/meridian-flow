@@ -1,7 +1,7 @@
 /**
  * A branch's pending move or delete of a document (its tree line), and the words for it: the
  * review row ("ch12: renaming to ch12-old") and the Work notice on the live document ("Ascension
- * is renaming this to ch12-old."). Live doesn't show either until Apply (D26). Works are named,
+ * is renaming this to ch12-old."). Live doesn't show either until Apply. Works are named,
  * never by handle (#914).
  */
 import { t } from "@lingui/core/macro";

@@ -1,7 +1,7 @@
 /** Contract tests for cached, delete-set-aware document containment.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Delete-aware update containment (kb/decisions/collab/branches/writer-admission-novel-effects.md)
+ * - Delete-aware update containment (kb/wiki/architecture/collaboration/draft-store-concurrency.md#admission-judges-only-what-an-update-adds)
  */
 
 import { describe, expect, it } from "vitest";

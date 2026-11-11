@@ -1,5 +1,5 @@
 /**
- * A branch placement's tree writes in one source (contract §6.2, §12.5; D26): creates, and a
+ * A branch placement's tree writes in one source (contract §6.2, §12.5): creates, and a
  * draft-mode chat's moves and deletes, which are facts on the branch's row. The port a branch
  * placement holds and a live placement never has. Postgres implements it over the tree view;
  * the in-memory composition has no branches and never builds a branch placement.
@@ -19,7 +19,7 @@ import type {
 /** The drafting owner's active branch, locked by the command transaction that ensured it. */
 export type EnsuredBranch = { id: BranchId; owner: DraftOwner };
 
-/** A drafted move or delete as it changed the branch's row, for the caller's record (D76). */
+/** A drafted move or delete as it changed the branch's row, for the caller's record. */
 export type RecordedBranchTreeChange = BranchTreeChange & { branchId: BranchId };
 
 /** The chat whose call made a branch's change, recorded on its row. */

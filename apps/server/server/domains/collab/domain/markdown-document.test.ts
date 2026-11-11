@@ -1,7 +1,7 @@
 /** Schema-aware read and restore contracts for the collab document engine.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Tracked-file schema checks and identity-preserving repair (kb/decisions/collab/schema/schema-coherence-invariant.md)
+ * - Tracked-file schema checks and identity-preserving repair (kb/wiki/architecture/collaboration/overview.md#document-schema)
  */
 
 import { fragmentOf, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";

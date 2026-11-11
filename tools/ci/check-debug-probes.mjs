@@ -21,7 +21,6 @@ const EXCLUDED_PARTS = new Set([
   ".output",
   "__tests__",
   "scripts",
-  "demo",
   "examples",
   "e2e",
 ]);

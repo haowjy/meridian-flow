@@ -967,7 +967,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Untitled 1",
         extension: "",
         // An explicit writer placement ends provisional state even when the
-        // name stays Untitled-N (D8 total graduation).
+        // name stays Untitled-N (total graduation).
         provisionalName: false,
       });
       expect(row?.sourceId).toBe(row?.folderSourceId);

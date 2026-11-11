@@ -4,7 +4,7 @@ Use an isolated, owned Postgres database and the production collab adapters.
 These races cannot be timed reliably through the browser. Keep the executable
 probe and stdout in the active work directory. Use the canonical dev DB helpers
 to provision and drop the database. Previous executable probes are recorded in
-the [checkpoint capture decision][checkpoint-decision].
+the [checkpoint capture rule][checkpoint-capture].
 
 ## Admission before room apply
 
@@ -43,4 +43,4 @@ Record the revision, exact commands, observed cold-loaded text, persisted
 coverage, failure events, and cleanup. Run `pnpm check` separately; runtime
 probes do not replace the gate.
 
-[checkpoint-decision]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/journal/checkpoint-capture-from-journal.md
+[checkpoint-capture]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/durability-and-honest-outcomes.md#journal-first-then-live

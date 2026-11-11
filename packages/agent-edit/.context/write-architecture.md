@@ -20,6 +20,16 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   one, so never wire a node's `draggable` or default DnD to reposition blocks.
   Figures move by cut and paste; drag-to-place is wanted and must be built as delete
   plus insert ([#111](https://github.com/haowjy/meridian-flow/issues/111)).
+- A find write rewrites only its matches. It splices the content into the serialized
+  block group, reparses it, and, in a top-level paragraph or heading that is a single
+  run of text, replaces each match's text window whole at its position
+  (`cutTextWindows`, `windowHunks`). Never re-derive such a match's edit by diffing
+  the block: the diff keeps words the content shares with nearby text and anchors the
+  new text to them, and the write is planned on the model's view, so a concurrent
+  delete of those words splits and reorders it. Everything else is still word-diffed
+  on the view and keeps that exposure: a scope `replace` (`in`, whole document), a
+  find whose windows can't be mapped, and any find into a list, a blockquote, or a
+  paragraph with a hard break or an image ([TODO](TODO.md#stale-view-word-diff)).
 - Equal serialized content does not preserve Yjs identity, tombstones or authorship,
   so rebuilding an existing replica from Markdown as a merge path loses all three.
 
@@ -75,5 +85,5 @@ a paragraph alone never joins independent writes. A live write merges one update
   change where a document lives, so the host runs them and reports through the same
   envelope.
 
-[view]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/model-view-frontier.md
-[reversal]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/agent-editing-and-reversal.md
+[view]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/model-view.md
+[reversal]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/agent-editing-and-reversal.md

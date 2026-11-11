@@ -1,5 +1,5 @@
 /**
- * Shared harness for the lock-free drafts probes (decision D21): one scratch PostgreSQL database
+ * Shared harness for the lock-free drafts probes: one scratch PostgreSQL database
  * with the committed migration chain, the production collab and Work adapters wired over it, and
  * the fixtures and interleaving helpers the probes share. Each probe seeds its own Work, draft and
  * documents, so the probes run in any order against one database.

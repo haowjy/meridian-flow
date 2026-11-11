@@ -170,8 +170,8 @@ export const ChromeKernelExtension = Extension.create({
           // returns true for `contextmenu`, and ProseMirror consults it in
           // `eventBelongsToView` BEFORE running any handler. Every React node
           // view in this editor — image, figure, jsx_leaf, jsx_container — is
-          // one of those, which is to say the two object types ruling 11 is
-          // actually about. Capture reaches them all, current and future,
+          // one of those, which are the two object types the
+          // capture exists for. Capture reaches them all, current and future,
           // without a single node view having to cooperate.
           //
           // It covers chrome portalled OUT of the editor too, so an object's

@@ -127,7 +127,7 @@ export function defineThreadHistoryContract(
       input: JsonObject,
       output: JsonValue,
       isError = false,
-      /** The typed result beside the rendered `output` (D43); absent on older rows. */
+      /** The typed result beside the rendered `output`; absent on older rows. */
       typed?: JsonValue,
     ) {
       const toolCallId = crypto.randomUUID();

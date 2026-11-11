@@ -2,7 +2,7 @@
  * PostgreSQL persistence and latest-response ordering for cache predictions.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - response-order cache selection within an explicit ancestor cutoff (kb/decisions/chat/turns/linear-turns.md)
+ * - response-order cache selection within an explicit ancestor cutoff (kb/wiki/product/chat/turns.md)
  */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {

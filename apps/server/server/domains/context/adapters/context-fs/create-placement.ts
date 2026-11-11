@@ -4,7 +4,7 @@
  * whose meaning differs: reads' tree view, `ensureTrackedDocument`, `writeBinary`,
  * `retractCreate`, the refusals a draft placement makes (a draft never seeds live
  * Yjs, and an empty hidden folder would have no use), and a draft placement's moves and
- * deletes, which are facts in the Work's branch (D26).
+ * deletes, which are facts in the Work's branch.
  */
 
 import type { DocumentId, DraftOwner, ThreadId, UserId } from "@meridian/contracts";

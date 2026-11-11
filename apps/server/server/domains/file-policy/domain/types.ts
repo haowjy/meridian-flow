@@ -55,7 +55,7 @@ export interface AgentLink {
   scratchOwner: import("../../context/scratch-owner.js").ScratchOwner;
 }
 
-/** `[calling thread, its parent, …, root]`. Each link caps the result (D8). */
+/** `[calling thread, its parent, …, root]`. Each link caps the result. */
 export type AgentChain = readonly AgentLink[];
 
 /** A Work as refusal copy names it. */
@@ -87,7 +87,7 @@ export interface Principal {
 // Skills
 // ---------------------------------------------------------------------------
 
-/** The skills a thread's binding names (D52) or its user invoked (D64), as the skill rule reads them. */
+/** The skills a thread's binding names or its user invoked, as the skill rule reads them. */
 export interface SkillFacts {
   /** `skills.load`: preloaded, readable whatever their `model-invocable`. */
   load: readonly string[];
@@ -164,7 +164,7 @@ export interface FileFacts {
   deleted: boolean;
   /**
    * `deleted` is the document's own delete or its folder's, and `branchOwner`'s branch has an
-   * active Work draft of it, which outlived that delete (D79): a draft destination in that
+   * active Work draft of it, which outlived that delete: a draft destination in that
    * branch stays open. Never set from the draft's pending effect.
    */
   survivingDraft?: boolean;

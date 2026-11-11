@@ -257,7 +257,7 @@ export type ToolHandler<TContext extends ToolHandlerContext = ToolHandlerContext
 export interface ToolRegistration {
   documentText?: DocumentTextPolicy;
   /**
-   * What follows a finished call's `→` in `thread_history` (D48), from its typed
+   * What follows a finished call's `→` in `thread_history`, from its typed
    * result; the line already quotes the arguments. Absent or undefined: no arrow.
    */
   historySummary?: (input: JsonObject, result: JsonValue) => string | undefined;
@@ -297,7 +297,7 @@ export interface ToolRegistration {
   /** Maps executor-owned failures into a tool's model-facing result protocol. */
   formatExecutionError?: (error: ToolExecutionError) => unknown;
   /**
-   * Renders the handler's typed result into the text the model sees (D43, D65),
+   * Renders the handler's typed result into the text the model sees,
    * given the call's parsed input (`{}` when it didn't parse). The executor
    * stores the typed result beside the text. A refusal (`MeridianError`) never
    * reaches it: the executor renders refusals itself.

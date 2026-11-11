@@ -9,4 +9,4 @@ meaning, classification, resolution and follow policy belong to
 - Don't make Editor hover depend on a role on the `<a>`.
 - Core names families and doesn't import icons.
 
-[link-chips]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/link-chips.md
+[link-chips]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/links.md

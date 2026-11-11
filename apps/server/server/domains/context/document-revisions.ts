@@ -56,7 +56,7 @@ export function createDocumentRevisions(deps: {
         const parsed =
           source?.kind === "available" ? parseUnifiedContextUri(source.entry.uri) : null;
         if (parsed?.ok) {
-          // The revision of the version this thread's writes change, per document (D14, D20).
+          // The revision of the version this thread's writes change, per document.
           const drafted =
             sourceDestination(
               parsed.value.scheme,
