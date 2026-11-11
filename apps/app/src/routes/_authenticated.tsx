@@ -20,7 +20,6 @@ import {
   rehydrateEditorWorkspace,
   ThreadStoreProvider,
 } from "@/client/stores";
-import { ConnectionBanner } from "@/components/app/ConnectionBanner";
 import { FailureToaster } from "@/components/app/failure-toast";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
@@ -196,12 +195,9 @@ function AuthenticatedProviderTree({
             <MeridianCopilotProvider>
               <DensityPopoverCollisionProvider>
                 <ImportsProvider key={user.userId}>
-                  <div className="app-frame flex flex-col">
-                    <ConnectionBanner />
-                    <div className="min-h-0 flex-1 overflow-hidden">
-                      {/* Project parents key their shell by resolved identity; account fencing stays above. */}
-                      <Outlet />
-                    </div>
+                  <div className="app-frame">
+                    {/* Project parents key their shell by resolved identity; account fencing stays above. */}
+                    <Outlet />
                   </div>
                   <SettingsDialog />
                   <FailureToaster />

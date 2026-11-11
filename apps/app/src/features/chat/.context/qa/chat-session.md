@@ -125,7 +125,8 @@ two tabs and on a 390px phone viewport.
 
 With the first text visible, run `agent-browser set offline on` until the server
 has finished the delayed step. The browser keeps the dot and shows
-“Connection lost. Retrying…”. Run `agent-browser set offline off`; the bar goes,
+“Reconnecting…”, then “Offline” with Reconnect now, on a line inside the composer; nothing
+outside the composer moves. Run `agent-browser set offline off`; the line goes,
 the second text appears, and the settled chat matches `thread view`.
 
 ## Socket replay (SR-01)
