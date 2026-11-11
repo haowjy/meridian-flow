@@ -77,15 +77,18 @@ export class DraftNotices {
     return this.notices.get(ownerKey) ?? null;
   }
 
-  /** The Discard notice a document's identity row shows: made in its band, or main landed on it. */
+  /**
+   * The Discard notice a document's identity row shows: one made in a document's band, on that
+   * document, or on the one main went back to when the Discard made it leave. A list or strip
+   * keeps its own notice where it was made.
+   */
   forDocument(projectId: string, documentId: string): DraftNotice | null {
     for (const notice of this.notices.values())
       if (
         notice.kind === "discarded" &&
         notice.projectId === projectId &&
-        (notice.left
-          ? notice.left.landed === documentId
-          : notice.surface.kind === "band" && notice.surface.documentId === documentId)
+        notice.surface.kind === "band" &&
+        (notice.left ? notice.left.landed : notice.surface.documentId) === documentId
       )
         return notice;
     return null;

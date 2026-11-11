@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
@@ -20,7 +20,7 @@ import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import { chatOwnerKey, workOwnerKey } from "@/features/draft-review/draft-owner-key";
-import { ReviewActions } from "@/features/draft-review/ReviewActions";
+import { DiscardQuestion, ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { hasTreeLine, reviewHasNoRoom, treeLineOf } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
@@ -205,14 +205,18 @@ export function ChangesSource({
     : null;
   const owned = useDraftNotice(ownerKey);
   const notice = owned?.surface.kind === "changes" ? owned : null;
-  // A single draft's Discard takes its row's place while the list still names the document.
+  // A single draft's Discard takes the place its row had, after the list's next read drops it.
+  const rowAt = useRef(new Map<string, number>());
+  files.forEach((file, index) => {
+    rowAt.current.set(file.documentId, index);
+  });
   const rowNotice =
     notice?.kind === "discarded" && notice.subject.kind !== "drafts" ? notice.documentIds[0] : null;
-  const inList =
-    rowNotice !== null &&
-    hasFiles &&
-    listed.some((file) => file.documentId === rowNotice) &&
-    !files.some((file) => file.documentId === rowNotice);
+  const noticeAt =
+    rowNotice !== null && hasFiles && !files.some((file) => file.documentId === rowNotice)
+      ? rowAt.current.get(rowNotice)
+      : undefined;
+  const inList = noticeAt !== undefined;
   const inBar = notice !== null && !inList && !question && !hasFiles;
 
   return (
@@ -250,17 +254,14 @@ export function ChangesSource({
       ) : null}
       {hasFiles ? (
         <ul className="flex flex-col px-2">
-          {listed.map((file) => {
-            if (inList && notice && file.documentId === rowNotice)
-              return (
-                <li key={file.documentId}>
+          {files.map((file, index) => (
+            <Fragment key={file.documentId}>
+              {inList && notice && index === noticeAt ? (
+                <li>
                   <DraftNoticeLine notice={notice} />
                 </li>
-              );
-            if (!files.includes(file)) return null;
-            return (
+              ) : null}
               <ChangeRow
-                key={file.documentId}
                 projectId={projectId}
                 ownerKey={ownerKey}
                 file={file}
@@ -273,8 +274,13 @@ export function ChangesSource({
                 touch={touch}
                 onPicked={onPicked}
               />
-            );
-          })}
+            </Fragment>
+          ))}
+          {inList && notice && noticeAt !== undefined && noticeAt >= files.length ? (
+            <li>
+              <DraftNoticeLine notice={notice} />
+            </li>
+          ) : null}
         </ul>
       ) : drafts.status === "error" ? (
         <InlineErrorRow
@@ -327,6 +333,10 @@ function ChangeRow({
 }) {
   const { openReviewFile } = useAiDraftLauncher();
   const [previewing, setPreviewing] = useState(false);
+  // A row's actions are too narrow for its question: it asks on the line under the name.
+  const [asking, setAsking] = useState(false);
+  const draft = { documentId: file.documentId, itemKey: file.draft.itemKey };
+  const discard = () => void controller.discard(file.documentId, file.draft.itemKey);
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
   const copyView = draftCopyView(file, ownerKey);
   const drag = useReferenceDrag(
@@ -364,11 +374,7 @@ function ChangeRow({
             touch={touch}
             disabled={command.pending || controller.dispositionLocked}
             className={touch ? "gap-0" : "gap-0.5"}
-            discardAsks={controller.discardAsks({
-              documentId: file.documentId,
-              itemKey: file.draft.itemKey,
-            })}
-            onDiscard={() => void controller.discard(file.documentId, file.draft.itemKey)}
+            onDiscard={() => (controller.discardAsks(draft) ? setAsking(true) : discard())}
             onApply={
               canApply
                 ? () => void controller.apply(file.documentId, file.draft.itemKey)
@@ -378,6 +384,16 @@ function ChangeRow({
         }
         below={
           <div className="pl-1">
+            {asking && !controller.dispositionLocked ? (
+              <DiscardQuestion
+                scope="document"
+                onKeep={() => setAsking(false)}
+                onConfirm={() => {
+                  setAsking(false);
+                  discard();
+                }}
+              />
+            ) : null}
             <DraftCommandStatus itemKey={file.draft.itemKey} item={file.draft} />
           </div>
         }

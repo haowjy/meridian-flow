@@ -80,14 +80,15 @@ export type ContextRemovalRoutePort = {
   /**
    * The writer is removing `documentId`, which main shows: main opens the document it showed
    * before, one that still exists and is not among `removing`, else Recently opened. Nothing
-   * moves once `isCurrent` turns false.
+   * moves once `isCurrent` turns false. Resolves to the document main landed on; null when it
+   * went to Recently opened or did not move.
    */
   goBack(
     projectId: string,
     documentId: string,
     removing: readonly string[],
     isCurrent: () => boolean,
-  ): void;
+  ): Promise<string | null>;
 };
 
 /**
@@ -908,19 +909,26 @@ export class ContextRemovalCoordinator {
   /**
    * The writer is deleting or Discarding these documents: their removal says nothing, and main,
    * if it shows one of them, goes at once to the document it showed before, else to Recently
-   * opened. Call before the removal; settle the returned mark as `markOwnRemoval` says.
+   * opened. Call before the removal; settle the returned mark as `markOwnRemoval` says. `landed`
+   * hears where main went, if it moved.
    */
-  beginOwnRemoval(projectId: string, documentIds: readonly string[]): SettleOwnRemoval {
+  beginOwnRemoval(
+    projectId: string,
+    documentIds: readonly string[],
+    landed?: (documentId: string | null) => void,
+  ): SettleOwnRemoval {
     const settle = this.notices?.markOwnRemoval(projectId, documentIds) ?? (() => undefined);
     const shown = this.presented.mainDocumentId(projectId);
     const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
     if (this.unavailable() || !route || !shown || !documentIds.includes(shown)) return settle;
-    route.goBack(
-      projectId,
-      shown,
-      documentIds,
-      () => !this.unavailable() && this.presented.mainDocumentId(projectId) === shown,
-    );
+    void route
+      .goBack(
+        projectId,
+        shown,
+        documentIds,
+        () => !this.unavailable() && this.presented.mainDocumentId(projectId) === shown,
+      )
+      .then((documentId) => landed?.(documentId));
     return settle;
   }
 

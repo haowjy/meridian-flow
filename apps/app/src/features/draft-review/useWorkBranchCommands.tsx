@@ -14,7 +14,11 @@ import {
 } from "@/client/query/useOwnerDrafts";
 import { documentBasename } from "@/client/query/work-branch-files";
 import { editorHistory } from "@/core/editor/editor-history";
-import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import {
+  useDraftCommandOwner,
+  useOptionalContextRemovalCoordinator,
+  useOptionalDraftOnlyPresentations,
+} from "@/features/project/context/account-feature-context";
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import type { CapturedApply, CommandOutcome } from "./draft-command-owner";
 import type { DiscardPart, NoticeSurface } from "./draft-notices";
@@ -70,6 +74,8 @@ export function useWorkBranchCommands({
   // text, so a whole Discard goes to the server, which allows it, and nothing else is sent.
   const frozen = useOwnerDraftsFrozen(projectId, ownerKey);
   const notices = owner.notices;
+  const removal = useOptionalContextRemovalCoordinator();
+  const draftOnly = useOptionalDraftOnlyPresentations();
   return useMemo(() => {
     const ref = (draft: DraftReviewSelection) => ({ projectId, ownerKey, ...draft });
     const row = (draft: DraftReviewSelection) =>
@@ -225,9 +231,36 @@ export function useWorkBranchCommands({
     ): CommandStart => {
       // A new Discard replaces the owner's notice, with its own or with none.
       if (resetNotice) endNotice();
+      // A draft-only page (live deleted it elsewhere) has nothing left to show once its draft is
+      // discarded: main goes back at once to the document it showed before, and the notice
+      // follows it there.
+      const leaves =
+        !locked &&
+        target.kind === "draft" &&
+        canUndoDiscard(row(draft), frozen, target) &&
+        (draftOnly?.isDraftOnly(projectId, draft.documentId) ?? false);
+      let shown: number | null = null;
+      let landedOn: string | null | undefined;
+      const settle =
+        leaves && removal
+          ? removal.beginOwnRemoval(projectId, [draft.documentId], (documentId) => {
+              landedOn = documentId;
+              if (shown !== null) notices.landed(ownerKey, shown, documentId);
+            })
+          : null;
       const { start, part } = dispatchDiscard(draft, target);
       if (part)
-        notices.showDiscard({ projectId, ownerKey, surface: noticeSurface(draft), parts: [part] });
+        shown = notices.showDiscard({
+          projectId,
+          ownerKey,
+          surface: noticeSurface(draft),
+          parts: [part],
+        });
+      if (shown !== null && landedOn !== undefined) notices.landed(ownerKey, shown, landedOn);
+      if (settle)
+        void start.outcome.then((outcome) =>
+          settle(outcome.kind === "done" ? [] : [draft.documentId]),
+        );
       return start;
     };
     /** Several Discards as one notice with one Undo, when every one of them carries an Undo. */
@@ -421,6 +454,8 @@ export function useWorkBranchCommands({
   }, [
     owner,
     notices,
+    removal,
+    draftOnly,
     locked,
     frozen,
     projectId,
