@@ -153,7 +153,7 @@ export function WorkCollection({
     }
   };
   return (
-    <div className="app-scroll scroll-pt-14" aria-busy={isFetching}>
+    <div className="app-scroll scroll-pt-14 coarse:scroll-pt-18" aria-busy={isFetching}>
       <section className="project-screen-column">
         <div className="flex items-center justify-between gap-4">
           <h1 ref={collectionHeading} tabIndex={-1} className={role.pageHeading}>

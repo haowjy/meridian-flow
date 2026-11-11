@@ -649,10 +649,10 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    outline: 2px none var(--color-focus);
+    outline: 2px none var(--focus-ring-color, var(--color-focus));
     outline-offset: -2px;
   }
-  :root[data-focus-keys] &:has(> [data-ring-on-frame]:focus-visible)::after {
+  :root[data-focus-keys] &:has(> [data-ring-on-frame]:focus-visible:not([data-focus-quiet]))::after {
     outline-style: solid;
   }
 }

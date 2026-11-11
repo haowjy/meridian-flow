@@ -105,7 +105,7 @@ export function ChatIndex({ projectId, namedByChrome = false }: ChatIndexProps) 
     <div
       ref={scrollOwner}
       data-chat-index-scroll-owner
-      className="app-scroll main-pane scroll-pt-14"
+      className="app-scroll main-pane scroll-pt-14 coarse:scroll-pt-18"
     >
       <div
         className={cn(

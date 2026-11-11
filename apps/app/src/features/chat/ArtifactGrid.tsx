@@ -75,7 +75,7 @@ function ImageArtifact({ image }: { image: Extract<ArtifactRef, { type: "image" 
       <DialogTrigger asChild>
         <button
           type="button"
-          className="focus-ring group block w-full overflow-hidden rounded-md border border-border-subtle bg-ink-fill transition-all hover:border-focus"
+          className="focus-ring group block w-full overflow-hidden rounded-md border border-border-subtle bg-ink-fill"
         >
           <img
             src={image.url}
