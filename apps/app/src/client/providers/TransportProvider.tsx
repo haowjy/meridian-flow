@@ -7,7 +7,7 @@
  */
 
 import { t } from "@lingui/core/macro";
-import type { ThreadTransport } from "@meridian/thread-client";
+import type { ConnectionState, ThreadTransport } from "@meridian/thread-client";
 import { ThreadSocketClient } from "@meridian/thread-client";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 import { MeridianApiError } from "@/client/api/meridian-error";
@@ -58,13 +58,15 @@ export function TransportProvider({ children }: { children: ReactNode }) {
   // Each composer shows the connection's state; the change is spoken once, here, through the
   // app's one live region.
   useEffect(() => {
-    let disrupted = false;
+    // A retry passes through `connecting`, which says nothing: only a new word is spoken.
+    let said: string | null = null;
     return transport.onConnectionState((state) => {
-      if (state.kind === "reconnecting" || state.kind === "degraded") {
-        if (!disrupted) announce(t`Reconnecting…`);
-        disrupted = true;
-      } else if (state.kind === "connected" && disrupted) {
-        disrupted = false;
+      const trouble = connectionTrouble(state);
+      if (trouble && trouble !== said) {
+        said = trouble;
+        announce(trouble);
+      } else if (state.kind === "connected" && said) {
+        said = null;
         announce(t`Reconnected`);
       }
     });
@@ -73,6 +75,13 @@ export function TransportProvider({ children }: { children: ReactNode }) {
   return (
     <ThreadTransportContext.Provider value={transport}>{children}</ThreadTransportContext.Provider>
   );
+}
+
+/** The words for a connection in trouble, shown in each composer and announced; null while it isn't. */
+export function connectionTrouble(state: ConnectionState): string | null {
+  if (state.kind === "reconnecting") return t`Reconnecting…`;
+  if (state.kind === "degraded") return t`Offline`;
+  return null;
 }
 
 export function useThreadTransport(): ThreadTransport {
