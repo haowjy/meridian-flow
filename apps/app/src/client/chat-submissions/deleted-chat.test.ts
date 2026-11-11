@@ -291,7 +291,7 @@ it("bind cleanup rechecks eligibility inside the lock when the chat becomes visi
   expect(f.left()).toBeUndefined();
 });
 
-it("own DELETE intent wins over a send's deletion response while DELETE is still in flight", async () => {
+it("a held own delete keeps the chat's words and records through a send's deletion response", async () => {
   const { QueryClient } = await import("@tanstack/react-query");
   const { bindChatSubmissions } = await import("./index");
   const { deleteProjectChat } = await import("@/client/query/delete-project-chat");
@@ -314,6 +314,7 @@ it("own DELETE intent wins over a send's deletion response while DELETE is still
     await sendResponse;
     await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports, true);
   });
+  const own = beginOwnChatDelete("owner", "chat");
   const deleting = deleteProjectChat(new QueryClient(), "project", "chat");
   answerSend();
   await sending;
@@ -321,9 +322,14 @@ it("own DELETE intent wins over a send's deletion response while DELETE is still
   expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
     "Existing writing",
   );
-  expect(f.records()).toEqual([]);
+  expect(f.records()).toHaveLength(1);
+  expect(f.source.initialDraft).not.toBeNull();
   finishDelete();
   await deleting;
+  own.release();
+  await cleanDeletedChat("owner", "chat", "project", "own-delete", f.ports);
+  expect(f.records()).toEqual([]);
+  expect(f.target.notices).toEqual([]);
   await new Promise((resolve) => setTimeout(resolve, 0));
   lock.mockRestore();
 });
@@ -386,7 +392,7 @@ it("failed own DELETE cancels its disposition, and confirmed cleanup releases it
   expect(f.target.notices).toHaveLength(1);
   f.target.handoff();
   const confirmed = beginOwnChatDelete("owner", "chat");
-  confirmed.confirmed();
+  confirmed.release();
   await cleanDeletedChat("owner", "chat", "project", "own-delete", f.ports);
   f.source.updateDraft({ text: "Restored writing", snapshot: f.snapshot("Restored writing") });
   await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
@@ -410,7 +416,7 @@ it("incomplete own-delete releases its mark before restored writing is deleted e
   const { bindChatSubmissions } = await import("./index");
   bindChatSubmissions("owner", () => true);
   const own = beginOwnChatDelete("owner", "chat");
-  own.confirmed();
+  own.release();
   const f = fixture();
   const read = f.ports.records;
   f.ports.records = () => null;

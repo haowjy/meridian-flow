@@ -40,9 +40,9 @@ export type ChatNavigation = {
   /** An unacknowledged first send from before a reload needs a visible host. */
   recoveringFirstSend: boolean;
   /** Main goes to this chat: every chat door (a row, a mention, a link) is this one open. */
-  openChat: (threadId: string) => Promise<void>;
-  /** Main goes to a new chat's composer. */
-  openNewChat: (options?: { replace?: boolean }) => Promise<void>;
+  openChat: (threadId: string, options?: { replace?: boolean }) => Promise<void>;
+  /** Main goes to a new chat's composer, which takes focus unless `focus` is false. */
+  openNewChat: (options?: { replace?: boolean; focus?: boolean }) => Promise<void>;
   /**
    * A just-sent new chat becomes the last chat. Sent from main's composer it becomes main's chat;
    * sent from the side's composer it is held there, beside main.
@@ -100,13 +100,13 @@ export function useProjectChatNavigation({
       const result = await latest.current.go(destination, options);
       if (result.kind === "failed") throw result.error;
     };
-    const openChat = async (threadId: string) => {
-      await go({ kind: "chat", chatId: threadId }, { replace: false });
+    const openChat = async (threadId: string, options?: { replace?: boolean }) => {
+      await go({ kind: "chat", chatId: threadId }, { replace: options?.replace ?? false });
     };
     const commands = {
       openChat,
-      openNewChat: async (options?: { replace?: boolean }) => {
-        setNewChatRequest(nextFocusRequestId.current++);
+      openNewChat: async (options?: { replace?: boolean; focus?: boolean }) => {
+        if (options?.focus !== false) setNewChatRequest(nextFocusRequestId.current++);
         if (latest.current.mainKind === "new") return;
         await go({ kind: "new-chat" }, { replace: options?.replace ?? false });
       },
