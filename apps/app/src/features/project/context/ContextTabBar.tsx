@@ -124,7 +124,7 @@ export function ContextTabBar({
               disabled={!onNewDocument}
               title={!onNewDocument ? t`Open a Work to create an Untitled document` : undefined}
               aria-label={t`New tab`}
-              className="focus-ring-inset relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
+              className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
             >
               {/* Same divider grammar as between tabs: a line sets the New-tab
                   control apart from the working set, except when the active
@@ -208,7 +208,7 @@ function TabChip({
         // it paints (and clicks) on top. The overlay carries the accessible
         // name; the visible glyph/label siblings are hidden from AT so the
         // strip doesn't announce each filename twice.
-        className="focus-ring-inset absolute inset-0"
+        className="focus-ring absolute inset-0"
         title={tab.kind === "new" ? tab.name : tab.path}
       />
       <FileKindIcon tab={tab} />

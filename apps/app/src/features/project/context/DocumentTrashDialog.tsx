@@ -308,7 +308,7 @@ export function TrashRow({
           event.preventDefault();
           row.activate(onOpen)(event);
         }}
-        className={cn(contextTreeFileRowClassName(selected), "py-1.5")}
+        className={cn(contextTreeFileRowClassName(selected), "focus-ring py-1.5")}
         style={{ paddingLeft: rowPaddingLeft(0) }}
       >
         <RowIcon icon={fileKindIcon(entry.name)} />
