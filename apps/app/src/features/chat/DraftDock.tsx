@@ -9,6 +9,7 @@ import {
   ApplyAllQuestion,
   CommandNotice,
   type CommandQuestion,
+  noticeAction,
 } from "@/features/draft-review/CommandNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
@@ -39,7 +40,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   }, [troubledFileCount]);
 
   const root = useRef<HTMLDivElement>(null);
-  useFocusSuccession(root, dock.mounted);
+  useFocusSuccession(root, dock.mounted, noticeAction);
 
   if (!dock.mounted) return null;
 

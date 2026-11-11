@@ -8,7 +8,7 @@ import "./document-identity-row.css";
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { OpenDocument } from "@/client/stores";
@@ -19,7 +19,7 @@ import { DraftReviewBand } from "@/features/editor/DraftReviewBand";
 import { DocumentStatePortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
-import { holdFocus } from "@/lib/focus-follow";
+import { holdFocus, useFocusSuccession } from "@/lib/focus-follow";
 import { useAiDraftLauncher } from "../review-launch";
 import { useAccountResourceProjection } from "./account-feature-context";
 import { schemeLabel } from "./context-schemes";
@@ -142,6 +142,8 @@ export function DocumentIdentityBar({
   const repairable = location.provisional && !readOnly;
   const manuscriptState = useManuscriptState(projectId, tab);
   const notice = useDocumentNotice(projectId, tab.documentId);
+  const lineFocus = useRef<HTMLDivElement>(null);
+  useFocusSuccession(lineFocus);
 
   // Reviewing a draft is a mode, not a notice: its controls take a line of their own
   // above the toolbar, and a Discard's notice takes that line when it ends the review (or
@@ -149,16 +151,20 @@ export function DocumentIdentityBar({
   // toolbar row.
   const renderState = (version: ReactNode, controls: ReactNode) => (
     <>
-      {controls || notice ? (
-        <div
-          ref={fitReviewLine}
-          data-review-line
-          className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-border-subtle bg-review px-4 py-1 text-sm text-muted-foreground"
-        >
-          {notice ? <DraftNoticeLine notice={notice} className="flex-1 px-0" /> : null}
-          {controls}
-        </div>
-      ) : null}
+      {/* Mounted while the line comes and goes, so a Discard's focus follows to its notice's
+          Undo and an Undo's back to the controls. */}
+      <div ref={lineFocus} className="contents">
+        {controls || notice ? (
+          <div
+            ref={fitReviewLine}
+            data-review-line
+            className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-border-subtle bg-review px-4 py-1 text-sm text-muted-foreground"
+          >
+            {notice ? <DraftNoticeLine notice={notice} className="flex-auto px-0" /> : null}
+            {controls}
+          </div>
+        ) : null}
+      </div>
       <DocumentStatePortal>
         <div
           data-document-identity-row

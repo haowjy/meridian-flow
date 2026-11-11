@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { AnchoredCards } from "../ChatCards";
 import { CompactionInstructions } from "../compaction/CompactionInstructions";
 import { useFocusWithinRow } from "../compaction/useFocusWithinRow";
-import { controlStatusCopy, controlStopLabel, controlStopText } from "./control-copy";
+import { controlStatusCopy, controlWithdrawLabel, controlWithdrawText } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
 import { WriteModeNotice } from "./WriteModeNotice";
 
@@ -75,10 +75,10 @@ function QueuedControlRow({
           // The row has Stop from its first frame so it never changes height. While the
           // post is in flight the server may hold the switch and hasn't said, so Stop waits.
           disabled={control.awaitingServer}
-          aria-label={controlStopLabel(control.control)}
+          aria-label={controlWithdrawLabel(control.control)}
           onClick={() => onStop(control)}
         >
-          {controlStopText(control.control)}
+          {controlWithdrawText(control.control)}
         </Button>
       ) : null}
     </>
