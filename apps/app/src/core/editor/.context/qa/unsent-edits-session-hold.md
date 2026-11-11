@@ -17,23 +17,6 @@ guards them. Recipe and the last run's results.
    The held session must go (`drainDocument` runs; nothing stays held).
 6. Control: revert the registry change and repeat 2 to 4. The second word never arrives.
 
-## Last run: 2026-11-10, commit after aa811f7 (phase 0), `pnpm dev` with deepseek-flash
+## Last run: 2026-11-11, `ux-v1` (harvest PR), `pnpm dev`, mock provider
 
-- Step 4: the word reached the server. Holds.
-- Step 6 control: the word stayed on the device. The probe fails without the change.
-- Step 5: the session was held after the grace, then released by `drainDocument` when the
-  document was removed. Holds.
-- Acknowledged exit: an offline edit, tab closed, back online: the session was held, then
-  retired once the server had the text.
-
-## Other phase 0 probes
-
-- **Two hosts, each Apply settles its own room (plan §10.4).** Two drafts on two
-  documents from one chat (write mode Draft). Applying one from the dock settled that
-  room only: the other document kept its draft and its "Apply". Two *hosts* on two
-  different drafts at once is not reachable today (the dock always shows the selected
-  tab's document), so the new case is unconfirmed; it needs phase 3's per-host review.
-- **Untitled document (plan §10.6).** Write in "New tab", open another tab, close the
-  untitled tab, reload: the text is on the server as `unfiled://Untitled 1` and the
-  replica's metadata database holds its handle record. Holds for the data. The sidebar
-  has no Unfiled list yet, so findability by a writer is still to build (phase 7).
+- Steps 1 to 4: both words reached the server after going back online. Holds.

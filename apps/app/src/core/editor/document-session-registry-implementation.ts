@@ -99,8 +99,7 @@ export class DocumentSessionRegistry
     attachTransport: (session) => this.attachSessionTransport(session),
   });
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Unretained live sessions kept open only until the server acknowledges their edits. */
-  // Stops the connected-time cap of a held session (`holdUntilAcknowledged`).
+  /** Stops the connected-time cap of a held session kept open until the server acknowledges its edits. */
   private readonly holdCapStops = new Map<string, () => void>();
   private liveDocCapWarningEmitted = false;
   private readonly sessionObservers = new Map<

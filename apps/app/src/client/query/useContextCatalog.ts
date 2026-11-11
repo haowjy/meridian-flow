@@ -605,50 +605,75 @@ export function useContextCatalogWake(
         : undefined,
     [projectId, queryClient, resources],
   );
-  useEffect(
-    () =>
-      projectId
-        ? transport?.subscribeCatalog(projectId, (hint) => {
-            if (hint.type === "project-chats-hint") {
-              // Another client's reply or question: the chat list's marks follow it. A refetch
-              // already under way answers for this hint too.
-              void queryClient.invalidateQueries(
-                { queryKey: projectQueryKeys.threads(projectId), exact: true },
-                { cancelRefetch: false },
-              );
-              return;
-            }
-            if (hint.type === "draft-owner-hint") {
-              void queryClient.invalidateQueries({
-                queryKey: projectQueryKeys.ownerDrafts(projectId, hint.owner),
-              });
-              void queryClient.invalidateQueries({
-                queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
-              });
-              return;
-            }
-            bumpLinkResolutionEpoch(projectId);
-            void queryClient.invalidateQueries({
-              queryKey: projectQueryKeys.documentTrash(projectId),
-            });
-            const requestedScope: CatalogScope =
-              hint.scope.kind === "user" ? { kind: "user", userId: "self" } : hint.scope;
-            const mounted =
-              queryClient
-                .getQueryCache()
-                .find({
-                  queryKey: projectQueryKeys.contextCatalog(projectId, requestedScope),
-                  exact: true,
-                })
-                ?.getObserversCount() ?? 0;
-            if (mounted === 0 && requestedScope.kind === "work") {
-              onColdWorkHint?.(requestedScope.workId);
-            }
-            if (resources) pullContextCatalogOnHint(queryClient, resources, projectId, hint);
+  useEffect(() => {
+    if (!projectId || !transport) return;
+    // Another client's reply or question: the chat list's marks and the chat feed's rows follow
+    // it. A read already under way may have started before this hint's commit, so a hint that
+    // lands during a refresh queues exactly one more after it.
+    let refreshing = false;
+    let trailing = false;
+    let active = true;
+    const refreshChats = () => {
+      if (refreshing) {
+        trailing = true;
+        return;
+      }
+      refreshing = true;
+      void Promise.all([
+        queryClient.invalidateQueries(
+          { queryKey: projectQueryKeys.threads(projectId), exact: true },
+          { cancelRefetch: false },
+        ),
+        queryClient.invalidateQueries(
+          { queryKey: projectQueryKeys.chatFeed(projectId) },
+          { cancelRefetch: false },
+        ),
+      ]).finally(() => {
+        refreshing = false;
+        if (active && trailing) {
+          trailing = false;
+          refreshChats();
+        }
+      });
+    };
+    const unsubscribe = transport.subscribeCatalog(projectId, (hint) => {
+      if (hint.type === "project-chats-hint") {
+        refreshChats();
+        return;
+      }
+      if (hint.type === "draft-owner-hint") {
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.ownerDrafts(projectId, hint.owner),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
+        });
+        return;
+      }
+      bumpLinkResolutionEpoch(projectId);
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.documentTrash(projectId),
+      });
+      const requestedScope: CatalogScope =
+        hint.scope.kind === "user" ? { kind: "user", userId: "self" } : hint.scope;
+      const mounted =
+        queryClient
+          .getQueryCache()
+          .find({
+            queryKey: projectQueryKeys.contextCatalog(projectId, requestedScope),
+            exact: true,
           })
-        : undefined,
-    [onColdWorkHint, projectId, queryClient, resources, transport],
-  );
+          ?.getObserversCount() ?? 0;
+      if (mounted === 0 && requestedScope.kind === "work") {
+        onColdWorkHint?.(requestedScope.workId);
+      }
+      if (resources) pullContextCatalogOnHint(queryClient, resources, projectId, hint);
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [onColdWorkHint, projectId, queryClient, resources, transport]);
 }
 
 /** Every draft read of the project: each Work's list and each document's hints. */
