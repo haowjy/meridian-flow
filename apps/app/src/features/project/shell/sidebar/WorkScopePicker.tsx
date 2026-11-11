@@ -162,7 +162,7 @@ function WorkState({ work, needsYou }: { work: Work; needsYou: number }) {
       {toReview > 0 ? <Trans>{toReview} to review</Trans> : null}
       {needsYou > 0 ? (
         <span>
-          <Trans>{needsYou} needs you</Trans>
+          <Trans>{needsYou} waiting on you</Trans>
         </span>
       ) : null}
     </span>
