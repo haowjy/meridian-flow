@@ -20,6 +20,7 @@ import type { AccountRecentItem } from "@/client/recents";
 import { readableRecentPath } from "@/client/recents";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
+import { ListRow } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import { Skeleton } from "@/components/ui/skeleton";
 import { editorColumnChrome } from "@/features/editor/editor-column";
@@ -149,8 +150,6 @@ export function RecentDocumentsLanding({
   );
 }
 
-const recentRowClass = "focus-ring flex w-full items-start gap-3.5 rounded-md py-2.5 text-left";
-
 function RecentDocumentRow({
   item,
   now,
@@ -164,71 +163,25 @@ function RecentDocumentRow({
 }) {
   const router = useRouter();
   const href = recentDocumentHref(item, projectId);
-  const content = <RecentDocumentContent item={item} now={now} />;
   // By the document's identity, never the path it was opened at; a local document is no entry yet.
   const drag = useReferenceDrag(
     item.address.kind === "document"
       ? { ref: { kind: "file", id: item.documentId }, name: item.name }
       : null,
   );
-  if (!href) {
-    return (
-      <button
-        type="button"
-        {...drag}
-        onClick={() => onOpen(item)}
-        className={cn(recentRowClass, "border-0 bg-transparent")}
-      >
-        {content}
-      </button>
-    );
-  }
   return (
-    <a
-      href={href}
-      {...drag}
-      onClick={(event) => {
-        // Plain left-click navigates in place; modified clicks keep their
-        // native new-tab/window behavior.
-        if (
-          event.defaultPrevented ||
-          event.metaKey ||
-          event.ctrlKey ||
-          event.shiftKey ||
-          event.altKey ||
-          event.button !== 0
-        ) {
-          return;
-        }
-        event.preventDefault();
-        void router.navigate({ href });
-      }}
-      className={recentRowClass}
-    >
-      {content}
-    </a>
-  );
-}
-
-function RecentDocumentContent({ item, now }: { item: AccountRecentItem; now: number }) {
-  const age = relativeTime(item.openedAt, now);
-  const parentPath =
-    item.address.kind === "document" ? item.address.path.replace(/\/[^/]+$/, "") : "";
-  return (
-    <>
-      <RowIcon icon={fileKindIcon(item.name)} className="mt-0.5" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-foreground">{item.name}</span>
-        {parentPath ? (
-          <span className="mt-0.5 flex items-baseline gap-2.5 text-xs">
-            <span className="truncate text-muted-foreground">{parentPath}</span>
-          </span>
-        ) : null}
-      </span>
-      <span aria-hidden className="mt-0.5 shrink-0 text-xs tabular-nums text-muted-foreground">
-        {age}
-      </span>
-    </>
+    // The row's inset hangs outside the column, so names stay on the heading's edge.
+    <div className="-mx-1.5">
+      <ListRow
+        href={href ?? undefined}
+        onOpen={() => (href ? void router.navigate({ href }) : onOpen(item))}
+        controlProps={drag}
+        leading={<RowIcon icon={fileKindIcon(item.name)} />}
+        title={item.name}
+        detail={item.address.kind === "document" ? item.address.path.replace(/\/[^/]+$/, "") : null}
+        meta={relativeTime(item.openedAt, now)}
+      />
+    </div>
   );
 }
 
