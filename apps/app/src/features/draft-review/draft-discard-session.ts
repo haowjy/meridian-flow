@@ -225,6 +225,7 @@ export function startDraftDiscardSession(input: {
       binding.runtime.projectNow();
       // The prose is back in the room, which sends it whenever it can and drains unsent edits
       // before it closes; its acknowledgement fails only once the room itself has ended.
+      // slop-lint: allow swallowed-error a rejection means the room ended, which ends the notice
       const landed = binding.session.whenCurrentChangesAcknowledged().catch(() => undefined);
       end();
       return { answer: "ok", landed };
