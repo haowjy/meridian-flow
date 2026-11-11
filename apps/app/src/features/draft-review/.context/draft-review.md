@@ -172,9 +172,9 @@ removed-documents notice). If the writer moved before the go-back resolved, the 
 facts from a band stay out of the store: the identity row shows them from the owner's per-document
 facts (`useManuscriptState`). Discard all is one notice over several rooms. A room's Undo is done
 once the prose is back in the room, which sends it whenever it can: the notice ends and the row
-returns at once, offline too. The owner list is not read again, and the view does not follow
-back to the draft, until the server lists the draft again (`relistedOwnerDraft`, polled after the
-acknowledgement): the list omits a draft until the server re-judges its effect, about 250 ms
+returns at once, offline too. This path does not re-read the owner list, and the view does not
+follow back to the draft, until the server lists the draft again (`relistedOwnerDraft`, polled
+after the acknowledgement): the list omits a draft until the server re-judges its effect, about 250 ms
 after the write, and a read before then drops the row. Following sooner opened a draft-only page
 on a draft the list omitted: `verifyPin` dropped the view's pin and `DraftOnlySettlement` closed
 the page as discarded ("This destination is unavailable"). If the server never lists it within
@@ -191,10 +191,14 @@ Both paths record restorations, so marks after an Undo match marks before the Di
 handle holds a room lease and entry user until it ends, so one notice per owner bounds the rooms
 kept open; `DraftCommandOwner.close()` ends every notice.
 
-A whole-draft text Discard on a draft-only page (live deleted it elsewhere) sends main back
-through `ContextRemovalCoordinator.beginOwnRemoval` once the Discard is written, so a refused
-Discard leaves main on the page that shows the refusal; the go-back reports where main landed,
-and an Undo while main is still there returns it to the draft's review address. Chat-strip and Work Discard publish their notice and a projection-scoped `discarding` target first, so the row
+A whole-draft Discard on a draft-only page (live deleted it elsewhere), local or on the server,
+sends main back through `ContextRemovalCoordinator.beginOwnRemoval` once the Discard is written,
+so a refused Discard leaves main on the page that shows the refusal; the go-back reports where
+main landed, and an Undo while main is still there returns it to the draft's review address.
+While that go-back runs, the coordinator's `discardDraft` leaves the page alone, so a slow open
+of the previous document doesn't let `DraftOnlySettlement` close it first and end the notice.
+
+Chat-strip and Work Discard publish their notice and a projection-scoped `discarding` target first, so the row
 and notice paint before the indivisible write-back. Hidden pages drain on visibility
 change rather than waiting for animation frames. Changed base or prose refuses the stale
 write and restores the row.

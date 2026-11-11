@@ -231,13 +231,11 @@ export function useWorkBranchCommands({
       // A new Discard replaces the owner's notice, with its own or with none.
       if (resetNotice) endNotice();
       // A draft-only page (live deleted it elsewhere) has nothing left to show once its draft is
-      // discarded: once the Discard is written, main goes back to the document it showed before,
-      // and the notice follows it there. A refused Discard leaves main on the page, which shows
-      // the refusal.
+      // discarded: once the Discard is written, here or on the server, main goes back to the
+      // document it showed before, and a notice follows it there. A refused Discard leaves main
+      // on the page, which shows the refusal.
       const leaves =
-        target.kind === "draft" &&
-        discardsLocally(draft, target) &&
-        (draftOnly?.isDraftOnly(projectId, draft.documentId) ?? false);
+        target.kind === "draft" && (draftOnly?.isDraftOnly(projectId, draft.documentId) ?? false);
       const { start, part } = dispatchDiscard(draft, target);
       const shown = part
         ? notices.showDiscard({
@@ -247,12 +245,12 @@ export function useWorkBranchCommands({
             parts: [part],
           })
         : null;
-      if (leaves && removal && shown !== null)
+      if (leaves && removal)
         void start.outcome.then((outcome) => {
           if (outcome.kind !== "done") return;
-          removal.beginOwnRemoval(projectId, [draft.documentId], (landing) =>
-            notices.landed(ownerKey, shown, landing),
-          )([]);
+          removal.beginOwnRemoval(projectId, [draft.documentId], (landing) => {
+            if (shown !== null) notices.landed(ownerKey, shown, landing);
+          })([]);
         });
       return start;
     };
