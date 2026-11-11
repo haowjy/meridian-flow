@@ -205,29 +205,21 @@ export function CreationComposer({
 
 /**
  * A new chat beside a document starts with that document attached. The writer's own draft is
- * theirs: the chip goes only into an empty composer, and when the document beside changes it is
- * replaced only while the draft is still that chip alone. Nothing here takes focus.
+ * theirs: the chip replaces only an empty draft or another chip alone. Nothing here takes focus.
  */
 function useAttachAbout(
   composerRef: RefObject<ComposerHandle | null>,
   references: ReferenceBrowserCatalog | null,
   about: string | null,
 ) {
-  const attached = useRef<{ about: string; draft: string } | null>(null);
   useEffect(() => {
-    if (!about || !references || attached.current?.about === about) return;
+    if (!about || !references) return;
     const attach = () => {
       const handle = composerRef.current;
       if (!handle) return false;
-      const ours = attached.current !== null && handle.getDraft() === attached.current.draft;
-      if (handle.hasContent() && !ours) {
-        attached.current = { about, draft: "" };
-        return true;
-      }
       const row = references.resolveReference({ kind: "file", id: about });
       if (row?.kind !== "file") return false;
       handle.startWith(row.action.reference, row.fileKind);
-      attached.current = { about, draft: handle.getDraft() };
       return true;
     };
     if (attach()) return;

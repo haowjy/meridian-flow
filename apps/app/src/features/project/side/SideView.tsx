@@ -147,7 +147,7 @@ export function SideViewProvider({
     resolution.kind === "settled"
       ? resolution.side
       : kept?.item && fitsBeside(kept.item, main, chatsOnly)
-        ? kept
+        ? reaimComposer(kept, main)
         : null;
   const sideKey = JSON.stringify([settled, resolution.kind]);
   const retry = resolution.kind === "failed" ? resolution.retry : null;
@@ -180,6 +180,15 @@ export function SideViewProvider({
     [side, JSON.stringify(main), chatOnScreen, hostChatId],
   );
   return <SideViewContext.Provider value={value}>{children}</SideViewContext.Provider>;
+}
+
+/** A kept new-chat composer is about main's document, not the one it was settled beside. */
+function reaimComposer(kept: SettledSide, main: MainForSide): SettledSide {
+  const item = kept.item;
+  if (item?.kind !== "chat" || item.chatId !== null || !item.about) return kept;
+  return main.kind === "document" && item.about !== main.documentId
+    ? { ...kept, item: { ...item, about: main.documentId } }
+    : kept;
 }
 
 /**
