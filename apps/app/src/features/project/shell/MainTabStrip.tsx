@@ -83,10 +83,10 @@ export function useMainTabCommands({
       const next = closeMainTab(accountId, projectId, key, mainKey);
       if (key === mainKey) show(next);
     },
-    /** Main showing a tab (or a document the record lacks) goes to Recently opened; a chat stays. */
-    closeAll: () => {
+    /** Main goes to Recently opened unless it keeps its item (a chat, or the landing itself). */
+    closeAll: ({ keepMain }: { keepMain: boolean }) => {
       closeAllMainTabs(accountId, projectId);
-      if (mainKey) onShowRecents({ replace: true });
+      if (!keepMain) onShowRecents({ replace: true });
     },
     /** Main's item holds no tab: main goes to the tab it showed last, else Recently opened. */
     closeMain: () => {
@@ -116,15 +116,10 @@ export function MainTabStrip({
   /** Absent while no Work is ready to hold an Untitled document. */
   onNewDocument?: () => void;
 }) {
-  const accountId = useAccountId();
-  const tabs = useLiveTabs(projectId, useMainTabs(accountId, projectId).tabs);
+  const { tabs, unrecorded } = useDrawnTabs(projectId, mainKey, mainDocument);
   const commands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
   const stripRef = useRef<HTMLDivElement>(null);
   const more = useScrollEdges(stripRef);
-  const unrecorded =
-    mainDocument && mainKey && !tabs.some((tab) => mainTabKey(tab) === mainKey)
-      ? mainDocument
-      : undefined;
   useActiveTabVisibility(stripRef, mainKey ?? (current ? "current" : null));
   const lastActive =
     unrecorded !== undefined || (tabs.at(-1) && mainTabKey(tabs.at(-1) as MainTab) === mainKey);
@@ -220,22 +215,23 @@ export function MainTabMenu({
   open,
   mainKey,
   mainDocument,
+  keepMain,
   onShowRecents,
 }: {
   projectId: string;
   open: OpenContextRoute;
   mainKey: string | null;
   mainDocument?: OpenDocument;
+  /** Close all leaves main's item where it is: a chat is not a tab, and the landing is the goal. */
+  keepMain: boolean;
   onShowRecents: (options: { replace: boolean }) => void;
 }) {
-  const accountId = useAccountId();
-  const tabs = useLiveTabs(projectId, useMainTabs(accountId, projectId).tabs);
+  const { tabs, unrecorded } = useDrawnTabs(projectId, mainKey, mainDocument);
   const commands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
   // Each document's page has its own band, so the trigger Radix would refocus is gone.
   const focusAfter = useRef<(() => HTMLElement | null) | null>(null);
   const documents = tabs.map((tab) => tab.document);
-  if (mainDocument && mainKey && !tabs.some((tab) => mainTabKey(tab) === mainKey))
-    documents.push(mainDocument);
+  if (unrecorded) documents.push(unrecorded);
   if (documents.length === 0) return null;
   const label = t`All open documents`;
   return (
@@ -269,7 +265,7 @@ export function MainTabMenu({
           onSelect={() => {
             focusAfter.current = () =>
               window.document.querySelector<HTMLElement>("[data-recents-door]");
-            commands.closeAll();
+            commands.closeAll({ keepMain });
           }}
         >
           <Trans>Close all</Trans>
@@ -313,6 +309,17 @@ function TabMenuItem({
       <span className="min-w-0 truncate">{document.name}</span>
     </DropdownMenuItem>
   );
+}
+
+/** The document tabs the strip draws: the live record, then main's document when it lacks it. */
+function useDrawnTabs(projectId: string, mainKey: string | null, mainDocument?: OpenDocument) {
+  const accountId = useAccountId();
+  const tabs = useLiveTabs(projectId, useMainTabs(accountId, projectId).tabs);
+  const unrecorded =
+    mainDocument && mainKey && !tabs.some((tab) => mainTabKey(tab) === mainKey)
+      ? mainDocument
+      : undefined;
+  return { tabs, unrecorded };
 }
 
 const PROJECT_SCOPED_SCHEMES: ReadonlySet<string> = new Set(PROJECT_SCOPED_CONTEXT_URI_SCHEMES);

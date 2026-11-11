@@ -22,6 +22,7 @@ export function MainHeader({
   mainKey,
   mainDocument,
   landing = false,
+  showsChat = false,
   current,
   onShowRecents,
   onNewDocument,
@@ -38,6 +39,8 @@ export function MainHeader({
   mainDocument?: OpenDocument;
   /** Main is the Recently opened landing: the door is the current place. */
   landing?: boolean;
+  /** Main shows a chat: Close all leaves it there. */
+  showsChat?: boolean;
   /** Main's item when it holds no tab (a chat, an address that names nothing). */
   current?: ReactNode;
   onShowRecents: (options: { replace: boolean }) => void;
@@ -76,6 +79,7 @@ export function MainHeader({
             open={open}
             mainKey={mainKey}
             mainDocument={mainDocument}
+            keepMain={showsChat || landing}
             onShowRecents={onShowRecents}
           />
         </div>
