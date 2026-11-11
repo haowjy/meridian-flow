@@ -175,9 +175,11 @@ export function CreationComposer({
             agent={agent}
             writeMode={writeMode}
             onAgentChange={(next) => creation.updateChoices({ agent: next })}
-            // A mode the writer picked here stays when they pick a Work; the Work's default shows
-            // only until they pick one.
-            onWorkChange={(selected) => creation.updateChoices({ workId: selected.id })}
+            // Picking a Work never changes the mode on screen: the mode shown becomes the pick.
+            // A Work's default shows only for the Work the composer opened with.
+            onWorkChange={(selected) =>
+              creation.updateChoices({ workId: selected.id, aiWriteMode: writeMode })
+            }
             onWriteModeChange={(mode) => creation.updateChoices({ aiWriteMode: mode })}
             onRetryWorks={works.refetch}
           />

@@ -113,7 +113,7 @@ export function DraftSwitcher({
             <span className="flex items-baseline gap-1.5">
               <Trans>Live</Trans>
               <span className="font-normal text-muted-foreground">
-                <Trans>(Work has a draft)</Trans>
+                <Trans>(draft waiting)</Trans>
               </span>
             </span>
           ) : (
