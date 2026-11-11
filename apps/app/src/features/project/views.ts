@@ -2,8 +2,7 @@
  * What main and the side show, and what a document paints in whichever of them holds it.
  *
  * Main is the address: `resolveMainDocument` is the one order in which an address finds its
- * document, on the desktop and the phone. The side is a fallback beside main, never main's own
- * item: the current chat beside a document, the last document opened beside a chat.
+ * document, on the desktop and the phone. What sits beside it is `side/side-item.ts`.
  *
  * What a document paints, in whichever host holds it: its view on this device (`document-views`),
  * the pinned owner's draft list, and the Work scope's list for the version chip.
@@ -146,10 +145,10 @@ export function useDocumentPaint(projectId: string, document: ContextTab | null)
   }, [scopeOwnerKey, scopeRow, view, pin, pinList.status, pinListed]);
 }
 
-/** What a view holds. A chat with no id is a new chat's composer. */
+/** What a view holds. A chat with no id is a new chat's composer; `about` is the document it attaches. */
 export type Item =
   | { kind: "document"; documentId: string }
-  | { kind: "chat"; chatId: string | null };
+  | { kind: "chat"; chatId: string | null; about?: string };
 
 export type AddressState = "pending" | "failed" | "settled";
 
@@ -350,25 +349,4 @@ export function useMainItem(): MainView {
 /** Main's item outside the project view's own tree (the provider may not be mounted). */
 export function useOptionalMainItem(): MainView | null {
   return useContext(MainViewContext);
-}
-
-export type SideItem = {
-  item: Item | null;
-  /** Why the side shows it: the header and, later, the picker say so. */
-  reason: "last-chat" | "last-document" | null;
-};
-
-/**
- * The side's fallback beside main, never main's own item: the current chat beside a document
- * (or beside nothing), the last document shown beside a chat. No chat sits beside a chat.
- */
-export function resolveSideItem(
-  mainIsChat: boolean,
-  currentChatId: string | null,
-  lastDocumentId: string | null,
-): SideItem {
-  if (!mainIsChat) return { item: { kind: "chat", chatId: currentChatId }, reason: "last-chat" };
-  if (lastDocumentId)
-    return { item: { kind: "document", documentId: lastDocumentId }, reason: "last-document" };
-  return { item: null, reason: null };
 }

@@ -5,12 +5,12 @@
  * main or the side by grid-area. Opening the side's item in main moves its mounted editor or chat
  * instead of remounting it, so undo, caret, scroll and a running stream survive the swap. Besides
  * main's and the side's, one more document stays mounted, kept hidden so its undo survives a
- * return: the newest one shown that is on screen no longer. Beside a document the side is a
- * chat, so at most two documents are mounted. One document is in at most one host.
+ * return: the newest one shown that is on screen no longer. So at most three documents are
+ * mounted (main, side, kept). One document is in at most one host. What the side shows is
+ * `side/SideView`'s resolution.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { readDocumentView } from "@/client/project-shell/document-views";
-import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import type { ContextTab } from "@/client/stores";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { ChatIndexController } from "./ChatIndexController";
@@ -24,7 +24,9 @@ import {
 import { DocumentHost, MainDocumentStatus } from "./context/DocumentHost";
 import { useDescribeProjectDocument } from "./context/open-project-document";
 import { RecentDocumentsLanding } from "./context/RecentDocumentsLanding";
+import { recentOpening } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
+import { useRecordOpenedDocument } from "./context/use-record-opened-document";
 import {
   NO_HELD_PANELS,
   type PanelSlotId,
@@ -33,7 +35,7 @@ import {
   useProjectSurfacePrefsActions,
 } from "./layout";
 import type { ReviewScopedProjectProps } from "./ProjectView";
-import { chatSurfaceThreadId, useChatNavigation } from "./routing/chat-navigation";
+import { useChatNavigation } from "./routing/chat-navigation";
 import {
   type OpenContextRoute,
   useCaptureProjectNavigation,
@@ -44,8 +46,10 @@ import { LeftSidebar } from "./shell/LeftSidebar";
 import { MainHeader } from "./shell/MainHeader";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
-import { SideChatHeader, SideDocumentHeader } from "./side/SideHeader";
-import { resolveSideItem, useMainItem } from "./views";
+import { ClosedSideButton } from "./side/ClosedSideButton";
+import { SideChatHeader, SideDocumentHeader, SideEmptyHeader } from "./side/SideHeader";
+import { useChatOnScreen, useHostChatId, useShellCommands, useSideItem } from "./side/SideView";
+import { useMainItem } from "./views";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
 const MAIN_MIN_WIDTH = 360;
@@ -60,8 +64,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const { setSlotOpen, setSlotWidth } = useProjectSurfacePrefsActions();
   // The single writer-driven open/close entry for a panel. Opening a panel also releases the
   // narrow-window hold on it, so the control can never write a pref that changes nothing.
+  const { releaseSide } = useShellCommands(projectId);
   const setSlotOpenHere = (slot: PanelSlotId, open: boolean) => {
     if (open) narrowHold.release(slot);
+    // Closing the side lets go of a held pick: it reopens following main.
+    else if (slot === "dock") releaseSide();
     setSlotOpen(slot, open);
   };
   const sidebarToggle: PaneHeaderRailToggle = { open: panels["rail-l"].open };
@@ -82,18 +89,20 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // A masked address paints no document: a removed one shows its removed state in place.
   const mainTab = !mainChat && !masked && props.contextLive ? main.document.tab : null;
 
-  const recent = useRecentDocuments(projectId);
   // Each mounted document at its host's current descriptor, newest on screen first.
   const shown = useShownDocuments(projectId);
-  // Beside a chat: the last document on screen (a draft-only one included, which recents never
-  // list), else the account's most recent.
-  const side = resolveSideItem(
-    mainChat !== null,
-    chat.currentThreadId,
-    shown[0]?.documentId ?? recent.documents[0]?.documentId ?? null,
-  );
+  const side = useSideItem();
   const sideDocumentId = side.item?.kind === "document" ? side.item.documentId : null;
   const sideTab = useDescribedDocument(projectId, sideDocumentId, shown);
+  useRecordSidePick(projectId, side.source === "held" ? sideTab : null);
+  // While the side is closed, main's header names what it would show; pressing it opens the side.
+  const closedSide = sideOpen ? null : (
+    <ClosedSideButton
+      projectId={projectId}
+      tab={sideTab}
+      onOpen={() => setSlotOpenHere("dock", true)}
+    />
+  );
   // The newest document shown that is off screen stays mounted, hidden. A document moving
   // between main and the side passes through here while main's address loads, so it never
   // remounts.
@@ -132,17 +141,23 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               onNewDocument={onNewDocument}
               sidebarToggle={sidebarToggle}
               sideToggle={sideToggle}
+              closedSide={closedSide}
             />
           ) : place === "side" ? (
-            <SideDocumentHeader tab={tab} onOpenInMain={() => openInMain(tab)} />
+            <SideDocumentHeader
+              projectId={projectId}
+              tab={tab}
+              onOpenInMain={() => openInMain(tab)}
+            />
           ) : null
         }
       />
     ),
   });
 
-  const sideChat = side.item?.kind === "chat";
-  const chatThread = chatSurfaceThreadId(chat);
+  const sideChat = side.item?.kind === "chat" ? side.item : null;
+  const chatThread = useHostChatId();
+  const chatOnScreen = useChatOnScreen();
   const chatIndexShowing = mainChat?.kind === "index";
   const chatInMain = mainChat?.kind === "thread";
   const chatHost: SlotGridHost = {
@@ -157,11 +172,14 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           <ChatSurface
             projectId={projectId}
             threadId={chatThread}
+            about={!chatInMain && sideChat?.chatId === null ? (sideChat.about ?? null) : null}
             activeWork={props.chatWork}
             availableWorks={props.availableWorks}
             place={chatInMain ? "main" : "side"}
-            visible={chatInMain || (sideChat && sideOpen)}
-            onOpenContextTarget={(target) => void open(target)}
+            visible={chatInMain || (sideChat !== null && sideOpen)}
+            onOpenContextTarget={(target) =>
+              void open(target, chatThread ? { beside: { chatId: chatThread } } : undefined)
+            }
             header={
               chatInMain ? (
                 <ChatPaneController
@@ -169,6 +187,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                   threadId={chatThread}
                   sidebarToggle={sidebarToggle}
                   contextToggle={sideToggle}
+                  closedSide={closedSide}
                 />
               ) : (
                 <SideChatHeader
@@ -198,7 +217,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           projectTitle={props.projectTitle}
           titleEdit={props.titleEdit}
           editorWorkId={props.editorWorkId}
-          chatThreadId={chatThread}
+          chatThreadId={chatOnScreen}
           contextLive={props.contextLive}
           activeDocument={mainTab ?? (mainChat ? sideTab : null)}
         />
@@ -236,6 +255,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
             onNewDocument={onNewDocument}
             sidebarToggle={sidebarToggle}
             sideToggle={sideToggle}
+            closedSide={closedSide}
           />
           <div className="page-sheet relative flex min-h-0 flex-1 flex-col">
             <ProjectRouteBoundary {...mask}>
@@ -255,7 +275,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
       ),
     });
   if (sideOpen && !sideChat && !(sideTab && sideTab.documentId !== mainTab?.documentId))
-    hosts.push({ key: "side-empty", slot: "dock", children: <SideEmpty /> });
+    hosts.push({
+      key: "side-empty",
+      slot: "dock",
+      children: <SideEmpty projectId={projectId} opening={sideDocumentId !== null} />,
+    });
 
   return (
     <TreeCreationProvider expandSidebar={() => setSlotOpenHere("rail-l", true)}>
@@ -270,9 +294,30 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   );
 }
 
-/** Nothing to show beside a chat yet: no document has been opened in this project. */
-function SideEmpty() {
-  return <div className="flex min-h-0 flex-1" aria-hidden />;
+/** The side with nothing to show: its document is still being found, or main has no companion. */
+function SideEmpty({ projectId, opening }: { projectId: string; opening: boolean }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <SideEmptyHeader projectId={projectId} opening={opening} />
+    </div>
+  );
+}
+
+/** A document the writer picked beside counts as recently opened, once per pick. */
+function useRecordSidePick(projectId: string, picked: ContextTab | null) {
+  const record = useRecordOpenedDocument();
+  const recorded = useRef<string | null>(null);
+  useEffect(() => {
+    if (!picked) {
+      recorded.current = null;
+      return;
+    }
+    if (recorded.current === picked.documentId) return;
+    const opening = recentOpening(projectId, picked, new Date().toISOString(), false);
+    if (!opening) return;
+    recorded.current = picked.documentId;
+    record(opening);
+  }, [picked, projectId, record]);
 }
 
 /** A document's descriptor: a mounted host's, else resolved once by its identity. */

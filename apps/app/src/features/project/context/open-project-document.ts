@@ -48,8 +48,10 @@ import {
 } from "@/client/query/useContextCatalog";
 import { type ContextTab, isEditorScheme } from "@/client/stores";
 import {
+  type BesideHint,
   type OpenContextRoute,
   useOpenContextRoute,
+  useOpenedFromChat,
   useProjectTrashNavigation,
 } from "../routing/ProjectNavigationContext";
 import {
@@ -285,6 +287,8 @@ export type OpenProjectDocumentRequest = {
   focus?: true;
   /** Takes the place of the current history entry (main leaving a document the writer removed). */
   replace?: true;
+  /** The chat the open was made from: the new entry keeps it beside the document. */
+  beside?: BesideHint;
   signal?: AbortSignal;
 };
 
@@ -367,6 +371,7 @@ export class ProjectDocumentNavigationAdapter {
       workId,
       focus,
       replace,
+      beside,
       signal,
     }: OpenProjectDocumentRequest,
   ): Promise<OpenDocumentOutcome> {
@@ -439,6 +444,7 @@ export class ProjectDocumentNavigationAdapter {
         chatId: identity.chatId,
         focus,
         replace,
+        beside,
         isCurrent,
         canCommit,
         transfer,
@@ -563,6 +569,7 @@ export class ProjectDocumentNavigationAdapter {
     chatId?: string;
     focus?: true;
     replace?: true;
+    beside?: BesideHint;
     isCurrent: () => boolean;
     canCommit: () => boolean;
     transfer?: AvailableOpenResolution;
@@ -592,6 +599,7 @@ export class ProjectDocumentNavigationAdapter {
         tab,
         ...(input.focus ? { focus: true as const } : {}),
         ...(input.replace ? { replace: true } : {}),
+        ...(input.beside ? { beside: input.beside } : {}),
         isCurrent: input.isCurrent,
         canCommit: input.canCommit,
         afterCommit: () =>
@@ -717,14 +725,15 @@ export function ProjectDocumentNavigationProvider({
 
 export function useOpenProjectDocument(projectId: string | undefined): OpenProjectDocument {
   const owner = useContext(ProjectDocumentNavigationContext);
+  const beside = useOpenedFromChat();
 
   return useCallback(
     async (request) => {
       if (!projectId || owner?.projectId !== projectId)
         return { kind: "refused", reason: "lookup-failed" };
-      return owner.adapter.open(projectId, request);
+      return owner.adapter.open(projectId, beside ? { beside, ...request } : request);
     },
-    [owner, projectId],
+    [owner, projectId, beside],
   );
 }
 

@@ -1,13 +1,14 @@
 /** Shared pinned new-chat composer for the main, the side, and the phone. */
 import { t } from "@lingui/core/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { useEffect, useMemo, useRef } from "react";
+import { type RefObject, useEffect, useMemo, useRef } from "react";
 import { chatUploadPort } from "@/client/api/context-upload-api";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useSelectionAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { Composer, type ComposerHandle } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
@@ -22,6 +23,7 @@ import { useCreationComposer } from "./useCreationComposer";
 
 export function CreationComposer({
   projectId,
+  about = null,
   variant = "pinned",
   autoFocus = false,
   newChatFocusRequestId = null,
@@ -29,6 +31,8 @@ export function CreationComposer({
   onNewChatFocusHandled,
 }: {
   projectId: string;
+  /** The document a new chat beside it is about: attached while the writer has written nothing. */
+  about?: string | null;
   /** `hero` — the chat index's centered composer; `pinned` — the empty chat's footer. */
   variant?: "pinned" | "hero";
   autoFocus?: boolean;
@@ -84,6 +88,7 @@ export function CreationComposer({
     null,
     creation.draft.chatId,
   );
+  useAttachAbout(composerRef, references, about);
   const openDocument = useOpenProjectDocument(projectId);
   const folders = useMemo<FolderMenuHost>(
     () => ({
@@ -196,4 +201,40 @@ export function CreationComposer({
       ) : null}
     </FolderMenuContext.Provider>
   );
+}
+
+/**
+ * A new chat beside a document starts with that document attached. The writer's own draft is
+ * theirs: the chip is added only to an empty composer, and when the document beside changes it
+ * replaces the chip it added only while nothing else has been written.
+ */
+function useAttachAbout(
+  composerRef: RefObject<ComposerHandle | null>,
+  references: ReferenceBrowserCatalog | null,
+  about: string | null,
+) {
+  const attached = useRef<string | null>(null);
+  useEffect(() => {
+    if (!about || !references || attached.current === about) return;
+    const attach = () => {
+      const handle = composerRef.current;
+      if (!handle) return false;
+      const previous = attached.current;
+      if (previous && handle.getDraft().trim() === "") handle.removeReferences(previous);
+      if (handle.hasContent()) {
+        attached.current = about;
+        return true;
+      }
+      const row = references.resolveReference({ kind: "file", id: about });
+      if (row?.kind !== "file") return false;
+      handle.insertReference(row.action.reference, row.fileKind);
+      attached.current = about;
+      return true;
+    };
+    if (attach()) return;
+    const stop = references.port.subscribe(() => {
+      if (attach()) stop();
+    });
+    return stop;
+  }, [about, references, composerRef]);
 }

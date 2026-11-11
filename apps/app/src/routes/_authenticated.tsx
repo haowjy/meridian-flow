@@ -8,8 +8,8 @@ import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { bindChatSubmissions } from "@/client/chat-submissions";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
-import { readCurrentChat } from "@/client/current-chat";
 import { FailureLogProvider } from "@/client/failures/failure-log";
+import { readHeldPick, readLastChat } from "@/client/project-shell/store";
 import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
@@ -109,9 +109,11 @@ function AuthenticatedLayout() {
     const route = parseProjectAddress(window.location.pathname, window.location.search);
     if (route.kind !== "valid") return false;
     const { projectId, destination } = route.address;
+    const held = readHeldPick(user.userId, projectId);
     return (
       (destination.kind === "chat" && destination.chatId === id) ||
-      readCurrentChat(user.userId, projectId) === id
+      readLastChat(user.userId, projectId) === id ||
+      (held?.kind === "chat" && held.chatId === id)
     );
   });
 

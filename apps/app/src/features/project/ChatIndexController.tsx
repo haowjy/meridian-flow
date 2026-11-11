@@ -26,17 +26,17 @@ export function ChatIndexController({
 }: ChatIndexControllerProps) {
   // The chip reopens the remembered current chat, which stays live in the side while the
   // index holds main.
-  const { currentThreadId, openChat } = useChatNavigation();
+  const { lastChatId, openChat } = useChatNavigation();
   const { threadById } = useProjectThreadGroups(projectId);
   return (
     <main className="main-pane flex min-h-0 flex-1 flex-col">
       <PaneHeader
         leading={<ChatIndexChip active />}
         title={
-          currentThreadId ? (
+          lastChatId ? (
             <ReturnTabChip
-              title={displayThreadTitle(threadById.get(currentThreadId)?.title)}
-              onClick={() => void openChat(currentThreadId)}
+              title={displayThreadTitle(threadById.get(lastChatId)?.title)}
+              onClick={() => void openChat(lastChatId)}
             />
           ) : null
         }
