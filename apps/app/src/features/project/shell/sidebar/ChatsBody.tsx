@@ -5,11 +5,11 @@ import { Layers, Plus } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
+import { ListRow } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
-import { RowIcon, rowPaddingLeft } from "../../context/ContextTreeRows";
-import { contextTreeFileRowClassName } from "../../context/context-row-geometry";
+import { RowIcon } from "../../context/ContextTreeRows";
 import { PaneHeaderActionButton } from "../../context/RailPaneHeader";
 import { SourceHint, SourcePane } from "./SourcePane";
 
@@ -96,19 +96,20 @@ export function ChatsBody({
         ) : (
           <>
             {/* One list, most urgent first; the mark on a row says its state. */}
-            <div className="pt-1">
+            <div className="px-2 pt-1">
               {groups.needsYou.map((thread) => row(thread, "needs-you"))}
               {groups.running.map((thread) => row(thread, "running"))}
               {groups.idle.map((thread) => row(thread, "idle"))}
               {groups.older > 0 ? (
-                <button
-                  type="button"
-                  onClick={onShowAllChats}
-                  className={cn(ROW_BUTTON, contextTreeFileRowClassName(false), role.secondary)}
-                  style={{ paddingLeft: rowPaddingLeft(1) }}
-                >
-                  <Trans>Older</Trans>
-                </button>
+                <ListRow
+                  depth={1}
+                  onOpen={onShowAllChats}
+                  title={
+                    <span className={role.secondary}>
+                      <Trans>Older</Trans>
+                    </span>
+                  }
+                />
               ) : null}
             </div>
             {groups.needsYou.length + groups.running.length + groups.idle.length === 0 ? (
@@ -118,29 +119,21 @@ export function ChatsBody({
             ) : null}
             <Group label={t`Other Works`} hidden={groups.otherWorks.length === 0}>
               {groups.otherWorks.map((other) => (
-                <button
+                <ListRow
                   key={other.workId}
-                  type="button"
-                  onClick={() => onShowWork(other.workId)}
-                  className={cn(ROW_BUTTON, contextTreeFileRowClassName(false))}
-                  style={{ paddingLeft: rowPaddingLeft(0) }}
-                >
-                  <RowIcon icon={Layers} />
-                  <span className="ml-0.5 min-w-0 flex-1 truncate">{workName(other.workId)}</span>
-                  <span
-                    className={cn(
-                      "shrink-0 pr-1",
-                      role.rowSecondary,
-                      other.needsYou > 0 && "text-jade-text",
-                    )}
-                  >
-                    {other.needsYou > 0 ? (
-                      <Trans>{other.needsYou} waiting on you</Trans>
+                  onOpen={() => onShowWork(other.workId)}
+                  leading={<RowIcon icon={Layers} />}
+                  title={workName(other.workId)}
+                  meta={
+                    other.needsYou > 0 ? (
+                      <span className="text-jade-text">
+                        <Trans>{other.needsYou} waiting on you</Trans>
+                      </span>
                     ) : (
                       <Trans>{other.running} working</Trans>
-                    )}
-                  </span>
-                </button>
+                    )
+                  }
+                />
               ))}
             </Group>
           </>
@@ -150,9 +143,6 @@ export function ChatsBody({
     </div>
   );
 }
-
-/** A row that is one button: the row frame, full width inside its inset. */
-const ROW_BUTTON = "focus-ring w-[calc(100%-1rem)] text-left";
 
 function Group({
   label,
@@ -165,8 +155,8 @@ function Group({
 }) {
   if (hidden) return null;
   return (
-    <section aria-label={label} className="pt-2">
-      <h3 className={cn("pr-2 pb-1 pl-3.5", role.groupLabel)}>{label}</h3>
+    <section aria-label={label} className="px-2 pt-2">
+      <h3 className={cn("px-1.5 pb-1", role.groupLabel)}>{label}</h3>
       {children}
     </section>
   );
@@ -187,34 +177,28 @@ function ChatRow({
   nested?: boolean;
   onOpen: () => void;
 }) {
-  const title = displayThreadTitle(thread.title);
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-current={current ? "page" : undefined}
-      className={cn(ROW_BUTTON, "gap-2", contextTreeFileRowClassName(current))}
-      style={{ paddingLeft: rowPaddingLeft(nested ? 1 : 0) }}
-    >
-      {thread.agentName ? (
-        <span
-          aria-hidden
-          className={cn(
-            "grid size-4 shrink-0 place-items-center rounded-sm border border-border-subtle font-medium leading-none",
-            role.rowSecondary,
-          )}
-          title={thread.agentName}
-        >
-          {thread.agentName.slice(0, 1).toUpperCase()}
-        </span>
-      ) : null}
-      <span className="min-w-0 flex-1 truncate">{title}</span>
-      {state === "idle" ? null : (
-        <span className="flex w-5 shrink-0 items-center justify-center">
-          <StateMark state={state} />
-        </span>
-      )}
-    </button>
+    <ListRow
+      onOpen={onOpen}
+      current={current ? "page" : false}
+      depth={nested ? 1 : 0}
+      leading={
+        thread.agentName ? (
+          <span
+            aria-hidden
+            className={cn(
+              "grid size-4 shrink-0 place-items-center rounded-sm border border-border-subtle font-medium leading-none",
+              role.rowSecondary,
+            )}
+            title={thread.agentName}
+          >
+            {thread.agentName.slice(0, 1).toUpperCase()}
+          </span>
+        ) : null
+      }
+      title={displayThreadTitle(thread.title)}
+      trailing={state === "idle" ? null : <StateMark state={state} />}
+    />
   );
 }
 
