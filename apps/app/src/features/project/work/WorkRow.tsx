@@ -6,8 +6,7 @@
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
 import type { ReactNode } from "react";
-import { cn } from "@/lib/utils";
-import { ruledRowClassName } from "../RuledList";
+import { ListRow } from "@/components/ui/list-row";
 import { relativeTime } from "../relative-time";
 import { WorkTitleLine } from "./WorkTitleLine";
 
@@ -28,33 +27,33 @@ export function WorkRow({
   liveState?: ReactNode;
 }) {
   return (
-    <div className={cn(ruledRowClassName, "flex min-h-12 items-center gap-3")}>
-      <button
-        type="button"
-        onClick={onOpen}
-        className="focus-ring focus-ring-outside min-w-0 flex-1 rounded-sm text-left after:absolute after:inset-0"
-      >
-        <span className="sr-only">
-          {work.status ? t`Open ${work.name} (${work.status})` : t`Open ${work.name}`}
-        </span>
-        <div aria-hidden>
+    // The row's inset hangs in the list's gutter, so names stay on the page's edge.
+    <div className="px-0.5">
+      <ListRow
+        onOpen={onOpen}
+        controlProps={{
+          "aria-label": work.status ? t`Open ${work.name} (${work.status})` : t`Open ${work.name}`,
+        }}
+        title={
           <WorkTitleLine
-            title={
-              <span className="truncate text-sm font-medium text-foreground">{work.name}</span>
-            }
+            title={<span className="truncate">{work.name}</span>}
             status={work.status}
           />
-        </div>
-        {work.goal ? (
-          <span aria-hidden className="block truncate text-xs text-muted-foreground">
-            {work.goal.split("\n").find((line) => line.trim()) ?? ""}
-          </span>
-        ) : null}
-      </button>
-      <div className="shrink-0 text-xs tabular-nums text-muted-foreground">
-        {liveState ?? relativeTime(work.lastActivityAt, now)}
-      </div>
-      {actions ? <div className="relative z-10 -my-1 shrink-0">{actions}</div> : null}
+        }
+        detail={work.goal ? (work.goal.split("\n").find((line) => line.trim()) ?? "") : null}
+        meta={liveState ? null : relativeTime(work.lastActivityAt, now)}
+        // A live state is announced, so it sits beside the control, not inside its name.
+        actions={
+          liveState || actions ? (
+            <>
+              {liveState ? (
+                <span className="px-1.5 text-xs text-muted-foreground">{liveState}</span>
+              ) : null}
+              {actions}
+            </>
+          ) : null
+        }
+      />
     </div>
   );
 }
