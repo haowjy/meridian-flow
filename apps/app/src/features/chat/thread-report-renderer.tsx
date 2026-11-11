@@ -43,7 +43,7 @@ export function SubagentRefLine({ handle }: { handle: string }) {
             subagentBlock: "card",
           })
         }
-        className="focus-ring relative z-10 rounded-sm text-left underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text"
+        className="focus-ring focus-ring-outside relative z-10 rounded-sm text-left underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text"
       >
         <SubagentIdentityName run={run} />
       </button>
