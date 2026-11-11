@@ -18,8 +18,6 @@ import {
   useOptionalPresentedDocuments,
 } from "@/features/project/context/account-feature-context";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
-import { escapeCssIdent } from "@/lib/css-selector";
-import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import type { DraftNotice } from "./draft-notices";
 
@@ -141,12 +139,11 @@ export function DraftNoticeLine({
         {dismiss}
       </div>
     );
-  const undo = (event?: { currentTarget: HTMLElement }) => {
+  const undo = () => {
     const { review, left, projectId, ownerKey } = notice;
     // Where main was when the notice showed (null: Recently opened); the view follows only
     // if main is still there.
     const stays = left ? left.landed : review?.documentId;
-    const focused = event?.currentTarget === document.activeElement;
     void notice.undo().then((answer) => {
       if (answer !== "ok" || !review || stays === undefined || !presented) return;
       if (presented.mainDocumentId(projectId) === stays) openReviewFile(review, ownerKey);
@@ -155,9 +152,6 @@ export function DraftNoticeLine({
         setDocumentView(accountId, projectId, stays, {
           pin: { ownerKey, itemKey: review.draft.itemKey },
         });
-      else return;
-      // The Undo goes with its notice: the focus follows to the draft's controls.
-      if (focused) holdFocus(() => reviewControl(review.documentId));
     });
   };
   if (notice.status === "failed")
@@ -165,7 +159,7 @@ export function DraftNoticeLine({
       <div role="status" data-command-notice="undo-failed" className={className}>
         <InlineErrorRow
           message={t`Couldn't undo. Try again.`}
-          onRetry={() => undo()}
+          onRetry={undo}
           onDismiss={notice.dismiss}
         />
       </div>
@@ -200,10 +194,9 @@ export function DraftNoticeLine({
   );
 }
 
-const reviewControl = (documentId: string) =>
-  document.querySelector<HTMLElement>(
-    `[data-project-host="document:${escapeCssIdent(documentId)}"] [data-draft-review-controls] button:not(:disabled)`,
-  );
+/** A notice's action in `container` (Undo, Retry): where the focus goes when the notice took the pressed control's place. */
+export const noticeAction = (container: HTMLElement) =>
+  container.querySelector<HTMLElement>("[data-command-notice] button:not(:disabled)");
 
 /**
  * A notice's sentence, where the document's name is what shortens: the verb that says what

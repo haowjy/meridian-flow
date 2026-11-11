@@ -63,11 +63,11 @@ export function controlAlreadyStartedCopy(control: ControlBody): string {
 }
 
 /** What the announcer says as a withdrawn row disappears. */
-export function controlStoppedCopy(control: ControlBody): string {
+export function controlWithdrawnCopy(control: ControlBody): string {
   return control.kind === "write_mode" ? t`Switch undone` : t`Compaction stopped`;
 }
 
-/** The card in a queued command's row when its Stop didn't reach the server (also announced). */
+/** The card in a queued command's row when its withdraw didn't reach the server (also announced). */
 export function controlWithdrawFailedCopy(control: ControlBody): string {
   return control.kind === "write_mode"
     ? t`Couldn't undo the switch.`
@@ -78,12 +78,12 @@ export function controlWithdrawFailedCopy(control: ControlBody): string {
  * The withdraw button's word: a switch not yet taken is undone (the chat keeps its mode); a
  * queued compaction is stopped.
  */
-export function controlStopText(control: ControlBody): string {
+export function controlWithdrawText(control: ControlBody): string {
   return control.kind === "compact" ? t`Stop` : t`Undo`;
 }
 
 /** The withdraw button's accessible name, specific so it differs from the composer's Stop. */
-export function controlStopLabel(control: ControlBody): string {
+export function controlWithdrawLabel(control: ControlBody): string {
   if (control.kind === "compact") return t`Stop compaction`;
   return control.mode === "draft" ? t`Undo switch to draft mode` : t`Undo switch to auto-apply`;
 }
