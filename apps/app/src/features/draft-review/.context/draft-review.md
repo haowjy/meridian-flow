@@ -154,10 +154,51 @@ occurrence suffix.
 ## Discard
 
 `discard(ref, target, history)` composes against the optimistic base and calls
-`writeDiscardBlocks` in one transaction. `history` is the issuing host's own editor (the
-controller's `reviewEditor`), whose Undo takes it back, or `notice` for a surface with no
-editor; the room's runtime may list more than one attached editor, so the session never picks
-one. Editor Discard is synchronous. Chat-strip and Work Discard publish their notice and a projection-scoped `discarding` target first, so the row
+`writeDiscardBlocks` in one transaction with an origin of its own, so the write is one
+`StackItem`. `history` is the issuing host's own editor (the controller's `reviewEditor`), or
+`notice` for a surface with no editor; the room's runtime may list more than one attached
+editor, so the session never picks one. Either way the session returns one Undo handle, which
+the owner's notice holds. Editor Discard is synchronous.
+
+### Notices
+
+`DraftNotices` (owned by `DraftCommandOwner`, so account-lived) holds one notice per draft
+owner key: the latest Discard with its Undo, or the latest Apply's facts. A newer Apply or
+Discard by the owner replaces it; there is no timer; a reload starts empty. Each notice records
+the surface it was made on (Changes list, a chat's strip, a document's band) and shows only
+there; a band notice shows in that document's identity-row slot, or in the slot of the document
+main went back to, or, when main went to Recently opened, in that landing's top slot (above a
+removed-documents notice). If the writer moved before the go-back resolved, the notice ends. Apply
+facts from a band stay out of the store: the identity row shows them from the owner's per-document
+facts (`useManuscriptState`). Discard all is one notice over several rooms. A room's Undo is done
+once the prose is back in the room, which sends it whenever it can: the notice ends and the row
+returns at once, offline too. This path does not re-read the owner list, and the view does not
+follow back to the draft, until the server lists the draft again (`relistedOwnerDraft`, polled
+after the acknowledgement): the list omits a draft until the server re-judges its effect, about 250 ms
+after the write, and a read before then drops the row. Following sooner opened a draft-only page
+on a draft the list omitted: `verifyPin` dropped the view's pin and `DraftOnlySettlement` closed
+the page as discarded ("This destination is unavailable"). If the server never lists it within
+the retries, main stays where it is. A room that turned read-only (its Work archived) ends the notice. An Undo
+that throws keeps the notice with Retry, and Retry takes back only the rooms that failed.
+
+A notice's Undo holds while the draft's prose is as the Discard left it. Any other transaction on
+the `prosemirror` fragment (writer typing, a model write), the room closing or resetting
+(`binding.notices`), or Ctrl+Z popping the item from the reviewing editor ends it silently. So
+the notice and Ctrl+Z can never undo the same Discard twice. While the reviewing editor lives and
+the item is on top of its stack, the notice's Undo is that editor's Undo; once the editor is gone
+(a band Discard sends the page to Live) the item is undone alone through a short-lived manager.
+Both paths record restorations, so marks after an Undo match marks before the Discard. Each Undo
+handle holds a room lease and entry user until it ends, so one notice per owner bounds the rooms
+kept open; `DraftCommandOwner.close()` ends every notice.
+
+A whole-draft Discard on a draft-only page (live deleted it elsewhere), local or on the server,
+sends main back through `ContextRemovalCoordinator.beginOwnRemoval` once the Discard is written,
+so a refused Discard leaves main on the page that shows the refusal; the go-back reports where
+main landed, and an Undo while main is still there returns it to the draft's review address.
+While that go-back runs, the coordinator's `discardDraft` leaves the page alone, so a slow open
+of the previous document doesn't let `DraftOnlySettlement` close it first and end the notice.
+
+Chat-strip and Work Discard publish their notice and a projection-scoped `discarding` target first, so the row
 and notice paint before the indivisible write-back. Hidden pages drain on visibility
 change rather than waiting for animation frames. Changed base or prose refuses the stale
 write and restores the row.
@@ -166,11 +207,18 @@ Direct writes never impersonate the binding origin: its delete-only transactions
 writer ProseMirror transaction are schema-repair evidence. The draft-only editor plugin
 installs restoration recording when its view mounts, before any writer Undo/Redo; live
 editors never install it. A side or Work notice owns a separate manager and pool lease.
-Undo captures its own session acknowledgement barrier before releasing notice ownership,
-because a later item lookup can't prove that retired session's edits landed. The notice
+The notice
 belongs to its exact session binding, so replacement documents never inherit the manager.
 
-Created-document removal and Work Discard go through the server. Their optimistic
+One rule decides where a Discard runs (`discardsLocally` in `useWorkBranchCommands`, read by
+every surface through `discardAsks`/`discardAllAsks`): a change in a read frame, or a whole text
+draft that is not a whole item (created document, picture), has no move or delete, and whose
+room is read now (`DraftCommandOwner.canDiscardLocally`), is a local text Discard with an Undo.
+Anything else asks once, shows no notice, and goes to the server, which has no Undo (#763): a
+whole draft as an item Discard (`discardOnServer`, everything the branch holds on the
+document), a move or delete as `discardItem`. A Discard all of only local drafts is local, one
+notice; any other Discard all (rows still loading, a room in error) is the server's branch
+Discard. A Discard never reports success for a draft it didn't discard. Their optimistic
 visibility is lifecycle state, never text-group hiding. `4205` maps to terminal `closed`,
 including in-band code-1000 delivery, and `4208` to `removed`.
 

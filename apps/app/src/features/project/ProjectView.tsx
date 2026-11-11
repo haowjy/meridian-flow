@@ -42,6 +42,7 @@ import { usePhoneShell } from "@/hooks/use-phone-shell";
 import {
   useAccountId,
   useContextRemovalCoordinator,
+  useDraftCommandOwner,
   useOptionalDraftOnlyPresentations,
   useOptionalPresentedDocuments,
   useProjectContextAvailabilityCoordinator,
@@ -500,9 +501,13 @@ function HydratedReviewControllers({
     work: chatWork,
     ownerKey: chatOwnerKey(chatWork, chatThread?.rootThreadId ?? null),
     threadId: chatThreadId,
+    surface: "dock",
   });
   const accountId = useAccountId();
   const draftOnly = useOptionalDraftOnlyPresentations();
+  // A Discard notice outlives its surface, not the project: leaving ends it and its room lease.
+  const { notices } = useDraftCommandOwner();
+  useEffect(() => () => notices.endProject(props.projectId), [notices, props.projectId]);
   // A Work pick returns every document showing a draft to Live. A draft-only page has no Live
   // version: it keeps its draft.
   const scopeWorkId = props.editorWorkId;

@@ -153,7 +153,7 @@ describe("AccountFeatureTestProvider", () => {
             transition: acceptContextTransition,
             readSearch: () => ({ scheme: "manuscript", path: "/a.md" }),
             updateSearch: () => undefined,
-            goBack: () => undefined,
+            goBack: () => Promise.resolve(null),
           },
           "work-1",
         );

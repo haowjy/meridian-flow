@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
@@ -12,13 +12,15 @@ import {
   ApplyAllQuestion,
   CommandNotice,
   type CommandQuestion,
+  DraftNoticeLine,
+  useDraftNotice,
 } from "@/features/draft-review/CommandNotice";
 import { draftCopyView } from "@/features/draft-review/copy-view";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import { chatOwnerKey, workOwnerKey } from "@/features/draft-review/draft-owner-key";
-import { ReviewActions } from "@/features/draft-review/ReviewActions";
+import { DiscardQuestion, ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { hasTreeLine, reviewHasNoRoom, treeLineOf } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
@@ -88,10 +90,11 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
 /**
  * The scope's drafted documents, one row each in the one file order. A row opens its draft;
  * its × and ✓ discard or apply that document's draft. Discard all and Apply all act on every
- * draft of the scope, new documents, moves and deletes included. Discard all asks first, and so
- * does an Apply all that would delete documents or bring back documents deleted from the
- * manuscript, naming each, and again for any a newer delete held back. A question takes the
- * place of the buttons that asked it; the latest command's notice sits below the rows.
+ * draft of the scope, new documents, moves and deletes included. A Discard asks first only when
+ * it can't run here and so carries no Undo (`discardAsks`); an Apply all asks when it would
+ * delete documents or bring back documents deleted from the manuscript, naming each, and again
+ * for any a newer delete held back. A question takes the place of the buttons that asked it. A Discard made here shows its
+ * notice in the row's place (Discard all: the bar's); an Apply's facts sit below the rows.
  *
  * An archived Work's commands show disabled, with the reason above the rows. A frozen lineage
  * (every chat in Trash) offers no Apply, only Discard.
@@ -111,7 +114,7 @@ export function ChangesSource({
   isOpen: (file: ReviewFileTarget) => boolean;
   onPicked?: () => void;
 }) {
-  const { work, ownerKey } = scope;
+  const { ownerKey } = scope;
   // Locked with rows to show means archived: no owner key or Work lists nothing.
   const archived = controller.dispositionLocked;
   useSyncExternalStore(
@@ -152,7 +155,6 @@ export function ChangesSource({
     hasTreeLine(file.draft) ||
     (file.draft.hasDraft && (readOf(file)?.frame?.groups.length ?? 0) > 0);
 
-  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   /** What an Apply all asks about first: the documents it deletes and those it brings back. */
   const [asking, setAsking] = useState<{
     deleting: readonly ReviewFileTarget[];
@@ -161,7 +163,6 @@ export function ChangesSource({
   const hasFiles = files.length > 0;
   useEffect(() => {
     if (hasFiles) return;
-    setConfirmingDiscard(false);
     setAsking(null);
   }, [hasFiles]);
 
@@ -201,27 +202,22 @@ export function ChangesSource({
         },
         disabled: controller.dispositionLocked,
       }
-    : confirmingDiscard
-      ? {
-          kind: "discard",
-          sentence: work?.isNoWork ? (
-            <Trans>Discard this chat’s changes?</Trans>
-          ) : (
-            <>
-              <Trans>Discard all changes?</Trans>{" "}
-              <Trans>This removes pending changes from every document in this Work.</Trans>
-            </>
-          ),
-          keep: <Trans>Keep</Trans>,
-          confirm: <Trans>Discard</Trans>,
-          onKeep: () => setConfirmingDiscard(false),
-          onConfirm: () => {
-            setConfirmingDiscard(false);
-            void controller.disposeDrafts("discard", everyDraft);
-          },
-          disabled: controller.dispositionLocked,
-        }
-      : null;
+    : null;
+  const owned = useDraftNotice(ownerKey);
+  const notice = owned?.surface.kind === "changes" ? owned : null;
+  // A single draft's Discard takes the place its row had, after the list's next read drops it.
+  const rowAt = useRef(new Map<string, number>());
+  files.forEach((file, index) => {
+    rowAt.current.set(file.documentId, index);
+  });
+  const rowNotice =
+    notice?.kind === "discarded" && notice.subject.kind !== "drafts" ? notice.documentIds[0] : null;
+  const noticeAt =
+    rowNotice !== null && hasFiles && !files.some((file) => file.documentId === rowNotice)
+      ? rowAt.current.get(rowNotice)
+      : undefined;
+  const inList = noticeAt !== undefined;
+  const inBar = notice !== null && !inList && !question && !hasFiles;
 
   return (
     <SourcePane
@@ -229,15 +225,18 @@ export function ChangesSource({
       bar={
         question ? (
           <div className="min-w-0 flex-1">
-            <CommandNotice commands={{ notice: null, undoNotice: () => {} }} question={question} />
+            <CommandNotice notice={null} question={question} />
           </div>
+        ) : inBar && notice ? (
+          <DraftNoticeLine notice={notice} className="min-w-0 flex-1" />
         ) : hasFiles ? (
           <ReviewActions
             scope="all"
             density="full"
             touch={touch}
             disabled={archived}
-            onDiscard={() => setConfirmingDiscard(true)}
+            discardAsks={controller.discardAllAsks(everyDraft)}
+            onDiscard={() => void controller.disposeDrafts("discard", everyDraft)}
             onApply={controller.canApply && files.every(applicable) ? startApplyAll : undefined}
             applyDisabled={held.some((read) => read.status !== "ready")}
           />
@@ -255,22 +254,33 @@ export function ChangesSource({
       ) : null}
       {hasFiles ? (
         <ul className="flex flex-col px-2">
-          {files.map((file) => (
-            <ChangeRow
-              key={file.documentId}
-              projectId={projectId}
-              ownerKey={ownerKey}
-              file={file}
-              textChanges={
-                readOf(file)?.status === "ready" ? readOf(file)?.listedChanges.length : undefined
-              }
-              active={isOpen(file)}
-              canApply={controller.canApply && applicable(file)}
-              controller={controller}
-              touch={touch}
-              onPicked={onPicked}
-            />
+          {files.map((file, index) => (
+            <Fragment key={file.documentId}>
+              {inList && notice && index === noticeAt ? (
+                <li>
+                  <DraftNoticeLine notice={notice} />
+                </li>
+              ) : null}
+              <ChangeRow
+                projectId={projectId}
+                ownerKey={ownerKey}
+                file={file}
+                textChanges={
+                  readOf(file)?.status === "ready" ? readOf(file)?.listedChanges.length : undefined
+                }
+                active={isOpen(file)}
+                canApply={controller.canApply && applicable(file)}
+                controller={controller}
+                touch={touch}
+                onPicked={onPicked}
+              />
+            </Fragment>
           ))}
+          {inList && notice && noticeAt !== undefined && noticeAt >= files.length ? (
+            <li>
+              <DraftNoticeLine notice={notice} />
+            </li>
+          ) : null}
         </ul>
       ) : drafts.status === "error" ? (
         <InlineErrorRow
@@ -285,9 +295,11 @@ export function ChangesSource({
       ) : (
         <SourceHint>{scope.empty}</SourceHint>
       )}
-      <div className="mx-2">
-        <CommandNotice commands={controller} />
-      </div>
+      {notice && !inList && !inBar ? (
+        <div className="mx-2">
+          <CommandNotice notice={notice} />
+        </div>
+      ) : null}
     </SourcePane>
   );
 }
@@ -321,6 +333,10 @@ function ChangeRow({
 }) {
   const { openReviewFile } = useAiDraftLauncher();
   const [previewing, setPreviewing] = useState(false);
+  // A row's actions are too narrow for its question: it asks on the line under the name.
+  const [asking, setAsking] = useState(false);
+  const draft = { documentId: file.documentId, itemKey: file.draft.itemKey };
+  const discard = () => void controller.discard(file.documentId, file.draft.itemKey);
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
   const copyView = draftCopyView(file, ownerKey);
   const drag = useReferenceDrag(
@@ -330,7 +346,6 @@ function ChangeRow({
   const imageOpenable = file.draft.binary;
   const opens = Boolean(file.contextLocation) && (file.draft.hasDraft || treeOnly || imageOpenable);
   const review = () => {
-    controller.dismissNotice();
     if (file.draft.hasDraft || treeOnly) {
       openReviewFile(file, ownerKey);
       onPicked?.();
@@ -359,7 +374,7 @@ function ChangeRow({
             touch={touch}
             disabled={command.pending || controller.dispositionLocked}
             className={touch ? "gap-0" : "gap-0.5"}
-            onDiscard={() => void controller.discard(file.documentId, file.draft.itemKey)}
+            onDiscard={() => (controller.discardAsks(draft) ? setAsking(true) : discard())}
             onApply={
               canApply
                 ? () => void controller.apply(file.documentId, file.draft.itemKey)
@@ -369,6 +384,16 @@ function ChangeRow({
         }
         below={
           <div className="pl-1">
+            {asking && !controller.dispositionLocked ? (
+              <DiscardQuestion
+                scope="document"
+                onKeep={() => setAsking(false)}
+                onConfirm={() => {
+                  setAsking(false);
+                  discard();
+                }}
+              />
+            ) : null}
             <DraftCommandStatus itemKey={file.draft.itemKey} item={file.draft} />
           </div>
         }

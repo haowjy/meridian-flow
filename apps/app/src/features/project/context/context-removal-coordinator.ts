@@ -64,6 +64,9 @@ type ContextRemovalWorkingSetPort = {
   replaceRecentRoutes(projectId: string, routes: readonly WorkingSetRoute[]): WorkingSetRoute[];
 };
 
+/** Where main went: a document, or Recently opened (`documentId` null). */
+export type MainLanding = { documentId: string | null };
+
 export type ContextRemovalRoutePort = {
   readSearch(projectId: string): ProjectSearch;
   updateSearch(
@@ -80,14 +83,15 @@ export type ContextRemovalRoutePort = {
   /**
    * The writer is removing `documentId`, which main shows: main opens the document it showed
    * before, one that still exists and is not among `removing`, else Recently opened. Nothing
-   * moves once `isCurrent` turns false.
+   * moves once `isCurrent` turns false. Resolves to where main landed (`documentId` null:
+   * Recently opened); null when it did not move.
    */
   goBack(
     projectId: string,
     documentId: string,
     removing: readonly string[],
     isCurrent: () => boolean,
-  ): void;
+  ): Promise<MainLanding | null>;
 };
 
 /**
@@ -153,6 +157,8 @@ type CoordinatorProjectState = {
   removalFence: RemovalFence | null;
   transitionRevision: number;
   terminalRemovals: Map<string, TerminalRouteRemoval>;
+  /** Documents whose own removal is still sending main back: their draft's end closes nothing. */
+  goingBack: Set<string>;
   live: boolean;
   listeners: Set<() => void>;
   snapshot: ContextRemovalProjectSnapshot;
@@ -908,19 +914,29 @@ export class ContextRemovalCoordinator {
   /**
    * The writer is deleting or Discarding these documents: their removal says nothing, and main,
    * if it shows one of them, goes at once to the document it showed before, else to Recently
-   * opened. Call before the removal; settle the returned mark as `markOwnRemoval` says.
+   * opened. Call before the removal; settle the returned mark as `markOwnRemoval` says. `landed`
+   * hears where main went, or null when it did not move; nothing when main did not show them.
    */
-  beginOwnRemoval(projectId: string, documentIds: readonly string[]): SettleOwnRemoval {
+  beginOwnRemoval(
+    projectId: string,
+    documentIds: readonly string[],
+    landed?: (landing: MainLanding | null) => void,
+  ): SettleOwnRemoval {
     const settle = this.notices?.markOwnRemoval(projectId, documentIds) ?? (() => undefined);
     const shown = this.presented.mainDocumentId(projectId);
     const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
     if (this.unavailable() || !route || !shown || !documentIds.includes(shown)) return settle;
-    route.goBack(
-      projectId,
-      shown,
-      documentIds,
-      () => !this.unavailable() && this.presented.mainDocumentId(projectId) === shown,
-    );
+    const goingBack = this.project(projectId).goingBack;
+    goingBack.add(shown);
+    void route
+      .goBack(
+        projectId,
+        shown,
+        documentIds,
+        () => !this.unavailable() && this.presented.mainDocumentId(projectId) === shown,
+      )
+      .finally(() => goingBack.delete(shown))
+      .then((landing) => landed?.(landing));
     return settle;
   }
 
@@ -951,10 +967,12 @@ export class ContextRemovalCoordinator {
   /**
    * A draft-created document a view presents lost its draft (a Discard). Runs when Discard starts
    * (optimistic) and again on server confirmation or a remote discard, where it finds nothing left
-   * to remove. A refused Discard does not come back here: the error lives on the draft.
+   * to remove. A refused Discard does not come back here: the error lives on the draft. A
+   * document the writer's own removal is still sending main back from is left to that go-back.
    */
   discardDraft(projectId: string, documentId: string): ContextRemovalOutcome {
-    if (this.unavailable()) return { kind: "noop" };
+    if (this.unavailable() || this.projects.get(projectId)?.goingBack.has(documentId))
+      return { kind: "noop" };
     this.presented.forget(projectId, [documentId]);
     const tab = this.presented
       .documents(projectId)
@@ -1116,6 +1134,7 @@ export class ContextRemovalCoordinator {
         removalFence: null,
         transitionRevision: 0,
         terminalRemovals: new Map(),
+        goingBack: new Set(),
         live: false,
         listeners: new Set(),
         snapshot: EMPTY_PROJECT_SNAPSHOT,

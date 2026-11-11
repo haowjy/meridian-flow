@@ -12,6 +12,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { ContextTab } from "@/client/stores";
+import { useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
 import { DraftReviewBand } from "@/features/editor/DraftReviewBand";
@@ -130,6 +131,7 @@ export function DocumentIdentityBar({
   // Only a provisional placement can be repaired here.
   const repairable = location.provisional && !readOnly;
   const manuscriptState = useManuscriptState(projectId, tab);
+  const notice = useDocumentNotice(projectId, tab.documentId);
 
   // Reviewing a draft is a mode, not a notice: its controls take a line of their own
   // above the toolbar. The version chip and other state stay on the toolbar row.
@@ -162,7 +164,7 @@ export function DocumentIdentityBar({
               onOpenExisting={onOpenExisting}
             />
           ) : null}
-          <ManuscriptStateSlot state={manuscriptState} />
+          <ManuscriptStateSlot state={manuscriptState} notice={notice} />
           {repair && !placementOpen ? (
             repairable ? (
               <button
