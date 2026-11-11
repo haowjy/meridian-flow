@@ -280,6 +280,9 @@ export class AccountResourceReplica {
     const names = new Set(
       projection.records.flatMap((record) => {
         if (!resourceVisibleInProject(projectId, record, projection.catalogs)) return [];
+        // The server names a create when its first word makes it eligible, counting only the
+        // documents it holds: an empty one here takes no number, or the name would jump.
+        if (record.resource.obligations.createEligibility?.eligibleAt === null) return [];
         const name = placement.resourceLocation(record)?.name;
         return name ? [name] : [];
       }),
@@ -343,6 +346,20 @@ export class AccountResourceReplica {
     this.requireOpen();
     await this.commitPlan(key, (record) => markResourceCreateEligible(record, Date.now()));
     this.reconciler.schedule(key);
+  }
+
+  /**
+   * An Untitled document left without a word goes without a trace: it was never sent, so its
+   * deletion settles here. A first word, typed in any window, marks it eligible and keeps it.
+   */
+  async discardUntouched(projectId: string, key: ResourceKey): Promise<boolean> {
+    this.requireOpen();
+    return this.settleLocalDocumentDeletion(
+      projectId,
+      key.handle,
+      crypto.randomUUID(),
+      (record) => record.resource.obligations.createEligibility?.eligibleAt === null,
+    );
   }
 
   async openDocument(
@@ -1021,12 +1038,14 @@ export class AccountResourceReplica {
     projectId: string,
     handle: string,
     operationId: string,
+    only: (record: ResourceRecord) => boolean = () => true,
   ): Promise<boolean> {
     const key: ResourceKey = { handle };
     return this.withResourceLock(key, async () => {
       for (;;) {
         const current = await this.metadata.readResource(key);
-        if (!current || deleteNeedsServer(current.resource.serverHold)) return false;
+        if (!current || deleteNeedsServer(current.resource.serverHold) || !only(current))
+          return false;
         const write = planResourceDeletion(current, projectId, crypto.randomUUID(), operationId);
         const settled = write?.next.intents.some(
           (intent) =>

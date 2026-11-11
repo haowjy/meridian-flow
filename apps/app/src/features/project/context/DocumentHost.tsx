@@ -319,6 +319,16 @@ function EditableDocument({
     if (document.kind === "new")
       await resources.markCreateEligible({ handle: document.resourceHandle });
   }, [resources, document]);
+  const presented = useOptionalPresentedDocuments();
+  const onUntitledLeftEmpty = useCallback(() => {
+    if (document.kind !== "new") return;
+    const { documentId, resourceHandle } = document;
+    // A move between main and the side, or a remount, mounts it again before this runs.
+    window.setTimeout(() => {
+      if (presented?.isMounted(projectId, documentId)) return;
+      void resources.discardUntouched(projectId, { handle: resourceHandle });
+    });
+  }, [document, presented, projectId, resources]);
   return (
     <ContextDocumentHost
       projectId={projectId}
@@ -328,6 +338,7 @@ function EditableDocument({
       editorClassName={editorClassName}
       loadFocus={loadFocus}
       onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
+      onUntitledLeftEmpty={onUntitledLeftEmpty}
     />
   );
 }

@@ -107,6 +107,13 @@ export class PresentedDocuments {
     return null;
   }
 
+  /** Whether any host here mounts it, the kept one included. */
+  isMounted(projectId: string, documentId: string): boolean {
+    for (const mount of this.mounts.values())
+      if (mount.projectId === projectId && mount.document.documentId === documentId) return true;
+    return false;
+  }
+
   isPresented(projectId: string, documentId: string): boolean {
     return this.documents(projectId).some((tab) => tab.documentId === documentId);
   }

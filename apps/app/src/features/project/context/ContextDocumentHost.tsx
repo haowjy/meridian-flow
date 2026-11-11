@@ -54,6 +54,8 @@ export type ContextDocumentHostProps = {
   readOnly?: boolean;
   presentation?: DocumentPresentation;
   onUntitledBecameNonEmpty?: (documentId: string) => Promise<void>;
+  /** This view of an Untitled document went away while it held no words. */
+  onUntitledLeftEmpty?: (documentId: string) => void;
   /** Overrides the editor shell's own styling, e.g. to take the side's material. */
   editorClassName?: string;
   onCloseDraftOnly?: () => void;
@@ -68,6 +70,7 @@ export function ContextDocumentHost({
   readOnly = false,
   presentation = DESKTOP_DOCUMENT_PRESENTATION,
   onUntitledBecameNonEmpty,
+  onUntitledLeftEmpty,
   editorClassName,
   onCloseDraftOnly,
   loadFocus = false,
@@ -175,6 +178,7 @@ export function ContextDocumentHost({
               documentId={document.documentId}
               session={session}
               onBecameNonEmpty={onUntitledBecameNonEmpty}
+              onLeftEmpty={onUntitledLeftEmpty}
             />
           ) : null}
           {/* Filename chrome is host-owned: the title chip names the
@@ -306,11 +310,26 @@ function UntitledInputObserver({
   documentId,
   session,
   onBecameNonEmpty,
+  onLeftEmpty,
 }: {
   documentId: string;
   session: import("@/core/editor/document-session").DocumentSession;
   onBecameNonEmpty: (documentId: string) => Promise<void>;
+  onLeftEmpty?: (documentId: string) => void;
 }) {
+  const leftEmpty = useRef(onLeftEmpty);
+  leftEmpty.current = onLeftEmpty;
+  // Only once local persistence has loaded does an empty fragment mean no words were written.
+  useEffect(() => {
+    const fragment = session.document.getXmlFragment(session.fragmentName);
+    let loaded = false;
+    void session.whenLocalPersistenceSynced().then(() => {
+      loaded = true;
+    });
+    return () => {
+      if (loaded && resourceDocumentIsEmpty(fragment)) leftEmpty.current?.(documentId);
+    };
+  }, [documentId, session]);
   useEffect(() => {
     const fragment = session.document.getXmlFragment(session.fragmentName);
     let armed = true;
