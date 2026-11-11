@@ -5,7 +5,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { type Dispatch, useCallback, useMemo, useReducer, useRef } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { editorHistory } from "@/core/editor/editor-history";
 import {
   type DraftReviewSelection,
   draftReviewReducer,
@@ -137,11 +136,10 @@ export function useDraftReviewController({
     work,
     ownerKey,
     threadId,
-    surface: "editor",
-    editorHistory: (draft) => {
+    reviewEditor: (draft) => {
       const runtime = inlineRuntimeRef.current;
       return runtime?.documentId === draft.documentId && runtime.itemKey === draft.itemKey
-        ? editorHistory(runtime.editor)
+        ? runtime.editor
         : null;
     },
   });

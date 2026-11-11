@@ -78,8 +78,8 @@ clearing ask the server first (`reconcileClosed`). `gone`, the same closed draft
 failed read refuse admission, because the room owner just ended that review and admitting
 it again would loop; a different active draft is the replacement. While a command hides
 the item (a Discard in flight), the port refuses it outright for the same reason; the end of the hide is a new port, so a refused Discard restores the
-review. `ReviewAddressOwner` remembers a refusal only for the port that gave it, so a
-replacement that becomes known later is retried once.
+review. `useReviewAdmission` (one per document host) remembers a refusal only for the port
+that gave it, so a replacement that becomes known later is retried once.
 
 The server answers `gone` from the Work's ownership and the item key alone, before any
 content grant: the active draft is what grants reading a document deleted live or a
@@ -148,9 +148,11 @@ occurrence suffix.
 
 ## Discard
 
-`discard(ref, target, surface)` composes against the optimistic base and calls
-`writeDiscardBlocks` in one transaction. Editor Discard is synchronous. Dock and Work
-Discard publish their notice and a projection-scoped `discarding` target first, so the row
+`discard(ref, target, history)` composes against the optimistic base and calls
+`writeDiscardBlocks` in one transaction. `history` is the issuing host's own editor (the
+controller's `reviewEditor`), whose Undo takes it back, or `notice` for a surface with no
+editor; the room's runtime may list more than one attached editor, so the session never picks
+one. Editor Discard is synchronous. Chat-strip and Work Discard publish their notice and a projection-scoped `discarding` target first, so the row
 and notice paint before the indivisible write-back. Hidden pages drain on visibility
 change rather than waiting for animation frames. Changed base or prose refuses the stale
 write and restores the row.

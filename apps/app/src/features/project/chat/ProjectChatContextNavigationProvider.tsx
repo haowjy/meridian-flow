@@ -153,11 +153,7 @@ export function ProjectChatContextNavigationProvider({
           ...review,
           draftOnly: true,
         });
-        if (tab)
-          besideChat(tab, door.claim, undefined, {
-            ownerKey: review.ownerKey,
-            itemKey: review.itemKey,
-          });
+        if (tab) besideChat(tab, door.claim);
         return Promise.resolve();
       }
       return openReviewing(document, gesture);

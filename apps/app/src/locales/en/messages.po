@@ -100,6 +100,10 @@ msgstr "“{name}” can't be found"
 msgid "“{name}” doesn't exist yet"
 msgstr "“{name}” doesn't exist yet"
 
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "(Work has a draft)"
+msgstr "(Work has a draft)"
+
 #. placeholder {0}: stats.callCount
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0, plural, one {# call} other {# calls}}"
@@ -224,8 +228,8 @@ msgstr "{0, plural, one {Restored # item to {destinationName}.} other {Restored 
 
 #. placeholder {0}: others.length
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "{0, plural, other {# sets of drafts for this}}"
-msgstr "{0, plural, other {# sets of drafts for this}}"
+#~ msgid "{0, plural, other {# sets of drafts for this}}"
+#~ msgstr "{0, plural, other {# sets of drafts for this}}"
 
 #. placeholder {0}: others.length
 #: src/features/editor/DocumentDraftHint.tsx
@@ -2288,6 +2292,10 @@ msgstr "Couldn't load the preview."
 msgid "Couldn't load this document."
 msgstr "Couldn't load this document."
 
+#: src/features/project/context/ContextDocumentHost.tsx
+msgid "Couldn't load this draft."
+msgstr "Couldn't load this draft."
+
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
@@ -2901,7 +2909,6 @@ msgid "Document name and location"
 msgstr "Document name and location"
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/DocumentVersionMenu.tsx
 msgid "Document version"
 msgstr "Document version"
 
@@ -2943,7 +2950,11 @@ msgstr "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 msgid "Draft review"
 msgstr "Draft review"
 
-#: src/features/editor/DocumentVersionMenu.tsx
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "Draft: {owner}"
+msgstr "Draft: {owner}"
+
+#: src/features/draft-review/DraftSwitcher.tsx
 msgid "Drafts"
 msgstr "Drafts"
 
@@ -2952,13 +2963,13 @@ msgid "Drafts ({waiting})"
 msgstr "Drafts ({waiting})"
 
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "Drafts for this"
-msgstr "Drafts for this"
+#~ msgid "Drafts for this"
+#~ msgstr "Drafts for this"
 
 #. placeholder {0}: only.label
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "Drafts for this ({0})"
-msgstr "Drafts for this ({0})"
+#~ msgid "Drafts for this ({0})"
+#~ msgstr "Drafts for this ({0})"
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 #~ msgid "Drop image to insert it"
@@ -3716,7 +3727,6 @@ msgid "litrpg"
 msgstr "litrpg"
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/DocumentVersionMenu.tsx
 msgid "Live"
 msgstr "Live"
 
@@ -4217,7 +4227,7 @@ msgstr "No column has been resized yet."
 #~ msgid "No context files yet."
 #~ msgstr "No context files yet."
 
-#: src/features/editor/DocumentVersionMenu.tsx
+#: src/features/draft-review/DraftSwitcher.tsx
 msgid "No drafts"
 msgstr "No drafts"
 
@@ -4654,6 +4664,10 @@ msgstr "Pick again"
 #: src/features/import/import-presentation.ts
 msgid "Pick the folder named {name} to continue."
 msgstr "Pick the folder named {name} to continue."
+
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "picked Work"
+msgstr "picked Work"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "picture"
@@ -5100,8 +5114,8 @@ msgid "Returned from the billing portal."
 msgstr "Returned from the billing portal."
 
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "Review"
-msgstr "Review"
+#~ msgid "Review"
+#~ msgstr "Review"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
@@ -6635,7 +6649,6 @@ msgstr "Unknown"
 msgid "Unknown component: {kindLabel}"
 msgstr "Unknown component: {kindLabel}"
 
-#: src/features/editor/DocumentDraftHint.tsx
 #: src/features/editor/DocumentVersionMenu.tsx
 msgid "Unnamed draft"
 msgstr "Unnamed draft"

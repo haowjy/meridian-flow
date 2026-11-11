@@ -325,6 +325,8 @@ export function DocumentIdentityBar({
   );
   return (
     <DraftReviewBand
+      projectId={projectId}
+      tab={tab}
       documentId={tab.documentId}
       itemKey={reviewItemKey ?? ""}
       onOpenDraft={openDraft}
@@ -404,7 +406,7 @@ function focusEditorProse(documentId: string) {
  * wrap to their own line before anything shortens; only a line too narrow for
  * them even alone gives up labels, in order (`ACTIONS_DENSITY` and
  * document-identity-row.css), and
- * the path drops its parent crumbs when the leaf would otherwise be cut.
+ * the path drops its parent crumbs when the leaf, or the path itself, would otherwise be cut.
  */
 function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
   useLayoutEffect(() => {
@@ -423,7 +425,12 @@ function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
       }
       row.removeAttribute("data-path-short");
       const leaf = row.querySelector<HTMLElement>("[data-path-leaf]");
-      if (leaf && leaf.scrollWidth > leaf.clientWidth) row.setAttribute("data-path-short", "");
+      const path = row.querySelector<HTMLElement>("[data-identity-path]");
+      if (
+        (leaf && leaf.scrollWidth > leaf.clientWidth) ||
+        (path && path.scrollWidth > path.clientWidth)
+      )
+        row.setAttribute("data-path-short", "");
     };
     fit();
     const resize = new ResizeObserver(fit);

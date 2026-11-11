@@ -1,4 +1,4 @@
-/** Local Discard and its surface-owned undo session. */
+/** Local Discard and its undo: in the reviewing editor's history, or a notice's. */
 import {
   applySpanPatches,
   blocksEqual,
@@ -6,6 +6,7 @@ import {
   recordRestorations,
   writeDiscardBlocks,
 } from "@meridian/agent-edit/diff";
+import type { Editor } from "@tiptap/core";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import type { DocumentSession } from "@/core/editor/document-session";
@@ -32,7 +33,12 @@ type Entry = {
 export function startDraftDiscardSession(input: {
   ref: DraftRef;
   target: TextTarget;
-  surface: "editor" | "dock";
+  /**
+   * The issuing host's editor, whose own Undo takes it back; `notice`: the surface has no editor,
+   * and the notice's Undo does. Null: the surface's editor is not reviewing this draft, so nothing
+   * is written.
+   */
+  history: Editor | "notice" | null;
   onNoticeEnd?: () => void;
   entry: Entry | undefined;
   registry: DraftRoomRegistry;
@@ -42,11 +48,18 @@ export function startDraftDiscardSession(input: {
   textClicks(): readonly unknown[];
   releaseIdle(): void;
 }): { notice: DiscardNotice; outcome: Promise<CommandOutcome> } | null {
-  const { ref, target, surface, onNoticeEnd, entry } = input;
+  const { ref, target, history: owner, onNoticeEnd, entry } = input;
+  const editor = owner === "notice" ? null : owner;
   const binding = entry?.binding;
-  if (!input.active() || !entry || !binding?.runtime.state().ready || input.state().discarding)
+  if (
+    owner === null ||
+    !input.active() ||
+    !entry ||
+    !binding?.runtime.state().ready ||
+    input.state().discarding
+  )
     return null;
-  const frame = surface === "editor" ? binding.runtime.projectNow() : binding.runtime.state().frame;
+  const frame = editor ? binding.runtime.projectNow() : binding.runtime.state().frame;
   if (!frame) return null;
   if (
     target.kind === "groups" &&
@@ -58,8 +71,6 @@ export function startDraftDiscardSession(input: {
   }
   const ids = target.kind === "draft" ? frame.groups.map((group) => group.id) : target.groupIds;
   if (!ids.length || ids.some((id) => !frame.groups.some((group) => group.id === id))) return null;
-  const editor = surface === "editor" ? binding.runtime.editor("editor") : null;
-  if (surface === "editor" && !editor) return null;
   const doc = binding.session.document;
   const fragment = doc.getXmlFragment("prosemirror");
   const wholeClick = !editor && target.kind === "draft";
@@ -70,10 +81,8 @@ export function startDraftDiscardSession(input: {
   };
   if (wholeClick) doc.on("update", onTextChange);
   if (!editor)
-    for (const surface of ["editor", "dock"] as const) {
-      const attached = binding.runtime.editor(surface);
-      if (attached) yUndoPluginKey.getState(attached.state)?.undoManager.stopCapturing();
-    }
+    for (const attached of binding.runtime.editors())
+      yUndoPluginKey.getState(attached.state)?.undoManager.stopCapturing();
   const origin = editor ? EDITOR_DISCARD_ORIGIN : {};
   const history: Y.UndoManager = editor
     ? yUndoPluginKey.getState(editor.state).undoManager
