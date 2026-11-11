@@ -52,16 +52,6 @@ export function MobileProject(props: MobileProjectProps) {
     arrivedAt.current = props.routeLocationKey;
     setSheetOpen(false);
   }, [props.routeLocationKey]);
-  // The sheet is no history entry, so Back while it is open closes it and leaves main where it is.
-  const sheetShown = useRef(false);
-  useBlocker({
-    shouldBlockFn: ({ action }) => {
-      if (action !== "BACK" || !sheetShown.current) return false;
-      setSheetOpen(false);
-      return true;
-    },
-    enableBeforeUnload: false,
-  });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const main = useMainItem();
   const crumbs = contextBreadcrumbSegments(
@@ -82,7 +72,15 @@ export function MobileProject(props: MobileProjectProps) {
   const SheetIcon = sideTab ? fileKindIcon(sideTab.name) : MessageSquare;
   const closeSheet = () => setSheetOpen(false);
   const sheetVisible = sheetOpen && sheetName !== null;
-  sheetShown.current = sheetVisible;
+  // The sheet is no history entry, so Back while it is open dismisses it and leaves main where it is.
+  useBlocker({
+    shouldBlockFn: ({ action }) => {
+      if (action !== "BACK" || !sheetVisible) return false;
+      closeSheet();
+      return true;
+    },
+    enableBeforeUnload: false,
+  });
   const sheetTitle = sheetName ? (
     <PhoneSideTitle projectId={props.projectId} name={sheetName} icon={SheetIcon} />
   ) : null;
