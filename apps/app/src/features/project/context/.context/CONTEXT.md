@@ -65,10 +65,12 @@ local-origin documents retaining their lineage; all other durable deletions requ
 ## Visible Editor ownership
 
 The address owns what main shows: `resolveMainDocument` finds its document by identity, then by
-path, the same on desktop and phone. There is no stored selection or tab list. Hosts present their
-documents to `PresentedDocuments` (`presented-documents.ts`: places main, side and kept; main
-first), which the removal coordinator, availability and removed notices read to know what is on
-screen. One document has at most one host, keyed `document:<id>` (`DocumentHost.tsx`), so a move
+path, the same on desktop and phone. There is no stored selection or tab list. Hosts mount their
+documents in `PresentedDocuments` (`presented-documents.ts`: places main, side and kept). Its
+`documents` are main's and the side's only (main first): the removal coordinator, availability
+and removed notices read them to know what is on screen. Its `shown` list, every mounted document
+newest on screen first, is where the desktop picks the kept host and the side's fallback; the
+coordinator's close, Discard and removal paths `forget` a document there so its host unmounts. One document has at most one host, keyed `document:<id>` (`DocumentHost.tsx`), so a move
 between main and the side doesn't remount it.
 
 ## Architecture
@@ -101,7 +103,7 @@ opened shows only the mark. A refused Copy has no row left, so it stays in the j
 toast is closed or Retry lands: it survives a reload, and closing it in one tab closes it in the
 others.
 
-DocumentHost (one per presented document: main, side, kept)
+DocumentHost (one per mounted document: main, side, kept)
        ├─ DocumentReviewProvider (this host's review)
        ├─ MainDocumentBinding (main only: binds the route, records the open)
        └─ DesktopDocumentFrame

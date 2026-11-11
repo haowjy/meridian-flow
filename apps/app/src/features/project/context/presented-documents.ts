@@ -1,23 +1,34 @@
 /**
- * The documents this browser tab's hosts present: main's, the side's, and the last one that left
- * main, kept mounted for its undo. A host presents its document under a token minted per mount, so
- * a removal, a notice or an availability watch knows what is on screen without a tab list. One
- * document has at most one host, so the document id names the presentation.
+ * The documents this browser tab's hosts mount, each under a token minted per mount. Main's and
+ * the side's are presented: a removal, a notice or an availability watch acts on them. A kept
+ * host (the last document shown that is no longer on screen, mounted hidden for its undo) is
+ * mounted but not presented. One document has at most one host, so the document id names it.
+ *
+ * `shown` is the mounted documents newest first by when they were last on screen: the desktop
+ * picks its kept host and the side's fallback from it. A close, a Discard or a removal `forget`s a
+ * document, so it is no longer picked and its host unmounts.
  */
 import type { ContextTab } from "@/client/stores";
 
-export type PresentedPlace = "main" | "side" | "kept";
+export type PresentedPlace = "main" | "side";
+export type MountedPlace = PresentedPlace | "kept";
 
-type Presentation = { projectId: string; tab: ContextTab; place: PresentedPlace };
+type Mount = {
+  projectId: string;
+  tab: ContextTab;
+  place: MountedPlace;
+  /** When it was last put on screen; null once forgotten. */
+  shownAt: number | null;
+};
 
 const NONE: readonly ContextTab[] = [];
 
 export class PresentedDocuments {
-  private readonly entries = new Map<string, Presentation>();
-  private readonly byProject = new Map<string, readonly ContextTab[]>();
+  private readonly mounts = new Map<string, Mount>();
+  private readonly presentedLists = new Map<string, readonly ContextTab[]>();
+  private readonly shownLists = new Map<string, readonly ContextTab[]>();
   private readonly listeners = new Set<() => void>();
-  /** Bumped on every change: a snapshot for readers of `isPresented`. */
-  version = 0;
+  private clock = 0;
 
   /** `presented` hears each new presentation: an open can land after a removal raced it. */
   constructor(
@@ -31,49 +42,63 @@ export class PresentedDocuments {
     };
   };
 
-  present(token: string, projectId: string, tab: ContextTab, place: PresentedPlace): void {
-    const prior = this.entries.get(token);
-    if (
-      prior?.projectId === projectId &&
-      prior.place === place &&
-      JSON.stringify(prior.tab) === JSON.stringify(tab)
-    )
+  mount(token: string, projectId: string, tab: ContextTab, place: MountedPlace): void {
+    const prior = this.mounts.get(token);
+    const sameDocument = prior?.projectId === projectId && prior.tab.documentId === tab.documentId;
+    if (sameDocument && prior.place === place && JSON.stringify(prior.tab) === JSON.stringify(tab))
       return;
-    this.entries.set(token, { projectId, tab, place });
+    const arrives = place !== "kept" && (!sameDocument || prior.place === "kept");
+    const shownAt = arrives ? ++this.clock : sameDocument ? prior.shownAt : null;
+    this.mounts.set(token, { projectId, tab, place, shownAt });
     this.changed(projectId);
-    if (prior?.tab.documentId !== tab.documentId) this.presented(projectId, tab);
+    if (prior && prior.projectId !== projectId) this.changed(prior.projectId);
+    if (arrives) this.presented(projectId, tab);
   }
 
-  withdraw(token: string): void {
-    const entry = this.entries.get(token);
-    if (!entry) return;
-    this.entries.delete(token);
-    this.changed(entry.projectId);
+  unmount(token: string): void {
+    const mount = this.mounts.get(token);
+    if (!mount) return;
+    this.mounts.delete(token);
+    this.changed(mount.projectId);
   }
 
-  /** One descriptor per presented document, main's first; the same array until one changes. */
+  /** The writer closed or Discarded these documents, or they were removed: none is picked again. */
+  forget(projectId: string, documentIds: readonly string[]): void {
+    let changed = false;
+    for (const mount of this.mounts.values())
+      if (
+        mount.projectId === projectId &&
+        mount.shownAt !== null &&
+        documentIds.includes(mount.tab.documentId)
+      ) {
+        mount.shownAt = null;
+        changed = true;
+      }
+    if (changed) this.changed(projectId);
+  }
+
+  /** One descriptor per presented document (main's and the side's), main's first. */
   documents(projectId: string): readonly ContextTab[] {
-    let list = this.byProject.get(projectId);
-    if (!list) {
-      const seen = new Set<string>();
-      const ordered = [...this.entries.values()]
-        .filter((entry) => entry.projectId === projectId)
-        .sort((left, right) => rank(left.place) - rank(right.place));
-      list = ordered.flatMap((entry) => {
-        if (seen.has(entry.tab.documentId)) return [];
-        seen.add(entry.tab.documentId);
-        return [entry.tab];
-      });
-      if (list.length === 0) list = NONE;
-      this.byProject.set(projectId, list);
-    }
-    return list;
+    return this.cached(this.presentedLists, projectId, () =>
+      [...this.mounts.values()]
+        .filter((mount) => mount.projectId === projectId && mount.place !== "kept")
+        .sort((left, right) => (left.place === "main" ? 0 : 1) - (right.place === "main" ? 0 : 1)),
+    );
+  }
+
+  /** The mounted documents not forgotten, newest on screen first, at their current descriptor. */
+  shown(projectId: string): readonly ContextTab[] {
+    return this.cached(this.shownLists, projectId, () =>
+      [...this.mounts.values()]
+        .filter((mount) => mount.projectId === projectId && mount.shownAt !== null)
+        .sort((left, right) => (right.shownAt ?? 0) - (left.shownAt ?? 0)),
+    );
   }
 
   /** The document main presents, if any. */
   mainDocumentId(projectId: string): string | null {
-    for (const entry of this.entries.values())
-      if (entry.projectId === projectId && entry.place === "main") return entry.tab.documentId;
+    for (const mount of this.mounts.values())
+      if (mount.projectId === projectId && mount.place === "main") return mount.tab.documentId;
     return null;
   }
 
@@ -81,13 +106,40 @@ export class PresentedDocuments {
     return this.documents(projectId).some((tab) => tab.documentId === documentId);
   }
 
+  /** The same array until its contents change, so readers re-render only on a real change. */
+  private cached(
+    lists: Map<string, readonly ContextTab[]>,
+    projectId: string,
+    select: () => Mount[],
+  ): readonly ContextTab[] {
+    const cached = lists.get(projectId);
+    if (cached) return cached;
+    const seen = new Set<string>();
+    const next = select().flatMap((mount) => {
+      if (seen.has(mount.tab.documentId)) return [];
+      seen.add(mount.tab.documentId);
+      return [mount.tab];
+    });
+    const list = next.length === 0 ? NONE : next;
+    lists.set(projectId, list);
+    return list;
+  }
+
   private changed(projectId: string): void {
-    this.version += 1;
-    this.byProject.delete(projectId);
+    const stale = [this.presentedLists, this.shownLists].map(
+      (lists) => [lists, lists.get(projectId)] as const,
+    );
+    for (const [lists] of stale) lists.delete(projectId);
+    // A change to a kept host's descriptor leaves `documents` as it was: keep its array.
+    for (const [lists, prior] of stale) {
+      const next =
+        lists === this.presentedLists ? this.documents(projectId) : this.shown(projectId);
+      lists.set(projectId, prior && sameTabs(prior, next) ? prior : next);
+    }
     for (const listener of [...this.listeners]) listener();
   }
 }
 
-function rank(place: PresentedPlace): number {
-  return place === "main" ? 0 : place === "side" ? 1 : 2;
+function sameTabs(left: readonly ContextTab[], right: readonly ContextTab[]): boolean {
+  return left.length === right.length && left.every((tab, index) => tab === right[index]);
 }

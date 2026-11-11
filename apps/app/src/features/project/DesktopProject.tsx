@@ -3,11 +3,12 @@
  *
  * `ItemHosts` is the one structural idea: a host per mounted item, keyed by that item, placed in
  * main or the side by grid-area. Opening the side's item in main moves its mounted editor or chat
- * instead of remounting it, so undo, caret, scroll and a running stream survive the swap. At most
- * three documents are mounted: main's, the side's, and the last one that left main, kept hidden
- * so its undo survives a return. One document is in at most one host.
+ * instead of remounting it, so undo, caret, scroll and a running stream survive the swap. Besides
+ * main's and the side's, one more document stays mounted, kept hidden so its undo survives a
+ * return: the newest one shown that is on screen no longer. Beside a document the side is a
+ * chat, so at most two documents are mounted. One document is in at most one host.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import type { ContextTab } from "@/client/stores";
@@ -17,15 +18,13 @@ import { ChatPaneController } from "./ChatPaneController";
 import { ChatSurface } from "./chat/ChatSurface";
 import {
   useAccountId,
-  useAccountResourceProjection,
   useAccountResourceReplica,
+  useShownDocuments,
 } from "./context/account-feature-context";
-import { projectResourceTab } from "./context/context-tab-from-file";
 import { DocumentHost, MainDocumentStatus } from "./context/DocumentHost";
 import { useDescribeProjectDocument } from "./context/open-project-document";
 import { RecentDocumentsLanding } from "./context/RecentDocumentsLanding";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
-import { useIsDraftOnly } from "./context/use-is-draft-only";
 import {
   NO_HELD_PANELS,
   type PanelSlotId,
@@ -84,24 +83,22 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const mainTab = !mainChat && !masked && props.contextLive ? main.document.tab : null;
 
   const recent = useRecentDocuments(projectId);
-  const shown = useShownTrail(projectId);
-  shown.note(mainTab);
+  // Each mounted document at its host's current descriptor, newest on screen first.
+  const shown = useShownDocuments(projectId);
   // Beside a chat: the last document on screen (a draft-only one included, which recents never
   // list), else the account's most recent.
   const side = resolveSideItem(
-    main.item,
     mainChat !== null,
     chat.currentThreadId,
-    shown.trail()[0]?.documentId ?? recent.documents[0]?.documentId ?? null,
+    shown[0]?.documentId ?? recent.documents[0]?.documentId ?? null,
   );
   const sideDocumentId = side.item?.kind === "document" ? side.item.documentId : null;
-  const sideTab = useDescribedDocument(projectId, sideDocumentId, shown.trail());
-  shown.note(sideTab);
-  const trail = shown.trail();
-  // The last document that left main or the side stays mounted, hidden. A document moving
-  // between them passes through here while main's address loads, so it never remounts.
+  const sideTab = useDescribedDocument(projectId, sideDocumentId, shown);
+  // The newest document shown that is off screen stays mounted, hidden. A document moving
+  // between main and the side passes through here while main's address loads, so it never
+  // remounts.
   const keptTab =
-    trail.find(
+    shown.find(
       (tab) => tab.documentId !== mainTab?.documentId && tab.documentId !== sideTab?.documentId,
     ) ?? null;
 
@@ -278,32 +275,7 @@ function SideEmpty() {
   return <div className="flex min-h-0 flex-1" aria-hidden />;
 }
 
-/**
- * The documents main has shown, latest first, that still exist: main's own, then the ones that
- * left it. The side's fallback and the kept host are found here before anything is looked up.
- */
-/** The documents last on screen in main or the side, newest first, removed ones dropped. */
-function useShownTrail(projectId: string) {
-  const trail = useRef<readonly ContextTab[]>([]);
-  const { records, placement } = useAccountResourceProjection(projectId);
-  const isDraftOnly = useIsDraftOnly(projectId);
-  return {
-    note(shown: ContextTab | null) {
-      if (shown && trail.current[0] !== shown)
-        trail.current = [
-          shown,
-          ...trail.current.filter((tab) => tab.documentId !== shown.documentId),
-        ].slice(0, 3);
-    },
-    trail: () =>
-      trail.current.filter((tab) => {
-        const projection = projectResourceTab(tab, records, placement, isDraftOnly(tab.documentId));
-        return projection.kind !== "removed" && projection.kind !== "terminal";
-      }),
-  };
-}
-
-/** A document's descriptor: one main showed, else resolved once by its identity. */
+/** A document's descriptor: a mounted host's, else resolved once by its identity. */
 function useDescribedDocument(
   projectId: string,
   documentId: string | null,

@@ -343,7 +343,7 @@ export function useOptionalDraftOnlyPresentations(): AccountFeatureLifetime["dra
   return useContext(DraftOnlyContext);
 }
 
-/** The documents this browser tab's hosts present; null outside the authenticated shell. */
+/** The documents this browser tab's hosts mount and present; null outside the authenticated shell. */
 export function useOptionalPresentedDocuments(): AccountFeatureLifetime["presented"] | null {
   return useContext(PresentedContext);
 }
@@ -356,6 +356,16 @@ export function usePresentedDocuments(projectId: string): readonly ContextTab[] 
   return useSyncExternalStore(
     presented?.subscribe ?? noSubscription,
     () => presented?.documents(projectId) ?? NOTHING_PRESENTED,
+    () => NOTHING_PRESENTED,
+  );
+}
+
+/** The documents mounted in a project, newest on screen first (`PresentedDocuments.shown`). */
+export function useShownDocuments(projectId: string): readonly ContextTab[] {
+  const presented = useContext(PresentedContext);
+  return useSyncExternalStore(
+    presented?.subscribe ?? noSubscription,
+    () => presented?.shown(projectId) ?? NOTHING_PRESENTED,
     () => NOTHING_PRESENTED,
   );
 }

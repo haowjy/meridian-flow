@@ -1,6 +1,7 @@
 /**
  * useFollowOpenDocumentPlacement — take main's address to wherever the replica now places its
- * document, and say once that a presented document the replica no longer places was removed.
+ * document, and say once that a presented document the replica no longer places was removed. A
+ * kept document the replica no longer places is let go without a word.
  *
  * Desktop and phone both need this: main's host derives its document from the address's
  * catalog, so a move that leaves that catalog would otherwise strand it on the old path. The
@@ -8,7 +9,7 @@
  */
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import { contextRouteRequest, sameContextTarget } from "../routing/project-route";
 import {
@@ -16,6 +17,7 @@ import {
   useContextRemovalCoordinator,
   usePresentedDocuments,
   useProjectContextAvailabilityCoordinator,
+  useShownDocuments,
 } from "./account-feature-context";
 import { routeTargetForTab } from "./context-removal-planner";
 import { type ContextRouteSelection, routeSelectionDocumentId } from "./context-removal-protocol";
@@ -35,6 +37,14 @@ export function useFollowOpenDocumentPlacement(input: {
   onOpenContextTarget: OpenContextRoute;
 }): void {
   const presented = usePresentedDocuments(input.projectId);
+  const shown = useShownDocuments(input.projectId);
+  const mounted = useMemo(
+    () => [
+      ...presented,
+      ...shown.filter((tab) => !presented.some((on) => on.documentId === tab.documentId)),
+    ],
+    [presented, shown],
+  );
   const resourceProjection = useAccountResourceProjection(input.projectId);
   const contextRemoval = useContextRemovalCoordinator();
   const availability = useProjectContextAvailabilityCoordinator();
@@ -58,7 +68,7 @@ export function useFollowOpenDocumentPlacement(input: {
         ? routeSelectionDocumentId(input.selection, route)
         : null;
     const gone = new Set<string>();
-    for (const tab of presented) {
+    for (const tab of mounted) {
       const projection = projectResourceTab(
         tab,
         resourceProjection.records,
@@ -121,7 +131,7 @@ export function useFollowOpenDocumentPlacement(input: {
     isDraftOnly,
     resourceProjection.records,
     resourceProjection.placement,
-    presented,
+    mounted,
   ]);
 }
 

@@ -25,7 +25,7 @@ export class AccountFeatureLifetime {
   readonly draftCommands;
   /** The draft-only documents mounted hosts present; settled by `DraftOnlySettlement`. */
   readonly draftOnly = new DraftOnlyPresentations();
-  /** What this browser tab's hosts present: main's document, the side's, the one kept for undo. */
+  /** What this browser tab's hosts mount: main's document and the side's (presented), the kept one. */
   readonly presented = new PresentedDocuments((projectId, tab) =>
     this.removal.reconcileInstalledTab(projectId, tab),
   );
@@ -106,6 +106,7 @@ export class AccountFeatureLifetime {
       draftOnly: this.draftOnly,
     });
     this.registry.observeRemovedRooms((session, room) => this.followRemovedRoom(session, room));
+    dropRetiredTabSession();
     this.resources =
       typeof window === "undefined"
         ? null
@@ -208,5 +209,15 @@ export class AccountFeatureLifetime {
       })
       .catch(() => undefined);
     return attempt;
+  }
+}
+
+/** The retired document-tab session holds tab names and paths nothing reads: the writer's own. */
+function dropRetiredTabSession(): void {
+  try {
+    if (typeof window !== "undefined")
+      window.sessionStorage.removeItem("meridian:editor-workspace:v2");
+  } catch {
+    /* Best-effort storage. */
   }
 }
