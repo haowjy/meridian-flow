@@ -3411,8 +3411,8 @@ msgid "Id"
 msgstr "Id"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Idle"
-msgstr "Idle"
+#~ msgid "Idle"
+#~ msgstr "Idle"
 
 #: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
