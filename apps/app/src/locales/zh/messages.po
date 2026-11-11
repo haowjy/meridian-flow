@@ -293,13 +293,11 @@ msgstr "{0} 是文本，已作为文档添加到 assets，链接会指向它。"
 
 #. placeholder {0}: other.needsYou
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "{0} needs you"
-msgstr ""
+#~ msgid "{0} needs you"
+#~ msgstr ""
 
 #. placeholder {0}: children.length
-#. placeholder {0}: other.running
 #: src/features/chat/RunningSubagentsStrip.tsx
-#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "{0} running"
 msgstr "{0} 运行中"
 
@@ -340,10 +338,20 @@ msgstr "{0} 个子代理已完成（{1} 个已停止）"
 msgid "{0} tok/s"
 msgstr "{0} 词元/秒"
 
+#. placeholder {0}: other.needsYou
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "{0} waiting on you"
+msgstr ""
+
 #. placeholder {0}: only.name
 #. placeholder {1}: only.as
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "{0} will be renamed {1}"
+msgstr ""
+
+#. placeholder {0}: other.running
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "{0} working"
 msgstr ""
 
 #: src/features/chat/ask/permission-request.ts
@@ -649,7 +657,11 @@ msgid "{needsLook, plural, one {# needs a look} other {# need a look}}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
-msgid "{needsYou} needs you"
+#~ msgid "{needsYou} needs you"
+#~ msgstr ""
+
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "{needsYou} waiting on you"
 msgstr ""
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
@@ -3412,6 +3424,10 @@ msgstr ""
 msgid "Id"
 msgstr "ID"
 
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Idle"
+msgstr ""
+
 #: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -4120,8 +4136,8 @@ msgid "Names cannot end with '/'"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Needs you"
-msgstr ""
+#~ msgid "Needs you"
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "New"
@@ -5140,7 +5156,6 @@ msgstr ""
 
 #: src/features/chat/subagent/SubagentMark.tsx
 #: src/features/chat/SubagentHeader.tsx
-#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Running"
 msgstr "运行中"
 
@@ -5329,8 +5344,8 @@ msgid "Settings sections"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Settled"
-msgstr ""
+#~ msgid "Settled"
+#~ msgstr ""
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "Shared an attachment"
@@ -6791,6 +6806,10 @@ msgstr ""
 msgid "Waiting for your review"
 msgstr ""
 
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Waiting on you"
+msgstr ""
+
 #: src/features/import/import-presentation.ts
 msgid "Waiting to organize {name}"
 msgstr ""
@@ -6884,6 +6903,7 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/SpawnReportCard.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Working"
 msgstr "处理中"
 
