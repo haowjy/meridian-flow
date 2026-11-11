@@ -373,15 +373,12 @@ function prepare(
       if (part)
         skip(
           part,
-          disposition(part) === "discarded"
-            ? "discarded"
-            : disposition(part) === "applied"
-              ? "applied"
-              : classified.reasons.includes("inaccessible ancestor")
-                ? "paragraph_removed"
-                : classified.state === "undone"
-                  ? "already_undone"
-                  : "edited_since",
+          entryPlanner.settledCause(disposition(part)) ??
+            (classified.reasons.includes("inaccessible ancestor")
+              ? "paragraph_removed"
+              : classified.state === "undone"
+                ? "already_undone"
+                : "edited_since"),
         );
     }
     const emittedEditIds = new Set(
@@ -391,7 +388,7 @@ function prepare(
       const key = partKey(selected.part);
       const target = targets.find((part) => partKey(part) === key);
       if (target && !classifiedKeys.has(key) && !emittedEditIds.has(selected.part.editId))
-        skip(target, "edited_since");
+        skip(target, entryPlanner.settledCause(disposition(target)) ?? "edited_since");
     }
     const steps = order.flatMap((step): InverseStep[] => {
       if (step.kind === "tree") return [{ ...step, actionId, actionKind: kind }];
