@@ -20,7 +20,7 @@
  * say the picked Work has one. A draft-created document is always pinned to its draft: every way
  * of opening one names it, so it never reaches Live.
  */
-import { draftOwnerKey, type ThreadDraftListItem } from "@meridian/contracts/branches";
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useRef } from "react";
@@ -45,6 +45,8 @@ import { useIsDraftOnly } from "./context/use-is-draft-only";
 import type { ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import type { LocalDocument } from "./routing/project-local-selection";
 import { contextRouteRequest } from "./routing/project-route";
+import { useOptionalChatOnScreen } from "./side/SideView";
+import { useScopeDraftOwner } from "./use-work-scope";
 
 export type DocumentPaint = {
   showing: "pending" | "failed" | "draft" | "live";
@@ -88,8 +90,7 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const accountId = useAccountId();
   const documentId = document?.documentId ?? null;
   const view = useDocumentView(accountId, projectId, documentId);
-  const { activeWorkId } = useContextRemovalProject(projectId);
-  const scopeOwnerKey = activeWorkId ? draftOwnerKey({ kind: "work", workId: activeWorkId }) : null;
+  const scopeOwnerKey = useScopeDraftOwner(projectId, useOptionalChatOnScreen()).ownerKey || null;
   const scopeRows = useOwnerDraftRows(projectId, scopeOwnerKey);
   const pin = view.pin;
   const pinRows = useOwnerDraftRows(

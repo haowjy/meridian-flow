@@ -73,7 +73,7 @@ vi.mock("@/client/query/useDraftMetadata", () => ({
     }),
 }));
 vi.mock("@/features/project/use-work-scope", () => ({
-  useWorkScopeState: () => ({ status: "ready", workId: null }),
+  useScopeDraftOwner: () => ({ picked: null, work: null, ownerKey: "" }),
 }));
 
 beforeEach(() => {

@@ -1,6 +1,6 @@
 /** Settles every draft-only document the project's hosts present, one owner's drafts at a time. */
 
-import { draftOwnerKey, type ThreadDraftListItem } from "@meridian/contracts/branches";
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { resourceIdentityIndex } from "@meridian/resource-replica";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useReducer, useRef, useSyncExternalStore } from "react";
@@ -27,7 +27,8 @@ import {
   useOptionalProjectContextAvailabilityCoordinator,
   useOptionalRemovedNotices,
 } from "@/features/project/context/account-feature-context";
-import { useWorkScopeState } from "@/features/project/use-work-scope";
+import { useOptionalChatOnScreen } from "@/features/project/side/SideView";
+import { useScopeDraftOwner } from "@/features/project/use-work-scope";
 import type { DraftOnlyPresentation, DraftOnlyPresentations } from "./draft-only-presentations";
 import type { DraftRef } from "./review-command-types";
 
@@ -40,8 +41,7 @@ export function DraftOnlySettlement({ projectId }: { projectId: string }) {
     () => registry?.presentations(projectId) ?? NONE,
     () => NONE,
   );
-  const { workId } = useWorkScopeState(projectId);
-  const scopeOwnerKey = workId ? draftOwnerKey({ kind: "work", workId }) : "";
+  const scopeOwnerKey = useScopeDraftOwner(projectId, useOptionalChatOnScreen()).ownerKey;
   if (!registry) return null;
   const owners = new Set(presentations.map((draft) => draft.ownerKey));
   return [...owners].map((ownerKey) => (
