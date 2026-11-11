@@ -213,46 +213,6 @@ function lowerText(
     }
   }
 
-  // A replace keeps the characters its old and new text share at the edges and changes only
-  // what lies between (a common prefix and suffix, as lib0's simpleDiff finds them, never
-  // splitting a surrogate pair). The kept edges are not written, so a letter the writer
-  // deleted from them is not put back; the model's own letter there is lost with it
-  // (`Gamma` over a deleted `Beta` lands `Gamm`), because the diff is of the model's view,
-  // not of the text the room holds. An atom is no character.
-  const letter = (text: string, unit: number) => !isAtom(text, unit);
-  const high = (unit: number) => /[\ud800-\udbff]/.test(a[unit]);
-  const low = (unit: number) => /[\udc00-\udfff]/.test(a[unit]);
-  for (const hunk of hunks) {
-    if (hunk.from === hunk.to || hunk.at === hunk.end) continue;
-    const start = hunk.from;
-    while (
-      hunk.from < hunk.to &&
-      hunk.at < hunk.end &&
-      a[hunk.from] === b[hunk.at] &&
-      letter(a, hunk.from)
-    ) {
-      hunk.from += 1;
-      hunk.at += 1;
-    }
-    if (hunk.from > start && high(hunk.from - 1)) {
-      hunk.from -= 1;
-      hunk.at -= 1;
-    }
-    const stop = hunk.to;
-    while (
-      hunk.from < hunk.to &&
-      hunk.at < hunk.end &&
-      a[hunk.to - 1] === b[hunk.end - 1] &&
-      letter(a, hunk.to - 1)
-    ) {
-      hunk.to -= 1;
-      hunk.end -= 1;
-    }
-    if (hunk.to < stop && low(hunk.to)) {
-      hunk.to += 1;
-      hunk.end += 1;
-    }
-  }
   hunks = hunks.filter((hunk) => hunk.from < hunk.to || hunk.at < hunk.end);
 
   // An inline atom is a child of the textblock, not a character of a run of text, so a

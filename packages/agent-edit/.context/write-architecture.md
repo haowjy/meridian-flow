@@ -33,21 +33,16 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   addressed by its unit. A unit is one UTF-16 code unit of text, or one inline atom. The
   model's changes come from a find's window, otherwise from the word diff (`wordHunks`;
   an atom is one token, compared by type, and a changed attribute is an attribute set;
-  formatting is not part of a token). Each replace is then trimmed to the middle of its old
-  and new text: the characters they share at the start and the end stay, and only the
-  middle is written, never splitting a surrogate pair (lib0's `simpleDiff`, which the
-  editor's binding runs too, but on the text the room holds now, where this runs on the
-  model's view). The trim is per change, not per textblock, so
-  the text between two changes is left alone. Every operation is made and Yjs merges it,
+  formatting is not part of a token). A replace is not trimmed: the model's whole new text
+  is written. Every operation is made and Yjs merges it,
   as for two people. The lowering never reads the room, so text the writer deleted since
-  the model's read is no input to it: the kept edges are not written, so no deleted letter
-  is put back, but the model's new text lands where it put it, and the owner chose to
+  the model's read is no input to it. The owner chose "the AI's whole word" and to
   trust the model to notice an odd merge in the write's echo and its listing of concurrent
-  edits (`He sighedcried.`, `A disciple.3 SIDETEXT`). A model letter can be lost the same
-  way: `Gamma` over a deleted `Beta` lands `Gamm`, because the deleted `a` is a shared edge
-  letter. Writing the model's whole new text instead would land `Gamma`, but it puts back
-  a deleted word the model's text repeats (`sighed softly` over a deleted `sighed`); the
-  trim was kept for that. Only the apply step meets the room (`applyOps`' `room`): a splice deletes the
+  edits (`He sighedthen he cried.`, `AlphaGamma.`). A word the writer deleted that the
+  model's new text repeats comes back inside it (`sighed softly` over a deleted `sighed`
+  lands `He sighed softly,`). A trim of the shared edges would keep the deleted word out,
+  but loses model letters (`Gamma` over a deleted `Beta` lands `Gamm`); it was tried and
+  removed. Only the apply step meets the room (`applyOps`' `room`): a splice deletes the
   items the room still holds, as an editor's delete cannot reach what is gone, and puts
   its text after the units it replaced. The update, the write's record and turn Undo
   therefore never claim the writer's deletion. An attribute the codec does
