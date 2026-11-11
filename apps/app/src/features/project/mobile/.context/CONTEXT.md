@@ -12,14 +12,22 @@ viewports: `(pointer: coarse) and (max-width: 767px)` or
 desktop; a short landscape phone remains mobile.
 
 Mobile consumes typed `ProjectViewProps`. Leaves never parse or construct URLs.
-The route parent owns push/replace and invalid-address rendering. Primary
-screens are Chats, Works, and Editor; Settings and
-Trash are auxiliary query surfaces. The navigation drawer's fixed row opens the
-full-screen Trash list without changing the mounted primary screen. Selecting a
-row shows its read-only document in place; Back returns to the list. Context
-browsing and documents live under Editor.
-Only the recognized Work/settings/trash/view selectors are accepted, and legacy
-screen/thread/scheme/folder/path query keys are not compatibility inputs.
+The route parent owns push/replace and invalid-address rendering. The phone has
+the desktop's two places, one on screen at a time: main fills the screen and
+shows what the address names (a document, a chat, `/chats`'s new-chat composer,
+or Recently opened), and the side is a bottom Sheet over it. Settings and Trash
+are query surfaces over main; the drawer's fixed row opens the full-screen Trash
+list without changing main, a row shows its read-only document in place, and
+Back returns to the list. Only the recognized owner/item/change/settings/trash
+selectors are accepted.
+
+The Sheet shows the side's item (`useSideItem`, the same resolution as the
+desktop side): a document through `DocumentHost` with `place="side"` and the
+phone presentation, or a chat. Its header is the desktop side's: the picker,
+the held mark and Open in main (`MobileSideSheetHeader`). The top bar's button
+names what the Sheet will show and is there whenever the side has an item. The
+Sheet is closed on arrival and any navigation closes it, so a door followed
+from inside it lands in main with the Sheet out of the way.
 
 User navigation pushes so OS/browser Back traverses screens and drill-in.
 Canonical repair or an explicitly guarded controller may replace. A malformed
@@ -27,11 +35,9 @@ or unavailable selection remains in place rather than silently defaulting.
 Breadcrumbs derive from the parsed route path; leaves do not duplicate path or
 filename parsing.
 
-The top bar has hamburger, project identity, screen/breadcrumb content, and a
-per-screen trailing action. It has no back button. Chat outside the Chat screen
-opens a local Sheet and leaves the current Work/Editor destination mounted;
-chat navigation on Chat changes the destination instead. The phone shell may
-mount only its active main screen, unlike desktop persistent surfaces.
+The top bar has hamburger, project identity, breadcrumb, and the side's button.
+It has no back button. The phone shell mounts only main's item and the Sheet's,
+unlike desktop's kept host.
 
 ## Document registry and review
 
@@ -71,20 +77,13 @@ is navigation, not Discard or a terminal review card. The read-only body
 selects changes instead of opening the
 keyboard; mobile review never becomes an editable Editor.
 
-## Files browser and phone chrome
+## Drawer and phone chrome
 
-`MobileContextBrowser` chooses a project scheme, then renders its nested subtree
-with the same `TreeChildren` rows and inline forms as desktop. Folder disclosure
-expands in place. The parsed route still owns the starting scheme/folder and
-file navigation; missing folders are honest dead ends. Draft-owned removal
-remains identity/revision-bound. The chat Files menu separately combines shared
-Scratch with the primary chat's uploads.
-
-The `+` action creates in the current scheme/folder through shared
-`ContextCreateKind`, `useCreateContextEntry`, and validation. Enter/Done or
-blur with content commits; Escape or empty commit cancels. Navigation abandons
-an uncommitted row. Creation stays in the listing: it does not auto-drill or
-open a file. The route's current location is the target.
+The navigation drawer is the desktop sidebar: the same Write | Chat switch and
+`SIDEBAR_LISTS` bodies (the file tree, the Chats list with find, Favourites and
+All chats), so files are browsed, created, moved and deleted there with the
+desktop's rows and forms. Opening a file from it closes the drawer once the
+open commits.
 
 Mobile top chrome names a document once. `PhoneDocumentFrame` renders the shared
 document host without toolbar or identity bar; non-tracked viewers use a bare host. Breadcrumb ancestors are 44px

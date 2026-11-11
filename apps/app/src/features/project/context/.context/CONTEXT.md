@@ -76,47 +76,17 @@ between main and the side doesn't remount it.
 ## Architecture
 
 ```text
-ContextTreePanel (sidebar source)   MobileContextBrowser (mobile)
-       │                                     │
-       ├─ useContextCatalogViews (batched projection) ┤
-       ├─ useCreateEntryForm ────────────────┤
-       ├─ useEntryInteraction ───────────────┤
-       │     └─ rename forms + move picker   │
-       ├─ useDeleteContextEntry ─────────────┤
-       └─ ContextEntryActions (menus) ───────┘
+ContextTreePanel (desktop sidebar and the phone's drawer)
+       ├─ useContextCatalogViews (batched projection)
+       ├─ useCreateEntryForm
+       ├─ useEntryInteraction
+       │     └─ rename forms + move picker
+       ├─ useDeleteContextEntry
+       └─ ContextEntryActions (menus)
                      │
       useInlineEdit (components/ui, shared core)
                      │
           validateContextEntryName (pure)
-
-A move, copy or delete that works shows only its result in the tree. One that fails toasts
-(`notifyFailure`, `components/app/failure-toast.tsx`) until the writer closes the toast, what it
-reports stops being refused, or the writer leaves the project. `entry-drag/entry-failure.ts` is
-the one path: a failure is data (`EntryFailure`) with its own key, `failureTitle` words it,
-`showFailure` shows it, and one retry runs it again. `runMove`, `runCopy` and `runDelete` do the
-work, and a Retry re-reads the replica, so a row the writer changed since is left alone.
-`RefusalToasts`, mounted once per project in `ProjectView`, watches the replica for what the
-server refused later. Each failure has its own toast, so a newer one never hides an older one;
-`visibleToasts={3}` caps the stack and the rest wait behind it. Rows refused together are one
-failure. A refused Move or delete keeps its mark on the row; a row refused before this project
-opened shows only the mark. A refused Copy has no row left, so it stays in the journal until the
-toast is closed or Retry lands: it survives a reload, and closing it in one tab closes it in the
-others.
-
-DocumentHost (one per mounted document: main, side, kept)
-       ├─ DocumentReviewProvider (this host's review)
-       ├─ MainDocumentBinding (main only: binds the route, records the open)
-       └─ DesktopDocumentFrame
-              ├─ the header the project view passes (MainHeader or SideDocumentHeader)
-              ├─ DocumentPaneChrome
-              │     ├─ PassageNotice, DocumentFreezeNotice (archived Work or trashed chat)
-              │     ├─ DocumentIdentityBar (DocumentPath crumbs + chips and painted DraftReviewBand)
-              │     └─ DocumentProperties (read-only frontmatter; mounts when the catalog entry
-              │        has `hasProperties`, then fetches by document id; open/closed is one
-              │        device preference in the surface-prefs store)
-              ├─ ContextDocumentHost (session boundary + EditorView)
-              └─ ContextViewerHost (read-only viewer)
-RecentDocumentsLanding (main when the address names no document)
 ```
 
 Document trash is a server snapshot separate from the live catalog projection.
