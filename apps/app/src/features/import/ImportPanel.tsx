@@ -153,7 +153,7 @@ function ImportCard({
         ) : null}
         {state === "needs-look" ? (
           <details>
-            <summary className="cursor-pointer text-foreground">
+            <summary className="focus-ring cursor-pointer rounded-sm text-foreground">
               <Trans>See files</Trans>
             </summary>
             <ul className="mt-2 max-h-48 space-y-2 overflow-y-auto">

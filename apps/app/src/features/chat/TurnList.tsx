@@ -354,7 +354,7 @@ export function TurnList({
         // its own scrollTop compensation for above-viewport resizes; browser native
         // scroll anchoring would be a competing second owner, double-correcting and
         // leaving the reader's place off. Disable it so TanStack alone drives scroll.
-        className="chat-scroll-fade-bottom size-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none]"
+        className="focus-ring chat-scroll-fade-bottom size-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none]"
       >
         <ChatColumn>
           <ol

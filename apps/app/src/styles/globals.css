@@ -611,30 +611,36 @@
   --prose-color: var(--color-muted-foreground);
 }
 
-/* The one keyboard focus ring. Every interactive element opts in with `focus-ring`. */
+/* The one keyboard focus ring. Every interactive element opts in with `focus-ring`.
+   It draws INSIDE the control's own box, as an outline: a ring outside the box is cut by
+   any clipping ancestor (a scroller, a rounded card, a fold) and covered by any filled
+   neighbour, and each site would have to leave it room. An outline also leaves the
+   control's own shadow alone. A filled control, where the focus colour would not show,
+   wears `focus-ring-on-fill`. */
 @utility focus-ring {
-  @apply outline-none;
+  /* Width, colour and offset at rest, so focus changes only the style: a control's own
+     colour transition would otherwise fade the ring in from its text colour. */
+  outline: 2px none var(--focus-ring-color, var(--color-focus));
+  outline-offset: var(--focus-ring-offset, -2px);
   :root[data-focus-keys] &:focus-visible:not([data-focus-quiet]) {
-    box-shadow: 0 0 0 2px var(--color-focus);
+    outline-style: solid;
   }
 }
 
-/* For a control whose box meets a clipping edge (a tab in a scrolling strip): the ring
-   draws inside the box, where the scroller and its neighbours can't cut it. */
-@utility focus-ring-inset {
-  @apply outline-none;
-  :root[data-focus-keys] &:focus-visible:not([data-focus-quiet]) {
-    box-shadow: inset 0 0 0 2px var(--color-focus);
-  }
+/* On an opaque fill the ring takes the fill's text colour, set in from the edge so it
+   reads as a line on the fill and not as the control shrinking. */
+@utility focus-ring-on-fill {
+  --focus-ring-color: currentColor;
+  --focus-ring-offset: -4px;
 }
 
-/* Menu rows sit inside the surface gutter. Keep keyboard focus on the
-   rounded-sm row, including composite rows that own a focused child. */
+/* Menu rows: the same ring, also worn by a composite row that owns a focused child. */
 @utility dropdown-focus-ring {
-  @apply outline-none;
+  outline: 2px none var(--color-focus);
+  outline-offset: -2px;
   :root[data-focus-keys] &:focus-visible,
   :root[data-focus-keys] &:has(> :focus-visible) {
-    box-shadow: inset 0 0 0 2px var(--color-focus) !important;
+    outline-style: solid !important;
   }
 }
 
