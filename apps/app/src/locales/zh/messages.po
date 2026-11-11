@@ -5618,6 +5618,10 @@ msgid "Summarize earlier messages so the model has room to keep going"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
+msgid "Switch chat"
+msgstr ""
+
+#: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Switch chat, currently {title}"
 msgstr ""
 
