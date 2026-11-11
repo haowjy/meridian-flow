@@ -693,7 +693,10 @@
  * sheet is the ONE sanctioned surface paint on top of it.
  */
 @utility page-sheet {
-  @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-md border border-b-0 border-border-subtle bg-background;
+  @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-x bg-background;
+  /* The `tab-band` above draws this sheet's top line; these are its sides, in the same
+     opaque hairline. */
+  border-color: color-mix(in oklab, var(--color-foreground) 9%, var(--color-background));
 }
 
 /*
@@ -717,76 +720,75 @@
 
 /*
  * Tab-chip grammar — geometry for the places a surface RISES out of the
- * chrome: the document tab strip (`ContextTabBar`) and the centered chat
- * header's title chip (`ThreadSwitcherPopover` variant="tab"). A chip sits in
- * the chrome band; the ACTIVE chip surfaces the field tone below it as a
- * folder tab: rounded top, the sheet's hairline around it, open at the base,
- * which flares outward into the sheet's top edge. An INACTIVE chip carries an inset rounded hover pill covering
- * its full hit target. (The dock's Chat|Changes switcher is deliberately NOT
- * this grammar — the dock is one uniform surface; its view switch is a
- * contained segmented track that presses into the chrome.)
+ * chrome: the document tab strip (`ContextTabBar`) and the pane band's index
+ * and title chips (`PaneHeader`). A chip sits in a `tab-band`; the ACTIVE chip
+ * is a folder tab: rounded top, open at the base, which flares outward into
+ * the band's bottom line. An INACTIVE chip carries an inset rounded hover pill
+ * covering its full hit target. (The dock's Chat|Changes switcher is
+ * deliberately NOT this grammar — the dock is one uniform surface; its view
+ * switch is a contained segmented track that presses into the chrome.)
+ *
+ * One owner per line, after VS Code's tab strip and Chromium's tab path. The
+ * band owns the page's top line, as one pseudo-element on its last row. The
+ * active chip owns its whole outline (both top corners, both sides, both
+ * flares) as ONE mask image painted in one colour, and covers the band's line
+ * beneath it with its fill. Nothing is assembled from a neighbour's border, so
+ * there is no joint to misalign and no overlap to darken. `--tab-line` is the
+ * hairline mixed onto the surface, hence opaque: the flares end on the band's
+ * line, and a translucent stroke would darken there.
  *
  * The variation point is the surfacing color: consumers set
  * `--tab-chip-surface` on the strip (canvas for document tabs). These
  * utilities own geometry and surface paint only — DOM, text color, and a11y
- * stay local to each consumer. Chips must be `relative` (the flares and hover
- * pill are absolutely-positioned pseudos).
+ * stay local to each consumer. Chips must be `relative` (outline, flares and
+ * hover pill are absolutely-positioned pseudos), and an active chip's base
+ * must sit on the band's bottom edge.
  *
  * No transition on the active chip: activation swaps geometry instantly, so
  * a background fade would flash the outgoing chip as a full-height rectangle
  * mid-fade — tab switches must snap. Only the hover pill transitions.
  */
+@utility tab-band {
+  --tab-line: color-mix(in oklab, var(--color-foreground) 9%, var(--color-background));
+  position: relative;
+  /* ::before, so it paints under the chips, which come after it. */
+  &::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: auto 0 0;
+    height: 1px;
+    background-color: var(--tab-line);
+  }
+}
 @utility tab-chip-active {
-  /* The hairline is translucent, so two strokes that overlap darken. The tab's outline is
-     therefore drawn in the same line mixed onto the tab's own surface, which is opaque and
-     the colour the sheet's border shows, and as borders, which stroke a corner evenly. */
-  --tab-chip-line: color-mix(in oklab, var(--color-foreground) 9%, var(--tab-chip-surface));
   margin-top: --spacing(1);
-  border: 1px solid var(--tab-chip-line);
-  border-bottom-width: 0;
   border-top-left-radius: var(--radius-md);
   border-top-right-radius: var(--radius-md);
   background-color: var(--tab-chip-surface);
-  /* The base flares outward into the sheet's top edge. The band overlaps the sheet by 2px
-     (`tab-band`): its top edge and one row inside it. Each flare is a box whose one rounded
-     corner is the curve; it sits on the edge's row, overlaps the tab's side line by that
-     line's width, and its shadow fills what lies outside the curve: the corner, the side
-     line below the curve's start, and the row inside the sheet. */
+  /* Both pseudos reach one flare past each side. The paths inside the images draw a 6px
+     radius, which is --radius-md: change them together. Their nested viewports anchor each
+     corner to its own corner of the chip, so the outline fits any chip size undistorted. */
   &::before,
   &::after {
     content: "";
     pointer-events: none;
     position: absolute;
-    bottom: 1px;
-    box-sizing: border-box;
-    width: calc(var(--radius-md) + 1px);
-    height: calc(var(--radius-md) + 1px);
-    border: 0 solid var(--tab-chip-line);
-    border-bottom-width: 1px;
+    inset: 0 calc(-1 * var(--radius-md));
+    mask-repeat: no-repeat;
+    mask-size: 100% 100%;
   }
+  /* The flares' fill, under the outline. */
   &::before {
-    left: calc(-1 * var(--radius-md) - 1px);
-    border-right-width: 1px;
-    border-bottom-right-radius: calc(var(--radius-md) + 1px);
-    box-shadow: 3px 3px 0 var(--tab-chip-surface);
+    background-color: var(--tab-chip-surface);
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22%3E%3Csvg y=%22100%25%22 overflow=%22visible%22%3E%3Cpath d=%22M.5,-.5A6 6 0 0 0 6.5,-6.5V0H.5Z%22/%3E%3Csvg x=%22100%25%22 overflow=%22visible%22%3E%3Cpath d=%22M-.5,-.5A6 6 0 0 1 -6.5,-6.5V0H-.5Z%22/%3E%3C/svg%3E%3C/svg%3E%3C/svg%3E");
   }
   &::after {
-    right: calc(-1 * var(--radius-md) - 1px);
-    border-left-width: 1px;
-    border-bottom-left-radius: calc(var(--radius-md) + 1px);
-    box-shadow: -3px 3px 0 var(--tab-chip-surface);
+    background-color: var(--tab-line);
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22%3E%3Csvg width=%2260%25%22 height=%2260%25%22%3E%3Cpath fill=%22none%22 stroke=%22black%22 d=%22M6.5,9999V6.5A6 6 0 0 1 12.5,.5H9999%22/%3E%3C/svg%3E%3Csvg x=%2240%25%22 width=%2260%25%22 height=%2260%25%22%3E%3Csvg x=%22100%25%22 overflow=%22visible%22%3E%3Cpath fill=%22none%22 stroke=%22black%22 d=%22M-6.5,9999V6.5A6 6 0 0 0 -12.5,.5H-9999%22/%3E%3C/svg%3E%3C/svg%3E%3Csvg y=%2240%25%22 width=%2260%25%22 height=%2260%25%22%3E%3Csvg y=%22100%25%22 overflow=%22visible%22%3E%3Cpath fill=%22none%22 stroke=%22black%22 d=%22M.5,-.5A6 6 0 0 0 6.5,-6.5V-9999%22/%3E%3C/svg%3E%3C/svg%3E%3Csvg x=%2240%25%22 y=%2240%25%22 width=%2260%25%22 height=%2260%25%22%3E%3Csvg x=%22100%25%22 y=%22100%25%22 overflow=%22visible%22%3E%3Cpath fill=%22none%22 stroke=%22black%22 d=%22M-.5,-.5A6 6 0 0 1 -6.5,-6.5V-9999%22/%3E%3C/svg%3E%3C/svg%3E%3C/svg%3E");
   }
 }
-/* A band whose active chip joins the `page-sheet` below it. */
-@utility tab-band {
-  position: relative;
-  z-index: 1;
-  margin-bottom: -2px;
-}
 @utility tab-chip-inactive {
-  /* The active chip's outline, unpainted, so activating a chip moves nothing in it. */
-  border: 1px solid transparent;
-  border-bottom-width: 0;
   /* isolate + z-index:-1 keeps the pill behind the chip's content without
      escaping under the strip's own background. */
   isolation: isolate;
