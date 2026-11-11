@@ -149,6 +149,7 @@ export type ComposerProps = {
    */
   stopStatus?: "idle" | "pending" | "stopping" | "failed";
   placeholder?: string;
+  /** Focus the box when it mounts, at the restored selection. */
   autoFocus?: boolean;
   variant?: "hero" | "pinned";
   toolbarLeft?: ReactNode;
@@ -213,7 +214,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     running = false,
     stopStatus = "idle",
     placeholder,
-    autoFocus,
+    autoFocus = true,
     variant = "hero",
     toolbarLeft,
     submitDisabled = false,
@@ -329,7 +330,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       }),
     ],
     content: initialDraft?.doc ?? { type: "doc", content: [{ type: "paragraph" }] },
-    autofocus: autoFocus,
+    // Tiptap focuses on mount unless told `false`; undefined keeps the restored selection.
+    autofocus: autoFocus ? undefined : false,
     editorProps: {
       handleDOMEvents: {
         keydown: (_view, event) => {
@@ -450,7 +452,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             : null;
         const chipOf = chip?.kind === "document" && !chip.upload ? chip.documentId : null;
         if (chipOf === reference.documentId) return true;
-        if (!editor.isEmpty && (chipOf === null || chipOf !== replaces)) return false;
+        // Not `editor.isEmpty`: it counts a paragraph holding only an upload in flight as empty.
+        const empty = only?.type.name === "paragraph" && only.childCount === 0;
+        if (!empty && (chipOf === null || chipOf !== replaces)) return false;
         // Not the writer's draft until they touch it: the next edit saves it with the chip.
         suppressDraftChangeRef.current = true;
         editor.commands.setContent({

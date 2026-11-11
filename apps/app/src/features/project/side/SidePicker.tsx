@@ -68,6 +68,7 @@ export function SidePicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const changeOpen = (next: boolean) => {
     setOpen(next);
     if (!next) setQuery("");
@@ -76,6 +77,7 @@ export function SidePicker({
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           data-side-picker-trigger
           aria-label={t`Choose what sits beside, now ${name}`}
@@ -107,6 +109,7 @@ export function SidePicker({
             onQueryChange={setQuery}
             searchRef={searchRef}
             chatsOnly={chatsOnly}
+            trigger={triggerRef}
             onDone={() => changeOpen(false)}
           />
         ) : null}
@@ -121,6 +124,7 @@ function SidePickerLists({
   onQueryChange,
   searchRef,
   chatsOnly,
+  trigger,
   onDone,
 }: {
   projectId: string;
@@ -128,6 +132,7 @@ function SidePickerLists({
   onQueryChange: (query: string) => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
   chatsOnly: boolean;
+  trigger: React.RefObject<HTMLButtonElement | null>;
   onDone: () => void;
 }) {
   const main = useMainForSide();
@@ -291,7 +296,7 @@ function SidePickerLists({
     const moves = !sameItem(pick, shownNow);
     pickSide(pick);
     onDone();
-    if (moves) focusTriggerAfterPick();
+    if (moves) focusTriggerAfterPick(trigger.current);
   };
   const row = (item: Row) => (
     <PickerRow
@@ -423,19 +428,22 @@ function SidePickerLists({
 
 /**
  * A pick can move the side to another host (a document's in place of the chat's), whose header
- * mounts a new trigger: the focus the popover returns has nowhere to go. Once the pick has
- * committed, the side's trigger takes it, if nothing else has.
+ * mounts a new trigger: the focus the popover returns to the old one is lost when it unmounts.
+ * For a few frames after the pick, while focus is still on the old trigger or nowhere, the new
+ * trigger takes it; focus the writer moved elsewhere stays.
  */
-function focusTriggerAfterPick() {
-  requestAnimationFrame(() => {
-    if (document.activeElement && document.activeElement !== document.body) return;
-    const triggers = document.querySelectorAll<HTMLElement>("[data-side-picker-trigger]");
-    for (const trigger of triggers) {
-      if (trigger.closest("[inert]")) continue;
-      trigger.focus();
-      return;
-    }
-  });
+function focusTriggerAfterPick(from: HTMLElement | null) {
+  let frames = 0;
+  const check = () => {
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== from) return;
+    const next = [...document.querySelectorAll<HTMLElement>("[data-side-picker-trigger]")].find(
+      (trigger) => trigger !== from && !trigger.closest("[inert]"),
+    );
+    if (next) next.focus();
+    else if (++frames < 10) requestAnimationFrame(check);
+  };
+  requestAnimationFrame(check);
 }
 
 function ItemIcon({ pick, name }: { pick: HeldPick; name: string }) {
