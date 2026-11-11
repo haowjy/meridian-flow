@@ -15,7 +15,6 @@
  * document inside the answer and lands on the anchor if the open result allows. No lookup
  * stands between the answer and the open.
  */
-import { draftOwnerKey } from "@meridian/contracts/branches";
 import { type ReactNode, useCallback, useContext, useMemo } from "react";
 import { useLineage } from "@/client/query/useLineageTitle";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -26,6 +25,7 @@ import {
   type ContextPassageAnchor,
   type PreparedDoor,
 } from "@/features/chat/ChatContextNavigation";
+import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import type { LinkDestination, LinkDocumentRef } from "@/features/links";
 import {
   type ChatLineages,
@@ -71,7 +71,7 @@ export function ProjectChatContextNavigationProvider({
   children,
 }: {
   projectId: string;
-  activeWork: { id: string; handle: string | null } | null;
+  activeWork: { id: string; handle: string | null; isNoWork: boolean } | null;
   availableWorks: readonly { id: string; handle: string | null }[];
   /** The displayed chat's lineage: where its bare `scratch://` points while it is on No Work. */
   rootThreadId: string | null;
@@ -143,13 +143,7 @@ export function ProjectChatContextNavigationProvider({
   const openReviewing = useReviewingLinkDestination(reviewOnly);
   // The chat's own drafts: its Work's, or under No Work its lineage's. A link to a document the
   // chat drafted opens that draft, the way its draft strip does.
-  const ownerKey = !activeWork
-    ? null
-    : activeWork.id !== noWorkId
-      ? draftOwnerKey({ kind: "work", workId: activeWork.id })
-      : rootThreadId
-        ? draftOwnerKey({ kind: "lineage", rootThreadId })
-        : null;
+  const ownerKey = chatOwnerKey(activeWork, rootThreadId) || null;
   const openDrafted = useOwnerDraftOpener(projectId, ownerKey);
   // A hidden document is a review. Beside the chat it opens in the dock, as everything
   // beside the chat does; elsewhere the review handoff opens it in the Editor.
