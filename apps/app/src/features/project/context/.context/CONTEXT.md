@@ -65,12 +65,14 @@ local-origin documents retaining their lineage; all other durable deletions requ
 ## Visible Editor ownership
 
 The address owns what main shows: `resolveMainDocument` finds its document by identity, then by
-path, the same on desktop and phone. There is no stored selection or tab list. Hosts mount their
+path, the same on desktop and phone. Main's tabs (`client/project-shell/main-tabs.ts`) follow the
+address, never lead it: arriving at a document opens or selects its tab. Hosts mount their
 documents in `PresentedDocuments` (`presented-documents.ts`: places main, side and kept). Its
 `documents` are main's and the side's only (main first): the removal coordinator, availability
 and removed notices read them to know what is on screen. Its `shown` list, every mounted document
-newest on screen first, is where the desktop picks the kept host and the side's fallback; the
-coordinator's close, Discard and removal paths `forget` a document there so its host unmounts. One document has at most one host, keyed `document:<id>` (`DocumentHost.tsx`), so a move
+newest on screen first, is where the desktop picks the kept host (an open tab only) and the side's
+fallback; the coordinator's close, Discard and removal paths `forget` a document there, which also
+closes its tab, so its host unmounts. One document has at most one host, keyed `document:<id>` (`DocumentHost.tsx`), so a move
 between main and the side doesn't remount it.
 
 ## Architecture

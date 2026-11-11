@@ -22,6 +22,22 @@ in development, its effects are replayed (the app runs under TanStack Start's de
 `StrictMode`), which destroys a live editor while its child effects still hold it (#1351). The
 cost is that DOM (tab) order among documents follows their ids, not main-then-side.
 
+Main holds tabs. `client/project-shell/main-tabs.ts` is the one record of what is open in main: an
+ordered list of documents per project in this browser tab's sessionStorage, so a reload keeps them
+and two windows keep their own. The address still names main's item. Arriving at an address
+(`ProjectView`, once per history entry key) is the one write that opens or selects a tab, a new one
+to the right of the tab main showed last; later descriptor changes only refresh a tab that is still
+open, so a removal that closed it is not undone by a re-render. Selecting a tab opens its document
+on its view's draft or Live (`useOpenInMain`); closing main's tab replaces the entry with its right
+neighbour, else its left, else Recently opened. The coordinator's `forget` (a close, a Discard, a
+removal, a vanished document) also closes the tab. `MainTabStrip` draws the tabs in main's band
+with the inset sheet's folder-tab look; main's item when it holds no tab (a chat, an address that
+names nothing) is the active chip after them, so a chat in main keeps the documents one click
+away and a link to a deleted chapter keeps its URL and shows the removed page in a tab of its own.
+Only documents take a tab: a tab is an item with a kind, and `TAB_KINDS` is the switch for chats.
+A tab's Live or Draft view is its document's view, so it is per tab already. The phone draws no
+strip; it records arrivals the same way.
+
 Main shows what the address names, resolved by `resolveMainDocument` / `useMainDocument`
 (`views.ts`), the resolver the phone uses too; `MainViewProvider` / `useMainItem` carry
 `{item, document}`. The side shows one item, never main's. `resolveSide` (`side/side-item.ts`) picks
@@ -61,7 +77,7 @@ name says that, not main's document.
 
 Which documents are mounted is one list, `PresentedDocuments` (`context/presented-documents.ts`):
 each document host registers its current descriptor there, and `shown` orders them newest on
-screen first. Besides main's and the side's document, the newest one shown that is off screen
+screen first. Besides main's and the side's document, the newest open tab shown that is off screen
 stays mounted as the kept host, hidden so its undo survives a return, so at most three documents
 are mounted (main, side, kept). The kept document is mounted but not presented:
 it reviews nothing, admits nothing, writes neither pin nor address, raises no removed notice and

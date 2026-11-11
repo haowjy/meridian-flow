@@ -5,7 +5,7 @@
  * main or the side by grid-area. Opening the side's item in main moves its mounted editor or chat
  * instead of remounting it, so undo, caret, scroll and a running stream survive the swap. Besides
  * main's and the side's, one more document stays mounted, kept hidden so its undo survives a
- * return: the newest one shown that is on screen no longer. So at most three documents are
+ * return: the newest open tab shown that is on screen no longer. So at most three documents are
  * mounted (main, side, kept). One document is in at most one host. What the side shows is
  * `side/SideView`'s resolution.
  */
@@ -108,7 +108,8 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
       onOpen={() => setSlotOpenHere("side", true)}
     />
   );
-  // The newest document shown that is off screen stays mounted, hidden. A document moving
+  // The newest open tab shown that is off screen stays mounted, hidden: closing a tab lets its
+  // editor go. A document moving
   // between main and the side passes through here while main's address loads, so it never
   // remounts.
   const accountId = useAccountId();
