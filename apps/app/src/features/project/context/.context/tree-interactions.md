@@ -234,7 +234,7 @@ and dialog serve all Scratch rows, retaining each target's owner. The actual own
 The Write sidebar, Chat mode's Scratch and a Work's Files are each one list:
 `useEntryList` owns its selection, its entries route and, through `EntryList`,
 its drop scope. The Write sidebar (also the phone drawer) is one list over every
-source it can show: Manuscript, Knowledge Base, Your files, Unfiled and the chat's
+source it can show: Manuscript, Knowledge, Your files, Unfiled and the chat's
 Scratch, each tree keeping its own expansion. Rows join through `EntrySelectionProvider`.
 Selection keys are `kind:id` and carry no scheme or place, so a moved row keeps
 its key and stays selected. A plain click opens or toggles the row as before and leaves no
@@ -301,7 +301,7 @@ selection of one), not the open row.
 In the Write sidebar the sources sit behind icon tabs (`shell/sidebar/SourcesBody.tsx`).
 Each source in its `SOURCES` table has one root drop, used by its tab and by its pane
 (`SourcePane`), and the strip and the pane share the sidebar's one drop scope. Dropping
-on a source's tab lands at that source's root ("Move to Knowledge Base"), and so does
+on a source's tab lands at that source's root ("Move to Knowledge"), and so does
 its heading or the space below its last row; the usual crossing-system rules apply, so
 Your files and Scratch still ask. A drag that rests on a tab for 600 ms opens it, as on
 a closed folder, for a drop into a folder inside. Trash is a source too, not a scheme:

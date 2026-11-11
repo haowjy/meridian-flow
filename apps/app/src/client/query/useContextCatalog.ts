@@ -133,7 +133,7 @@ export function contextCatalogQueryOptions(
 
 const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   manuscript: "Manuscript",
-  kb: "Knowledge Base",
+  kb: "Knowledge",
   user: "User Files",
   unfiled: "Unfiled",
   scratch: "Scratch",
