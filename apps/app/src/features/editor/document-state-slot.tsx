@@ -11,7 +11,7 @@ import { createPortal } from "react-dom";
 
 type Slot = {
   element: HTMLElement | null;
-  setHosts: Dispatch<SetStateAction<readonly HTMLElement[]>>;
+  setElement: Dispatch<SetStateAction<HTMLElement | null>>;
 };
 
 const DocumentStateSlotContext = createContext<Slot | null>(null);
@@ -22,9 +22,9 @@ const DocumentStateSlotContext = createContext<Slot | null>(null);
  * renders the state into it with `DocumentStatePortal`.
  */
 export function DocumentStateSlotProvider({ children }: { children: ReactNode }) {
-  const [hosts, setHosts] = useState<readonly HTMLElement[]>([]);
+  const [element, setElement] = useState<HTMLElement | null>(null);
   return (
-    <DocumentStateSlotContext.Provider value={{ element: hosts.at(-1) ?? null, setHosts }}>
+    <DocumentStateSlotContext.Provider value={{ element, setElement }}>
       {children}
     </DocumentStateSlotContext.Provider>
   );
@@ -32,16 +32,16 @@ export function DocumentStateSlotProvider({ children }: { children: ReactNode })
 
 /** The toolbar row's end, where the state lands. Only the active editor renders it. */
 export function DocumentStateSlotHost() {
-  const setHosts = useContext(DocumentStateSlotContext)?.setHosts;
+  const setElement = useContext(DocumentStateSlotContext)?.setElement;
   const [node, setNode] = useState<HTMLElement | null>(null);
-  // Rows mount and unmount in any order (an editor swap, a pane loading behind the open
-  // one): the newest row still mounted holds the slot, so one leaving hands it back.
+  // An editor swap (live to draft review) can mount the new row before the old one
+  // unmounts: a row may only clear the slot while it still holds it.
   useLayoutEffect(() => {
-    if (!setHosts || !node) return;
-    setHosts((hosts) => [...hosts.filter((host) => host !== node), node]);
-    return () => setHosts((hosts) => hosts.filter((host) => host !== node));
-  }, [node, setHosts]);
-  if (!setHosts) return null;
+    if (!setElement || !node) return;
+    setElement(node);
+    return () => setElement((current) => (current === node ? null : current));
+  }, [node, setElement]);
+  if (!setElement) return null;
   return <div ref={setNode} className="flex min-w-0 items-center" />;
 }
 
