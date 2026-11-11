@@ -86,9 +86,14 @@ function SideBand({
         <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1">
           <SidePicker projectId={projectId} name={name} icon={icon} chatsOnly={chatsOnly} />
           {reason ? (
-            <span className="min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground">
-              {reason}
-            </span>
+            // One clipped line: under 5rem left, the reason wraps past the empty first item (a line
+            // tall, or the second line sits on the first) and hides whole instead of leaving "E…".
+            <div className="flex h-4 min-w-0 flex-1 basis-0 flex-wrap overflow-hidden">
+              <span className="h-4" />
+              <span className="max-w-full min-w-20 truncate text-xs leading-4 text-muted-foreground">
+                {reason}
+              </span>
+            </div>
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-0.5 pr-2">
