@@ -10,7 +10,8 @@ import { PanelToggleSpacer } from "./PanelToggleButton";
  * title/breadcrumb, and far-right actions + an expand control for the right
  * rail. It paints NOTHING of its own — the center slot's chrome shows through
  * (same grammar as the document tab strip), and the pane's `page-sheet` body
- * rises out of it below. No bottom border: separation is tonal.
+ * rises out of it below. No bottom border: the sheet draws its own edge, and
+ * the band overlaps it so an active chip covers that edge (`tab-band`).
  *
  * The panel toggles are the shell's corner buttons (`ProjectShell`). When a
  * rail is closed its toggle floats over this band, so the band reserves its
@@ -45,14 +46,15 @@ export type PaneHeaderProps = {
 export function PaneHeader({ title, left, right, actions, leading, notice }: PaneHeaderProps) {
   const leftToggle = left && !left.open;
   return (
-    <div className="@container/pane-header shrink-0">
-      <header className="flex flex-wrap items-center gap-x-1 px-2">
+    <div className="@container/pane-header tab-band shrink-0">
+      <header className="flex flex-wrap items-center gap-x-1 pr-2 pl-3.5">
         {leftToggle ? <PanelToggleSpacer /> : null}
         {leading ? (
-          // The tab strip puts its first chip flush at the pane edge, or 8px past
-          // the toggle's own px-2 zone; the offsets land on those same x values.
-          // -mr-1 cancels the gap so the title chip sits flush like a next tab.
-          <div className={cn("-mr-1 flex shrink-0 self-stretch", leftToggle ? "ml-1" : "-ml-2")}>
+          // The same x as the tab strip's first chip in both sidebar states: the
+          // band's 14px gutter (the sheet's corner plus a chip's outer flare), or
+          // 8px past the toggle. -mr-1 cancels the gap so the title chip sits
+          // flush like a next tab.
+          <div className={cn("-mr-1 flex shrink-0 self-stretch", leftToggle && "-ml-0.5")}>
             {leading}
           </div>
         ) : null}

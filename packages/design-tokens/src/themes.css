@@ -23,6 +23,7 @@
   --color-ink-fill-strong: color-mix(in oklab, var(--color-foreground) 10%, transparent);
   --color-border: color-mix(in oklab, var(--color-foreground) 15%, transparent);
   --color-border-subtle: color-mix(in oklab, var(--color-foreground) 9%, transparent);
+  --color-page-edge: color-mix(in oklab, var(--color-foreground) 9%, var(--color-background));
   --color-focus: oklch(0.75 0.08 176);
 
   /* Jade brightens on dark ground; text on a jade fill stays dark ink. */

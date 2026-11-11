@@ -66,7 +66,11 @@ export function ContextTabBar({
       role="tablist"
       aria-label={t`Open context files`}
       // Chips surface the canvas tone — see the tab-chip grammar in globals.css.
-      className="flex h-10 shrink-0 items-stretch [--tab-chip-surface:var(--color-background)]"
+      className={cn(
+        "tab-band flex h-10 shrink-0 items-stretch [--tab-chip-surface:var(--color-background)]",
+        // The band's gutter: the sheet's corner plus the first chip's outer flare.
+        !leading && "pl-3.5",
+      )}
     >
       {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
       {onShowRecents ? (
@@ -96,14 +100,8 @@ export function ContextTabBar({
           </TooltipContent>
         </Tooltip>
       ) : null}
-      {/* Flush against the door when it is there: the door is the first chip in
-          the row, not a control docked beside it. */}
-      <div
-        className={cn(
-          "flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden",
-          onShowRecents ? "pl-0" : "pl-2",
-        )}
-      >
+      {/* The left padding is room for the first tab's flare, which this scroller would clip. */}
+      <div className="flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden pl-2">
         {tabs.map((tab, index) => {
           const isActive = (member: ContextTab) =>
             activeTabInstanceId
@@ -285,7 +283,9 @@ function TabChipFrame({
       className={cn(
         // No h-full: items-stretch sizes the chip so the active tab's mt-1
         // subtracts from its height instead of overflowing the strip.
-        "group relative flex w-40 shrink-0 items-center gap-1.5 px-3",
+        // scroll-mx: scrolled into view, the active tab keeps room for its flares,
+        // which the strip's scroller would clip at its edge.
+        "group relative flex w-40 shrink-0 scroll-mx-2 items-center gap-1.5 px-3",
         active
           ? "tab-chip-active text-foreground"
           : "tab-chip-inactive text-muted-foreground hover:text-foreground",
