@@ -685,15 +685,14 @@
 /*
  * Page sheet — the lit paper rising out of the chrome. Every center pane
  * wears this below its h-10 chrome band (PaneHeader or the document tab
- * strip). Top-RIGHT corner only (shared tab radius, tucking under the chrome
- * toward the dock): the top-LEFT is deliberately square — the sheet sits
- * flush against the rail edge, and the roundness against the project header belongs
- * to the CHROME FIELD's own top-left corner (center slot / route pane), not
- * the sheet (user call, 2026-07-15). The center slot paints the chrome; the
- * sheet is the ONE sanctioned surface paint on top of it.
+ * strip). It is a sheet set into the chrome: a hairline on its top and sides,
+ * both top corners rounded, running to the foot of the window. The center
+ * slot paints the chrome; the sheet is the ONE sanctioned surface paint on
+ * top of it.
  */
 @utility page-sheet {
-  @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-tr-md bg-background;
+  /* `page-edge`, not `border-subtle`: a `tab-chip-active` outline ends on this top edge. */
+  @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-md border border-b-0 border-page-edge bg-background;
 }
 
 /*
@@ -717,55 +716,72 @@
 
 /*
  * Tab-chip grammar — geometry for the places a surface RISES out of the
- * chrome: the document tab strip (`ContextTabBar`) and the centered chat
- * header's title chip (`ThreadSwitcherPopover` variant="tab"). A chip sits in
- * the chrome band; the ACTIVE chip surfaces the field tone below it — rounded
- * top plus Obsidian-style bottom flares (corner fills outside the chip so its
- * base curves outward into the page instead of meeting the band at a hard
- * right angle). An INACTIVE chip carries an inset rounded hover pill covering
- * its full hit target. (The dock's Chat|Changes switcher is deliberately NOT
- * this grammar — the dock is one uniform surface; its view switch is a
- * contained segmented track that presses into the chrome.)
+ * chrome: the document tab strip (`ContextTabBar`) and the pane band's index
+ * and title chips (`PaneHeader`). A chip sits in a `tab-band`; the ACTIVE chip
+ * is a folder tab: rounded top, open at the base, which flares outward into
+ * the sheet's top edge. An INACTIVE chip carries an inset rounded hover pill
+ * covering its full hit target. (The dock's Chat|Changes switcher is
+ * deliberately NOT this grammar — the dock is one uniform surface; its view
+ * switch is a contained segmented track that presses into the chrome.)
+ *
+ * One owner per outline, after Chromium's tab path. The `page-sheet` owns its
+ * own edge, as one border. The active chip owns its whole outline (both top
+ * corners, both sides, both flares) as ONE mask image painted in one colour,
+ * and covers the sheet's top edge beneath it with its fill: the band overlaps
+ * the sheet, and the chip's last row lies inside it. Nothing is assembled
+ * from a neighbour's border, so there is no joint to misalign and no overlap
+ * to darken. Both strokes are `page-edge`, the hairline resolved onto the
+ * page and so opaque: the flares end on the sheet's edge, and a translucent
+ * stroke would darken there.
  *
  * The variation point is the surfacing color: consumers set
  * `--tab-chip-surface` on the strip (canvas for document tabs). These
  * utilities own geometry and surface paint only — DOM, text color, and a11y
- * stay local to each consumer. Chips must be `relative` (the flares and pill
- * are absolutely-positioned pseudos).
+ * stay local to each consumer. Chips must be `relative` (outline, flares and
+ * hover pill are absolutely-positioned pseudos), and an active chip's base
+ * must sit on the band's bottom edge. A chip starts no closer to the pane's
+ * edge than the sheet's corner radius plus a flare, so the flare lands on the
+ * sheet's straight edge.
  *
  * No transition on the active chip: activation swaps geometry instantly, so
  * a background fade would flash the outgoing chip as a full-height rectangle
  * mid-fade — tab switches must snap. Only the hover pill transitions.
  */
+@utility tab-band {
+  position: relative;
+  z-index: 1;
+  /* Over the sheet's top edge and one row inside it, so an active chip's fill hides the
+     edge beneath it with no gap at fractional display scales. */
+  margin-bottom: -2px;
+}
 @utility tab-chip-active {
+  /* In px, not --radius-md's rem: the mask's paths below draw this radius in px, and the
+     two must agree at any root font size. */
+  --tab-radius: 6px;
   margin-top: --spacing(1);
-  border-top-left-radius: var(--radius-md);
-  border-top-right-radius: var(--radius-md);
+  border-top-left-radius: var(--tab-radius);
+  border-top-right-radius: var(--tab-radius);
   background-color: var(--tab-chip-surface);
+  /* Both pseudos reach one flare past each side. The paths inside the images draw a 6px
+     radius, which is --tab-radius: change them together. Their nested viewports anchor each
+     corner to its own corner of the chip, so the outline fits any chip size undistorted. */
   &::before,
   &::after {
     content: "";
     pointer-events: none;
     position: absolute;
-    bottom: 0;
-    width: var(--radius-md);
-    height: var(--radius-md);
+    inset: 0 calc(-1 * var(--tab-radius));
+    mask-repeat: no-repeat;
+    mask-size: 100% 100%;
   }
+  /* The flares' fill, under the outline. */
   &::before {
-    left: calc(-1 * var(--radius-md));
-    background: radial-gradient(
-      circle at 0 0,
-      transparent calc(var(--radius-md) - 0.5px),
-      var(--tab-chip-surface) var(--radius-md)
-    );
+    background-color: var(--tab-chip-surface);
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22%3E%3Csvg y=%22100%25%22 overflow=%22visible%22%3E%3Cpath d=%22M.5,-1.5A6 6 0 0 0 6.5,-7.5V0H.5Z%22/%3E%3Csvg x=%22100%25%22 overflow=%22visible%22%3E%3Cpath d=%22M-.5,-1.5A6 6 0 0 1 -6.5,-7.5V0H-.5Z%22/%3E%3C/svg%3E%3C/svg%3E%3C/svg%3E");
   }
   &::after {
-    right: calc(-1 * var(--radius-md));
-    background: radial-gradient(
-      circle at 100% 0,
-      transparent calc(var(--radius-md) - 0.5px),
-      var(--tab-chip-surface) var(--radius-md)
-    );
+    background-color: var(--color-page-edge);
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22%3E%3Csvg width=%2260%25%22 height=%2260%25%22%3E%3Cpath fill=%22none%22 stroke=%22black%22 d=%22M6.5,9999V6.5A6 6 0 0 1 12.5,.5H9999%22/%3E%3C/svg%3E%3Csvg x=%2240%25%22 width=%2260%25%22 height=%2260%25%22%3E%3Csvg x=%22100%25%22 overflow=%22visible%22%3E%3Cpath fill=%22none%22 stroke=%22black%22 d=%22M-6.5,9999V6.5A6 6 0 0 0 -12.5,.5H-9999%22/%3E%3C/svg%3E%3C/svg%3E%3Csvg y=%2240%25%22 width=%2260%25%22 height=%2260%25%22%3E%3Csvg y=%22100%25%22 overflow=%22visible%22%3E%3Cpath fill=%22none%22 stroke=%22black%22 d=%22M.5,-1.5A6 6 0 0 0 6.5,-7.5V-9999%22/%3E%3C/svg%3E%3C/svg%3E%3Csvg x=%2240%25%22 y=%2240%25%22 width=%2260%25%22 height=%2260%25%22%3E%3Csvg x=%22100%25%22 y=%22100%25%22 overflow=%22visible%22%3E%3Cpath fill=%22none%22 stroke=%22black%22 d=%22M-.5,-1.5A6 6 0 0 1 -6.5,-7.5V-9999%22/%3E%3C/svg%3E%3C/svg%3E%3C/svg%3E");
   }
 }
 @utility tab-chip-inactive {
