@@ -55,7 +55,7 @@ Three facts must stay separate:
 
 Closing the view never abandons the resource or cancels synchronization, with one exception: an Untitled document that never held a word goes when the last view of it in this browser tab does (`discardUntouched`). The editor's leave check sees the text empty once local persistence has loaded; the replica settles the never-sent deletion only while its create is still ineligible, so a word typed anywhere keeps it. Otherwise Explicit Delete is the writer command that changes resource lifecycle.
 
-An Untitled document's reserved name counts only documents whose create is eligible: the server names a create when it arrives, counting the documents it holds, so an empty one must not take a number the server would then reassign.
+An Untitled document is reserved as plain Untitled. The server names an untitled create when it arrives (`Untitled N`, by what its folder holds, hidden documents included), which the client can't predict, so the number appears with the first word.
 
 ## Catalogs, addresses, and opening
 

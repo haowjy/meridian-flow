@@ -39,7 +39,6 @@ import {
   reserveResourceDocument,
   resolveRefusedCopy,
   resourcePlacementForSnapshot,
-  resourceVisibleInProject,
   sameOwner,
 } from "@meridian/resource-replica";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
@@ -275,24 +274,9 @@ export class AccountResourceReplica {
   }> {
     const key = { handle: crypto.randomUUID() };
     const documentId = crypto.randomUUID();
-    const projection = await this.metadata.readProjection(projectId);
-    const placement = resourcePlacementForSnapshot(projectId, projection);
-    const names = new Set(
-      projection.records.flatMap((record) => {
-        if (!resourceVisibleInProject(projectId, record, projection.catalogs)) return [];
-        // The server names a create when its first word makes it eligible, counting only the
-        // documents it holds: an empty one here takes no number, or the name would jump.
-        if (record.resource.obligations.createEligibility?.eligibleAt === null) return [];
-        const name = placement.resourceLocation(record)?.name;
-        return name ? [name] : [];
-      }),
-    );
-    let ordinal = 1;
-    let name = "Untitled";
-    while (names.has(name)) {
-      ordinal += 1;
-      name = `Untitled ${ordinal}`;
-    }
+    // The server numbers an untitled create when its first word sends it (`Untitled N`, by what
+    // its folder holds, hidden documents included); until then the document is plain Untitled.
+    const name = "Untitled";
     const reserve = (admission?: PlacementAdmission) =>
       reserveResourceDocument({
         projectId,
