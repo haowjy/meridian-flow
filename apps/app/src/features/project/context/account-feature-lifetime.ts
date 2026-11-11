@@ -115,16 +115,29 @@ export class AccountFeatureLifetime {
       },
       draftOnly: this.draftOnly,
       addresses: {
-        removed: (projectId, documentIds) =>
-          queryClient.setQueriesData<DocumentAddressResult>(
-            { queryKey: projectQueryKeys.documentAddresses(projectId) },
-            (answer) =>
+        removed: (projectId, documentIds) => {
+          const queryKey = projectQueryKeys.documentAddresses(projectId);
+          const rewrite = () =>
+            queryClient.setQueriesData<DocumentAddressResult>({ queryKey }, (answer) =>
               answer?.kind !== "unavailable" &&
               answer &&
               documentIds.includes(answer.document.documentId)
                 ? { kind: "unavailable" }
                 : answer,
-          ),
+            );
+          rewrite();
+          // A lookup in flight was asked before the removal: its answer would land over the
+          // rewrite. Cancelling reverts it to its last answer, so rewrite again and ask afresh.
+          const inFlight = queryClient
+            .getQueryCache()
+            .findAll({ queryKey, fetchStatus: "fetching" });
+          if (inFlight.length === 0) return;
+          void queryClient.cancelQueries({ queryKey, fetchStatus: "fetching" }).then(() => {
+            rewrite();
+            for (const query of inFlight)
+              void queryClient.invalidateQueries({ queryKey: query.queryKey, exact: true });
+          });
+        },
         available: (projectId) =>
           void queryClient.invalidateQueries({
             queryKey: projectQueryKeys.documentAddresses(projectId),
