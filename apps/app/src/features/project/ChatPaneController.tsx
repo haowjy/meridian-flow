@@ -18,7 +18,7 @@ export type ChatPaneControllerProps = {
   projectId: string;
   threadId: string | null;
   open: OpenContextRoute;
-  onShowRecents: (options: { replace: boolean }) => void;
+  onShowRecents: (options: { replace: boolean }) => Promise<void>;
   sidebarToggle: PaneHeaderRailToggle;
   contextToggle: PaneHeaderRailToggle;
   /** While the side is closed: the control naming what it would show. */

@@ -125,11 +125,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const open = props.onOpenContextTarget;
   const openInMain = useOpenInMain(projectId, open);
   const onNewDocument = useNewDocument(projectId, props.contextLive ? open : null);
-  const showRecents = props.routeCommands.showEditorRecents;
-  const onShowRecents = useCallback(
-    (options: { replace: boolean }) => void showRecents(options),
-    [showRecents],
-  );
+  const onShowRecents = props.routeCommands.showEditorRecents;
   const mainKey = mainTab ? `document:${mainTab.documentId}` : null;
   const tabCommands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
 

@@ -43,7 +43,7 @@ export function MainHeader({
   showsChat?: boolean;
   /** Main's item when it holds no tab (a chat, an address that names nothing). */
   current?: ReactNode;
-  onShowRecents: (options: { replace: boolean }) => void;
+  onShowRecents: (options: { replace: boolean }) => Promise<void>;
   /** Absent while no Work is ready to hold an Untitled document. */
   onNewDocument?: () => void;
   sidebarToggle: PaneHeaderRailToggle;

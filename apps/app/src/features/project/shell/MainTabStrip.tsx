@@ -65,7 +65,7 @@ export function useMainTabCommands({
   open: OpenContextRoute;
   /** The tab main shows; null while main holds no tab. */
   mainKey: string | null;
-  onShowRecents: (options: { replace: boolean }) => void;
+  onShowRecents: (options: { replace: boolean }) => Promise<void>;
 }) {
   const accountId = useAccountId();
   const openInMain = useOpenInMain(projectId, open);
@@ -84,9 +84,11 @@ export function useMainTabCommands({
       if (key === mainKey) show(next);
     },
     /** Main goes to Recently opened unless it keeps its item (a chat, or the landing itself). */
-    closeAll: ({ keepMain }: { keepMain: boolean }) => {
+    closeAll: async ({ keepMain }: { keepMain: boolean }) => {
+      // Main leaves first: while it still shows a document, that document's arrival puts its tab
+      // back (`ProjectView`). An Untitled page leaves later than a filed one.
+      if (!keepMain) await onShowRecents({ replace: true });
       closeAllMainTabs(accountId, projectId);
-      if (!keepMain) onShowRecents({ replace: true });
     },
     /** Main's item holds no tab: main goes to the tab it showed last, else Recently opened. */
     closeMain: () => {
@@ -112,7 +114,7 @@ export function MainTabStrip({
   mainDocument?: OpenDocument;
   /** Main's item when it is not a document, drawn as the active chip after the tabs. */
   current?: ReactNode;
-  onShowRecents: (options: { replace: boolean }) => void;
+  onShowRecents: (options: { replace: boolean }) => Promise<void>;
   /** Absent while no Work is ready to hold an Untitled document. */
   onNewDocument?: () => void;
 }) {
@@ -224,7 +226,7 @@ export function MainTabMenu({
   mainDocument?: OpenDocument;
   /** Close all leaves main's item where it is: a chat is not a tab, and the landing is the goal. */
   keepMain: boolean;
-  onShowRecents: (options: { replace: boolean }) => void;
+  onShowRecents: (options: { replace: boolean }) => Promise<void>;
 }) {
   const { tabs, unrecorded } = useDrawnTabs(projectId, mainKey, mainDocument);
   const commands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
@@ -265,7 +267,7 @@ export function MainTabMenu({
           onSelect={() => {
             focusAfter.current = () =>
               window.document.querySelector<HTMLElement>("[data-recents-door]");
-            commands.closeAll({ keepMain });
+            void commands.closeAll({ keepMain });
           }}
         >
           <Trans>Close all</Trans>
