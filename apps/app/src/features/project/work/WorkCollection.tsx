@@ -14,7 +14,6 @@ import { role } from "@/components/ui/roles";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
-import { cn } from "@/lib/utils";
 import { RuledList } from "../RuledList";
 import { DeletedWorkList } from "./DeletedWorkList";
 import { useArchiveFocusFollow } from "./useArchiveFocusFollow";
@@ -144,7 +143,10 @@ export function WorkCollection({
   };
   return (
     <section aria-busy={isFetching} className="flex min-h-0 flex-1 flex-col">
-      <div ref={archiveFocus.tabs} className="flex items-center justify-between gap-4 pb-2">
+      <div
+        ref={archiveFocus.tabs}
+        className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pb-2"
+      >
         <SegmentedTabs
           label={t`Show Work`}
           value={view}

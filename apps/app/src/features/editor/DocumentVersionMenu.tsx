@@ -18,6 +18,8 @@ import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { DraftSwitcher, type DraftSwitcherProps } from "@/features/draft-review/DraftSwitcher";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useHostDocumentPaint } from "@/features/project/DocumentReview";
+import { escapeCssIdent } from "@/lib/css-selector";
+import { holdFocus } from "@/lib/focus-follow";
 import { workDisplayName } from "@/lib/work-name";
 
 export type DocumentVersionReview = Pick<
@@ -80,10 +82,12 @@ export function DocumentVersionMenu({
     ) : undefined,
     current: shown?.ownerKey === hint.owner,
     scope: hint.owner === scopeOwner,
-    onSelect: () =>
+    onSelect: () => {
       setDocumentView(accountId, projectId, documentId, {
         pin: { ownerKey: hint.owner, itemKey: hint.itemKey },
-      }),
+      });
+      followToChip(documentId);
+    },
   }));
   const shownLabel = listed.find((hint) => hint.owner === shown?.ownerKey)?.label ?? null;
   const outOfScope =
@@ -96,14 +100,24 @@ export function DocumentVersionMenu({
       owner={outOfScope ?? undefined}
       draftOnly={review?.draftOnly ?? false}
       disabled={review?.disabled ?? false}
-      onShowLive={
-        review?.onShowLive ??
-        (() => setDocumentView(accountId, projectId, documentId, { version: "live" }))
-      }
+      onShowLive={() => {
+        if (review) review.onShowLive();
+        else setDocumentView(accountId, projectId, documentId, { version: "live" });
+        followToChip(documentId);
+      }}
       onRename={review?.onRename}
       marks={review?.marks}
       draftCommands={review?.draftCommands}
       touch={touch}
     />
+  );
+}
+
+/** A pick swaps the chip for the other version's: the menu's focus return follows to the new one. */
+function followToChip(documentId: string) {
+  holdFocus(() =>
+    document.querySelector<HTMLElement>(
+      `[data-project-host="document:${escapeCssIdent(documentId)}"] [data-version-chip]`,
+    ),
   );
 }

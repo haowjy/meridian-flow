@@ -27,7 +27,7 @@ import { commandFailureInput } from "@/client/failures/command-failure";
 import { useFailureLog } from "@/client/failures/failure-log";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, useThreadActions } from "@/client/stores";
-import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from "./control-copy";
+import { controlAlreadyStartedCopy, controlStatusCopy, controlWithdrawnCopy } from "./control-copy";
 import {
   type CompactControl,
   type ControlAction,
@@ -210,7 +210,7 @@ export function useThreadControls(input: {
       }
       dispatch({ type: "withdraw", row: queued, requestId: crypto.randomUUID() });
       const occurrence = localRef.current.get(queued.id)?.withdrawal;
-      announce(controlStoppedCopy(queued.control));
+      announce(controlWithdrawnCopy(queued.control));
       const withdrawOnServer = async () => {
         try {
           const { outcome, runState } = await withdrawThreadControl(threadId, queued.id);

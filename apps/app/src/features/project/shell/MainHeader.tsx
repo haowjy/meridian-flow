@@ -11,6 +11,7 @@ import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { OpenDocument } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { draftCopyView } from "@/features/draft-review/copy-view";
+import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../context/context-file-icon";
 import { useReferenceDrag } from "../context/entry-drag/reference-source";
@@ -126,7 +127,14 @@ function RecentlyOpenedDoor({ active, onClick }: { active: boolean; onClick: () 
       <TooltipTrigger asChild>
         <button
           type="button"
-          onClick={onClick}
+          onClick={(event) => {
+            const focused = event.currentTarget === document.activeElement;
+            onClick();
+            // The landing is main's own page with its own header: the focus follows to its door.
+            if (focused)
+              holdFocus(() => document.querySelector("[data-recents-door][aria-current]"));
+          }}
+          data-recents-door
           aria-label={label}
           aria-current={active ? "page" : undefined}
           className={cn("focus-ring shrink-0", tabChipClass(active))}

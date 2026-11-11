@@ -180,12 +180,10 @@ export function DraftNoticeLine({
         className,
       )}
     >
-      <span className="min-w-0 truncate" title={sentence}>
-        {sentence}
-      </span>
+      <NoticeSentence sentence={sentence} name={subject.kind === "drafts" ? null : subject.name} />
       <button
         type="button"
-        className="text-button shrink-0 text-xs disabled:opacity-50 coarse:min-h-11"
+        className="text-button shrink-0 text-xs disabled:opacity-50 coarse:min-h-11 coarse:min-w-11"
         disabled={notice.status === "undoing"}
         onClick={undo}
       >
@@ -193,6 +191,31 @@ export function DraftNoticeLine({
       </button>
       {dismiss}
     </div>
+  );
+}
+
+/** A notice's action in `container` (Undo, Retry): where the focus goes when the notice took the pressed control's place. */
+export const noticeAction = (container: HTMLElement) =>
+  container.querySelector<HTMLElement>("[data-command-notice] button:not(:disabled)");
+
+/**
+ * A notice's sentence, where the document's name is what shortens: the verb that says what
+ * happened stays whole at any width.
+ */
+function NoticeSentence({ sentence, name }: { sentence: string; name: string | null }) {
+  const at = name ? sentence.indexOf(name) : -1;
+  if (!name || at < 0)
+    return (
+      <span className="min-w-0 truncate" title={sentence}>
+        {sentence}
+      </span>
+    );
+  return (
+    <span className="flex min-w-0 whitespace-pre" title={sentence}>
+      <span className="shrink-0">{sentence.slice(0, at)}</span>
+      <span className="min-w-0 truncate">{name}</span>
+      <span className="shrink-0">{sentence.slice(at + name.length)}</span>
+    </span>
   );
 }
 
