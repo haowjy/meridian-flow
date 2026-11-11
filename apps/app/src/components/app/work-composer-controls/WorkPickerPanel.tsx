@@ -8,20 +8,17 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
-import { LoaderCircle, Search } from "lucide-react";
-import { type ReactNode, type RefObject, useId } from "react";
+import { LoaderCircle } from "lucide-react";
+import type { RefObject } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { Button } from "@/components/ui/button";
 import {
-  dropdownGroupLabelClass,
-  dropdownResultsClass,
-  dropdownRowVariants,
-  dropdownSearchClass,
-} from "@/components/ui/dropdown-presentation";
-import { Input } from "@/components/ui/input";
-import { handleListKeys } from "@/components/ui/list-keys";
-import { role } from "@/components/ui/roles";
-import { cn } from "@/lib/utils";
+  Picker,
+  PickerLine,
+  PickerResults,
+  PickerRow,
+  PickerSearch,
+  PickerSection,
+} from "@/components/ui/picker";
 
 export type WorkPickerFailure =
   | { kind: "thread_busy" }
@@ -119,58 +116,35 @@ export function WorkPickerPanel({
     retry: RefObject<HTMLButtonElement | null>;
   };
 }) {
-  const searchId = useId();
+  const noneCurrent = view.status === "ready" && operation.currentWorkId === view.noWork.id;
   return (
-    // biome-ignore lint/a11y/useSemanticElements: fieldset intrinsic sizing breaks the bounded results scrollport.
-    <div
-      role="group"
-      aria-label={purposeLabel}
-      aria-busy={(view.status === "ready" && view.refreshing) || operation.pending}
-      className="flex min-h-0 min-w-0 flex-1 flex-col gap-[var(--chat-space-block)]"
-      onKeyDown={handleListKeys}
+    <Picker
+      label={purposeLabel}
+      busy={(view.status === "ready" && view.refreshing) || operation.pending}
     >
-      <label htmlFor={searchId} className="sr-only">
-        <Trans>Search Work</Trans>
-      </label>
-      <div className="relative mx-[var(--chat-space-block)] shrink-0">
-        <Search
-          className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
-          data-list-item
-          ref={searchRef}
-          id={searchId}
-          type="search"
-          value={view.query}
-          disabled={view.status !== "ready"}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder={t`Search Work`}
-          className={dropdownSearchClass}
-        />
-      </div>
-      <div className={`${dropdownResultsClass} space-y-[var(--chat-space-inline)]`}>
+      <PickerSearch
+        ref={searchRef}
+        value={view.query}
+        disabled={view.status !== "ready"}
+        onChange={onQueryChange}
+        label={t`Search Work`}
+      />
+      <PickerResults>
         {view.status === "ready" ? (
-          <Button
-            ref={operation.currentWorkId === view.noWork.id ? focusRefs?.selected : undefined}
-            type="button"
-            variant="ghost"
-            aria-current={operation.currentWorkId === view.noWork.id ? "true" : undefined}
-            className={cn(
-              dropdownRowVariants({ selected: operation.currentWorkId === view.noWork.id }),
-              "w-full justify-start",
-            )}
-            data-list-item
-            disabled={!view.enabled}
-            onClick={() => onChoose(view.noWork)}
-          >
-            <Trans>None</Trans>
-          </Button>
+          <PickerSection>
+            <PickerRow
+              ref={noneCurrent ? focusRefs?.selected : undefined}
+              current={noneCurrent}
+              disabled={!view.enabled}
+              onSelect={() => onChoose(view.noWork)}
+              title={<Trans>None</Trans>}
+            />
+          </PickerSection>
         ) : null}
         {view.status === "loading" ? (
-          <PickerState>
+          <PickerLine>
             <Trans>Loading Work…</Trans>
-          </PickerState>
+          </PickerLine>
         ) : null}
         {view.status === "error" ? (
           <InlineErrorRow
@@ -180,119 +154,72 @@ export function WorkPickerPanel({
           />
         ) : null}
         {view.status === "empty" ? (
-          <PickerState>
+          <PickerLine>
             <Trans>No Work yet.</Trans>
-          </PickerState>
+          </PickerLine>
         ) : null}
         {view.works.length ? (
-          <WorkSection
-            label={t`Active Work`}
-            works={view.works}
-            operation={operation}
-            enabled={view.enabled}
-            onChoose={onChoose}
-            focusRefs={focusRefs}
-          />
+          <PickerSection label={t`Active Work`}>
+            {view.works.map((work) => {
+              const current = work.id === operation.currentWorkId;
+              const changing = work.id === operation.targetId && operation.pending;
+              const error = work.id === operation.targetId ? operation.failure : null;
+              const errorId = `${work.id}-work-error`;
+              const helpId = `${work.id}-work-help`;
+              const hasHelp = Boolean((changing && work.goal) || current);
+              return (
+                <PickerRow
+                  key={work.id}
+                  kind="descriptive"
+                  ref={
+                    current
+                      ? focusRefs?.selected
+                      : work.id === view.works[0]?.id
+                        ? focusRefs?.first
+                        : undefined
+                  }
+                  current={current}
+                  disabled={!view.enabled}
+                  describedBy={
+                    [hasHelp ? helpId : null, error ? errorId : null].filter(Boolean).join(" ") ||
+                    undefined
+                  }
+                  onSelect={() => onChoose(work)}
+                  title={work.name}
+                  detail={changing ? <Trans>Changing work</Trans> : work.goal}
+                  trailing={
+                    <>
+                      {changing ? (
+                        <LoaderCircle className="size-4 animate-spin" aria-hidden />
+                      ) : null}
+                      {hasHelp ? (
+                        <span id={helpId} className="sr-only">
+                          {changing && work.goal ? t`Goal: ${work.goal}. ` : null}
+                          {current ? <Trans>Current Work for this chat.</Trans> : null}
+                        </span>
+                      ) : null}
+                    </>
+                  }
+                  below={
+                    error ? (
+                      <InlineErrorRow
+                        id={errorId}
+                        message={failureCopy(error)}
+                        className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-0"
+                      />
+                    ) : null
+                  }
+                />
+              );
+            })}
+          </PickerSection>
         ) : null}
         {view.status === "ready" && view.query.trim() !== "" && !view.works.length ? (
-          <p className={cn("px-2", role.emptyLine)}>
+          <PickerLine>
             <Trans>No Work matches your search.</Trans>
-          </p>
+          </PickerLine>
         ) : null}
-      </div>
-    </div>
-  );
-}
-
-function PickerState({ children }: { children: ReactNode }) {
-  return <p className={cn("px-2", role.emptyLine)}>{children}</p>;
-}
-
-function WorkSection({
-  label,
-  works,
-  operation,
-  enabled,
-  onChoose,
-  focusRefs,
-}: {
-  label: string;
-  works: Work[];
-  operation: WorkPickerOperation;
-  enabled: boolean;
-  onChoose: (work: Work) => void;
-  focusRefs?: {
-    selected: RefObject<HTMLButtonElement | null>;
-    first: RefObject<HTMLButtonElement | null>;
-  };
-}) {
-  return (
-    <section aria-label={label}>
-      <h3 className={dropdownGroupLabelClass}>{label}</h3>
-      <div className="space-y-[var(--chat-space-inline)]">
-        {works.map((work) => {
-          const current = work.id === operation.currentWorkId;
-          const changing = work.id === operation.targetId && operation.pending;
-          const error = work.id === operation.targetId ? operation.failure : null;
-          const errorId = `${work.id}-work-error`;
-          const helpId = `${work.id}-work-help`;
-          const hasHelp = Boolean((changing && work.goal) || current);
-          return (
-            <div key={work.id}>
-              <Button
-                ref={
-                  current
-                    ? focusRefs?.selected
-                    : work.id === works[0]?.id
-                      ? focusRefs?.first
-                      : undefined
-                }
-                data-list-item
-                variant="ghost"
-                type="button"
-                disabled={!enabled}
-                aria-current={current ? "true" : undefined}
-                aria-describedby={
-                  [hasHelp ? helpId : null, error ? errorId : null].filter(Boolean).join(" ") ||
-                  undefined
-                }
-                onClick={() => onChoose(work)}
-                className={cn(
-                  dropdownRowVariants({ kind: "descriptive", selected: current }),
-                  "justify-start whitespace-normal",
-                )}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{work.name}</span>
-                  {changing ? (
-                    <span className="block truncate text-xs text-muted-foreground">
-                      <Trans>Changing work</Trans>
-                    </span>
-                  ) : work.goal ? (
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {work.goal}
-                    </span>
-                  ) : null}
-                </span>
-                {changing ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : null}
-                {hasHelp ? (
-                  <span id={helpId} className="sr-only">
-                    {changing && work.goal ? t`Goal: ${work.goal}. ` : null}
-                    {current ? <Trans>Current Work for this chat.</Trans> : null}
-                  </span>
-                ) : null}
-              </Button>
-              {error ? (
-                <InlineErrorRow
-                  id={errorId}
-                  message={failureCopy(error)}
-                  className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-0"
-                />
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    </section>
+      </PickerResults>
+    </Picker>
   );
 }
