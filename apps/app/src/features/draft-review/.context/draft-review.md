@@ -172,9 +172,13 @@ removed-documents notice). If the writer moved before the go-back resolved, the 
 facts from a band stay out of the store: the identity row shows them from the owner's per-document
 facts (`useManuscriptState`). Discard all is one notice over several rooms. A room's Undo is done
 once the prose is back in the room, which sends it whenever it can: the notice ends and the row
-returns at once, offline too. Only the view's follow back to the draft waits for the server's
-acknowledgement (`landed`), since a draft-only document's review address resolves only once the
-server holds its text. A room that turned read-only (its Work archived) ends the notice. An Undo
+returns at once, offline too. The owner list is not read again, and the view does not follow
+back to the draft, until the server lists the draft again (`relistedOwnerDraft`, polled after the
+acknowledgement): the list omits a draft until the server re-judges its effect, about 250 ms
+after the write, and a read before then drops the row. Following sooner opened a draft-only page
+on a draft the list omitted: `verifyPin` dropped the view's pin and `DraftOnlySettlement` closed
+the page as discarded ("This destination is unavailable"). If the server never lists it within
+the retries, main stays where it is. A room that turned read-only (its Work archived) ends the notice. An Undo
 that throws keeps the notice with Retry, and Retry takes back only the rooms that failed.
 
 A notice's Undo holds while the draft's prose is as the Discard left it. Any other transaction on
