@@ -1,7 +1,7 @@
 /** Renders the mobile project workspace. */
 
 import { t } from "@lingui/core/macro";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Pin } from "lucide-react";
 import { useEffect, useState } from "react";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -13,12 +13,11 @@ import { DocumentHost, MainDocumentStatus } from "../context/DocumentHost";
 import { RecentDocumentsLanding } from "../context/RecentDocumentsLanding";
 import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice";
 import type { ReviewScopedProjectProps } from "../ProjectView";
-import {
-  chatSurfaceThreadId,
-  displayedChatThreadId,
-  useChatNavigation,
-} from "../routing/chat-navigation";
+import { useChatNavigation } from "../routing/chat-navigation";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
+import { sideReasonText, useSideChatName } from "../side/SideHeader";
+import { SidePicker } from "../side/SidePicker";
+import { useChatOnScreen, useHostChatId, useShellCommands, useSideItem } from "../side/SideView";
 import { useMainItem } from "../views";
 import { ChatBreadcrumb } from "./ChatBreadcrumb";
 import { pathLeafName } from "./context-location";
@@ -49,6 +48,13 @@ export function MobileProject(props: MobileProjectProps) {
     main.document.local ? main.document.tab?.name : undefined,
   );
   const removedNotice = useRemovedDocumentPhoneNotice(props.projectId);
+  // The sheet is the side: the same held pick and picker as the desktop, chats only.
+  const side = useSideItem();
+  const sheetChat = useHostChatId();
+  const sideChat = side.item?.kind === "chat" ? side.item : null;
+  const sheetName = useSideChatName(props.projectId, sideChat?.chatId ?? sheetChat);
+  const chatOnScreen = useChatOnScreen();
+  const mainChatId = props.chatDisplay?.kind === "thread" ? props.chatDisplay.threadId : null;
 
   return (
     <div
@@ -69,15 +75,23 @@ export function MobileProject(props: MobileProjectProps) {
         notice={onChat ? undefined : removedNotice}
         chatAction={
           !onChat ? (
-            <IconButton size="sm" label={t`Open chat`} onClick={() => openChatSheet()}>
-              <MessageSquare className="size-5" aria-hidden />
-            </IconButton>
+            // Names what the sheet will show: main's companion, or the held pick.
+            <button
+              type="button"
+              aria-label={t`Show ${sheetName}`}
+              onClick={() => openChatSheet()}
+              className="focus-ring flex h-11 max-w-36 min-w-11 items-center justify-center gap-1.5 rounded-md px-2 text-muted-foreground"
+            >
+              <MessageSquare className="size-5 shrink-0" aria-hidden />
+              <span className="min-w-0 truncate text-xs">{sheetName}</span>
+              {side.source === "held" ? (
+                <Pin className="size-3 shrink-0" aria-label={t`Held`} />
+              ) : null}
+            </button>
           ) : undefined
         }
         actions={
-          onChat ? (
-            <ChatFilesMenu projectId={props.projectId} threadId={displayedChatThreadId(chat)} />
-          ) : undefined
+          onChat ? <ChatFilesMenu projectId={props.projectId} threadId={mainChatId} /> : undefined
         }
       />
       <main className="main-pane flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -88,7 +102,7 @@ export function MobileProject(props: MobileProjectProps) {
           removed={props.routeIssues?.main ? undefined : props.routeIssues?.removed}
           issue={props.routeIssues?.main ?? (onChat ? undefined : props.routeIssues?.editor)}
         >
-          {renderActiveView(props, chat)}
+          {renderActiveView(props)}
         </ProjectRouteBoundary>
       </main>
       <Sheet open={chatOpen && !onChat} onOpenChange={setChatOpen}>
@@ -103,21 +117,28 @@ export function MobileProject(props: MobileProjectProps) {
             <MobileKeyboardAware>
               <ChatSurface
                 projectId={props.projectId}
-                threadId={chatSurfaceThreadId(chat)}
+                threadId={sheetChat}
+                about={sideChat?.chatId === null ? (sideChat.about ?? null) : null}
                 activeWork={props.chatWork}
                 availableWorks={props.availableWorks}
                 place="side"
                 header={
                   <MobileChatSheetHeader
                     projectId={props.projectId}
-                    threadId={chatSurfaceThreadId(chat)}
+                    threadId={sheetChat}
+                    threadSelect={<PhoneSideTitle projectId={props.projectId} name={sheetName} />}
                     onClose={() => setChatOpen(false)}
                   />
                 }
                 // The sheet mounts the surface only while open: it is always
                 // visible, and closing the sheet ends it.
                 visible
-                onOpenContextTarget={props.onOpenContextTarget}
+                onOpenContextTarget={(target) =>
+                  void props.onOpenContextTarget(
+                    target,
+                    sheetChat ? { beside: { chatId: sheetChat } } : undefined,
+                  )
+                }
               />
             </MobileKeyboardAware>
           </WorkBranchCommandsBoundary>
@@ -133,13 +154,39 @@ export function MobileProject(props: MobileProjectProps) {
         contextLive={props.contextLive}
         activeContextScheme={props.activeContextScheme}
         activeContextPath={props.activeContextPath}
-        chatThreadId={displayedChatThreadId(chat)}
+        chatThreadId={chatOnScreen}
       />
     </div>
   );
 }
 
-function renderActiveView(props: MobileProjectProps, chat: ReturnType<typeof useChatNavigation>) {
+/** The sheet's name is its picker, with why it is there and the held mark. */
+function PhoneSideTitle({ projectId, name }: { projectId: string; name: string }) {
+  const side = useSideItem();
+  const { releaseSide } = useShellCommands(projectId);
+  const mainName = useMainItem().document.tab?.name ?? null;
+  const reason = side.source === "held" ? null : sideReasonText(side.reason, mainName);
+  return (
+    <>
+      <SidePicker
+        projectId={projectId}
+        name={name}
+        icon={<MessageSquare aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+        chatsOnly
+      />
+      {reason ? (
+        <span className="min-w-0 shrink truncate text-xs text-muted-foreground">{reason}</span>
+      ) : null}
+      {side.source === "held" ? (
+        <IconButton size="sm" label={t`Held here. Follow main again`} onClick={releaseSide}>
+          <Pin className="size-4" aria-hidden />
+        </IconButton>
+      ) : null}
+    </>
+  );
+}
+
+function renderActiveView(props: MobileProjectProps) {
   if (props.chatDisplay) {
     if (props.chatDisplay.kind === "index")
       return <ChatIndex projectId={props.projectId} namedByChrome />;
@@ -147,7 +194,7 @@ function renderActiveView(props: MobileProjectProps, chat: ReturnType<typeof use
       <WorkBranchCommandsBoundary value={props.chatCommands}>
         <MobileChatHost
           projectId={props.projectId}
-          threadId={displayedChatThreadId(chat)}
+          threadId={props.chatDisplay.threadId}
           activeWork={props.chatWork}
           availableWorks={props.availableWorks}
           onOpenContextTarget={props.onOpenContextTarget}

@@ -6,6 +6,7 @@
  * sidebar/context rail reopen controls reachable above that surface.
  */
 
+import type { ReactNode } from "react";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
@@ -20,6 +21,8 @@ export type ChatPaneControllerProps = {
   threadId: string | null;
   sidebarToggle: PaneHeaderRailToggle;
   contextToggle: PaneHeaderRailToggle;
+  /** While the side is closed: the control naming what it would show. */
+  closedSide?: ReactNode;
 };
 
 export function ChatPaneController({
@@ -27,6 +30,7 @@ export function ChatPaneController({
   threadId,
   sidebarToggle,
   contextToggle,
+  closedSide,
 }: ChatPaneControllerProps) {
   const { openChatIndex } = useChatNavigation();
   const activity = useThreadActivity({
@@ -48,12 +52,15 @@ export function ChatPaneController({
       left={sidebarToggle}
       right={contextToggle}
       actions={
-        threadId ? (
-          <>
-            <ChatFilesMenu projectId={projectId} threadId={threadId} />
-            <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
-          </>
-        ) : null
+        <>
+          {closedSide}
+          {threadId ? (
+            <>
+              <ChatFilesMenu projectId={projectId} threadId={threadId} />
+              <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
+            </>
+          ) : null}
+        </>
       }
     />
   );

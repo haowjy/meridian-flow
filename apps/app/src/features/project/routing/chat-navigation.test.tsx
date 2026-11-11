@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 /**
- * A sent chat takes main when main is the chat index; beside a document it only becomes the
- * current chat, which the side shows. The current chat is this tab's own, and a chat the
- * server no longer has is let go.
+ * A sent chat takes main when main is the chat index; sent from the side's composer it is held
+ * beside main. The last chat is this tab's own, and a chat the server no longer has is let go.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - tab-local remembered chat navigation
@@ -11,14 +10,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { readCurrentChat } from "@/client/current-chat";
+import { readHeldPick, readLastChat } from "@/client/project-shell/store";
 import { threadSnapshotQueryOptions } from "@/client/query/thread-snapshot-query";
 import { ThreadStoreProvider, useThreadActions } from "@/client/stores";
-import {
-  type ChatNavigation,
-  chatSurfaceThreadId,
-  useProjectChatNavigation,
-} from "./chat-navigation";
+import { type ChatNavigation, useProjectChatNavigation } from "./chat-navigation";
 import type { ProjectDestination } from "./project-address";
 
 (
@@ -79,11 +74,11 @@ afterEach(() => {
   act(() => root.unmount());
 });
 
-it("shows a sent chat in main from the index and only remembers it beside a document", () => {
+it("shows a sent chat in main from the index and holds it beside a document", () => {
   render({ kind: "index" });
   act(() => navigation.acceptCreatedChat("sent"));
   expect(go).toHaveBeenCalledWith({ kind: "chat", chatId: "sent" });
-  expect(readCurrentChat(ACCOUNT, PROJECT)).toBe("sent");
+  expect(readLastChat(ACCOUNT, PROJECT)).toBe("sent");
   // The route settles the URL onto the new chat; re-rendering with it reflects
   // the thread variant (the hook alone cannot observe the navigation completing).
   render({ kind: "thread", threadId: "sent" });
@@ -93,7 +88,7 @@ it("shows a sent chat in main from the index and only remembers it beside a docu
   render(null);
   act(() => navigation.acceptCreatedChat("docked"));
   expect(go).not.toHaveBeenCalled();
-  expect(chatSurfaceThreadId(navigation)).toBe("docked");
+  expect(readHeldPick(ACCOUNT, PROJECT)).toEqual({ kind: "chat", chatId: "docked" });
 });
 
 it("keeps a first send whose pre-creation 404 is still cached once it is acknowledged", () => {

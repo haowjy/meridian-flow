@@ -3,6 +3,7 @@ import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/p
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { NewChatSubmission } from "@/client/chat-submissions";
 import { recordAndProjectSubmission } from "@/client/chat-submissions/owner";
+import type { ComposerDraftScope } from "@/client/composer-drafts";
 import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerDraftSnapshot } from "@/components/app/composer/composer-document";
 import type { CreationAgent } from "@/features/agents/creation-agent";
@@ -26,6 +27,8 @@ export type SendProjectChatArgs = {
   aiWriteMode?: AiWriteMode;
   /** The thread id minted before the first attach, which owns any uploads already attached. */
   threadId?: string;
+  /** The draft the message was written in, handed to the journal once recorded. */
+  draftScope: ComposerDraftScope;
   threadActions: ThreadStoreActions;
   selectChat: (threadId: string) => void;
   now?: number;
@@ -49,6 +52,7 @@ export function sendProjectChat({
   workAiWriteMode,
   aiWriteMode,
   threadId: mintedThreadId,
+  draftScope,
   threadActions,
   selectChat,
   now,
@@ -82,13 +86,7 @@ export function sendProjectChat({
         agentSlug: agent.slug,
       },
     };
-    if (
-      !recordAndProjectSubmission(accountId, submission, threadActions, {
-        kind: "new-chat",
-        id: projectId,
-      })
-    )
-      return null;
+    if (!recordAndProjectSubmission(accountId, submission, threadActions, draftScope)) return null;
   }
   try {
     selectChat(threadId);

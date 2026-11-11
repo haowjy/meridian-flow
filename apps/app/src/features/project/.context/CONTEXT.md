@@ -19,16 +19,41 @@ changes its `grid-area`, or parks it; it doesn't portal, reparent or remount a s
 
 Main shows what the address names, resolved by `resolveMainDocument` / `useMainDocument`
 (`views.ts`), the resolver the phone uses too; `MainViewProvider` / `useMainItem` carry
-`{item, document}`. The side shows one item, never main's (`resolveSideItem`): the last chat beside
-a document; beside a chat, the newest document shown in main or the side, else the head of
-Recently opened. Each header renders inside its host (`shell/MainHeader.tsx`,
-`side/SideHeader.tsx`).
+`{item, document}`. The side shows one item, never main's. `resolveSide` (`side/side-item.ts`) picks
+it: the held pick, else the chat this history entry was opened from (`meridianBeside` in history
+state), else main's companion once its read answers, else a new-chat composer about main's
+document. A document's companion is the newest chat that edited it (`/related`); a chat's is the
+newest document it touched, else the last document. A document fits beside only once it is
+described (`describe` in `context/open-project-document.ts`) and opens in the editor: one that
+doesn't (removed, an upload) is skipped for the next candidate, and the picker offers only what
+opens. `fitsBeside` is the one answer to "can this sit beside", for the rule and the picker. While
+a read or a describe is out, the side keeps what it showed and says no reason, since the kept
+reason was about another main. `side/SideView.tsx` holds this state and the commands
+(`useShellCommands`); both shells read it, and the phone's sheet takes chats only. The held pick
+lives per browser tab (`client/project-shell/store.ts`, seeded from the device) and never enters
+history, so Back moves main and leaves the hold alone. A hold ends by the held mark, by Follow in
+the picker, by closing the side, when it can no longer sit beside main (its item becomes main, a
+chat opens in main, or the phone shell meets a held document), when its document no longer opens,
+and when its document is closed, Discarded or removed: a hold the writer can't see never waits.
+Ctrl/cmd-click or middle-click on a document link holds it beside with the link's Work and opens
+a closed side (`useOptionalHoldBeside`). Each header renders inside its host
+(`shell/MainHeader.tsx`, `side/SideHeader.tsx`); while the side is closed, main's header names it
+(`side/ClosedSideButton.tsx`).
+
+The side's new-chat composer (`useAttachAbout` in `features/chat/CreationComposer.tsx`) attaches
+main's document only to an empty draft or over the chip it put there itself, which it remembers
+with the draft (`AttachedAbout`), so a remount or reload still knows it. Its draft is its own
+(`side-new-chat`, one per project in each browser tab), apart from the one `/chats` and main's new
+chat use: a chip the side attached never reaches `/chats`, and words typed in `/chats` never show
+beside a document. A Send that fails after the chat was made returns its words to main's new
+chat, where the dissolved chat reopens. The composer reports what the draft is about (`NewChatAbout`), and the side's
+name says that, not main's document.
 
 Which documents are mounted is one list, `PresentedDocuments` (`context/presented-documents.ts`):
 each document host registers its current descriptor there, and `shown` orders them newest on
 screen first. Besides main's and the side's document, the newest one shown that is off screen
-stays mounted as the kept host, hidden so its undo survives a return; beside a document the side
-is a chat, so at most two documents are mounted. The kept document is mounted but not presented:
+stays mounted as the kept host, hidden so its undo survives a return, so at most three documents
+are mounted (main, side, kept). The kept document is mounted but not presented:
 it reviews nothing, admits nothing, writes neither pin nor address, raises no removed notice and
 is not on screen for removals or availability. A close, a Discard and a removal `forget` the
 document through the removal coordinator, so nothing picks it again and its host unmounts (taking
@@ -103,10 +128,12 @@ on refusal, returns to the origin tab if the user hasn't moved focus elsewhere.
 
 ## Navigation and chat
 
-`routing/chat-navigation.tsx` is the single command seam: `openChat` always navigates main to the chat; there is no side-only
-chat selection. `display` is the chat main shows (the index or one thread), null when main holds
-no chat; `currentThreadId` is the last chat opened, which the side shows beside a document. A link
-followed inside a chat opens the page in main and the chat moves to the side. On the phone, chat
+`routing/chat-navigation.tsx` is the single command seam for main: `openChat` always navigates
+main to the chat. The side chooses its own chat only through the held pick (the side's picker, or
+a chat created from the side's composer). `display` is the chat main shows (the index or one thread), null when main holds
+no chat; `lastChatId` is the last chat opened (`readLastChat` in `client/project-shell/store.ts`).
+A chat created from the side's composer is held beside. A link followed inside a chat opens the
+page in main, and the entry records that chat as its beside hint. On the phone, chat
 outside the Chat screen reveals the local Sheet.
 
 The displayed-chat variant is derived from the URL; a chat may stay mounted behind the index

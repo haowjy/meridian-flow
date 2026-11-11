@@ -1,7 +1,7 @@
 /** Tab-local selection, with a device seed only for a tab's first read. */
 import { browserRecord } from "./storage/browser-record";
 
-type RememberedKind = "chat" | "work" | "sidebar-list";
+type RememberedKind = "chat" | "work" | "sidebar-list" | "held";
 
 export function rememberedIdKey(
   kind: RememberedKind,

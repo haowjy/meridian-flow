@@ -1,13 +1,16 @@
 /** Shared pinned new-chat composer for the main, the side, and the phone. */
 import { t } from "@lingui/core/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { useEffect, useMemo, useRef } from "react";
+import type { JSONContent } from "@tiptap/core";
+import { type RefObject, useCallback, useEffect, useMemo, useRef } from "react";
 import { chatUploadPort } from "@/client/api/context-upload-api";
+import type { AttachedAbout } from "@/client/composer-drafts";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useSelectionAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
-import { Composer, type ComposerHandle } from "@/components/app/composer";
+import { Composer, type ComposerDraftChange, type ComposerHandle } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
@@ -22,13 +25,19 @@ import { useCreationComposer } from "./useCreationComposer";
 
 export function CreationComposer({
   projectId,
+  about = null,
   variant = "pinned",
   autoFocus = false,
   newChatFocusRequestId = null,
   newChatWorkId,
   onNewChatFocusHandled,
+  onAboutChange,
 }: {
   projectId: string;
+  /** The document a new chat beside it is about: attached while the writer has written nothing. */
+  about?: string | null;
+  /** What the new chat is about as its draft stands, for the side's name. */
+  onAboutChange?: (about: NewChatAbout) => void;
   /** `hero` — the chat index's centered composer; `pinned` — the empty chat's footer. */
   variant?: "pinned" | "hero";
   autoFocus?: boolean;
@@ -84,6 +93,7 @@ export function CreationComposer({
     null,
     creation.draft.chatId,
   );
+  const noteDraft = useAttachAbout(composerRef, creation.draft, references, about, onAboutChange);
   const openDocument = useOpenProjectDocument(projectId);
   const folders = useMemo<FolderMenuHost>(
     () => ({
@@ -146,7 +156,10 @@ export function CreationComposer({
         onSubmit={async (envelope) =>
           Boolean(choicesReady && context && creation.submit(envelope, context))
         }
-        onDraftChange={creation.draft.updateDraft}
+        onDraftChange={(change) => {
+          creation.draft.updateDraft(change);
+          noteDraft(change);
+        }}
         referenceCatalog={references}
         availableSkills={availableSkills.skills}
         onOpenReference={(reference) => {
@@ -196,4 +209,73 @@ export function CreationComposer({
       ) : null}
     </FolderMenuContext.Provider>
   );
+}
+
+/**
+ * What a new chat beside a document is about, as its draft stands: the side's name says it.
+ * `follows`: the draft is empty or the chip this composer put there, untouched, so it moves with
+ * the document beside. A label: the writer wrote around that chip. Null: the chip is gone.
+ */
+export type NewChatAbout = "follows" | { label: string } | null;
+
+/**
+ * A new chat beside a document starts with that document attached. The writer's own draft is
+ * theirs: the chip replaces only an empty draft or the chip this hook put there last, never an
+ * upload or a chip the writer picked. Which chip it put there is kept with the draft, so a
+ * remounted or reloaded composer still knows. Nothing here takes focus.
+ */
+function useAttachAbout(
+  composerRef: RefObject<ComposerHandle | null>,
+  draft: Pick<
+    ReturnType<typeof useCreationComposer>["draft"],
+    "attachedAbout" | "setAttachedAbout"
+  >,
+  references: ReferenceBrowserCatalog | null,
+  about: string | null,
+  onAboutChange: ((about: NewChatAbout) => void) | undefined,
+) {
+  const { attachedAbout, setAttachedAbout } = draft;
+  const report = useRef(onAboutChange);
+  report.current = onAboutChange;
+  useEffect(() => {
+    if (!about || !references) return;
+    const attach = () => {
+      const handle = composerRef.current;
+      if (!handle) return false;
+      const row = references.resolveReference({ kind: "file", id: about });
+      if (row?.kind !== "file") return false;
+      const reference = row.action.reference;
+      if (handle.startWith(reference, row.fileKind, attachedAbout()?.documentId ?? null)) {
+        setAttachedAbout({ documentId: about, label: reference.label });
+        report.current?.("follows");
+      } else report.current?.(aboutOf(handle.snapshot().doc, attachedAbout()));
+      return true;
+    };
+    if (attach()) return;
+    const stop = references.port.subscribe(() => {
+      if (attach()) stop();
+    });
+    return stop;
+  }, [about, references, composerRef, attachedAbout, setAttachedAbout]);
+  return useCallback(
+    (change: ComposerDraftChange) => {
+      const attached = attachedAbout();
+      if (attached) report.current?.(aboutOf(change.snapshot.doc, attached));
+    },
+    [attachedAbout],
+  );
+}
+
+/** Whether the draft is the attached chip alone, holds it among the writer's words, or lost it. */
+function aboutOf(doc: JSONContent, chip: AttachedAbout | null): NewChatAbout {
+  if (!chip) return null;
+  const isChip = (node: JSONContent | undefined) =>
+    node?.type === "composerReference" &&
+    (node.attrs?.reference as { kind?: string; documentId?: string } | undefined)?.documentId ===
+      chip.documentId;
+  const only = doc.content?.length === 1 ? doc.content[0] : undefined;
+  if (only?.type === "paragraph" && only.content?.length === 1 && isChip(only.content[0]))
+    return "follows";
+  const holds = (node: JSONContent): boolean => isChip(node) || (node.content ?? []).some(holds);
+  return holds(doc) ? { label: chip.label } : null;
 }

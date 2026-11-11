@@ -48,8 +48,10 @@ import {
 } from "@/client/query/useContextCatalog";
 import { type ContextTab, isEditorScheme } from "@/client/stores";
 import {
+  type BesideHint,
   type OpenContextRoute,
   useOpenContextRoute,
+  useOpenedFromChat,
   useProjectTrashNavigation,
 } from "../routing/ProjectNavigationContext";
 import {
@@ -285,6 +287,8 @@ export type OpenProjectDocumentRequest = {
   focus?: true;
   /** Takes the place of the current history entry (main leaving a document the writer removed). */
   replace?: true;
+  /** The chat the open was made from: the new entry keeps it beside the document. */
+  beside?: BesideHint;
   signal?: AbortSignal;
 };
 
@@ -367,6 +371,7 @@ export class ProjectDocumentNavigationAdapter {
       workId,
       focus,
       replace,
+      beside,
       signal,
     }: OpenProjectDocumentRequest,
   ): Promise<OpenDocumentOutcome> {
@@ -439,6 +444,7 @@ export class ProjectDocumentNavigationAdapter {
         chatId: identity.chatId,
         focus,
         replace,
+        beside,
         isCurrent,
         canCommit,
         transfer,
@@ -526,10 +532,21 @@ export class ProjectDocumentNavigationAdapter {
 
   /**
    * The descriptor a view paints a document from, resolved like an open but navigating nowhere:
-   * the side's fallback document. Null when the document no longer opens.
+   * the side's document. Null when the document no longer opens in the editor (removed, or an
+   * upload); throws when the lookup failed.
    */
-  async describe(projectId: string, documentId: string): Promise<ContextTab | null> {
-    const identified = await this.identify(projectId, { documentId, isCurrent: () => true });
+  async describe(
+    projectId: string,
+    documentId: string,
+    workId?: string,
+  ): Promise<ContextTab | null> {
+    const identified = await this.identify(projectId, {
+      documentId,
+      workId,
+      isCurrent: () => true,
+    });
+    if (identified.kind === "refused" && identified.reason === "lookup-failed")
+      throw new Error("Couldn't look up the document");
     if (identified.kind !== "identified") return null;
     const { identity, transfer } = identified;
     if (!isEditorScheme(identity.scheme)) return null;
@@ -539,7 +556,7 @@ export class ProjectDocumentNavigationAdapter {
       identity.file,
       identity.rootThreadId
         ? { rootThreadId: identity.rootThreadId }
-        : { workId: identity.workId ?? null },
+        : { workId: identity.workId ?? workId ?? null },
     );
   }
 
@@ -563,6 +580,7 @@ export class ProjectDocumentNavigationAdapter {
     chatId?: string;
     focus?: true;
     replace?: true;
+    beside?: BesideHint;
     isCurrent: () => boolean;
     canCommit: () => boolean;
     transfer?: AvailableOpenResolution;
@@ -592,6 +610,7 @@ export class ProjectDocumentNavigationAdapter {
         tab,
         ...(input.focus ? { focus: true as const } : {}),
         ...(input.replace ? { replace: true } : {}),
+        ...(input.beside ? { beside: input.beside } : {}),
         isCurrent: input.isCurrent,
         canCommit: input.canCommit,
         afterCommit: () =>
@@ -717,14 +736,15 @@ export function ProjectDocumentNavigationProvider({
 
 export function useOpenProjectDocument(projectId: string | undefined): OpenProjectDocument {
   const owner = useContext(ProjectDocumentNavigationContext);
+  const beside = useOpenedFromChat();
 
   return useCallback(
     async (request) => {
       if (!projectId || owner?.projectId !== projectId)
         return { kind: "refused", reason: "lookup-failed" };
-      return owner.adapter.open(projectId, request);
+      return owner.adapter.open(projectId, beside ? { beside, ...request } : request);
     },
-    [owner, projectId],
+    [owner, projectId, beside],
   );
 }
 
@@ -736,11 +756,11 @@ export function canOpenReference(uri: string): boolean {
 /** Resolves a document's descriptor without opening it (`describe`). */
 export function useDescribeProjectDocument(
   projectId: string,
-): (documentId: string) => Promise<ContextTab | null> {
+): (documentId: string, workId?: string) => Promise<ContextTab | null> {
   const owner = useContext(ProjectDocumentNavigationContext);
   return useCallback(
-    async (documentId) =>
-      owner?.projectId === projectId ? owner.adapter.describe(projectId, documentId) : null,
+    async (documentId, workId) =>
+      owner?.projectId === projectId ? owner.adapter.describe(projectId, documentId, workId) : null,
     [owner, projectId],
   );
 }

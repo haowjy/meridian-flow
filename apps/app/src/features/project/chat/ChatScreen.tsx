@@ -17,7 +17,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 
 import { ChatSurface as ChatFrame } from "@/features/chat/ChatSurface";
 import { ChatView } from "@/features/chat/ChatView";
-import { CreationComposer } from "@/features/chat/CreationComposer";
+import { CreationComposer, type NewChatAbout } from "@/features/chat/CreationComposer";
 import {
   type DerivationDeps,
   derivationFailureCopy,
@@ -41,6 +41,10 @@ export type ChatScreenProps = {
   projectId: string;
   /** ProjectView's resolved thread. */
   threadId: string | null;
+  /** With no thread: the document the new chat's composer attaches. */
+  about?: string | null;
+  /** The side's composer reports what its new chat is about. */
+  onAboutChange?: (about: NewChatAbout) => void;
   activeWork: Work | null;
   availableWorks: readonly Work[];
   onOpenContextTarget?: (target: ContextRouteRequest) => void;
@@ -52,6 +56,8 @@ export type ChatScreenProps = {
 export function ChatScreen({
   projectId,
   threadId,
+  about = null,
+  onAboutChange,
   activeWork,
   availableWorks,
   onOpenContextTarget,
@@ -73,6 +79,8 @@ export function ChatScreen({
         footer={
           <CreationComposer
             projectId={projectId}
+            about={about}
+            onAboutChange={onAboutChange}
             newChatFocusRequestId={newChatFocusRequestId}
             newChatWorkId={newChatWorkId}
             onNewChatFocusHandled={consumeNewChatFocusRequest}

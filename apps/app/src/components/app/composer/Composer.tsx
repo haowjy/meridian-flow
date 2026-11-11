@@ -149,6 +149,7 @@ export type ComposerProps = {
    */
   stopStatus?: "idle" | "pending" | "stopping" | "failed";
   placeholder?: string;
+  /** Focus the box when it mounts, at the restored selection. */
   autoFocus?: boolean;
   variant?: "hero" | "pinned";
   toolbarLeft?: ReactNode;
@@ -177,6 +178,16 @@ export type ComposerHandle = {
   focus: () => void;
   /** Adds a file the writer picked outside the `@` menu (the chat's uploads list) at the caret. */
   insertReference: (reference: DocumentReference, fileKind: "document" | "asset") => void;
+  /**
+   * Makes the draft this one file's chip alone, without taking focus (a new chat about a page),
+   * when the draft is empty or exactly the chip of `replaces` (the one the caller put there last);
+   * anything else is the writer's and stays. Returns whether the draft is now that chip alone.
+   */
+  startWith: (
+    reference: DocumentReference,
+    fileKind: "document" | "asset",
+    replaces: string | null,
+  ) => boolean;
   /** Attaches files to this chat's Uploads, as the paperclip does: one chip each at the caret. */
   attachFiles: (entries: readonly DroppedEntry[]) => void;
   /** Drops every chip that references the document (a file the writer deleted elsewhere). */
@@ -202,7 +213,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     running = false,
     stopStatus = "idle",
     placeholder,
-    autoFocus,
+    autoFocus = true,
     variant = "hero",
     toolbarLeft,
     submitDisabled = false,
@@ -318,7 +329,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       }),
     ],
     content: initialDraft?.doc ?? { type: "doc", content: [{ type: "paragraph" }] },
-    autofocus: autoFocus,
+    // Tiptap focuses on mount unless told `false`; undefined keeps the restored selection.
+    autofocus: autoFocus ? undefined : false,
     editorProps: {
       handleDOMEvents: {
         keydown: (_view, event) => {
@@ -426,6 +438,32 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           .focus()
           .insertContent(composerReferenceContent(pickedReferenceAttrs(reference, fileKind)))
           .run();
+      },
+      startWith: (reference, fileKind, replaces) => {
+        if (!editor || editor.isDestroyed) return false;
+        const doc = editor.state.doc;
+        const only = doc.childCount === 1 ? doc.firstChild : null;
+        const chip =
+          only?.type.name === "paragraph" &&
+          only.childCount === 1 &&
+          only.firstChild?.type.name === "composerReference"
+            ? (only.firstChild.attrs.reference as ComposerReferenceAttrs)
+            : null;
+        const chipOf = chip?.kind === "document" && !chip.upload ? chip.documentId : null;
+        if (chipOf === reference.documentId) return true;
+        // Not `editor.isEmpty`: it counts a paragraph holding only an upload in flight as empty.
+        const empty = only?.type.name === "paragraph" && only.childCount === 0;
+        if (!empty && (chipOf === null || chipOf !== replaces)) return false;
+        editor.commands.setContent({
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [composerReferenceContent(pickedReferenceAttrs(reference, fileKind))],
+            },
+          ],
+        });
+        return true;
       },
       attachFiles: (entries) => attachFilesRef.current(entries),
       removeReferences: (documentId) => {
