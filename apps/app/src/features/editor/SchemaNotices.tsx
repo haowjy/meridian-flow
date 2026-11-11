@@ -180,7 +180,7 @@ function SchemaRepairNotice({
         aria-labelledby={labelId}
         data-schema-repair-details=""
         // Anchored to the whole bar, so the trigger width is the bar's: the popover
-        // stays inside the pane in a narrow dock. The rescued words scroll inside
+        // stays inside the pane in the narrow side. The rescued words scroll inside
         // it; it never outgrows the space below the bar.
         className="flex max-h-[min(28rem,var(--radix-popover-content-available-height))] w-[min(30rem,var(--radix-popover-trigger-width))] flex-col gap-3 overflow-y-auto p-3 text-compact"
         onCloseAutoFocus={(event) => {

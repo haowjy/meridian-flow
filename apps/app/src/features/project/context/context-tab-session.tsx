@@ -1,7 +1,7 @@
 /**
  * The session-bound half of an open document: one resource lookup, one live
- * room binding, one server-session capture. Editor tabs and the dock's
- * document both render through it, so a document has exactly one way to reach
+ * room binding, one server-session capture. Main's and the side's
+ * documents both render through it, so a document has exactly one way to reach
  * its `DocumentSession` and no view owns a second Y.Doc, room or capture.
  */
 import {

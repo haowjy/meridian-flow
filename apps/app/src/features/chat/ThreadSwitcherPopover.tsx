@@ -53,10 +53,10 @@ export function ThreadSwitcherPopover({
   /** Where a closed rename field hands focus back. */
   triggerRef?: RefObject<HTMLButtonElement | null>;
   /**
-   * `quiet` — chrome that stays chrome (the dock): hovers like an inactive
-   *   document tab.
+   * `quiet` — chrome that stays chrome (the side): hovers like an inactive
+   *   chip.
    * `tab` — the active-tab chip grammar: the chat pane's page material
-   * continues up into the band, same as the document tab strip. Use only
+   * continues up into the band, same as a document's title chip. Use only
    * where the pane below the band is `page-sheet`.
    */
   variant?: "quiet" | "tab";

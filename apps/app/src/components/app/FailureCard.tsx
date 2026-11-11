@@ -54,7 +54,7 @@ export function FailureCard({
           ? "border-destructive-border bg-destructive-tint"
           : "border-border bg-ink-fill",
         "rounded-lg py-[var(--chat-card-pad-y)] shadow-none",
-        // Inline is tightened so Retry and Edit fit the narrowest dock (280px) on one line.
+        // Inline is tightened so Retry and Edit fit the narrowest side panel (280px) on one line.
         inline
           ? "w-fit px-[var(--chat-space-block)] has-[>svg]:gap-x-2"
           : "px-[var(--chat-card-pad-x)]",

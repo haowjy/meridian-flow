@@ -24,7 +24,7 @@ a scratch directory outside the checkout:
    picture, and **Open original** in the footer downloads the original bytes.
 2. Open `thing.xyz`, `broken.tiff` and `notes.pdf` in a browser with no PDF viewer
    (or any `.xyz`): each shows the card (name, type, size, **Download**). Download
-   returns the exact original bytes. No tab says Retry.
+   returns the exact original bytes. No viewer says Retry.
 3. Open the imported DOCX: its embedded TIFF draws inline from the preview. An
    embedded image the server couldn't convert shows the inline card, no Retry.
 4. In a manuscript document, paste or drop `map.tiff`: it draws from the preview.
@@ -37,7 +37,7 @@ a scratch directory outside the checkout:
 7. Ask a Work to create `map.tiff`'s duplicate in a draft: the draft strip opens
    it in the preview dialog, a card for an undrawable file.
 8. A file saved before previews existed (an older project) opens as the card.
-9. With the network offline, open an image tab whose signed URL has expired:
+9. With the network offline, open an image document whose signed URL has expired:
    **Retry** appears only when the signed-URL request fails, and it recovers
    when the network returns.
 

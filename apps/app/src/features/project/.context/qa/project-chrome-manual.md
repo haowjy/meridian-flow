@@ -50,33 +50,29 @@ Run these against an owned worktree and stack. Discover URLs with
 14. Create a new document. It has **one review door**, and Apply all and Discard all appear
     in chat and in Work rows.
 
-## Project shell and dock
+## Project shell and side
 
 15. Retained document A with B pending, flip the sidebar's Write | Chat switch: the
-    **address, main and the dock do not change**, and the sidebar shows the other list.
+    **address, main and the side do not change**, and the sidebar shows the other list.
 16. Hide a pane. It **carries nothing** with it.
 17. From Work Files, pick a chat row in the Chat list. **Main goes to that chat**; the
     document it replaced is one Back away.
-18. Collapse an occupant, then flip the switch. The collapsed occupant stays collapsed
-    and **carries nothing**.
-19. Cancel a dock intent, and separately supersede one. In both cases the document
-    stays and **no failure appears**.
-20. Force Open in Editor from the dock to fail. Main **stays where it was**, the dock
-    stays, and **Retry clears the failure**.
-    - The dock header has no `…` "Document actions" menu: **Open in Editor** is a
-      direct button, and **Collapse** is pinned to the right with the review controls
-      wrapping or shrinking beside it.
-    - When Open in Editor fails, "This view couldn’t open." shows as **a line under
-      the header**, tied to the button, and Collapse comes before the review controls
-      in tab order.
-21. Issue a new dock intent while a tab install is in flight. The newer intent wins
-    and the tab still installs.
+18. Close the side, then flip the switch. The side stays closed and **carries nothing**.
+19. With a chat in main, follow a document link in a message. **The page opens in main
+    and the chat moves to the side**, still mounted.
+20. With a document in the side beside a chat, press **Open in main** in its header.
+    The document moves to main without remounting (caret and undo kept) and the chat
+    moves to the side. The side header has no `…` menu: its name and **Open in main**
+    are all it carries.
+21. Open documents A, B, then C. A is no longer main, side or kept. Go Back to B: B's
+    undo history is intact (it was kept, mounted and hidden). A kept document reviews
+    nothing and writes neither pin nor address.
 22. Navigate same-screen after a source rail action. The feedback **expires**;
     ordinary opens do not opt into it.
 23. Replace document A with B and then back to A. The header feedback **expires
     permanently**.
-24. Park an occupant for another project, and separately for Work. Neither receives
-    the document; a parked Chat occupant is left alone.
+24. Close the side while a chat runs in it: the run continues, hidden. Reopen it: the
+    chat is as it was.
 
 ## Write mode
 

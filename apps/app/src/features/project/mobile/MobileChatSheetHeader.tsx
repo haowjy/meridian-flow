@@ -1,10 +1,8 @@
 /**
- * MobileChatSheetHeader — the phone chat sheet's own dock header.
+ * MobileChatSheetHeader — the phone chat sheet's own header.
  *
  * Built from the same status-bar-aware chrome primitives as `MobileTopBar`
- * (`IconButton`, safe-area padding), independent of the desktop
- * `DockHeader`. `ChatSurface` passes this as `DockShell`'s header slot for the
- * phone chat sheet; `DockHeader` itself stays desktop-only.
+ * (`IconButton`, safe-area padding), independent of the desktop `SideHeader`.
  */
 import { t } from "@lingui/core/macro";
 import { X } from "lucide-react";

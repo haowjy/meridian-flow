@@ -1,7 +1,7 @@
 /**
  * useRecordOpenedDocument — the one place an open is written to account recents.
  *
- * The live editor tab is the recorder. The device record updates before the
+ * Main's document host is the recorder. The device record updates before the
  * POST, so the landing does not wait on the network. A failed or unchanged
  * record leaves that opening where the writer put it.
  *

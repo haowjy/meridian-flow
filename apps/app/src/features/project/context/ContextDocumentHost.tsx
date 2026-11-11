@@ -2,11 +2,10 @@
  * ContextDocumentHost — one editable document in a view: its session, its
  * editor, and the review room the controller asks for.
  *
- * The Editor's warm tab set, the dock's single document and the phone render
+ * Main's document, the side's document, the kept one and the phone render
  * through this, each inside its own review (`DocumentReviewProvider`), and differ only in
- * what they pass: whether the editor is painted (`shown`), whether the surface
- * is on screen (`active`, which stands down chrome that portals to the body),
- * and whether the document is frozen (`readOnly`). The host fills its
+ * what they pass: whether the surface is on screen (`active`, which stands down chrome that
+ * portals to the body), and whether the document is frozen (`readOnly`). The host fills its
  * `relative` parent.
  */
 
@@ -18,7 +17,7 @@ import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisitio
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
+import { PaintCapture } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
 import type {
   DocumentSession,
@@ -29,7 +28,6 @@ import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
-import { cn } from "@/lib/utils";
 import { useHostDocumentPaint } from "../DocumentReview";
 import {
   useAccountResourceProjection,
@@ -47,10 +45,6 @@ export type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }
 export type ContextDocumentHostProps = {
   projectId: string;
   tab: EditableContextTab;
-  /** False binds the session but paints no editor: a warm tab evicted from the mounted set. */
-  mountEditor?: boolean;
-  /** False keeps the editor mounted behind the front one, hidden. */
-  shown?: boolean;
   /** Whether the surface is on screen; a hidden surface's chrome stands down. */
   active: boolean;
   /**
@@ -60,7 +54,7 @@ export type ContextDocumentHostProps = {
   readOnly?: boolean;
   presentation?: DocumentPresentation;
   onUntitledBecameNonEmpty?: (documentId: string) => Promise<void>;
-  /** Overrides the editor shell's own styling, e.g. to take the dock's material. */
+  /** Overrides the editor shell's own styling, e.g. to take the side's material. */
   editorClassName?: string;
   onCloseDraftOnly?: () => void;
 };
@@ -68,8 +62,6 @@ export type ContextDocumentHostProps = {
 export function ContextDocumentHost({
   projectId,
   tab,
-  mountEditor = true,
-  shown = true,
   active,
   readOnly = false,
   presentation = DESKTOP_DOCUMENT_PRESENTATION,
@@ -127,7 +119,6 @@ export function ContextDocumentHost({
     retrySession?: () => void,
     sessionFailure: Extract<LiveDocumentBindingState, { kind: "failed" }>["reason"] | null = null,
   ): ReactNode => {
-    if (!mountEditor) return null;
     const failed = sessionFailed || retryDraftList !== null;
     const retry = retryDraftList ?? retrySession;
     const failureReason = retryDraftList ? null : sessionFailure;
@@ -142,18 +133,11 @@ export function ContextDocumentHost({
       }
     }
     return (
-      <PaintScope active={shown}>
+      <>
         <PaintCapture surface={surface} state={surface} />
         <div
           data-context-editor-document-id={tab.documentId}
-          className={cn(
-            // Each editor fills the host's frame; only the active one is
-            // visible. `hidden` keeps DOM/state alive without painting.
-            "absolute inset-0 flex min-h-0 flex-col",
-            shown ? "" : "hidden",
-          )}
-          // Defensive: aria-hidden hides background editors from AT.
-          aria-hidden={!shown}
+          className="absolute inset-0 flex min-h-0 flex-col"
           aria-busy={!failed && !hosted}
         >
           {failed ? (
@@ -187,11 +171,11 @@ export function ContextDocumentHost({
               onBecameNonEmpty={onUntitledBecameNonEmpty}
             />
           ) : null}
-          {/* Filename chrome is host-owned: the context tab strip names the
-                  active file, so EditorView renders no redundant header bar. */}
+          {/* Filename chrome is host-owned: the title chip names the
+                  file, so EditorView renders no redundant header bar. */}
           {failed || !hosted ? null : (
             <>
-              {active && shown ? (
+              {active ? (
                 <RoomScopeCatalogCheck
                   projectId={projectId}
                   session={session}
@@ -203,7 +187,7 @@ export function ContextDocumentHost({
               <ActiveReviewBinding
                 documentId={tab.documentId}
                 liveSession={session}
-                active={active && shown}
+                active={active}
                 inReview={Boolean(
                   presentation.presenceSuspendsOn === "requested-review"
                     ? selectedReviewItemKey
@@ -227,7 +211,7 @@ export function ContextDocumentHost({
                 bindingKey={bindingKey}
                 // A warm editor is hidden, not gone. Its chrome portals to
                 // the body, where `hidden` on an ancestor means nothing.
-                active={active && shown}
+                active={active}
                 editable={editable}
                 showToolbar={editable}
                 reviewReadOnly={presentation.reviewReadOnly}
@@ -242,7 +226,7 @@ export function ContextDocumentHost({
             </>
           )}
         </div>
-      </PaintScope>
+      </>
     );
   };
   return (

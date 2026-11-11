@@ -22,7 +22,7 @@
  * route keeps the current Editor Work. Having the Editor
  * adopt the chat's Work is a decision for all of chat's doors at once (#625).
  *
- * Visibility: `active` is the chat's visibility, so hiding the dock or opening
+ * Visibility: `active` is the chat's visibility, so hiding the side or opening
  * Settings aborts a follow and dismisses its dialog. ChatView remounts per
  * thread, so switching threads aborts too.
  *

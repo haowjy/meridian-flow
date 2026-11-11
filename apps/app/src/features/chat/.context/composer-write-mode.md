@@ -40,7 +40,7 @@ callers:
   answer after the first record is announced once; a snapshot, a replayed frame and
   the apply are silent.
 - One view host per chat per tab. The desktop shell moves a single `ChatSurface`
-  between center and dock, and a dev-only registry in `useSwitchView` warns when a
+  between main and the side, and a dev-only registry in `useSwitchView` warns when a
   second view mounts.
 
 A pending switch reads "Switch to … queued" only when its record item's

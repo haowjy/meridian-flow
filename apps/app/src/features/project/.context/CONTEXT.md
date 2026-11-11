@@ -13,11 +13,20 @@ Desktop renders a single flat grid with stable direct-child slots:
 rail-l | left-resize | center | dock-resize | dock
 ```
 
-A screen change changes `grid-area` or parks a surface; it doesn't portal, reparent or
-conditionally unmount stateful surfaces.
+`dock` is the side's slot id. Each host (`SlotGrid` `hosts`: `{key, slot, children}`) is keyed by
+what it holds, a document (`document:<id>`) or the chat. Moving an item between main and the side
+changes its `grid-area`, or parks it; it doesn't portal, reparent or remount a stateful surface.
 
-Slot wrappers paint their material, and document shells stay transparent. Slot placement is
-derived from the kind of item the address names (`PLACEMENTS` in `layout/placement.ts`: a document or a chat in the centre), not persisted. The Write | Chat switch is not a mode:
+Main shows what the address names, resolved by `resolveMainDocument` / `useMainDocument`
+(`views.ts`), the resolver the phone uses too; `MainViewProvider` / `useMainItem` carry
+`{item, document}`. The side shows one item, never main's (`resolveSideItem`): the last chat beside
+a document, the last document opened beside a chat. Each header renders inside its host
+(`shell/MainHeader.tsx`, `side/SideHeader.tsx`). At most three documents are mounted: main's, the
+side's, and the last one that left main, kept hidden so its undo survives a return. The kept
+document reviews nothing, admits nothing and writes neither pin nor address. Nothing here is
+persisted.
+
+Slot wrappers paint their material, and document shells stay transparent. The Write | Chat switch is not a mode:
 it stores `sidebarList` (`client/project-shell/store.ts`, per browser tab) and `SIDEBAR_LISTS` picks the
 sidebar body, so flipping it never navigates. Widths are per slot; the sidebar and the side panel each have one open/closed
 preference for every kind of main. Preferences hydrate before the desktop component
@@ -28,7 +37,7 @@ The two panel toggles are `ProjectShell`'s corner buttons, drawn once over the g
 never move when a panel opens or closes. A header under one keeps a `PanelToggleSpacer` in its
 place instead of a button of its own. A panel's content slides in on open; the grid columns
 change in one step, because animating them reflows the chapter on every frame. Region separation is tonal. Repeated header primitives are
-shared, but Chat's dock is not a resizable panel.
+shared.
 
 ## Routes
 
@@ -36,15 +45,15 @@ The authenticated project route keeps `ProjectView` mounted across same-project 
 Typed route controllers own push/replace, and leaves parse no URLs. `repairAddress` is reserved
 for canonical, entry-guarded replacement.
 
-Rename or move prepares the open tab's new locator and the replacement address as one navigation
-commit, so the old address keeps its identity continuity until the new one is accepted.
+Rename or move prepares the open document's new locator and the replacement address as one
+navigation commit, so the old address keeps its identity continuity until the new one is accepted.
 
-A tab is its document id; its path, name and owner are a display cache the replica refreshes. A
-route is bound to a document only when that is proven, and the bound selection records what proved
-it (`by`). A navigation that names the document (a tab click, a tree open) binds the route it
+A presented document is its id; its path, name and owner are a display cache the replica
+refreshes. A route is bound to a document only when that is proven, and the bound selection records what proved
+it (`by`). A navigation that names the document (a tree open, a Recent row, a chat door) binds the route it
 opens in `commit()` (`enterRoute`), and any other URL (paste, reload, Back/Forward) stays a
 candidate until its address answer binds it (`addressRouteBinding`), so the path's occupant
-decides there. A tab found by its cached path may paint but never binds. A selection about another
+decides there. A document found by its cached path may paint but never binds. A selection about another
 route than the URL begins again (`ProjectContextRemovalController`), so a binding that lands late
 cannot stay stale.
 
@@ -63,9 +72,9 @@ another document is the path's occupant, so the route waits. The hold asks `reso
 address answer decides. The lookup takes a plain navigation ticket, never the writer's intent. A
 failed catalog during a hold shows the error with Retry. A draft-only document is not found by its
 cached path on the phone either (`useMobileRouteBinding`): its review binds on arrival, and a
-plain URL there waits for the address answer. The phone never searches the Editor's tabs: it
-resolves a document the destination area's catalog lacks (a draft that creates it, or moves it to
-another area) from the address's answer (`addressedDocument`), as the desktop admission does.
+plain URL there waits for the address answer. Desktop and phone resolve the address the same way (`resolveMainDocument`): a document the
+destination area's catalog lacks (a draft that creates it, or moves it to another area) comes from
+the address's answer (`addressedDocument`).
 
 An empty (No Work) Editor selection lives in href-scoped history state, so Back/Forward and reload
 keep it.
@@ -86,21 +95,48 @@ on refusal, returns to the origin tab if the user hasn't moved focus elsewhere.
 
 ## Navigation and chat
 
-`routing/chat-navigation.tsx` is the single command seam: on Chat it changes the route, and
-elsewhere it reveals the local dock or phone Sheet. Dock selection doesn't write the URL.
+`routing/chat-navigation.tsx` is the single command seam: `openChat` always navigates main to the chat; there is no side-only
+chat selection. `display` is the chat main shows (the index or one thread), null when main holds
+no chat; `currentThreadId` is the last chat opened, which the side shows beside a document. A link
+followed inside a chat opens the page in main and the chat moves to the side. On the phone, chat
+outside the Chat screen reveals the local Sheet.
 
-The displayed-chat variant is derived from the URL; a warm chat may stay mounted behind the index
+The displayed-chat variant is derived from the URL; a chat may stay mounted behind the index
 but isn't the displayed chat. Primary-list lookups may supply Work and header projections but never
 decide the body identity or reject a subagent.
+
+## Document review state
+
+What a document paints is its document view (`client/project-shell/document-views.ts`), keyed by
+document id per account and project in session storage: Live or Draft, the pinned draft (owner and
+item), and Show changes. A document opens on Live; a draft paints only when the writer picks it or
+arrives at an address naming it, and a draft-created document paints its own draft. `views.ts`
+resolves the paint and holds it while the pinned owner's list loads, so a document never paints
+Live and then the draft.
+
+Every document host (main, the side, the phone) has its own review (`DocumentReview.tsx`);
+`useReviewAdmission` makes it enter, keep or leave the draft its paint names. Only a host on screen
+reviews: a host that is not showing (the kept document, a closed side) paints no draft, admits
+nothing, holds no draft room and writes no pin. That keeps one review per document, and Discard
+writes into the issuing host's own editor, whose Undo takes it back.
+
+Main's address and main's view stay in step (`use-review-address-sync.ts`): an address arriving by
+push, pop or load sets or drops the pin; after that the view writes the address by replace. The
+side's view never writes the address. Launchers live in `review-launch.tsx`. Keep `PaintHold` and
+`FocusOpenedReview` in the presenting container; a command adapter may request a launch but must
+not manage focus or copy.
 
 ## Document admission
 
 A bound document with no source is pending, never a cached occupant. Catalog errors and pending
 refreshes don't prove absence.
 
-The opening record is taken from the active editor tab, not an intent or create path. It updates
-locally before a server POST, and the POST waits for `whenOnServer`. A parked restored tab is not
-an open.
+The opening record is taken from main's host, not an intent or create path. It updates
+locally before a server POST, and the POST waits for `whenOnServer`. The side and the kept host
+record no open.
+
+`ProjectAddressDocument` only canonicalizes the address and publishes its admission issue; it
+installs nothing. Main's host paints the document the address names.
 
 Background review launch, paint hold and focus handoff stay with the presenting container; the
 document host never invents a second review controller.
@@ -121,6 +157,5 @@ preload the project route loader, which would repeat owner and shell-data reads.
 - [`editor-document-lifecycle.md`](editor-document-lifecycle.md)
 - [`resource-lifecycle-architecture.md`](resource-lifecycle-architecture.md)
 - [`../mobile/.context/CONTEXT.md`](../mobile/.context/CONTEXT.md)
-- [`../dock/.context/CONTEXT.md`](../dock/.context/CONTEXT.md)
 - [`../context/.context/CONTEXT.md`](../context/.context/CONTEXT.md)
 - [`../chat-index/.context/CONTEXT.md`](../chat-index/.context/CONTEXT.md)

@@ -37,19 +37,16 @@ mount only its active main screen, unlike desktop persistent surfaces.
 
 The writer can type in a phone document, as on desktop; a review's draft body
 stays read-only. Every editable phone document (the ordinary route, the local
-pointer and a draft-only document) renders `ContextDocumentHost` directly, inside
-a `relative min-h-0 flex-1` frame that is a direct child of a flex column, with
-`PHONE_DOCUMENT_PRESENTATION` (`context/document-presentation.ts`). It does not
-use `ContextEditorMountHost`, the desktop's warm-set LRU.
+pointer and a draft-only document) renders through `DocumentHost` with the phone presentation
+(`PhoneDocumentFrame`): `ContextDocumentHost` inside a `relative min-h-0 flex-1` frame that is a
+direct child of a flex column, with `PHONE_DOCUMENT_PRESENTATION`
+(`context/document-presentation.ts`). The phone resolves its document with the same
+`resolveMainDocument` as the desktop's main (`../views.ts`) and mounts one host.
 
 The presentation value is the whole phone difference: it shows no remote carets,
 keeps a review body read-only, suspends presence from the click that requests a review, and sets the binding
 owner id `mobile-project-document-host`.
 Everything else is the shared host.
-
-The route-owned phone presentation reuses the installed Editor tab's instance
-identity. An availability answer committed with that tab therefore reaches the
-phone's shared session boundary instead of starting a second lookup.
 
 The phone must stay on the shared session boundary. Only
 `ContextTabSessionBoundary` probes local content and holds the adoption-eligible
@@ -70,7 +67,7 @@ phone-layout state. No Apply-all/Discard-all lives in the sheet.
 
 A pending draft exposes a Draft chip on its live view. An empty review stays in
 the same draft room and reads "No changes left"; closing a draft-only document
-tab is navigation, not Discard or a terminal review card. The read-only body
+is navigation, not Discard or a terminal review card. The read-only body
 selects changes instead of opening the
 keyboard; mobile review never becomes an editable Editor.
 
@@ -89,8 +86,8 @@ blur with content commits; Escape or empty commit cancels. Navigation abandons
 an uncommitted row. Creation stays in the listing: it does not auto-drill or
 open a file. The route's current location is the target.
 
-Mobile top chrome names a document once. `MobileDocumentHost` renders the shared
-document host without toolbar; non-tracked viewers use a bare host. Breadcrumb ancestors are 44px
+Mobile top chrome names a document once. `PhoneDocumentFrame` renders the shared
+document host without toolbar or identity bar; non-tracked viewers use a bare host. Breadcrumb ancestors are 44px
 controls, the last segment is current, and deep trails keep the first plus the
 last two segments.
 

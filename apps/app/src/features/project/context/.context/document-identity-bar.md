@@ -7,10 +7,10 @@ for feature-level contracts first.
 
 `DocumentIdentityBar.tsx` is the one identity surface: a mono
 path (`Unfiled › Untitled 4`) and its chips, on every document — tracked,
-provisional, viewer. The Editor draws it as a band at the top of the active
-tab's canvas; a document beside the chat draws it in the dock header
-(`variant="header"`, `../dock/DockDocumentIdentity.tsx`), which replaces the
-tab strip there, so the filename shows once. Crumb/field text is `text-sm`
+provisional, viewer. Every host draws it (`variant="state"`) at the top of
+its document's canvas, in main and in the side. The header above it
+(`MainHeader`, `SideDocumentHeader`) carries the document's name, so the bar shows
+the path and chips. Crumb/field text is `text-sm`
 to match the suggestion-popover rows; `identity-bar-geometry.ts` owns the box
 constants (28px band, 22px child boxes) and the zero-layout-shift contract
 between rest and edit states. Provisional docs are a *state* of the bar (italic
@@ -23,12 +23,11 @@ never occupy it again (structural separation, 2026-07-17).
 highlighted. The area opens the list of areas, a folder opens its parent,
 the filename opens its folder. An area not offered by the root list opens inside itself instead. The menu
 highlights everything on the document's path and the folder a back row just
-climbed out of. A pick opens through `useOpenDocumentInDock`, the way the
-screen opens documents: the dock on Chat and Work, an Editor tab on the Editor.
+climbed out of. A pick opens in main, like every door.
 Crumb menus carry no actions. A local-new or draft-only document is not in a
 catalog yet, so its path is passive until it joins one. Browsable paths keep
 their Radix roots and triggers mounted at rest; only the open browsing body acquires catalogs, and its initial trail
-is set once that source resolves. The identity row is wrapping-first, one rule for Editor and dock: the review
+is set once that source resolves. The identity row is wrapping-first, one rule for main and the side: the review
 controls move to a second line before anything shortens, and only a line too
 narrow for them alone collapses labels to icons, hides the stepper count, then
 collapses Apply to its icon; parent crumbs drop only when the leaf would be cut.
@@ -39,7 +38,7 @@ browser); see the KB's path-navigates-lists-edit decision.
 
 Contracts:
 
-- **Keystroke path**: at rest the bar renders from tab metadata only. The
+- **Keystroke path**: at rest the bar renders from document metadata only. The
   content-suggestion observer (300ms debounce, `writerOwnsName` latch) mounts
   only while the edit field is open on a provisional doc.
 - **Placement grammar** (any Unfiled document or provisional document): the jade chip opens
@@ -55,7 +54,7 @@ Contracts:
 - **Commit seam**: the field submits one final `{ destination, name }` to
   `use-identity-commit.ts`. The hook resolves the stable resource handle and
   writes one durable location intent. The optimistic resource projection updates
-  the tab and route immediately; the namespace runner later settles the exact
+  the host's descriptor and route immediately; the namespace runner later settles the exact
   server receipt or a typed final HTTP refusal tied to the submitted operation. A same-name explicit Save clears provisional presentation.
   Navigation additionally requires that the committed document is still active.
   The field does not blur-dismiss while a save is pending.
@@ -86,7 +85,3 @@ Contracts:
 - **Destination keyboard path**: ArrowDown/ArrowUp enters the suggestion list
   through its typed focus handle. Rows retain arrow wrapping and Enter select;
   folder selection can drill to arbitrary existing depth.
-
-The tab strip still follows the settled tonal treatment: it paints nothing,
-active tabs continue the canvas upward, inactive neighbors alone receive short
-dividers, and the whole chip is the tab target.

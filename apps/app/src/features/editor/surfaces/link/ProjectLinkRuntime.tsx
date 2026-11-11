@@ -3,7 +3,7 @@
  * this editor actually goes.
  *
  * The editor core knows a link is internal and nothing else; the project, the
- * Work, the router, and the tab strip are the app's, and resolving and
+ * Work, and the router are the app's, and resolving and
  * following belong to [`features/links`](../../../links/AGENTS.md). This
  * supplies the Editor's three parts (its scope, its destination, and the store
  * its outcome is reported into), registers the follower as the navigator a

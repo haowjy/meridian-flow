@@ -358,7 +358,6 @@ function DesktopDocumentChrome({
     <>
       <DocumentIdentityBar
         key={tab.documentId}
-        variant="state"
         projectId={projectId}
         editorWorkId={editorWorkId}
         tab={tab}

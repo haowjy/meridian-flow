@@ -71,5 +71,5 @@ Move… that stopped working because Copy joined them. This recipe drives the br
 
 ## Not covered here
 
-A draft tab's copy of the draft has no surface yet. The replica already carries the source
+A draft document's copy of the draft has no surface yet. The replica already carries the source
 view; the server side is in [The server Copy command](../../../../../../../server/server/domains/context/.context/qa/copy-server.md), step 3.

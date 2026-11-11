@@ -61,7 +61,7 @@ export function dismissFailures(prefix: string) {
   for (const key of [...shown.keys()]) if (key.startsWith(prefix)) dismissFailure(key);
 }
 
-/** Below the dock's header on desktop, below the top bar on a phone. */
+/** Below the side header on desktop, below the top bar on a phone. */
 const DESKTOP_OFFSET = { top: "3rem", right: "1rem" };
 const PHONE_OFFSET = {
   top: "calc(env(safe-area-inset-top) + 3.5rem + 0.5rem)",

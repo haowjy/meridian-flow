@@ -1,4 +1,4 @@
-/** Shared pinned new-chat composer for the center, dock, and phone. */
+/** Shared pinned new-chat composer for the main, the side, and the phone. */
 import { t } from "@lingui/core/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { useEffect, useMemo, useRef } from "react";
@@ -46,7 +46,7 @@ export function CreationComposer({
   const composerRef = useRef<ComposerHandle>(null);
   // An explicit New chat focuses the empty composer showing it. The hero is
   // not New chat's target: it focuses at mount where a keyboard is likely.
-  // The frame lets a just-revealed dock drop `inert` first. A composer that
+  // The frame lets a just-revealed side drop `inert` first. A composer that
   // mounts fresh already sees the request id in this same render, so mount
   // timing never races the host publishing it.
   useEffect(() => {

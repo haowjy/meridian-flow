@@ -9,7 +9,7 @@ import { PanelToggleSpacer } from "./PanelToggleButton";
  * main pane: a far-left expand control for the left sidebar, a centered
  * title/breadcrumb, and far-right actions + an expand control for the right
  * rail. It paints NOTHING of its own — the center slot's chrome shows through
- * (same grammar as the document tab strip), and the pane's `page-sheet` body
+ * (same grammar as main's header), and the pane's `page-sheet` body
  * rises out of it below. No bottom border: the sheet draws its own edge, and
  * the band overlaps it so an active chip covers that edge (`tab-band`).
  *
@@ -50,9 +50,9 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
       <header className="flex flex-wrap items-center gap-x-1 pr-2">
         {leftToggle ? <PanelToggleSpacer /> : null}
         {leading ? (
-          // The same x as the tab strip's first chip in both sidebar states: the
+          // The same x as main's header's first chip in both sidebar states: the
           // band's gutter, or just past the toggle. -mr-1 cancels the gap so the
-          // title chip sits flush like a next tab.
+          // title chip sits flush beside it.
           <div className={cn("-mr-1 flex shrink-0 self-stretch", leftToggle && "-ml-0.5")}>
             {leading}
           </div>

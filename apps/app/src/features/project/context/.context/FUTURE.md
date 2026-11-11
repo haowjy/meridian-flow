@@ -19,8 +19,8 @@ here is a known defect.
   project on the recents row, which is only worth doing if the short list shows
   up in use.
 - Uploads rows would open onto the "Viewing chat resources is not available
-  yet." wall (`ProjectRouteBoundary.tsx`, chosen by `isEditorScheme`). The tab
-  seam produces no such tab, so none is recorded today; omit that scheme from
+  yet." wall (`ProjectRouteBoundary.tsx`, chosen by `isEditorScheme`). Main's
+  host records no such document, so none is recorded today; omit that scheme from
   the list if one ever is.
 - Nothing asserts that every scheme in `CONTEXT_URI_SCHEMES` is resolvable by
   `document-address`, which is the one axis where recents' listability and

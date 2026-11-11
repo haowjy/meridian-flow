@@ -130,8 +130,8 @@ Work Apply all sends one frozen click per text draft, never a Work-wide Apply.
 
 ## Removal and terminal closure
 
-- A hidden created-document Discard removes the item without Undo and closes its
-  tab to the Work. A later model write is refused; creating again gets a new id.
+- A hidden created-document Discard removes the item without Undo and ends its
+  presentation to the Work. A later model write is refused; creating again gets a new id.
   A per-change Discard never takes this route.
 - In a three-tab close race, Work Discard all removes `item` and `change` from
   the review URL and shows the exact live document. The pending list is empty,

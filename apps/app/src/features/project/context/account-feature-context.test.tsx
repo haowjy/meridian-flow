@@ -44,7 +44,7 @@ function tracked(documentId: string, path: string) {
 }
 
 describe("AccountFeatureTestProvider", () => {
-  it("publishes terminal identity after catalog removal so dock and Editor see absence", async () => {
+  it("publishes terminal identity after catalog removal so the side and main see absence", async () => {
     let publish: ((snapshot: ResourceProjectionSnapshot) => void) | null = null;
     const replica = {
       observeProjection(

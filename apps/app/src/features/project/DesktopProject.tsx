@@ -90,9 +90,14 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     chat.currentThreadId,
     recent.documents[0]?.documentId ?? null,
   );
-  const trail = useMainTrail(projectId, mainTab);
+  const shown = useShownTrail(projectId);
+  shown.note(mainTab);
   const sideDocumentId = side.item?.kind === "document" ? side.item.documentId : null;
-  const sideTab = useDescribedDocument(projectId, sideDocumentId, trail);
+  const sideTab = useDescribedDocument(projectId, sideDocumentId, shown.trail());
+  shown.note(sideTab);
+  const trail = shown.trail();
+  // The last document that left main or the side stays mounted, hidden. A document moving
+  // between them passes through here while main's address loads, so it never remounts.
   const keptTab =
     trail.find(
       (tab) => tab.documentId !== mainTab?.documentId && tab.documentId !== sideTab?.documentId,
@@ -275,19 +280,25 @@ function SideEmpty() {
  * The documents main has shown, latest first, that still exist: main's own, then the ones that
  * left it. The side's fallback and the kept host are found here before anything is looked up.
  */
-function useMainTrail(projectId: string, mainTab: ContextTab | null): readonly ContextTab[] {
+/** The documents last on screen in main or the side, newest first, removed ones dropped. */
+function useShownTrail(projectId: string) {
   const trail = useRef<readonly ContextTab[]>([]);
-  if (mainTab && trail.current[0] !== mainTab)
-    trail.current = [
-      mainTab,
-      ...trail.current.filter((tab) => tab.documentId !== mainTab.documentId),
-    ].slice(0, 3);
   const { records, placement } = useAccountResourceProjection(projectId);
   const isDraftOnly = useIsDraftOnly(projectId);
-  return trail.current.filter((tab) => {
-    const projection = projectResourceTab(tab, records, placement, isDraftOnly(tab.documentId));
-    return projection.kind !== "removed" && projection.kind !== "terminal";
-  });
+  return {
+    note(shown: ContextTab | null) {
+      if (shown && trail.current[0] !== shown)
+        trail.current = [
+          shown,
+          ...trail.current.filter((tab) => tab.documentId !== shown.documentId),
+        ].slice(0, 3);
+    },
+    trail: () =>
+      trail.current.filter((tab) => {
+        const projection = projectResourceTab(tab, records, placement, isDraftOnly(tab.documentId));
+        return projection.kind !== "removed" && projection.kind !== "terminal";
+      }),
+  };
 }
 
 /** A document's descriptor: one main showed, else resolved once by its identity. */
