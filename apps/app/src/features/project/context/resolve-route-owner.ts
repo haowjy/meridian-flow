@@ -54,7 +54,14 @@ export function resolveRouteOwner({
     locator,
     workspaceRoute,
     // A locator with no owning tab is an open still in flight; with one, the selection
-    // follows it in the same commit.
-    tab: locator && workspaceRoute.kind === "unowned" ? null : selected,
+    // follows it in the same commit. No locator and no local draft is the bare Editor
+    // (the recents chooser): the store keeps its selected tab, the pane shows none.
+    tab: locator
+      ? workspaceRoute.kind === "unowned"
+        ? null
+        : selected
+      : localDocumentId
+        ? selected
+        : null,
   };
 }
