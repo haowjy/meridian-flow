@@ -28,11 +28,21 @@ export interface ApplySuccessResponseInput {
   documentEmpty?: boolean;
   /** A copy reports this instead of echoing what it wrote; its edges are `hash|prefix` lines. */
   copied?: { summary: CopySummary; edges: readonly string[] };
+  /** Changes left out because the room deleted all of the text they change. */
+  skipped?: number;
 }
 
-/** A write whose content the document already held: nothing is reserved, applied or journaled. */
-export function formatUnchangedSuccess(): InternalWriteResult {
-  return { status: "success", phase: "committed", revision: null, model: { unchanged: true } };
+/**
+ * A write that changes nothing: the document already held its content, or every change it
+ * made was to text deleted since the model's read. Nothing is reserved, applied or journaled.
+ */
+export function formatUnchangedSuccess(skipped = 0): InternalWriteResult {
+  return {
+    status: "success",
+    phase: "committed",
+    revision: null,
+    model: skipped > 0 ? { skipped } : { unchanged: true },
+  };
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
@@ -58,6 +68,7 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
       ...(blocks.length > 0 ? { blocks } : {}),
       ...(input.awarenessDegraded ? { awarenessDegraded: true } : {}),
       ...(input.documentEmpty ? { documentEmpty: true } : {}),
+      ...(input.skipped ? { skipped: input.skipped } : {}),
     },
     ...(input.writeId ? { writeId: input.writeId } : {}),
     ...(input.settlementId ? { settlementId: input.settlementId } : {}),

@@ -24,20 +24,29 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   block group, reparses it, and replaces each match's text window whole at its
   position (`cutTextWindows`, `windowHunks`); a block that isn't a single run of text,
   or a find whose windows can't be mapped, is word-diffed or block-diffed instead.
-- A block rewritten in place is lowered without the characters the room deleted since
-  the model's view (`removedText`, `withoutRemovedText`). A diff keeps old characters
-  and anchors the new text to them; if the room deleted a kept one, the model's text
-  loses it and lands split (`A disciple.B2 SIDETEXT`). So, before capture, those
-  characters are dropped from the view's block and from the model's new block, and the
-  lowering runs on what is left, whatever its path. A deleted run stays deleted unless
-  the model's inserted text sits inside it, continues into it within a word, or would
-  lose the only space before the next word; a diff-placed insert is first slid along
-  equal text to the best word boundary, and a run still touched that way is restated as
-  the model's text. The drop happens before capture, so the write's update never
-  deletes what the room already deleted, and its Undo returns to the writer's text.
-  Resolution (find, hashes, windows) still reads the full view, so the model's
-  references mean what it saw, and the writer's new words, which the view doesn't hold,
-  can't be deleted. A delete that lands after the call read its room isn't covered
+- A block rewritten in place is lowered without what the room deleted since the
+  model's view (`removedUnits`, `withoutRemovedUnits`). A diff keeps old characters and
+  anchors the new text to them; if the room deleted a kept one, the model's text loses
+  it and lands split (`A disciple.B2 SIDETEXT`). So, before capture, the deleted units
+  (characters, inline atoms such as hard breaks and images, and nested nodes such as a
+  list item) are dropped from the view's block, item for item, and from the model's new
+  block, and the lowering runs on what is left, whatever its path. Units, not characters:
+  a deleted line break the view kept would leave a blank line in the model's name.
+- The writer's delete stands. A model change whose old text the room deleted entirely
+  is skipped: it has no target, and the result tells the model (`skipped`). An insert
+  lands at the edge of a deleted run and brings nothing back, as does a change to
+  surviving text only. A find window that covers both is word-diffed inside, so this
+  holds per word: a find over a whole paragraph the writer cut a sentence from keeps the
+  sentence cut. A word-level change that rewrites both deleted and surviving text lands,
+  and gets back only a deleted node it cuts into and one deleted space that kept it off a
+  surviving word. Chinese and Japanese characters, punctuation and dashes never count as
+  word characters there. A diff-placed insert is first slid along equal text to the best
+  word boundary against the text that survives around it. The drop happens
+  before capture, so the write's update never deletes what the room already deleted,
+  and its Undo returns to the writer's text. Resolution (find, hashes, windows) still
+  reads the full view, so the model's references mean what it saw, and the writer's new
+  words, which the view doesn't hold, can't be deleted. A delete that lands after the
+  call read its room isn't covered
   ([TODO](TODO.md#deletes-that-land-after-a-write-read-its-room)).
 - Equal serialized content does not preserve Yjs identity, tombstones or authorship,
   so rebuilding an existing replica from Markdown as a merge path loses all three.
