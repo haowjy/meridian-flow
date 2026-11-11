@@ -369,7 +369,7 @@ function ChangeRow({
         actions={
           <ReviewActions
             scope="document"
-            subject={name}
+            labels={{ apply: t`Apply draft of ${name}`, discard: t`Discard draft of ${name}` }}
             density="icon"
             touch={touch}
             disabled={command.pending || controller.dispositionLocked}

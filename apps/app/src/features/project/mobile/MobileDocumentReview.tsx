@@ -16,7 +16,6 @@
  */
 
 import { type ReactNode, useEffect, useState } from "react";
-import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { OpenDocument } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
@@ -25,7 +24,6 @@ import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { DraftNotice } from "@/features/draft-review/draft-notices";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
-import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
 import {
   type ManuscriptState,
   ManuscriptStateSlot,
@@ -80,12 +78,7 @@ export function MobileDocumentReview({
             onOpenList={() => setListOpen(true)}
           />
         ) : (
-          <LiveDraftEntry
-            projectId={projectId}
-            tab={tab}
-            manuscriptState={manuscriptState}
-            notice={notice}
-          />
+          <ManuscriptStateRow state={manuscriptState} notice={notice} />
         )}
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         {itemKey ? (
@@ -97,37 +90,27 @@ export function MobileDocumentReview({
 }
 
 /**
- * The live document's way into its drafts: the version chip in a row of the
- * review header's own height and inset, so the chip stays where the reviewing
- * one will be. The row also holds what an Apply brought back, so that line takes
- * the review header's place instead of pushing the page. Nothing is drawn for a
- * document with neither a draft nor such a line.
+ * What an Apply brought back, in a row of the review header's own height and inset, so the
+ * line takes the header's place instead of pushing the page. The version chip is in the
+ * toolbar row, as on a desktop.
  */
-function LiveDraftEntry({
-  projectId,
-  tab,
-  manuscriptState,
+function ManuscriptStateRow({
+  state,
   notice,
 }: {
-  projectId: string;
-  tab: OpenDocument;
-  manuscriptState: ManuscriptState | null;
+  state: ManuscriptState | null;
   notice: DraftNotice | null;
 }) {
-  const hints = useDocumentDraftHints(projectId, tab.documentId, { enabled: tab.kind !== "new" });
-  const drafted = hints.length > 0;
-  if (!drafted && !manuscriptState && !notice) return null;
+  if (!state && !notice) return null;
   return (
     <div
-      data-phone-draft-entry
       className="flex min-h-12 shrink-0 items-center border-b border-border-subtle bg-review"
       style={{
         paddingLeft: "calc(0.25rem + env(safe-area-inset-left))",
         paddingRight: "calc(0.25rem + env(safe-area-inset-right))",
       }}
     >
-      {drafted ? <DocumentVersionMenu projectId={projectId} tab={tab} touch /> : null}
-      <ManuscriptStateSlot state={manuscriptState} notice={notice} touch />
+      <ManuscriptStateSlot state={state} notice={notice} touch />
     </div>
   );
 }

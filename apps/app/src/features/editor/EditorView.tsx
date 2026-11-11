@@ -31,8 +31,10 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   showCollaborationDecorations?: boolean;
   /** Requested destination, including while the canonical room is still resolving. */
   reviewItemKey?: string | null;
-  /** The hosting tab instance, whose focus-on-open intent the live editor claims. */
+  /** The hosted document, whose focus-on-open intent the live editor claims. */
   focusKey?: string;
+  /** Main's document: the page load's caret goes to it, not to a side's or a sheet's. */
+  loadFocus?: boolean;
 };
 
 const REVIEW_MARKS_WAIT_MS = 1500;
@@ -189,6 +191,7 @@ export function EditorView(props: EditorViewProps) {
               }}
               session={liveSession}
               focusKey={props.focusKey}
+              loadFocus={props.loadFocus}
             />
           </div>
         </PaintScope>

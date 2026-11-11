@@ -57,6 +57,8 @@ export type ContextDocumentHostProps = {
   /** Overrides the editor shell's own styling, e.g. to take the side's material. */
   editorClassName?: string;
   onCloseDraftOnly?: () => void;
+  /** Main's document: a page load puts the caret in it (`focusOnLoad`). */
+  loadFocus?: boolean;
 };
 
 export function ContextDocumentHost({
@@ -68,6 +70,7 @@ export function ContextDocumentHost({
   onUntitledBecameNonEmpty,
   editorClassName,
   onCloseDraftOnly,
+  loadFocus = false,
 }: ContextDocumentHostProps) {
   const removal = useContextRemovalCoordinator();
   const { controller, fileForDocument, reviewRoomNameForDraft } = useDraftReview();
@@ -207,6 +210,7 @@ export function ContextDocumentHost({
                 projectId={projectId}
                 documentId={tab.documentId}
                 focusKey={tab.documentId}
+                loadFocus={loadFocus}
                 session={session ?? undefined}
                 bindingKey={bindingKey}
                 // A warm editor is hidden, not gone. Its chrome portals to

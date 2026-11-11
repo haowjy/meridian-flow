@@ -71,9 +71,10 @@ read-only. Projection, commands and history belong to the
 Each document host (main, the side, the phone) has its own review
 (`features/project/DocumentReview.tsx`); its chrome and change bars read that
 review's projection, and `EditorView` does not own a second review controller.
-The review controls live in the identity bar's path row: `DocumentVersionMenu`
-(Live or any owner's draft, on desktop and phone) and, in review, the rest of
-`DraftReviewBand`, with no separate header above it. The focused
+The version chip (`DocumentVersionMenu`, Live with every draft one pick away) sits at the
+toolbar row's end on desktop and phone alike, and gives way to the review's own chip once a
+review of the document is entered. On desktop the review's controls live in the identity
+bar (`DraftReviewBand`), with no separate header above it. The focused
 change's bar (`surfaces/review`) never covers manuscript text: it sits in the
 right margin beside the change when there is room, else in a block slot after
 the change's last paragraph. Draft room lifecycle, frozen commands and Discard history belong

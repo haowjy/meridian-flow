@@ -19,7 +19,7 @@ import { DraftReviewBand } from "@/features/editor/DraftReviewBand";
 import { DocumentStatePortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
-import { focusIsFree } from "@/lib/focus-follow";
+import { holdFocus } from "@/lib/focus-follow";
 import { useAiDraftLauncher } from "../review-launch";
 import { useAccountResourceProjection } from "./account-feature-context";
 import { schemeLabel } from "./context-schemes";
@@ -305,29 +305,11 @@ function focusEditorProse(documentId: string) {
 
 /**
  * A closing review swaps the document's editor once the live one has painted, so the
- * prose may not be there yet. Waits for it while nothing else holds the focus, and
- * gives up at the writer's next key or press.
+ * prose may not be there yet: holds the focus for it until the writer takes the focus.
  */
 function focusEditorProseOnceShown(documentId: string, leaving: boolean) {
-  const settle = () => {
-    if (!focusIsFree()) return true;
-    // A draft-only document's discard sends main back: its prose never returns, main's does.
-    const prose = editorProse(documentId) ?? (leaving ? mainProse(documentId) : null);
-    prose?.focus();
-    return prose !== null && document.activeElement === prose;
-  };
-  if (settle()) return;
-  const observer = new MutationObserver(() => {
-    if (settle()) stop();
-  });
-  const stop = () => {
-    observer.disconnect();
-    window.removeEventListener("pointerdown", stop, true);
-    window.removeEventListener("keydown", stop, true);
-  };
-  observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-  window.addEventListener("pointerdown", stop, true);
-  window.addEventListener("keydown", stop, true);
+  // A draft-only document's discard sends main back: its prose never returns, main's does.
+  holdFocus(() => editorProse(documentId) ?? (leaving ? mainProse(documentId) : null));
 }
 
 /**
@@ -374,4 +356,4 @@ function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
 }
 
 /** The review actions' form at each collapse level (document-identity-row.css has the rest). */
-const ACTIONS_DENSITY = ["full", "short", "short", "icon", "icon"] as const;
+const ACTIONS_DENSITY = ["full", "full", "full", "icon", "icon"] as const;

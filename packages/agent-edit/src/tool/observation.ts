@@ -14,13 +14,7 @@ import {
 } from "../frontier.js";
 import { toDocHandle } from "../handles.js";
 import { renderedItems, type ShownCommandLinks, shownEvidence } from "../links/shown.js";
-import {
-  blockHashesForDoc,
-  blockIdentityForItem,
-  getBlockItemId,
-  getTopLevelXmlBlocks,
-  uniqueHashesForIds,
-} from "../model/block-hash.js";
+import { blockIdentityForItem, uniqueHashesForIds } from "../model/block-hash.js";
 import { toHashline } from "../model/hashline.js";
 import type { AgentEditModel, ProjectedBlock } from "../ports/model.js";
 import type { InternalWriteResult } from "./internal-result.js";
