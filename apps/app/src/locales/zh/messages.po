@@ -101,8 +101,12 @@ msgid "“{name}” doesn't exist yet"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
-msgid "(Work has a draft)"
+msgid "(draft waiting)"
 msgstr ""
+
+#: src/features/draft-review/DraftSwitcher.tsx
+#~ msgid "(Work has a draft)"
+#~ msgstr ""
 
 #. placeholder {0}: stats.callCount
 #: src/features/chat/AssistantTurnActions.tsx
