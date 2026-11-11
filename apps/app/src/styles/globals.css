@@ -619,6 +619,15 @@
   }
 }
 
+/* For a control whose box meets a clipping edge (a tab in a scrolling strip): the ring
+   draws inside the box, where the scroller and its neighbours can't cut it. */
+@utility focus-ring-inset {
+  @apply outline-none;
+  :root[data-focus-keys] &:focus-visible:not([data-focus-quiet]) {
+    box-shadow: inset 0 0 0 2px var(--color-focus);
+  }
+}
+
 /* Menu rows sit inside the surface gutter. Keep keyboard focus on the
    rounded-sm row, including composite rows that own a focused child. */
 @utility dropdown-focus-ring {
