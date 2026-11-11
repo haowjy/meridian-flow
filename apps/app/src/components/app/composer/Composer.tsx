@@ -205,7 +205,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     running = false,
     stopStatus = "idle",
     placeholder,
-    autoFocus,
+    autoFocus = false,
     variant = "hero",
     toolbarLeft,
     submitDisabled = false,
