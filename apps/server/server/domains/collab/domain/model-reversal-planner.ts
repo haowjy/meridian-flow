@@ -73,7 +73,17 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       ? `draft (${draftId ? (document.drafts.get(draftId)?.name ?? "unavailable") : "unavailable"})`
       : "live";
   };
-  type TextFailure = "draft_archived" | "document_deleted" | "discarded" | "changed";
+  type TextFailure =
+    | "draft_archived"
+    | "document_deleted"
+    | "applied"
+    | "partly_applied"
+    | "discarded"
+    | "changed";
+  // A closed draft keeps its apply record: a part is in the manuscript if it was applied,
+  // and gone otherwise. Every closed-draft answer below derives from this one rule.
+  const closedPartCause = (part: StoredInversePart) =>
+    part.disposition === "applied" ? ("applied" as const) : ("discarded" as const);
   type TextOmission = {
     ordinal: number;
     cause:
@@ -91,7 +101,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   ): TextFailure | null {
     const destination = document.destinationOf(part.origin);
     if (destination.frozen) return "draft_archived";
-    if (destination.kind === "draft" && destination.state === "gone") return "discarded";
+    if (destination.kind === "draft" && destination.state === "gone") return closedPartCause(part);
     const state = inspection.states([part])[0];
     if (state.state !== (direction === "undo" ? "active" : "undone")) {
       if (part.disposition === "discarded") return "discarded";
@@ -99,6 +109,12 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     }
     return null;
   }
+  const inverseOf = (original: StoredInversePart, inverseParts: readonly StoredInversePart[]) =>
+    inverseParts.find((part) =>
+      part.targets.some((target) =>
+        target.ordinal === original.ordinal ? target.editId === original.editId : false,
+      ),
+    );
   function changedReason(part: StoredInversePart, inspection: Inspection): TextOmission["cause"] {
     const state = inspection.states([part])[0];
     return state.reasons.includes("inaccessible ancestor")
@@ -119,14 +135,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     for (const original of direction === "undo"
       ? [...entry.parts].sort((a, b) => b.id - a.id)
       : entry.parts) {
-      const inverse =
-        direction === "redo"
-          ? inverseParts.find((part) =>
-              part.targets.some((target) =>
-                target.ordinal === original.ordinal ? target.editId === original.editId : false,
-              ),
-            )
-          : undefined;
+      const inverse = direction === "redo" ? inverseOf(original, inverseParts) : undefined;
       if (direction === "redo" && !inverse)
         throw new Error("Undo action has no inverse for its target");
       const candidate = inverse
@@ -158,8 +167,17 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     if (destinations.size !== 1) throw new Error("One model edit spans multiple versions");
     const [destination] = destinations;
     if (!destination) throw new Error("One model edit has no destination");
-    if (destination.kind === "draft" && destination.state === "gone")
-      return { failure: "discarded" as const };
+    if (destination.kind === "draft" && destination.state === "gone") {
+      const causes = new Set(entry.parts.map(closedPartCause));
+      return {
+        failure:
+          causes.size > 1
+            ? ("partly_applied" as const)
+            : causes.has("applied")
+              ? ("applied" as const)
+              : ("discarded" as const),
+      };
+    }
     if (destination.frozen) return { failure: "draft_archived" as const };
     if (destination.kind === "live" && (options.liveRemoved ?? destination.removed))
       return { failure: "document_deleted" as const };
@@ -203,16 +221,18 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     if (destinations.size !== 1) throw new Error("One edit spans multiple versions");
     const [destination] = destinations;
     if (!destination) throw new Error("One edit has no destination");
-    if (destination.frozen) return { cause: "draft_archived" as const };
+    const every = (cause: TurnInverseSkipCause) => ({ causes: entry.parts.map(() => cause) });
+    if (destination.frozen) return every("draft_archived");
     if (destination.kind === "draft" && destination.state === "gone")
-      return { cause: "discarded" as const };
-    if (destination.kind === "live" && liveRemoved)
       return {
-        cause:
-          document.removal?.reason === "discarded"
-            ? ("document_discarded" as const)
-            : ("document_deleted" as const),
+        causes: entry.parts.map((part) =>
+          closedPartCause(direction === "redo" ? (inverseOf(part, inverseParts) ?? part) : part),
+        ),
       };
+    if (destination.kind === "live" && liveRemoved)
+      return every(
+        document.removal?.reason === "discarded" ? "document_discarded" : "document_deleted",
+      );
     const actionKind =
       kind === "rollback"
         ? "rollback"
