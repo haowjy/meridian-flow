@@ -183,9 +183,10 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends postgresql-server-dev-16 libicu-dev
           }
-          # The runner image's Azure apt mirror sometimes stops resolving for hours.
+          # ubuntu.com names (the image's Azure mirror and archive.ubuntu.com) sometimes stop resolving on
+          # the runners for hours; kernel.org carries the same archive.
           install || {
-            echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
+            echo "http://mirrors.edge.kernel.org/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
             install
           }
           SUDO=sudo tools/postgres/install-pg-bigm.sh
