@@ -67,7 +67,7 @@ export type DocumentHostProps = {
   /** Main's address answer; set only while the host is main's. */
   main?: MainDocument;
   presentation: "desktop" | "phone";
-  /** The desktop's band above the page: main's header or the side's. */
+  /** The band above the page: main's header or the side's (on the phone, the sheet's). */
   header?: ReactNode;
   editorWorkId: string | null;
 };
@@ -83,7 +83,16 @@ export function DocumentHost(props: DocumentHostProps) {
         <MainDocumentBinding projectId={projectId} tab={tab} main={props.main} />
       ) : null}
       {props.presentation === "phone" ? (
-        <PhoneDocumentFrame projectId={projectId} tab={tab} local={props.main?.local === true} />
+        props.header ? (
+          <div className="flex h-full min-h-0 flex-col">
+            {props.header}
+            <div className="min-h-0 flex-1">
+              <PhoneDocumentFrame projectId={projectId} tab={tab} local={false} />
+            </div>
+          </div>
+        ) : (
+          <PhoneDocumentFrame projectId={projectId} tab={tab} local={props.main?.local === true} />
+        )
       ) : (
         <DesktopDocumentFrame {...props} tab={tab} onScreen={onScreen} />
       )}

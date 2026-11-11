@@ -63,7 +63,6 @@ function SideBand({
   icon,
   actions,
   onOpenInMain,
-  chatsOnly,
   leading,
   trailing,
 }: {
@@ -72,7 +71,6 @@ function SideBand({
   icon: ReactNode;
   actions?: ReactNode;
   onOpenInMain?: () => void;
-  chatsOnly?: boolean;
   /** Before the picker (the phone sheet's close). */
   leading?: ReactNode;
   /** After everything (the phone has no corner toggle to make room for). */
@@ -88,7 +86,7 @@ function SideBand({
         {leading}
         {/* No overflow-hidden: clipping here shears the title's hover pill. */}
         <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1">
-          <SidePicker projectId={projectId} name={name} icon={icon} chatsOnly={chatsOnly} />
+          <SidePicker projectId={projectId} name={name} icon={icon} />
           {reason ? (
             // One clipped line: under 5rem left, the reason wraps past the empty first item (a line
             // tall, or the second line sits on the first) and hides whole instead of leaving "E…".
@@ -155,14 +153,12 @@ export function SideChatHeader({
   projectId,
   threadId,
   onOpenInMain,
-  chatsOnly,
   leading,
   trailing,
 }: {
   projectId: string;
   threadId: string | null;
   onOpenInMain?: () => void;
-  chatsOnly?: boolean;
   leading?: ReactNode;
   trailing?: ReactNode;
 }) {
@@ -173,7 +169,6 @@ export function SideChatHeader({
       projectId={projectId}
       name={name}
       icon={<MessageSquare aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
-      chatsOnly={chatsOnly}
       leading={leading}
       trailing={trailing}
       actions={

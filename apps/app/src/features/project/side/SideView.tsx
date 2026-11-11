@@ -1,13 +1,14 @@
 /**
  * The side's state for one project view: what it shows (`useSideItem`), which chat is on screen,
- * and the held pick's commands (`useShellCommands`). Both shells read it; the phone's sheet holds
- * chats only.
+ * and the held pick's commands (`useShellCommands`). Both shells read it: the phone's side is
+ * its sheet.
  *
  * The held pick is stored per browser tab (`client/project-shell/store.ts`) and never written to
  * history: Back moves main, and the beside hint returns with its entry. A hold ends by the held
  * mark, by "Follow" in the picker, by closing the side, when it can no longer sit beside main (its
- * item becomes main, a chat in main, a document on the phone), when its document no longer opens,
- * and when its document is closed, Discarded or removed.
+ * item becomes main, or a chat in main for a held chat), when its document no longer opens, and when
+ * its document is closed, Discarded or removed. A narrow window folding the side is not the writer
+ * closing it: the hold stays.
  */
 import {
   createContext,
@@ -38,6 +39,8 @@ import {
   useShownDocuments,
 } from "../context/account-feature-context";
 import { useDescribeProjectDocument } from "../context/open-project-document";
+import { recentOpening } from "../context/recent-opening";
+import { useRecordOpenedDocument } from "../context/use-record-opened-document";
 import type { Item } from "../views";
 import {
   type Candidate,
@@ -256,14 +259,12 @@ export function SideViewProvider({
   main,
   mainIsLocal,
   besideChatId,
-  chatsOnly,
   children,
 }: {
   projectId: string;
   main: MainForSide;
   mainIsLocal: boolean;
   besideChatId: string | null;
-  chatsOnly: boolean;
   children: ReactNode;
 }) {
   const accountId = useAccountId();
@@ -276,7 +277,6 @@ export function SideViewProvider({
     held,
     besideChatId,
     companion,
-    chatsOnly,
     describe: descriptions.read,
   });
   const describing = resolution.kind === "pending" ? resolution.describing : null;
@@ -294,7 +294,7 @@ export function SideViewProvider({
   const settled =
     resolution.kind === "settled"
       ? resolution.side
-      : kept?.item && fitsBeside(kept.item, main, chatsOnly)
+      : kept?.item && fitsBeside(kept.item, main)
         ? reaimComposer(kept, main)
         : null;
   const sideKey = JSON.stringify([settled, resolution.kind]);
@@ -313,6 +313,7 @@ export function SideViewProvider({
   );
 
   useReleaseHold(accountId, projectId, held, resolution.releaseHeld);
+  useRecordSidePick(projectId, side.source === "held" ? side.tab : null);
 
   const mainChat = main.kind === "chat" ? main.chatId : null;
   const sideChat = side.item?.kind === "chat" ? side.item : null;
@@ -358,6 +359,23 @@ export function SideViewProvider({
     ],
   );
   return <SideViewContext.Provider value={value}>{children}</SideViewContext.Provider>;
+}
+
+/** A document the writer picked beside counts as recently opened, once per pick. */
+function useRecordSidePick(projectId: string, picked: ContextTab | null) {
+  const record = useRecordOpenedDocument();
+  const recorded = useRef<string | null>(null);
+  useEffect(() => {
+    if (!picked) {
+      recorded.current = null;
+      return;
+    }
+    if (recorded.current === picked.documentId) return;
+    const opening = recentOpening(projectId, picked, new Date().toISOString(), false);
+    if (!opening) return;
+    recorded.current = picked.documentId;
+    record(opening);
+  }, [picked, projectId, record]);
 }
 
 /** A kept new-chat composer is about main's document, not the one it was settled beside. */
