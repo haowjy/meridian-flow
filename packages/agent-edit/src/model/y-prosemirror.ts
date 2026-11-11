@@ -126,6 +126,14 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       return roomNodeState(nodeAt(unwrapBlock(block), path), unwrapDoc(current));
     },
 
+    roomAddedAfter(block, path, unit, current) {
+      return roomAddedAfter(nodeAt(unwrapBlock(block), path), unit, unwrapDoc(current));
+    },
+
+    roomAddedInside(block, path, current) {
+      return roomAddedInside(nodeAt(unwrapBlock(block), path), unwrapDoc(current));
+    },
+
     applyMinimalOps(_doc, block, ops) {
       applyMinimalOps(unwrapBlock(block), ops);
     },
@@ -626,6 +634,62 @@ function roomNodeState(node: Y.XmlElement, current: Y.Doc): RoomNodeState {
   return { removed: false, changedAttrs };
 }
 
+/** The id of one unit of a textblock in the view: a text character or an inline atom. */
+function unitId(leaf: Y.XmlElement, unit: number): Y.ID | null {
+  let offset = 0;
+  for (const child of leaf.toArray()) {
+    if (!(child instanceof Y.XmlText)) {
+      if (offset === unit) return (child as Y.XmlElement)._item?.id ?? null;
+      offset += 1;
+      continue;
+    }
+    for (let item = child._start; item; item = item.right) {
+      if (item.deleted || !item.countable) continue;
+      if (unit < offset + item.length)
+        return Y.createID(item.id.client, item.id.clock + unit - offset);
+      offset += item.length;
+    }
+  }
+  return null;
+}
+
+function roomAddedAfter(leaf: Y.XmlElement, unit: number, current: Y.Doc): boolean {
+  const view = leaf.doc;
+  if (!view) return false;
+  let next: Y.Item | null;
+  if (unit < 0) {
+    const first = leaf.get(0);
+    const text =
+      first instanceof Y.XmlText && first._item ? findItem(current, first._item.id) : null;
+    next =
+      text?.content instanceof Y.ContentType ? (text.content.type._start as Y.Item | null) : null;
+  } else {
+    const id = unitId(leaf, unit);
+    const item = id && findItem(current, id);
+    if (!id || !item) return false;
+    // The next unit is in the same room item: nothing was put between them.
+    if (id.clock < item.id.clock + item.length - 1) return false;
+    next = item.right;
+  }
+  for (; next && !findItem(view, next.id); next = next.right) if (!next.deleted) return true;
+  return false;
+}
+
+function roomAddedInside(node: Y.XmlElement, current: Y.Doc): boolean {
+  const view = node.doc;
+  const item = node._item && findItem(current, node._item.id);
+  if (!view || !item || !(item.content instanceof Y.ContentType)) return false;
+  const visit = (type: Y.AbstractType<unknown>): boolean => {
+    for (let at = type._start; at; at = at.right) {
+      if (at.deleted) continue;
+      if (at.countable && !findItem(view, at.id)) return true;
+      if (at.content instanceof Y.ContentType && visit(at.content.type)) return true;
+    }
+    return false;
+  };
+  return visit(item.content.type);
+}
+
 /**
  * Every address is resolved to its Yjs type before anything changes, so an operation's
  * path and offsets mean the block as planned whatever ran before it.
@@ -686,6 +750,37 @@ function applyLeafEdit(leaf: Y.XmlElement, op: Extract<MinimalOp, { kind: "text"
     }
   }
   for (const splice of [...op.splices].reverse()) {
+    if (splice.insertFirst) {
+      const part = parts().find(
+        (candidate) =>
+          candidate.child instanceof Y.XmlText &&
+          splice.from >= candidate.start &&
+          splice.from < candidate.start + candidate.length,
+      );
+      let grown = 0;
+      if (part) {
+        splice.content.forEach((node) => {
+          if (!node.isText) throw new Error("SPIKE: insert-first carries text only");
+          const attributes = Object.fromEntries(
+            node.marks.map((mark) => [mark.type.name, mark.attrs]),
+          );
+          (part.child as Y.XmlText).insert(
+            splice.from - part.start + grown,
+            node.text ?? "",
+            attributes,
+          );
+          grown += node.text?.length ?? 0;
+        });
+        for (const piece of parts().reverse()) {
+          const from = Math.max(splice.from + grown, piece.start);
+          const to = Math.min(splice.to + grown, piece.start + piece.length);
+          if (from >= to) continue;
+          if (piece.child instanceof Y.XmlText) piece.child.delete(from - piece.start, to - from);
+          else leaf.delete(piece.index, 1);
+        }
+        continue;
+      }
+    }
     for (const part of parts().reverse()) {
       const from = Math.max(splice.from, part.start);
       const to = Math.min(splice.to, part.start + part.length);

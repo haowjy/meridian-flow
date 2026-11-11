@@ -36,6 +36,12 @@ export interface LeafSplice {
   from: number;
   to: number;
   content: Fragment;
+  /**
+   * Insert before deleting, so the new text anchors on the unit before the range. Set when
+   * the room added text right after the range: inserted after its own deletions, the new
+   * text would share that text's origin and Yjs would order the two by client id.
+   */
+  insertFirst?: boolean;
 }
 
 /** SPIKE: one mark set (`attrs`) or cleared (`null`) over a run of a text leaf's units. */
@@ -156,6 +162,20 @@ export interface AgentEditModel extends DocumentModel {
 
   /** SPIKE: what the room did to the node at `path` under `block`. */
   roomNodeState(block: BlockRef, path: readonly number[], current: DocHandle): RoomNodeState;
+
+  /**
+   * SPIKE: whether the room holds text the view lacks directly after unit `unit` of the
+   * textblock at `path` (-1: at the textblock's start).
+   */
+  roomAddedAfter(
+    block: BlockRef,
+    path: readonly number[],
+    unit: number,
+    current: DocHandle,
+  ): boolean;
+
+  /** SPIKE: whether the room holds anything the view lacks inside the node at `path`. */
+  roomAddedInside(block: BlockRef, path: readonly number[], current: DocHandle): boolean;
 
   /** SPIKE: apply minimal operations to one top-level block, addressed on its state before any of them. */
   applyMinimalOps(doc: DocHandle, block: BlockRef, ops: readonly MinimalOp[]): void;

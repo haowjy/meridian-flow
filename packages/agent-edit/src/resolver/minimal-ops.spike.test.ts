@@ -7,8 +7,13 @@
 
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { Fragment, Slice } from "prosemirror-model";
 import { expect, it } from "vitest";
-import { prosemirrorToYXmlFragment } from "y-prosemirror";
+import {
+  prosemirrorToYXmlFragment,
+  updateYFragment,
+  yXmlFragmentToProseMirrorRootNode,
+} from "y-prosemirror";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
 import { createAgentEditCodecFactory } from "../codec-adapter.js";
@@ -68,6 +73,46 @@ const format =
     const { text: ytext, from } = textHolding(room, old);
     ytext.format(from, old.length, attrs);
   };
+/**
+ * The writer typing `text` over `old` as the editor's binding writes it: one ProseMirror
+ * document per keystroke, pushed through `updateYFragment`, which keeps edge characters the
+ * old and new text share.
+ */
+const bindingRetype =
+  (old: string, text: string, keep = 0): Writer =>
+  (room) => {
+    const fragment = room.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+    let doc = yXmlFragmentToProseMirrorRootNode(fragment, schema);
+    let at = -1;
+    doc.descendants((node, pos) => {
+      if (at < 0 && node.isTextblock) {
+        const index = node.textBetween(0, node.content.size, undefined, "\uFFFC").indexOf(old);
+        if (index >= 0) at = pos + 1 + index;
+      }
+      return at < 0;
+    });
+    if (at < 0) throw new Error("writer text not found");
+    const push = (next: typeof doc) => {
+      updateYFragment(room, fragment, next, { mapping: new Map(), isOMark: new Map() });
+      doc = next;
+    };
+    const chars = [...text];
+    const marks = doc.resolve(at + 1).marks();
+    const slice = (value: string) =>
+      new Slice(value ? Fragment.from(schema.text(value, marks)) : Fragment.empty, 0, 0);
+    let cursor = at + keep;
+    if (keep === 0) {
+      push(doc.replace(at, at + old.length, slice(chars[0] ?? "")));
+      cursor = at + (chars.shift()?.length ?? 0);
+    }
+    for (const char of chars) {
+      push(doc.replace(cursor, cursor, slice(char)));
+      cursor += char.length;
+    }
+  };
+const bindingTypeAfter = (anchor: string, text: string): Writer =>
+  bindingRetype(anchor, text, anchor.length);
+
 const top = (room: Y.Doc, index: number) =>
   room.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(index) as Y.XmlElement;
 
@@ -281,7 +326,7 @@ const rows: Row[] = [
     "- one\n- two\n- three",
     rewrite("- one\n- three"),
     typeAfter("two", " WRITER"),
-    "- one\n- three",
+    "- one\n- &#x20;WRITER\n- three",
   ],
   [
     "L6 model reorders items, writer edits one",
@@ -405,6 +450,95 @@ const rows: Row[] = [
     rewrite("# Chapter One"),
     typeAfter("One", " WRITER"),
     undefined,
+  ],
+  // ── The writer typed, deleting nothing, beside the model's change ──
+  [
+    "R1 word replaced, writer typed after it",
+    SIGHED,
+    find("sighed", "sighs"),
+    typeAfter("sighed", " deeply"),
+    "He sighs deeply, and then he wept.",
+  ],
+  [
+    "R2 word replaced, writer typed before it",
+    SIGHED,
+    find("sighed", "sighs"),
+    typeAfter("He ", "then "),
+    "He then sighs, and then he wept.",
+  ],
+  [
+    "R3 word replaced, writer typed on both sides",
+    SIGHED,
+    find("sighed", "sighs"),
+    (room) => {
+      typeAfter("sighed", " deeply")(room);
+      typeAfter("He ", "then ")(room);
+    },
+    "He then sighed deeply, and then he wept.",
+  ],
+  [
+    "R4 list item word replaced, writer typed after it",
+    `- ${SIGHED}`,
+    rewrite("- He groaned, and then he wept."),
+    typeAfter("sighed", " deeply"),
+    "- He groaned deeply, and then he wept.",
+  ],
+  [
+    "R5 level and text by the model, writer typed after",
+    "# Chapter One",
+    rewrite("## Chapter Two"),
+    typeAfter("One", " W"),
+    "## Chapter Two W",
+  ],
+  [
+    "R6 full stop replaced, writer continued the paragraph",
+    SIGHED,
+    find("wept.", "wept!"),
+    typeAfter("wept.", " Rain"),
+    "He sighed, and then he wept! Rain",
+  ],
+  // ── The writer as the editor's binding writes ──
+  [
+    "B1 binding: bold before typed-over text",
+    SIGHED,
+    rewrite("He **sighed**, and then he wept."),
+    bindingRetype(", and then he wept", " loudly"),
+    "He **sighed** loudly.",
+  ],
+  [
+    "B2 binding: word replaced, typed over",
+    `> ${SIGHED}`,
+    find("sighed", "sighs"),
+    bindingRetype(", and then he wept", " loudly"),
+    "> He sighs loudly.",
+  ],
+  [
+    "B3 binding: insert after a word the writer retyped keeping its last letter",
+    SIGHED,
+    insertAfter("wept", " again"),
+    bindingRetype("wept", "tears"),
+    "He sighed, and then he tears.",
+  ],
+  [
+    "B6 binding: insert where the writer is typing",
+    SIGHED,
+    insertAfter("sighed", " softly"),
+    bindingTypeAfter("sighed", " deeply"),
+    "He sighed deeply, and then he wept.",
+  ],
+  [
+    "B4 binding: bold on a word the writer retyped keeping its last letter",
+    SIGHED,
+    rewrite("He **sighed**, and then he wept."),
+    bindingRetype("sighed", "dropped"),
+    undefined,
+  ],
+  [
+    "B5 binding: word replaced, writer typed after it",
+    SIGHED,
+    find("sighed", "sighs"),
+    bindingTypeAfter("sighed", " deeply"),
+    "He sighs deeply, and then he wept.",
   ],
   // ── Top-level structure ──
   [
@@ -662,6 +796,7 @@ it("class run", () => {
       for (const [editName, writer, writerText] of [
         ["deleted", del(gone), text.replace(gone, "")],
         ["typed over", retype(gone, typed), text.replace(gone, typed)],
+        ["typed over (binding)", bindingRetype(gone, typed), text.replace(gone, typed)],
       ] as Array<[string, Writer, string]>)
         for (const [name, make, landed] of cases) {
           if (wrapName === "code block" && name.includes("bold")) continue;

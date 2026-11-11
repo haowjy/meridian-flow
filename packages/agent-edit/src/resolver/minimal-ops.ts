@@ -4,7 +4,7 @@
 // The stale-view rule runs once per text leaf, the same wherever the leaf sits.
 
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
-import type { Mark } from "prosemirror-model";
+import { Fragment, type Mark } from "prosemirror-model";
 import type { Block, Span } from "../codec-types.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel, LeafFormat, LeafSplice, MinimalOp } from "../ports/model.js";
@@ -35,6 +35,8 @@ interface LowerContext {
   model: AgentEditModel;
   block: BlockRef;
   current: DocHandle | undefined;
+  /** The textblock being decided. */
+  path: readonly number[];
   /** One private-use character per distinct inline atom, shared by both sides of a diff. */
   atoms: Map<string, string>;
 }
@@ -51,7 +53,7 @@ export function lowerBlock(
   after: Block,
   windows: [TextWindow[] | undefined, TextWindow[] | undefined] | null,
 ): LoweredBlock | null {
-  const ctx: LowerContext = { model, block, current, atoms: new Map() };
+  const ctx: LowerContext = { model, block, current, path: [], atoms: new Map() };
   const placed =
     windows?.[0] && windows[1] ? leafWindows(before, after, windows[0], windows[1]) : null;
   const out: LoweredBlock = { ops: [], skipped: 0 };
@@ -91,7 +93,7 @@ function lowerNode(
     const leafIndex = counter.leaf++;
     if (before.eq(after) || before.content.eq(after.content)) return;
     const removed = ctx.current ? ctx.model.removedLeafUnits(ctx.block, path, ctx.current) : [];
-    const decided = decideLeaf(ctx, before, after, removed, placed?.get(leafIndex));
+    const decided = decideLeaf({ ...ctx, path }, before, after, removed, placed?.get(leafIndex));
     out.skipped += decided.skipped;
     if (decided.splices.length + decided.formats.length > 0)
       out.ops.push({ kind: "text", path, splices: decided.splices, formats: decided.formats });
@@ -115,7 +117,11 @@ function lowerNode(
       case "remove":
         // A delete deletes whatever is left: Yjs ignores it where the room already did.
         countLeaves(olds[step.old], counter);
-        out.ops.push({ kind: "delete", path: [...path, step.old] });
+        // A delete deletes what the model saw. Where the room added text inside the node,
+        // the node stays and only the view's units go.
+        if (ctx.current && ctx.model.roomAddedInside(ctx.block, [...path, step.old], ctx.current))
+          emptyTextblocks(olds[step.old], [...path, step.old], out);
+        else out.ops.push({ kind: "delete", path: [...path, step.old] });
         break;
       case "add": {
         if (state?.removed) {
@@ -130,6 +136,22 @@ function lowerNode(
       }
     }
   }
+}
+
+function emptyTextblocks(node: Block, path: number[], out: LoweredBlock): void {
+  if (node.isTextblock) {
+    if (node.content.size > 0)
+      out.ops.push({
+        kind: "text",
+        path,
+        splices: [{ from: 0, to: node.content.size, content: Fragment.empty }],
+        formats: [],
+      });
+    return;
+  }
+  node.forEach((child, _offset, index) => {
+    emptyTextblocks(child, [...path, index], out);
+  });
 }
 
 function samePath(a: readonly number[], b: readonly number[]): boolean {
@@ -329,6 +351,15 @@ function decideLeaf(
     if (hunk.anchored) lands = alive(hunk.from - 1);
     else if (hunk.from === hunk.to) lands = alive(hunk.from - 1) || alive(hunk.to);
     else lands = hunk.at === hunk.end || deadIn(hunk.from, hunk.to) === 0;
+    // An insert where the room also put text has no side to take: Yjs would order the two
+    // by client id, and the room's text may be the rest of a word (`t` + `ears`).
+    if (
+      lands &&
+      hunk.from === hunk.to &&
+      ctx.current &&
+      ctx.model.roomAddedAfter(ctx.block, ctx.path, hunk.from - 1, ctx.current)
+    )
+      lands = false;
     if (!lands) {
       const sameRun = skipRunEnd >= 0 && deadIn(skipRunEnd, hunk.from) === hunk.from - skipRunEnd;
       if (!sameRun) skipped += 1;
@@ -338,7 +369,22 @@ function decideLeaf(
     skipRunEnd = -1;
     const content = after.content.cut(hunk.at, hunk.end);
     if (deadIn(hunk.from, hunk.to) === 0) {
-      splices.push({ from: hunk.from, to: hunk.to, content });
+      // A replace has two places to anchor its new text: before the range or after it.
+      // Take the one where the room added nothing; with room text at both, it is not made.
+      const replaces = hunk.from < hunk.to && content.size > 0 && ctx.current !== undefined;
+      const added = (unit: number) =>
+        ctx.model.roomAddedAfter(ctx.block, ctx.path, unit, ctx.current as DocHandle);
+      const after = replaces && added(hunk.to - 1);
+      if (after && added(hunk.from - 1)) {
+        skipped += 1;
+        continue;
+      }
+      splices.push({
+        from: hunk.from,
+        to: hunk.to,
+        content,
+        ...(after ? { insertFirst: true } : {}),
+      });
       continue;
     }
     // A delete that also covers deleted units deletes only what is left of it.
