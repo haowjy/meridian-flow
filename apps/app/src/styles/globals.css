@@ -634,6 +634,13 @@
   --focus-ring-offset: -4px;
 }
 
+/* The exception: a control that is only its text (an inline link, a text button) or is
+   filled edge to edge in the focus colour (a checked switch) has no room inside, and
+   always has room around it. Its ring stands off the box. */
+@utility focus-ring-outside {
+  --focus-ring-offset: 2px;
+}
+
 /* Menu rows: the same ring, also worn by a composite row that owns a focused child. */
 @utility dropdown-focus-ring {
   outline: 2px none var(--color-focus);
@@ -828,7 +835,7 @@
 
 /** Link-style control — always reads as clickable (not hover-only). */
 @utility text-button {
-  @apply focus-ring text-sm font-medium text-jade-text underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline;
+  @apply focus-ring focus-ring-outside text-sm font-medium text-jade-text underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline;
 }
 
 /** Plain collapsible row (reasoning / activity toggles) — text, not a card. */

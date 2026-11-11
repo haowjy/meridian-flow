@@ -39,7 +39,7 @@ export function WorkRow({
           event.preventDefault();
           onOpen();
         }}
-        className="focus-ring min-w-0 flex-1 rounded-sm after:absolute after:inset-0"
+        className="focus-ring focus-ring-outside min-w-0 flex-1 rounded-sm after:absolute after:inset-0"
       >
         <span className="sr-only">
           {work.status ? t`Open ${work.name} (${work.status})` : t`Open ${work.name}`}
