@@ -12,12 +12,14 @@ import { FileQuestion, Plus, X } from "lucide-react";
 import {
   type HTMLAttributes,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
   type RefObject,
   useCallback,
   useEffect,
   useMemo,
   useRef,
+  useSyncExternalStore,
   type WheelEvent,
 } from "react";
 import {
@@ -35,7 +37,6 @@ import { useScrollEdges } from "@/hooks/use-scroll-edges";
 import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { useAccountId, useAccountResourceProjection } from "../context/account-feature-context";
-import { fileKindIcon } from "../context/context-file-icon";
 import { useReferenceDrag } from "../context/entry-drag/reference-source";
 import { projectResourceDocument } from "../context/open-document-from-file";
 import { tabSubject } from "../context/tab-subject";
@@ -118,6 +119,7 @@ export function MainTabStrip({
     <div
       role="tablist"
       aria-label={t`Open documents`}
+      data-main-tab-strip
       onKeyDown={moveAlongStrip}
       className="flex h-full min-w-0 shrink items-stretch"
     >
@@ -280,9 +282,29 @@ function DocumentTabChip({
       isDraftOnly(document.documentId),
     ),
   );
-  const Icon = fileKindIcon(document.name);
+  const heldWidth = useHeldTabWidth();
+  const closeByPointer = (chip: HTMLElement | null) => {
+    holdTabWidth(chip);
+    onClose();
+  };
   return (
-    <TabChipFrame active={active} reviewing={reviewing} divider={divider} tabProps={drag}>
+    <TabChipFrame
+      active={active}
+      reviewing={reviewing}
+      divider={divider}
+      tabProps={{
+        ...drag,
+        style: heldWidth === null ? undefined : { flex: `0 0 ${heldWidth}px` },
+        // Anywhere on the tab, its close included, as in Chrome.
+        onAuxClick: (event) => {
+          if (event.button === 1) closeByPointer(event.currentTarget);
+        },
+      }}
+      // Every tab is one width, as in Chrome: 240px, all shrinking together when the band is full,
+      // to the start of its name (a chapter's number). No icon: every document's would be the same.
+      // The open tab keeps room for its close; the strip scrolls past that.
+      className={cn("@container/tab w-60 shrink", active ? "min-w-16" : "min-w-12")}
+    >
       <button
         type="button"
         role="tab"
@@ -297,19 +319,21 @@ function DocumentTabChip({
           // Each document's page has its own band: the focus follows to this tab in the new one.
           if (focused) holdFocus(() => selectedTabFor(document.documentId));
         }}
-        onAuxClick={(event) => {
-          if (event.button === 1) onClose();
-        }}
         // The whole chip is the hit target; the close button sits above it. The overlay carries
         // the name, so the visible label is hidden from assistive tech.
         className="focus-ring absolute inset-0"
         title={document.kind === "new" ? document.name : document.path}
       />
-      <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      <span aria-hidden className="min-w-0 truncate text-left text-xs">
+      <span aria-hidden className="min-w-0 flex-1 truncate text-left text-xs">
         {document.name}
       </span>
-      <TabCloseButton name={document.name} active={active} onClose={onClose} />
+      <TabCloseButton
+        name={document.name}
+        active={active}
+        onClose={(event) =>
+          event.detail > 0 ? closeByPointer(event.currentTarget.parentElement) : onClose()
+        }
+      />
     </TabChipFrame>
   );
 }
@@ -339,7 +363,7 @@ function TabCloseButton({
 }: {
   name: string;
   active: boolean;
-  onClose: () => void;
+  onClose: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
   return (
     <button
@@ -348,14 +372,75 @@ function TabCloseButton({
       aria-label={t`Close ${name}`}
       tabIndex={active ? 0 : -1}
       className={cn(
-        "focus-ring relative grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground transition-opacity",
-        "hover:bg-ink-fill hover:text-foreground focus-visible:opacity-100",
-        // Hidden on inactive tabs until hovered, as in VS Code.
-        active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+        "focus-ring relative grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground",
+        "hover:bg-ink-fill hover:text-foreground",
+        // On every tab, in the same place, so closing several is one target after another; an
+        // inactive tab narrower than 64px (40px inside its padding) gives the close up, as in Chrome.
+        !active && "@max-[2.5rem]/tab:hidden",
       )}
     >
       <X className="size-3" aria-hidden />
     </button>
+  );
+}
+
+/**
+ * While the writer closes tabs with the pointer, the tabs keep the width they had, so the next
+ * close lands under the pointer (Chrome's rule); they resize once the pointer leaves the strip.
+ * One value per window, outside the strip: each document has its own band, so closing main's tab
+ * draws a new strip.
+ */
+let heldTabWidth: number | null = null;
+const heldTabWidthListeners = new Set<() => void>();
+
+function setHeldTabWidth(width: number | null) {
+  if (width === heldTabWidth) return;
+  heldTabWidth = width;
+  for (const listener of heldTabWidthListeners) listener();
+}
+
+function holdTabWidth(chip: HTMLElement | null) {
+  if (!chip) return;
+  const first = heldTabWidth === null;
+  // An inactive tab's width: at the minimum the open tab is wider (it keeps room for its close),
+  // and holding that would widen every tab under the pointer.
+  const inactive = chip
+    .closest("[data-main-tab-strip]")
+    ?.querySelector('[role=tab][aria-selected="false"]')?.parentElement;
+  setHeldTabWidth((inactive ?? chip).getBoundingClientRect().width);
+  if (!first) return;
+  // Released when the pointer crosses out of the strip, presses anywhere else (a touch tap fires
+  // no move), or a mouse leaves the window from it; a touch lift also reports leaving to nowhere.
+  // Closing main's tab redraws the strip, and for a frame the pointer is over the band behind it:
+  // that crossing comes from outside the strip, so it doesn't count.
+  const inStrip = (node: EventTarget | null) =>
+    node instanceof Element && node.closest("[data-main-tab-strip]") !== null;
+  const release = (event: PointerEvent) => {
+    const crossedOut =
+      event.type === "pointerover" && !inStrip(event.target) && inStrip(event.relatedTarget);
+    const pressedElsewhere = event.type === "pointerdown" && !inStrip(event.target);
+    const leftWindow =
+      event.type === "pointerout" &&
+      event.pointerType === "mouse" &&
+      event.relatedTarget === null &&
+      inStrip(event.target);
+    if (!crossedOut && !pressedElsewhere && !leftWindow) return;
+    for (const type of RELEASE_EVENTS) window.removeEventListener(type, release, true);
+    setHeldTabWidth(null);
+  };
+  for (const type of RELEASE_EVENTS) window.addEventListener(type, release, true);
+}
+
+const RELEASE_EVENTS = ["pointerover", "pointerdown", "pointerout"] as const;
+
+function useHeldTabWidth(): number | null {
+  return useSyncExternalStore(
+    (listener) => {
+      heldTabWidthListeners.add(listener);
+      return () => heldTabWidthListeners.delete(listener);
+    },
+    () => heldTabWidth,
+    () => null,
   );
 }
 
@@ -446,9 +531,6 @@ export function TabChipFrame({
         // No h-full: items-stretch sizes the chip so the active tab's top margin subtracts from
         // its height. scroll-mx: scrolled into view, the active tab keeps room for its flares.
         "group scroll-mx-6 gap-1.5",
-        // Tabs keep their names' width up to a cap; inactive ones shrink to their icon first.
-        "max-w-60",
-        active ? "shrink-0" : "min-w-10",
         tabChipClass(active),
         // Under review the chip takes the review strip's tone, so tab and band read as one.
         reviewing && "[--tab-chip-surface:var(--color-review)]",
