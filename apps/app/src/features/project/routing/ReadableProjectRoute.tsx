@@ -511,11 +511,17 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     reconciledDocumentAddress.view,
   );
   const documentResult = gated.result;
+  const draftOnly = gated.outcome === "ready" ? gated.draftOnly : undefined;
+  // Shown through its draft: the address's own draft row says live lacks the document, or a host
+  // already presents it draft-only. A delete that went back from the draft leaves no host to ask.
+  const shownThroughItsDraft = (documentId: string) =>
+    draftOnly?.documentId === documentId ||
+    (draftOnlyDocuments?.isDraftOnly(projectId, documentId) ?? false);
   const admissibleResult = useAddressResultAfterRemoval(
     projectId,
     documentResult,
     documentLookup.dataUpdatedAt,
-    (documentId) => draftOnlyDocuments?.isDraftOnly(projectId, documentId) ?? false,
+    shownThroughItsDraft,
   );
   const routeBinding = addressRouteBinding(
     addressBinding,
@@ -534,7 +540,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       routeBinding.by,
     );
   }, [contextRemoval, projectId, routeBinding?.revision, routeBinding?.documentId]);
-  const draftOnly = gated.outcome === "ready" ? gated.draftOnly : undefined;
   const reviewItemKey = address.itemKey ?? draftOnly?.draft.itemKey;
   const addressedNow = addressedDocument(
     address,
