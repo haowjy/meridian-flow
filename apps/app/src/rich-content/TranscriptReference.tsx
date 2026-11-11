@@ -32,6 +32,7 @@ import {
 import {
   classifyLinkTarget,
   type LinkAnswerCache,
+  type LinkFollowDisposition,
   type LinkRequester,
   type LinkResolutionEntry,
   type LinkTarget,
@@ -50,7 +51,8 @@ import { FolderMenu, useFolderMenuHost } from "@/features/project/context/Folder
  * loading, so a reference does not flicker between a link and text.
  */
 export type TranscriptLinkNavigation = {
-  follow(target: LinkTarget): void;
+  /** `new-tab`: a cmd-click, ctrl-click or middle click, which holds a document beside main. */
+  follow(target: LinkTarget, gesture?: LinkFollowDisposition): void;
   canFollow(target: LinkTarget): boolean;
   /** The cache the surface's follows resolve through; what a syntax link draws. */
   resolution: LinkAnswerCache | null;
@@ -154,7 +156,7 @@ export function TranscriptReference({
         ? () => onOpen(resolution.id)
         : undefined
       : navigation && syntax && syntaxFollowable && !folderMenu
-        ? () => navigation.follow(syntax)
+        ? (gesture: LinkFollowDisposition = "current") => navigation.follow(syntax, gesture)
         : undefined;
   const label = authoredLabel !== "true" && resolution?.available ? resolution.label : children;
   // Only an exact reference the host still resolves names an entry; syntax and gone ones are not draggable.
@@ -202,7 +204,10 @@ export function TranscriptReference({
       title={chip?.state === "draft" ? missing : undefined}
       {...(chip ? linkChipAttributes(chip) : {})}
       {...drag}
-      onClick={follow}
+      onClick={(event) => follow?.(event.ctrlKey || event.metaKey ? "new-tab" : "current")}
+      onAuxClick={(event) => {
+        if (event.button === 1) follow?.("new-tab");
+      }}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           event.preventDefault();
@@ -236,7 +241,9 @@ export function TranscriptReference({
             {uri ?? targetHref}
           </ContextMenuLabel>
         ) : null}
-        {follow ? <ContextMenuItem onSelect={follow}>{t`Open link`}</ContextMenuItem> : null}
+        {follow ? (
+          <ContextMenuItem onSelect={() => follow()}>{t`Open link`}</ContextMenuItem>
+        ) : null}
       </ContextMenuContent>
     </ContextMenu>
   );

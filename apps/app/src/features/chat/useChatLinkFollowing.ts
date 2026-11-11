@@ -151,22 +151,27 @@ export function useChatLinkFollowing({
   );
 
   const openReferenceDocument = useOpenProjectDocument(projectId);
-  // A page this chat drafted opens on its draft.
-  const openDrafted = useOwnerDraftOpener(
-    projectId,
-    chatOwnerKey(activeWork, activeThread?.rootThreadId ?? null) || null,
-  );
   const openLive = useCallback<LinkDestination>(
     (document) =>
-      (!document.trashed && openDrafted(document.documentId)) ||
       openReferenceDocument({
         documentId: document.documentId,
         ...(document.trashed ? { trashed: true as const } : {}),
         ...(document.focus ? { focus: true as const } : {}),
       }),
-    [openReferenceDocument, openDrafted],
+    [openReferenceDocument],
   );
-  const open = useReviewingLinkDestination(openLive);
+  const openReviewing = useReviewingLinkDestination(openLive);
+  // A page this chat drafted opens on its draft.
+  const openDrafted = useOwnerDraftOpener(
+    projectId,
+    chatOwnerKey(activeWork, activeThread?.rootThreadId ?? null) || null,
+  );
+  const open = useCallback<LinkDestination>(
+    (document, gesture) =>
+      (!document.review && !document.trashed && openDrafted(document.documentId, gesture)) ||
+      openReviewing(document, gesture),
+    [openDrafted, openReviewing],
+  );
   const folders = useMemo<FolderMenuHost>(
     () => ({ projectId, openDocument: (documentId) => void open({ documentId }, "current") }),
     [open, projectId],
@@ -227,9 +232,9 @@ export function useChatLinkFollowing({
 
   const navigation = useMemo<TranscriptLinkNavigation>(
     () => ({
-      follow: (target) => {
+      follow: (target, gesture) => {
         shellDoors?.retire();
-        follower.follow(target);
+        follower.follow(target, gesture);
       },
       canFollow: follower.canFollow,
       resolution,

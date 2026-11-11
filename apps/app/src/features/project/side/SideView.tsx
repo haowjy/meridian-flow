@@ -20,6 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { type DraftPin, setDocumentView } from "@/client/project-shell/document-views";
 import {
   type HeldPick,
   readHeldPick,
@@ -81,7 +82,8 @@ type SideView = {
   reportNewChatAbout: (about: NewChatAbout) => void;
   /** Bumped by a hold from a link: the desktop opens the side so the hold is seen. */
   revealed: number;
-  holdBeside: (pick: HeldPick) => void;
+  /** With `draft`, the held document shows that draft. */
+  holdBeside: (pick: HeldPick, draft?: DraftPin) => void;
   descriptions: Descriptions;
 };
 
@@ -328,7 +330,9 @@ export function SideViewProvider({
   const [newChatAbout, reportNewChatAbout] = useState<NewChatAbout>("follows");
   const [revealed, setRevealed] = useState(0);
   const holdBeside = useCallback(
-    (pick: HeldPick) => {
+    (pick: HeldPick, draft?: DraftPin) => {
+      if (draft && pick.kind === "document")
+        setDocumentView(accountId, projectId, pick.documentId, { pin: draft });
       writeHeldPick(accountId, projectId, pick);
       setRevealed((count) => count + 1);
     },
@@ -463,7 +467,7 @@ export function useNewChatAbout(): {
 }
 
 /** Holds a document beside from a link, and has the side seen; null outside the project view. */
-export function useOptionalHoldBeside(): ((pick: HeldPick) => void) | null {
+export function useOptionalHoldBeside(): SideView["holdBeside"] | null {
   return useContext(SideViewContext)?.holdBeside ?? null;
 }
 
