@@ -74,6 +74,6 @@ tests: `inverse-attribution`, `model-inverse`, `turn-inverse`, `response-rollbac
 `draft-disposition` and `branch-tree.apply-placement`.
 
 **Gaps.** What the browser displays is unchecked. Live documents carry no marks.
-`packages/agent-edit/src/diff/item-authorship.ts` has no caller. Cut-and-pasted text
+Cut-and-pasted text
 reads as the writer's (#889). Five receipt families have separate shapes, and nothing
 cross-checks them.

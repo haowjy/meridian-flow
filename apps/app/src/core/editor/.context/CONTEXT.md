@@ -110,10 +110,15 @@ review rotates the document client while migrating suspended fields. A second
 presence write path or cached client ID creates ghost carets.
 
 Peer marks, session markers, and review decorations are projections, never
-manuscript content. Peer marks are dormant: no server code sends `change_event`,
-so the marker store stays empty ([peer-marks](../../../features/editor/surfaces/peer-marks/AGENTS.md)). The session marker store is ephemeral and group revisions
-fence delayed replays. Peer-mark popovers open the owning conversation;
-Undo/Redo of an AI change remains the producing-turn receipt's authority.
+manuscript content. The session marker store is ephemeral and group revisions
+fence delayed replays. Undo/Redo of an AI change remains the producing-turn
+receipt's authority.
+
+The peer-marks lane (`PeerMarkerExtension`, the marker store, the agent-name
+store) is dormant: no server code has sent `change_event` since `92967a8b80`, so
+the store stays empty and no mark renders. It is kept for the history feature,
+which will decide what marks show. Don't extend it and don't delete it
+([peer-marks](../../../features/editor/surfaces/peer-marks/AGENTS.md)).
 
 ## Anchors and holds
 
