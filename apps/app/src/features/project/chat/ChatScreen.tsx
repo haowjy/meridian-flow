@@ -64,8 +64,7 @@ export function ChatScreen({
   visible = true,
 }: ChatScreenProps) {
   const { threads: projectThreads } = useProjectThreads(projectId);
-  const { openChat, newChatFocusRequestId, newChatWorkId, consumeNewChatFocusRequest } =
-    useChatNavigation();
+  const { openChat, newChatFocusRequestId, consumeNewChatFocusRequest } = useChatNavigation();
   const derivationDeps = useDerivationDeps();
   // A fork or handoff reloaded mid-creation re-issues its request first.
   const resumingDerivation = useDerivationResume(threadId, derivationDeps);
@@ -82,7 +81,6 @@ export function ChatScreen({
             about={about}
             onAboutChange={onAboutChange}
             newChatFocusRequestId={newChatFocusRequestId}
-            newChatWorkId={newChatWorkId}
             onNewChatFocusHandled={consumeNewChatFocusRequest}
           />
         }

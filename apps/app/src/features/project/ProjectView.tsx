@@ -454,7 +454,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
   const mainForSide: MainForSide = props.chatDisplay
     ? props.chatDisplay.kind === "thread"
       ? { kind: "chat", chatId: props.chatDisplay.threadId }
-      : { kind: "chat-index" }
+      : { kind: "new-chat" }
     : main.item?.kind === "document"
       ? { kind: "document", documentId: main.item.documentId }
       : main.document.requested && (props.routeIssues?.editor === "loading" || !props.contextLive)

@@ -112,7 +112,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       ? parsed.address
       : {
           projectId: project.id,
-          destination: { kind: "chat-index" },
+          destination: { kind: "new-chat" },
         };
   const destination = address.destination;
   const [navigation, setNavigation] = useState<ReturnType<typeof createProjectNavigation> | null>(
@@ -124,8 +124,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     mainChat:
       destination.kind === "chat"
         ? { kind: "thread", threadId: destination.chatId }
-        : destination.kind === "chat-index"
-          ? { kind: "index" }
+        : destination.kind === "new-chat"
+          ? { kind: "new" }
           : null,
     go: (next, options) => go(toDestination(next), options),
   });

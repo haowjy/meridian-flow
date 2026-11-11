@@ -4,7 +4,7 @@
  * of the server's confirmation.
  */
 import type { QueryClient } from "@tanstack/react-query";
-import { deleteThread } from "@/client/api/threads-api";
+import { deleteThread, restoreThread } from "@/client/api/threads-api";
 import { getChatSubmissionAccountId, getChatSubmissionEpoch } from "@/client/chat-submissions";
 import { beginOwnChatDelete, cleanDeletedChat } from "@/client/chat-submissions/deleted-chat";
 import { removeChatRow, restoreChatRow, snapshotChatRow } from "./chat-projections";
@@ -48,6 +48,22 @@ export async function deleteProjectChat(
     if (userState !== undefined) {
       client.setQueryData(projectQueryKeys.threadUserState(projectId, threadId), userState);
     }
+    return { status: "error", error: cause instanceof Error ? cause : new Error(String(cause)) };
+  }
+}
+
+/** Brings a deleted chat back from Trash: the delete's Undo. Every chat list rereads it. */
+export async function restoreProjectChat(
+  client: QueryClient,
+  projectId: string,
+  threadId: string,
+): Promise<DeleteProjectChatOutcome> {
+  try {
+    await restoreThread(threadId);
+    void invalidateProjectThreadData(client, projectId);
+    void invalidateWorkThreads(client, projectId);
+    return { status: "success" };
+  } catch (cause) {
     return { status: "error", error: cause instanceof Error ? cause : new Error(String(cause)) };
   }
 }
