@@ -704,7 +704,7 @@
  * nothing; they sit transparent on this field.
  */
 @utility chrome-field {
-  /* Shares --radius-md with the tab chips and the page sheet — ONE corner
+  /* Shares --radius-md with the page sheet (the tab chips draw the same 6px) — ONE corner
      voice across the shell (user call 2026-07-16, superseding the earlier
      3px "architecture" tune). The curve exists only against the project header:
      ProjectShell zeroes --chrome-corner when the left rail is collapsed,

@@ -46,7 +46,7 @@ export function WorkTitleTab({
   const rename = useWorkRename(projectId, work);
   if (isWorkArchived(work)) return <PlainWorkTitleTab name={work.name} variant={variant} />;
   return (
-    <div className={cn(titleChipClass(variant), "relative")}>
+    <div className={titleChipClass(variant)}>
       <TitleEditSlot
         titleKey={`work:${work.id}`}
         label={t`Rename Work`}
