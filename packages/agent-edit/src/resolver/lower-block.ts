@@ -83,11 +83,16 @@ export function lowerBlock(
  * comes back the same from both, so the model never overwrites what it was never shown.
  */
 function changedAttrs(codec: AgentEditCodec, before: Block, after: Block): Record<string, unknown> {
-  const shown = codec.parse(codec.serialize([before])).blocks[0];
+  const differs = (left: unknown, right: unknown) => JSON.stringify(left) !== JSON.stringify(right);
+  const candidates = Object.keys(after.attrs).filter((key) =>
+    differs(before.attrs[key], after.attrs[key]),
+  );
   const changed: Record<string, unknown> = {};
+  if (candidates.length === 0) return changed;
+  const shown = codec.parse(codec.serialize([before])).blocks[0];
   if (shown)
-    for (const [key, value] of Object.entries(after.attrs))
-      if (JSON.stringify(value) !== JSON.stringify(shown.attrs[key])) changed[key] = value;
+    for (const key of candidates)
+      if (differs(shown.attrs[key], after.attrs[key])) changed[key] = after.attrs[key];
   return changed;
 }
 
