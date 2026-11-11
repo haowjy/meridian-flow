@@ -99,11 +99,6 @@ export interface DocumentModel {
  * Hosts may provide any implementation that satisfies this port; the built-in
  * y-prosemirror adapter is only one implementation.
  */
-/** A run of a block's content positions; `whole` when it is one deleted node, never split. */
-export interface RemovedUnits extends Span {
-  whole?: true;
-}
-
 export interface AgentEditModel extends DocumentModel {
   /** Apply exact disjoint same-block replacements without trimming common edge characters. */
   applyInlineReplacements(
@@ -116,14 +111,10 @@ export interface AgentEditModel extends DocumentModel {
   applyBlockReplacement(doc: DocHandle, block: BlockRef, replacement: Block): void;
 
   /**
-   * Runs of the block's content positions that `current` has deleted: characters, inline
-   * atoms, nested nodes. The block's document is the model's view of `current`'s room, so
-   * the two share item identities.
+   * Runs of a flat text block's characters that `current` has deleted. The block's document
+   * is the model's view of `current`'s room, so the two share item identities.
    */
-  removedUnits(block: BlockRef, current: DocHandle): RemovedUnits[];
-
-  /** Delete from the block what `current` has deleted, item for item, as `current` did. */
-  dropRemovedUnits(block: BlockRef, current: DocHandle): void;
+  removedUnits(block: BlockRef, current: DocHandle): Span[];
 
   /**
    * Every top-level block with its display hash and ProseMirror node, built in one walk so

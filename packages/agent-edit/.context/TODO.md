@@ -14,9 +14,26 @@ save-time "only if empty" precondition, which only `saveNow` passes.
 Unify them: have `saveNow` run the reply path's prepare, persist and report inside
 one transaction the host owns, and route inverses through `prepareSave`.
 
+## Stale-view writes into structural blocks
+
+A write planned on the model's view and lowered into a quote, list item, verse,
+paragraph with a hard break or an image, code block or table is diffed against the
+stale view, as if the writer had deleted nothing since. A model insert beside a line
+the writer deleted lands split (`> A disciple.2. DRAFT-B SIDETEXT`), a rewrite can
+bring the deleted line back, and a change to a word the writer retyped lands inside it.
+This includes a paragraph whose line break or inline image the writer deleted: the
+editor retypes the text after it, and the model's view of the block was not flat.
+Plain paragraphs and headings are decided by `withoutRemovedUnits`. Dropping the room's
+deletions from the view before the structural diff makes it worse: the character diff
+then places the model's text at the dropped run's edge, beside what the writer typed
+there, ordered by client id (`> He sigh loudlys.`). The fix is to apply the rule's
+landed changes as exact positional edits into nested text with the deletions kept, and
+use a structural diff only for changes that create or remove node edges
+([#1363](https://github.com/haowjy/meridian-flow/issues/1363)).
+
 ## Deletes that land after a write read its room
 
-A block rewrite is decided against what its room copy has deleted
+A flat block rewrite is decided against what its room copy has deleted
 (`withoutRemovedUnits`), but only what the copy holds when the call reads it. A
 delete that lands later still meets a lowering that kept those units. For a draft
 write the window runs from the call's room read to the step's save: the rest of the
@@ -26,24 +43,17 @@ placed by their windows and survive it; other rewrites can split. The rule is a 
 function of the two blocks and the deleted units, so the fix is to run it again at
 save time against the room the update merges into.
 
-## Edits to text the editor retyped
-
-Joining two lines or deleting an inline image makes the editor delete the following
-text and insert it again as new items. A model change planned on the old items lands
-on deleted text, so it is skipped and the result says so; before, it was lost without
-a word. Landing it needs the retyped text matched to the old by content.
-
 ## Formatting in a paragraph the writer deleted from
 
 When the model changes bold, italics, a link or a paragraph's attributes in a flat
 paragraph that has room deletions, the paragraph is lowered as if there were no room,
 so text the writer deleted there can come back as the model's. Deciding it by the rule
 needs the splice path to carry format ranges applied on the view with its deletions
-left in, as `main`'s block diff does. That is a format-only replacement through
-`ResolvedEdit`, `applyInlineReplacements`, `editSegments`, the semantic IR and server
-provenance, which mark only text replacements today. The structural diff is not the
-answer: there the model's bold extends over text the writer typed over a deletion
-beside it when the model's client id is higher (`He **sighed loudly**.`).
+left in. That is a format-only replacement through `ResolvedEdit`,
+`applyInlineReplacements`, `editSegments`, the semantic IR and server provenance, which
+mark only text replacements today. A structural diff on a view with the deletions
+dropped is not the answer: there the model's bold extends over text the writer typed
+over a deletion beside it when the model's client id is higher (`He **sighed loudly**.`).
 
 ## Blocks a write removes and adds
 
