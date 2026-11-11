@@ -11,6 +11,7 @@ import { useRouter } from "@tanstack/react-router";
 import { FileQuestion, Plus, X } from "lucide-react";
 import {
   type HTMLAttributes,
+  type KeyboardEvent,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -30,6 +31,8 @@ import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { OpenDocument } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { draftCopyView } from "@/features/draft-review/copy-view";
+import { useScrollEdges } from "@/hooks/use-scroll-edges";
+import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { useAccountId, useAccountResourceProjection } from "../context/account-feature-context";
 import { fileKindIcon } from "../context/context-file-icon";
@@ -103,6 +106,7 @@ export function MainTabStrip({
   const tabs = useLiveTabs(projectId, useMainTabs(accountId, projectId).tabs);
   const commands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
   const stripRef = useRef<HTMLDivElement>(null);
+  const more = useScrollEdges(stripRef);
   const unrecorded =
     mainDocument && mainKey && !tabs.some((tab) => mainTabKey(tab) === mainKey)
       ? mainDocument
@@ -114,6 +118,7 @@ export function MainTabStrip({
     <div
       role="tablist"
       aria-label={t`Open documents`}
+      onKeyDown={moveAlongStrip}
       className="flex h-full min-w-0 shrink items-stretch"
     >
       {/* The padding is room for the end tabs' flares, which this scroller would clip; the
@@ -121,7 +126,9 @@ export function MainTabStrip({
       <div
         ref={stripRef}
         onWheel={scrollStripWithWheel}
-        className="-mx-1.5 flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden px-1.5"
+        data-more-start={more.start || undefined}
+        data-more-end={more.end || undefined}
+        className="-mx-1.5 flex min-w-0 scroll-fade-x items-stretch overflow-x-auto overflow-y-hidden px-1.5 [--scroll-fade:1.5rem] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {tabs.map((tab, index) => {
           const active = mainTabKey(tab) === mainKey;
@@ -152,7 +159,11 @@ export function MainTabStrip({
         ) : null}
         {current ? (
           // The active item never shrinks: the inactive tabs give way first, then the strip scrolls.
-          <div data-active-tab className="flex max-w-60 shrink-0 scroll-mx-1.5 items-stretch">
+          <div
+            data-active-tab
+            data-main-current
+            className="flex max-w-60 shrink-0 scroll-mx-6 items-stretch"
+          >
             {current}
           </div>
         ) : null}
@@ -277,7 +288,15 @@ function DocumentTabChip({
         role="tab"
         aria-selected={active}
         aria-label={document.name}
-        onClick={() => onSelect(document)}
+        // One stop in the Tab order; the arrows move along the strip (`moveAlongStrip`).
+        tabIndex={active ? 0 : -1}
+        data-main-tab={document.documentId}
+        onClick={(event) => {
+          const focused = event.currentTarget === window.document.activeElement;
+          onSelect(document);
+          // Each document's page has its own band: the focus follows to this tab in the new one.
+          if (focused) holdFocus(() => selectedTabFor(document.documentId));
+        }}
         onAuxClick={(event) => {
           if (event.button === 1) onClose();
         }}
@@ -327,6 +346,7 @@ function TabCloseButton({
       type="button"
       onClick={onClose}
       aria-label={t`Close ${name}`}
+      tabIndex={active ? 0 : -1}
       className={cn(
         "focus-ring relative grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground transition-opacity",
         "hover:bg-ink-fill hover:text-foreground focus-visible:opacity-100",
@@ -359,6 +379,43 @@ function useActiveTabVisibility(
   }, [router, stripRef, activeKey]);
 }
 
+function selectedTabFor(documentId: string): HTMLElement | null {
+  const tabs = document.querySelectorAll<HTMLElement>(
+    `[data-main-tab="${CSS.escape(documentId)}"][aria-selected="true"]`,
+  );
+  return [...tabs].find((tab) => tab.checkVisibility()) ?? null;
+}
+
+/**
+ * Arrow keys, Home and End move focus along the strip's tabs and main's other item; Enter or Space
+ * opens the focused one. Control+Tab is the browser's, so the page never sees it.
+ */
+function moveAlongStrip(event: KeyboardEvent<HTMLDivElement>) {
+  const stops = [
+    ...event.currentTarget.querySelectorAll<HTMLElement>(
+      "[data-main-current] > button, [role=tab]",
+    ),
+  ];
+  const at = stops.findIndex((stop) => stop === document.activeElement);
+  if (at < 0) return;
+  const to =
+    event.key === "ArrowRight"
+      ? at + 1
+      : event.key === "ArrowLeft"
+        ? at - 1
+        : event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? stops.length - 1
+            : null;
+  if (to === null) return;
+  event.preventDefault();
+  const next = stops[Math.max(0, Math.min(stops.length - 1, to))];
+  next?.focus({ preventScroll: true });
+  // The chip, not its overlay button, carries the scroll margin that clears the edge fade.
+  next?.parentElement?.scrollIntoView({ inline: "nearest", block: "nearest" });
+}
+
 /** A plain mouse wheel only scrolls vertically; the strip turns that into its own scroll. */
 function scrollStripWithWheel(event: WheelEvent<HTMLDivElement>) {
   if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
@@ -388,7 +445,7 @@ export function TabChipFrame({
       className={cn(
         // No h-full: items-stretch sizes the chip so the active tab's top margin subtracts from
         // its height. scroll-mx: scrolled into view, the active tab keeps room for its flares.
-        "group scroll-mx-1.5 gap-1.5",
+        "group scroll-mx-6 gap-1.5",
         // Tabs keep their names' width up to a cap; inactive ones shrink to their icon first.
         "max-w-60",
         active ? "shrink-0" : "min-w-10",

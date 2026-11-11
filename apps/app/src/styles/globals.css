@@ -803,6 +803,27 @@
  * a background fade would flash the outgoing chip as a full-height rectangle
  * mid-fade — tab switches must snap. Only the hover pill transitions.
  */
+/* A strip wider than its box scrolls sideways with no scrollbar, so an edge with content behind
+   it fades: the suggestion menu's mask (`suggestion-menu.css`), turned on its side.
+   `useScrollEdges` sets `data-more-start` / `data-more-end`. */
+@utility scroll-fade-x {
+  --scroll-fade: 3rem;
+  --scroll-fade-start: 0px;
+  --scroll-fade-end: 0px;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--scroll-fade-start),
+    #000 calc(100% - var(--scroll-fade-end)),
+    transparent 100%
+  );
+  &[data-more-start] {
+    --scroll-fade-start: var(--scroll-fade);
+  }
+  &[data-more-end] {
+    --scroll-fade-end: var(--scroll-fade);
+  }
+}
 @utility tab-band {
   position: relative;
   z-index: 1;

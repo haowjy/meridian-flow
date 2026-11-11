@@ -39,7 +39,10 @@ on the record: main's document with no tab in it, a chat, or an address that nam
 active chip after the tabs, so a link to a deleted chapter keeps its URL and shows the removed page
 in a tab of its own. New document (+) follows the document tabs only, never a chat or an
 unavailable address, where it would read as a new one of those. The active chip never shrinks;
-inactive tabs shrink to their icon, then the strip scrolls. Every control in the band shares the
+inactive tabs shrink to their icon, then the strip scrolls, with no scrollbar and a faded edge
+where tabs are behind it (`useScrollEdges`, `scroll-fade-x`, as the editor toolbar). The keyboard
+follows the tabs pattern: main's item is the one Tab stop, arrows, Home and End move along the
+strip, Enter opens; each document's page has its own band, so the focus follows to the new one. Every control in the band shares the
 chips' centre line. Stored tabs of documents deleted while the window was closed are not drawn
 once the replica holds the catalog (`useLiveTabs`; the record is left alone, so a document that
 comes back has its tab). Only documents take a tab: a tab is an item with a kind, and `TAB_KINDS`
