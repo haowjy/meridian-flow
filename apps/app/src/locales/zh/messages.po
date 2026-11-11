@@ -4709,8 +4709,8 @@ msgid "Opening the link"
 msgstr ""
 
 #: src/features/project/side/SideHeader.tsx
-msgid "Opening…"
-msgstr ""
+#~ msgid "Opening…"
+#~ msgstr ""
 
 #: src/features/chat/ask/AskTakeover.tsx
 msgid "Or type your own answer"
