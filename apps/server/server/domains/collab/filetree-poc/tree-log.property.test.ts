@@ -13,6 +13,7 @@ import {
   fingerprint,
   LIVE,
   materialize,
+  replay,
   type NodeKind,
   type TreeOp,
   ROOT,
@@ -93,6 +94,7 @@ function runSeed(seed: number): {
   refused: number;
   widened: number;
   leftPending: number;
+  laterUndone: number;
 } {
   const random = rng(seed);
   const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)] as T;
@@ -102,6 +104,7 @@ function runSeed(seed: number): {
   let refused = 0;
   let widened = 0;
   let leftPending = 0;
+  let laterUndone = 0;
 
   const deliver = (from: Replica, to: Replica) => {
     const fromIndex = replicas.indexOf(from);
@@ -198,7 +201,8 @@ function runSeed(seed: number): {
         const shownBefore = fingerprint(materialize(writer.doc, view));
         const liveBefore = fingerprint(materialize(writer.doc, LIVE));
         // Apply lands what can land and leaves the rest pending.
-        const pendingBefore = viewOps(writer.doc, view).filter((op) => op.draft === view.draft);
+        const viewBefore = viewOps(writer.doc, view);
+        const pendingBefore = viewBefore.filter((op) => op.draft === view.draft);
         const landed = writer.applyLanding(view.draft, "user:w", some);
         if (process.env.TREE_DEBUG && fingerprint(materialize(writer.doc, view)) !== shownBefore) {
           console.info("DEBUG seed", seed, "step", step, "some", some);
@@ -212,7 +216,7 @@ function runSeed(seed: number): {
         const copies = landed.copies;
         const landing = landed.left.length > 0;
         if (landed.blocked) widened += 1;
-        if (landing) leftPending += 1;
+        if (landed.cannot.length > 0) leftPending += 1;
         applies.push(copies);
         if (random() < 0.3) {
           // Undo of an Apply at once: live and the draft both read as before it.
@@ -228,10 +232,26 @@ function runSeed(seed: number): {
             expect(viewProblems(writer.doc, each), `seed ${seed} step ${step}`).toEqual([]);
           continue;
         }
-        // A partial Apply leaves the draft reading as it did.
-        expect(fingerprint(materialize(writer.doc, view)), `seed ${seed} partial apply`).toBe(
-          shownBefore,
-        );
+        // An Apply leaves the draft reading as it did. A record that cannot land may start
+        // to take effect once the rest has landed, so with such records the views are compared
+        // without them.
+        if (landed.cannot.length === 0)
+          expect(fingerprint(materialize(writer.doc, view)), `seed ${seed} partial apply`).toBe(
+            shownBefore,
+          );
+        else {
+          const cannot = new Set(landed.cannot.map((op) => op.id));
+          const without = (ops: readonly TreeOp[]) =>
+            fingerprint(
+              replay(
+                ops.filter((op) => !cannot.has(op.id)),
+                { draft: view.draft },
+              ),
+            );
+          expect(without(viewOps(writer.doc, view)), `seed ${seed} landing apply`).toBe(
+            without(viewBefore),
+          );
+        }
         if (!some && !landing)
           expect(fingerprint(materialize(writer.doc, LIVE)), `seed ${seed} WYSIWYG apply`).toBe(
             shownBefore,
@@ -239,7 +259,26 @@ function runSeed(seed: number): {
         if (random() < 0.1 && applies.length > 1) {
           // Undo of an earlier Apply, which may have been built on since, here or elsewhere.
           const earlier = pick(applies);
-          if (earlier.length > 0 && writer.undoApply(earlier) === "superseded") refused += 1;
+          if (earlier.length > 0) {
+            const made = new Set(earlier.flatMap((op) => (op.type === "create" ? [op.node] : [])));
+            const before = VIEWS.map((each) => materialize(writer.doc, each));
+            if (writer.undoApply(earlier) === "superseded") refused += 1;
+            else {
+              // Taking an Apply back removes nothing but what that Apply itself created, in
+              // any view, and sends nothing to the top of the tree for want of its folder.
+              for (const [at, each] of VIEWS.entries()) {
+                const after = materialize(writer.doc, each);
+                for (const node of before[at]?.nodes.keys() ?? [])
+                  if (!made.has(node))
+                    expect(after.nodes.has(node), `seed ${seed} undo apply lost ${node}`).toBe(true);
+                expect(
+                  after.rescued.length,
+                  `seed ${seed} step ${step} undo apply orphaned a node`,
+                ).toBeLessThanOrEqual(before[at]?.rescued.length ?? 0);
+              }
+              laterUndone += 1;
+            }
+          }
         }
       } else {
         writer.discard(view.draft, some);
@@ -298,6 +337,7 @@ function runSeed(seed: number): {
     refused,
     widened,
     leftPending,
+    laterUndone,
   };
 }
 
@@ -311,6 +351,7 @@ describe("file tree log under random concurrent edits", () => {
     let refused = 0;
     let widened = 0;
     let leftPending = 0;
+    let laterUndone = 0;
     for (let seed = FIRST_SEED; seed < FIRST_SEED + SEEDS; seed += 1) {
       const result = runSeed(seed);
       ops += result.ops;
@@ -321,6 +362,7 @@ describe("file tree log under random concurrent edits", () => {
       refused += result.refused;
       widened += result.widened;
       leftPending += result.leftPending;
+      laterUndone += result.laterUndone;
     }
     // The run must actually reach the hard cases, or it proves nothing about them.
     expect(skipped).toBeGreaterThan(0);
@@ -328,7 +370,7 @@ describe("file tree log under random concurrent edits", () => {
     expect(undone).toBeGreaterThan(0);
     expect(refused).toBeGreaterThan(0);
     console.info(
-      `tree property: ${SEEDS} seeds, ${ops} live ops, ${skipped} cycle skips, ${kept} folders kept by a child, ${repaired} replicas left with stuck pending updates and repaired by a state-vector sync, ${undone} Applies undone at once, ${refused} later undos of an Apply refused as built on, ${leftPending} Applies that left records pending, ${widened} Applies that took nothing because what could land was tied to what could not`,
+      `tree property: ${SEEDS} seeds, ${ops} live ops, ${skipped} cycle skips, ${kept} folders kept by a child, ${repaired} replicas left with stuck pending updates and repaired by a state-vector sync, ${undone} Applies undone at once, ${laterUndone} earlier Applies undone later, ${refused} refused as built on, ${leftPending} Applies that left records that could not land, ${widened} Applies that took nothing because what could land was tied to what could not`,
     );
   }, 600_000);
 

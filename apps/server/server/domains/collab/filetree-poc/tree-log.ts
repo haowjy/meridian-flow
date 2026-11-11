@@ -119,8 +119,30 @@ export function opsOf(doc: Y.Doc): Y.Array<TreeOp> {
   return doc.getArray<TreeOp>("ops");
 }
 
-export function settlementsOf(doc: Y.Doc): Y.Map<Settlement> {
-  return doc.getMap<Settlement>("settled");
+/**
+ * A settlement is a record too, appended and never changed: who settled which records, and to
+ * what. `pending` puts a drafted record back (an Apply taken back). The state of a record is
+ * its last settlement in list order, so the doc holds no deletions and a state vector names a
+ * point in it exactly.
+ */
+export type SettleRecord = {
+  id: string;
+  actor: Actor;
+  targets: string[];
+  to: Settlement | "pending";
+};
+
+export function settleLogOf(doc: Y.Doc): Y.Array<SettleRecord> {
+  return doc.getArray<SettleRecord>("settle");
+}
+
+export function settlementsOf(doc: Y.Doc): Map<string, Settlement> {
+  const state = new Map<string, Settlement>();
+  for (const record of settleLogOf(doc).toArray())
+    for (const target of record.targets)
+      if (record.to === "pending") state.delete(target);
+      else state.set(target, record.to);
+  return state;
 }
 
 /** The ops a view replays, in replay order: live ops, then the draft's unsettled ops. */
@@ -308,15 +330,18 @@ export function replay(
           skipped.push({ op: op.id, reason: "missing-node" });
           continue;
         }
+        // A restore brings back the node and what its own delete took. Out of a deleted
+        // folder it brings back only the node and what is inside it: they leave that folder's
+        // delete, and the folder stands holding them (kept by a child) with the rest in Trash.
         deletes.delete(op.node);
         draftDeletes.delete(op.node);
         const restored = nodes.get(op.node);
         if (restored) restored.arrivedAt = index;
-        // Restoring a node also restores the delete of any folder above it, so it shows.
-        for (const [deleted] of deletes)
-          if (isAncestor(deleted, op.node)) {
-            deletes.delete(deleted);
-            draftDeletes.delete(deleted);
+        for (const records of [deletes, draftDeletes])
+          for (const [top, cascade] of records) {
+            if (!isAncestor(top, op.node)) continue;
+            for (const member of [...cascade])
+              if (member === op.node || isAncestor(op.node, member)) cascade.delete(member);
           }
         continue;
       }
@@ -547,6 +572,12 @@ export class TreeWriter {
     return this.applyLanding(draft, appliedBy, only).copies;
   }
 
+  /** Appends one settlement record. Call inside a transaction with what it settles. */
+  settle(actor: Actor, targets: readonly string[], to: SettleRecord["to"]): void {
+    if (targets.length === 0) return;
+    settleLogOf(this.doc).push([{ id: this.nextId("st"), actor, targets: [...targets], to }]);
+  }
+
   private applyChosen(draft: DraftId, appliedBy: Actor, chosen: ReadonlySet<string>): TreeOp[] {
     const pending = viewOps(this.doc, { draft }).filter((op) => op.draft === draft);
     const live = this.view(LIVE);
@@ -571,8 +602,7 @@ export class TreeWriter {
     }
     this.doc.transact(() => {
       opsOf(this.doc).push(copies);
-      for (const op of pending)
-        if (chosen.has(op.id)) settlementsOf(this.doc).set(op.id, "applied");
+      this.settle(appliedBy, [...chosen], "applied");
     }, this.origin);
     return copies;
   }
@@ -590,7 +620,7 @@ export class TreeWriter {
     draft: DraftId,
     appliedBy: Actor,
     only?: readonly string[],
-  ): { copies: TreeOp[]; left: TreeOp[]; blocked: boolean } {
+  ): { copies: TreeOp[]; left: TreeOp[]; cannot: TreeOp[]; blocked: boolean } {
     const view = this.view({ draft });
     const pending = viewOps(this.doc, { draft }).filter((op) => op.draft === draft);
     const skipped = new Set(view.skipped.map((skip) => skip.op));
@@ -602,12 +632,15 @@ export class TreeWriter {
     const leftIds = dependents(pending, cannot.map((op) => op.id));
     const wanted = only ? prerequisites(pending, only) : new Set(pending.map((op) => op.id));
     const landing = new Set([...wanted].filter((id) => !leftIds.has(id)));
-    if (landing.size === 0) return { copies: [], left: pending, blocked: false };
+    const cannotLand = pending.filter((op) => leftIds.has(op.id));
+    if (landing.size === 0)
+      return { copies: [], left: pending, cannot: cannotLand, blocked: false };
     const live = viewOps(this.doc, LIVE);
-    // The draft's view must read the same after: take the selection if it keeps it, else the
-    // drafted records up to the last chosen one less what cannot land, else nothing.
+    // What lands must be what the draft's view showed of it: take the selection if the view,
+    // read without the records that cannot land, is the same after; else the drafted records
+    // up to the last chosen one, less what cannot land; else nothing.
     let chosen: Set<string> | undefined;
-    if (keepsView(live, pending, landing)) chosen = landing;
+    if (keepsView(live, pending, landing, leftIds)) chosen = landing;
     else {
       const last = Math.max(...pending.flatMap((op, at) => (landing.has(op.id) ? [at] : [])));
       const prefix = new Set(
@@ -616,50 +649,61 @@ export class TreeWriter {
           .map((op) => op.id)
           .filter((id) => !leftIds.has(id)),
       );
-      if (keepsView(live, pending, prefix)) chosen = prefix;
+      if (keepsView(live, pending, prefix, leftIds)) chosen = prefix;
     }
-    if (!chosen) return { copies: [], left: pending, blocked: true };
+    if (!chosen) return { copies: [], left: pending, cannot: cannotLand, blocked: true };
     const taken = chosen;
     const copies = this.applyChosen(draft, appliedBy, taken);
-    return { copies, left: pending.filter((op) => !taken.has(op.id)), blocked: false };
+    return {
+      copies,
+      left: pending.filter((op) => !taken.has(op.id)),
+      cannot: cannotLand,
+      blocked: false,
+    };
   }
 
   /**
    * Takes an Apply back: its live copies leave the replay and the drafted records are pending
-   * again, so live and the draft both read as they did before it. Refused once a later live
-   * record acts on a node the Apply touched or on anything it created.
+   * again, so live and the draft both read as they did before it. A node the Apply created goes
+   * back to existing only in the draft, so the Undo is refused once anything stands on what the
+   * Apply did: a later live record on a node it acted on, or into a folder it created; any
+   * Work's pending record on a node it created; text written since in a document it created
+   * (`writtenSince`, which the list cannot see).
    */
-  undoApply(copies: readonly TreeOp[]): "undone" | "superseded" {
+  undoApply(
+    copies: readonly TreeOp[],
+    by: Actor = "user:w",
+    writtenSince: ReadonlySet<string> = new Set(),
+  ): "undone" | "superseded" {
     const all = opsOf(this.doc).toArray();
     const settled = settlementsOf(this.doc);
     const ids = new Set(copies.map((copy) => copy.id));
-    // Built on: a later live record acts on a node the Apply acted on, or puts something into a
-    // folder the Apply created. A later change inside a folder the Apply only moved is not.
     const actedOn = new Set(copies.map((copy) => copy.node));
     const created = new Set(copies.flatMap((copy) => (copy.type === "create" ? [copy.node] : [])));
+    for (const node of created) if (writtenSince.has(node)) return "superseded";
     const last = Math.max(...all.flatMap((op, index) => (ids.has(op.id) ? [index] : [])));
     for (const op of all.slice(last + 1)) {
-      if (op.draft !== null || settled.get(op.id) === "undone" || ids.has(op.id)) continue;
-      if (actedOn.has(op.node)) return "superseded";
-      if ((op.type === "create" || op.type === "move") && created.has(op.parent))
-        return "superseded";
+      if (ids.has(op.id) || settled.has(op.id)) continue;
+      const into = op.type === "create" || op.type === "move" ? created.has(op.parent) : false;
+      if (op.draft !== null) {
+        // Another change waiting for review that stands on something the Apply created.
+        if (created.has(op.node) || into) return "superseded";
+        continue;
+      }
+      if (actedOn.has(op.node) || into) return "superseded";
     }
     this.doc.transact(() => {
-      for (const copy of copies) {
-        settled.set(copy.id, "undone");
-        if (copy.appliedFrom) settled.delete(copy.appliedFrom);
-      }
+      this.settle(by, copies.map((copy) => copy.id), "undone");
+      this.settle(by, copies.flatMap((copy) => (copy.appliedFrom ? [copy.appliedFrom] : [])), "pending");
     }, this.origin);
     return "undone";
   }
 
   /** Discards a draft, whole or in part: the chosen ops and every drafted op that needs them. */
-  discard(draft: DraftId, only?: readonly string[]): string[] {
+  discard(draft: DraftId, only?: readonly string[], by: Actor = "user:w"): string[] {
     const pending = viewOps(this.doc, { draft }).filter((op) => op.draft === draft);
     const chosen = only ? dependents(pending, only) : new Set(pending.map((op) => op.id));
-    this.doc.transact(() => {
-      for (const id of chosen) settlementsOf(this.doc).set(id, "discarded");
-    }, this.origin);
+    this.doc.transact(() => this.settle(by, [...chosen], "discarded"), this.origin);
     return [...chosen];
   }
 
@@ -710,9 +754,15 @@ export class TreeWriter {
           { type: "rename", node: op.node, name: op.fromName, fromName: op.name },
           extra,
         );
-      case "delete":
+      case "delete": {
         if (!node.trashed) return "superseded";
+        // Someone deleted or restored it again since: this delete is no longer the one in force.
+        const onNode = viewOps(this.doc, view).filter(
+          (other) => other.node === op.node && (other.type === "delete" || other.type === "restore"),
+        );
+        if (onNode.at(-1)?.id !== op.id && onNode.at(-1)?.appliedFrom !== op.id) return "superseded";
         return this.author(view, actor, { type: "restore", node: op.node }, extra);
+      }
       case "restore":
         if (node.trashed) return "superseded";
         return this.author(
@@ -771,22 +821,26 @@ export function prerequisites(pending: readonly TreeOp[], only: readonly string[
 }
 
 /**
- * Whether applying `chosen` leaves the draft's view as it was: the view of live plus every
- * pending record, against the view after the chosen ones have become live copies.
+ * Whether applying `chosen` lands what the draft's view showed: the view of live plus the
+ * pending records, against the view after the chosen ones have become live copies. Both are
+ * read without the records that cannot land (`without`): one of those may start to take effect
+ * once the rest has landed, which is the writer's cue that it can now be applied.
  */
 export function keepsView(
   live: readonly TreeOp[],
   pending: readonly TreeOp[],
   chosen: ReadonlySet<string>,
+  without: ReadonlySet<string> = new Set(),
 ): boolean {
   const draft = pending[0]?.draft ?? null;
-  const before = fingerprint(replay([...live, ...pending], { draft }));
+  const rest = pending.filter((op) => !without.has(op.id));
+  const before = fingerprint(replay([...live, ...rest], { draft }));
   const after = [
     ...live,
-    ...pending
+    ...rest
       .filter((op) => chosen.has(op.id))
       .map((op) => ({ ...op, draft: null, fromDraft: draft ?? undefined }) as TreeOp),
-    ...pending.filter((op) => !chosen.has(op.id)),
+    ...rest.filter((op) => !chosen.has(op.id)),
   ];
   return fingerprint(replay(after, { draft })) === before;
 }

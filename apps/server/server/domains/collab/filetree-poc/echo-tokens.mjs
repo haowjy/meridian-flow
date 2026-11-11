@@ -27,6 +27,11 @@ const cases = {
   "both renamed": "status: success; write: e7; version: live\n\ntree changes by the user:\n  renamed: manuscript://Arc 2/Chapter 49 → The Fall",
   "20 drafted moves, proposed": ["not applied yet: tree changes in this chat's draft stay out of live until the user applies them. Tell the user they are waiting for review.\n\nstatus: success; write: e1; version: draft (w2)", ...Array.from({length:19},(_, i)=>`status: success; write: e${i+2}; version: draft (w2)`)].join("\n"),
   "20 drafted moves, today": Array.from({length:20},(_, i)=>`not applied yet: moved only in this chat's draft; live still has it at manuscript://Arc 2/Chapter ${41+i} until the user applies it. Tell the user it is waiting for their review.\n\nstatus: success; path: manuscript://Arc 3/Chapter ${41+i}; write: e${i+1}; version: draft (w2); moved from manuscript://Arc 2/Chapter ${41+i}`).join("\n"),
+  "path names a different node now": "status: path_changed; path: manuscript://Chapter 49\n\nNothing done: the document you listed as manuscript://Chapter 49 is now manuscript://The Fall, and the user has made a new manuscript://Chapter 49. Use the path of the one you mean.",
+  "move several, partly made": "status: success; write: e7; version: live; moved: 7 of 9\n\nnot moved: manuscript://Arc 2/Chapter 44 (deleted by the user); manuscript://Arc 2/Part 1/ (would put it inside itself)",
+  "delete with surviving Works": "status: success; write: e8; version: live\n\nw2 still has changes to it; applying them brings it back.",
+  "restore into a folder still in Trash": "status: success; write: e10; version: live; kept: manuscript://Arc 2/",
+  "sibling for position gone": "status: success; write: e7; version: live; placed at end: manuscript://Arc 3/Chapter 48 is no longer in this folder",
   "report: 4 changes by the user": "tree changes by the user:\n  renamed: manuscript://Arc 2/Chapter 49 → The Fall\n  moved: manuscript://Notes/Outline → manuscript://Arc 3/\n  deleted: manuscript://Old outline\n  created: manuscript://Arc 3/Chapter 50",
 };
 // a folder re-listing: 30 chapters

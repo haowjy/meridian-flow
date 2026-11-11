@@ -281,7 +281,7 @@ describe("part 2: two authors inside one Work's draft", () => {
     expect(both.w.discard("work-1", [create2.id])).toHaveLength(2);
     // A discard that did not see the scene (two writers, or a scene written after the discard
     // was computed): only the folder's create is settled.
-    t.doc.transact(() => t.doc.getMap("settled").set(createArc.id, "discarded"));
+    t.doc.transact(() => t.w.settle(CHAT, [createArc.id], "discarded"));
     const view = t.w.view(D);
     expect(view.rescued).toHaveLength(1);
     expect(view.nodes.get(scene)).toMatchObject({ parent: ROOT, trashed: false });
@@ -532,3 +532,101 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
     t.valid();
   });
 });
+
+describe("found in review", () => {
+  it("Undo of an Apply that created a chapter the writer has since typed in: refused", () => {
+    const t = start();
+    const ch = t.chapter("Chapter 50", ROOT, D, CHAT);
+    const copies = t.w.apply("work-1", WRITER);
+    // Typing writes nothing to the tree list; the caller passes the documents written since.
+    expect(t.w.undoApply(copies, WRITER, new Set([ch]))).toBe("superseded");
+    expect(t.at(ch)?.trashed).toBe(false);
+    expect(t.w.undoApply(copies, WRITER, new Set())).toBe("undone");
+  });
+
+  it("Undo of an Apply whose new folder another Work has drafted a scene in: refused", () => {
+    const t = start();
+    const arc = t.folder("Arc", ROOT, D, CHAT);
+    const copies = t.w.apply("work-1", WRITER);
+    const other: View = { draft: "work-2" };
+    const scene = t.chapter("Scene", arc, other, CHAT2);
+    expect(t.w.undoApply(copies)).toBe("superseded");
+    expect(t.w.view(other).rescued).toEqual([]);
+    expect(t.at(scene, other)).toMatchObject({ parent: arc, trashed: false });
+  });
+
+  it("a move that would loop, followed by the move that makes it possible: the second lands, the first then shows as able to land, and lands next", () => {
+    const t = start();
+    const a = t.folder("A");
+    const b = t.folder("B", a); // live: A/B
+    const loop = t.w.move(D, CHAT, a, b); // would put A inside itself
+    const out = t.w.move(D, CHAT, b, ROOT);
+    expect(t.w.view(D).skipped).toEqual([{ op: loop.id, reason: "cycle" }]);
+    const first = t.w.applyLanding("work-1", WRITER);
+    expect(first.copies.map((op) => op.appliedFrom)).toEqual([out.id]);
+    expect(first.left.map((op) => op.id)).toEqual([loop.id]);
+    expect(first.blocked).toBe(false);
+    expect(t.at(b)?.parent).toBe(ROOT);
+    expect(t.at(a)?.parent).toBe(ROOT);
+    // Still pending, never marked applied, and now it fits.
+    expect(t.w.view(D).skipped).toEqual([]);
+    expect(t.at(a, D)?.parent).toBe(b);
+    const second = t.w.applyLanding("work-1", WRITER);
+    expect(second.copies.map((op) => op.appliedFrom)).toEqual([loop.id]);
+    expect(t.at(a)?.parent).toBe(b);
+    t.valid();
+  });
+
+  it("restoring one chapter out of a deleted folder brings back only that chapter; the folder stands holding it", () => {
+    const t = start();
+    const f = t.folder("Arc 2");
+    const [c1, c2, c3] = ["c1", "c2", "c3"].map((n) => t.chapter(n, f)) as [string, string, string];
+    t.w.delete(LIVE, WRITER, f);
+    t.w.restore(LIVE, WRITER, c1);
+    expect([c1, c2, c3].map((n) => t.at(n)?.trashed)).toEqual([false, true, true]);
+    expect(t.at(f)).toMatchObject({ trashed: false, keptByChild: true });
+    // Restoring the folder brings back the rest.
+    t.w.restore(LIVE, WRITER, f);
+    expect([c1, c2, c3].map((n) => t.at(n)?.trashed)).toEqual([false, false, false]);
+    t.valid();
+  });
+
+  it("Undo of a delete after someone deleted it again: refused, so one author's Undo never reverses another's delete", () => {
+    const t = start();
+    const f = t.folder("F");
+    t.chapter("x", f);
+    const byChat = t.w.delete(LIVE, CHAT, f);
+    t.w.restore(LIVE, WRITER, f);
+    const y = t.chapter("y", f);
+    t.w.delete(LIVE, WRITER, f);
+    expect(t.w.undo(LIVE, CHAT, byChat.id)).toBe("superseded");
+    expect([t.at(f)?.trashed, t.at(y)?.trashed]).toEqual([true, true]);
+  });
+
+  it("a Discard and an Undo of an Apply are records with an actor, and the list holds no deletions", () => {
+    const t = reorganisedOnce();
+    const log = () => t.doc.getArray<{ actor: string; to: string }>("settle").toArray();
+    const copies = t.w.apply("work-1", WRITER);
+    const vectorAfterApply = Y.encodeStateVector(t.doc);
+    t.w.undoApply(copies, WRITER);
+    expect(Y.encodeStateVector(t.doc)).not.toEqual(vectorAfterApply);
+    t.w.discard("work-1", undefined, CHAT);
+    expect(log().map((record) => [record.actor, record.to])).toEqual([
+      [WRITER, "applied"],
+      [WRITER, "undone"],
+      [WRITER, "pending"],
+      [CHAT, "discarded"],
+    ]);
+    // Nothing in the doc was deleted: the delete set is empty.
+    const snapshot = Y.snapshot(t.doc);
+    expect(snapshot.ds.clients.size).toBe(0);
+  });
+});
+
+function reorganisedOnce() {
+  const t = start();
+  const ch = t.chapter("Chapter 1");
+  const arc = t.folder("Arc", ROOT, D, CHAT);
+  t.w.move(D, CHAT, ch, arc);
+  return t;
+}
