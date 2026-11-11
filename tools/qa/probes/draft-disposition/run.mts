@@ -133,7 +133,7 @@ try {
     message: discardResult.message,
   });
   assert.equal(discardResult.status, "nothing_to_revert");
-  assert.match(discardResult.message, /discarded/i);
+  assert.match(discardResult.message, /edited/i);
   assert.equal((await h.readDraft(discarded.draftId)).text, discardedBefore.text);
 
   const deleted = await fixture("deletion-only", true);
@@ -226,8 +226,8 @@ try {
     status: closedRevert.status,
     message: closedRevert.message,
   });
-  assert.equal(closedRevert.status, "nothing_to_revert");
-  assert.match(closedRevert.message, /discarded/i);
+  assert.equal(closedRevert.status, "cant_undo_applied");
+  assert.match(closedRevert.message, /applied/i);
   assert.equal(await h.liveText(applied.documentId), closedLive);
   assert.deepEqual(
     await h.raw`select id,origin,effect from document_edit_parts order by id`,

@@ -1,10 +1,14 @@
 /** Captured destination, stack, and eligibility facts shared by model reversal commands and history. */
 
-import { type InverseSelection, prepareEditRoots } from "@meridian/agent-edit/integration";
+import {
+  type InverseSelection,
+  type PartClassification,
+  prepareEditRoots,
+} from "@meridian/agent-edit/integration";
 import type { TurnInverseSkipCause } from "@meridian/contracts/protocol";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
-import { type PartDisposition, settledCause } from "./draft-disposition.js";
+import { settledCause } from "./draft-disposition.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import {
   type Entry,
@@ -115,33 +119,23 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
         target.ordinal === original.ordinal ? target.editId === original.editId : false,
       ),
     );
-  type KernelState = { state: string; reasons: readonly string[] };
-  // The one place a part's cause is decided: the writer's apply or discard first, then what the
-  // kernel found. Both the per-edit omissions and the per-turn skips take it from here.
-  function partCause(disposition: PartDisposition, kernel: KernelState | null) {
-    const settled = settledCause(disposition);
-    if (settled) return settled;
-    if (!kernel) return "edited_since" as const;
-    return kernel.reasons.includes("inaccessible ancestor")
+  // What the kernel found, as a cause: a part the kernel cannot reach reads from the first
+  // reason it gives. The writer's apply or discard outranks this (`settledCause`).
+  const kernelCause = (kernel: PartClassification | null | undefined) =>
+    kernel?.reasons.includes("inaccessible ancestor")
       ? ("paragraph_removed" as const)
-      : kernel.state === "undone"
+      : kernel?.state === "undone"
         ? ("already_removed" as const)
         : ("edited_since" as const);
-  }
-  // A part being reverted is applied by definition, so only a discard can explain why it stays.
-  const omissionCause = (disposition: PartDisposition, kernel: KernelState | null) => {
-    const cause = partCause(disposition === "applied" ? "pending" : disposition, kernel);
-    return cause === "applied" ? ("edited_since" as const) : cause;
-  };
-  /** `partCause` in the turn protocol's words, for a part found `kernel` after `direction`. */
+  /** The per-turn skip cause, in the turn protocol's words, for a part found `kernel` after `direction`. */
   function turnSkipCause(
     part: StoredInversePart,
     direction: "undo" | "redo",
     inverseParts: readonly StoredInversePart[],
-    kernel: KernelState | null,
+    kernel: PartClassification | null,
   ): TurnInverseSkipCause {
     const settledBy = direction === "redo" ? (inverseOf(part, inverseParts) ?? part) : part;
-    const cause = partCause(settledBy.disposition, kernel);
+    const cause = settledCause(settledBy.disposition) ?? kernelCause(kernel);
     return cause === "already_removed" ? "already_undone" : cause;
   }
 
@@ -168,7 +162,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       else if (refused === "changed")
         partial.push({
           ordinal: original.ordinal,
-          cause: omissionCause("pending", inspection.states([original])[0]),
+          cause: kernelCause(inspection.states([original])[0]),
         });
       else return { selection, partial, refusal: refused };
     }
@@ -347,7 +341,9 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
             ? "rolled_back"
             : state?.state === "active"
               ? null
-              : omissionCause(part.disposition, state ?? null);
+              : part.disposition === "discarded"
+                ? "discarded"
+                : kernelCause(state);
       if (reason) skipped.push({ ordinal: part.ordinal, cause: reason });
       else selection.push({ part, direction: "invert" });
     }

@@ -70,7 +70,8 @@ Closed origins are gone and never stand in for a destination.
 A part the kernel cannot reach in an open draft (a sibling change in its paragraph was applied or
 discarded since, or the writer typed over it) reads from its disposition first: applied is
 "Applied to the manuscript", discarded is "Discarded", and only a pending part reads "Stayed as you
-edited it". The planner's `partCause` decides this once for the per-edit omissions and the turn record (`turnSkipCause` words it for the turn protocol); the service does not derive causes. A one-by-one discard in an open draft
+edited it". The planner decides these text-part causes once, for the per-edit omissions and the turn
+record (`turnSkipCause` words it for the turn protocol); the service does not derive them. A one-by-one discard in an open draft
 still reads edited: the draft keeps no mark that tells it from retyped text (#1361).
 Live destinations carry the captured physical source owner's lifecycle and the document's removal;
 the chat's query draft never decides availability for live text or tree entries. A surviving draft
