@@ -4,6 +4,7 @@ import { type InverseSelection, prepareEditRoots } from "@meridian/agent-edit/in
 import type { TurnInverseSkipCause } from "@meridian/contracts/protocol";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
+import type { PartDisposition } from "./draft-disposition.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import {
   type Entry,
@@ -84,6 +85,11 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   // and gone otherwise. Every closed-draft answer below derives from this one rule.
   const closedPartCause = (part: StoredInversePart) =>
     part.disposition === "applied" ? ("applied" as const) : ("discarded" as const);
+  // An open draft's part the kernel can no longer reach (a sibling change in its paragraph was
+  // applied or discarded, or the writer typed over it) is still the writer's: the apply or
+  // discard they chose outranks the kernel's "items changed since".
+  const settledCause = (disposition: PartDisposition) =>
+    disposition === "applied" || disposition === "discarded" ? disposition : null;
   type TextOmission = {
     ordinal: number;
     cause:
@@ -104,9 +110,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     if (destination.kind === "draft" && destination.state === "gone") return closedPartCause(part);
     const state = inspection.states([part])[0];
     if (state.state !== (direction === "undo" ? "active" : "undone")) {
-      if (part.disposition === "discarded" || part.disposition === "applied")
-        return part.disposition;
-      return "changed";
+      return settledCause(part.disposition) ?? "changed";
     }
     return null;
   }
@@ -346,6 +350,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     textPlan,
     turnTextPlan,
     treePlan,
+    settledCause,
     version,
     queryDestination,
     draftIdOf,

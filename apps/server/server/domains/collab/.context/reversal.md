@@ -67,6 +67,11 @@ Part disposition is computed once for each resolved destination.
 wins; otherwise an active draft is pending and a gone draft is discarded. A
 revision mismatch between evidence and planning recaptures the bounded attempt.
 Closed origins are gone and never stand in for a destination.
+A part the kernel cannot reach in an open draft (a sibling change in its paragraph was applied or
+discarded since, or the writer typed over it) reads from its disposition first: applied is
+"Applied to the manuscript", discarded is "Discarded", and only a pending part reads "Stayed as you
+edited it" (`settledCause` in `model-reversal-planner.ts`). A one-by-one discard in an open draft
+still reads edited: the draft keeps no mark that tells it from retyped text (#1361).
 Live destinations carry the captured physical source owner's lifecycle and the document's removal;
 the chat's query draft never decides availability for live text or tree entries. A surviving draft
 still ignores live removal and accepts its own inverse.
