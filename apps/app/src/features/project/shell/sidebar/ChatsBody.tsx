@@ -2,7 +2,14 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { Layers, Plus } from "lucide-react";
-import { type ReactNode, useMemo } from "react";
+import {
+  type PointerEvent,
+  type ReactNode,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
 import { ListRow } from "@/components/ui/list-row";
@@ -57,6 +64,11 @@ export function ChatsBody({
     () => groupChats(threads ?? [], scopeWorkId ?? noWorkId, noWorkId, currentThreadId),
     [threads, scopeWorkId, noWorkId, currentThreadId],
   );
+  const rows = useOrderHeldUnderPointer([
+    ...groups.needsYou.map((thread) => ({ thread, state: "needs-you" as const })),
+    ...groups.running.map((thread) => ({ thread, state: "running" as const })),
+    ...groups.idle.map((thread) => ({ thread, state: "idle" as const })),
+  ]);
   const workName = (workId: string) =>
     workId === noWorkId
       ? t`Chats without a Work`
@@ -96,10 +108,8 @@ export function ChatsBody({
         ) : (
           <>
             {/* One list, most urgent first; the mark on a row says its state. */}
-            <div className="px-2 pt-1">
-              {groups.needsYou.map((thread) => row(thread, "needs-you"))}
-              {groups.running.map((thread) => row(thread, "running"))}
-              {groups.idle.map((thread) => row(thread, "idle"))}
+            <div className="px-2 pt-1" {...rows.holdProps}>
+              {rows.list.map(({ thread, state }) => row(thread, state))}
               {groups.older > 0 ? (
                 <ListRow
                   depth={1}
@@ -112,7 +122,7 @@ export function ChatsBody({
                 />
               ) : null}
             </div>
-            {groups.needsYou.length + groups.running.length + groups.idle.length === 0 ? (
+            {rows.list.length === 0 ? (
               <SourceHint>
                 <Trans>No chats in this Work yet.</Trans>
               </SourceHint>
@@ -142,6 +152,34 @@ export function ChatsBody({
       {footer}
     </div>
   );
+}
+
+/**
+ * While a mouse is over the list, rows keep the places they had when it arrived, so a chat
+ * changing state never moves the row under the pointer. The urgency order returns when it leaves.
+ */
+function useOrderHeldUnderPointer<T extends { thread: ThreadListItem }>(list: T[]) {
+  const [held, setHeld] = useState(false);
+  const shown = useRef<string[]>([]);
+  let ordered = list;
+  if (held) {
+    const place = new Map(shown.current.map((id, index) => [id, index]));
+    ordered = [...list].sort(
+      (a, b) =>
+        (place.get(a.thread.id) ?? Number.POSITIVE_INFINITY) -
+        (place.get(b.thread.id) ?? Number.POSITIVE_INFINITY),
+    );
+  }
+  useLayoutEffect(() => {
+    shown.current = ordered.map(({ thread }) => thread.id);
+  });
+  return {
+    list: ordered,
+    holdProps: {
+      onPointerEnter: (event: PointerEvent) => setHeld(event.pointerType === "mouse"),
+      onPointerLeave: () => setHeld(false),
+    },
+  };
 }
 
 function Group({

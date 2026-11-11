@@ -224,7 +224,7 @@ export function DocumentIdentityBar({
         ref={rowRef}
         data-document-identity-row
         className={cn(
-          "relative flex flex-wrap items-center gap-x-1 font-mono text-muted-foreground text-sm",
+          "relative flex flex-wrap items-center gap-x-1 text-muted-foreground text-sm",
           "min-h-10 gap-y-0.5 py-1 pl-2",
           trailing && "pr-12 coarse:pr-14",
           // The row grows so every control can own a 44px target (document-identity-row.css).
@@ -262,7 +262,7 @@ export function DocumentIdentityBar({
                     projectId={projectId}
                     subject={{ kind: "file", id: tab.documentId }}
                     operationId={noteOperationId}
-                    className="ml-3 font-sans text-muted-foreground"
+                    className="ml-3 text-muted-foreground"
                   />
                 }
               />

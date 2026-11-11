@@ -77,7 +77,7 @@ export function ThreadSwitcherPopover({
     }))
     .filter((work) => work.threadIds.length > 0);
   const visibleUngrouped = ungroupedThreads.filter((thread) => filteredIds.has(thread.id));
-  const showGroupHeaders = workItems.length > 1;
+  const showGroupHeaders = workItems.length + (ungroupedThreads.length > 0 ? 1 : 0) > 1;
   const showSearch = shouldShowThreadSearch(primaryThreads.length);
 
   const changeOpen = (nextOpen: boolean) => {
@@ -199,7 +199,9 @@ export function ThreadSwitcherPopover({
               </PickerSection>
             ))}
             {visibleUngrouped.length > 0 ? (
-              <PickerSection>{visibleUngrouped.map(threadRow)}</PickerSection>
+              <PickerSection label={showGroupHeaders ? t`Chats without a Work` : undefined}>
+                {visibleUngrouped.map(threadRow)}
+              </PickerSection>
             ) : null}
           </PickerResults>
         </Picker>
