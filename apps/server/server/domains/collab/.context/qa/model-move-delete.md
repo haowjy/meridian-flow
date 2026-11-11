@@ -27,7 +27,7 @@ model.
    ch3 and activate its link (Enter on the focused chip): ch1-awakening opens. A move into
    another owner's Scratch names that owner, never its handle: `move` ch8 to
    `scratch://@w1/ideas/ch8` reads "Moved ch8 to Scratch for Ascension/ideas/ch8".
-2. **Delete, then Undo.** With ch2 open in a tab, script `delete` ch2. The tab becomes "The AI
+2. **Delete, then Undo.** With ch2 open in main, script `delete` ch2. Main becomes "The AI
    in Chapter cleanup deleted ch2.", the row reads "Deleted ch2" with no door, the card lists
    "Deleted ch2". The card's Undo brings ch2 back into the tree and offers Redo. The other
    Work's chat still docks "ch2 1 change Discard Apply".
@@ -65,7 +65,7 @@ the text it found or a block hash from that read.
    Discard and Apply. Open live ch1: the
    identity row reads "Ascension is renaming this to ch1-old." (at 390 px, "Pending rename",
    its popover the sentence); ch3 reads "Ascension is deleting this.". The prose doesn't move.
-7. **Apply, Discard, Apply all.** ch1's Draft view, Apply draft: the tab becomes ch1-old with
+7. **Apply, Discard, Apply all.** ch1's Draft view, Apply draft: main becomes ch1-old with
    the text change. Work page, Apply all: the footer asks "Applying deletes ch3."
    (Cancel). ch3's Discard: its row goes at once, ch3 stays live. Apply all: ch4 → ch5
    and ch5 → ch6 both land in dependency order from either row. Repeat with a swap: both land
