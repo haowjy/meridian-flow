@@ -87,7 +87,7 @@ export function useComposerWorkBinding({
             type: "change.superseded",
             requestId: request.id,
             work: outcome.currentWork,
-            message: t`This chat's Work changed to ${outcome.currentWork.name}`,
+            message: t`This chat's Work changed to ${workDisplayName(outcome.currentWork)}`,
           });
           return "close" as const;
         }
