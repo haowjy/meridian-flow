@@ -17,6 +17,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
+  useMenuActionDispatch,
 } from "@/components/ui/dropdown-menu";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
@@ -48,6 +49,7 @@ export function WorkScopePicker({
   const scoped = works?.find((work) => work.id === workId) ?? null;
   const noWorkScoped = workId !== null && workId === noWork?.id;
   const pending = scoped?.pendingDocumentCount ?? 0;
+  const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
 
   return (
     <DropdownMenu>
@@ -84,7 +86,11 @@ export function WorkScopePicker({
           />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
+      <DropdownMenuContent
+        align="start"
+        className="w-[var(--radix-dropdown-menu-trigger-width)]"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         {noWork ? (
           <PickRow
             name={t`None`}
@@ -126,7 +132,7 @@ export function WorkScopePicker({
             </DropdownMenuSubContent>
           </DropdownMenuSub>
         ) : null}
-        <DropdownMenuItem onSelect={onManage}>
+        <DropdownMenuItem onSelect={() => dispatch(onManage)}>
           <Trans>Manage Works…</Trans>
         </DropdownMenuItem>
       </DropdownMenuContent>

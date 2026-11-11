@@ -42,12 +42,15 @@ export function DiscardQuestion({
   scope,
   onKeep,
   onConfirm,
+  returnFocus,
   touch = false,
   className,
 }: {
   scope: ReviewScope;
   onKeep(): void;
   onConfirm(): void;
+  /** Where Keep puts the focus when the question took the place of the control that asked. */
+  returnFocus?: () => HTMLElement | null | undefined;
   touch?: boolean;
   className?: string;
 }) {
@@ -58,6 +61,7 @@ export function DiscardQuestion({
       confirm={t`Discard`}
       onKeep={onKeep}
       onConfirm={onConfirm}
+      returnFocus={returnFocus}
       touch={touch}
       className={className}
     />
@@ -105,55 +109,64 @@ export function ReviewActions({
   className,
 }: ReviewActionsProps) {
   const [asking, setAsking] = useState(false);
+  // Outlives the swap between the buttons and the question, so Keep can find Discard again.
+  const place = useRef<HTMLSpanElement>(null);
   if (asking && discardAsks && !disabled)
     return (
-      <DiscardQuestion
-        scope={scope}
-        className={className}
-        onKeep={() => setAsking(false)}
-        onConfirm={() => {
-          setAsking(false);
-          onDiscard();
-        }}
-      />
+      <span ref={place} className="contents">
+        <DiscardQuestion
+          scope={scope}
+          className={className}
+          returnFocus={() => place.current?.querySelector("button")}
+          onKeep={() => setAsking(false)}
+          onConfirm={() => {
+            setAsking(false);
+            onDiscard();
+          }}
+        />
+      </span>
     );
   return (
-    <span
-      data-review-actions
-      data-density={density}
-      className={cn(
-        "group/review flex shrink-0 items-center whitespace-nowrap",
-        touch ? "gap-3" : "gap-1.5",
-        className,
-      )}
-    >
-      <ReviewActionButton
-        density={density}
-        name={reviewActionLabel("discard", scope)}
-        label={labels?.discard}
-        icon={<X aria-hidden />}
-        variant="quiet"
-        touch={touch}
-        disabled={disabled}
-        onClick={(event) => {
-          event.stopPropagation();
-          if (discardAsks) setAsking(true);
-          else onDiscard();
-        }}
-      />
-      {onApply ? (
+    <span ref={place} className="contents">
+      <span
+        data-review-actions
+        data-density={density}
+        className={cn(
+          "group/review flex shrink-0 items-center whitespace-nowrap",
+          touch ? "gap-3" : "gap-1.5",
+          className,
+        )}
+      >
         <ReviewActionButton
           density={density}
-          name={reviewActionLabel("apply", scope)}
-          label={labels?.apply}
-          icon={applying ? <Loader2 aria-hidden className="animate-spin" /> : <Check aria-hidden />}
-          busy={applying}
-          variant={scope !== "all" && density === "icon" ? "row" : "default"}
+          name={reviewActionLabel("discard", scope)}
+          label={labels?.discard}
+          icon={<X aria-hidden />}
+          variant="quiet"
           touch={touch}
-          disabled={disabled || applyDisabled}
-          onClick={onApply}
+          disabled={disabled}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (discardAsks) setAsking(true);
+            else onDiscard();
+          }}
         />
-      ) : null}
+        {onApply ? (
+          <ReviewActionButton
+            density={density}
+            name={reviewActionLabel("apply", scope)}
+            label={labels?.apply}
+            icon={
+              applying ? <Loader2 aria-hidden className="animate-spin" /> : <Check aria-hidden />
+            }
+            busy={applying}
+            variant={scope !== "all" && density === "icon" ? "row" : "default"}
+            touch={touch}
+            disabled={disabled || applyDisabled}
+            onClick={onApply}
+          />
+        ) : null}
+      </span>
     </span>
   );
 }

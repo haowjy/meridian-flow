@@ -3,7 +3,7 @@
 import { plural, t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import {
   ApplyAllQuestion,
@@ -18,6 +18,7 @@ import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { treeLineSentence } from "@/features/draft-review/tree-line";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
+import { useFocusSuccession } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import type { DockFile } from "./draft-dock-files";
 import type { DraftDockModel } from "./useDraftDock";
@@ -36,6 +37,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   useEffect(() => {
     if (troubledFileCount > 0) setExpanded(true);
   }, [troubledFileCount]);
+
+  const root = useRef<HTMLDivElement>(null);
+  useFocusSuccession(root, dock.mounted);
 
   if (!dock.mounted) return null;
 
@@ -145,7 +149,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   );
 
   return (
-    <div className="@container/dock rounded-t-lg bg-review" data-draft-dock="settled">
+    <div ref={root} className="@container/dock rounded-t-lg bg-review" data-draft-dock="settled">
       {multi ? summary() : null}
       <div className={cn(expanded && multi && "app-scroll max-h-[min(40svh,20rem)]")}>
         {dock.files.map((file) => (
