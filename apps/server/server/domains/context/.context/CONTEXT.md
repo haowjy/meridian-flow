@@ -265,7 +265,7 @@ one source's tree contributes.
 - Names are the destination namespace's, so its adapter plans them (`planCopy`): allocated
   against live occupants and the rest of the batch, from a lock-free read of the destination
   parent. A hidden draft node never takes a name from a copy ([naming conflicts never
-  block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/placement-and-naming.md#naming-conflicts-never-block)):
+  block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/placement-and-naming.md#naming-conflicts-never-block)):
   the insert normalizes the roots' names, so a hidden node on a root's name yields to the next
   free one. Only the roots meet existing occupants.
   A selected root may carry the device's `copyId` (a UUID); the root copy takes it and

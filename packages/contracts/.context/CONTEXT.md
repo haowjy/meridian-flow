@@ -62,6 +62,6 @@ Link identity is in the [Links KB page][links]. In the code:
 - Href classification is shared: raw `%` is a literal manuscript path and protocol-relative
   `//host/x` is external. Callers do not reimplement relative resolution.
 
-[handles]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/addresses.md#handles-name-owners-names-are-labels
-[schemes]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/addresses.md#schemes
-[links]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/links.md#stored-identity-and-spelling
+[handles]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/addresses.md#handles-name-owners-names-are-labels
+[schemes]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/addresses.md#schemes
+[links]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/links.md#stored-identity-and-spelling

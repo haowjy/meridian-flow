@@ -1,9 +1,9 @@
 # features/project — desktop project shell
 
 Route grammar and `?work` are in
-[Project Addresses Are Screen-First](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/entry-and-navigation.md);
+[Project Addresses Are Screen-First](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/entry-and-navigation.md);
 identity order and admission are in
-[Routes find their document by identity](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/browser-document-identity.md#routes-find-their-document-by-identity).
+[Routes find their document by identity](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/browser.md#routes-find-their-document-by-identity).
 
 ## Desktop shell
 

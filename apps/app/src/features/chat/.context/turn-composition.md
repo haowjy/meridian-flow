@@ -92,7 +92,7 @@ state and the answer command are `@meridian/thread-client`'s (`asks/`).
 
 `TurnList` is the only transcript scroller: TanStack Virtual owns geometry and
 `useChatFollowScroll` owns follow/free policy
-([scroll-follow](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/composer-and-queue.md)).
+([scroll-follow](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/composer-and-queue.md)).
 It reads cached content and viewport heights and guards programmatic scroll
 bursts, so streaming needs no synchronous layout read per token. No child
 transcript surface adds a scroller.
@@ -100,7 +100,7 @@ transcript surface adds a scroller.
 The app reads the chat's `RunState` only through the `@meridian/thread-client`
 selectors (`isBusy`, `waitingWriterMessages`, `usageBlockedMessages`,
 `switchState`), as `./mf` does
-([one run-state record](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/chat-sync.md#one-run-state-record-per-chat)).
+([one run-state record](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/sync.md#one-run-state-record-per-chat)).
 
 ## Tool presentation
 

@@ -18,4 +18,4 @@ envelopes, geometry, insertion and rendering.
 
 Callback and cold-source details: [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
-[at-references]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/editor/references.md
+[at-references]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/editor/references.md

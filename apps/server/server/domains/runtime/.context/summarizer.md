@@ -30,4 +30,4 @@ predictions, request sizes and debits through `TurnAccounting.computeAndDebit` i
 the transaction ending the owner. It is metadata-neutral: C and S write their own
 typed telemetry. Retried settlement doesn't double-charge the shared tree budget.
 
-[kb-summarizer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/compaction-memory.md#two-summary-paths
+[kb-summarizer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/compaction.md#two-summary-paths

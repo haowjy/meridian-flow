@@ -43,4 +43,4 @@ Record the revision, exact commands, observed cold-loaded text, persisted
 coverage, failure events, and cleanup. Run `pnpm check` separately; runtime
 probes do not replace the gate.
 
-[checkpoint-capture]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/durability-and-honest-outcomes.md#journal-first-then-live
+[checkpoint-capture]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/durability-and-honest-outcomes.md#journal-first-then-live

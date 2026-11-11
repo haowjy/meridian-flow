@@ -13,4 +13,4 @@ disagree about one row.
 
 Contracts: [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
-[send]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/composer-and-queue.md
+[send]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/composer-and-queue.md

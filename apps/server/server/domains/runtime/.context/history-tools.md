@@ -30,5 +30,5 @@ Model-visible guidance to call `thread_history` is frozen in prompt bytes.
 including for a compaction summary or settled handoff seed, so a later registry
 change can't rewrite an old summary's sentence.
 
-[kb-connected]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/agents/conversations.md
-[kb-from]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/agents/conversations.md
+[kb-connected]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/conversations.md
+[kb-from]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/conversations.md

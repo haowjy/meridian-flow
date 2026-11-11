@@ -93,5 +93,5 @@ one queued switch. A same-mode request also writes its row already acknowledged.
 Such a row answers replays with `turnId` null and no item in `runState`, so a
 retried cancel never cancels a newer switch.
 
-[kb-commands]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/server-runtime.md#only-history-rewriting-work-waits-between-replies
-[kb-write-mode]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/work/write-mode.md
+[kb-commands]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/runtime.md#only-history-rewriting-work-waits-between-replies
+[kb-write-mode]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/work/write-mode.md

@@ -18,5 +18,5 @@ the [Agent definition][definitions] and [package][packages] pages.
 - Project availability filters prospective selection only: bound execution and
   same-ID creation recovery do not recheck it.
 
-[definitions]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/agents/definitions.md
-[packages]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/agents/definitions.md
+[definitions]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/definitions.md
+[packages]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/definitions.md
