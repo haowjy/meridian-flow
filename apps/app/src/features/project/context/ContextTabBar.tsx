@@ -63,9 +63,13 @@ export function ContextTabBar({
       role="tablist"
       aria-label={t`Open context files`}
       // Chips surface the canvas tone — see the tab-chip grammar in globals.css.
-      className="tab-band flex h-10 shrink-0 items-stretch [--tab-chip-surface:var(--color-background)]"
+      className={cn(
+        "tab-band flex h-10 shrink-0 items-stretch [--tab-chip-surface:var(--color-background)]",
+        // The first chip starts where `PaneHeader`'s does: clear of the sheet's rounded corner.
+        !leading && "pl-3.5",
+      )}
     >
-      {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
+      {leading ? <div className="flex shrink-0 items-center pr-1 pl-3.5">{leading}</div> : null}
       {onShowRecents ? (
         <Tooltip>
           <TooltipTrigger asChild>

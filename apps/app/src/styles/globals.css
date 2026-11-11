@@ -737,52 +737,44 @@
  * mid-fade — tab switches must snap. Only the hover pill transitions.
  */
 @utility tab-chip-active {
+  /* The hairline is translucent, so two strokes that overlap darken. The tab's outline is
+     therefore drawn in the same line mixed onto the tab's own surface, which is opaque and
+     the colour the sheet's border shows, and as borders, which stroke a corner evenly. */
+  --tab-chip-line: color-mix(in oklab, var(--color-foreground) 9%, var(--tab-chip-surface));
   margin-top: --spacing(1);
+  border: 1px solid var(--tab-chip-line);
+  border-bottom-width: 0;
   border-top-left-radius: var(--radius-md);
   border-top-right-radius: var(--radius-md);
   background-color: var(--tab-chip-surface);
-  /* The sheet's hairline carried up and over the tab. The band overlaps the sheet by
-     2px (`tab-band`): the sheet's top edge and one row inside it, so this chip's fill
-     hides the edge beneath it even where a fractional display scale draws the edge
-     a sliver thicker than the layout pixel. */
-  box-shadow:
-    inset 1px 0 0 var(--color-border-subtle),
-    inset -1px 0 0 var(--color-border-subtle),
-    inset 0 1px 0 var(--color-border-subtle);
-  /* The base flares outward into the sheet's top edge. Each flare is one hairline wider
-     than the radius and overlaps the chip by that hairline, so its arc starts on the
-     chip's side line and ends on the sheet's top edge. Its last row lies inside the
-     sheet and is filled, which ends the chip's side line at the edge. */
+  /* The base flares outward into the sheet's top edge. The band overlaps the sheet by 2px
+     (`tab-band`): its top edge and one row inside it. Each flare is a box whose one rounded
+     corner is the curve; it sits on the edge's row, overlaps the tab's side line by that
+     line's width, and its shadow fills what lies outside the curve: the corner, the side
+     line below the curve's start, and the row inside the sheet. */
   &::before,
   &::after {
     content: "";
     pointer-events: none;
     position: absolute;
-    bottom: 0;
+    bottom: 1px;
+    box-sizing: border-box;
     width: calc(var(--radius-md) + 1px);
-    height: calc(var(--radius-md) + 2px);
-    background-repeat: no-repeat;
-    background-size:
-      100% calc(100% - 1px),
-      100% 1px;
-    --flare: transparent calc(var(--radius-md) - 0.5px), var(--color-border-subtle) var(--radius-md),
-      var(--color-border-subtle) calc(var(--radius-md) + 0.5px),
-      var(--tab-chip-surface) calc(var(--radius-md) + 1px);
-    --patch: linear-gradient(var(--tab-chip-surface), var(--tab-chip-surface));
+    height: calc(var(--radius-md) + 1px);
+    border: 0 solid var(--tab-chip-line);
+    border-bottom-width: 1px;
   }
   &::before {
-    left: calc(-1 * var(--radius-md));
-    background-image: radial-gradient(circle at 0 0, var(--flare)), var(--patch);
-    background-position:
-      top,
-      bottom;
+    left: calc(-1 * var(--radius-md) - 1px);
+    border-right-width: 1px;
+    border-bottom-right-radius: calc(var(--radius-md) + 1px);
+    box-shadow: 3px 3px 0 var(--tab-chip-surface);
   }
   &::after {
-    right: calc(-1 * var(--radius-md));
-    background-image: radial-gradient(circle at 100% 0, var(--flare)), var(--patch);
-    background-position:
-      top,
-      bottom;
+    right: calc(-1 * var(--radius-md) - 1px);
+    border-left-width: 1px;
+    border-bottom-left-radius: calc(var(--radius-md) + 1px);
+    box-shadow: -3px 3px 0 var(--tab-chip-surface);
   }
 }
 /* A band whose active chip joins the `page-sheet` below it. */
@@ -792,6 +784,9 @@
   margin-bottom: -2px;
 }
 @utility tab-chip-inactive {
+  /* The active chip's outline, unpainted, so activating a chip moves nothing in it. */
+  border: 1px solid transparent;
+  border-bottom-width: 0;
   /* isolate + z-index:-1 keeps the pill behind the chip's content without
      escaping under the strip's own background. */
   isolation: isolate;
