@@ -44,7 +44,7 @@ export type EditableOpenDocument = Extract<OpenDocument, { kind: "tracked" | "ne
 
 export type ContextDocumentHostProps = {
   projectId: string;
-  tab: EditableOpenDocument;
+  document: EditableOpenDocument;
   /** Whether the surface is on screen; a hidden surface's chrome stands down. */
   active: boolean;
   /**
@@ -63,7 +63,7 @@ export type ContextDocumentHostProps = {
 
 export function ContextDocumentHost({
   projectId,
-  tab,
+  document,
   active,
   readOnly = false,
   presentation = DESKTOP_DOCUMENT_PRESENTATION,
@@ -76,24 +76,27 @@ export function ContextDocumentHost({
   const { controller, fileForDocument, reviewRoomNameForDraft } = useDraftReview();
   const { snapshot: resourceProjection } = useAccountResourceProjection(projectId);
   const bindingKeys = useRef(new WeakMap<object, string>());
-  const availabilityRevision = resourceAvailabilityRevision(resourceProjection, tab.documentId);
+  const availabilityRevision = resourceAvailabilityRevision(
+    resourceProjection,
+    document.documentId,
+  );
   // The host's own review: the one it has open, else the draft its view paints. While the paint
   // is held (the pinned owner's list is loading) the pin already names the item, so the live
   // text stays covered rather than painting Live first.
   const paint = useHostDocumentPaint();
   const inline = controller.inlineReview;
   const selectedReviewItemKey =
-    inline?.documentId === tab.documentId
+    inline?.documentId === document.documentId
       ? inline.itemKey
       : paint?.showing === "pending"
         ? (paint.view.pin?.itemKey ?? null)
         : (paint?.draft?.itemKey ?? null);
   const reviewRoomName = selectedReviewItemKey
-    ? reviewRoomNameForDraft(tab.documentId, selectedReviewItemKey)
+    ? reviewRoomNameForDraft(document.documentId, selectedReviewItemKey)
     : null;
   const selectedReviewFile =
     selectedReviewItemKey && typeof fileForDocument === "function"
-      ? fileForDocument(tab.documentId)
+      ? fileForDocument(document.documentId)
       : null;
   const treeOnlyReview =
     selectedReviewFile?.draft.itemKey === selectedReviewItemKey &&
@@ -110,7 +113,7 @@ export function ContextDocumentHost({
     : null;
   // A draft-only document has no live room until settlement promotes it, and the server refuses
   // one: review hosts the draft room alone. While the pinned draft's row is unread, neither opens.
-  const liveness = useDraftOnlyPresentation(projectId, tab);
+  const liveness = useDraftOnlyPresentation(projectId, document);
   const draftOnly = liveness === "draft-only";
   // `readOnly` is the owner's scope (archived or trashed freezes it); the presentation decides whether
   // this view ever types. Only the first is compared with the room's access.
@@ -139,7 +142,7 @@ export function ContextDocumentHost({
       <>
         <PaintCapture surface={surface} state={surface} />
         <div
-          data-context-editor-document-id={tab.documentId}
+          data-context-editor-document-id={document.documentId}
           className="absolute inset-0 flex min-h-0 flex-col"
           aria-busy={!failed && !hosted}
         >
@@ -167,9 +170,9 @@ export function ContextDocumentHost({
             </div>
           ) : null}
           {!failed && !hosted ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
-          {tab.kind === "new" && session && onUntitledBecameNonEmpty ? (
+          {document.kind === "new" && session && onUntitledBecameNonEmpty ? (
             <UntitledInputObserver
-              documentId={tab.documentId}
+              documentId={document.documentId}
               session={session}
               onBecameNonEmpty={onUntitledBecameNonEmpty}
             />
@@ -188,7 +191,7 @@ export function ContextDocumentHost({
                 />
               ) : null}
               <ActiveReviewBinding
-                documentId={tab.documentId}
+                documentId={document.documentId}
                 liveSession={session}
                 active={active}
                 inReview={Boolean(
@@ -202,14 +205,14 @@ export function ContextDocumentHost({
                 onCloseDraftOnly={
                   onCloseDraftOnly ??
                   (() => {
-                    const closing = removal.writerClose(projectId, tab);
+                    const closing = removal.writerClose(projectId, document);
                     if (closing instanceof Promise) closing.catch(reportError);
                   })
                 }
                 className={editorClassName}
                 projectId={projectId}
-                documentId={tab.documentId}
-                focusKey={tab.documentId}
+                documentId={document.documentId}
+                focusKey={document.documentId}
                 loadFocus={loadFocus}
                 session={session ?? undefined}
                 bindingKey={bindingKey}
@@ -219,9 +222,9 @@ export function ContextDocumentHost({
                 editable={editable}
                 showToolbar={editable}
                 reviewReadOnly={presentation.reviewReadOnly}
-                detached={tab.kind === "new"}
+                detached={document.kind === "new"}
                 localContentReady={localContentReady}
-                schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
+                schemaType={document.kind === "tracked" ? document.schemaType : "document"}
                 showCollaborationDecorations={presentation.collaborationDecorations}
                 // The intent, not the resolved room: the live editor goes
                 // read-only from the click, while the room is still resolving.
@@ -236,8 +239,8 @@ export function ContextDocumentHost({
   return (
     <OpenDocumentSessionBoundary
       projectId={projectId}
-      documentId={tab.documentId}
-      resourceHandle={tab.resourceHandle}
+      documentId={document.documentId}
+      resourceHandle={document.resourceHandle}
       availabilityRevision={availabilityRevision}
       liveRoom={liveness === "live"}
       bindingOwner={presentation.bindingOwner}

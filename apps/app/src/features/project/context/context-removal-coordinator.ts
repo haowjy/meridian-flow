@@ -101,7 +101,6 @@ export type ContextRemovalRoutePort = {
  */
 type PresentedPort = Pick<PresentedDocuments, "documents" | "mainDocumentId" | "forget">;
 
-/** The draft-only documents hosts present (`DraftOnlyPresentations`). */
 /**
  * The cached answers to "what lives at this address". Kept by a query cache that outlives a
  * removal: an answer from before it would paint the document again.
@@ -113,6 +112,7 @@ export type AddressAnswersPort = {
   available(projectId: string): void;
 };
 
+/** The draft-only documents hosts present (`DraftOnlyPresentations`). */
 export type DraftOnlyPort = {
   isDraftOnly(projectId: string, documentId: string): boolean;
   holdRemovedLive(

@@ -25,18 +25,18 @@ import { TextViewer } from "./viewers/TextViewer";
 
 export type ContextViewerHostProps = {
   projectId: string;
-  tab: Extract<OpenDocument, { kind: "viewer" }>;
+  document: Extract<OpenDocument, { kind: "viewer" }>;
   /** The surface's material; the side paints its own and passes `bg-transparent`. */
   className?: string;
 };
 
-export function ContextViewerHost({ projectId, tab, className }: ContextViewerHostProps) {
-  const read = useProjectContextRead(projectId, tab.documentId);
+export function ContextViewerHost({ projectId, document, className }: ContextViewerHostProps) {
+  const read = useProjectContextRead(projectId, document.documentId);
   if (read.status === "loading") {
     return (
       <ReadOnlyViewerFrame className={className}>
         <div className="relative h-full" aria-busy>
-          <DelayedContentSkeleton key={tab.documentId} className="absolute inset-0" />
+          <DelayedContentSkeleton key={document.documentId} className="absolute inset-0" />
         </div>
       </ReadOnlyViewerFrame>
     );
@@ -56,9 +56,9 @@ export function ContextViewerHost({ projectId, tab, className }: ContextViewerHo
   // Tracked-classified viewer tabs use the same read-only text preview in the
   // Editor host. Collaborative editing remains in the tracked editor
   // mount and does not render through this component.
-  const kind = previewKind(tab, read.data);
+  const kind = previewKind(document, read.data);
   const emptyMessage =
-    tab.scheme === "scratch" ? (
+    document.scheme === "scratch" ? (
       <Trans>This note is empty. Open it in the Editor to write.</Trans>
     ) : undefined;
   const binary = read.data.kind === "binary" ? read.data : null;
@@ -72,7 +72,7 @@ export function ContextViewerHost({ projectId, tab, className }: ContextViewerHo
             source={
               read.data.kind === "tracked" ? { content: read.data.content } : { url: read.data.url }
             }
-            name={tab.name}
+            name={document.name}
             markdown={kind === "markdown"}
             emptyMessage={emptyMessage}
           />
@@ -82,13 +82,16 @@ export function ContextViewerHost({ projectId, tab, className }: ContextViewerHo
       return binary ? (
         <ReadOnlyViewerFrame
           className={className}
-          footer={imageViewerFooter({ url: documentDownloadUrl(tab.documentId), name: tab.name })}
+          footer={imageViewerFooter({
+            url: documentDownloadUrl(document.documentId),
+            name: document.name,
+          })}
         >
           <ImageViewer
-            key={tab.documentId}
-            url={documentDownloadUrl(tab.documentId)}
+            key={document.documentId}
+            url={documentDownloadUrl(document.documentId)}
             drawUrl={binary.drawUrl}
-            name={tab.name}
+            name={document.name}
             mimeType={binary.mimeType}
             sizeBytes={binary.sizeBytes}
             refresh={async () => {
@@ -103,8 +106,8 @@ export function ContextViewerHost({ projectId, tab, className }: ContextViewerHo
         <ReadOnlyViewerFrame className={className}>
           <PdfViewer
             url={binary.url}
-            downloadUrl={documentDownloadUrl(tab.documentId)}
-            name={tab.name}
+            downloadUrl={documentDownloadUrl(document.documentId)}
+            name={document.name}
             sizeBytes={binary.sizeBytes}
           />
         </ReadOnlyViewerFrame>
@@ -113,9 +116,9 @@ export function ContextViewerHost({ projectId, tab, className }: ContextViewerHo
       return binary ? (
         <ReadOnlyViewerFrame className={className}>
           <BinaryFallbackViewer
-            url={documentDownloadUrl(tab.documentId)}
+            url={documentDownloadUrl(document.documentId)}
             mimeType={binary.mimeType}
-            name={tab.name}
+            name={document.name}
             sizeBytes={binary.sizeBytes}
           />
         </ReadOnlyViewerFrame>

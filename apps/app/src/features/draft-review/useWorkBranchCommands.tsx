@@ -96,8 +96,8 @@ export function useWorkBranchCommands({
     const noticeSurface = (draft: DraftReviewSelection): NoticeSurface =>
       surface === "band"
         ? { kind: "band", documentId: draft.documentId }
-        : surface === "dock"
-          ? { kind: "dock", threadId }
+        : surface === "strip"
+          ? { kind: "strip", threadId }
           : { kind: "changes" };
     const endNotice = () => notices.end(ownerKey);
     /**

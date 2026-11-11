@@ -21,7 +21,7 @@ import {
 } from "./account-feature-context";
 import { routeTargetForTab } from "./context-removal-planner";
 import { type ContextRouteSelection, routeSelectionDocumentId } from "./context-removal-protocol";
-import { projectResourceTab } from "./open-document-from-file";
+import { projectResourceDocument } from "./open-document-from-file";
 import { useIsDraftOnly } from "./use-is-draft-only";
 
 export function useFollowOpenDocumentPlacement(input: {
@@ -69,7 +69,7 @@ export function useFollowOpenDocumentPlacement(input: {
         : null;
     const gone = new Set<string>();
     for (const tab of mounted) {
-      const projection = projectResourceTab(
+      const projection = projectResourceDocument(
         tab,
         resourceProjection.records,
         resourceProjection.placement,
@@ -98,14 +98,17 @@ export function useFollowOpenDocumentPlacement(input: {
       if (
         route !== null &&
         tab.kind !== "new" &&
-        projection.tab.kind !== "new" &&
+        projection.document.kind !== "new" &&
         boundDocumentId === tab.documentId &&
-        !sameContextTarget(routeTargetForTab(projection.tab), route)
+        !sameContextTarget(routeTargetForTab(projection.document), route)
       )
         void input
           .onOpenContextTarget(
-            contextRouteRequest({ ...projection.tab, documentId: projection.tab.documentId }),
-            { replace: true, tab: projection.tab },
+            contextRouteRequest({
+              ...projection.document,
+              documentId: projection.document.documentId,
+            }),
+            { replace: true, document: projection.document },
           )
           .then(
             (settlement) => {

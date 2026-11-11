@@ -18,7 +18,7 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { useWorks } from "@/client/query/useWorks";
-import type { TabOwner } from "@/client/stores";
+import type { OpenDocumentOwner } from "@/client/stores";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -35,7 +35,7 @@ export type UseRenameEntryFormOptions = {
   projectId: string;
   entryId: string;
   /** Who holds the entry: a Work row, or a chat's lineage with its handle. */
-  owner: TabOwner;
+  owner: OpenDocumentOwner;
   scheme: ProjectContextTreeScheme;
   /** Stored name of the entry (pre-populates the input). */
   currentName: string;

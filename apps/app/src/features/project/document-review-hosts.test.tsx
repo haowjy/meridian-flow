@@ -2,6 +2,10 @@
 /**
  * One review per document across main and the side: off a document's address main's
  * frame stays mounted while the side holds the same document.
+ *
+ * Pins implementation decisions (rewrite or delete these cases when one changes):
+ * - main's frame stays mounted off its address, so both hosts call useDocumentReview and
+ *   only the host that shows the document reviews it
  */
 import "fake-indexeddb/auto";
 
@@ -41,26 +45,26 @@ it("reviews a document only in the host that shows it", async () => {
     items: [{ itemKey: "item", documentId: "chapter" }],
   });
   setDocumentView(accountId, projectId, "chapter", { pin: { ownerKey: owner, itemKey: "item" } });
-  let editor: DocumentReview | null = null;
-  let dock: DocumentReview | null = null;
+  let main: DocumentReview | null = null;
+  let side: DocumentReview | null = null;
   const root = createRoot(document.createElement("div"));
   await act(async () => {
     root.render(
       <QueryClientProvider client={queryClient}>
         <ThreadStoreProvider now={0}>
           <AccountFeatureTestProvider accountId={accountId}>
-            <Host showing={false} report={(review) => (editor = review)} />
-            <Host showing report={(review) => (dock = review)} />
+            <Host showing={false} report={(review) => (main = review)} />
+            <Host showing report={(review) => (side = review)} />
           </AccountFeatureTestProvider>
         </ThreadStoreProvider>
       </QueryClientProvider>,
     );
   });
-  expect(dock).toMatchObject({
+  expect(side).toMatchObject({
     paint: { showing: "draft", draft: { itemKey: "item" } },
     value: { controller: { inlineReview: { documentId: "chapter", itemKey: "item" } } },
   });
-  expect(editor).toMatchObject({
+  expect(main).toMatchObject({
     paint: { showing: "live", draft: null },
     value: { controller: { inlineReview: null } },
   });

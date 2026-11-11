@@ -1,7 +1,10 @@
-import { isWorkArchived } from "@meridian/contracts/works";
+import type { DraftOwnerKey } from "@meridian/contracts/branches";
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { useCallback, useMemo } from "react";
 import { NO_SCOPE, useProjectScope, writeProjectScope } from "@/client/project-shell/store";
-import { useWorks } from "@/client/query/useWorks";
+import { useDisplayedThread } from "@/client/query/useDisplayedThread";
+import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
+import { chatOwnerKey, workOwnerKey } from "@/features/draft-review/draft-owner-key";
 import { useAccountId } from "./context/account-feature-context";
 
 /** The Work scope as the shell can use it: ready with a Work row id (No Work's included), or not yet. */
@@ -55,4 +58,30 @@ export function useWorkScope(projectId: string): {
     [accountId, projectId, noWorkId],
   );
   return useMemo(() => ({ workId, setWorkId }), [workId, setWorkId]);
+}
+
+/**
+ * Whose drafts the scope holds: the picked Work's, or under No Work the chat on screen's own,
+ * when that chat has no Work (a chat on a named Work keeps its drafts in that Work). `ownerKey`
+ * is "" when there are none to show; `work` is the Work its commands act for.
+ */
+export function useScopeDraftOwner(
+  projectId: string,
+  chatThreadId: string | null,
+): { picked: Work | null; work: Work | null; ownerKey: DraftOwnerKey | "" } {
+  const { workId } = useWorkScope(projectId);
+  const { works, noWork } = useWorks(projectId);
+  const thread = useDisplayedThread(projectId, chatThreadId);
+  const snapshot = noWork ? { works: works ?? [], noWork } : null;
+  const picked = workId && workId !== noWork?.id ? workFromSnapshot(snapshot, workId) : null;
+  const chatWork = thread?.workId ? workFromSnapshot(snapshot, thread.workId) : null;
+  const lineageKey =
+    !picked && chatWork?.isNoWork ? chatOwnerKey(chatWork, thread?.rootThreadId ?? null) : "";
+  return useMemo(
+    () =>
+      picked
+        ? { picked, work: picked, ownerKey: workOwnerKey(picked) }
+        : { picked: null, work: lineageKey ? chatWork : null, ownerKey: lineageKey },
+    [picked, chatWork, lineageKey],
+  );
 }

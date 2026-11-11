@@ -34,15 +34,19 @@ doesn't (removed, an upload) is skipped for the next candidate, and the picker o
 opens. `fitsBeside` is the one answer to "can this sit beside", for the rule and the picker. While
 a read or a describe is out, the side keeps what it showed and says no reason, since the kept
 reason was about another main. `side/SideView.tsx` holds this state and the commands
-(`useShellCommands`); both shells read it, and the phone's sheet shows the same item. The held pick
+(`useShellCommands`); both shells read it, and the phone's sheet shows the same item. The sheet is no history
+entry: Back while it is open dismisses it and leaves main where it is. The held pick
 lives per browser tab (`client/project-shell/store.ts`, seeded from the device) and never enters
 history, so Back moves main and leaves the hold alone. Only the writer's own acts release a hold:
 the held mark, For this, the close button, the held item becoming main, and its document being
 closed, Discarded or removed. A fold from a narrow window is not one: the hold survives it and is
 back when the window widens. A held chat also gives way when the writer opens a chat in main (no
 chat sits beside a chat), and a held document that no longer opens is dropped.
-Ctrl/cmd-click or middle-click on a document link holds it beside with the link's Work and opens
-a closed side (`useOptionalHoldBeside`). Each header renders inside its host
+Every document link follows one click rule (`useLinkPlacement` in `review-launch.tsx`, the
+gesture from `followDisposition` in `core/editor/links`): a plain click opens in main, and a
+cmd-click, ctrl-click or middle click holds the page beside, with the link's Work, and opens a
+closed side. Editor links, transcript links, chat doors and a reply's "Drafted N documents" rows
+all go through it. Each header renders inside its host
 (`shell/MainHeader.tsx`, `side/SideHeader.tsx`); while the side is closed, main's header names it
 (`side/ClosedSideButton.tsx`).
 
@@ -110,8 +114,8 @@ another document is the path's occupant, so the route waits. The hold asks `reso
 (`unbindRoute`, only while the selection is still bound to that document at this route) so the
 address answer decides. The lookup takes a plain navigation ticket, never the writer's intent. A
 failed catalog during a hold shows the error with Retry. A draft-only document is not found by its
-cached path on the phone either (`useMobileRouteBinding`): its review binds on arrival, and a
-plain URL there waits for the address answer. Desktop and phone resolve the address the same way (`resolveMainDocument`): a document the
+cached path on either shell: its review binds on arrival, and a plain URL there waits for the
+address answer. Desktop and phone resolve the address the same way (`resolveMainDocument`): a document the
 destination area's catalog lacks (a draft that creates it, or moves it to another area) comes from
 the address's answer (`addressedDocument`).
 
@@ -141,10 +145,10 @@ composer). `display` is the chat main shows (`new` or one thread), null when mai
 `lastChatId` is the last chat opened (`readLastChat` in `client/project-shell/store.ts`). A chat
 created from `/chats` takes main; one created from the side's composer is held beside. A link
 followed inside a chat opens the page in main, and the entry records that chat as its beside
-hint. A link or door to a page that chat drafted opens its draft (`useOwnerDraftOpener` in
-`review-launch.tsx`), with or without a passage (a passage door opens the draft at its top: draft
-editors don't register as passage targets yet); a cmd-click, ctrl-click or middle click holds the
-page beside main instead, on that draft when the chat has one. No chat sits beside a chat, so a chat in main takes the side's picker down
+hint. A link or door to a page that chat drafted opens its draft (`useLinkPlacement`), with or
+without a passage (a passage door opens the draft at its top: draft editors don't register as
+passage targets yet); a cmd-click, ctrl-click or middle click holds the page beside main instead,
+on that draft when the chat has one. No chat sits beside a chat, so a chat in main takes the side's picker down
 to documents.
 
 There is no chat index. The sidebar's Chats list (`shell/sidebar/ChatsBody.tsx`) is how chats are
@@ -189,7 +193,7 @@ writes into the issuing host's own editor, whose Undo takes it back.
 Main's address and main's view stay in step (`use-review-address-sync.ts`): an address arriving by
 push, pop or load sets or drops the pin; after that the view writes the address by replace. The
 side's view never writes the address. Launchers live in `review-launch.tsx`. Keep `PaintHold` and
-`FocusOpenedReview` in the presenting container; a command adapter may request a launch but must
+the opened review's focus in the presenting container; a command adapter may request a launch but must
 not manage focus or copy.
 
 ## Document admission

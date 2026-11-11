@@ -175,10 +175,9 @@ export function CreationComposer({
             agent={agent}
             writeMode={writeMode}
             onAgentChange={(next) => creation.updateChoices({ agent: next })}
-            // A mode picked for one Work is not carried to another.
-            onWorkChange={(selected) =>
-              creation.updateChoices({ workId: selected.id, aiWriteMode: undefined })
-            }
+            // A mode the writer picked here stays when they pick a Work; the Work's default shows
+            // only until they pick one.
+            onWorkChange={(selected) => creation.updateChoices({ workId: selected.id })}
             onWriteModeChange={(mode) => creation.updateChoices({ aiWriteMode: mode })}
             onRetryWorks={works.refetch}
           />

@@ -111,7 +111,7 @@ export function applyRecentAvailability(
   if (browserStore()?.applyAvailability(accountId, input)) publish();
 }
 
-export function patchAccountRecentsFromTabs(
+export function patchAccountRecentsFromDocuments(
   accountId: string,
   projectId: string,
   tabs: readonly { documentId: string; name: string; address: RecentAddress }[],

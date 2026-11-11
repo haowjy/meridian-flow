@@ -25,8 +25,6 @@ export type ProjectShellProps = {
   onSetSlotWidth: (slot: PanelSlotId, widthPx: number) => void;
   /** Open or close a panel slot. */
   onSetSlotOpen: (slot: PanelSlotId, open: boolean) => void;
-  /** A running agent while the side is closed: its toggle carries a spinner. */
-  dockActivity?: boolean;
   /** Minimum width (px) the main column may shrink to. */
   mainMinWidth?: number;
   children?: ReactNode;
@@ -37,21 +35,20 @@ export function ProjectShell({
   hosts,
   onSetSlotWidth,
   onSetSlotOpen,
-  dockActivity = false,
   mainMinWidth,
   children,
 }: ProjectShellProps) {
   const gridRef = useRef<HTMLDivElement | null>(null);
   const railOpen = panels["rail-l"].open;
-  const dockOpen = panels.dock.open;
+  const sideOpen = panels.side.open;
   const leftWidth = railOpen ? panels["rail-l"].width : 0;
-  const dockWidth = dockOpen ? panels.dock.width : 0;
+  const sideWidth = sideOpen ? panels.side.width : 0;
   const desktopGridTemplate = getDesktopGridTemplate();
 
   // `[` toggles the sidebar, `]` the side. Read through a ref so the listener
   // never re-binds while still seeing fresh layout state.
-  const toggleRef = useRef({ railOpen, dockOpen, onSetSlotOpen });
-  toggleRef.current = { railOpen, dockOpen, onSetSlotOpen };
+  const toggleRef = useRef({ railOpen, sideOpen, onSetSlotOpen });
+  toggleRef.current = { railOpen, sideOpen, onSetSlotOpen };
   useEffect(() => {
     function isEditableTarget(target: EventTarget | null): boolean {
       if (!(target instanceof HTMLElement)) return false;
@@ -65,7 +62,7 @@ export function ProjectShell({
       const current = toggleRef.current;
       e.preventDefault();
       if (e.key === "[") current.onSetSlotOpen("rail-l", !current.railOpen);
-      else current.onSetSlotOpen("dock", !current.dockOpen);
+      else current.onSetSlotOpen("side", !current.sideOpen);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -93,8 +90,8 @@ export function ProjectShell({
           // these grid seams; zero-width tracks remove the visible empty strip.
           "--project-left-handle-width": "0px",
           "--project-main-min-width": `${mainMinWidth ?? 0}px`,
-          "--project-dock-handle-width": "0px",
-          "--project-dock-width": `${dockWidth}px`,
+          "--project-side-handle-width": "0px",
+          "--project-side-width": `${sideWidth}px`,
         } as CSSProperties
       }
     >
@@ -112,15 +109,15 @@ export function ProjectShell({
           />
         </div>
       ) : null}
-      {dockOpen ? (
-        <div className="relative z-20 min-h-0 overflow-visible" style={{ gridArea: "dock-resize" }}>
+      {sideOpen ? (
+        <div className="relative z-20 min-h-0 overflow-visible" style={{ gridArea: "side-resize" }}>
           <ResizeHandle
             gridRef={gridRef}
-            cssVariableName="--project-dock-width"
-            widthPx={dockWidth}
-            minWidthPx={SLOT_WIDTH_BOUNDS.dock.min}
-            maxWidthPx={SLOT_WIDTH_BOUNDS.dock.max}
-            onCommit={(px) => onSetSlotWidth("dock", px)}
+            cssVariableName="--project-side-width"
+            widthPx={sideWidth}
+            minWidthPx={SLOT_WIDTH_BOUNDS.side.min}
+            maxWidthPx={SLOT_WIDTH_BOUNDS.side.max}
+            onCommit={(px) => onSetSlotWidth("side", px)}
             ariaLabel={t`Resize side panel`}
             dragDirection={-1}
           />
@@ -137,10 +134,9 @@ export function ProjectShell({
       />
       <CornerToggle
         side="right"
-        open={dockOpen}
-        busy={!dockOpen && dockActivity}
-        label={dockOpen ? t`Close side panel  ]` : t`Open side panel  ]`}
-        onClick={() => onSetSlotOpen("dock", !dockOpen)}
+        open={sideOpen}
+        label={sideOpen ? t`Close side panel  ]` : t`Open side panel  ]`}
+        onClick={() => onSetSlotOpen("side", !sideOpen)}
       />
     </SlotGrid>
   );
@@ -149,13 +145,11 @@ export function ProjectShell({
 function CornerToggle({
   side,
   open,
-  busy = false,
   label,
   onClick,
 }: {
   side: "left" | "right";
   open: boolean;
-  busy?: boolean;
   label: string;
   onClick: () => void;
 }) {
@@ -173,7 +167,6 @@ function CornerToggle({
       )}
     >
       <Icon className="size-4" aria-hidden />
-      {busy ? <span aria-hidden className="streaming-dot absolute top-1 right-1 size-1.5" /> : null}
     </IconButton>
   );
 }

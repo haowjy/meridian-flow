@@ -19,11 +19,17 @@ import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
+import { followDisposition, MIDDLE_BUTTON } from "@/core/editor/links";
 import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { cn } from "@/lib/utils";
-import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
+import {
+  type CanOpenContextUri,
+  type OpenContextUri,
+  useChatContextNavigation,
+  useChatContextRoutability,
+} from "./ChatContextNavigation";
 import { DocumentName } from "./DocumentName";
 import {
   describeModelMove,
@@ -349,8 +355,8 @@ function DocumentRow({
   canOpenContextUri,
 }: {
   document: TurnEditDocument;
-  onOpenContextUri: ((uri: string) => void) | null;
-  canOpenContextUri: ((uri: string) => boolean) | null;
+  onOpenContextUri: OpenContextUri | null;
+  canOpenContextUri: CanOpenContextUri | null;
 }) {
   const drag = useDocumentRowDrag(document);
   const openable =
@@ -369,7 +375,11 @@ function DocumentRow({
     <button
       type="button"
       {...drag}
-      onClick={() => onOpenContextUri(document.uri)}
+      onClick={(event) => onOpenContextUri(document.uri, undefined, followDisposition(event))}
+      onAuxClick={(event) => {
+        if (event.button === MIDDLE_BUTTON)
+          onOpenContextUri(document.uri, undefined, followDisposition(event));
+      }}
       className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-ink-fill"
     >
       <DocumentRowLabel document={document} />

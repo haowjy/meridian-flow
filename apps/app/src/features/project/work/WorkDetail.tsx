@@ -7,6 +7,7 @@ import { Trans } from "@lingui/react/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { useEffect } from "react";
 import type { AddressableWork } from "@/client/query/useWorks";
+import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import { useWorkMutations } from "@/client/query/work-command-store";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,9 +21,12 @@ import { ArchivedWorkNotice } from "./ArchivedWorkNotice";
 import { useWorkArchiveToggle } from "./useWorkArchiveToggle";
 import type { WorkDeletion } from "./useWorkDeletion";
 import { WorkActionsMenu } from "./WorkActionsMenu";
+import { WorkCommandFailureRow } from "./WorkCommandFailureRow";
 import { useWorkMetadataController, WorkGoal, type WorkMetadataController } from "./WorkMetadata";
 import { WorkTitleLine } from "./WorkTitleLine";
 import { WorkHeading } from "./WorkTitles";
+
+const ARCHIVE_TOGGLE = ["archive", "unarchive"] as const;
 
 /** Asks before leaving with an unsaved goal edit; the dialog calls it for Back and close. */
 export type LeaveGuard = (leave: () => void, cancel: () => void) => void;
@@ -46,6 +50,7 @@ export function WorkDetail({
 }) {
   const mutations = useWorkMutations(projectId);
   const toggleArchive = useWorkArchiveToggle(projectId);
+  const archiveFailure = useWorkCommandFailures(projectId, ARCHIVE_TOGGLE).get(work.id);
   const controller = useWorkMetadataController(work, async (data) => {
     const error = await mutations.update({ workId: work.id, data });
     if (error) throw error;
@@ -85,6 +90,7 @@ export function WorkDetail({
             <ArchivedWorkNotice projectId={projectId} work={work} showFailure={false} />
           </div>
         ) : null}
+        {archiveFailure ? <WorkCommandFailureRow failure={archiveFailure} /> : null}
         <WorkGoal work={work} controller={controller} />
       </header>
       <DirtyDecision controller={controller} />

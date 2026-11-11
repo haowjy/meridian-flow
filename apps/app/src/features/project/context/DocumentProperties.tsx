@@ -12,7 +12,7 @@ import { ChevronRight } from "lucide-react";
 import { useId } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useDocumentProperties } from "@/client/query/useDocumentProperties";
-import { type OpenDocument, tabContextOwner } from "@/client/stores";
+import { documentContextOwner, type OpenDocument } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
@@ -21,7 +21,7 @@ import { DocumentPropertyValue, YamlBlock } from "./DocumentPropertyValue";
 
 /** The catalog's word on whether a document has properties; false until it has said so. */
 function useHasProperties(projectId: string, tab: OpenDocument): boolean {
-  const owner = tab.kind === "new" ? {} : tabContextOwner(tab);
+  const owner = tab.kind === "new" ? {} : documentContextOwner(tab);
   const { catalog } = useContextCatalogView(
     projectId,
     tab.kind === "new" ? "unfiled" : tab.scheme,
@@ -33,10 +33,22 @@ function useHasProperties(projectId: string, tab: OpenDocument): boolean {
   return tab.kind !== "new" && catalog?.findDocument(tab.documentId)?.hasProperties === true;
 }
 
-export function DocumentProperties({ projectId, tab }: { projectId: string; tab: OpenDocument }) {
-  const hasProperties = useHasProperties(projectId, tab);
+export function DocumentProperties({
+  projectId,
+  document,
+}: {
+  projectId: string;
+  document: OpenDocument;
+}) {
+  const hasProperties = useHasProperties(projectId, document);
   if (!hasProperties) return null;
-  return <PropertiesRow key={tab.documentId} projectId={projectId} documentId={tab.documentId} />;
+  return (
+    <PropertiesRow
+      key={document.documentId}
+      projectId={projectId}
+      documentId={document.documentId}
+    />
+  );
 }
 
 function PropertiesRow({ projectId, documentId }: { projectId: string; documentId: string }) {

@@ -136,10 +136,10 @@ mount presents in the registry like a desktop one. Both shells find the document
 `route-document-owner.ts`: the bound identity in the live catalog, then the document the
 answered address names (`addressedDocument`, built from the address's draft row when
 live lacks it), before any path occupant. A plain path never settles on a draft-only
-document (`resolveWorkspaceRoute`'s `isDraftOnly`); only its address with `owner` and
+document; only its address with `owner` and
 `item` reaches it.
 The live resource replica says nothing about a draft-only document
-(`projectResourceTab` answers `none`): a deleted document's replica record is
+(`projectResourceDocument` answers `none`): a deleted document's replica record is
 terminal, often from an earlier session's cache, and treating it as the document's
 removal hid the editor behind a skeleton that never resolved.
 Once live has the document (Apply, or a restore), settlement promotes the presentation
@@ -173,7 +173,7 @@ opened as blank documents.
 ## Editor versus chat resources
 
 Editor trees list project document schemes only. Scratch documents open in
-main through links, Work Files and a chat's Scratch section, owned by their
+main through links and the sidebar's Scratch section, owned by their
 Work or, for a No Work chat, by their lineage; nothing in the Editor browses
 Scratch, and a Scratch crumb links nowhere. Uploads remain storage and
 reference/tool resources; their direct URLs show the viewing-not-available state.

@@ -8,6 +8,7 @@ import type { Editor } from "@tiptap/core";
 import { act, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as threads from "@/client/query/useProjectThreads";
+import { ThreadStoreProvider } from "@/client/stores";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { createEditorSessions } from "@/test-support/editor-sessions";
 import { installEditorShell } from "@/test-support/editor-shell";
@@ -89,9 +90,11 @@ function Harness({ initial }: { initial: SurfaceProps }) {
 function ExactLiveEditor(props: SurfaceProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <I18nProvider i18n={i18n}>
-        <EditorView {...props} session={props.session ?? sessions.get(props.documentId)} />
-      </I18nProvider>
+      <ThreadStoreProvider now={0}>
+        <I18nProvider i18n={i18n}>
+          <EditorView {...props} session={props.session ?? sessions.get(props.documentId)} />
+        </I18nProvider>
+      </ThreadStoreProvider>
     </QueryClientProvider>
   );
 }

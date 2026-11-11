@@ -5,7 +5,7 @@ for feature-level contracts first.
 
 ## Shared nested rows
 
-Work Files, the context sidebar, and the phone browser render ordinary nested
+The sidebar's sources, on desktop and in the phone's drawer, render ordinary nested
 folders through `TreeChildren`. Search supplies visible ids
 with ancestor closure, not a filtered catalog: rename and move free-name predictions
 always see all siblings. Search disclosure is temporary; it never overwrites
@@ -13,7 +13,7 @@ the normal expansion state. A newly created Work note stays visible for naming
 even when its name does not match the search.
 
 Indentation counts visible expandable parents, not catalog depth: standalone
-Work Files and phone lists start at zero; rail sections start at one. The shared
+lists start at zero; rail sections start at one. The shared
 `TreeGroup` spans all visible children, including Earlier notes and the current
 Work’s separate catalog. It paints its parent guide above row highlights without taking pointer
 input. Section headers and folder rows use the same disclosure-center geometry.
@@ -161,7 +161,7 @@ Create) is listed at its name, not under a folder of the refused destination.
 The move's receipt carries `linkUpdate.links`. `setLocation` and `setFolderLocation`
 return the operation id issued at admission; the account-owned lifecycle watches
 its journal receipt and `LinkUpdateNote` shows "Updated N links" on its own line
-under the name in tree, drawer and Work Files rows, inline in the phone listing,
+under the name in tree and drawer rows, inline in the phone listing,
 or after the open document's identity path. Selection is keyed by stable resource
 handle (folder handles for folders). Presentation document IDs resolve through
 the replica's canonical identity/alias policy, so feedback follows remint and
@@ -173,7 +173,7 @@ A move that updated no links shows nothing: the writer just did it and can see
 where the row went (owner, 2026-10-14). Refused moves show nothing.
 Refused row moves retain the journal destination in the catalog projection. Comparing that destination with the projected parent and owner distinguishes them from name-only refusals: the failure mark stays on the row, and reopening Move shows the failed destination with retry guidance, never an automatic rename field. Retry validation and submission use the retained
 destination name, including a cancelled rename/move chain; fresh moves use the
-entry's current name. Work Files uses the same picker and repair decision.
+entry's current name.
 The remembered operation follows the entry's identity across row remounts. Inline
 operations keep stable entry identity. Work selection is attached only to
 Scratch/Uploads, never project-owned Manuscript/KB/User paths.
@@ -378,7 +378,6 @@ document drags as itself and a gone one answers "Some of these items are no long
 | Source | Names | View |
 |---|---|---|
 | Main's document title (`MainHeader`) | the document | the draft of the Work under review while the document is under review (`draftCopyView`, owned by draft review); local and draft-only documents don't drag |
-| Path crumb (`DocumentPath`) | the document (filename) or the folder (read up the placement graph, so no catalog is acquired); the area crumb navigates | the filename follows its document (the draft while under review); folders live |
 | Recent row | the document by id, never the path it was opened at | live |
 | Transcript chip (`TranscriptReference`) | an exact reference the host still resolves; syntax links name no entry | live |
 | Composer chip (`ComposerReferenceMenu`) | its document or folder | live |
@@ -419,7 +418,7 @@ destination is no longer there.", with Retry while every source and the destinat
 The journal keeps the refusal until that toast closes or Retry lands (`copy-refusal.ts`).
 
 Targets: a folder row is its folder; a file row hands its drop to its folder (or
-the area); an area header, and in Work Files the whole Scratch group, is the
+the area); an area header is the
 catalog's top level. A row's top and bottom bands are sibling edges, before or
 after that row in its actual parent (`RowEdges` in `tree-drop.tsx`): a third of a
 file row, a quarter of a folder row, whose centre keeps moving rows into it. An

@@ -18,7 +18,7 @@ import type { DocumentFreeze } from "./use-document-freeze";
 
 export type DocumentPaneChromeProps = {
   projectId: string;
-  tab: OpenDocument;
+  document: OpenDocument;
   /** Set when the document as shown is frozen: by its archived Work, or a trashed chat. */
   freeze: DocumentFreeze | null;
   /**
@@ -30,7 +30,7 @@ export type DocumentPaneChromeProps = {
 
 export function DocumentPaneChrome({
   projectId,
-  tab,
+  document,
   freeze,
   reviewNotices,
 }: DocumentPaneChromeProps) {
@@ -38,25 +38,25 @@ export function DocumentPaneChrome({
     <>
       {/* A jump that could not find its passage says so here, over the page
           rather than in the layout. */}
-      <PassageNotice documentId={tab.documentId} />
+      <PassageNotice documentId={document.documentId} />
       {freeze ? (
         <DocumentFreezeNotice projectId={projectId} freeze={freeze} className="px-4 pt-3" />
       ) : null}
-      {reviewNotices ? <ReviewFailureNotices tab={tab} /> : null}
-      <DocumentProperties projectId={projectId} tab={tab} />
-      <DraftedDeleteNotice documentId={tab.documentId} />
+      {reviewNotices ? <ReviewFailureNotices document={document} /> : null}
+      <DocumentProperties projectId={projectId} document={document} />
+      <DraftedDeleteNotice documentId={document.documentId} />
     </>
   );
 }
 
-function ReviewFailureNotices({ tab }: { tab: OpenDocument }) {
+function ReviewFailureNotices({ document }: { document: OpenDocument }) {
   const { controller } = useDraftReview();
   const { openReviewFile } = useAiDraftLauncher();
   const review = controller.inlineReview;
-  if (review?.documentId !== tab.documentId || !review.shown) return null;
+  if (review?.documentId !== document.documentId || !review.shown) return null;
   return (
     <DraftReviewFailureNotices
-      documentId={tab.documentId}
+      documentId={document.documentId}
       itemKey={review.itemKey}
       onOpenDraft={(row) => openReviewFile(row, controller.ownerKey)}
     />

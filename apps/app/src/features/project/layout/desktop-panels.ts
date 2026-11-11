@@ -16,7 +16,7 @@ export function useDesktopPanels(held: readonly PanelSlotId[] = NO_HELD_PANELS):
   return useMemo(
     () => ({
       "rail-l": { open: panels.sidebarOpen && !held.includes("rail-l"), width: widths["rail-l"] },
-      dock: { open: panels.sideOpen && !held.includes("dock"), width: widths.dock },
+      side: { open: panels.sideOpen && !held.includes("side"), width: widths.side },
     }),
     [held, panels, widths],
   );

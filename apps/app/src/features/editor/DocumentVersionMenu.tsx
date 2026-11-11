@@ -29,22 +29,22 @@ export type DocumentVersionReview = Pick<
 
 export function DocumentVersionMenu({
   projectId,
-  tab,
+  document,
   touch = false,
   review,
 }: {
   projectId: string;
-  tab: OpenDocument;
+  document: OpenDocument;
   touch?: boolean;
   /** The open review's controls; absent while the document shows Live. */
   review?: DocumentVersionReview;
 }) {
-  const { documentId } = tab;
+  const { documentId } = document;
   const accountId = useAccountId();
   const paint = useHostDocumentPaint();
-  const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
+  const hints = useDocumentDraftHints(projectId, documentId, { enabled: document.kind !== "new" });
   const { works } = useWorks(projectId);
-  if (tab.kind === "new") return null;
+  if (document.kind === "new") return null;
 
   const shown = review ? (paint?.draft ?? null) : null;
   const ownerName = (owner: string, label: string | null) => {

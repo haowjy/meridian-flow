@@ -124,9 +124,14 @@ export function ComposerReferenceMenu({
         aria-disabled={!follow}
         aria-label={label}
         {...drag}
+        // A click on the chip follows it and leaves the caret beside it, never on it: a chip the
+        // click selected (or a focused chip holding the DOM selection) is replaced by the next keystroke.
         onClick={(event) => {
           event.preventDefault();
           follow?.();
+          const position = getPos();
+          if (position !== undefined && editor.isEditable)
+            editor.commands.focus(position + node.nodeSize, { scrollIntoView: false });
         }}
         onKeyDown={(event) => {
           if (event.key !== "Enter") return;

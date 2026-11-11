@@ -55,7 +55,7 @@ Run these against an owned worktree and stack. Discover URLs with
 15. Retained document A with B pending, flip the sidebar's Write | Chat switch: the
     **address, main and the side do not change**, and the sidebar shows the other list.
 16. Hide a pane. It **carries nothing** with it.
-17. From Work Files, pick a chat row in the Chat list. **Main goes to that chat**; the
+17. With a document in main, pick a chat row in the Chat list. **Main goes to that chat**; the
     document it replaced is one Back away.
 18. Close the side, then flip the switch. The side stays closed and **carries nothing**.
 19. With a chat in main, follow a document link in a message. **The page opens in main

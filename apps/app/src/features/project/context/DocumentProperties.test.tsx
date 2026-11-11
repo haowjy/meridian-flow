@@ -77,7 +77,7 @@ async function show(run: (root: HTMLElement, settled: () => Promise<void>) => Pr
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await withReactRoot(
     <QueryClientProvider client={client}>
-      <DocumentProperties projectId="project" tab={tab} />
+      <DocumentProperties projectId="project" document={tab} />
     </QueryClientProvider>,
     async () => {
       await settle(client);

@@ -18,21 +18,21 @@ import { useRenameEntryForm } from "../context/use-rename-entry-form";
 
 export function MobileRefusalNotice({
   projectId,
-  tab,
+  document,
   className,
 }: {
   projectId: string;
-  tab: EditableOpenDocument;
+  document: EditableOpenDocument;
   className?: string;
 }) {
   // A refused nameless create is listed in Unfiled, like any refused create.
-  const scheme = tab.kind === "tracked" ? tab.scheme : "unfiled";
+  const scheme = document.kind === "tracked" ? document.scheme : "unfiled";
   const owner: ContextOwner =
-    tab.kind === "tracked" && tab.rootThreadId
-      ? { rootThreadId: tab.rootThreadId, rootThreadRef: tab.rootThreadRef }
-      : { workId: tab.kind === "tracked" ? tab.workId : undefined };
+    document.kind === "tracked" && document.rootThreadId
+      ? { rootThreadId: document.rootThreadId, rootThreadRef: document.rootThreadRef }
+      : { workId: document.kind === "tracked" ? document.workId : undefined };
   const { catalog } = useContextCatalogView(projectId, scheme, owner);
-  const file = catalog?.findDocument(tab.documentId) ?? null;
+  const file = catalog?.findDocument(document.documentId) ?? null;
   if (!catalog || !file?.namespaceFailure) return null;
   return (
     <RefusedDocument

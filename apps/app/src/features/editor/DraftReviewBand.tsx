@@ -48,7 +48,7 @@ import { DocumentVersionMenu } from "./DocumentVersionMenu";
 
 export type DraftReviewBandProps = {
   projectId: string;
-  tab: OpenDocument;
+  document: OpenDocument;
   documentId: string;
   itemKey: string;
   /** Set for a draft-only document: closes its tab instead of returning to live. */
@@ -141,7 +141,7 @@ export function DraftReviewBand({
       <PaintCapture surface={status} state={status === "loading" ? "pending" : "painted"} />
       <DocumentVersionMenu
         projectId={props.projectId}
-        tab={props.tab}
+        document={props.document}
         review={{
           draftOnly: header.draftOnly,
           disabled: locked,

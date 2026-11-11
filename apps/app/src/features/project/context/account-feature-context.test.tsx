@@ -19,7 +19,7 @@ import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useObservedResourceProjection } from "./account-feature-context";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
-import { projectResourceTab } from "./open-document-from-file";
+import { projectResourceDocument } from "./open-document-from-file";
 
 const providerQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 function TestAccountProvider(props: React.ComponentProps<typeof AccountFeatureTestProvider>) {
@@ -65,10 +65,12 @@ describe("AccountFeatureTestProvider", () => {
     }).next;
     record.intents = [];
     record.resource.lifecycle = { kind: "terminal", generation: "9", transitionId: "delete" };
-    const projections: ReturnType<typeof projectResourceTab>[] = [];
+    const projections: ReturnType<typeof projectResourceDocument>[] = [];
     function Child() {
       const { records, placement } = useObservedResourceProjection(replica, "project-1");
-      projections.push(projectResourceTab(tracked("gone", "/gone.md"), records, placement, false));
+      projections.push(
+        projectResourceDocument(tracked("gone", "/gone.md"), records, placement, false),
+      );
       return null;
     }
     await withReactRoot(<Child />, async () => {

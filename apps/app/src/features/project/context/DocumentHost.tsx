@@ -44,7 +44,7 @@ import { DocumentFreezeNotice } from "./DocumentFreezeNotice";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { PHONE_DOCUMENT_PRESENTATION } from "./document-presentation";
-import { projectResourceTab } from "./open-document-from-file";
+import { projectResourceDocument } from "./open-document-from-file";
 import type { MountedPlace } from "./presented-documents";
 import { recentOpening } from "./recent-opening";
 import { useContextRemovalProject } from "./use-context-removal-project";
@@ -64,7 +64,7 @@ export type DocumentPlace = MountedPlace;
 
 export type DocumentHostProps = {
   projectId: string;
-  tab: OpenDocument;
+  document: OpenDocument;
   place: DocumentPlace;
   /** Whether the host's slot is on screen: main always, the side while it is open. */
   visible: boolean;
@@ -85,27 +85,31 @@ export type DocumentHostProps = {
 
 export function DocumentHost(props: DocumentHostProps) {
   const { projectId, place } = props;
-  const tab = useCurrentDescriptor(projectId, props.tab, place === "main");
+  const tab = useCurrentDescriptor(projectId, props.document, place === "main");
   const onScreen = place !== "kept" && props.visible;
   useMountDocument(projectId, tab, place);
   return (
-    <DocumentReviewProvider projectId={projectId} tab={tab} showing={onScreen}>
+    <DocumentReviewProvider projectId={projectId} document={tab} showing={onScreen}>
       {place === "main" && props.main ? (
-        <MainDocumentBinding projectId={projectId} tab={tab} main={props.main} />
+        <MainDocumentBinding projectId={projectId} document={tab} main={props.main} />
       ) : null}
       {props.presentation === "phone" ? (
         place === "main" ? (
-          <PhoneDocumentFrame projectId={projectId} tab={tab} local={props.main?.local === true} />
+          <PhoneDocumentFrame
+            projectId={projectId}
+            document={tab}
+            local={props.main?.local === true}
+          />
         ) : (
           <div className="flex h-full min-h-0 flex-col">
             {props.header}
             <div className="min-h-0 flex-1">
-              <PhoneDocumentFrame projectId={projectId} tab={tab} local={false} />
+              <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
             </div>
           </div>
         )
       ) : (
-        <DesktopDocumentFrame {...props} tab={tab} onScreen={onScreen} />
+        <DesktopDocumentFrame {...props} document={tab} onScreen={onScreen} />
       )}
     </DocumentReviewProvider>
   );
@@ -119,8 +123,8 @@ function useCurrentDescriptor(projectId: string, tab: OpenDocument, main: boolea
   const { records, placement } = useAccountResourceProjection(projectId);
   const isDraftOnly = useIsDraftOnly(projectId);
   if (main) return tab;
-  const projected = projectResourceTab(tab, records, placement, isDraftOnly(tab.documentId));
-  return projected.kind === "projected" ? projected.tab : tab;
+  const projected = projectResourceDocument(tab, records, placement, isDraftOnly(tab.documentId));
+  return projected.kind === "projected" ? projected.document : tab;
 }
 
 /** Main's and the side's documents are what removals, notices and availability act on. */
@@ -139,11 +143,11 @@ function useMountDocument(projectId: string, tab: OpenDocument, place: DocumentP
  */
 function MainDocumentBinding({
   projectId,
-  tab,
+  document,
   main,
 }: {
   projectId: string;
-  tab: OpenDocument;
+  document: OpenDocument;
   main: MainDocument;
 }) {
   const contextRemoval = useContextRemovalCoordinator();
@@ -155,16 +159,12 @@ function MainDocumentBinding({
     if (main.local) {
       // The pointer route (`unfiled`, no path) and a path route the pointer holds: both bind to
       // the local document, so a move of it carries the route instead of rejecting its old path.
-      const workspace = resolveWorkspaceRoute({
-        tabs: [tab],
-        selectedDocumentId: tab.documentId,
-        locator: selection.locator,
-      });
+      const workspace = resolveWorkspaceRoute(document, selection.locator);
       if (workspace.kind === "materialized-local")
         contextRemoval.redirectMaterializedLocal(
           projectId,
           selection.revision,
-          tab.documentId,
+          document.documentId,
           workspace.target,
         );
       else if (workspace.kind === "owner" && selection.status === "candidate")
@@ -192,20 +192,20 @@ function MainDocumentBinding({
       contextRemoval.bindRouteSelection(
         projectId,
         selection.revision,
-        { kind: "server", documentId: tab.documentId },
+        { kind: "server", documentId: document.documentId },
         "answer",
       );
-  }, [contextRemoval, projectId, selection, main, tab]);
+  }, [contextRemoval, projectId, selection, main, document]);
 
   // The route is remembered once it is bound to this document; a draft-only document's path dies
   // with its draft, so it never is.
-  const liveness = useDocumentLiveness(projectId, tab);
+  const liveness = useDocumentLiveness(projectId, document);
   useLayoutEffect(() => {
     if (
       main.draftOnly ||
       liveness === "draft-only" ||
       selection.status !== "bound" ||
-      selection.identity.documentId !== tab.documentId
+      selection.identity.documentId !== document.documentId
     )
       return;
     contextRemoval.activate({
@@ -220,7 +220,7 @@ function MainDocumentBinding({
     projectId,
     selection,
     state.transitionRevision,
-    tab,
+    document,
     main.draftOnly,
     liveness,
   ]);
@@ -233,19 +233,19 @@ function MainDocumentBinding({
       recorded.current = null;
       return;
     }
-    if (recorded.current === tab.documentId) return;
-    const opening = recentOpening(projectId, tab, new Date().toISOString(), false);
+    if (recorded.current === document.documentId) return;
+    const opening = recentOpening(projectId, document, new Date().toISOString(), false);
     if (!opening) return;
-    recorded.current = tab.documentId;
+    recorded.current = document.documentId;
     record(opening);
-  }, [liveness, tab, projectId, record]);
+  }, [liveness, document, projectId, record]);
   return null;
 }
 
 /** Desktop: the band, then the page (main's) or the side's body, then the document itself. */
 function DesktopDocumentFrame({
   projectId,
-  tab,
+  document,
   place,
   header,
   onScreen,
@@ -261,24 +261,24 @@ function DesktopDocumentFrame({
       {header}
       <PaintScope active={onScreen}>
         <PaintHold
-          status={t`Opening ${tab.name}`}
+          status={t`Opening ${document.name}`}
           className={cn("relative flex min-h-0 flex-1 flex-col", place === "main" && "page-sheet")}
         >
-          <PaintCapture surface={tab.documentId} />
+          <PaintCapture surface={document.documentId} />
           <DocumentStateSlotProvider>
             <DesktopDocumentChrome
               projectId={projectId}
-              tab={tab}
+              document={document}
               place={place}
               editorWorkId={editorWorkId}
               focusReview={focusReview}
               onFocusReview={onFocusReview}
             />
-            {tab.kind === "viewer" ? (
+            {document.kind === "viewer" ? (
               <div className="flex min-h-0 flex-1 flex-col">
                 <ContextViewerHost
                   projectId={projectId}
-                  tab={tab}
+                  document={document}
                   className={place === "main" ? undefined : "bg-transparent"}
                 />
               </div>
@@ -286,7 +286,7 @@ function DesktopDocumentFrame({
               <div className="relative min-h-0 flex-1">
                 <EditableDocument
                   projectId={projectId}
-                  tab={tab}
+                  document={document}
                   active={onScreen}
                   editorClassName={place === "main" ? undefined : "bg-transparent"}
                   loadFocus={place === "main"}
@@ -302,26 +302,27 @@ function DesktopDocumentFrame({
 
 function EditableDocument({
   projectId,
-  tab,
+  document,
   active,
   editorClassName,
   loadFocus,
 }: {
   projectId: string;
-  tab: EditableOpenDocument;
+  document: EditableOpenDocument;
   active: boolean;
   editorClassName?: string;
   loadFocus: boolean;
 }) {
-  const freeze = useHostFreeze(projectId, tab);
+  const freeze = useHostFreeze(projectId, document);
   const resources = useAccountResourceReplica();
   const onUntitledBecameNonEmpty = useCallback(async () => {
-    if (tab.kind === "new") await resources.markCreateEligible({ handle: tab.resourceHandle });
-  }, [resources, tab]);
+    if (document.kind === "new")
+      await resources.markCreateEligible({ handle: document.resourceHandle });
+  }, [resources, document]);
   return (
     <ContextDocumentHost
       projectId={projectId}
-      tab={tab}
+      document={document}
       active={active}
       readOnly={freeze !== null}
       editorClassName={editorClassName}
@@ -345,29 +346,31 @@ function useHostFreeze(projectId: string, tab: OpenDocument) {
 /** The document's identity and state, its notices and its review's toast. */
 function DesktopDocumentChrome({
   projectId,
-  tab,
+  document,
   place,
   editorWorkId,
   focusReview,
   onFocusReview,
 }: {
   projectId: string;
-  tab: OpenDocument;
+  document: OpenDocument;
   place: DocumentPlace;
   editorWorkId: string | null;
   focusReview?: string | null;
   onFocusReview?: (itemKey: string | null) => void;
 }) {
   const { controller } = useDraftReview();
-  const freeze = useHostFreeze(projectId, tab);
+  const freeze = useHostFreeze(projectId, document);
   const removal = useContextRemovalCoordinator();
   const openRoute = useOpenContextRoute();
-  const draftOnly = useDocumentLiveness(projectId, tab) === "draft-only";
+  const draftOnly = useDocumentLiveness(projectId, document) === "draft-only";
   // A chat's Scratch belongs to no Work, so archiving the scope's Work never freezes it. The
   // reviewed file itself may be project-owned, so only its own Work's archive freezes its
   // identity row.
   const fileInWork =
-    tab.kind !== "new" && isWorkScopedScheme(tab.scheme) && tab.rootThreadId === undefined;
+    document.kind !== "new" &&
+    isWorkScopedScheme(document.scheme) &&
+    document.rootThreadId === undefined;
   const onCommitted = (
     documentId: string,
     next: IdentityCommitted,
@@ -376,7 +379,7 @@ function DesktopDocumentChrome({
     // Main's address follows its own document's rename or move; a side document follows the
     // replica's placement on its own.
     if (place !== "main" || !openRoute) return;
-    if (!identityCommitMayNavigate(ownership, tab.documentId, documentId)) return;
+    if (!identityCommitMayNavigate(ownership, document.documentId, documentId)) return;
     const { request, options } = identityCommitRoute(documentId, next);
     void openRoute(request, options).then(
       (settlement) => {
@@ -388,13 +391,13 @@ function DesktopDocumentChrome({
   return (
     <>
       <DocumentIdentityBar
-        key={tab.documentId}
+        key={document.documentId}
         projectId={projectId}
         editorWorkId={editorWorkId}
-        tab={tab}
+        document={document}
         readOnly={Boolean(fileInWork && freeze?.kind === "work")}
         onCloseDraftOnly={
-          draftOnly ? () => settleWriterClose(removal.writerClose(projectId, tab)) : undefined
+          draftOnly ? () => settleWriterClose(removal.writerClose(projectId, document)) : undefined
         }
         focusReview={focusReview}
         onFocusReview={onFocusReview}
@@ -412,7 +415,7 @@ function DesktopDocumentChrome({
       />
       <DocumentPaneChrome
         projectId={projectId}
-        tab={tab}
+        document={document}
         freeze={freeze}
         reviewNotices={place === "main"}
       />
@@ -429,39 +432,41 @@ function DesktopDocumentChrome({
  */
 function PhoneDocumentFrame({
   projectId,
-  tab,
+  document,
   local,
 }: {
   projectId: string;
-  tab: OpenDocument;
+  document: OpenDocument;
   local: boolean;
 }) {
   const removal = useContextRemovalCoordinator();
-  const draftOnly = useDocumentLiveness(projectId, tab) === "draft-only";
-  const name = tab.name;
+  const draftOnly = useDocumentLiveness(projectId, document) === "draft-only";
+  const name = document.name;
   return (
     <PaintHold
       status={name ? t`Opening ${name}` : t`Opening draft`}
       className="relative h-full min-h-0"
     >
-      <PaintCapture surface={tab.documentId} />
-      {tab.kind === "viewer" ? (
-        <ContextViewerHost projectId={projectId} tab={tab} />
+      <PaintCapture surface={document.documentId} />
+      {document.kind === "viewer" ? (
+        <ContextViewerHost projectId={projectId} document={document} />
       ) : local ? (
         <div className="flex h-full min-h-0 flex-col">
-          <PhoneEditor projectId={projectId} tab={tab} />
+          <PhoneEditor projectId={projectId} document={document} />
         </div>
       ) : (
         <MobileDocumentReview
           projectId={projectId}
-          tab={tab}
+          document={document}
           // A draft-only document has no live version to return to: its review closes it.
           onCloseDraftOnly={
-            draftOnly ? () => settleWriterClose(removal.writerClose(projectId, tab)) : undefined
+            draftOnly
+              ? () => settleWriterClose(removal.writerClose(projectId, document))
+              : undefined
           }
         >
-          <PhoneEditor projectId={projectId} tab={tab}>
-            <PassageNotice documentId={tab.documentId} />
+          <PhoneEditor projectId={projectId} document={document}>
+            <PassageNotice documentId={document.documentId} />
           </PhoneEditor>
         </MobileDocumentReview>
       )}
@@ -471,22 +476,22 @@ function PhoneDocumentFrame({
 
 function PhoneEditor({
   projectId,
-  tab,
+  document,
   children,
 }: {
   projectId: string;
-  tab: EditableOpenDocument;
+  document: EditableOpenDocument;
   children?: ReactNode;
 }) {
-  const freeze = useHostFreeze(projectId, tab);
+  const freeze = useHostFreeze(projectId, document);
   const review = useDraftReview().controller.inlineReview;
   return (
     <DocumentStateSlotProvider>
       {/* The version chip lives at the toolbar row's end, as on a desktop; a review, painted or on
           its way, shows its own chip in its header. */}
-      {review?.documentId === tab.documentId ? null : (
+      {review?.documentId === document.documentId ? null : (
         <DocumentStatePortal>
-          <DocumentVersionMenu projectId={projectId} tab={tab} touch />
+          <DocumentVersionMenu projectId={projectId} document={document} touch />
         </DocumentStatePortal>
       )}
       {freeze ? (
@@ -496,12 +501,12 @@ function PhoneEditor({
           className="shrink-0 px-2 pt-2"
         />
       ) : null}
-      <MobileRefusalNotice projectId={projectId} tab={tab} className="shrink-0 px-4" />
+      <MobileRefusalNotice projectId={projectId} document={document} className="shrink-0 px-4" />
       <div className="relative min-h-0 flex-1">
         {children}
         <ContextDocumentHost
           projectId={projectId}
-          tab={tab}
+          document={document}
           active
           readOnly={freeze !== null}
           presentation={PHONE_DOCUMENT_PRESENTATION}

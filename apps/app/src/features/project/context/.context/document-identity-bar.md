@@ -18,17 +18,6 @@ leaf + jade “Choose a home” chip), never separate chrome; the editor banner
 slot below the toolbar belongs to draft chrome alone, and identity chrome must
 never occupy it again (structural separation, 2026-07-17).
 
-**The path navigates; it never edits.** `DocumentPath.tsx` makes each crumb a
-`DrillInMenu` trigger: each crumb opens the list it sits in, with itself
-highlighted. The area opens the list of areas, a folder opens its parent,
-the filename opens its folder. An area not offered by the root list opens inside itself instead. The menu
-highlights everything on the document's path and the folder a back row just
-climbed out of. A pick opens in main, like every door.
-Crumb menus carry no actions. A local-new or draft-only document is not in a
-catalog yet, so its path is passive until it joins one. Browsable paths keep
-their Radix roots and triggers mounted at rest; only the open browsing body acquires catalogs, and its initial trail
-is set once that source resolves.
-
 A review's controls take a line of their own above the toolbar (the review line), one rule for
 main and the side: only a line too narrow for them collapses labels to icons, hides the stepper
 count, then collapses Apply to its icon (`fitReviewLine`, `document-identity-row.css`). A
