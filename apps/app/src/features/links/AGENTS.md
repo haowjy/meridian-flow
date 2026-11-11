@@ -3,7 +3,7 @@
 A surface supplies resolution scope, an `open` destination and an outcome host; this
 module resolves and follows. Link meaning and per-editor cache rules belong to
 [`core/editor/links`](../../core/editor/links/AGENTS.md). The outcomes are in the
-[link-following decision][link-following].
+[link-following rules][link-following].
 
 - An answer is keyed by the link's ref and href, never the holder's text, so two links
   sharing an href don't share an answer.
@@ -21,4 +21,4 @@ module resolves and follows. Link meaning and per-editor cache rules belong to
 Scope, follow, creation and document-index contracts:
 [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
-[link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-following.md
+[link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/links.md#following-a-link-is-one-procedure

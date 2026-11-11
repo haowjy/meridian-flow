@@ -2,7 +2,7 @@
  * A reply's drafted writes and the branch they land in (contract §2.5, ledger K-1, K-2): a read never makes a branch, draft or peer; the first write does.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - lazy branch, draft, and peer provisioning on first write (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - lazy branch, draft, and peer provisioning on first write (kb/wiki/architecture/collaboration/drafts-and-branches.md#where-a-write-goes)
  */
 
 import type { DocumentId, WorkId } from "@meridian/contracts";
@@ -197,7 +197,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         )
         .toEqual(["closed", "closed"]);
       const scratch = await scenario.view(closedFirst).read("scratch://notes.md");
-      expect.soft(scratch.ok, "the reply's other document saved (D29, D42)").toBe(true);
+      expect.soft(scratch.ok, "the reply's other document saved").toBe(true);
 
       // V2-H2, one order: the close commits first; the save then finds its branch closed.
       const closeFirst = await scenario.work("Close commits first", "draft");

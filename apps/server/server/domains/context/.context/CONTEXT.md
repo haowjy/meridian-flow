@@ -2,8 +2,8 @@
 
 This page holds the cross-module contracts for URI resolution, ContextFS,
 tree views, arrivals, and catalog publication. It deliberately omits adapter
-inventories; code owns those details, while [the parent entry page](../AGENTS.md)
-provides the cold-start mental model.
+inventories; code owns those details. The [entry page](../AGENTS.md) lists the rules to
+know before editing.
 
 ## URI and ownership
 
@@ -248,7 +248,7 @@ one source's tree contributes.
   series of committed reads, not one database snapshot; a folder moved while it runs lands
   on one side of it. A selection collapses to its outermost roots first: a root inside
   another selected folder, or selected twice, is already in that copy. Everything slow
-  happens before the receipt's transaction opens: the reads, a binary's duplicated object (`prepareBinaryCopy`, D24: a
+  happens before the receipt's transaction opens: the reads, a binary's duplicated object (`prepareBinaryCopy`: a
   store-side `copy`, never through memory), the plan, and the binding. A source room that is not open
   loads through a second connection, so a transaction held across the reads would starve
   the pool. Each put key is released if no transaction commits to name its object (a
@@ -265,7 +265,7 @@ one source's tree contributes.
 - Names are the destination namespace's, so its adapter plans them (`planCopy`): allocated
   against live occupants and the rest of the batch, from a lock-free read of the destination
   parent. A hidden draft node never takes a name from a copy ([naming conflicts never
-  block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/naming/naming-conflicts-never-block.md)):
+  block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/placement-and-naming.md#naming-conflicts-never-block)):
   the insert normalizes the roots' names, so a hidden node on a root's name yields to the next
   free one. Only the roots meet existing occupants.
   A selected root may carry the device's `copyId` (a UUID); the root copy takes it and
@@ -444,7 +444,7 @@ for a drafted delete whose identity is intentionally absent there, which reads
 the live tree by the validated document identity. The item's own draft admits its document the way it admits writes
 (`survivingDraftDocuments`, availability's `admitDrafts`): a no-effect draft of a
 document deleted live is not listed, so its path finds it gone, but its review
-address still opens the open tab's draft (D79). Stale,
+address still opens the open tab's draft. Stale,
 foreign, or mismatched selectors return unavailable rather than falling back
 to live. The address resolver returns the canonical current locator; it never
 makes a path-only URL a capability.

@@ -9,7 +9,7 @@
  * A branch view is a `UNION ALL` of disjoint arms: live rows the branch neither moved nor
  * deleted; the branch's hidden creations at their row; the documents it moved, at its
  * placement (its effective placement: a folder's source, so a live move of that folder
- * carries them); and the deleted documents it still has pending changes to (D79: a draft
+ * carries them); and the deleted documents it still has pending changes to (a draft
  * outlives a live delete of its document). A document the branch deleted is in none. Folders
  * have no change rows yet, so a branch's folders are the live ones plus the hidden and
  * deleted ones its documents sit under.

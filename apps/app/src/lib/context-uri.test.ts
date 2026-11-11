@@ -3,7 +3,7 @@
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - malformed-path degradation and default context scheme
- * - Scratch URI ownership (kb/decisions/work/model/lineage-scratch.md)
+ * - Scratch URI ownership (kb/wiki/product/work/scratch.md)
  */
 import { describe, expect, it } from "vitest";
 

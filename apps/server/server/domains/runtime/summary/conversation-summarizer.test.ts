@@ -1,7 +1,7 @@
 /** The summarizer's provider-neutral request and paid-attempt contracts.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Warm and rolling summary strategy (kb/decisions/engineering/runtime/compaction-summarizer-and-overflow.md)
+ * - Warm and rolling summary strategy (kb/wiki/architecture/compaction-memory.md#two-summary-paths)
  */
 import type { Block, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";

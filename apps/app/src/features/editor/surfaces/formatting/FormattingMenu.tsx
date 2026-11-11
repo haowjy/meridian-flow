@@ -1,13 +1,13 @@
 /**
  * FormattingMenu — the menu a writer asks for in the prose (§5.1).
  *
- * Selection alone raises nothing (law 7, ruling 13): highlighting is how a
+ * Selection alone raises nothing (law 7): highlighting is how a
  * writer reads and how they point a passage out to the AI, so formatting is
  * asked for by right-click, Menu key, or long press. `useFormattingMenuDoors`
  * owns those three; this file owns what the menu says and what each item does.
  *
  * A right-click over a selection and a right-click at a bare caret both arrive
- * here (human ruling, 2026-07-29): the ladder's floor moves the caret to where
+ * here: the ladder's floor moves the caret to where
  * the writer pointed, so the same items answer for the same block either way.
  * In a table cell the menu carries the row and column lists as well, straight
  * from the grips' own surface.

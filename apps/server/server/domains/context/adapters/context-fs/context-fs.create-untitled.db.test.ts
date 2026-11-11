@@ -2,7 +2,7 @@
  * Persisted live-document coverage for client-owned untitled creation.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - zero-struct server authority for client-owned untitled content (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ * - zero-struct server authority for client-owned untitled content (kb/wiki/architecture/documents/existence-and-removal.md#creates)
  */
 
 import { Hocuspocus } from "@hocuspocus/server";

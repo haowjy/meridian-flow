@@ -10,7 +10,7 @@ boundary. What a provider owes is in `diagram-providers.ts`.
   render hook, faces and `DIAGRAM_PREVIEW_SELECTOR` are shared.
 - Only branded `SanitizedSvg` reaches the page. Provider strictness doesn't replace
   app sanitization.
-- This module stays independent of object physics. Error-face actions are callbacks
-  from the node view.
+- Stay independent of object physics. Error-face actions are callbacks from the node
+  view.
 
 Render details: [`.context/CONTEXT.md`](.context/CONTEXT.md).

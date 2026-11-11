@@ -2,7 +2,7 @@
  * PostgreSQL half of the shared transcript reader behavior contract.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - compaction-defined prompt epochs and first-page-only unsettled previews (kb/decisions/chat/turns/linear-turns.md)
+ * - compaction-defined prompt epochs and first-page-only unsettled previews (kb/wiki/product/chat/turns.md)
  */
 
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";

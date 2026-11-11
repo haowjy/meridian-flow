@@ -3,7 +3,7 @@
  *
  * The chip cluster spreads the same verbs across three controls — a labeled
  * language button, a copy icon, and a ⋯ — because a fence's language is worth
- * a label of its own in the corner (ruling 15). A right-click has one list to
+ * a label of its own in the corner. A right-click has one list to
  * put them in, so it nests the language and keeps the rest flat. Same verbs,
  * same wording, same commands: a second copy of them would be two answers
  * within a week.

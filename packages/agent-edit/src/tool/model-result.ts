@@ -140,7 +140,7 @@ export interface AgentEditModelPayload {
   };
   /**
    * What a `move` or `delete` did to the whole document: where a move came from, as the model
-   * named it, and the Works whose drafts of a deleted document survive it (D79), by handle.
+   * named it, and the Works whose drafts of a deleted document survive it, by handle.
    */
   namespace?: { kind: "moved"; from: string } | { kind: "deleted"; survivingWorks?: string[] };
   read?: {

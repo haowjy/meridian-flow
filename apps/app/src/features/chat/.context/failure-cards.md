@@ -2,8 +2,8 @@
 
 `chatCards` (`@meridian/thread-client`) decides which card exists, its copy key, its
 action and its anchor. `ChatCards.tsx` draws each card and decides nothing;
-`chat-card-copy.ts` words it. The per-failure catalog is in
-[Chat Failures](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/chat-failures.md#chat-cards).
+`chat-card-copy.ts` words it. Who sees a failure and for how long is in
+[Failures](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/failures.md).
 
 A running subagent's failed Stop is the exception: the strip draws `handBackCards`
 on that child's row, because the failure is the child's, not this chat's.

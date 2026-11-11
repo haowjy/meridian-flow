@@ -25,4 +25,4 @@ boundary turn ([frozen prefix][kb-frozen-prefix]).
 
 - **One-statement batch append.** `adapters/drizzle/event-writer.ts` `appendEvents` runs BEGIN, `UPDATE threads.next_seq`, a multi-row INSERT, `pg_notify` and COMMIT: about five round trips per batch. A single CTE (update, insert, notify) would make it one. Trigger: a profile of many concurrent paced streams showing journal write load or pool waits.
 
-[kb-frozen-prefix]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/frozen-request-prefix.md
+[kb-frozen-prefix]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/request-prefix.md

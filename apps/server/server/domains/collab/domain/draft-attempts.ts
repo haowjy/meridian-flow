@@ -1,5 +1,5 @@
 /**
- * The one owner of a bounded draft-store attempt (decision D13): capture and compute off
+ * The one owner of a bounded draft-store attempt: capture and compute off
  * every lock, one commit scope per attempt, and the lifetime of every candidate the attempt
  * prepared. Operation policy (the bound's exhaustion outcome, the inverse's classification
  * pass, the reply save's retained `confirm` locks) stays with the caller.
@@ -63,7 +63,7 @@ export async function runBoundedAttempts<T>(spec: {
   exhausted(cause: unknown): T | Promise<T>;
 }): Promise<T> {
   // A nested owner would transfer its candidates when it ends, before the outer attempt can
-  // still roll its scope back (decision D16a): pass the outer `Attempt` down instead.
+  // still roll its scope back: pass the outer `Attempt` down instead.
   if (commitScopes.getStore()?.open) throw new NestedAttemptError();
   for (let number = 1; ; number++) {
     const owned: AttemptCandidate[] = [];

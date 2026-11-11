@@ -127,6 +127,18 @@ origin, and a store that has already garbage-collected restores the wrong text
 without an error. The frontier probe pins only the Yjs library behavior; it
 cannot catch a server fold that starts encoding a gc-on doc.
 
+Under `gc: false`, setting a `Y.Map` key to the value it already holds is not a
+no-op: it writes a new item and a tombstone, a journaled update and eventually a
+checkpoint. Skip a write whose value is unchanged, and guard set-once keys with
+`!map.has(key)`.
+
+Loading a document applies its checkpoint, then every update since. The store's
+debounce (`debounce: 2000`, `maxDebounce: 10000` in `yjs-ws-handler.ts`) writes
+a checkpoint during active editing, so the replay window stays short and load
+needs no checkpoint step. Projections (`document-derivations.ts`) derive AI
+writes and seeds at once and writer typing 2 s after typing stops, at most every
+10 s; no reader needs them fresh, because readers read live Yjs.
+
 Seed and compaction snapshots use the same mutation lock. A first seed is
 initialize-only, becomes the generation's base checkpoint, and reconciles an
 already open room before success. Writer admission rejects reserved client IDs

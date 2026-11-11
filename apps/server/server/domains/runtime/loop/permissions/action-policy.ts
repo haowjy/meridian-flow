@@ -1,5 +1,5 @@
 /**
- * The action policy (D39): the one place an agent action beyond files is
+ * The action policy: the one place an agent action beyond files is
  * decided allow, ask or deny. File writes go through the file policy instead;
  * the writer's own actions never come here.
  */

@@ -45,7 +45,7 @@
   display: none;
 }
 
-/* The fade belongs to what actually scrolls (ruling 2026-07-30), so it is a
+/* The fade belongs to what actually scrolls, so it is a
    mask on the list itself — the same mechanism the chat transcript uses
    (`chat-scroll-fade-bottom`, globals.css) and for the same two reasons: a
    mask sits on the element that owns the overflow, hugging its real top and

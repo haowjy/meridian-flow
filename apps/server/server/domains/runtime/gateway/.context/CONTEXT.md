@@ -38,7 +38,12 @@ models.dev lacks, such as per-TTL cache-write rates and wire parameters.
 Retry occurs only before committed text or tool output; reasoning-only
 output is retryable. Backoff honors provider retry hints and is abort-aware.
 Each attempt has an inactivity stall timer and an absolute ceiling timer on one
-derived signal. Iterator cleanup cannot hold cancellation hostage.
+derived signal. Every stream event re-arms the stall timer, so a slow model that
+keeps streaming is never killed; the ceiling is a backstop, not the normal end.
+`MODEL_CALL_STALL_MS` and `MODEL_CALL_TIMEOUT_MS` override the defaults in
+`deadline.ts` (`DEFAULT_ATTEMPT_STALL_MS`, `DEFAULT_ATTEMPT_CEILING_MS`); 0
+disables either. A timeout is a retryable provider error. Iterator cleanup
+cannot hold cancellation hostage.
 
 Instrumentation wraps the production-composed gateway once. It emits lifecycle
 records keyed by `gatewayCallId`; request capture is a separate bounded debug

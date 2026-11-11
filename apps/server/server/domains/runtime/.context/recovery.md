@@ -2,7 +2,7 @@
 
 Recovery repairs pending runs, placeholders, and child reports after ownership
 is proven dead. A handoff brief uses the destination's ordinary run claim, not a
-separate recovery owner. See the [process-death decision][kb-process-death].
+separate recovery owner. See the [process death][kb-process-death].
 
 ## Placeholder and run repair
 
@@ -74,4 +74,4 @@ through its worker runner, leaving repair to restart. Shutdown aborts live work
 with reason `shutdown` after paid rows settle, acknowledges receipts, and
 suppresses new starts and wakes.
 
-[kb-process-death]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/process-death-turn-recovery.md
+[kb-process-death]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/runtime.md#process-death-ends-in-flight-turns

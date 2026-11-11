@@ -8,11 +8,11 @@ export type FolderId = string;
 export const asFolderId = (s: string) => s as FolderId;
 export type DocumentId = string;
 export const asDocumentId = (s: string) => s as DocumentId;
-/** A `branches` row: one Work branch, the unit Discard all closes (D68). */
+/** A `branches` row: one Work branch, the unit Discard all closes. */
 export type BranchId = string;
-/** One document's pending `work_draft` version inside a branch (D68). */
+/** One document's pending `work_draft` version inside a branch. */
 export type DraftId = string;
-/** `${branchId}:${documentId}`: the client's one review identity for a document of a branch (D68). */
+/** `${branchId}:${documentId}`: the client's one review identity for a document of a branch. */
 export type DraftItemKey = string;
 
 /** The one builder of a draft item key, for text and binary items alike. */

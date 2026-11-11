@@ -1,26 +1,12 @@
 # domains/context — context filesystem
 
-This domain exposes agent-readable and writable content through context URIs.
-It owns URI routing, source/document location, catalog views, arrivals, and
-the storage seam; file access remains the responsibility of [file policy](../file-policy/.context/CONTEXT.md).
+Agent-readable and writable content behind context URIs: URI routing, catalog
+views, arrivals and the storage seam. File access stays with
+[file policy](../file-policy/.context/CONTEXT.md). Owners, schemes and the
+rest of the contracts: [context contracts](.context/CONTEXT.md).
 
-## Mental model
-
-- `manuscript://`, `kb://`, and `unfiled://` are project content; `user://` is
-  personal content. A named Work owns `scratch://@w3/` (`w3` is its handle). A chat owns its
-  uploads at `uploads://@c12/`, where bare `uploads://name` is the asking
-  chat's and a subagent uses its top chat's. A fork or handoff owns its own;
-  the Work and No Work own none.
-- A No Work chat lineage owns `scratch://@c12/`. The locked No Work row owns no
-  Scratch source. `scratchOwnerFor(thread, work)` is the single owner rule for
-  bare Scratch and file policy.
-- `skills://` is model-only skill loading, not a context scheme. All callers
-  resolve through the unified `ContextPort` for the thread.
-- Work URI authorities use the persisted Work handle. Membership selects a
-  thread's primary Work but does not grant context access.
-
-## Rules that change behavior
-
+- `scratchOwnerFor(thread, work)` is the one owner rule for bare Scratch, in
+  resolution and in file policy. `skills://` is model-only, not a context scheme.
 - Routes and tools ask file policy before calling this domain. Storage
   transactions begin with `lockSeamWorks`, then namespace/source locks; lifecycle
   loss is reported as `context_unavailable`.
@@ -31,18 +17,15 @@ the storage seam; file access remains the responsibility of [file policy](../fil
   never seed a Y.Doc with an assumed Markdown schema.
 - A move writes no document content. Stable links re-spell on read, and every
   arrival settles ahead refs once against its final tree.
-- A Copy is one atomic command (`copy/`): it reads each source subtree and content cut
-  once, then duplicates binary bytes, plans names against live occupants (a hidden draft
-  node never takes a name from a copy; it yields), and binds refs inside the copied set to point at the copies, all before any lock. It
-  locks only the destination namespace and inserts the plan in set-based statements. Its
-  typed refusals are recorded, and a replay answers the original result; a source not yet
-  caught up to the client is retryable (`source_behind`) and records nothing.
+- A Copy (`copy/`) reads, plans names and binds refs before taking any lock, then
+  locks only the destination namespace. A hidden draft node yields its name to a
+  copy. A source not yet caught up to the client answers `source_behind`, which is
+  retryable and records nothing.
 - The catalog and ContextFS use the same tree view. Branch-hidden rows never
-  escape that view; Apply and Discard reconcile tree changes inside their own
-  completion transactions.
+  escape it; Apply and Discard reconcile tree changes inside their own completion
+  transactions.
 - Lineage hiding is reversible authority loss, not document deletion. Folder
   deletes validate the supplied folder identity before recursive mutation.
 
-See [context contracts](.context/CONTEXT.md), [tree visibility](tree/AGENTS.md),
-[upload intake](uploads/.context/CONTEXT.md), and [collab codecs](../collab/AGENTS.md).
-Deferred work is in [.context/FUTURE.md](.context/FUTURE.md).
+See also [tree](tree/AGENTS.md), [upload intake](uploads/.context/CONTEXT.md),
+[collab](../collab/AGENTS.md) and [FUTURE](.context/FUTURE.md).

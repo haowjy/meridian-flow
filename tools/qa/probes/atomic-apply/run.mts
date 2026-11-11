@@ -736,7 +736,7 @@ try {
       .living;
   const draftStatus = async (f: Awaited<ReturnType<typeof fixture>>) =>
     (await h.raw`select status from document_drafts where id=${f.draftId}`)[0].status;
-  /** The click a writer sends knowing the document is deleted (D79). */
+  /** The click a writer sends knowing the document is deleted. */
   const restoring = (c: FrozenClick): FrozenClick => ({
     ...c,
     request: { ...c.request, restore: true },

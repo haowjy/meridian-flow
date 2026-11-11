@@ -1,5 +1,5 @@
 /**
- * Phase 4 (design §5, F6, D30 Q3): Archive locks no draft row; the append keeps the Work
+ * Phase 4 (design §5, F6): Archive locks no draft row; the append keeps the Work
  * predicate in its `UPDATE` and rechecks the lifecycle in its post-lock read. What remains is
  * the honest window: a key whose post-lock read ran before Archive committed may land in the
  * archived draft; every later key is refused.

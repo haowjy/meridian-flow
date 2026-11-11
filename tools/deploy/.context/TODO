@@ -1,0 +1,6 @@
+# Before the landing page goes live
+
+- About five sign-in attempts in ten minutes make `/signup`, `/login` and project links return 500 until the cookies expire ([#1274](https://github.com/haowjy/meridian-flow/issues/1274)); the landing page's Start writing makes that easier to reach.
+- Check in the WorkOS dashboard whether open sign-up is allowed.
+- Exercise signed-in log out through WorkOS; it has never run.
+- Choose a staging landing address.

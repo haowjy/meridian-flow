@@ -7,7 +7,7 @@ import {
   type WorkBindingState,
   workLifecycleState,
 } from "@meridian/contracts/works";
-import { createWriterWorkSwitchedNotice, type NoticePort } from "../../notices/index.js";
+import { createWorkSwitchedNotice, type NoticePort } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
 import { WorkLifecycleUnavailableError, type WorkRepository } from "../../projects/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../ports/repositories.js";
@@ -120,6 +120,7 @@ export async function rebindThreadWork(
 export async function switchThreadWork(
   deps: SwitchThreadWorkDeps,
   input: RebindThreadWorkInput,
+  actor: "writer" | "model",
 ): Promise<RebindThreadWorkResult> {
   const transition = await rebindThreadWork(deps, input);
   if (!transition.changed) return transition;
@@ -137,13 +138,14 @@ export async function switchThreadWork(
       : { kind: "work", workHandle: transition.before.handle },
   );
   await deps.notices.record(
-    createWriterWorkSwitchedNotice({
+    createWorkSwitchedNotice({
       threadId: transition.threadId,
       previousWorkId: transition.before.workId,
       previousWorkName: transition.before.name,
       workId: transition.after.workId,
       workName: transition.after.name,
       previousScratchUri,
+      actor,
     }),
   );
   return transition;

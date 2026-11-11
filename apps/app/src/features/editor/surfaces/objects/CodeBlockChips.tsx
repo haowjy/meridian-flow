@@ -1,6 +1,6 @@
 /**
  * The code block's chip cluster — `[language ▾ | copy | ⋯]` inside the block's
- * top-right bounds (ruling 15, `refs/notion-code-block.png`).
+ * top-right bounds.
  *
  * A code block is the partial exception to object physics: its rendering IS its
  * source, so a click places a caret and there is no hidden mode to fall into.

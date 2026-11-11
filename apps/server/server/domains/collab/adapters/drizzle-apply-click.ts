@@ -4,7 +4,7 @@
  * live state (design-v2 §4): a delete removes it live, a move moves it (or restores it there,
  * or reveals it there), a creation reveals it; then the branch's row goes with settlement rows.
  * A document deleted live comes back only when the click carries the writer's `restore`
- * (`restoreDocument`, D79), then the text merges.
+ * (`restoreDocument`), then the text merges.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import {

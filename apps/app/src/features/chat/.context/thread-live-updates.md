@@ -55,8 +55,10 @@ the same change.
 
 ## Stop and hand-back
 
-The mechanics are in
-[Chat Composer and Transcript](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/chat-composer-implementation.md#stop-and-hand-back).
+The operation is the shared thread-client one
+([thread-client context](../../../../../../packages/thread-client/.context/CONTEXT.md));
+the server's boundary and adoption facts are in the runtime
+[delivery context](../../../../../server/server/domains/runtime/.context/delivery.md).
 What only the app holds:
 
 - References come back as chips only when the chat proves their owner

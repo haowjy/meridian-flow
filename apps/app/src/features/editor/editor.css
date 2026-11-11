@@ -69,7 +69,7 @@
 /* A picture is a big glyph. Its bottom sits on the text baseline, so the words
    before it and after it stand at its foot, the line box grows as tall as the
    picture, and what follows wraps onto the line below — the "in line" of Docs
-   and Word (human ruling, 2026-07-30). It is the same object at the same size
+   and Word. It is the same object at the same size
    mid-sentence or alone in its paragraph, and the prose column is its only
    bound.
 

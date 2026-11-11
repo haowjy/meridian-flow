@@ -52,7 +52,7 @@ export type DraftCoordinator = Pick<DraftRuntime, "loadBase" | "prepareAppend"> 
   /** Brings this process's rooms up to what is committed now: a read, installed as any other. */
   deliverCommitted(draftId: string): Promise<void>;
   /**
-   * Brings a registered room up to what is committed on its stable identity (decisions D26, D27):
+   * Brings a registered room up to what is committed on its stable identity:
    * at its enrollment, from which on every installed transition reaches it, and at each tab's
    * handshake, so a room that missed a delivery heals on the next exchange whether or not the
    * tab may write. Returns the base it reconciled against, or null when the draft closed or
@@ -90,7 +90,7 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
     return fn(base.replica.doc, base.snapshot);
   }
 
-  /** A private copy: whatever its owner changes stays with it (decision F6). */
+  /** A private copy: whatever its owner changes stays with it. */
   async function copyDraft(
     draftId: string,
   ): Promise<{ doc: Y.Doc; snapshot: DraftSnapshot; position: number }> {

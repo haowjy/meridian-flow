@@ -1,80 +1,50 @@
 # core/editor — collaborative editor runtime
 
-This directory owns the browser TipTap schema, Yjs document-session binding, and editor-only projections. It is not the server persistence authority;
-feature surfaces consume the headless seams here.
+The browser TipTap schema, the Yjs document-session binding and editor-only
+projections. It is not the server persistence authority; feature surfaces consume
+the headless seams here.
 
-## Mental model
-
-One mounted editor binds to one Yjs document fragment through the
-`DocumentSessionRegistry`. Construction identity determines the React mount; surface options update a live editor. Anchors and `NodeHold`s carry identity across
-the whole-document ProseMirror rebuild caused by remote Yjs writes.
-
-## Rules that protect the boundary
-
-- Assemble collaborative extensions only through `createEditorExtensions()`.
-  Keep its TipTap schema structurally aligned with
-  `@meridian/prosemirror-schema`, and use the shared
-  `PROSEMIRROR_FRAGMENT_NAME` and one sync path. The two schemas are built
-  separately and parity is not enforced, so a node or attr is a two-file change.
-  An extension may not add node or mark types the shared schema lacks unless
-  the schema package and the server Markdown adapter change in the same PR.
-- `mounted-editor.ts` constructs and destroys TipTap through the session binding
-  seam. Put every construction fact in `EditorMountIdentity`; reconcile
-  editability and `editorProps` as live `EditorSurfaceOptions`, never by
-  rebuilding from an effect dependency.
-- The session owns one schema-repair witness and one local-presence write port.
-  Repairs are reported, not fenced; presence suspension and client rotation
-  preserve desired fields. Do not expose raw mutable Awareness to an extension.
+- Assemble collaborative extensions only through `createEditorExtensions()`. The
+  TipTap schema and `@meridian/prosemirror-schema` are built separately and only
+  type and attr names are tested (`schema-mirror.test.ts`), so a node or attr is a
+  two-file change. An extension may not add node or mark types the shared schema
+  lacks unless the schema package and the server Markdown adapter change in the
+  same PR.
+- Put every construction fact for a mount in `EditorMountIdentity`; reconcile
+  editability and `editorProps` as live `EditorSurfaceOptions`, never by rebuilding
+  from an effect dependency.
+- Remote writes rebuild the whole ProseMirror document and can move or replace
+  anything while a menu, picker, drag or review operation is open. Hold identity
+  with `EditorAnchor`/`NodeHold`, then resolve and validate at use time. Never trust
+  a raw position or DOM element.
+- Only `local-presence.ts` may call `setLocalState*`; don't expose raw Awareness to
+  an extension. Awareness cursor colors are concrete RGB hex before publication.
+- Peer marks are projections: never persisted, draft-projected, or locally authored.
 - Reading memory persists only account-stamped Yjs anchors and dimensionless
-  viewport offsets. Review rooms never consume or overwrite live positions.
-  Only a new mount restores, without taking focus; an explicit destination
-  always beats mount-time memory, so every new jump path claims through
+  viewport offsets. Only a new mount restores, without taking focus; an explicit
+  destination always beats mount-time memory, so every new jump path claims through
   `reading-position-navigation.ts`.
-- `landing/` is the one answer for where a press with no text under it, and
-  every drop except a block move, lands: one walk over the document's boxes,
-  one plan per drag event for the caret, hint and drop. (A block moved by its
-  handle draws and lands its own top-level seam.) It keeps caret placement, seam
-  precedence and keyboard parity out of layout components; layout code and
-  lanes never place a drop themselves. A drop makes a paragraph at a seam
-  where a press never does, except past a closing diagram, where a press makes
-  the one line that lets a writer type after it. A press on a text selection's
-  highlight is the exception to "a press with no text under it": `landing/selection-drag.ts`
-  lifts it (no browser text drag, so no pause and no third-click refusal). See the
-  editor context for the policy.
-- Peer marks are projections: never persisted, draft-projected, or locally
-  authored. Awareness cursor colors are concrete RGB hex before publication;
-  only `local-presence.ts` may call `setLocalState*`.
-- A picture enters as a document node before upload. Its stable source is an
-  `asset:` identity, an address, or the empty pending slot; signed URLs and
-  progress never enter Yjs. See [`images/AGENTS.md`](images/AGENTS.md).
-- Shared editor policy has one owner: Chrome owns Escape, context claims,
-  hover, and key scopes; object registration owns object physics; the suggestion
-  lane owns trigger specs. Extensions register with those seams rather than
-  binding private listeners.
+- Drops and presses with no text under them have one landing authority, `landing/`.
+  Layout code and lanes never place a drop themselves, and StarterKit's dropcursor
+  stays off. Policy: the editor context.
+- Editor-owned keys stay consumed on a refusal (Tab would otherwise move focus out
+  of the manuscript).
+- Chrome owns Escape, context claims, hover and key scopes; object registration owns
+  object physics; the suggestion lane owns trigger specs. Extensions register with
+  those seams rather than binding private listeners.
+- A picture enters as a document node before upload; see
+  [`images/AGENTS.md`](images/AGENTS.md).
 - Draft identity is stable until close. Terminal draft retirement never transfers
-  queued unacknowledged updates to a replacement draft; see [the session contract](.context/CONTEXT.md).
-- Draft sessions persist locally under their room name. Review projection reads
-  the mounted document and its server-owned review base; it never replays a
-  retired snapshot or transfers selection to a replacement draft.
-- Editor-owned keys remain consumed on refusals, and drops have one landing
-  authority (`landing/`). The Tab ladder, cell Enter behavior, dropcursor
-  policy, drop snapping and refusals, diagram faces, and `@` delimiter rule
-  are in the editor context.
-- Remote writes can move or replace anything while a menu, picker, drag, or
-  review operation is open. Hold identity with `EditorAnchor`/`NodeHold`, then
-  resolve and validate at use time. Never trust a raw position or DOM element.
+  queued unacknowledged updates to a replacement draft, and review projection never
+  replays a retired snapshot or transfers selection to a replacement
+  ([session contract](.context/CONTEXT.md)).
 
-## Child boundaries
+Child areas: [chrome](chrome/AGENTS.md), [objects](objects/AGENTS.md),
+[images](images/AGENTS.md), [links](links/AGENTS.md),
+[diagrams](diagrams/AGENTS.md), [blocks](blocks/AGENTS.md),
+[viewer](viewer/AGENTS.md), [`@`](extensions/at-reference/AGENTS.md),
+[auto-pair](extensions/auto-pair/AGENTS.md), [`/`](extensions/slash/AGENTS.md),
+[completion menus](../completion/AGENTS.md).
 
-- [`chrome/AGENTS.md`](chrome/AGENTS.md) — control-surface policy
-- [`objects/AGENTS.md`](objects/AGENTS.md) — registration-driven physics
-- [`images/AGENTS.md`](images/AGENTS.md) — image ingress and rendering lifecycle
-- [`links/AGENTS.md`](links/AGENTS.md) — link classification and resolution seam
-- [`diagrams/AGENTS.md`](diagrams/AGENTS.md) — provider catalog and safe SVG
-- [`blocks/AGENTS.md`](blocks/AGENTS.md) — block-drag document plugin
-- [`viewer/AGENTS.md`](viewer/AGENTS.md) — disposable pan and zoom
-- [`extensions/at-reference/AGENTS.md`](extensions/at-reference/AGENTS.md) — `@`
-- [`extensions/auto-pair/AGENTS.md`](extensions/auto-pair/AGENTS.md) — closers
-- [`extensions/slash/AGENTS.md`](extensions/slash/AGENTS.md) — `/` spec
-- [`../completion/AGENTS.md`](../completion/AGENTS.md) — host-independent menus
-→ [`.context/CONTEXT.md`](.context/CONTEXT.md) — session, anchor, and projection contracts; [`.context/TODO.md`](.context/TODO.md) — verified open editor contracts
+Depth: [`.context/CONTEXT.md`](.context/CONTEXT.md) (session, anchor, projection and
+landing contracts), [`.context/TODO.md`](.context/TODO.md).

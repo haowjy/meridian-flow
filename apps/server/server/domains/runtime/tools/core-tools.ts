@@ -138,7 +138,7 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
       command: z.literal("switch"),
       work: WorkRefSchema.nullable()
         .optional()
-        .describe('Work handle, e.g. "w3"; omit or null for No Work.'),
+        .describe('Work handle, e.g. "w3"; omit, null or "none" for No Work.'),
     })
     .strict()
     .describe("Move this conversation to another Work."),
@@ -241,7 +241,7 @@ async function askUser(input: unknown, ctx: RequestToolHandlerContext) {
  * The document tools' handlers and error formatter return agent-edit results,
  * except a `skills://` read, whose text is already the model's.
  */
-/** A handler's own `invalid_arguments` refusal (a `skills://` read, D60) reads like the executor's. */
+/** A handler's own `invalid_arguments` refusal (a `skills://` read) reads like the executor's. */
 function renderDocumentResult(tool: "read" | "write") {
   return (result: unknown): string => {
     if (typeof result === "string") return result;

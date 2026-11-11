@@ -160,7 +160,7 @@ export function createReplySaveFences(deps: {
             entry.pin?.peerDraftId,
           );
         } else if (record.threadId) {
-          // A denial carries the policy's document-level copy; the writes are dropped (D29, D42).
+          // A denial carries the policy's document-level copy; the writes are dropped.
           entry.core.dropStaged(documentId, record.threadId);
           denied.add(entry.core);
         }

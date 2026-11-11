@@ -2,7 +2,7 @@
  * Shared effective-action history across card and model selectors.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - strict newest-first model history alongside user-owned Undo and Redo (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - strict newest-first model history alongside user-owned Undo and Redo (kb/wiki/architecture/collaboration/agent-editing-and-reversal.md#reversal-is-a-forward-edit)
  */
 import { randomUUID } from "node:crypto";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";

@@ -92,7 +92,7 @@ export async function writeThreadContextDocument(
   input: { threadId: ThreadId; userId: UserId; uri: string; markdown: string },
 ) {
   const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
-  // People write live (D20): a writer's whole-document write never lands in a draft.
+  // People write live: a writer's whole-document write never lands in a draft.
   const context = await resolveThreadContextPort(deps, threadId, input.userId, {
     liveWrites: true,
   });
