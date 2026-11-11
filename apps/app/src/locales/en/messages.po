@@ -1924,10 +1924,14 @@ msgstr "Composer controls"
 msgid "Confirming your purchase…"
 msgstr "Confirming your purchase…"
 
+#: src/components/app/ConnectionBanner.tsx
+#~ msgid "Connection lost. Retrying…"
+#~ msgstr "Connection lost. Retrying…"
+
 #. placeholder {0}: state.attempt
 #: src/components/app/ConnectionBanner.tsx
-msgid "Connection lost. Retrying… attempt {0}"
-msgstr "Connection lost. Retrying… attempt {0}"
+#~ msgid "Connection lost. Retrying… attempt {0}"
+#~ msgstr "Connection lost. Retrying… attempt {0}"
 
 #: src/features/import/ImportPanel.tsx
 msgid "Continue…"
@@ -4437,6 +4441,10 @@ msgstr "now"
 msgid "Numbered list"
 msgstr "Numbered list"
 
+#: src/components/app/composer/ConnectionLine.tsx
+msgid "Offline"
+msgstr "Offline"
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ol"
 msgstr "ol"
@@ -4818,18 +4826,23 @@ msgstr "Recently opened"
 msgid "Recommended"
 msgstr "Recommended"
 
-#: src/components/app/ConnectionBanner.tsx
+#: src/components/app/composer/ConnectionLine.tsx
 msgid "Reconnect now"
 msgstr "Reconnect now"
 
-#: src/components/app/ConnectionBanner.tsx
+#: src/client/providers/TransportProvider.tsx
 msgid "Reconnected"
 msgstr "Reconnected"
 
+#: src/client/providers/TransportProvider.tsx
+#: src/components/app/composer/ConnectionLine.tsx
+msgid "Reconnecting…"
+msgstr "Reconnecting…"
+
 #. placeholder {0}: state.attempt
 #: src/components/app/ConnectionBanner.tsx
-msgid "Reconnecting… attempt {0}"
-msgstr "Reconnecting… attempt {0}"
+#~ msgid "Reconnecting… attempt {0}"
+#~ msgstr "Reconnecting… attempt {0}"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Redid"

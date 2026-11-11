@@ -1924,10 +1924,14 @@ msgstr ""
 msgid "Confirming your purchase…"
 msgstr ""
 
+#: src/components/app/ConnectionBanner.tsx
+#~ msgid "Connection lost. Retrying…"
+#~ msgstr ""
+
 #. placeholder {0}: state.attempt
 #: src/components/app/ConnectionBanner.tsx
-msgid "Connection lost. Retrying… attempt {0}"
-msgstr ""
+#~ msgid "Connection lost. Retrying… attempt {0}"
+#~ msgstr ""
 
 #: src/features/import/ImportPanel.tsx
 msgid "Continue…"
@@ -4437,6 +4441,10 @@ msgstr "刚刚"
 msgid "Numbered list"
 msgstr ""
 
+#: src/components/app/composer/ConnectionLine.tsx
+msgid "Offline"
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ol"
 msgstr ""
@@ -4818,18 +4826,23 @@ msgstr ""
 msgid "Recommended"
 msgstr "推荐"
 
-#: src/components/app/ConnectionBanner.tsx
+#: src/components/app/composer/ConnectionLine.tsx
 msgid "Reconnect now"
 msgstr ""
 
-#: src/components/app/ConnectionBanner.tsx
+#: src/client/providers/TransportProvider.tsx
 msgid "Reconnected"
+msgstr ""
+
+#: src/client/providers/TransportProvider.tsx
+#: src/components/app/composer/ConnectionLine.tsx
+msgid "Reconnecting…"
 msgstr ""
 
 #. placeholder {0}: state.attempt
 #: src/components/app/ConnectionBanner.tsx
-msgid "Reconnecting… attempt {0}"
-msgstr ""
+#~ msgid "Reconnecting… attempt {0}"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Redid"

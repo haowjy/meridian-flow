@@ -1,6 +1,5 @@
 - `../context/viewers/ReadOnlyViewerFrame.tsx` paints `bg-background`, which a binary file shown in the dock
   draws against the dock's material. Make it transparent when the host is the dock.
 - `DockDocumentView.tsx` and `features/editor/SyncStatus.tsx`: confirm the writer can see "Saved locally
-  (offline)" in the dock. A probe found the label in the DOM, but the screenshot showed only the app-wide
-  `ConnectionBanner`, and the offline label lingered in a hidden warm Editor tab after reconnect until
+  (offline)" in the dock. A probe found the label in the DOM but not on the screenshot, and the offline label lingered in a hidden warm Editor tab after reconnect until
   reload. Neither reproduced as a visible bug.

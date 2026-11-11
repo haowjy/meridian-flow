@@ -138,7 +138,7 @@ export const ProjectChatRow = memo(function ProjectChatRow({
               if (!favoriteSuppressed) onFavorite(item, favoriteValue);
             }}
             className={cn(
-              "pointer-events-auto [@media(hover:none)]:after:absolute [@media(hover:none)]:after:-inset-1.5 [@media(hover:none)]:after:content-['']",
+              "pointer-events-auto",
               item.isFavorite
                 ? "text-gold hover:text-gold"
                 : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 coarse:opacity-100",
