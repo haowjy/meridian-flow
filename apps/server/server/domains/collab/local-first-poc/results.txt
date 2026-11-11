@@ -1,0 +1,57 @@
+NOOP
+{"name":"paragraph","inserted":0,"deleted":0,"ms":6.55,"serialized":"One small sentence.\n\nAnother paragraph.\n"}
+{"name":"heading","inserted":0,"deleted":0,"ms":2.54,"serialized":"# The gate\n\nA line.\n"}
+{"name":"list","inserted":0,"deleted":0,"ms":4.29,"serialized":"- outer\n  - inner\n- [x] task\n- [ ] todo\n"}
+{"name":"table","inserted":0,"deleted":0,"ms":6.77,"serialized":"<table>\n  <thead>\n    <tr>\n      <th align=\"left\">\n        <p>Left</p>\n      </th>\n      <th align=\"right\">\n        <p>Right</p>\n      </th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <td align=\"left\">\n        <p>a</p>\n      </td>\n      <td align=\"right\">\n        <p>b</p>\n      </td>\n    </tr>\n  </tbody>\n</table>\n"}
+{"name":"image","inserted":0,"deleted":0,"ms":2.76,"serialized":"Before ![alt](https://example.org/a.png) after.\n"}
+{"name":"link","inserted":0,"deleted":0,"ms":2.22,"serialized":"A [link](https://example.org) here.\n"}
+{"name":"code","inserted":0,"deleted":0,"ms":1.32,"serialized":"```ts\nconst a = 1;\n```\n"}
+{"name":"break","inserted":0,"deleted":0,"ms":1.44,"serialized":"first\\\nsecond\n"}
+{"name":"mdx","inserted":0,"deleted":0,"ms":1.57,"serialized":"```mdx\n<Note title=\"Tip\">\n\nA note.\n\n</Note>\n```\n"}
+{"name":"figure","inserted":0,"deleted":0,"ms":1.45,"serialized":"<Figure src=\"https://example.org/a.png\" caption=\"Hi\" />\n"}
+{"name":"empty","error":"Error: {\"code\":\"corrupt_state\",\"documentId\":\"p16402-doc\",\"message\":\"invalid_write: Use `remove` to remove blocks\"}"}
+{"name":"quote","inserted":0,"deleted":0,"ms":1.41,"serialized":"> A quote.\n"}
+{"name":"strong","inserted":0,"deleted":0,"ms":1.74,"serialized":"**Bold** and *italic*.\n"}
+{"name":"fixture Ch 2.md","inserted":0,"deleted":0,"ms":4.14,"serialized":"---\n\naliases: \\[The First Trial]\ntags: \\[chapter]\nstatus: draft\n-------------\n\n# The First Trial\n\nPreviously: \\[\\[Chapter 1 - The Gate]]. Lin found [the sect register](../Lore/Sects.md) and [a clan ledger](Sects%20and%20Clans.md).\n\n!\\[\\[Chapter 1 - The Gate]]\n\n\\[\\[Lin Feng|Lin]] chose the empty bowl. Nobody else saw the ==silver ash==. %% Cut this hint? %%\n\n> \\[!note]\n> The bowl remembers the last owner.\n"}
+{"name":"fixture Chapter 1 - The Gate.md","inserted":0,"deleted":0,"ms":7.64,"serialized":"---\n\naliases: \\[Gate Opening, First Chapter]\ntags: \\[serial, progression-fantasy]\nstatus: revised\n---------------\n\n# Chapter 1: The Gate\n\nLin Feng touched the bronze gate. \\[\\[Lin Feng|the protagonist]] had one breath left before the trial began. See \\[\\[Cultivation Realms#Foundation]] and \\[\\[Sects]] for the oath he would break.\n\n> \\[!warning] A costly breakthrough\n> A cracked core cannot hold a second spirit.\n\n%% This reveal belongs in chapter twenty. %%\n\nThe gate was ==warm as blood==. #foreshadowing\n\n!\\[\\[map.png]]\n\nHe remembered the elder's words \\[\\[Cultivation Realms#^core-oath]].\n\nA debt can outlive a dynasty.\\[^debt]\n\n\\[^debt]: The Jade Crane Sect keeps its ledgers for seven generations.\n\n<table>\n  <thead>\n    <tr>\n      <th>\n        <p>Realm</p>\n      </th>\n      <th>\n        <p>Cost</p>\n      </th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <td>\n        <p>Foundation</p>\n      </td>\n      <td>\n        <p>One spirit stone</p>\n      </td>\n    </tr>\n    <tr>\n      <td>\n        <p>Golden Core</p>\n      </td>\n      <td>\n        <p>A broken oath</p>\n      </td>\n    </tr>\n  </tbody>\n</table>\n"}
+{"name":"fixture Chapter 4 - The Ledger.md","inserted":0,"deleted":0,"ms":1.83,"serialized":"# The Ledger\n\nThe jade ledger listed \\[\\[Magic System]] and \\[\\[magic system]].\n\nLin returned to \\[\\[Lin Feng]] before dawn.\n"}
+{"name":"fixture Sects and Clans.md","inserted":0,"deleted":0,"ms":1.48,"serialized":"# Sects and Clans\n\nThe rival Red Lotus Clan controls the south road.\n"}
+{"name":"hidden link ref","inserted":0,"deleted":0,"ms":2.33,"serialized":"[link](https://example.org/a)\n"}
+{"name":"image width","inserted":0,"deleted":0,"ms":1.67,"serialized":"<img src=\"https://example.org/a.png\" alt=\"pic\" width=\"240\" />\n"}
+{"name":"image uploadToken","inserted":1,"deleted":1,"ms":3.53,"serialized":"![](https://example.org/a.png)\n"}
+{"name":"aligned paragraph","inserted":0,"deleted":0,"ms":2.1,"serialized":"<Layout align=\"center\">\n  Centered\n</Layout>\n"}
+{"name":"empty paragraphs","inserted":0,"deleted":0,"ms":1.56,"serialized":" \n\ntext\n\n \n"}
+{"name":"table spans","inserted":0,"deleted":0,"ms":2.48,"serialized":"<Layout align=\"center\">\n  <table>\n    <thead>\n      <tr>\n        <th colspan=\"2\" align=\"right\">\n          <p>Heading</p>\n        </th>\n      </tr>\n    </thead>\n    <tbody>\n      <tr>\n        <td colspan=\"2\">\n          <p>value</p>\n        </td>\n      </tr>\n    </tbody>\n  </table>\n</Layout>\n"}
+LOCALITY
+{"name":"word","inserted":4,"deleted":5,"ms":5.8,"serialized":"First paragraph has a quick brown fox.\n\nSecond paragraph has a quiet moon.\n\nThird paragraph stays here.\n"}
+{"name":"add paragraph","inserted":18,"deleted":0,"ms":2.26,"serialized":"First paragraph has a quick brown fox.\n\nSecond paragraph has a quiet moon.\n\nThird paragraph stays here.\n"}
+{"name":"delete paragraph","inserted":0,"deleted":36,"ms":2.02,"serialized":"First paragraph has a quick brown fox.\n\nSecond paragraph has a quiet moon.\n\nThird paragraph stays here.\n"}
+{"name":"swap paragraphs","inserted":40,"deleted":40,"ms":2.09,"serialized":"First paragraph has a quick brown fox.\n\nSecond paragraph has a quiet moon.\n\nThird paragraph stays here.\n"}
+{"name":"table cell","inserted":1,"deleted":1,"ms":3.91,"serialized":"<table>\n  <thead>\n    <tr>\n      <th align=\"left\">\n        <p>Left</p>\n      </th>\n      <th align=\"right\">\n        <p>Right</p>\n      </th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <td align=\"left\">\n        <p>a</p>\n      </td>\n      <td align=\"right\">\n        <p>b</p>\n      </td>\n    </tr>\n  </tbody>\n</table>\n"}
+{"name":"list item","inserted":8,"deleted":0,"ms":3.53,"serialized":"- outer\n  - inner\n- [x] task\n- [ ] todo\n"}
+{"name":"heading","inserted":4,"deleted":4,"ms":1.86,"serialized":"# The gate\n\nA line.\n"}
+{"name":"link text","inserted":6,"deleted":6,"ms":2.61,"serialized":"A [link](https://example.org) here.\n"}
+{"name":"image neighbor","inserted":3,"deleted":3,"ms":1.99,"serialized":"Before ![alt](https://example.org/a.png) after.\n"}
+FORMATTING
+{"name":"CRLF","inserted":0,"deleted":0,"ms":3.37,"serialized":"A *small* phrase.\n\n- one\n- two\n\n1. first\n2. second\n"}
+{"name":"missing newline","inserted":0,"deleted":0,"ms":2.48,"serialized":"A *small* phrase.\n\n- one\n- two\n\n1. first\n2. second\n"}
+{"name":"extra newline","inserted":0,"deleted":0,"ms":2.4,"serialized":"A *small* phrase.\n\n- one\n- two\n\n1. first\n2. second\n"}
+{"name":"BOM","inserted":0,"deleted":0,"ms":2.49,"serialized":"A *small* phrase.\n\n- one\n- two\n\n1. first\n2. second\n"}
+{"name":"trailing spaces","inserted":0,"deleted":0,"ms":2.42,"serialized":"A *small* phrase.\n\n- one\n- two\n\n1. first\n2. second\n"}
+{"name":"hard wrap","inserted":1,"deleted":1,"ms":2.72,"serialized":"A *small* phrase.\n\n- one\n- two\n\n1. first\n2. second\n"}
+{"name":"em markers","inserted":0,"deleted":0,"ms":2.1,"serialized":"A *small* phrase.\n\n- one\n- two\n\n1. first\n2. second\n"}
+{"name":"list markers","inserted":0,"deleted":0,"ms":2.08,"serialized":"A *small* phrase.\n\n- one\n- two\n\n1. first\n2. second\n"}
+{"name":"renumber","inserted":0,"deleted":0,"ms":2.03,"serialized":"A *small* phrase.\n\n- one\n- two\n\n1. first\n2. second\n"}
+{"name":"smart quotes","inserted":2,"deleted":0,"ms":3.65,"serialized":"A *small* phrase.\n\n- one\n- two\n\n1. first\n2. second\n"}
+{"name":"prettier","status":254,"stderr":""}
+TIMING_5000_WORDS
+{"name":"5000 words","inserted":0,"deleted":0,"ms":71.59}
+{"name":"5000 words","inserted":0,"deleted":0,"ms":59.68}
+{"name":"5000 words","inserted":0,"deleted":0,"ms":63.97}
+{"name":"5000 words","inserted":0,"deleted":0,"ms":58.77}
+{"name":"5000 words","inserted":0,"deleted":0,"ms":64.56}
+STALE
+{"name":"different paragraphs","merged":"First paragraph has a slow brown fox.\n\nSecond paragraph has a bright moon.\n\nThird paragraph stays here.\n"}
+{"name":"same paragraph","merged":"First paragraph has a slow brown cat.\n\nSecond paragraph has a quiet moon.\n\nThird paragraph stays here.\n"}
+{"name":"same sentence","merged":"First paragraph has a slow red fox.\n\nSecond paragraph has a quiet moon.\n\nThird paragraph stays here.\n"}
+{"name":"same word","merged":"First paragraph has a slowrapid brown fox.\n\nSecond paragraph has a quiet moon.\n\nThird paragraph stays here.\n"}

@@ -1,0 +1,5 @@
+{"n":0,"rssMiB":244.6,"heapMiB":56.2,"bytesPerStoredDocument":54100,"wordCount":5100}
+{"n":100,"rssMiB":262.2,"heapMiB":76.1,"bytesPerStoredDocument":54100,"wordCount":5100}
+{"n":300,"rssMiB":304.2,"heapMiB":115.7,"bytesPerStoredDocument":54100,"wordCount":5100}
+{"n":1000,"rssMiB":449.6,"heapMiB":254.2,"bytesPerStoredDocument":54100,"wordCount":5100}
+retained 1000
