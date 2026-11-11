@@ -32,7 +32,7 @@ vi.mock("./account-feature-context", () => ({
   }),
 }));
 
-import { ContextTabSessionBoundary } from "./context-tab-session";
+import { OpenDocumentSessionBoundary } from "./open-document-session";
 
 function session(): DocumentSession {
   return {
@@ -63,7 +63,7 @@ const noTransfer = {
   disposeTransfer: () => undefined,
 };
 
-describe("ContextTabSessionBoundary", () => {
+describe("OpenDocumentSessionBoundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal("reportError", reportError);
@@ -81,7 +81,7 @@ describe("ContextTabSessionBoundary", () => {
 
     await withReactRoot(
       <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
-        <ContextTabSessionBoundary
+        <OpenDocumentSessionBoundary
           projectId="project-a"
           documentId="document-a"
           availabilityRevision="catalog-1"
@@ -90,7 +90,7 @@ describe("ContextTabSessionBoundary", () => {
             observed.push({ value, failed });
             return null;
           }}
-        </ContextTabSessionBoundary>
+        </OpenDocumentSessionBoundary>
       </ProjectDocumentLiveOpenerContext.Provider>,
       async () => {
         await act(async () => undefined);
@@ -121,7 +121,7 @@ describe("ContextTabSessionBoundary", () => {
       advanceCatalog = () => setRevision("catalog-2");
       return (
         <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
-          <ContextTabSessionBoundary
+          <OpenDocumentSessionBoundary
             projectId="project-a"
             documentId="document-a"
             availabilityRevision={revision}
@@ -131,7 +131,7 @@ describe("ContextTabSessionBoundary", () => {
               observed.push({ value, failed });
               return null;
             }}
-          </ContextTabSessionBoundary>
+          </OpenDocumentSessionBoundary>
         </ProjectDocumentLiveOpenerContext.Provider>
       );
     }
@@ -185,7 +185,7 @@ describe("ContextTabSessionBoundary", () => {
       advanceAvailability = () => setRevision("document-2");
       return (
         <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
-          <ContextTabSessionBoundary
+          <OpenDocumentSessionBoundary
             projectId="project-a"
             documentId="document-a"
             availabilityRevision={revision}
@@ -194,7 +194,7 @@ describe("ContextTabSessionBoundary", () => {
               observed.push(value);
               return null;
             }}
-          </ContextTabSessionBoundary>
+          </OpenDocumentSessionBoundary>
         </ProjectDocumentLiveOpenerContext.Provider>
       );
     }
@@ -239,7 +239,7 @@ describe("ContextTabSessionBoundary", () => {
       advanceAvailability = () => setRevision("document-2");
       return (
         <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
-          <ContextTabSessionBoundary
+          <OpenDocumentSessionBoundary
             projectId="project-a"
             documentId="document-a"
             availabilityRevision={revision}
@@ -248,7 +248,7 @@ describe("ContextTabSessionBoundary", () => {
               observed.push(value);
               return null;
             }}
-          </ContextTabSessionBoundary>
+          </OpenDocumentSessionBoundary>
         </ProjectDocumentLiveOpenerContext.Provider>
       );
     }

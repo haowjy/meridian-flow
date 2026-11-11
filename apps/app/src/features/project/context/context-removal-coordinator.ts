@@ -5,7 +5,7 @@ import type {
   ProjectContextTreeScheme,
   WorkingSetRoute,
 } from "@meridian/contracts/protocol";
-import type { ContextTab, ServerContextTab } from "@/client/stores";
+import type { OpenDocument, ServerOpenDocument } from "@/client/stores";
 import {
   type ReconcileContextRoutesInput,
   readRecentRoutes,
@@ -598,7 +598,7 @@ export class ContextRemovalCoordinator {
    * exact command to the newly presented document instead of leaving it outside the command's
    * already-settled batch.
    */
-  reconcileInstalledTab(projectId: string, tab: ContextTab): void {
+  reconcileInstalledTab(projectId: string, tab: OpenDocument): void {
     const key = `${projectId}/${tab.documentId}`;
     const command = this.terminalAvailability.get(key);
     if (command?.kind !== "terminal-remove") return;
@@ -715,7 +715,7 @@ export class ContextRemovalCoordinator {
             if (command.kind !== "terminal-remove") return [];
             const id = command.documentId;
             const tab = presented.find(
-              (candidate): candidate is ServerContextTab =>
+              (candidate): candidate is ServerOpenDocument =>
                 candidate.kind !== "new" && candidate.documentId === id,
             );
             return tab && !settledPlan.tabs.some((candidate) => candidate.documentId === id)
@@ -864,7 +864,7 @@ export class ContextRemovalCoordinator {
    */
   writerClose(
     projectId: string,
-    addressed: ContextTab,
+    addressed: OpenDocument,
   ): ContextRemovalOutcome | Promise<NavigationSettlement> {
     if (this.unavailable()) return { kind: "noop" };
     const state = this.project(projectId);
@@ -909,7 +909,7 @@ export class ContextRemovalCoordinator {
     );
   }
 
-  private commitWriterClose(projectId: string, addressed: ContextTab): ContextRemovalOutcome {
+  private commitWriterClose(projectId: string, addressed: OpenDocument): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     const documentId = addressed.documentId;
     const tab = this.presented
@@ -961,7 +961,7 @@ export class ContextRemovalCoordinator {
    * availability proves a removal; the address stays where it is, so the view shows the removal
    * in place. A kept one, off screen, just goes.
    */
-  closeVanished(projectId: string, tab: ContextTab): ContextRemovalOutcome {
+  closeVanished(projectId: string, tab: OpenDocument): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     if (this.heldByDrafts(projectId, [tab.documentId]).has(tab.documentId)) return { kind: "noop" };
     this.presented.forget(projectId, [tab.documentId]);
@@ -1010,7 +1010,7 @@ export class ContextRemovalCoordinator {
    * leaves its draft pending, so the removal guard that keeps Back and late
    * address resolution from resurrecting a discarded address no longer applies.
    */
-  admitDraftReview(projectId: string, tab: Extract<ContextTab, { kind: "tracked" }>): void {
+  admitDraftReview(projectId: string, tab: Extract<OpenDocument, { kind: "tracked" }>): void {
     this.projects.get(projectId)?.terminalRemovals.delete(locatorKey(routeTargetForTab(tab)));
   }
 

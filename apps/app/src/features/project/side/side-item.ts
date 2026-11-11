@@ -17,7 +17,7 @@
  * beside a chat. A hold that can no longer sit beside main ends.
  */
 import type { HeldPick } from "@/client/project-shell/store";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import type { Item } from "../views";
 
 /** Why the side shows its item: the header and the picker say so. */
@@ -37,7 +37,7 @@ export type SettledSide = {
   /** Null: nothing to show (a chat beside which no document was ever opened). */
   item: Item | null;
   /** A document item's descriptor. */
-  tab: ContextTab | null;
+  tab: OpenDocument | null;
   source: SideSource;
   reason: SideReason | null;
 };
@@ -65,7 +65,7 @@ export type Companion =
 export type Described =
   | { status: "pending" }
   | { status: "failed"; retry: () => void }
-  | { status: "ready"; tab: ContextTab | null };
+  | { status: "ready"; tab: OpenDocument | null };
 
 /** A document to describe: a link's held document keeps the link's Work. */
 export type Describing = { documentId: string; workId?: string };
@@ -117,7 +117,7 @@ export function fitsBeside(item: Item, main: MainForSide): boolean {
 }
 
 type Step =
-  | { kind: "show"; tab: ContextTab | null }
+  | { kind: "show"; tab: OpenDocument | null }
   | { kind: "skip" }
   | { kind: "wait"; resolution: Unsettled };
 
@@ -150,7 +150,7 @@ export function resolveSide(input: {
   let releaseHeld = false;
   const settle = (
     item: Item,
-    tab: ContextTab | null,
+    tab: OpenDocument | null,
     source: SideSource,
     reason: SideReason | null,
   ): SideResolution => ({ kind: "settled", side: { item, tab, source, reason }, releaseHeld });

@@ -5,13 +5,13 @@ import {
   type ResourceRecord,
   resourceIdentityIndex,
 } from "@meridian/resource-replica";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { routeTargetForTab } from "../context/context-removal-planner";
-import { contextTabFromResource } from "../context/context-tab-from-file";
+import { openDocumentFromResource } from "../context/open-document-from-file";
 import type { ContextRouteRequest } from "./project-route";
 
 /** A document this device created: untitled (`new`), or filed since and still device-made. */
-export type LocalDocument = Extract<ContextTab, { kind: "new" | "tracked" }>;
+export type LocalDocument = Extract<OpenDocument, { kind: "new" | "tracked" }>;
 
 /**
  * The replica holds the handle-to-document pairing: a history entry's pointer names the handle,
@@ -24,7 +24,7 @@ export function localDocumentsOf(projection: {
   const index = resourceIdentityIndex(projection.records);
   return (resourceHandle) => {
     const record = index.byHandle(resourceHandle);
-    return record ? contextTabFromResource(record, projection.placement) : null;
+    return record ? openDocumentFromResource(record, projection.placement) : null;
   };
 }
 

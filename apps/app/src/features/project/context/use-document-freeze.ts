@@ -3,7 +3,7 @@ import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { useOwnerDraftsFrozen } from "@/client/query/useOwnerDrafts";
 import { useWorks } from "@/client/query/useWorks";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 
 /**
  * Why an open document is read-only: its archived Work (the Work that owns the file, or the
@@ -18,7 +18,7 @@ export type DocumentFreeze = { kind: "work"; work: Work } | { kind: "chat"; owne
  */
 export function useDocumentFreeze(
   projectId: string,
-  tab: ContextTab | null,
+  tab: OpenDocument | null,
   reviewOwner: string | null,
 ): DocumentFreeze | null {
   const { works } = useWorks(projectId);

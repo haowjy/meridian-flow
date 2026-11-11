@@ -25,7 +25,7 @@ import {
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useWorks } from "@/client/query/useWorks";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
@@ -59,7 +59,7 @@ export function useHostDocumentPaint(): DocumentPaint | null {
 
 export function useDocumentReview(
   projectId: string,
-  hostTab: ContextTab | null,
+  hostTab: OpenDocument | null,
   showing: boolean,
 ): DocumentReview {
   const tab = showing ? hostTab : null;
@@ -194,7 +194,7 @@ export function DocumentReviewProvider({
   children,
 }: {
   projectId: string;
-  tab: ContextTab | null;
+  tab: OpenDocument | null;
   /** Whether the host is on screen; one that is not reviews nothing. */
   showing: boolean;
   children: ReactNode;

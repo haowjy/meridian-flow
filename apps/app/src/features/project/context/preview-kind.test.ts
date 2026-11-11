@@ -7,10 +7,10 @@
 import type { ContextReadResponse } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { previewKind } from "./preview-kind";
 
-type ViewerTab = Extract<ContextTab, { kind: "viewer" }>;
+type ViewerTab = Extract<OpenDocument, { kind: "viewer" }>;
 
 function tab(name: string, fileType: ViewerTab["fileType"] = "binary"): ViewerTab {
   return {

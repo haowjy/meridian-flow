@@ -6,7 +6,7 @@
  * in main at the end of the toolbar row, in the side in its header (the Live
  * menu lists other owners' drafts).
  */
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { DraftedDeleteNotice } from "@/features/draft-review/DraftedDeleteNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
@@ -18,7 +18,7 @@ import type { DocumentFreeze } from "./use-document-freeze";
 
 export type DocumentPaneChromeProps = {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   /** Set when the document as shown is frozen: by its archived Work, or a trashed chat. */
   freeze: DocumentFreeze | null;
   /**
@@ -49,7 +49,7 @@ export function DocumentPaneChrome({
   );
 }
 
-function ReviewFailureNotices({ tab }: { tab: ContextTab }) {
+function ReviewFailureNotices({ tab }: { tab: OpenDocument }) {
   const { controller } = useDraftReview();
   const { openReviewFile } = useAiDraftLauncher();
   const review = controller.inlineReview;

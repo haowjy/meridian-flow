@@ -2,13 +2,13 @@
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { RecentAddress, RecentOpening } from "@/client/recents";
 import { readableRecentPath } from "@/client/recents";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 
 const EDITOR_SCHEMES = new Set<string>(PROJECT_SCOPED_CONTEXT_URI_SCHEMES);
 
 export function recentOpening(
   projectId: string,
-  tab: ContextTab,
+  tab: OpenDocument,
   openedAt: string,
   /** Live lacks the document (`useDocumentLiveness`): a draft-only review is never a live recent. */
   draftOnly: boolean,
@@ -34,6 +34,6 @@ export function recentOpening(
   return { documentId: tab.documentId, projectId, name: tab.name, openedAt, address };
 }
 
-export function recentAddressFromTab(tab: ContextTab, draftOnly: boolean): RecentAddress | null {
+export function recentAddressFromTab(tab: OpenDocument, draftOnly: boolean): RecentAddress | null {
   return recentOpening("", tab, "", draftOnly)?.address ?? null;
 }

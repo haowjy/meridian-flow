@@ -17,7 +17,7 @@ import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDestination } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
-import { contextTabFromDraftGroup } from "./context/context-tab-from-draft";
+import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
 import {
   type BesideHint,
   type OpenContextRoute,
@@ -92,7 +92,7 @@ export function ReviewLaunchProvider({
             ...(target.focus ? { changeId: target.focus.id } : {}),
           },
         });
-      const tab = contextTabFromDraftGroup(target);
+      const tab = openDocumentFromDraftGroup(target);
       const launch = ++sequence.current;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const result = await openContextRoute(

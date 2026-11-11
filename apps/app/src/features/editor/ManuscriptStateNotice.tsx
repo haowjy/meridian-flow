@@ -18,7 +18,7 @@ import { Info, X } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import { documentBasename } from "@/client/query/work-branch-files";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { appliedSentence, DraftNoticeLine } from "@/features/draft-review/CommandNotice";
@@ -44,7 +44,7 @@ export type ManuscriptState = {
 };
 
 /** The document's manuscript state, or null when live did nothing to it. */
-export function useManuscriptState(projectId: string, tab: ContextTab): ManuscriptState | null {
+export function useManuscriptState(projectId: string, tab: OpenDocument): ManuscriptState | null {
   useLingui();
   const { documentId } = tab;
   const { files } = useDraftReview();

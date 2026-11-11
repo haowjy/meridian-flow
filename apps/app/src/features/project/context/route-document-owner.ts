@@ -10,18 +10,18 @@
  * that occupant.
  */
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import type { ContextRouteRequest } from "../routing/project-route";
 
 /** The document an answered address names (`addressedDocument`). */
-export type AddressedDocument = { tab: ContextTab; draftOnly: boolean };
+export type AddressedDocument = { tab: OpenDocument; draftOnly: boolean };
 
 export type RouteDocumentOwner =
   | { kind: "live"; file: CatalogFile; byIdentity: boolean }
   /** Live lacks the document: its descriptor is the address's draft row. */
-  | { kind: "draft-only"; tab: ContextTab }
+  | { kind: "draft-only"; tab: OpenDocument }
   /** The bound document the catalog lacks here (a review of a move): the address's answer. */
-  | { kind: "addressed"; tab: ContextTab }
+  | { kind: "addressed"; tab: OpenDocument }
   /** An identity the route holds that no source resolves yet. */
   | { kind: "pending" }
   | { kind: "absent" };

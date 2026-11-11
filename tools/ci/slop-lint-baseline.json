@@ -328,7 +328,7 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/features/project/context/context-tab-session.tsx",
+        "path": "apps/app/src/features/project/context/open-document-session.tsx",
         "line": "void resources",
         "count": 1
       },

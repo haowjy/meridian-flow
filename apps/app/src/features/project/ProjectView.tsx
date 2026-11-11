@@ -24,7 +24,7 @@ import {
   readAccountRecents,
   subscribeAccountRecents,
 } from "@/client/recents";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import {
   readRecentRoutes,
   retryWorkingSetHydration,
@@ -80,7 +80,7 @@ import { addressStateOf, type MainView, MainViewProvider, useMainDocument } from
 import { ManageWorksDialogHost, ManageWorksProvider } from "./work/ManageWorksDialog";
 
 function availabilityWatchRecord(
-  value: Pick<Exclude<ContextTab, { kind: "new" }>, "documentId" | "scheme"> & {
+  value: Pick<Exclude<OpenDocument, { kind: "new" }>, "documentId" | "scheme"> & {
     workId?: string | null;
   },
 ): AvailabilityWatchRecord {
@@ -182,7 +182,7 @@ export function ProjectView(props: ProjectViewProps) {
       lease.watch(
         "presented",
         shown
-          .filter((tab): tab is Exclude<ContextTab, { kind: "new" }> => tab.kind !== "new")
+          .filter((tab): tab is Exclude<OpenDocument, { kind: "new" }> => tab.kind !== "new")
           .map(availabilityWatchRecord),
       );
       const selection = removal.getProjectSnapshot(props.projectId).selection;

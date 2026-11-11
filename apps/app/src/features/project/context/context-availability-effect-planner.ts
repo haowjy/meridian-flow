@@ -2,7 +2,7 @@
 
 import { isWorkScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import {
   buildWorkingSetRoute,
   reconcileSnapshotContextRoutes,
@@ -30,7 +30,7 @@ import type { ProjectDocumentAvailabilityCommand } from "./project-context-avail
 export type ContextAvailabilityLocalBatchPlan = Readonly<{
   projectId: string;
   commands: readonly ProjectDocumentAvailabilityCommand[];
-  tabs: readonly ContextTab[];
+  tabs: readonly OpenDocument[];
   selection: ContextRouteSelection;
   admitted: ContextRouteRequest | null;
   removalFence: ContextRemovalProjectSnapshot["removalFence"];
@@ -63,7 +63,7 @@ export function planContextAvailabilityBatch(
     commands: readonly ProjectDocumentAvailabilityCommand[];
     project: ContextRemovalProjectSnapshot;
     /** What the views present (`PresentedDocuments`). */
-    tabs: readonly ContextTab[];
+    tabs: readonly OpenDocument[];
     /** The document main presents, if any. */
     mainDocumentId: string | null;
     recentRoutes: readonly WorkingSetRoute[];
@@ -104,7 +104,7 @@ export function planContextAvailabilityBatch(
     });
     if (command.kind === "available") {
       const entry = command.document;
-      const scheme = entry.uri.slice(0, entry.uri.indexOf(":")) as ContextTab extends {
+      const scheme = entry.uri.slice(0, entry.uri.indexOf(":")) as OpenDocument extends {
         scheme: infer Scheme;
       }
         ? Scheme
@@ -156,16 +156,16 @@ export function planContextAvailabilityBatch(
           rootThreadRef: _oldHandle,
           ...withoutOwner
         } = common;
-        if (chatId) return common as ContextTab;
+        if (chatId) return common as OpenDocument;
         if (lineageId && lineageRef)
           return {
             ...withoutOwner,
             rootThreadId: lineageId,
             rootThreadRef: lineageRef,
-          } as ContextTab;
+          } as OpenDocument;
         return isWorkScopedScheme(scheme) && target?.workId
-          ? ({ ...withoutOwner, workId: target.workId } as ContextTab)
-          : (withoutOwner as ContextTab);
+          ? ({ ...withoutOwner, workId: target.workId } as OpenDocument)
+          : (withoutOwner as OpenDocument);
       });
       if (
         target &&

@@ -1,7 +1,7 @@
 /** Phone review chrome: version, stepper and list control in one row. Completion replaces stepping in that same row; whole commands live in the version menu. */
 import { t } from "@lingui/core/macro";
 import { List } from "lucide-react";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { changeListLabel } from "@/features/draft-review/DocumentChanges";
 import type { DraftNotice } from "@/features/draft-review/draft-notices";
 import { DiscardQuestion } from "@/features/draft-review/ReviewActions";
@@ -23,7 +23,7 @@ export function MobileReviewHeader({
   onOpenList,
 }: {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   header: ReviewHeaderModel;
   /** What live did to this document; it takes the row's free end. */
   manuscriptState: ManuscriptState | null;

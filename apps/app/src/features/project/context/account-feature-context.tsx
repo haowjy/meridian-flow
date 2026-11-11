@@ -23,7 +23,7 @@ import {
 } from "react";
 import { scopeCreationRegistry } from "@/client/creation/creation-registry";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { LinkSettlementsProvider } from "@/features/links/link-settlements";
 import { AccountFeatureLifetime } from "./account-feature-lifetime";
@@ -349,10 +349,10 @@ export function useOptionalPresentedDocuments(): AccountFeatureLifetime["present
   return useContext(PresentedContext);
 }
 
-const NOTHING_PRESENTED: readonly ContextTab[] = [];
+const NOTHING_PRESENTED: readonly OpenDocument[] = [];
 
 /** The documents this browser tab's hosts present in a project, main's first. */
-export function usePresentedDocuments(projectId: string): readonly ContextTab[] {
+export function usePresentedDocuments(projectId: string): readonly OpenDocument[] {
   const presented = useContext(PresentedContext);
   return useSyncExternalStore(
     presented?.subscribe ?? noSubscription,
@@ -362,7 +362,7 @@ export function usePresentedDocuments(projectId: string): readonly ContextTab[] 
 }
 
 /** The documents mounted in a project, newest on screen first (`PresentedDocuments.shown`). */
-export function useShownDocuments(projectId: string): readonly ContextTab[] {
+export function useShownDocuments(projectId: string): readonly OpenDocument[] {
   const presented = useContext(PresentedContext);
   return useSyncExternalStore(
     presented?.subscribe ?? noSubscription,

@@ -1,6 +1,6 @@
 /** Route-owned command channel for project destination commands. */
 import { createContext, type ReactNode, useContext, useLayoutEffect, useMemo, useRef } from "react";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import type { NavigationSettlement, ProjectLeaveGuard } from "./project-navigation";
 import type { ContextRouteRequest } from "./project-route";
 
@@ -25,7 +25,7 @@ export type OpenContextOptions = {
   replace?: boolean;
   /** Replace only when the route already names this document; otherwise push. */
   replaceIfSameDocument?: boolean;
-  tab?: ContextTab;
+  tab?: OpenDocument;
   /** Live lacks the document: its draft created it, or live deleted it while the draft keeps it. */
   draftOnly?: boolean;
   /** The destination is a document the writer just made: its editor takes the caret once live. */

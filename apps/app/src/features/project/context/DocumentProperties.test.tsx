@@ -4,7 +4,7 @@ import type { DocumentProperties as Dto } from "@meridian/contracts";
 import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { DocumentProperties } from "./DocumentProperties";
@@ -28,7 +28,7 @@ const tab = {
   scheme: "manuscript",
   path: "/Chapter 1.md",
   name: "Chapter 1",
-} as ContextTab;
+} as OpenDocument;
 
 const chapter: Dto = {
   entries: [

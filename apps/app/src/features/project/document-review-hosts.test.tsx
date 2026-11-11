@@ -11,7 +11,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it } from "vitest";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { type ContextTab, ThreadStoreProvider } from "@/client/stores";
+import { type OpenDocument, ThreadStoreProvider } from "@/client/stores";
 import { AccountFeatureTestProvider } from "@/test-support/account-feature-provider";
 import { type DocumentReview, useDocumentReview } from "./DocumentReview";
 
@@ -27,7 +27,7 @@ const tab = {
   path: "/Chapter One.md",
   name: "Chapter One.md",
   schemaType: "document",
-} as unknown as ContextTab;
+} as unknown as OpenDocument;
 
 function Host({ showing, report }: { showing: boolean; report: (review: DocumentReview) => void }) {
   report(useDocumentReview(projectId, tab, showing));
