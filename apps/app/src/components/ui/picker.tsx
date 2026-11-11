@@ -1,12 +1,10 @@
 import { Search } from "lucide-react";
-import type { ButtonHTMLAttributes, ReactElement, ReactNode, Ref } from "react";
+import type { ComponentProps, ReactNode, Ref } from "react";
 
-import {
-  dropdownGroupLabelClass,
-  dropdownRowVariants,
-} from "@/components/ui/dropdown-presentation";
+import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { Input } from "@/components/ui/input";
 import { handleListKeys } from "@/components/ui/list-keys";
+import { ListRow } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 
@@ -116,108 +114,32 @@ export function PickerSection({
   );
 }
 
+/**
+ * A picker's row: `ListRow` at menu density in the list's `<li>`. Kept under its own name
+ * until every picker has landed; new code may use `ListRow` directly.
+ */
 export function PickerRow({
-  kind = "navigation",
-  current = false,
-  disabled,
   onSelect,
-  ref,
-  leading,
-  title,
-  detail,
-  meta,
-  trailing,
-  actions,
-  below,
-  describedBy,
   buttonProps,
   wrapButton,
-}: {
-  /** `navigation` is one line; `descriptive` puts `detail` under the title. */
-  kind?: "navigation" | "descriptive";
-  /** The value in effect, or with `"page"` the place the writer is on. */
-  current?: boolean | "page";
-  disabled?: boolean;
+  ...row
+}: Omit<
+  ComponentProps<typeof ListRow>,
+  "density" | "href" | "onOpen" | "depth" | "revealActions" | "controlProps" | "wrapControl"
+> & {
   onSelect: () => void;
-  ref?: Ref<HTMLButtonElement>;
-  leading?: ReactNode;
-  title: ReactNode;
-  detail?: ReactNode;
-  /** Right of the title: an age, a model name. */
-  meta?: ReactNode;
-  /** A mark at the row's end, inside the button. */
-  trailing?: ReactNode;
-  /** Buttons beside the row's own; Left and Right move between them. */
-  actions?: ReactNode;
-  /** Under the row, outside its button: a failure of this row's choice. */
-  below?: ReactNode;
-  describedBy?: string;
-  /** Spread first: the row's own handler, state and classes win. */
-  buttonProps?: Omit<
-    ButtonHTMLAttributes<HTMLButtonElement>,
-    "type" | "disabled" | "onClick" | "className" | "aria-current" | "aria-describedby"
-  >;
-  wrapButton?: (button: ReactElement) => ReactNode;
+  buttonProps?: ComponentProps<typeof ListRow>["controlProps"];
+  wrapButton?: ComponentProps<typeof ListRow>["wrapControl"];
 }) {
-  const oneLine = kind === "navigation";
-  const button = (
-    <button
-      {...buttonProps}
-      ref={ref}
-      data-list-item
-      type="button"
-      disabled={disabled}
-      aria-current={current || undefined}
-      aria-describedby={describedBy}
-      onClick={onSelect}
-      className={cn(dropdownRowVariants({ kind, interactive: false }), "flex-1")}
-    >
-      {leading}
-      {oneLine ? (
-        <>
-          <span className="min-w-0 flex-1 truncate">{title}</span>
-          {detail ? (
-            <span className="max-w-24 min-w-0 shrink-0 truncate text-xs font-medium text-muted-foreground">
-              {detail}
-            </span>
-          ) : null}
-          {meta ? <RowMeta>{meta}</RowMeta> : null}
-        </>
-      ) : (
-        <span className="flex min-w-0 flex-1 flex-col justify-center">
-          <span className="flex min-w-0 items-baseline justify-between gap-2">
-            <span className="truncate font-medium">{title}</span>
-            {meta ? <RowMeta>{meta}</RowMeta> : null}
-          </span>
-          {detail ? <span className="truncate text-xs text-muted-foreground">{detail}</span> : null}
-        </span>
-      )}
-      {trailing}
-    </button>
-  );
   return (
     <li>
-      <div
-        data-selected={Boolean(current)}
-        data-list-row
-        className={cn(
-          // The container owns the fills, so a row with actions beside its button lights as one.
-          "dropdown-focus-ring flex min-w-0 items-center rounded-md transition-colors has-[>:focus-visible]:bg-ink-fill data-[selected=true]:bg-ink-fill-strong",
-          !current && !disabled && "hover:bg-ink-fill",
-        )}
-      >
-        {wrapButton ? wrapButton(button) : button}
-        {actions}
-      </div>
-      {below}
+      <ListRow
+        {...row}
+        density="menu"
+        onOpen={onSelect}
+        controlProps={buttonProps}
+        wrapControl={wrapButton}
+      />
     </li>
-  );
-}
-
-function RowMeta({ children }: { children: ReactNode }) {
-  return (
-    <span className="max-w-1/2 shrink-0 truncate text-xs font-normal tabular-nums text-muted-foreground">
-      {children}
-    </span>
   );
 }

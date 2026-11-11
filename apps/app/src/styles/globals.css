@@ -641,12 +641,12 @@
   --focus-ring-offset: 2px;
 }
 
-/* Menu rows: the same ring, also worn by a composite row that owns a focused child. */
+/* Menu rows: the same ring, also worn by a row frame whose main control has focus. */
 @utility dropdown-focus-ring {
   outline: 2px none var(--color-focus);
   outline-offset: -2px;
   :root[data-focus-keys] &:focus-visible,
-  :root[data-focus-keys] &:has(> :focus-visible) {
+  :root[data-focus-keys] &:has(> [data-list-item]:focus-visible) {
     outline-style: solid !important;
   }
 }

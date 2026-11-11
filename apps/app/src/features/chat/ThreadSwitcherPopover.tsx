@@ -106,15 +106,17 @@ export function ThreadSwitcherPopover({
         current={active ? "page" : false}
         onSelect={() => selectThread(thread.id)}
         title={displayThreadTitle(thread.title)}
-        detail={
+        meta={
           <>
-            <span className="sr-only">
-              <Trans>Agent:</Trans>{" "}
-            </span>
-            {thread.agentName ?? "General"}
+            <span className="font-medium">
+              <span className="sr-only">
+                <Trans>Agent:</Trans>{" "}
+              </span>
+              {thread.agentName ?? "General"}
+            </span>{" "}
+            {relativeTime(thread.updatedAt, now)}
           </>
         }
-        meta={relativeTime(thread.updatedAt, now)}
         actions={
           active ? (
             <IconButton size="xs" label={t`Rename chat`} onClick={startRename} className="mr-1">
