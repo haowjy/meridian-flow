@@ -7,7 +7,7 @@ import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { role } from "@/components/ui/roles";
+import { ListRow } from "@/components/ui/list-row";
 import {
   ApplyAllQuestion,
   CommandNotice,
@@ -27,7 +27,6 @@ import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
 import { RowIcon } from "../../context/ContextTreeRows";
 import { fileKindIcon } from "../../context/context-file-icon";
-import { contextTreeFileRowClassName } from "../../context/context-row-geometry";
 import { useReferenceDrag } from "../../context/entry-drag/reference-source";
 import { useAiDraftLauncher } from "../../review-launch";
 import { useWorkScope } from "../../use-work-scope";
@@ -255,7 +254,7 @@ export function ChangesSource({
         </SourceHint>
       ) : null}
       {hasFiles ? (
-        <ul className="flex flex-col">
+        <ul className="flex flex-col px-2">
           {files.map((file) => (
             <ChangeRow
               key={file.documentId}
@@ -343,44 +342,37 @@ function ChangeRow({
 
   return (
     <li>
-      <div
-        className={cn(
-          contextTreeFileRowClassName(active),
-          "gap-0.5 py-0.5 pl-2",
-          !opens && "text-muted-foreground",
-        )}
-      >
-        <RowIcon icon={fileKindIcon(file.contextLocation?.path ?? name)} />
-        <button
-          type="button"
-          {...drag}
-          aria-current={active ? "true" : undefined}
-          disabled={!opens}
-          onClick={review}
-          className="focus-ring flex min-w-0 flex-1 flex-col items-start justify-center rounded-sm px-1 py-0.5 text-left coarse:min-h-11"
-        >
-          <span className={cn("w-full truncate", deleted && "line-through")}>{name}</span>
-          <ChangeSummary file={file} textChanges={textChanges} />
-        </button>
-        <ReviewActions
-          scope="document"
-          subject={name}
-          density="icon"
-          touch={touch}
-          disabled={command.pending || controller.dispositionLocked}
-          className={cn(
-            "gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 motion-reduce:transition-none [@media(hover:none)]:opacity-100",
-            touch && "gap-0 opacity-100",
-          )}
-          onDiscard={() => void controller.discard(file.documentId, file.draft.itemKey)}
-          onApply={
-            canApply ? () => void controller.apply(file.documentId, file.draft.itemKey) : undefined
-          }
-        />
-      </div>
-      <div className="mx-2 pl-1">
-        <DraftCommandStatus itemKey={file.draft.itemKey} item={file.draft} />
-      </div>
+      <ListRow
+        onOpen={review}
+        current={active}
+        disabled={!opens}
+        controlProps={drag}
+        leading={<RowIcon icon={fileKindIcon(file.contextLocation?.path ?? name)} />}
+        title={<span className={cn(deleted && "line-through")}>{name}</span>}
+        detail={changeSummary(file, textChanges)}
+        revealActions={!touch}
+        actions={
+          <ReviewActions
+            scope="document"
+            subject={name}
+            density="icon"
+            touch={touch}
+            disabled={command.pending || controller.dispositionLocked}
+            className={touch ? "gap-0" : "gap-0.5"}
+            onDiscard={() => void controller.discard(file.documentId, file.draft.itemKey)}
+            onApply={
+              canApply
+                ? () => void controller.apply(file.documentId, file.draft.itemKey)
+                : undefined
+            }
+          />
+        }
+        below={
+          <div className="pl-1">
+            <DraftCommandStatus itemKey={file.draft.itemKey} item={file.draft} />
+          </div>
+        }
+      />
       <DraftImagePreview
         target={previewing ? { projectId, ownerKey, documentId: file.documentId, name } : null}
         onClose={() => setPreviewing(false)}
@@ -393,13 +385,7 @@ function ChangeRow({
  * What the draft does to the document, in a quiet line under its name; nothing to say, no line.
  * The row's name is already the draft's, so a rename says what it was.
  */
-function ChangeSummary({
-  file,
-  textChanges,
-}: {
-  file: ReviewFileTarget;
-  textChanges: number | undefined;
-}) {
+function changeSummary(file: ReviewFileTarget, textChanges: number | undefined) {
   const line = treeLineOf(file.draft);
   const tree = file.draft.isNew
     ? t`New`
@@ -416,7 +402,7 @@ function ChangeSummary({
   const count = !file.draft.isNew && line?.kind !== "delete" && textChanges ? textChanges : null;
   if (!tree && count === null) return null;
   return (
-    <span className={cn("flex w-full min-w-0 gap-2", role.rowSecondary)}>
+    <span className="flex min-w-0 gap-2">
       {tree ? <span className="min-w-0 truncate">{tree}</span> : null}
       {count !== null ? (
         <span className="shrink-0">
