@@ -6833,6 +6833,10 @@ msgstr "What are you working on?"
 msgid "What are you writing?"
 msgstr "What are you writing?"
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "What happened to each part"
+msgstr "What happened to each part"
+
 #: src/components/app/ToastRegion.tsx
 #~ msgid "What is running in the background, with its controls."
 #~ msgstr "What is running in the background, with its controls."
