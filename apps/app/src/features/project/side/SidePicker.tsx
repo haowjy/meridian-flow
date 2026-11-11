@@ -86,7 +86,7 @@ export function SidePicker({
           className={cn("focus-ring min-w-0 text-left", titleChipClass("quiet"))}
         >
           {icon}
-          <span className="min-w-0 truncate text-sm font-medium">{name}</span>
+          <span className="min-w-0 truncate text-xs font-medium">{name}</span>
           <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
         </button>
       </PopoverTrigger>
