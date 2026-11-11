@@ -139,15 +139,15 @@ function OwnerSettlement({
       if (metadata.status !== "gone" && shown) return;
       // The answer is about this presentation: a newer mount of the item stays.
       if (registry.state(draft.token) !== "draft-only" || !removal) return;
-      if (registry.isHold(draft.token)) registry.withdraw(draft.token);
       const successor = await successorDraft(queryClient, draft, pinned, scopeOwnerKey);
       if (attempt.signal.aborted) return;
-      if (successor) {
-        setDocumentView(accountId, projectId, draft.documentId, { pin: successor });
-        return;
+      if (successor) setDocumentView(accountId, projectId, draft.documentId, { pin: successor });
+      else {
+        const closed = removal.discardDraft(projectId, draft.documentId);
+        if (closed.kind !== "noop") notices?.presentedRemoved(projectId, closed.removed);
       }
-      const closed = removal.discardDraft(projectId, draft.documentId);
-      if (closed.kind !== "noop") notices?.presentedRemoved(projectId, closed.removed);
+      // Last: withdrawing changes the membership, which aborts this attempt.
+      if (registry.isHold(draft.token)) registry.withdraw(draft.token);
     };
     // A catalog observation that starts now: joining an older in-flight one could report the
     // pre-Apply tree and misread a remote Apply as a Discard.
