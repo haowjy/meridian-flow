@@ -17,6 +17,7 @@
  */
 
 import { type ReactNode, useCallback, useContext, useMemo } from "react";
+import { setDocumentView } from "@/client/project-shell/document-views";
 import { useLineage } from "@/client/query/useLineageTitle";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
@@ -35,6 +36,7 @@ import {
   canOpenContextUri as isContextUriRoutable,
   parseContextUri,
 } from "@/lib/context-uri";
+import { useAccountId } from "../context/account-feature-context";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { BesideChatContext, useOpenChatDocument } from "../context/open-chat-document";
 import { claimOpenIntent, isCurrentOpenIntent } from "../context/open-intent";
@@ -111,6 +113,7 @@ export function ProjectChatContextNavigationProvider({
   );
   const passages = usePassageDoors(projectId, activeWork?.id ?? null);
   const besideChat = useContext(BesideChatContext);
+  const accountId = useAccountId();
   const openChatDocument = useOpenChatDocument(projectId);
   const route = useCallback(
     (target: RouteTarget) => onOpenContextTarget?.(contextRouteRequest(target)),
@@ -148,17 +151,17 @@ export function ProjectChatContextNavigationProvider({
       if (!review) return Promise.resolve(openLive(door, document));
       if (door.claim !== null && !isCurrentOpenIntent(door.claim)) return Promise.resolve();
       if (besideChat && door.claim !== null) {
-        const tab = contextTabFromDraftGroup({
-          documentId: document.documentId,
-          ...review,
-          draftOnly: true,
-        });
-        if (tab) besideChat(tab, door.claim);
+        const tab = contextTabFromDraftGroup({ documentId: document.documentId, ...review });
+        // A hidden document has no Live: it opens on its draft.
+        if (tab && besideChat(tab, door.claim).kind === "opened")
+          setDocumentView(accountId, projectId, document.documentId, {
+            pin: { ownerKey: review.ownerKey, itemKey: review.itemKey },
+          });
         return Promise.resolve();
       }
       return openReviewing(document, gesture);
     },
-    [besideChat, openLive, openReviewing],
+    [besideChat, openLive, openReviewing, accountId, projectId],
   );
   // Only a route-backed door overrides the follower's missing outcome: its route says so in
   // place. A resource door has no route, so it keeps the follower's shared outcome.

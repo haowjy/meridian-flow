@@ -41,9 +41,7 @@ function composed(settleWorkspace: () => Promise<void>) {
         selectedTabKey: "tab",
       }),
       commit: () => [],
-      settleDraft: async () => ({ kind: "not-settled" as const }),
       applyAvailability: settleWorkspace,
-      holdForDrafts: () => undefined,
     },
   });
   const availability = new ProjectContextAvailabilityCoordinator({

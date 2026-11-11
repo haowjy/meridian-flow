@@ -8,7 +8,6 @@ import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import {
   type ContextTab,
   getContextTabs,
-  matchesReviewItem,
   selectedDocumentIdOf,
   useContextTabs,
   useContextTabsActions,
@@ -16,6 +15,7 @@ import {
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { contextTabFromFile } from "../context/context-tab-from-file";
+import type { AddressedDocument } from "../context/route-document-owner";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { canonicalDocumentAddress, canonicalReviewTabPatch } from "./document-address-canonical";
 import { addressReviewOwner } from "./document-address-review";
@@ -61,6 +61,41 @@ export function useAddressResultAfterRemoval(
   return terminal || (fenced && updatedAt <= (fencedAt.current ?? 0)) ? undefined : result;
 }
 
+/**
+ * The document an answered address names: built from the address's draft row when live lacks it
+ * (a page a draft created), else from the server's answer at its canonical locator. The address
+ * admission installs it as a tab; the phone's resolver shows it.
+ */
+export function addressedDocument(
+  address: ProjectAddress,
+  result: DocumentAddressResult | undefined,
+  localFile: CatalogFile | undefined,
+  draftOnly: ReviewFileTarget | undefined,
+): AddressedDocument | null {
+  if (!result || result.kind === "unavailable") return null;
+  if (draftOnly) {
+    const tab = contextTabFromDraftGroup({
+      documentId: result.document.documentId,
+      contextLocation: draftOnly.contextLocation,
+      documentName: draftOnly.documentName,
+    });
+    return tab ? { tab, draftOnly: true } : null;
+  }
+  const canonical = canonicalDocumentAddress(address, result.document.entry);
+  if (!canonical) return null;
+  const document = result.document.entry;
+  const scope = document.scope;
+  const tab = contextTabFromFile(
+    canonical.destination.scheme,
+    mergeLocalResourceState(projectCatalogFile(document), localFile),
+    contextOwner(
+      scope.kind === "work" ? scope.workId : undefined,
+      scope.kind === "lineage" ? scope.rootThreadId : undefined,
+    ),
+  );
+  return { tab, draftOnly: false };
+}
+
 export function ProjectAddressDocument({
   projectId,
   href,
@@ -100,8 +135,7 @@ export function ProjectAddressDocument({
       !!reviewItemKey &&
       !!result &&
       result.kind !== "unavailable" &&
-      tab.documentId === result.document.documentId &&
-      matchesReviewItem(tab, { reviewOwner: reviewOwner ?? "", reviewItemKey }),
+      tab.documentId === result.document.documentId,
   );
   const reviewLocatorFingerprint = JSON.stringify(
     reviewTab ? { scheme: reviewTab.scheme, path: reviewTab.path, name: reviewTab.name } : null,
@@ -130,8 +164,6 @@ export function ProjectAddressDocument({
       });
       return;
     }
-    const document = result.document.entry;
-    const scope = document.scope;
     // A removal leaves the address in place with nothing selected. The document that returns
     // under it (a restore, with or without its draft open) takes the selection back; a selection
     // elsewhere (the dock) stays.
@@ -139,33 +171,15 @@ export function ProjectAddressDocument({
       selectedDocumentIdOf(getContextTabs(projectId)) === null
         ? { select: true as const }
         : undefined;
-    const liveTab = () =>
-      contextTabFromFile(
-        canonical.destination.scheme,
-        mergeLocalResourceState(projectCatalogFile(document), localFile),
-        contextOwner(
-          scope.kind === "work" ? scope.workId : undefined,
-          scope.kind === "lineage" ? scope.rootThreadId : undefined,
-        ),
-      );
+    const addressed = addressedDocument(address, result, localFile, draftOnly);
     if (reviewItemKey) {
       // An arriving review address is an open command: with no tab for the document it installs
-      // one, and the address sync pins its view, which the host's review follows. A hidden review has no
-      // live catalog to refresh its labels, so the server's canonical locator repairs its tab here.
+      // one, and the address sync pins its view, which the host's review follows. A hidden
+      // document's descriptor comes from its owner's draft row. A hidden review has no live
+      // catalog to refresh its labels, so the server's canonical locator repairs its tab here.
       if (!opened) {
-        const tab = !draftOnly
-          ? liveTab()
-          : reviewOwner
-            ? contextTabFromDraftGroup({
-                ownerKey: reviewOwner,
-                documentId: result.document.documentId,
-                itemKey: reviewItemKey,
-                contextLocation: draftOnly.contextLocation,
-                documentName: draftOnly.documentName,
-                draftOnly: true,
-              })
-            : null;
-        if (tab) openTab(projectId, tab, () => navigation.isCurrent(ticket), selectIfNone());
+        if (addressed)
+          openTab(projectId, addressed.tab, () => navigation.isCurrent(ticket), selectIfNone());
       } else if (reviewTab) {
         const patch = canonicalReviewTabPatch(
           reviewTab,
@@ -186,7 +200,9 @@ export function ProjectAddressDocument({
     const publish = (issue: ProjectRouteIssue | undefined) => onAdmission({ ...identity, issue });
     publish("loading");
     void (async () => {
-      const installed = openTab(projectId, liveTab(), isCurrent, selectIfNone());
+      const installed = addressed
+        ? openTab(projectId, addressed.tab, isCurrent, selectIfNone())
+        : ({ kind: "not-opened" } as const);
       if (controller.signal.aborted || !navigation.isCurrent(ticket)) return;
       if (installed.kind !== "opened") {
         publish("unavailable");

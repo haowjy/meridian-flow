@@ -166,16 +166,25 @@ export function returnDraftsToLive(
 
 /**
  * A draft has ended (Applied, Discarded, or closed elsewhere): every view pinned to it drops the
- * pin. The version stays: an open review of the ended draft keeps its editor until Live.
+ * pin, or moves to the draft `successor` names for its document. The version stays: an open
+ * review of the ended draft keeps its editor until Live.
  */
-export function endPin(accountId: string, projectId: string, pin: DraftPin): void {
+export function endPin(
+  accountId: string,
+  projectId: string,
+  pin: DraftPin,
+  successor: (documentId: string) => DraftPin | null = () => null,
+): void {
   const views = read(accountId, projectId);
   const next: Record<string, DocumentView> = {};
   let changed = false;
   for (const [documentId, view] of Object.entries(views)) {
     if (view.pin?.ownerKey === pin.ownerKey && view.pin.itemKey === pin.itemKey) {
       changed = true;
-      next[documentId] = { version: view.version, showChanges: view.showChanges };
+      const moved = successor(documentId);
+      next[documentId] = moved
+        ? { version: "draft", pin: moved, showChanges: view.showChanges }
+        : { version: view.version, showChanges: view.showChanges };
     } else next[documentId] = view;
   }
   if (changed) write(accountId, projectId, next);
@@ -189,13 +198,14 @@ const verifyKey = (projectId: string, ownerKey: string, itemKey: string) =>
  * A pin whose item a cached owner list lacks. The list may only be stale (the draft was made a
  * moment ago), so the pin goes only once a fresh read of the owner's list also lacks it: the
  * draft has ended (Applied, Discarded, or gone in another tab). A failed read clears nothing.
- * Concurrent calls for one item share one read.
+ * Concurrent calls for one item share one read; the first one's `successor` decides.
  */
 export function verifyPin(
   queryClient: QueryClient,
   accountId: string,
   projectId: string,
   pin: DraftPin,
+  successor?: (documentId: string) => DraftPin | null,
 ): void {
   const key = verifyKey(projectId, pin.ownerKey, pin.itemKey);
   if (verifying.has(key)) return;
@@ -209,7 +219,7 @@ export function verifyPin(
       )
     )
       return;
-    endPin(accountId, projectId, pin);
+    endPin(accountId, projectId, pin, successor);
   });
   verifying.set(key, check);
   void check.finally(() => verifying.delete(key));
@@ -234,5 +244,14 @@ export function useDocumentView(
     (listener) => subscribe(accountId, projectId, listener),
     () => (documentId ? readDocumentView(accountId, projectId, documentId) : DEFAULT_DOCUMENT_VIEW),
     () => DEFAULT_DOCUMENT_VIEW,
+  );
+}
+
+/** Every view of a project that differs from the default, re-read when one changes. */
+export function useDocumentViews(accountId: string, projectId: string): Views {
+  return useSyncExternalStore(
+    (listener) => subscribe(accountId, projectId, listener),
+    () => read(accountId, projectId),
+    () => EMPTY,
   );
 }

@@ -70,7 +70,7 @@ describe("AccountFeatureTestProvider", () => {
     function Child() {
       const { records, placement } = useObservedResourceProjection(replica, "project-1");
       projections.push(
-        projectResourceTab("project-1", tracked("gone", "/gone.md"), records, placement),
+        projectResourceTab("project-1", tracked("gone", "/gone.md"), records, placement, false),
       );
       return null;
     }

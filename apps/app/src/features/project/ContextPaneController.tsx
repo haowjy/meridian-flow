@@ -8,7 +8,6 @@ import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
   type ContextTab,
   getContextTabs,
-  isDraftOnly,
   isEditorContextTab,
   matchesTabInstance,
   replaceOwner,
@@ -34,6 +33,7 @@ import {
   useFollowOpenDocumentPlacement,
 } from "./context/use-follow-open-document-placement";
 import { identityCommitMayNavigate, identityCommitRoute } from "./context/use-identity-commit";
+import { useIsDraftOnly } from "./context/use-is-draft-only";
 import {
   type OpenContextRoute,
   useCaptureProjectNavigation,
@@ -105,6 +105,7 @@ export function ContextViewerSurfaceController({
   const { openTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const visibleTabs = editorWorkId ? tabs.filter(isEditorContextTab) : [];
   const removalState = useContextRemovalProject(projectId);
+  const isDraftOnly = useIsDraftOnly(projectId);
   const { workspaceRoute, tab: activeTab } = resolvedEditor;
 
   const {
@@ -225,10 +226,10 @@ export function ContextViewerSurfaceController({
     if (
       !active ||
       !activeTab ||
-      isDraftOnly(activeTab) ||
+      isDraftOnly(activeTab.documentId) ||
       removalState.selection.status !== "bound" ||
       workspaceRoute.kind !== "owner" ||
-      isDraftOnly(workspaceRoute.tab) ||
+      isDraftOnly(workspaceRoute.tab.documentId) ||
       workspaceRoute.tab.documentId !== removalState.selection.identity.documentId
     )
       return;
@@ -240,7 +241,7 @@ export function ContextViewerSurfaceController({
       identity: removalState.selection.identity,
       owner: { kind: "workspace", tab: workspaceRoute.tab },
     });
-  }, [active, contextRemoval, workspaceRoute, projectId, removalState]);
+  }, [active, activeTab, contextRemoval, isDraftOnly, workspaceRoute, projectId, removalState]);
 
   // Untitled tabs are store-owned until materialization gives them a server
   // route. Their activation must not depend on search-param validation.

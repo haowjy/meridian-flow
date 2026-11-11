@@ -16,7 +16,6 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import type { ContextTab } from "@/client/stores";
-import { isDraftOnly } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
@@ -40,6 +39,7 @@ import {
 import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./context-tab-session";
 import { DESKTOP_DOCUMENT_PRESENTATION, type DocumentPresentation } from "./document-presentation";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
+import { useDraftOnlyPresentation } from "./use-draft-only-presentation";
 import type { LiveDocumentBindingState } from "./use-live-document-binding";
 
 export type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
@@ -113,9 +113,10 @@ export function ContextDocumentHost({
           queryKey: projectQueryKeys.ownerDrafts(projectId, pinnedOwner),
         })
     : null;
-  // A draft-only document has no live room until Apply promotes it, and
-  // the server refuses one. Review hosts the draft room alone.
-  const draftOnly = isDraftOnly(tab);
+  // A draft-only document has no live room until settlement promotes it, and the server refuses
+  // one: review hosts the draft room alone. While the pinned draft's row is unread, neither opens.
+  const liveness = useDraftOnlyPresentation(projectId, tab);
+  const draftOnly = liveness === "draft-only";
   // `readOnly` is the owner's scope (archived or trashed freezes it); the presentation decides whether
   // this view ever types. Only the first is compared with the room's access.
   const editable = presentation.editable && !readOnly;
@@ -251,7 +252,7 @@ export function ContextDocumentHost({
       resourceHandle={tab.resourceHandle}
       tabInstanceId={tab.tabInstanceId}
       availabilityRevision={availabilityRevision}
-      liveRoom={!draftOnly}
+      liveRoom={liveness === "live"}
       bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}

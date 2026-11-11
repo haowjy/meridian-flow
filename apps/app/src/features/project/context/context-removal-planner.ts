@@ -2,12 +2,7 @@
 
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
-import {
-  type ContextTab,
-  isDraftOnly,
-  isEditorContextTab,
-  withoutReviewEntry,
-} from "@/client/stores";
+import { type ContextTab, isEditorContextTab } from "@/client/stores";
 import {
   buildWorkingSetRoute,
   type ReconcileContextRoutesInput,
@@ -24,8 +19,8 @@ export type ContextRemovalIntent = {
   documentIds: readonly string[];
   /** Writer close and draft settlement address a mounted tab, not every document representation. */
   tabInstanceId?: string;
-  /** Discard and a writer's close of a draft-only tab are one Work's: the tab stays while another Work still reviews the document. */
-  reviewOwner?: string;
+  /** Documents a draft keeps on screen when live loses them: their tabs stay. */
+  held?: ReadonlySet<string>;
 };
 
 export type ContextRouteIdentity = { kind: "server" | "local"; documentId: string };
@@ -115,9 +110,9 @@ export function contextTabEligibleForRemoval(
       return true;
     case "catalog-unavailable":
     case "authority-unavailable":
-      return tab.kind !== "new" && !isDraftOnly(tab);
+      return tab.kind !== "new" && !intent.held?.has(tab.documentId);
     case "draft-discard":
-      return tab.kind !== "new" && isDraftOnly(tab);
+      return tab.kind !== "new";
   }
 }
 
@@ -154,13 +149,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   const requested = new Set(input.intent.documentIds);
   const removed = input.tabs.filter((tab) => contextTabEligibleForRemoval(tab, input.intent));
   const removedIds = new Set(removed.map((tab) => tab.documentId));
-  // The membership after the removal, decided once: a review removal can leave
-  // the tab in place for the Works that still present it.
-  const reviewOwner = input.intent.reviewOwner;
-  const remaining = input.tabs.flatMap((tab) => {
-    if (!removedIds.has(tab.documentId)) return [tab];
-    return (reviewOwner && withoutReviewEntry(tab, reviewOwner)) || [];
-  });
+  const remaining = input.tabs.filter((tab) => !removedIds.has(tab.documentId));
   if (input.activeWorkId === null) {
     // Before any route port registers there is no Editor locator to repair.
     return {

@@ -472,6 +472,21 @@ export class ProjectContextAvailabilityCoordinator {
     this.notifyRemoval(key);
   }
 
+  /**
+   * The replica places again a document this cache says is removed (a restore elsewhere), so the
+   * answer may be stale. While asked, it becomes `unresolved` and is looked up again; focus,
+   * online and the poll retry a lookup that fails, until an answer arrives.
+   */
+  removalOutdated(projectId: string, documentId: string): void {
+    const key = removalKey(projectId, documentId);
+    const asks = this.removalAsks.get(projectId);
+    if (this.removalAnswers.get(key)?.kind !== "removed" || !asks?.counts.has(documentId)) return;
+    this.removalAnswers.set(key, { kind: "unresolved" });
+    asks.unasked.add(documentId);
+    this.watchAsked(projectId, asks);
+    this.notifyRemoval(key);
+  }
+
   private ask(projectId: string, documentId: string): void {
     let asks = this.removalAsks.get(projectId);
     if (!asks) {
@@ -528,8 +543,8 @@ export class ProjectContextAvailabilityCoordinator {
       // An open in flight answers for itself; a second lookup would fence it.
       const lookup = [...asks.unasked].filter(
         (documentId) =>
-          !this.removalAnswers.has(removalKey(projectId, documentId)) &&
-          !this.pendingOpens.has(JSON.stringify([projectId, documentId])),
+          (this.removalAnswers.get(removalKey(projectId, documentId))?.kind ?? "unresolved") ===
+            "unresolved" && !this.pendingOpens.has(JSON.stringify([projectId, documentId])),
       );
       asks.unasked.clear();
       if (lookup.length === 0) return;

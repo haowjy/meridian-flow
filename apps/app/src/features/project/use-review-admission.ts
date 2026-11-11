@@ -29,7 +29,6 @@ export type ReviewedDocument = {
   review: DraftPin | null;
   /** The view asks for a draft: an open review of the document stays until the writer picks Live. */
   draftView: boolean;
-  draftOnly: boolean;
 };
 
 export function useReviewAdmission({
@@ -124,7 +123,6 @@ export function useReviewAdmission({
         itemKey,
         contextLocation: { scheme: presented.scheme, path: presented.path },
         documentName: file?.documentName ?? undefined,
-        draftOnly: file?.draftOnly ?? presented.draftOnly,
       })
       .then(
         (admitted) => {

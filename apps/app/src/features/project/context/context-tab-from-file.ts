@@ -16,12 +16,7 @@ import {
 } from "@meridian/resource-replica";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 
-import {
-  type ContextTab,
-  isDraftOnly,
-  type ServerContextTab,
-  type TabOwner,
-} from "@/client/stores";
+import type { ContextTab, ServerContextTab, TabOwner } from "@/client/stores";
 
 /** Work-scoped tabs retain their row identity, including No Work. */
 export function editorTabWorkId(location: ResourceOwner): string | undefined {
@@ -128,7 +123,6 @@ export function serverTabFromFile(
 
 /** One optimistic tab projection for a durable editable resource. */
 export function contextTabFromResource(
-  projectId: string,
   record: ResourceRecord,
   placement: ResourcePlacement,
 ): Extract<ContextTab, { kind: "new" | "tracked" }> | null {
@@ -184,17 +178,18 @@ export type ResourceTabProjection =
 
 /**
  * Reconcile any open tab by stable handle when known, otherwise by server document identity.
- * A draft-only tab is one live doesn't hold, so the live replica says nothing about it: the
+ * A draft-only document is one live doesn't hold, so the live replica says nothing about it: the
  * record of a document live deleted while a Work's draft survives is terminal (D79), and
- * hiding or closing the tab on it would strand the draft. Its draft lifecycle owns it.
+ * hiding or closing its tab on it would strand the draft. Its draft settlement owns it.
  */
 export function projectResourceTab(
   projectId: string,
   tab: ContextTab,
   records: readonly ResourceRecord[],
   placement: ResourcePlacement,
+  draftOnly: boolean,
 ): ResourceTabProjection {
-  if (isDraftOnly(tab)) return { kind: "none" };
+  if (draftOnly) return { kind: "none" };
   const record =
     (tab.resourceHandle
       ? records.find(({ resource }) => resource.handle === tab.resourceHandle)
@@ -235,7 +230,7 @@ export function projectResourceTab(
   // A chat's upload cached before its chat had a handle names no tab owner: the tab keeps its own.
   const located = placement.resourceLocation(record);
   if (located && !tabOwnerOf(located)) return { kind: "none" };
-  const projected = contextTabFromResource(projectId, record, placement);
+  const projected = contextTabFromResource(record, placement);
   // The projection re-describes the resource, not the open: the instance id is the open's own.
   return projected
     ? {

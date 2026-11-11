@@ -5,7 +5,7 @@ import { acceptContextTransition } from "@/test-support/context-removal-route";
 import "fake-indexeddb/auto";
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { act, useState } from "react";
+import { act, useLayoutEffect, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   type ContextTab,
@@ -39,6 +39,7 @@ function ContextViewerSurfaceController(
 }
 
 import type { ProjectSearch } from "../routing/project-route";
+import { useOptionalDraftOnlyPresentations } from "./account-feature-context";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectContextRemovalController } from "./ProjectContextRemovalController";
 
@@ -374,7 +375,6 @@ it("a plain path settles on another Work's hidden draft-created document never",
             editable: true,
             filetype: "markdown",
             schemaType: "document",
-            reviews: { "work:work-1": { itemKey: "draft-1", tabInstanceToken: "token" } },
           },
         ],
         selectedTabKey: "instance-a",
@@ -385,6 +385,7 @@ it("a plain path settles on another Work's hidden draft-created document never",
   queryState.isFetching = true;
   await withReactRoot(
     <AccountFeatureTestProvider accountId="account-a">
+      <PresentDraftOnly />
       <ContextViewerSurfaceController
         {...shellProps}
         projectId="project"
@@ -404,3 +405,19 @@ it("a plain path settles on another Work's hidden draft-created document never",
     },
   );
 });
+
+/** Work 1's review host presents document `a`, a page its draft created. */
+function PresentDraftOnly() {
+  const registry = useOptionalDraftOnlyPresentations();
+  useLayoutEffect(() => {
+    registry?.present({
+      projectId: "project",
+      documentId: "a",
+      ownerKey: "work:work-1",
+      itemKey: "draft-1",
+      token: "token",
+      contextLocation: { scheme: "manuscript", path: "/a.md" },
+    });
+  }, [registry]);
+  return null;
+}

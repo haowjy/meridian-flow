@@ -60,11 +60,16 @@ identity, so rebinding an editor can't drop it.
 Presentation state retains selection, focus, marks and `shown`, not room readiness.
 Cached active metadata keeps its room mounted after a metadata refetch failure.
 
-A draft-only editor is the document's single tab in its review Work, and closing its
-review is not Discard. List omission alone can't infer Discard or Apply: the list omits
-an active draft with no effect (a delete's held tab, a fully applied draft, one inside
-the `has_effect` lag). So an unlisted draft-only tab goes live when the catalog shows its
-document and closes only when its draft metadata answers `gone`.
+A draft-only document is presented by the hosts that mount it
+(`DraftOnlyPresentations`, one token per mount) and, after a live delete, by a hold for
+the draft its view pins; closing its review is not Discard. List omission alone can't
+infer Discard or Apply: the list omits an active draft with no effect (a delete's held
+document, a fully applied draft, one inside the `has_effect` lag). So
+`DraftOnlySettlement` promotes an unlisted presentation when a fresh catalog read shows
+its document, and ends it only on that same presentation's answer: its draft metadata
+says `gone`, or the view no longer pins that draft (a Discard of the last change, which
+leaves the draft active and empty). The scope's draft of the document, if any, takes
+over; otherwise the document closes.
 
 Closure belongs to a draft generation, not its item key. The key (branch + document)
 outlives its drafts: a later write to the same document mints a new draft under the same
