@@ -219,7 +219,9 @@ export function DocumentIdentityBar({
       itemKey={reviewItemKey ?? ""}
       onOpenDraft={openDraft}
       onCloseDraftOnly={onCloseDraftOnly}
-      onFocusDocument={() => focusEditorProseOnceShown(tab.documentId)}
+      onFocusDocument={() =>
+        focusEditorProseOnceShown(tab.documentId, onCloseDraftOnly !== undefined)
+      }
       focusOnOpen={reviewItemKey !== null && focusReview === reviewItemKey}
       onOpenFocused={() => onFocusReview?.(null)}
     >
@@ -289,6 +291,13 @@ const editorProse = (documentId: string) =>
     ),
   ].find((prose) => !prose.closest("[inert]")) ?? null;
 
+const mainProse = (leftDocumentId: string) =>
+  [...document.querySelectorAll<HTMLElement>('[role="main"] [contenteditable="true"]')].find(
+    (prose) =>
+      !prose.closest("[inert]") &&
+      !prose.closest(`[data-context-editor-document-id="${escapeCssIdent(leftDocumentId)}"]`),
+  ) ?? null;
+
 /** Esc hands focus back to the prose (the bar is one tab stop). */
 function focusEditorProse(documentId: string) {
   editorProse(documentId)?.focus();
@@ -299,10 +308,11 @@ function focusEditorProse(documentId: string) {
  * prose may not be there yet. Waits for it while nothing else holds the focus, and
  * gives up at the writer's next key or press.
  */
-function focusEditorProseOnceShown(documentId: string) {
+function focusEditorProseOnceShown(documentId: string, leaving: boolean) {
   const settle = () => {
     if (!focusIsFree()) return true;
-    const prose = editorProse(documentId);
+    // A draft-only document's discard sends main back: its prose never returns, main's does.
+    const prose = editorProse(documentId) ?? (leaving ? mainProse(documentId) : null);
     prose?.focus();
     return prose !== null && document.activeElement === prose;
   };

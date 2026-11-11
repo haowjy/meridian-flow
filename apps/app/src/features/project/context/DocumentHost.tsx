@@ -70,6 +70,13 @@ export type DocumentHostProps = {
   /** The desktop's band above the page: main's header or the side's. */
   header?: ReactNode;
   editorWorkId: string | null;
+  /**
+   * The draft whose review controls take the focus when they show (desktop): the draft an Apply
+   * or Next draft from another draft's controls opens. Held above the hosts, since each
+   * document has its own.
+   */
+  focusReview?: string | null;
+  onFocusReview?: (itemKey: string | null) => void;
 };
 
 export function DocumentHost(props: DocumentHostProps) {
@@ -230,6 +237,8 @@ function DesktopDocumentFrame({
   header,
   onScreen,
   editorWorkId,
+  focusReview,
+  onFocusReview,
 }: DocumentHostProps & { onScreen: boolean }) {
   return (
     <div
@@ -249,6 +258,8 @@ function DesktopDocumentFrame({
               tab={tab}
               place={place}
               editorWorkId={editorWorkId}
+              focusReview={focusReview}
+              onFocusReview={onFocusReview}
             />
             {tab.kind === "viewer" ? (
               <div className="flex min-h-0 flex-1 flex-col">
@@ -320,20 +331,21 @@ function DesktopDocumentChrome({
   tab,
   place,
   editorWorkId,
+  focusReview,
+  onFocusReview,
 }: {
   projectId: string;
   tab: ContextTab;
   place: DocumentPlace;
   editorWorkId: string | null;
+  focusReview?: string | null;
+  onFocusReview?: (itemKey: string | null) => void;
 }) {
   const { controller } = useDraftReview();
   const freeze = useHostFreeze(projectId, tab);
   const removal = useContextRemovalCoordinator();
   const openRoute = useOpenContextRoute();
   const draftOnly = useDocumentLiveness(projectId, tab) === "draft-only";
-  // The identity bar remounts per document, so the draft that takes the focus when its controls
-  // show is held here.
-  const [focusReview, setFocusReview] = useState<string | null>(null);
   // A chat's Scratch belongs to no Work, so archiving the scope's Work never freezes it. The
   // reviewed file itself may be project-owned, so only its own Work's archive freezes its
   // identity row.
@@ -368,7 +380,7 @@ function DesktopDocumentChrome({
           draftOnly ? () => settleWriterClose(removal.writerClose(projectId, tab)) : undefined
         }
         focusReview={focusReview}
-        onFocusReview={setFocusReview}
+        onFocusReview={onFocusReview}
         onCommitted={onCommitted}
         onOpenExisting={(scheme, path, owner) => {
           void openRoute?.(

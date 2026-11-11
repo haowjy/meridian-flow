@@ -132,6 +132,9 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     });
   const onNewDocument = useNewDocument(projectId, props.contextLive ? open : null);
 
+  // Each document has its own host, so the draft that takes the focus when its controls show is
+  // held here.
+  const [focusReview, setFocusReview] = useState<string | null>(null);
   const documentHost = (tab: ContextTab, place: "main" | "side" | "kept"): SlotGridHost => ({
     key: `document:${tab.documentId}`,
     slot: place === "main" ? "center" : place === "side" && sideOpen ? "dock" : null,
@@ -144,6 +147,8 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         main={place === "main" ? main.document : undefined}
         presentation="desktop"
         editorWorkId={props.editorWorkId}
+        focusReview={focusReview}
+        onFocusReview={setFocusReview}
         header={
           place === "main" ? (
             <MainHeader
