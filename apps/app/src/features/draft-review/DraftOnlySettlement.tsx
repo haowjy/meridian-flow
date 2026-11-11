@@ -168,7 +168,7 @@ function OwnerSettlement({
               );
               continue;
             }
-            // An unanswered disposition keeps the document, never guesses Discard.
+            // slop-lint: allow swallowed-error an unanswered disposition keeps the document, never guesses Discard
             void ended(draft).catch(() => undefined);
           }
         })

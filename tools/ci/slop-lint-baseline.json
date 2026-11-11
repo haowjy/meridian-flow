@@ -299,11 +299,6 @@
       },
       {
         "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
-        "line": "void fetchCurrentDraftMetadata(queryClient, draft)",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
         "line": "void resources",
         "count": 1
       },
