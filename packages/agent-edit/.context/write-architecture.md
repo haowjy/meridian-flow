@@ -75,5 +75,5 @@ a paragraph alone never joins independent writes. A live write merges one update
   change where a document lives, so the host runs them and reports through the same
   envelope.
 
-[view]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/model-view-frontier.md
-[reversal]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/agent-editing-and-reversal.md
+[view]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/model-view.md
+[reversal]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/agent-editing-and-reversal.md

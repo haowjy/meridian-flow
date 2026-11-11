@@ -21,4 +21,4 @@ module resolves and follows. Link meaning and per-editor cache rules belong to
 Scope, follow, creation and document-index contracts:
 [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
-[link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/links.md#following-a-link-is-one-procedure
+[link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/links.md#following-a-link-is-one-procedure

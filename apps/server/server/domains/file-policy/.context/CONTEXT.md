@@ -46,5 +46,5 @@ Measure statement count and peak connection usage with the current fixtures
 before narrowing confirmation, adding a cache, or changing lock ownership. A
 cache must not hide Work switches or branch-view changes.
 
-[file-policy]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/access.md
-[agent-permission]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/access.md#agent-permission-is-separate-from-tools
+[file-policy]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/access.md
+[agent-permission]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/access.md#agent-permission-is-separate-from-tools

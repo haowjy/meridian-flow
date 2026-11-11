@@ -1,9 +1,9 @@
 # Turn rhythm and settled actions
 
 The design is
-[Chat Thread Rhythm](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/transcript.md)
+[Chat Thread Rhythm](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/transcript.md)
 and
-[Finished Turns Carry Actions](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/chat/turns.md).
+[Finished Turns Carry Actions](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/turns.md).
 
 ## Spacing
 

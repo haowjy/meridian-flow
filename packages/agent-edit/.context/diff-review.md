@@ -182,7 +182,7 @@ replaced in contested text. No caller should rediff the result to recover the me
 side, for joining host ownership. A whole-block deletion has empty output support, so callers
 keep its removed base support separately.
 
-[review]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/draft-review.md#what-review-shows
-[authors]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/draft-review.md#who-wrote-a-change
-[cost]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/draft-review.md#what-review-shows
-[late-peer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/draft-store-concurrency.md#a-late-peer-keeps-only-its-surviving-typing
+[review]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-review.md#what-review-shows
+[authors]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-review.md#who-wrote-a-change
+[cost]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-review.md#what-review-shows
+[late-peer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-store-concurrency.md#a-late-peer-keeps-only-its-surviving-typing

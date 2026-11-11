@@ -687,8 +687,8 @@ retires the addressed peer and does not roll back unrelated documents in the rep
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
 
-[kb-archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/work/lifecycle.md#archive-freezes-the-works-own-material
-[eventual]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/draft-store-concurrency.md
+[kb-archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/work/lifecycle.md#archive-freezes-the-works-own-material
+[eventual]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-store-concurrency.md
 
 ## Producer shutdown
 

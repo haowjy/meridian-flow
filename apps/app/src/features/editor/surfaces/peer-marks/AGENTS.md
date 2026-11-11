@@ -6,7 +6,7 @@ The popover a peer mark opens. The marks are
 Dormant: no server code sends `change_event`, so no mark renders and nothing here runs in
 the app. The lane waits for the history feature, which will decide what marks show and where
 their data comes from
-([KB](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/turn-receipts.md#the-receipt-is-a-record-of-what-the-turn-wrote)).
+([KB](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/turn-receipts.md#the-receipt-is-a-record-of-what-the-turn-wrote)).
 Don't extend it for new work, and don't delete it.
 
 - `PeerMarkSurface` reads the press the plugin writes and listens to no DOM event of its

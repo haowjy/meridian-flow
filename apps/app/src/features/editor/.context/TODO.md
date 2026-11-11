@@ -2,7 +2,7 @@
 
 - `EditorView.tsx` (`data-document-schema-stale`): the only surface where a writer
   faces a document they can't read or edit, a state the
-  [repair-first rule](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/overview.md#document-schema)
+  [repair-first rule](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/index.md#document-schema)
   rules out as a product state. It stands only as an assertion screen for major schema
   mismatches. If the 4407 path becomes reachable, replace it with the migration flow and
   at minimum a read-only view of the last known content, following the schema-fence

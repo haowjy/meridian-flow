@@ -47,6 +47,6 @@ Delete and purge lock the thread tree before the Work, then recheck the full
 membership set; a concurrent join retries. Restore locks the threads carrying
 that Work's deletion marker and clears exactly that set.
 
-[archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/work/lifecycle.md#archive-freezes-the-works-own-material
-[fence]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/draft-store-concurrency.md#an-owners-lifecycle-fences-its-drafts-through-one-boundary
-[count]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/draft-store-concurrency.md#pending-counts-announce-only-when-they-move
+[archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/work/lifecycle.md#archive-freezes-the-works-own-material
+[fence]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-store-concurrency.md#an-owners-lifecycle-fences-its-drafts-through-one-boundary
+[count]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-store-concurrency.md#pending-counts-announce-only-when-they-move

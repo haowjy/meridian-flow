@@ -59,6 +59,6 @@ for a lock waiter means the second operation did not block; read the Guard
 contract before changing the probe. Probes use their own Works and documents;
 with `--keep`, drop only the named scratch database.
 
-[lock-free]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/collaboration/draft-store-concurrency.md#keystrokes-append-without-a-revision-fence
+[lock-free]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-store-concurrency.md#keystrokes-append-without-a-revision-fence
 [probes]: ../../../../../../../tools/qa/probes/drafts-lock-free
 [collab-context]: ../CONTEXT.md#transaction-and-lock-contracts

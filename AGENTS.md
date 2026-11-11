@@ -129,4 +129,4 @@ in this repository.
 [meridian-flow-docs]: https://github.com/haowjy/meridian-flow-docs
 [trust-llm]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/trust-the-llm.md
 [trust-user]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/copy-and-feedback.md
-[work]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/work/index.md
+[work]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/work/index.md

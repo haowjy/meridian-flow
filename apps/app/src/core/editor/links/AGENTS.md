@@ -21,6 +21,6 @@ Classifies, follows, renders and assigns standard Markdown links
 Gestures, ref assignment and folder follow:
 [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
-[link-identity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/links.md#stored-identity-and-spelling
-[link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/links.md#following-a-link-is-one-procedure
-[link-chips]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/links.md
+[link-identity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/links.md#stored-identity-and-spelling
+[link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/links.md#following-a-link-is-one-procedure
+[link-chips]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/links.md

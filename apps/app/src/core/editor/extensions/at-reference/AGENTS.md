@@ -8,5 +8,5 @@ Behavior: [predictive browser][at-references], [link identity][link-identity].
   alike, so a document, asset or folder has one node shape per host. Interaction
   code owns its own landing, spacing and Undo.
 
-[at-references]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/editor/references.md
-[link-identity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/documents/links.md#stored-identity-and-spelling
+[at-references]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/editor/references.md
+[link-identity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/links.md#stored-identity-and-spelling
