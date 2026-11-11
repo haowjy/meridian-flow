@@ -46,7 +46,7 @@ export function AgentPickerPanel({
   };
   return (
     <TooltipProvider delayDuration={500}>
-      <Picker label={t`Choose agent`}>
+      <Picker>
         <PickerResults>
           {status.status === "loading" || status.status === "disabled" ? (
             <PickerLine>
@@ -75,7 +75,7 @@ export function AgentPickerPanel({
                   return (
                     <PickerRow
                       key={rowId}
-                      kind="identity"
+                      kind="descriptive"
                       current={active}
                       ref={
                         active

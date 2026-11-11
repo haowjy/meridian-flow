@@ -1,8 +1,3 @@
-/**
- * Picker — a list the writer picks one thing from, inside a popover or the composer.
- * The pieces own every class, list stop and ARIA attribute; a site supplies its rows'
- * content and handlers, and keeps its own surface (popover, panel) and focus rules.
- */
 import { Search } from "lucide-react";
 import type { ButtonHTMLAttributes, ReactElement, ReactNode, Ref } from "react";
 
@@ -23,7 +18,8 @@ export function Picker({
   busy,
   children,
 }: {
-  label: string;
+  /** Names the list as a group. Leave it out where the surface around it already has the name. */
+  label?: string;
   busy?: boolean;
   children: ReactNode;
 }) {
@@ -140,8 +136,8 @@ export function PickerRow({
   buttonProps,
   wrapButton,
 }: {
-  /** `navigation` is one line; `descriptive` and `identity` put `detail` under the title. */
-  kind?: "navigation" | "descriptive" | "identity";
+  /** `navigation` is one line; `descriptive` puts `detail` under the title. */
+  kind?: "navigation" | "descriptive";
   /** The value in effect, or with `"page"` the place the writer is on. */
   current?: boolean | "page";
   disabled?: boolean;
@@ -159,7 +155,11 @@ export function PickerRow({
   /** Under the row, outside its button: a failure of this row's choice. */
   below?: ReactNode;
   describedBy?: string;
-  buttonProps?: ButtonHTMLAttributes<HTMLButtonElement>;
+  /** Spread first: the row's own handler, state and classes win. */
+  buttonProps?: Omit<
+    ButtonHTMLAttributes<HTMLButtonElement>,
+    "type" | "disabled" | "onClick" | "className" | "aria-current" | "aria-describedby"
+  >;
   wrapButton?: (button: ReactElement) => ReactNode;
 }) {
   const oneLine = kind === "navigation";
@@ -187,12 +187,7 @@ export function PickerRow({
           {meta ? <RowMeta>{meta}</RowMeta> : null}
         </>
       ) : (
-        <span
-          className={cn(
-            "flex w-full min-w-0 flex-1 flex-col justify-center",
-            kind === "identity" && "gap-0.5",
-          )}
-        >
+        <span className="flex min-w-0 flex-1 flex-col justify-center">
           <span className="flex min-w-0 items-baseline justify-between gap-2">
             <span className="truncate font-medium">{title}</span>
             {meta ? <RowMeta>{meta}</RowMeta> : null}
