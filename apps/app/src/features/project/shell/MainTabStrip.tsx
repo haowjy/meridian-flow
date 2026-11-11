@@ -37,7 +37,6 @@ import { useScrollEdges } from "@/hooks/use-scroll-edges";
 import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { useAccountId, useAccountResourceProjection } from "../context/account-feature-context";
-import { fileKindIcon } from "../context/context-file-icon";
 import { useReferenceDrag } from "../context/entry-drag/reference-source";
 import { projectResourceDocument } from "../context/open-document-from-file";
 import { tabSubject } from "../context/tab-subject";
@@ -283,7 +282,6 @@ function DocumentTabChip({
       isDraftOnly(document.documentId),
     ),
   );
-  const Icon = fileKindIcon(document.name);
   const heldWidth = useHeldTabWidth();
   const closeByPointer = (chip: HTMLElement | null) => {
     holdTabWidth(chip);
@@ -295,9 +293,10 @@ function DocumentTabChip({
       reviewing={reviewing}
       divider={divider}
       tabProps={{ ...drag, style: heldWidth === null ? undefined : { flex: `0 0 ${heldWidth}px` } }}
-      // Every tab is one width, as in Chrome: 240px, all shrinking together when the band is full.
+      // Every tab is one width, as in Chrome: 240px, all shrinking together when the band is full,
+      // to the start of its name (a chapter's number). No icon: every document's would be the same.
       // The open tab keeps room for its close; the strip scrolls past that.
-      className={cn("@container/tab w-60 shrink", active ? "min-w-16" : "min-w-10")}
+      className={cn("@container/tab w-60 shrink", active ? "min-w-16" : "min-w-12")}
     >
       <button
         type="button"
@@ -321,7 +320,6 @@ function DocumentTabChip({
         className="focus-ring absolute inset-0"
         title={document.kind === "new" ? document.name : document.path}
       />
-      <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       <span aria-hidden className="min-w-0 flex-1 truncate text-left text-xs">
         {document.name}
       </span>
@@ -373,8 +371,8 @@ function TabCloseButton({
         "focus-ring relative grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground",
         "hover:bg-ink-fill hover:text-foreground",
         // On every tab, in the same place, so closing several is one target after another; an
-        // inactive tab too narrow for its name gives the close up, as in Chrome.
-        !active && "@max-[5rem]/tab:hidden",
+        // inactive tab narrower than 64px (40px inside its padding) gives the close up, as in Chrome.
+        !active && "@max-[2.5rem]/tab:hidden",
       )}
     >
       <X className="size-3" aria-hidden />
