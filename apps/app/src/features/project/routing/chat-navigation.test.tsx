@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * A sent chat takes main when main is the chat index; sent from the side's composer it is held
+ * A sent chat takes main when main is a new chat's composer; sent from the side's composer it is held
  * beside main. The last chat is this tab's own, and a chat the server no longer has is let go.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):

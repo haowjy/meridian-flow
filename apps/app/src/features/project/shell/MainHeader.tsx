@@ -18,7 +18,6 @@ import { RemovedDocumentChip, RemovedNoticeSlot } from "../context/RemovedDocume
 import { tabSubject } from "../context/tab-subject";
 import { useIsDraftOnly } from "../context/use-is-draft-only";
 import { useDocumentPaint } from "../views";
-import { IndexTabChip } from "./IndexTabChip";
 import { PaneHeader, type PaneHeaderRailToggle } from "./PaneHeader";
 import { tabChipClass } from "./tab-chip";
 
@@ -46,14 +45,7 @@ export function MainHeader({
     <PaneHeader
       left={sidebarToggle}
       right={sideToggle}
-      leading={
-        <IndexTabChip
-          icon={History}
-          label={t`Recently opened`}
-          active={document === null}
-          onClick={onShowRecents}
-        />
-      }
+      leading={<RecentlyOpenedDoor active={document === null} onClick={onShowRecents} />}
       title={
         <div className="flex h-full min-w-0 flex-1 items-stretch">
           {document ? <DocumentTitleChip projectId={projectId} tab={document} /> : null}
@@ -120,5 +112,31 @@ function DocumentTitleChip({ projectId, tab }: { projectId: string; tab: OpenDoc
       <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="min-w-0 truncate text-xs">{tab.name}</span>
     </div>
+  );
+}
+
+/**
+ * The door to Recently opened, icon only, right after the sidebar toggle. Current while the
+ * landing is the page below (the page rises into it).
+ */
+function RecentlyOpenedDoor({ active, onClick }: { active: boolean; onClick: () => void }) {
+  const label = t`Recently opened`;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label={label}
+          aria-current={active ? "page" : undefined}
+          className={cn("focus-ring shrink-0", tabChipClass(active))}
+        >
+          <History className="size-3.5" aria-hidden />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={4}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
   );
 }

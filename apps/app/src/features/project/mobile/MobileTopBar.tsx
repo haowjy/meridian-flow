@@ -23,7 +23,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 
 export type MobileTopBarProps = {
-  /** Main shows a chat (or the chat index), not a document. */
+  /** Main shows a chat (or a new chat's composer), not a document. */
   onChat: boolean;
   projectTitle: string;
   onOpenDrawer: () => void;
