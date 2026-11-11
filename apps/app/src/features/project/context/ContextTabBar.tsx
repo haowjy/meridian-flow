@@ -17,6 +17,8 @@ import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useReviewCopy } from "@/features/draft-review/copy-view";
 import { cn } from "@/lib/utils";
+
+import { tabChipClass } from "../shell/tab-chip";
 import { fileKindIcon } from "./context-file-icon";
 import type { OptimisticContextTab } from "./context-pane-state";
 import { useReferenceDrag } from "./entry-drag/reference-source";
@@ -62,14 +64,10 @@ export function ContextTabBar({
     <div
       role="tablist"
       aria-label={t`Open context files`}
-      // Chips surface the canvas tone — see the tab-chip grammar in globals.css.
-      className={cn(
-        "tab-band flex h-10 shrink-0 items-stretch [--tab-chip-surface:var(--color-background)]",
-        // The band's gutter: the sheet's corner plus the first chip's outer flare.
-        !leading && "pl-3.5",
-      )}
+      className="tab-band flex h-10 shrink-0 items-stretch"
     >
-      {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
+      {/* pr-0.5: the first chip lands on `PaneHeader`'s x past the toggle. */}
+      {leading ? <div className="flex shrink-0 items-center pr-0.5">{leading}</div> : null}
       {onShowRecents ? (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -82,12 +80,7 @@ export function ContextTabBar({
               // page's top edge rises into, and off it the writer gets the same
               // hover pill an inactive tab wears. Not `h-full` — items-stretch
               // sizes the chip so the active margin subtracts from its height.
-              className={cn(
-                "focus-ring relative flex shrink-0 items-center gap-1.5 px-3",
-                recentsActive
-                  ? "tab-chip-active text-foreground"
-                  : "tab-chip-inactive text-muted-foreground hover:text-foreground",
-              )}
+              className={cn("focus-ring shrink-0 gap-1.5", tabChipClass(recentsActive))}
             >
               <History className="size-3.5" aria-hidden />
             </button>
@@ -270,10 +263,8 @@ function TabChipFrame({
         // subtracts from its height instead of overflowing the strip.
         // scroll-mx: scrolled into view, the active tab keeps room for its flares,
         // which the strip's scroller would clip at its edge.
-        "group relative flex w-40 shrink-0 scroll-mx-2 items-center gap-1.5 px-3",
-        active
-          ? "tab-chip-active text-foreground"
-          : "tab-chip-inactive text-muted-foreground hover:text-foreground",
+        "group w-40 shrink-0 scroll-mx-2 gap-1.5",
+        tabChipClass(active),
         // Under review the chip surfaces the review strip's tone so tab and
         // banner read as one continuous surface.
         reviewing && "[--tab-chip-surface:var(--color-review)]",

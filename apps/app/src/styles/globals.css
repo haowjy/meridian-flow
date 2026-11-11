@@ -734,14 +734,12 @@
  * page and so opaque: the flares end on the sheet's edge, and a translucent
  * stroke would darken there.
  *
- * The variation point is the surfacing color: consumers set
- * `--tab-chip-surface` on the strip (canvas for document tabs). These
- * utilities own geometry and surface paint only — DOM, text color, and a11y
- * stay local to each consumer. Chips must be `relative` (outline, flares and
- * hover pill are absolutely-positioned pseudos), and an active chip's base
- * must sit on the band's bottom edge. A chip starts no closer to the pane's
- * edge than the sheet's corner radius plus a flare, so the flare lands on the
- * sheet's straight edge.
+ * Sites take a chip's classes from `tabChipClass` (features/project/shell/
+ * tab-chip.ts), never from these utilities directly: it makes the chip
+ * `relative` (outline, flares and hover pill are absolutely-positioned
+ * pseudos) and band-tall, so an active chip's base sits on the band's bottom
+ * edge. The one variation point is the surface: a chip under review sets
+ * `--tab-chip-surface`; the default is the page.
  *
  * No transition on the active chip: activation swaps geometry instantly, so
  * a background fade would flash the outgoing chip as a full-height rectangle
@@ -750,6 +748,9 @@
 @utility tab-band {
   position: relative;
   z-index: 1;
+  /* The gutter: no chip starts closer to the pane's edge than the sheet's corner radius
+     plus a flare, so a flare lands on the sheet's straight edge. */
+  padding-inline-start: --spacing(3.5);
   /* Over the sheet's top edge and one row inside it, so an active chip's fill hides the
      edge beneath it with no gap at fractional display scales. */
   margin-bottom: -2px;
@@ -761,7 +762,7 @@
   margin-top: --spacing(1);
   border-top-left-radius: var(--tab-radius);
   border-top-right-radius: var(--tab-radius);
-  background-color: var(--tab-chip-surface);
+  background-color: var(--tab-chip-surface, var(--color-background));
   /* Both pseudos reach one flare past each side. The paths inside the images draw a 6px
      radius, which is --tab-radius: change them together. Their nested viewports anchor each
      corner to its own corner of the chip, so the outline fits any chip size undistorted. */
@@ -776,7 +777,7 @@
   }
   /* The flares' fill, under the outline. */
   &::before {
-    background-color: var(--tab-chip-surface);
+    background-color: var(--tab-chip-surface, var(--color-background));
     mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22%3E%3Csvg y=%22100%25%22 overflow=%22visible%22%3E%3Cpath d=%22M.5,-1.5A6 6 0 0 0 6.5,-7.5V0H.5Z%22/%3E%3Csvg x=%22100%25%22 overflow=%22visible%22%3E%3Cpath d=%22M-.5,-1.5A6 6 0 0 1 -6.5,-7.5V0H-.5Z%22/%3E%3C/svg%3E%3C/svg%3E%3C/svg%3E");
   }
   &::after {
