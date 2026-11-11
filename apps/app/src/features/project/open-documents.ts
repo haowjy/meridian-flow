@@ -1,11 +1,11 @@
 /**
- * The open-document interface the v1 shell codes against (work/ux-overhaul/plan/open-document-interface.md).
+ * The open-document interface the v1 shell reads (work/ux-overhaul/plan/open-document-interface.md).
  *
  * The tab store is the one owner of the open document: the tabs, one selection per project, and
- * each tab's view, preview mark and review pin. This file reads them, resolves what a tab paints
- * (`showing`, `review`) from the tab, the Work scope and the scope's draft list, and offers the
- * commands. The route no longer decides what is shown: an address arriving is an open or select
- * command, and in Write the URL follows the selection.
+ * each tab's view, preview mark and review pin. This file reads them and resolves what a tab
+ * paints (`showing`, `review`) from the tab, the Work scope and the scope's draft list. An address
+ * arriving is the route's open command (`useOpenContextRoute`); an address that names nothing is
+ * not turned into a tab: the route paints it unavailable or removed and leaves the URL alone.
  */
 import {
   draftOwnerKey,
@@ -33,15 +33,9 @@ import {
   useSelectedContextTab,
 } from "@/client/stores";
 import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
-import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 import { useContextRemovalProject } from "@/features/project/context/use-context-removal-project";
 import { settleWriterClose } from "@/features/project/context/use-follow-open-document-placement";
 import type { ReviewAddress } from "@/features/project/presented-document";
-import {
-  useOpenContextRoute,
-  useProjectScreen,
-} from "@/features/project/routing/ProjectNavigationContext";
-import { openDocumentInEditor } from "@/features/project/routing/use-open-document-in-editor";
 
 export { type TabView, useSelectedDocumentId } from "@/client/stores";
 
@@ -55,18 +49,12 @@ export type OpenDocumentTab = {
   review: ReviewAddress | null;
   /** What the tab paints once resolved. `pending` is a paint hold: never Live first. */
   showing: "pending" | "draft" | "live" | "as-of";
-  /** Whether the address that opened the tab has a document to show. */
-  address: { state: "ready" } | { state: "opening" | "not-found" | "removed" };
   /** Belongs to another Work: mark it, offer "Show <Work>". */
   outOfScope: { workId: string } | null;
   /** The scope's owner has a draft of this document (the tab's dot). */
   hasDraftInScope: boolean;
   view: TabView;
 };
-
-export type OpenTarget =
-  | { kind: "document"; documentId: string; review?: ReviewAddress }
-  | { kind: "tab"; tab: ContextTab; review?: ReviewAddress };
 
 type DraftRows = {
   status: "loading" | "ready";
@@ -215,7 +203,6 @@ function openDocumentTab(
     key: tabKey(tab),
     tab,
     preview: tab.preview === true,
-    address: { state: "ready" },
     ...resolveTab(tab, scope, pinned),
   };
 }
@@ -273,114 +260,14 @@ export function useSelectedOpenDocument(projectId: string): OpenDocumentTab | nu
   return useMemo(() => (tab ? openDocumentTab(tab, scope, pinned) : null), [tab, scope, pinned]);
 }
 
-export function useOpenDocumentActions(projectId: string): {
-  select(key: string): void;
-  open(target: OpenTarget): void;
-  openPreview(target: OpenTarget): void;
-  keep(key: string): void;
-  close(key: string): void;
-  setView(key: string, view: Partial<TabView>): void;
-} {
-  const screen = useProjectScreen();
-  const openRoute = useOpenContextRoute();
-  const openChatDocument = useOpenChatDocument(projectId);
+/** Closes an open tab as the writer's own close does: the coordinator owns the removal. */
+export function useCloseOpenDocument(projectId: string): (key: string) => void {
   const coordinator = useContextRemovalCoordinator();
-  const { activeWorkId } = useContextRemovalProject(projectId);
-
-  const writing = screen === "context";
-
-  const reviewOf = (tab: ContextTab, review?: ReviewAddress | null): ReviewAddress | null => {
-    if (review) return review;
-    if (tab.reviewPin) return tab.reviewPin;
-    const ownerKey = reviewOwnerOfTab(tab, activeWorkId);
-    const entry = ownerKey ? reviewEntryOf(tab, ownerKey) : undefined;
-    return ownerKey && entry ? { ownerKey, itemKey: entry.itemKey } : null;
-  };
-
-  /** Write: one route command installs the tab, selects it and writes the URL. */
-  const openInWrite = useCallback(
-    async (tab: ContextTab, review: ReviewAddress | null) => {
-      if (!openRoute) return;
-      if (tab.kind === "new" || tab.rootThreadId || review) {
-        await openDocumentInEditor(openRoute, tab, { review });
-        return;
-      }
-      await openRoute(
-        {
-          scheme: tab.scheme,
-          path: tab.path,
-          workId: tab.workId ?? activeWorkId ?? undefined,
-          documentId: tab.documentId,
-        },
-        { tab },
-      );
-    },
-    [openRoute, activeWorkId],
-  );
-
-  return useMemo(() => {
-    const store = () => useContextTabsStore.getState();
-    const findTab = (key: string) => getContextTabs(projectId).tabs.find((t) => tabKey(t) === key);
-    const findByDocument = (documentId: string) =>
-      getContextTabs(projectId).tabs.find((t) => t.documentId === documentId);
-
-    const close = (key: string) => {
-      const tab = findTab(key);
+  return useCallback(
+    (key) => {
+      const tab = getContextTabs(projectId).tabs.find((t) => tabKey(t) === key);
       if (tab) settleWriterClose(coordinator.writerClose(projectId, tab));
-    };
-
-    /** The pin an explicit review address sets, once the tab exists. */
-    const pinReview = (documentId: string, review: ReviewAddress | undefined) => {
-      const tab = findByDocument(documentId);
-      if (tab && review)
-        store().setTabState(projectId, tabKey(tab), {
-          reviewPin: review,
-          view: { version: "draft" },
-        });
-    };
-
-    const open = async (target: OpenTarget): Promise<ContextTab | undefined> => {
-      const documentId = target.kind === "document" ? target.documentId : target.tab.documentId;
-      const existing = findByDocument(documentId);
-      const stored = existing ?? (target.kind === "tab" ? target.tab : undefined);
-      if (writing) {
-        if (stored) await openInWrite(stored, reviewOf(stored, target.review));
-        else await openChatDocument({ documentId, workId: activeWorkId ?? undefined });
-      } else if (existing) {
-        await store().selectTab(projectId, documentId, existing);
-      } else if (stored) {
-        store().openTab(projectId, stored, undefined, undefined, { select: true });
-      } else {
-        // Beside the chat: the door's placement commits the tab into the store and selects it.
-        await openChatDocument({ documentId, workId: activeWorkId ?? undefined, keep: true });
-      }
-      pinReview(documentId, target.review);
-      return findByDocument(documentId);
-    };
-
-    return {
-      select: (key) => {
-        const tab = findTab(key);
-        if (!tab) return;
-        if (writing) void openInWrite(tab, reviewOf(tab));
-        else void store().selectTab(projectId, tab.documentId, tab);
-      },
-      open: (target) => void open(target),
-      // A new peek takes the preview slot and the previous peek closes; a document already open
-      // stays as it is and is only selected, so peeking never replaces the tab being worked in.
-      openPreview: (target) => {
-        const documentId = target.kind === "document" ? target.documentId : target.tab.documentId;
-        const previous = getContextTabs(projectId).tabs.find((t) => t.preview);
-        const wasOpen = findByDocument(documentId) !== undefined;
-        void open(target).then((tab) => {
-          if (!tab || wasOpen) return;
-          store().setTabState(projectId, tabKey(tab), { preview: true });
-          if (previous && previous.documentId !== tab.documentId) close(tabKey(previous));
-        });
-      },
-      keep: (key) => store().setTabState(projectId, key, { preview: false }),
-      close,
-      setView: (key, view) => store().setTabState(projectId, key, { view }),
-    };
-  }, [projectId, coordinator, writing, openInWrite, openChatDocument, activeWorkId]);
+    },
+    [coordinator, projectId],
+  );
 }

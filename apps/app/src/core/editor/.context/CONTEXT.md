@@ -390,9 +390,12 @@ keyboard, pointer, drop, or draft-recovery answer.
   never counts and a writer who types on a train gets delivery on reconnect, however
   long it takes. (Elapsed connected time, not a refusal count: the transport counts
   refusals for draft rooms only, and a live-room count would change every live session.)
-  The edits stay in IndexedDB in every case.
+  Every exit but a removal leaves the edits in IndexedDB.
 - A removed room (4208) retires at once, before an availability check can prove a
-  restore and restart it; its edits wait in IndexedDB for the next open.
+  restore and restart it. A removal runs `drainDocument` → `teardownOwner.drainRoom`,
+  which clears the local copy: edits typed offline into a document someone else deletes
+  are gone after Restore. Whether a removal should keep them until Restore or a purge
+  is an open owner decision ([#1385](https://github.com/haowjy/meridian-flow/issues/1385)).
 - Restarting a removed or unavailable room cancels its pending teardown and schedules
   it again when no host retains the room.
 

@@ -34,21 +34,6 @@ export function addressWorkSelection(address: ProjectAddress): AddressSelection 
   return d.kind === "work" ? { kind: "id", id: d.workId } : address.work;
 }
 
-/** Repair an editing-context `?work=` only; a resource's Work is its identity and never falls back. */
-export function guardProjectQuerySelections(
-  address: ProjectAddress,
-  catalogs: {
-    work: AddressCatalog<{ id: string }>;
-  },
-): ProjectAddress {
-  if (workIsIdentity(address.destination)) return address;
-  const resolution = resolveAddressSelection(address.work, catalogs.work);
-  if (resolution.status === "malformed" || resolution.status === "unavailable") {
-    return { ...address, work: { kind: "none" } };
-  }
-  return address;
-}
-
 /** Project content spells No Work as none; identity destinations retain the row id. */
 export function workSelectionFor(
   destination: ProjectDestination,

@@ -17,7 +17,6 @@ import {
   workingSetRouteEquals,
 } from "@/client/working-set";
 import {
-  type ContextRouteRepair,
   type ContextRouteTarget,
   sameContextTarget,
   targetInEditorOf,
@@ -118,57 +117,20 @@ export type ExactRouteCleanup = {
   identity: ContextRouteIdentity;
 };
 
-export type CandidateRejectionPlan = {
-  expected: { revision: number; locator: ContextRouteTarget };
-  fallback: ContextRouteTarget | null;
-  workspaceSelection: { kind: "preserve" } | { kind: "select"; documentId: string };
-  workingSet: ReconcileContextRoutesInput;
-  repair: ContextRouteRepair;
-};
-
 export function planCandidateRejection(input: {
-  rawRouteWork: string | undefined;
-  rawRouteChat?: string | undefined;
-  revision: number;
   rejected: ContextRouteTarget;
-  activeWorkId: string;
   tabs: readonly ContextTab[];
-  selectedTabId: string | null;
-  admitted: ContextRouteTarget | null;
   recentRoutes: readonly WorkingSetRoute[];
-}): CandidateRejectionPlan {
-  const fallback = chooseAdmittedFallback({ ...input, excluded: input.rejected });
-  const fallbackTab = fallback ? tabForTarget(input.tabs, fallback, fallback.workId) : null;
+}): { workingSet: ReconcileContextRoutesInput } {
   const rejectedRoute = input.recentRoutes.find((route) =>
     workingSetRouteMatchesTarget(route, input.rejected),
   );
-  const fallbackRoute = fallbackTab ? workingSetRouteForTab(fallbackTab) : null;
   return {
-    expected: { revision: input.revision, locator: input.rejected },
-    fallback,
-    workspaceSelection:
-      fallbackTab && fallbackTab.documentId !== input.selectedTabId
-        ? { kind: "select", documentId: fallbackTab.documentId }
-        : { kind: "preserve" },
     workingSet: {
       removedLocators: rejectedRoute ? [rejectedRoute] : [],
-      survivingOwnedLocators: [
-        ...input.tabs.flatMap((tab) => workingSetRouteForTab(tab) ?? []),
-        ...(fallbackRoute ? [fallbackRoute] : []),
-      ],
-      promote: fallbackRoute,
+      survivingOwnedLocators: input.tabs.flatMap((tab) => workingSetRouteForTab(tab) ?? []),
+      promote: null,
       clearAll: false,
-    },
-    repair: {
-      expectedSearch: {
-        screen: "context",
-        work: input.rawRouteWork,
-        chat: input.rawRouteChat,
-        scheme: input.rejected.scheme,
-        path: input.rejected.path,
-      },
-      expectedSelection: { kind: "rejected-candidate", revision: input.revision },
-      next: fallback ?? { kind: "clear" },
     },
   };
 }

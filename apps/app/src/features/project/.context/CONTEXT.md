@@ -32,7 +32,13 @@ shared, but Chat's dock is not a resizable panel.
 
 The authenticated project route keeps `ProjectView` mounted across same-project child paths.
 Typed route controllers own push/replace, and leaves parse no URLs. `repairAddress` is reserved
-for canonical, entry-guarded replacement.
+for canonical, entry-guarded replacement of the path.
+
+An address that names nothing (a missing or deleted path, an `item=` that names no draft, a `?work=`
+for a deleted Work) keeps the URL the writer asked for: the route paints it unavailable (or the
+removed notice when the removal record answers) in the destination's own tab. Nothing rewrites the
+URL to the selection or drops the unresolvable `?work` or `item`. A rejected candidate only clears
+its recent route. In Write the URL is the only owner of the Work scope (`setEditorWork`).
 
 Rename or move prepares the open tab's new locator and the replacement address as one navigation
 commit, so the old address keeps its identity continuity until the new one is accepted.

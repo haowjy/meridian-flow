@@ -138,6 +138,8 @@ export function useProjectLeaveGuard(guard: ProjectLeaveGuard) {
 export type ScreenCommands = {
   showEditor: (options?: { afterCommit?: () => void }) => Promise<NavigationSettlement>;
   showWork: () => Promise<NavigationSettlement>;
+  /** Write's Work scope: the address's `?work`, with or without a document. */
+  setEditorWork: (workId: string) => Promise<NavigationSettlement>;
 };
 export function useScreenCommands() {
   return useContext(ProjectNavigationContext)?.screenCommands;

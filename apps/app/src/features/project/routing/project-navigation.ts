@@ -7,7 +7,6 @@ import {
   projectAddressHref,
   projectAddressState,
 } from "./project-address";
-import { type AddressCatalog, guardProjectQuerySelections } from "./project-address-resolution";
 
 export type ProjectHistoryEntry = { href: string; key: string; state: Record<string, unknown> };
 export type ProjectNavigationPort = {
@@ -320,24 +319,21 @@ export function createProjectNavigation(
         afterCommit: options.afterCommit,
       });
     },
-    /** Rewrites the current entry in place: canonical path (bare project → `/chats`) and invalid `?work=`. */
-    repairAddress(
-      ticket: ProjectNavigationTicket,
-      catalogs: {
-        work: AddressCatalog<{ id: string }>;
-      },
-    ): void {
+    /** Rewrites the current entry in place to its canonical path (bare project → `/chats`). */
+    repairAddress(ticket: ProjectNavigationTicket): void {
       if (!isCurrent(ticket)) return;
       const entry = port.read();
       const parsed = parsedEntry(entry);
       if (parsed.kind !== "valid") return;
-      const next = guardProjectQuerySelections(parsed.address, catalogs);
       const pathOf = (href: string) => href.split(/[?#]/, 1)[0];
-      if (next === parsed.address && pathOf(parsed.href) === pathOf(entry.href)) return;
+      if (pathOf(parsed.href) === pathOf(entry.href)) return;
       // The destination does not change. Do not queue a destination blocker
       // that could later compete with the writer's pending navigation.
       revision += 1;
-      port.replaceEntry(projectAddressHref(next), projectAddressState(next, entry.state));
+      port.replaceEntry(
+        projectAddressHref(parsed.address),
+        projectAddressState(parsed.address, entry.state),
+      );
     },
     async replaceIfCurrent(
       ticket: ProjectNavigationTicket,

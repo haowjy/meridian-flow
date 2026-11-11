@@ -26,7 +26,7 @@ import { ContextDocumentHost } from "../context/ContextDocumentHost";
 import { ContextViewerHost } from "../context/ContextViewerHost";
 import { DocumentPaneChrome } from "../context/DocumentPaneChrome";
 import { useDocumentFreeze } from "../context/use-document-freeze";
-import { type OpenDocumentTab, useOpenDocumentActions } from "../open-documents";
+import { type OpenDocumentTab, useCloseOpenDocument } from "../open-documents";
 
 export function DockDocumentView(props: {
   projectId: string;
@@ -59,7 +59,7 @@ function DockDocumentBody({
   /** Whether the dock is on screen; a hidden dock's editor chrome stands down. */
   visible: boolean;
 }) {
-  const { close } = useOpenDocumentActions(projectId);
+  const close = useCloseOpenDocument(projectId);
   const closeDocument = () => close(dockDocument.key);
   const resources = useAccountResourceReplica();
   const tab = dockDocument.tab;

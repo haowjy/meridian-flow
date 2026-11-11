@@ -6,7 +6,7 @@
 import { t } from "@lingui/core/macro";
 import { Maximize2, X } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
-import { type OpenDocumentTab, useOpenDocumentActions } from "../open-documents";
+import { type OpenDocumentTab, useCloseOpenDocument } from "../open-documents";
 import { useScreenCommands } from "../routing/ProjectNavigationContext";
 
 export function DockDocumentCommands({
@@ -17,7 +17,7 @@ export function DockDocumentCommands({
   document: OpenDocumentTab;
 }) {
   const showEditor = useScreenCommands()?.showEditor;
-  const { close } = useOpenDocumentActions(projectId);
+  const close = useCloseOpenDocument(projectId);
 
   return (
     <>

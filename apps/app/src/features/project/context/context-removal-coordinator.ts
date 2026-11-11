@@ -704,7 +704,12 @@ export class ContextRemovalCoordinator {
               (candidate): candidate is ServerContextTab =>
                 candidate.kind !== "new" && candidate.documentId === id,
             );
-            return tab && !settledPlan.tabs.some((candidate) => candidate.documentId === id)
+            // A tab held for another Work's draft is gone from this Editor's strip too.
+            return tab &&
+              !settledPlan.tabs.some(
+                (candidate) =>
+                  candidate.documentId === id && isEditorTab(candidate, state.activeWorkId),
+              )
               ? [tab]
               : [];
           }),
@@ -974,7 +979,6 @@ export class ContextRemovalCoordinator {
     );
     const recentRoutes = this.workingSet.readRecentRoutes(projectId);
     const remainingTabs = tabs.filter((tab) => !documentIds.includes(tab.documentId));
-    const targetSelection = selectedDocumentIdOf(this.workspace.read(projectId));
     const fallback = chooseAdmittedFallback({
       activeWorkId,
       tabs: remainingTabs,
@@ -1003,14 +1007,6 @@ export class ContextRemovalCoordinator {
         obsoleteRoutes,
       );
     } else {
-      const selectedTab =
-        remainingTabs.find(
-          (tab) => tab.documentId === targetSelection && isEditorTab(tab, activeWorkId),
-        ) ?? null;
-      const _compatibleSelected =
-        selectedTab && targetInEditorOf(routeTargetForTab(selectedTab, activeWorkId), activeWorkId)
-          ? selectedTab
-          : null;
       const fallbackTab = fallback ? tabForTarget(remainingTabs, fallback, activeWorkId) : null;
       const promotedRoute = fallbackTab ? workingSetRouteForTab(fallbackTab) : null;
       this.workingSet.reconcileContextRoutes(projectId, {
@@ -1302,52 +1298,16 @@ export class ContextRemovalCoordinator {
       return;
     }
     if (!state.activeWorkId) return;
-    const slice = this.workspace.read(projectId);
-    const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
-    const search = route?.readSearch(projectId);
+    // The address stays what the writer asked for and the route paints it unavailable: the
+    // selection and the URL are not repaired to another document. Only the dead recent route goes.
     const plan = planCandidateRejection({
-      rawRouteWork: search?.work,
-      revision: rejection.revision,
       rejected: rejection.locator,
-      activeWorkId: state.activeWorkId,
-      tabs: slice.tabs,
-      selectedTabId: state.activeWorkId ? selectedDocumentIdOf(slice) : null,
-      admitted: state.admitted,
+      tabs: this.workspace.read(projectId).tabs,
       recentRoutes: this.workingSet.readRecentRoutes(projectId),
     });
-    if (plan.workspaceSelection.kind === "select") {
-      if (state.activeWorkId) {
-        this.workspace.commit(projectId, {
-          documentIds: [],
-          workspaceSelection: { documentId: plan.workspaceSelection.documentId },
-        });
-      }
-    }
     this.workingSet.reconcileContextRoutes(projectId, plan.workingSet);
     state.transitionRevision += 1;
-    state.admitted = plan.fallback;
     this.publish(state);
-
-    if (!route || !contextRouteMatchesSearch(search, rejection.locator, state.activeWorkId)) {
-      return;
-    }
-    route.updateSearch(projectId, (latest) =>
-      this.candidateStillRejected(projectId, rejection)
-        ? applyContextRepairIfCurrent(plan.repair, latest)
-        : latest,
-    );
-  }
-
-  private candidateStillRejected(
-    projectId: string,
-    rejection: Extract<ContextRouteSelection, { status: "rejected" }>,
-  ): boolean {
-    const selection = this.project(projectId).selection;
-    return (
-      selection.status === "rejected" &&
-      selection.revision === rejection.revision &&
-      sameLocator(selection.locator, rejection.locator)
-    );
   }
 
   private leaveSelection(projectId: string): void {

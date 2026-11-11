@@ -35,6 +35,7 @@ import {
   isEditorScheme,
   matchesReviewItem,
   selectedDocumentIdOf,
+  selectedTabOf,
   useContextTabs,
   useContextTabsStore,
 } from "@/client/stores";
@@ -297,11 +298,8 @@ function ReadableProjectDestination({
     if (!navigation || parsed.kind !== "valid") return;
     const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
     if (!ticket) return;
-    // A cached miss while a catalog refresh is pending is not confirmed unavailability.
-    navigation.repairAddress(ticket, {
-      work: workCatalog.isFetching ? { status: "loading" } : workCatalog,
-    });
-  }, [navigation, location, workCatalog.entries, workCatalog.status, workCatalog.isFetching]);
+    navigation.repairAddress(ticket);
+  }, [navigation, location]);
 
   // Cached live locations, read only to place a review launch's document (never fetched for it).
   const launchCatalogs = useContextCatalogViews(projectId, CONTEXT_URI_SCHEMES, {
@@ -672,7 +670,7 @@ function ReadableProjectDestination({
   // The server not having a path rejects a route candidate only when this device holds no
   // document there either: a document the server never accepted is listed here and opens.
   // An item that names no draft (or a draft that has ended) is not the document missing: the
-  // address names the document, so only the review goes (below) and the selection stays.
+  // document's recent route stays. The address itself still shows unavailable.
   useLayoutEffect(() => {
     if (
       documentLookup.data?.kind !== "unavailable" ||
@@ -701,16 +699,6 @@ function ReadableProjectDestination({
     selection,
     workId,
   ]);
-  useLayoutEffect(() => {
-    if (!reviewGone || !navigation) return;
-    const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
-    if (ticket)
-      void navigation.replaceIfCurrent(ticket, {
-        ...address,
-        itemKey: undefined,
-        changeId: undefined,
-      });
-  }, [reviewGone, navigation, location, address]);
   const removedTitle = documentDestination?.path.split("/").filter(Boolean).at(-1) ?? null;
   const switchFailure = useDocumentSwitchFailures();
   const failedDestination = destinationFailure(
@@ -1027,6 +1015,20 @@ function ReadableProjectDestination({
       { replace: false, ...options },
     );
   };
+  // The URL owns Write's scope: with a document selected the command reopens it in the Work,
+  // otherwise it states the Work on the bare Editor address.
+  const setEditorWork = (id: string) => {
+    const tab = selectedTabOf(getContextTabs(projectId));
+    return tab
+      ? openContext({ ...routeTargetForTab(tab, id), documentId: tab.documentId }, { tab })
+      : go(
+          {
+            ...toDestination({ kind: "editor" }),
+            work: workSelectionFor({ kind: "editor" }, id, noWorkId),
+          },
+          { replace: true },
+        );
+  };
   const selectRailScreen = useRailScreenSwitch(
     activeScreen,
     (ticket) => latest.current.navigation?.isCurrent(ticket) ?? false,
@@ -1053,6 +1055,7 @@ function ReadableProjectDestination({
       screenCommands={{
         showEditor: (options) => showScreenDestination("context", options),
         showWork: () => showScreenDestination("work"),
+        setEditorWork,
       }}
       isCurrentNavigation={(ticket) => latest.current.navigation?.isCurrent(ticket) ?? false}
       captureNavigation={captureNavigation}
