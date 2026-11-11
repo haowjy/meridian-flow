@@ -78,7 +78,8 @@ export class AccountFeatureLifetime {
       closeCreated: (ref) => {
         this.removal.discardDraft(ref.projectId, ref.documentId);
       },
-      markOwnRemoval: (ref) => this.notices.markOwnRemoval(ref.projectId, [ref.documentId]),
+      markOwnRemoval: (ref): ((outcome: "removed" | "kept") => void) =>
+        this.removal.beginOwnRemoval(ref.projectId, [ref.documentId]),
     });
     this.availability = new ProjectContextAvailabilityCoordinator({
       lookup: lookupProjectContextAvailability,

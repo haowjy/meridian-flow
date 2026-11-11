@@ -283,6 +283,8 @@ export type OpenProjectDocumentRequest = {
   /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
   workId?: string;
   focus?: true;
+  /** Takes the place of the current history entry (main leaving a document the writer removed). */
+  replace?: true;
   signal?: AbortSignal;
 };
 
@@ -364,6 +366,7 @@ export class ProjectDocumentNavigationAdapter {
       known,
       workId,
       focus,
+      replace,
       signal,
     }: OpenProjectDocumentRequest,
   ): Promise<OpenDocumentOutcome> {
@@ -435,6 +438,7 @@ export class ProjectDocumentNavigationAdapter {
         rootThreadId: identity.rootThreadId,
         chatId: identity.chatId,
         focus,
+        replace,
         isCurrent,
         canCommit,
         transfer,
@@ -558,6 +562,7 @@ export class ProjectDocumentNavigationAdapter {
     rootThreadId?: string;
     chatId?: string;
     focus?: true;
+    replace?: true;
     isCurrent: () => boolean;
     canCommit: () => boolean;
     transfer?: AvailableOpenResolution;
@@ -586,6 +591,7 @@ export class ProjectDocumentNavigationAdapter {
       {
         tab,
         ...(input.focus ? { focus: true as const } : {}),
+        ...(input.replace ? { replace: true } : {}),
         isCurrent: input.isCurrent,
         canCommit: input.canCommit,
         afterCommit: () =>

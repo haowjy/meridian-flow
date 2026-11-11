@@ -13,7 +13,7 @@ import {
 } from "@meridian/resource-replica";
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
 import { notifyFailure } from "@/components/app/failure-toast";
-import type { RemovedNoticeStore } from "../removed-notice-store";
+import type { ContextRemovalCoordinator } from "../context-removal-coordinator";
 import { copyFailures, copyFailureTitle } from "./copy-refusal";
 import type { EntryRef } from "./entry";
 import { copyRows } from "./execute-copy";
@@ -30,7 +30,7 @@ import {
 } from "./move-plan";
 
 export type EntryContext = ReplicaContext & {
-  notices?: Pick<RemovedNoticeStore, "markOwnRemoval"> | null;
+  removal?: Pick<ContextRemovalCoordinator, "beginOwnRemoval"> | null;
 };
 
 export type EntryFailure = { key: string } & (
@@ -173,7 +173,7 @@ export async function runCopy(
     });
 }
 
-/** The documents deleting `entry` takes away; the notice store keeps the presented ones. */
+/** The documents deleting `entry` takes away. */
 async function ownRemovals(context: EntryContext, entry: EntryRef): Promise<string[]> {
   if (entry.kind === "file") return [entry.id];
   const view = await currentView(context);
@@ -189,8 +189,8 @@ export async function runDelete(
   context: EntryContext,
   { name, ...entry }: EntryRef & { name: string },
 ): Promise<void> {
-  const { resources, projectId, notices } = context;
-  const settleMark = notices?.markOwnRemoval(projectId, await ownRemovals(context, entry));
+  const { resources, projectId, removal } = context;
+  const settleMark = removal?.beginOwnRemoval(projectId, await ownRemovals(context, entry));
   try {
     if (entry.kind === "folder") await resources.deleteFolder(projectId, entry.id);
     else {

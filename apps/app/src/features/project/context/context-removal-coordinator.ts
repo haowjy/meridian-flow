@@ -77,6 +77,17 @@ export type ContextRemovalRoutePort = {
     target: ContextRouteRequest | { kind: "clear" },
     prepared: PreparedWorkspaceNavigation,
   ): Promise<NavigationSettlement>;
+  /**
+   * The writer is removing `documentId`, which main shows: main opens the document it showed
+   * before, one that still exists and is not among `removing`, else Recently opened. Nothing
+   * moves once `isCurrent` turns false.
+   */
+  goBack(
+    projectId: string,
+    documentId: string,
+    removing: readonly string[],
+    isCurrent: () => boolean,
+  ): void;
 };
 
 /**
@@ -130,7 +141,10 @@ export type ContextRouteActivation = {
 };
 
 /** Where views report documents they presented that vanished (`RemovedNoticeStore`). */
-export type RemovedPresentationPort = Pick<RemovedNoticeStore, "presentedRemoved">;
+export type RemovedPresentationPort = Pick<
+  RemovedNoticeStore,
+  "presentedRemoved" | "markOwnRemoval"
+>;
 
 type CoordinatorProjectState = {
   activeWorkId: string | null;
@@ -881,6 +895,28 @@ export class ContextRemovalCoordinator {
     const outcome = this.executePlanning(projectId, transition.planning);
     this.publish(state);
     return outcome;
+  }
+
+  /**
+   * The writer is deleting or Discarding these documents: their removal says nothing, and main,
+   * if it shows one of them, goes at once to the document it showed before, else to Recently
+   * opened. Call before the removal; settle the returned mark as `markOwnRemoval` says.
+   */
+  beginOwnRemoval(
+    projectId: string,
+    documentIds: readonly string[],
+  ): (outcome: "removed" | "kept") => void {
+    const settle = this.notices?.markOwnRemoval(projectId, documentIds) ?? (() => undefined);
+    const shown = this.presented.mainDocumentId(projectId);
+    const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
+    if (this.unavailable() || !route || !shown || !documentIds.includes(shown)) return settle;
+    route.goBack(
+      projectId,
+      shown,
+      documentIds,
+      () => !this.unavailable() && this.presented.mainDocumentId(projectId) === shown,
+    );
+    return settle;
   }
 
   /**
