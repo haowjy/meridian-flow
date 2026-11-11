@@ -190,15 +190,16 @@ export function startDraftDiscardSession(input: {
   binding.notices.add(end);
   const handle: DiscardUndo = {
     end,
-    undo: async () => {
-      if (!active) return "gone";
+    undo: () => {
+      const none = Promise.resolve();
+      if (!active) return { answer: "gone", landed: none };
       if (pending) {
         pending = false;
         cancelAnimationFrame(paintFrame);
         document.removeEventListener("visibilitychange", onVisibility);
         finish({ kind: "done" });
         end();
-        return "ok";
+        return { answer: "ok", landed: none };
       }
       if (
         !item ||
@@ -208,7 +209,7 @@ export function startDraftDiscardSession(input: {
         binding.session.getSnapshot().access === "read"
       ) {
         end();
-        return "gone";
+        return { answer: "gone", landed: none };
       }
       const stackItem = item;
       undoing = true;
@@ -217,15 +218,16 @@ export function startDraftDiscardSession(input: {
           history.undo();
         else undoAlone(fragment, stackItem, history);
       } catch {
-        return "failed";
+        return { answer: "failed", landed: none };
       } finally {
         undoing = false;
       }
       binding.runtime.projectNow();
       // The prose is back in the room, which sends it whenever it can and drains unsent edits
       // before it closes; its acknowledgement fails only once the room itself has ended.
+      const landed = binding.session.whenCurrentChangesAcknowledged().catch(() => undefined);
       end();
-      return "ok";
+      return { answer: "ok", landed };
     },
   };
   if (editor) {

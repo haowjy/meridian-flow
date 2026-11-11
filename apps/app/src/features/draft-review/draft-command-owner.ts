@@ -868,7 +868,13 @@ export class DraftCommandOwner {
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") {
         settleOwn?.(true);
-        this.setState(ref.itemKey, { hidden: true, discarding: null });
+        // State held under the item key itself (no draft room ever bound, as for a picture)
+        // would hide the document's next item in this branch too; the caller drops the row.
+        const hides = item.isNew || this.generation(ref.itemKey) !== ref.itemKey;
+        this.setState(
+          ref.itemKey,
+          hides ? { hidden: true, discarding: null } : { discarding: null },
+        );
         return { kind: "done" };
       }
       settleOwn?.(false);
