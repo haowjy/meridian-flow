@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { projectResourceTab } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import { useIsDraftOnly } from "../context/use-draft-only-presentation";
+import { useIsDraftOnly } from "../context/use-is-draft-only";
 import type { ScreenKey } from "../routing/project-route";
 import { useWorkScope } from "../use-work-scope";
 import { useManageWorks } from "../work/ManageWorksDialog";

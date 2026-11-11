@@ -17,7 +17,7 @@
  */
 import { draftOwnerKey, type ThreadDraftListItem } from "@meridian/contracts/branches";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import {
   type DocumentView,
@@ -30,6 +30,7 @@ import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import type { ContextTab } from "@/client/stores";
 import { useAccountId } from "./context/account-feature-context";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
+import { useIsDraftOnly } from "./context/use-is-draft-only";
 
 export type DocumentPaint = {
   showing: "pending" | "failed" | "draft" | "live";
@@ -87,13 +88,26 @@ export function useDocumentPaint(projectId: string, document: ContextTab | null)
 
   const queryClient = useQueryClient();
   const missingKey = pinMissing ? JSON.stringify([pin.ownerKey, pin.itemKey]) : null;
-  useEffect(() => {
-    if (pin && missingKey) verifyPin(queryClient, accountId, projectId, pin);
-  }, [missingKey, queryClient, accountId, projectId]);
-
   const scopeRow = documentId
     ? scopeRows.rows.find((row) => row.documentId === documentId)
     : undefined;
+  // A document live lacks shows "removed" only when the scope has no draft of it either: its view
+  // moves to the scope's draft when the pinned one ends.
+  const isDraftOnly = useIsDraftOnly(projectId);
+  const successor =
+    documentId && scopeOwnerKey && scopeRow && isDraftOnly(documentId)
+      ? { documentId, pin: { ownerKey: scopeOwnerKey, itemKey: scopeRow.itemKey } }
+      : null;
+  const latestSuccessor = useRef(successor);
+  latestSuccessor.current = successor;
+  useEffect(() => {
+    if (!pin || !missingKey) return;
+    verifyPin(queryClient, accountId, projectId, pin, (id) => {
+      const next = latestSuccessor.current;
+      return next?.documentId === id && next.pin.itemKey !== pin.itemKey ? next.pin : null;
+    });
+  }, [missingKey, queryClient, accountId, projectId]);
+
   return useMemo((): DocumentPaint => {
     const scopeDraft =
       scopeOwnerKey && scopeRow ? { ownerKey: scopeOwnerKey, itemKey: scopeRow.itemKey } : null;

@@ -8,7 +8,7 @@
 import type { ReactNode } from "react";
 import { DocumentIdentityBar } from "../context/DocumentIdentityBar";
 import { useDocumentFreeze } from "../context/use-document-freeze";
-import { useIsDraftOnly } from "../context/use-draft-only-presentation";
+import { useIsDraftOnly } from "../context/use-is-draft-only";
 import { type OpenDocumentTab, useOpenDocumentActions } from "../open-documents";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { DockDocumentCommands } from "./DockDocumentCommands";

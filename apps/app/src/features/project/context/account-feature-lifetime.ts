@@ -1,5 +1,6 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
 
+import { readDocumentView } from "@/client/project-shell/document-views";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
 import type { DocumentSession } from "@/core/editor/document-session";
@@ -86,7 +87,16 @@ export class AccountFeatureLifetime {
     this.removal = new ContextRemovalCoordinator(accountId, {
       sessions: this.registry,
       notices: this.notices,
-      drafts: this.draftCommands,
+      drafts: {
+        // A Discarded draft's review can still hold its room, and a view can leave a draft for
+        // Live: neither shows the draft, so neither keeps a document live deleted.
+        boundDrafts: (projectId, documentId) => {
+          const pin = readDocumentView(accountId, projectId, documentId).pin;
+          return this.draftCommands
+            .boundDrafts(projectId, documentId)
+            .filter((draft) => draft.ownerKey === pin?.ownerKey && draft.itemKey === pin.itemKey);
+        },
+      },
       draftOnly: this.draftOnly,
     });
     this.registry.observeRemovedRooms((session, room) => this.followRemovedRoom(session, room));

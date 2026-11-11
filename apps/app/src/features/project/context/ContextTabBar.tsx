@@ -25,7 +25,7 @@ import { useReferenceDrag } from "./entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "./open-project-document";
 import { RemovedNoticeSlot } from "./RemovedDocumentNotice";
 import { tabSubject } from "./tab-subject";
-import { useIsDraftOnly } from "./use-draft-only-presentation";
+import { useIsDraftOnly } from "./use-is-draft-only";
 
 export type ContextTabBarProps = {
   tabs: ContextTab[];
