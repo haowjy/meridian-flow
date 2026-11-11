@@ -61,7 +61,6 @@ import {
   canonicalDocumentPath,
   gateLiveView,
   holdsBoundDocument,
-  projectAddressMatchesContextTarget,
   reconcileDocumentAddress,
   resolveLocalDocumentAddress,
 } from "./local-document-address";
@@ -245,9 +244,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     const current = latest.current.navigation;
     const ticket = current?.beginIntent();
     return () => !!ticket && !!current?.isCurrent(ticket);
-  }, []);
-  const isCurrentContextRoute = useCallback((target: ContextRouteRequest) => {
-    return projectAddressMatchesContextTarget(latest.current.address, target);
   }, []);
 
   // A scheme the Editor never opens (Uploads) shows in its resource view.
@@ -835,11 +831,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   return (
     <ProjectNavigationProvider
       openContextRoute={openContext}
-      isCurrentNavigation={(ticket) => latest.current.navigation?.isCurrent(ticket) ?? false}
       captureNavigation={captureNavigation}
       trash={{ destination: trashDestination, navigate: navigateTrash }}
-      isCurrentContextRoute={isCurrentContextRoute}
-      registerLeaveGuard={navigation?.registerGuard}
     >
       <ChatNavigationProvider value={chat}>
         <ProjectDocumentNavigationProvider

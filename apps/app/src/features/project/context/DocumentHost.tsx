@@ -155,11 +155,7 @@ function MainDocumentBinding({
     if (main.local) {
       // The pointer route (`unfiled`, no path) and a path route the pointer holds: both bind to
       // the local document, so a move of it carries the route instead of rejecting its old path.
-      const workspace = resolveWorkspaceRoute({
-        tabs: [tab],
-        selectedDocumentId: tab.documentId,
-        locator: selection.locator,
-      });
+      const workspace = resolveWorkspaceRoute(tab, selection.locator);
       if (workspace.kind === "materialized-local")
         contextRemoval.redirectMaterializedLocal(
           projectId,
