@@ -27,7 +27,7 @@ import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { fetchCurrentDraftMetadata, useDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { projectWorkBranchFiles } from "@/client/query/work-branch-files";
-import { type ContextTab, isEditorScheme } from "@/client/stores";
+import { isEditorScheme, type OpenDocument } from "@/client/stores";
 import type { WorkingSetHydrationPlan } from "@/client/working-set";
 import { parseContextUri } from "@/lib/context-uri";
 import { originalBrowserSearch } from "@/router-search";
@@ -662,7 +662,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     };
   }
   const contextDestination = useCallback(
-    (target: ContextRouteRequest, preparedTab?: ContextTab, itemKey?: string) =>
+    (target: ContextRouteRequest, preparedTab?: OpenDocument, itemKey?: string) =>
       prepareEditorDestination(
         {
           projectId,

@@ -13,7 +13,7 @@ import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts
 import { Check, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { dropdownPanelClass } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
@@ -63,7 +63,7 @@ export function IdentityPlacementField({
 }: {
   projectId: string;
   editorWorkId: string | null;
-  tab: ContextTab;
+  tab: OpenDocument;
   location: TabLocation;
   failure: QueuedIdentityFailure | null;
   commit: (target: IdentityCommitTarget) => Promise<IdentityCommitOutcome>;
@@ -409,7 +409,7 @@ function treeSegments(path: string): string[] {
 }
 
 function suggestionForSession(
-  tab: ContextTab,
+  tab: OpenDocument,
   session: import("@/core/editor/document-session").DocumentSession,
 ): string {
   const suggestion = suggestedNameFromFragment(

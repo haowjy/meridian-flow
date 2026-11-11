@@ -30,7 +30,7 @@ import {
 import { useDocumentRelated } from "@/client/query/useDocumentRelated";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import type { NewChatAbout } from "@/features/chat/CreationComposer";
 import {
   useAccountId,
@@ -59,7 +59,7 @@ import {
 export type SideItem = {
   item: Item | null;
   /** A document item's descriptor. */
-  tab: ContextTab | null;
+  tab: OpenDocument | null;
   source: SideSource | null;
   /** Why it is there; none while the side keeps an earlier item, whose reason was about another main. */
   reason: SideReason | null;
@@ -161,7 +161,7 @@ type Descriptions = {
 function useDescriptions(projectId: string): Descriptions {
   const describe = useDescribeProjectDocument(projectId);
   const shown = useShownDocuments(projectId);
-  const [answers, setAnswers] = useState<ReadonlyMap<string, ContextTab | null | "failed">>(
+  const [answers, setAnswers] = useState<ReadonlyMap<string, OpenDocument | null | "failed">>(
     () => new Map(),
   );
   const asked = useRef(new Set<string>());
@@ -174,7 +174,7 @@ function useDescriptions(projectId: string): Descriptions {
   const lifecycle = useRef(lifecycleOf);
   lifecycle.current = lifecycleOf;
   const refused = useRef(new Map<string, string | null>());
-  const store = useCallback((key: string, value: ContextTab | null | "failed" | undefined) => {
+  const store = useCallback((key: string, value: OpenDocument | null | "failed" | undefined) => {
     if (value === null) refused.current.set(key, lifecycle.current(key.split("|")[0] ?? ""));
     else refused.current.delete(key);
     setAnswers((current) => {
@@ -362,7 +362,7 @@ export function SideViewProvider({
 }
 
 /** A document the writer picked beside counts as recently opened, once per pick. */
-function useRecordSidePick(projectId: string, picked: ContextTab | null) {
+function useRecordSidePick(projectId: string, picked: OpenDocument | null) {
   const record = useRecordOpenedDocument();
   const recorded = useRef<string | null>(null);
   useEffect(() => {

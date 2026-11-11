@@ -66,7 +66,7 @@ export function tabContextOwner(owner: TabOwner): ContextOwner {
     : { workId: owner.workId ?? null };
 }
 
-export type ContextTab =
+export type OpenDocument =
   | ({
       kind: "tracked";
       documentId: string;
@@ -106,7 +106,7 @@ export type ContextTab =
       resourceHandle: string;
     };
 
-export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" }>;
+export type ServerOpenDocument = Extract<OpenDocument, { kind: "tracked" | "viewer" }>;
 
 /**
  * The one scheme the Editor never opens: uploads belong to a chat and open in
@@ -117,6 +117,6 @@ export function isEditorScheme(scheme: ProjectContextTreeScheme): boolean {
 }
 
 /** Whether a main view can hold the document: every kind but an upload. */
-export function isEditorContextTab(tab: ContextTab): boolean {
+export function isEditorOpenDocument(tab: OpenDocument): boolean {
   return tab.kind === "new" || isEditorScheme(tab.scheme);
 }

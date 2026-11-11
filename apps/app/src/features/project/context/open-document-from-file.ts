@@ -1,5 +1,5 @@
 /**
- * context-tab-from-file — adapter from context-tree file metadata to ContextTab.
+ * open-document-from-file — adapter from context-tree file metadata to OpenDocument.
  *
  * Keeps desktop and phone context navigation on the same tab construction path
  * so file classification, schema type, and viewer metadata cannot drift between
@@ -16,7 +16,7 @@ import {
 } from "@meridian/resource-replica";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 
-import type { ContextTab, ServerContextTab, TabOwner } from "@/client/stores";
+import type { OpenDocument, ServerOpenDocument, TabOwner } from "@/client/stores";
 
 /** Work-scoped tabs retain their row identity, including No Work. */
 export function editorTabWorkId(location: ResourceOwner): string | undefined {
@@ -53,11 +53,11 @@ function lineageRefOf(file: CatalogFile): string {
   return parsed.value.authority.rootThreadRef;
 }
 
-export function contextTabFromFile(
+export function openDocumentFromFile(
   scheme: ProjectContextTreeScheme,
   file: CatalogFile,
   owner: ContextOwner = {},
-): ContextTab {
+): OpenDocument {
   if (file.resourceHandle && file.resourceState === "local" && file.provisionalName) {
     return {
       kind: "new",
@@ -116,16 +116,16 @@ export function serverTabFromFile(
   scheme: ProjectContextTreeScheme,
   file: CatalogFile,
   owner: ContextOwner = {},
-): ServerContextTab | null {
-  const tab = contextTabFromFile(scheme, file, owner);
+): ServerOpenDocument | null {
+  const tab = openDocumentFromFile(scheme, file, owner);
   return tab.kind === "new" ? null : tab;
 }
 
 /** One optimistic tab projection for a durable editable resource. */
-export function contextTabFromResource(
+export function openDocumentFromResource(
   record: ResourceRecord,
   placement: ResourcePlacement,
-): Extract<ContextTab, { kind: "new" | "tracked" }> | null {
+): Extract<OpenDocument, { kind: "new" | "tracked" }> | null {
   const location = placement.resourceLocation(record);
   const tabOwner = location ? tabOwnerOf(location) : null;
   if (!location || !tabOwner) return null;
@@ -173,7 +173,7 @@ export type ResourceTabProjection =
   | {
       kind: "projected";
       resourceHandle: string;
-      tab: ContextTab;
+      tab: OpenDocument;
     };
 
 /**
@@ -183,7 +183,7 @@ export type ResourceTabProjection =
  * hiding or closing its tab on it would strand the draft. Its draft settlement owns it.
  */
 export function projectResourceTab(
-  tab: ContextTab,
+  tab: OpenDocument,
   records: readonly ResourceRecord[],
   placement: ResourcePlacement,
   draftOnly: boolean,
@@ -223,13 +223,13 @@ export function projectResourceTab(
       name: location.name,
       ...tabOwner,
       ...(existing.kind === "tracked" ? { provisionalName: location.provisional } : {}),
-    } as Extract<ContextTab, { kind: "tracked" | "viewer" }>;
+    } as Extract<OpenDocument, { kind: "tracked" | "viewer" }>;
     return { kind: "projected", resourceHandle: record.resource.handle, tab: projected };
   }
   // A chat's upload cached before its chat had a handle names no tab owner: the tab keeps its own.
   const located = placement.resourceLocation(record);
   if (located && !tabOwnerOf(located)) return { kind: "none" };
-  const projected = contextTabFromResource(record, placement);
+  const projected = openDocumentFromResource(record, placement);
   return projected
     ? { kind: "projected", resourceHandle: record.resource.handle, tab: projected }
     : { kind: "removed" };

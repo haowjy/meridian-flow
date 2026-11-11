@@ -3,14 +3,14 @@
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback } from "react";
 import { type DraftPin, readDocumentView } from "@/client/project-shell/document-views";
-import { type ContextTab, isEditorContextTab } from "@/client/stores";
+import { isEditorOpenDocument, type OpenDocument } from "@/client/stores";
 import { useAccountId } from "../context/account-feature-context";
 import { type OpenContextRoute, useOpenContextRoute } from "./ProjectNavigationContext";
 import { contextRouteRequest } from "./project-route";
 
 type EditorDocument =
   | ({ scheme: ProjectContextTreeScheme; path: string } & ContextOwner)
-  | ContextTab;
+  | OpenDocument;
 
 export function openDocumentInEditor(
   open: OpenContextRoute,
@@ -18,7 +18,7 @@ export function openDocumentInEditor(
   options: { afterCommit?: () => void; review?: DraftPin | null } = {},
 ) {
   const { review, ...routeOptions } = options;
-  const tab = "kind" in target && isEditorContextTab(target) ? target : undefined;
+  const tab = "kind" in target && isEditorOpenDocument(target) ? target : undefined;
   if ("kind" in target && target.kind === "new")
     return open(
       { scheme: "unfiled", path: "", documentId: target.documentId },
@@ -57,7 +57,7 @@ export function useOpenDocumentInEditor() {
 export function useOpenInMain(
   projectId: string,
   open: OpenContextRoute,
-): (tab: ContextTab) => void {
+): (tab: OpenDocument) => void {
   const accountId = useAccountId();
   return useCallback(
     (tab) =>

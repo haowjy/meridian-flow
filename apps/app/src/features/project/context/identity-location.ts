@@ -8,7 +8,7 @@ import {
   resourceWorkAuthorityFor,
 } from "@meridian/resource-replica";
 
-import { type ContextTab, replaceOwner, type TabOwner } from "@/client/stores";
+import { type OpenDocument, replaceOwner, type TabOwner } from "@/client/stores";
 import { parentPath as parentFolderPath } from "./file-suggestions";
 
 export type TabLocation = {
@@ -92,7 +92,7 @@ export function destinationOwner(
 }
 
 /** Local documents acquire their first durable location in the project Unfiled source. */
-export function tabLocation(tab: ContextTab): TabLocation {
+export function tabLocation(tab: OpenDocument): TabLocation {
   if (tab.kind === "new") {
     return {
       scheme: "unfiled",

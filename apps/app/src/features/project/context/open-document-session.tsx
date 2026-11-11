@@ -18,7 +18,7 @@ import type { LiveDocumentBindingState } from "./use-live-document-binding";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
 import { useRefusedEditsReopen } from "./use-refused-edits-reopen";
 
-type ContextTabSessionProps = {
+type OpenDocumentSessionProps = {
   projectId: string;
   documentId: string;
   resourceHandle?: string;
@@ -40,13 +40,13 @@ type ContextTabSessionProps = {
  * unmounts. A room dropped because the server refused its edits reopens as a
  * fresh session: local probe and server binding both start over.
  */
-export function ContextTabSessionBoundary(props: ContextTabSessionProps) {
+export function OpenDocumentSessionBoundary(props: OpenDocumentSessionProps) {
   const [opening, setOpening] = useState(0);
   const reopen = useCallback(() => setOpening((value) => value + 1), []);
-  return <ContextTabSession key={opening} {...props} onReopen={reopen} />;
+  return <OpenDocumentSession key={opening} {...props} onReopen={reopen} />;
 }
 
-function ContextTabSession({
+function OpenDocumentSession({
   projectId,
   documentId,
   resourceHandle,
@@ -55,7 +55,7 @@ function ContextTabSession({
   bindingOwner = "desktop-document-host",
   children,
   onReopen,
-}: ContextTabSessionProps & { onReopen: () => void }) {
+}: OpenDocumentSessionProps & { onReopen: () => void }) {
   const resources = useAccountResourceReplica();
   const opener = useProjectDocumentLiveOpener();
   const participant = useRef(`cached-server-tab:${crypto.randomUUID()}`);

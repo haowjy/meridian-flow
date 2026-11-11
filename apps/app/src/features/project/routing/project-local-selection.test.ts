@@ -1,16 +1,16 @@
 /** History pointers admit only the exact account/project local document the replica holds. */
 import { describe, expect, it } from "vitest";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { resolveLocalDocumentSelection } from "./project-local-selection";
 
-const tab: ContextTab = {
+const tab: OpenDocument = {
   kind: "new",
   documentId: "draft-a",
   name: "Untitled",
   resourceHandle: "resource-draft-a",
 };
 const holding =
-  (...documents: Extract<ContextTab, { kind: "new" }>[]) =>
+  (...documents: Extract<OpenDocument, { kind: "new" }>[]) =>
   (resourceHandle: string) =>
     documents.find((document) => document.resourceHandle === resourceHandle) ?? null;
 const input = {

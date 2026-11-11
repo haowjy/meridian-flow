@@ -8,7 +8,7 @@ import { t } from "@lingui/core/macro";
 import { Maximize2, MessageSquare, Pin } from "lucide-react";
 import type { ReactNode } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { IconButton } from "@/components/ui/icon-button";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
@@ -135,7 +135,7 @@ export function SideDocumentHeader({
   onOpenInMain,
 }: {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   onOpenInMain: () => void;
 }) {
   const Icon = fileKindIcon(tab.name);

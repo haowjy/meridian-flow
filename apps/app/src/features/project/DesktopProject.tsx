@@ -10,7 +10,7 @@
  * `side/SideView`'s resolution.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { ChatPaneController } from "./ChatPaneController";
 import { ChatSurface } from "./chat/ChatSurface";
@@ -118,7 +118,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // Each document has its own host, so the draft that takes the focus when its controls show is
   // held here.
   const [focusReview, setFocusReview] = useState<string | null>(null);
-  const documentHost = (tab: ContextTab, place: "main" | "side" | "kept"): SlotGridHost => ({
+  const documentHost = (tab: OpenDocument, place: "main" | "side" | "kept"): SlotGridHost => ({
     key: `document:${tab.documentId}`,
     slot: place === "main" ? "center" : place === "side" && sideOpen ? "dock" : null,
     children: (

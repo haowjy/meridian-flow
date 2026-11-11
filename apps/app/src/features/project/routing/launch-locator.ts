@@ -12,7 +12,7 @@
  */
 import type { ProjectContextIdentityResolution } from "@meridian/contracts/protocol";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { parseContextUri } from "@/lib/context-uri";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { canonicalDocumentPath } from "./local-document-address";
@@ -25,7 +25,7 @@ export type LaunchIdentityLookup = (
 
 export async function resolveLaunchLocator(input: {
   requested: ContextRouteRequest;
-  tabs: readonly ContextTab[];
+  tabs: readonly OpenDocument[];
   addressed: ProjectDestination;
   addressNamesIt: boolean;
   /** The prepared review tab is a pending new-document draft: the draft list is its admission. */

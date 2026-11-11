@@ -35,10 +35,10 @@ import type { CatalogContextView } from "@/client/query/context-catalog-projecti
 import { unwrapListQuery } from "@/client/query/list-query";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { useAccountId } from "./context/account-feature-context";
 import { routeSelectionDocumentId } from "./context/context-removal-protocol";
-import { contextTabFromFile } from "./context/context-tab-from-file";
+import { openDocumentFromFile } from "./context/open-document-from-file";
 import { type AddressedDocument, resolveRouteDocumentOwner } from "./context/route-document-owner";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
 import { useIsDraftOnly } from "./context/use-is-draft-only";
@@ -84,7 +84,7 @@ export function useOwnerDraftRows(projectId: string, ownerKey: string | null): R
   );
 }
 
-export function useDocumentPaint(projectId: string, document: ContextTab | null): DocumentPaint {
+export function useDocumentPaint(projectId: string, document: OpenDocument | null): DocumentPaint {
   const accountId = useAccountId();
   const documentId = document?.documentId ?? null;
   const view = useDocumentView(accountId, projectId, documentId);
@@ -167,7 +167,7 @@ export type MainDocument = Readonly<{
   workId?: string | null;
   /** A chat's Scratch route names its lineage here, in place of a Work. */
   rootThreadId?: string | null;
-  tab: ContextTab | null;
+  tab: OpenDocument | null;
   /** The history entry's pointer names an untitled document: the replica holds it, not a path. */
   local: boolean;
   /** Live lacks the document: the descriptor is built from the address's draft row. */
@@ -252,7 +252,7 @@ export function resolveMainDocument(input: {
   });
   const resolved =
     owner.kind === "live"
-      ? contextTabFromFile(input.scheme, owner.file, contextOwner(input.workId, rootThreadId))
+      ? openDocumentFromFile(input.scheme, owner.file, contextOwner(input.workId, rootThreadId))
       : owner.kind === "draft-only" || owner.kind === "addressed"
         ? owner.tab
         : null;

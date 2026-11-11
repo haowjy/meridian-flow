@@ -14,7 +14,7 @@ import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import type { ProjectDocumentAvailabilityCommand } from "@/features/project/context/project-context-availability-coordinator";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -33,7 +33,7 @@ let removal: ContextRemovalCoordinator;
 const metadataAnswers: Array<(answer: { status: "gone" | "active" }) => void> = [];
 /** What the removed notice was told the writer lost. */
 let removedNotices: string[] = [];
-const presentedTab: ContextTab = {
+const presentedTab: OpenDocument = {
   kind: "tracked",
   documentId,
   ...contextLocation,
@@ -53,7 +53,7 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
   useObservedResourceProjection: () => ({ records: [], placement: null }),
   useOptionalProjectContextAvailabilityCoordinator: () => null,
   useOptionalRemovedNotices: () => ({
-    presentedRemoved: (_project: string, tabs: readonly ContextTab[]) =>
+    presentedRemoved: (_project: string, tabs: readonly OpenDocument[]) =>
       removedNotices.push(...tabs.map((tab) => tab.documentId)),
   }),
 }));

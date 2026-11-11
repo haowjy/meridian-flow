@@ -1,5 +1,5 @@
 /**
- * context-tab-identity — route/tab matching for work-scoped context files.
+ * open-document-identity — route/tab matching for work-scoped context files.
  *
  * Scratch shares path shape across works and
  * a No Work chat's Scratch shares it across lineages; tab and route
@@ -7,12 +7,12 @@
  * switching active work cannot reuse another owner's open tab.
  */
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import type { ContextRouteRequest } from "../routing/project-route";
 
 type RouteLocator = Pick<ContextRouteRequest, "scheme" | "path" | "workId" | "rootThreadId">;
 
-export function contextTabMatchesRoute(tab: ContextTab, target: RouteLocator): boolean {
+export function openDocumentMatchesRoute(tab: OpenDocument, target: RouteLocator): boolean {
   if (tab.kind === "new") return false;
   if (tab.scheme !== target.scheme || tab.path !== target.path) return false;
   if (!isWorkScopedScheme(target.scheme)) return true;
@@ -21,7 +21,7 @@ export function contextTabMatchesRoute(tab: ContextTab, target: RouteLocator): b
     : tab.rootThreadId === undefined && tab.workId === target.workId;
 }
 
-export function contextTabRouteKey(projectId: string, target: RouteLocator): string {
+export function openDocumentRouteKey(projectId: string, target: RouteLocator): string {
   if (isWorkScopedScheme(target.scheme)) {
     const owner = target.rootThreadId ? `chat:${target.rootThreadId}` : target.workId;
     return `${projectId}:${target.scheme}:${owner}:${target.path}`;

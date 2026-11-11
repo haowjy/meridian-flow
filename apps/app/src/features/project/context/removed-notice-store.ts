@@ -5,7 +5,7 @@
  * Discard marks its documents first, so its removals say nothing.
  */
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import type { PresentedDocuments } from "./presented-documents";
 import type {
   ProjectContextAvailabilityCoordinator,
@@ -61,7 +61,7 @@ export class RemovedNoticeStore {
   ) {}
 
   /** Documents a view was presenting that vanished. */
-  presentedRemoved(projectId: string, tabs: readonly ContextTab[]): void {
+  presentedRemoved(projectId: string, tabs: readonly OpenDocument[]): void {
     const key = projectKey(projectId);
     let changed = false;
     for (const tab of tabs) {

@@ -8,7 +8,7 @@ import { Trans } from "@lingui/react/macro";
 import { History, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { draftCopyView } from "@/features/draft-review/copy-view";
 import { cn } from "@/lib/utils";
@@ -33,7 +33,7 @@ export function MainHeader({
 }: {
   projectId: string;
   /** Main's document; null on the Recently opened landing, which the door then marks current. */
-  document: ContextTab | null;
+  document: OpenDocument | null;
   onShowRecents: () => void;
   /** Absent while no Work is ready to hold an Untitled document. */
   onNewDocument?: () => void;
@@ -90,7 +90,7 @@ export function MainHeader({
 }
 
 /** The page's own title: the active chip, a drag source for a reference to what it shows. */
-function DocumentTitleChip({ projectId, tab }: { projectId: string; tab: ContextTab }) {
+function DocumentTitleChip({ projectId, tab }: { projectId: string; tab: OpenDocument }) {
   const paint = useDocumentPaint(projectId, tab);
   const drafts = useOwnerDrafts(projectId, paint.draft?.ownerKey ?? null);
   const file = paint.draft ? drafts.fileForDocument(tab.documentId) : null;

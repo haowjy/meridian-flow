@@ -13,7 +13,7 @@ import {
   type ResourceRecord,
 } from "@meridian/resource-replica";
 import { expect, it } from "vitest";
-import { contextTabFromResource } from "@/features/project/context/context-tab-from-file";
+import { openDocumentFromResource } from "@/features/project/context/open-document-from-file";
 import {
   del,
   entries,
@@ -125,7 +125,7 @@ it.each([
         .map((entry) => entry.entryId),
     ).toEqual(["A"]);
     expect(selected.findDocument("f")?.path).toBe(`/${destination}/doc.md`);
-    expect(contextTabFromResource(record, placement)).toMatchObject({
+    expect(openDocumentFromResource(record, placement)).toMatchObject({
       path: `/${destination}/doc.md`,
     });
   }
@@ -159,9 +159,9 @@ it.each([
   const tree = projectCatalogView("p", "manuscript", projected, placement, [record], folders);
   if (deleted === "P") {
     expect(tree.findDocument("f")?.path).toBe("/B/A/doc.md");
-    expect(contextTabFromResource(record, placement)).toMatchObject({ path: "/B/A/doc.md" });
+    expect(openDocumentFromResource(record, placement)).toMatchObject({ path: "/B/A/doc.md" });
   } else {
     expect(tree.findDocument("f")).toBeNull();
-    expect(contextTabFromResource(record, placement)).toBeNull();
+    expect(openDocumentFromResource(record, placement)).toBeNull();
   }
 });

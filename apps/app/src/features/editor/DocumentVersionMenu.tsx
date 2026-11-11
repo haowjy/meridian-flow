@@ -13,7 +13,7 @@ import { type DocumentDraftHint, workIdOfDraftOwnerKey } from "@meridian/contrac
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import { useWorks } from "@/client/query/useWorks";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { DraftSwitcher, type DraftSwitcherProps } from "@/features/draft-review/DraftSwitcher";
 import { useAccountId } from "@/features/project/context/account-feature-context";
@@ -32,7 +32,7 @@ export function DocumentVersionMenu({
   review,
 }: {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   touch?: boolean;
   /** The open review's controls; absent while the document shows Live. */
   review?: DocumentVersionReview;

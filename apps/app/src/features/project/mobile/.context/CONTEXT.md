@@ -55,7 +55,7 @@ owner id `mobile-project-document-host`.
 Everything else is the shared host.
 
 The phone must stay on the shared session boundary. Only
-`ContextTabSessionBoundary` probes local content and holds the adoption-eligible
+`OpenDocumentSessionBoundary` probes local content and holds the adoption-eligible
 lease that completes a stranded adoption; a phone that binds the live room itself
 is refused with `adoption-pending` while the local copy is reserved.
 

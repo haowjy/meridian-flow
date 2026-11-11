@@ -14,7 +14,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisition";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { PaintCapture } from "@/components/app/PaintHold";
@@ -34,17 +34,17 @@ import {
   useContextRemovalCoordinator,
   useLiveDocumentSessionRegistry,
 } from "./account-feature-context";
-import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./context-tab-session";
 import { DESKTOP_DOCUMENT_PRESENTATION, type DocumentPresentation } from "./document-presentation";
+import { OpenDocumentSessionBoundary, resourceAvailabilityRevision } from "./open-document-session";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
 import { useDraftOnlyPresentation } from "./use-draft-only-presentation";
 import type { LiveDocumentBindingState } from "./use-live-document-binding";
 
-export type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
+export type EditableOpenDocument = Extract<OpenDocument, { kind: "tracked" | "new" }>;
 
 export type ContextDocumentHostProps = {
   projectId: string;
-  tab: EditableContextTab;
+  tab: EditableOpenDocument;
   /** Whether the surface is on screen; a hidden surface's chrome stands down. */
   active: boolean;
   /**
@@ -230,7 +230,7 @@ export function ContextDocumentHost({
     );
   };
   return (
-    <ContextTabSessionBoundary
+    <OpenDocumentSessionBoundary
       projectId={projectId}
       documentId={tab.documentId}
       resourceHandle={tab.resourceHandle}
@@ -239,7 +239,7 @@ export function ContextDocumentHost({
       bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}
-    </ContextTabSessionBoundary>
+    </OpenDocumentSessionBoundary>
   );
 }
 

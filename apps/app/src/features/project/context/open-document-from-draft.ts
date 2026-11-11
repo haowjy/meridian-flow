@@ -1,5 +1,5 @@
 /**
- * context-tab-from-draft — ContextTab synthesized from a work-draft group.
+ * open-document-from-draft — OpenDocument synthesized from a work-draft group.
  *
  * Draft-only documents (created by the draft, or deleted live while this draft
  * still has them) have no context-tree entry until Apply, so the
@@ -16,14 +16,14 @@
  * a visible extension (`outline.json`) states its type.
  */
 import { classifyFiletype, filetypeForPath } from "@meridian/contracts/protocol";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import type { ContextUri } from "@/lib/context-uri";
 
-export function contextTabFromDraftGroup(group: {
+export function openDocumentFromDraftGroup(group: {
   documentId: string;
   contextLocation?: Pick<ContextUri, "scheme" | "path"> | null;
   documentName?: string | null;
-}): Extract<ContextTab, { kind: "tracked" }> | null {
+}): Extract<OpenDocument, { kind: "tracked" }> | null {
   const location = group.contextLocation;
   if (!location?.path) return null;
   const { scheme, path } = location;

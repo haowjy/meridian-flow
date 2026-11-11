@@ -4,8 +4,8 @@ import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
-import { contextTabFromFile } from "../context/context-tab-from-file";
+import { openDocumentFromDraftGroup } from "../context/open-document-from-draft";
+import { openDocumentFromFile } from "../context/open-document-from-file";
 import type { AddressedDocument } from "../context/route-document-owner";
 import { canonicalDocumentAddress } from "./document-address-canonical";
 import { addressReviewOwner } from "./document-address-review";
@@ -34,7 +34,7 @@ export function addressedDocument(
 ): AddressedDocument | null {
   if (!result || result.kind === "unavailable") return null;
   if (draftOnly) {
-    const tab = contextTabFromDraftGroup({
+    const tab = openDocumentFromDraftGroup({
       documentId: result.document.documentId,
       contextLocation: draftOnly.contextLocation,
       documentName: draftOnly.documentName,
@@ -45,7 +45,7 @@ export function addressedDocument(
   if (!canonical) return null;
   const document = result.document.entry;
   const scope = document.scope;
-  const tab = contextTabFromFile(
+  const tab = openDocumentFromFile(
     canonical.destination.scheme,
     mergeLocalResourceState(projectCatalogFile(document), localFile),
     contextOwner(
