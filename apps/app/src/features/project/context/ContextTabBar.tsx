@@ -65,8 +65,8 @@ export function ContextTabBar({
       // Chips surface the canvas tone — see the tab-chip grammar in globals.css.
       className={cn(
         "tab-band flex h-10 shrink-0 items-stretch [--tab-chip-surface:var(--color-background)]",
-        // The band's gutter: room for the first chip's outer flare.
-        !leading && "pl-2",
+        // The band's gutter: the sheet's corner plus the first chip's outer flare.
+        !leading && "pl-3.5",
       )}
     >
       {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
