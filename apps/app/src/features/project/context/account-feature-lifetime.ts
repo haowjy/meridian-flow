@@ -2,6 +2,7 @@
 
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
+import { browserRecord } from "@/client/storage/browser-record";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { RetainedLiveDocumentReference } from "@/core/editor/document-session-registry";
@@ -107,7 +108,7 @@ export class AccountFeatureLifetime {
       draftOnly: this.draftOnly,
     });
     this.registry.observeRemovedRooms((session, room) => this.followRemovedRoom(session, room));
-    dropRetiredTabSession();
+    dropRetiredTabSession(accountId);
     this.resources =
       typeof window === "undefined"
         ? null
@@ -214,11 +215,10 @@ export class AccountFeatureLifetime {
 }
 
 /** The retired document-tab session holds tab names and paths nothing reads: the writer's own. */
-function dropRetiredTabSession(): void {
-  try {
-    if (typeof window !== "undefined")
-      window.sessionStorage.removeItem("meridian:editor-workspace:v2");
-  } catch {
-    /* Best-effort storage. */
-  }
+function dropRetiredTabSession(accountId: string): void {
+  browserRecord(
+    "session",
+    { key: "meridian:editor-workspace:v2", version: 0, accountId },
+    () => undefined,
+  ).write(undefined);
 }
