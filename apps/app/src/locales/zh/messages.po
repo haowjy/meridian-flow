@@ -2349,6 +2349,10 @@ msgstr ""
 msgid "Couldn't load. Check your connection."
 msgstr ""
 
+#: src/features/project/side/SideHeader.tsx
+msgid "Couldn't look up the document to show here."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't move"
 msgstr ""
