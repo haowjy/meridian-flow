@@ -11,7 +11,6 @@ import type {
   InlineReplacementResult,
   InlineTextReplacement,
   ProjectedBlock,
-  RemovedUnits,
 } from "../ports/model.js";
 import { findItem, itemsInRange } from "../yjs-mutation.js";
 import {
@@ -114,14 +113,7 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
     },
 
     removedUnits(block, current) {
-      return removedRuns(unwrapBlock(block), unwrapDoc(current), schema).map(
-        ({ drop: _drop, ...span }) => span,
-      );
-    },
-
-    dropRemovedUnits(block, current) {
-      const runs = removedRuns(unwrapBlock(block), unwrapDoc(current), schema);
-      for (const run of runs.reverse()) run.drop();
+      return removedUnits(unwrapBlock(block), unwrapDoc(current));
     },
 
     projectBlocks(doc) {
@@ -378,87 +370,37 @@ function collectVisibleContentLineage(block: Y.XmlElement): ContentLineage[] {
   return lineage;
 }
 
-interface RemovedRun extends RemovedUnits {
-  /** Delete the run's items from the walked document. */
-  drop(): void;
-}
-
 /**
- * The block's content positions whose items `current` holds deleted, in document order. A
- * clock `current` keeps no item for was collected, so it counts as deleted too. Dropping
- * runs from last to first keeps each one's index valid.
+ * The flat text block's character runs whose items `current` holds deleted, in document
+ * order. A clock `current` keeps no item for was collected, so it counts as deleted too.
  */
-function removedRuns(block: Y.XmlElement, current: Y.Doc, schema: Schema): RemovedRun[] {
-  const runs: RemovedRun[] = [];
+function removedUnits(block: Y.XmlElement, current: Y.Doc): Span[] {
+  const runs: Span[] = [];
   let offset = 0;
-  const deleted = (type: Y.XmlText | Y.XmlElement) => {
-    const item = type._item && findItem(current, type._item.id);
-    return !item || item.deleted;
-  };
-  const visitText = (text: Y.XmlText, parent: Y.XmlElement, index: number) => {
-    if (deleted(text)) {
-      const length = text.length;
-      runs.push({ from: offset, to: offset + length, drop: () => parent.delete(index, 1) });
-      offset += length;
-      return;
+  for (const text of block.toArray()) {
+    if (!(text instanceof Y.XmlText)) continue;
+    const textItem = text._item && findItem(current, text._item.id);
+    if (!textItem || textItem.deleted) {
+      runs.push({ from: offset, to: offset + text.length });
+      offset += text.length;
+      continue;
     }
-    let at = 0;
     for (let item = text._start; item; item = item.right) {
       if (item.deleted || !item.countable) continue;
       const { client, clock } = item.id;
-      const remove = (from: number, to: number) => {
-        const start = at + from;
-        runs.push({
-          from: offset + from,
-          to: offset + to,
-          drop: () => text.delete(start, to - from),
-        });
-      };
       let cursor = clock;
       for (const live of itemsInRange(current, { client, clock, len: item.length })) {
         if (live.item.deleted) continue;
-        if (live.clock > cursor) remove(cursor - clock, live.clock - clock);
+        if (live.clock > cursor)
+          runs.push({ from: offset + cursor - clock, to: offset + live.clock - clock });
         cursor = live.clock + live.len;
       }
-      if (cursor < clock + item.length) remove(cursor - clock, item.length);
+      if (cursor < clock + item.length)
+        runs.push({ from: offset + cursor - clock, to: offset + item.length });
       offset += item.length;
-      at += item.length;
     }
-  };
-  const visit = (element: Y.XmlElement) => {
-    for (const [index, child] of element.toArray().entries()) {
-      if (child instanceof Y.XmlText) visitText(child, element, index);
-      if (!(child instanceof Y.XmlElement)) continue;
-      const size = nodeSize(child, schema);
-      if (deleted(child)) {
-        runs.push({
-          from: offset,
-          to: offset + size,
-          whole: true,
-          drop: () => element.delete(index, 1),
-        });
-        offset += size;
-      } else if (size === 1) offset += 1;
-      else {
-        offset += 1;
-        visit(child);
-        offset += 1;
-      }
-    }
-  };
-  visit(block);
-  return runs;
-}
-
-/** The ProseMirror size of the node an element projects to. */
-function nodeSize(element: Y.XmlElement, schema: Schema): number {
-  if (schema.nodes[element.nodeName]?.isLeaf) return 1;
-  let size = 2;
-  for (const child of element.toArray()) {
-    if (child instanceof Y.XmlText) size += child.length;
-    else if (child instanceof Y.XmlElement) size += nodeSize(child, schema);
   }
-  return size;
+  return runs;
 }
 
 function yTextPlainText(text: Y.XmlText): string {

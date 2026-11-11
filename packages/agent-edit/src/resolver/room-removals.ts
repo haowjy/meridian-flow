@@ -1,32 +1,16 @@
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
-import { Slice } from "prosemirror-model";
 import type { Block, Span } from "../codec-types.js";
-import type { RemovedUnits } from "../ports/model.js";
 import type { WordHunk } from "../word-hunks.js";
 import type { TextWindow } from "./find.js";
 
-/** A block rewrite decided against the units the room deleted since the model's view. */
+/** A flat block rewrite decided against the units the room deleted since the model's view. */
 export interface RoomRebasedRewrite {
-  /** The block the lowering starts from: the view's, less the room's deletions iff `drop`. */
-  before: Block;
-  /** `before` with the changes that land. */
+  /** The view's block with the changes that land; the room's deletions stay in it. */
   after: Block;
-  /** Flat text only: where each landed change sits in `before` and in `after`. */
-  windows: [TextWindow[], TextWindow[]] | null;
+  /** Where each landed change sits in the view's block and in `after`. */
+  windows: [TextWindow[], TextWindow[]];
   /** Changes not made. */
   skipped: number;
-  /**
-   * The view's block must lose the room's deletions before the edit applies: a structural
-   * diff anchors on old units, and a deleted one would bring the model's text back around
-   * it. Flat text keeps them, so each splice keeps its side of a deleted run.
-   */
-  drop: boolean;
-}
-
-/** One diff token: `key` is its identity, `size` its length in content positions. */
-interface Token {
-  key: string;
-  size: number;
 }
 
 /** A model change: base positions [from, to) become the model's positions [at, end). */
@@ -63,17 +47,20 @@ export function isFlatText(block: Block): boolean {
  * Decide a block rewrite planned on the model's view against what the room deleted since.
  * A change lands only if every unit it replaces survives; an insert lands unless it sits in
  * deleted text; a delete deletes whatever is left; no deleted unit is put back; every change
- * not made is counted. `placed` is a find's known placement in a flat block.
+ * not made is counted. `placed` is a find's known placement.
  *
- * Null when the rule doesn't decide the block: a flat paragraph whose formatting or
- * attributes the model changed is lowered as without a room.
+ * Null when the rule doesn't decide the block, which is then lowered as without a room: a
+ * block that is not flat text, or one whose formatting or attributes the model changed.
+ * Splices carry no format ranges, and a structural diff re-places the model's text beside
+ * what the writer typed over.
  */
 export function withoutRemovedUnits(
   before: Block,
   after: Block,
-  removed: readonly RemovedUnits[],
+  removed: readonly Span[],
   placed: readonly WordHunk[] | undefined,
 ): RoomRebasedRewrite | null {
+  if (!isFlatText(before) || !isFlatText(after)) return null;
   const size = before.content.size;
   const dead = new Uint8Array(size);
   for (const span of removed) dead.fill(1, span.from, span.to);
@@ -82,17 +69,12 @@ export function withoutRemovedUnits(
   const deadIn = (from: number, to: number) => deadBefore[to] - deadBefore[from];
   // The block's own edges survive: the block is still there.
   const alive = (unit: number) => unit < 0 || unit >= size || dead[unit] === 0;
-  const cutsDeadNode = (from: number, to: number) =>
-    removed.some(
-      (span) =>
-        span.whole && span.from < to && from < span.to && !(from <= span.from && span.to <= to),
-    );
-  const flat = isFlatText(before) && isFlatText(after);
 
   /** The model's changes inside base [bLo, bHi) and model [tLo, tHi), by token diff. */
   const diffed = (bLo: number, bHi: number, tLo: number, tHi: number): Hunk[] => {
-    const a = tokens(before.cut(bLo, bHi));
-    const b = tokens(after.cut(tLo, tHi));
+    // Marks are not part of a token: formatting is not a change of text.
+    const a = tokens(before.textContent.slice(bLo, bHi));
+    const b = tokens(after.textContent.slice(tLo, tHi));
     const aAt = offsets(a);
     const bAt = offsets(b);
     const raw = tokenHunks(a, b);
@@ -112,8 +94,8 @@ export function withoutRemovedUnits(
             if (p < lo || p > hi) continue;
             const same =
               shift < 0
-                ? a.slice(p, aFrom).every((t, i) => t.key === b[bTo + shift + i].key)
-                : a.slice(aFrom, p).every((t, i) => t.key === b[bFrom + i].key);
+                ? a.slice(p, aFrom).every((t, i) => t === b[bTo + shift + i])
+                : a.slice(aFrom, p).every((t, i) => t === b[bFrom + i]);
             if (same && score(p) > best) {
               moved = aAt[p] - aAt[aFrom];
               best = score(p);
@@ -133,7 +115,7 @@ export function withoutRemovedUnits(
   // A find's window is one change, placed by the model; only a window that holds deleted
   // units is split into the changes inside it.
   const hunks: Hunk[] = [];
-  if (placed && flat) {
+  if (placed) {
     let shift = 0;
     for (const window of placed) {
       const at = window.from + shift;
@@ -164,15 +146,10 @@ export function withoutRemovedUnits(
     }
     equal.push([b, size, t]);
   }
-  // Formatting moved onto the structural diff lands beside typed-over text by client id
-  // (`He **sighed loudly**.`), and splices carry no format ranges.
   if (
-    flat &&
-    !(
-      before.sameMarkup(after) &&
-      equal.every(([from, to, at]) =>
-        before.content.cut(from, to).eq(after.content.cut(at, at + to - from)),
-      )
+    !before.sameMarkup(after) ||
+    !equal.every(([from, to, at]) =>
+      before.content.cut(from, to).eq(after.content.cut(at, at + to - from)),
     )
   )
     return null;
@@ -184,8 +161,8 @@ export function withoutRemovedUnits(
       let lands: boolean;
       if (hunk.anchored) lands = alive(hunk.from - 1);
       else if (hunk.from === hunk.to) lands = alive(hunk.from - 1) || alive(hunk.to);
-      else if (hunk.at === hunk.end) lands = !cutsDeadNode(hunk.from, hunk.to);
-      else lands = deadIn(hunk.from, hunk.to) === 0;
+      // A delete deletes whatever is left of its text.
+      else lands = hunk.at === hunk.end || deadIn(hunk.from, hunk.to) === 0;
       if (lands) {
         skipRunEnd = -1;
         return true;
@@ -198,99 +175,47 @@ export function withoutRemovedUnits(
     }),
   );
 
-  if (flat) {
-    // The landed changes go onto the view's text as it is, deleted units included.
-    const pieces: Hunk[] = [];
-    for (const hunk of hunks) {
-      if (!landed.has(hunk)) continue;
-      if (deadIn(hunk.from, hunk.to) === 0) pieces.push(hunk);
-      // A delete that also covers deleted units deletes only what is left of it.
-      else
-        for (let at = hunk.from; at < hunk.to; at += 1) {
-          if (dead[at]) continue;
-          const last = pieces.at(-1);
-          if (last && last.to === at && last.at === last.end && last.from >= hunk.from)
-            last.to += 1;
-          else pieces.push({ from: at, to: at + 1, at: hunk.at, end: hunk.at });
-        }
-    }
-    let result = before;
-    for (const piece of [...pieces].reverse())
-      result = result.replace(piece.from, piece.to, after.slice(piece.at, piece.end));
-    const windows: [TextWindow[], TextWindow[]] = [[], []];
-    let grown = 0;
-    for (const piece of pieces) {
-      const length = piece.end - piece.at;
-      windows[0].push({ from: piece.from, to: piece.to });
-      windows[1].push({ from: piece.from + grown, to: piece.from + grown + length });
-      grown += length - (piece.to - piece.from);
-    }
-    return { before, after: result, windows, skipped, drop: false };
-  }
-
-  // The structural diff's target is the model's block, so its marks and attributes on
-  // surviving text land as formatting, with each skipped change put back as the view had
-  // it, less the deleted units.
-  const base = withoutUnits(before, removed);
-  try {
-    let result = after;
-    for (const hunk of [...hunks].reverse())
-      if (!landed.has(hunk))
-        result = result.replace(hunk.at, hunk.end, before.slice(hunk.from, hunk.to));
-    // Where each deleted unit still in `result` sits in it.
-    const cuts: Span[] = [];
-    let at = 0;
-    let b = 0;
-    const keep = (from: number, to: number) => {
-      for (let unit = from; unit < to; unit += 1) {
-        if (!dead[unit]) continue;
-        const pos = at + unit - from;
-        const last = cuts.at(-1);
-        if (last && last.to === pos) last.to += 1;
-        else cuts.push({ from: pos, to: pos + 1 });
+  // The landed changes go onto the view's text as it is, deleted units included.
+  const pieces: Hunk[] = [];
+  for (const hunk of hunks) {
+    if (!landed.has(hunk)) continue;
+    if (deadIn(hunk.from, hunk.to) === 0) pieces.push(hunk);
+    // A delete that also covers deleted units deletes only what is left of it.
+    else
+      for (let at = hunk.from; at < hunk.to; at += 1) {
+        if (dead[at]) continue;
+        const last = pieces.at(-1);
+        if (last && last.to === at && last.at === last.end && last.from >= hunk.from) last.to += 1;
+        else pieces.push({ from: at, to: at + 1, at: hunk.at, end: hunk.at });
       }
-      at += to - from;
-    };
-    for (const hunk of hunks) {
-      keep(b, hunk.from);
-      if (landed.has(hunk)) at += hunk.end - hunk.at;
-      else keep(hunk.from, hunk.to);
-      b = hunk.to;
-    }
-    keep(b, size);
-    result = withoutUnits(result, cuts);
-    result.check();
-    return { before: base, after: result, windows: null, skipped, drop: true };
-  } catch {
-    // The landed changes don't make a valid block without the skipped ones: make none.
-    return { before: base, after: base, windows: null, skipped: Math.max(1, skipped), drop: true };
   }
+  let result = before;
+  for (const piece of [...pieces].reverse())
+    result = result.replace(piece.from, piece.to, after.slice(piece.at, piece.end));
+  const windows: [TextWindow[], TextWindow[]] = [[], []];
+  let grown = 0;
+  for (const piece of pieces) {
+    const length = piece.end - piece.at;
+    windows[0].push({ from: piece.from, to: piece.to });
+    windows[1].push({ from: piece.from + grown, to: piece.from + grown + length });
+    grown += length - (piece.to - piece.from);
+  }
+  return { after: result, windows, skipped };
 }
 
-function tokens(node: Block): Token[] {
-  const out: Token[] = [];
-  const walk = (child: Block) => {
-    if (child.isText) {
-      // Marks are not part of a token: formatting is not a change of text.
-      for (const text of child.text?.match(TOKEN) ?? []) out.push({ key: text, size: text.length });
-    } else if (child.isLeaf) {
-      out.push({ key: `\u0002${child.type.name}${JSON.stringify(child.attrs)}`, size: 1 });
-    } else {
-      out.push({ key: `\u0003${child.type.name}${JSON.stringify(child.attrs)}`, size: 1 });
-      child.forEach(walk);
-      out.push({ key: `\u0004${child.type.name}`, size: 1 });
-    }
-  };
-  node.forEach(walk);
-  return out;
+function tokens(text: string): string[] {
+  return text.match(TOKEN) ?? [];
 }
 
 /** Token-index hunks of a -> b: [aFrom, aTo, bFrom, bTo]. */
-function tokenHunks(a: readonly Token[], b: readonly Token[]): [number, number, number, number][] {
+function tokenHunks(
+  a: readonly string[],
+  b: readonly string[],
+): [number, number, number, number][] {
   const codes = new Map<string, string>();
-  const encode = (list: readonly Token[]) =>
+  const encode = (list: readonly string[]) =>
     list
-      .map(({ key }) => {
+      .map((key) => {
         let code = codes.get(key);
         if (code === undefined) {
           // One UTF-16 unit per distinct token, skipping the surrogate range.
@@ -329,16 +254,8 @@ function tokenHunks(a: readonly Token[], b: readonly Token[]): [number, number, 
   return hunks;
 }
 
-function offsets(list: readonly Token[]): number[] {
+function offsets(list: readonly string[]): number[] {
   const at = [0];
-  for (const token of list) at.push((at.at(-1) as number) + token.size);
+  for (const token of list) at.push((at.at(-1) as number) + token.length);
   return at;
-}
-
-/** `node` without the content positions in `spans`, each a run of whole units. */
-function withoutUnits(node: Block, spans: readonly Span[]): Block {
-  let result = node;
-  for (const span of [...spans].reverse())
-    if (span.from < span.to) result = result.replace(span.from, span.to, Slice.empty);
-  return result;
 }

@@ -25,51 +25,49 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   position (`cutTextWindows`, `windowHunks`); a block that isn't a single run of text,
   or a find whose windows can't be mapped, is word-diffed or block-diffed instead.
 - A write is planned on the model's view, so a block it rewrites in place may have
-  lost text in the room since (the writer deleted it). Such a block is decided against
-  those deletions (`removedUnits`, `withoutRemovedUnits` in `resolver/room-removals.ts`);
-  every other block lowers as if there were no room. A unit is one content position: a
-  UTF-16 code unit, an inline atom (hard break, image), or one edge of a nested node.
-  The model's changes come from a find's window when it holds no deleted unit, otherwise
-  from a token diff in which a Chinese or Japanese character is one token, a run of other
+  lost text in the room since (the writer deleted it). A flat text block (`isFlatText`:
+  a paragraph or heading that is one run of text) is decided against those deletions
+  (`removedUnits`, `withoutRemovedUnits` in `resolver/room-removals.ts`); every other
+  block lowers as if there were no room. A unit is one UTF-16 code unit. The model's
+  changes come from a find's window when it holds no deleted unit, otherwise from a
+  token diff in which a Chinese or Japanese character is one token, a run of other
   letters is one (so a spaceless Thai phrase is one), and formatting is not part of a
   token. The rule: a change lands only if every unit it replaces survives; an insert
   lands unless it sits in deleted text; a delete deletes whatever is left; no deleted
   unit is put back; every change not made is counted (`skipped` in the result).
-- What that guarantees, for such a block, and no more:
+- What that guarantees, for a flat text block, and no more:
   - The write's update neither deletes nor re-inserts any unit the room deleted.
   - The model's new text lands only in place of units that all survive, after a find
-    match whose last unit survives (flat text only), or as a diff-placed insert with a
-    surviving unit, or the block's end, on at least one side.
+    match whose last unit survives, or as a diff-placed insert with a surviving unit, or
+    the block's end, on at least one side.
   - A change not made is counted in the result and never marked.
   - Words the writer deleted can still appear as the model's text: the model's new text
     may contain them, and when the model moved text past a deletion, the half of the
     move that lands can carry them (`First. Second. Third.`, `Second. ` deleted, written
     as `Second. First. Third.`, gives `Second. Third.`, one skipped).
-- How it is applied. Flat text (`isFlatText`) keeps the room's deletions in the view and
-  lowers the landed changes as exact splices: dropping them would lose which side of a
-  deleted run a change sits on, and Yjs would then order the model's text against what
-  the writer typed there by client id (`He  loudlygroaned.`). Quotes, lists, verse,
-  code blocks and other blocks lowered by a structural diff drop the deletions from the
-  view first (`dropRemovedUnits`, before capture), because the diff anchors on old units
-  and a deleted one would split the model's text around it.
+- How it is applied: the room's deletions stay in the view and the landed changes lower
+  as exact splices. Never drop the deletions from the view and re-diff: the lowering's
+  character diff would then place the model's text at the dropped run's edge, where Yjs
+  orders it against what the writer typed there by client id (`He  loudlygroaned.`).
+  That is why the rule stops at flat text
+  ([#1363](https://github.com/haowjy/meridian-flow/issues/1363)).
 - What the rule does not cover:
+  - Quotes, lists, verse, paragraphs with a hard break or an image, code blocks and
+    tables lower exactly as without a room. A model change there that meets text the
+    writer deleted since its read can bring that text back, and an insert beside a
+    deleted line can land split, by client id
+    ([TODO](TODO.md#stale-view-writes-into-structural-blocks)).
   - A flat paragraph whose formatting or attributes the model changed is lowered as if
-    there were no room: splices carry no format ranges, and the structural diff lands
-    the model's bold beside typed-over text by client id (`He **sighed loudly**.`). Text
-    the writer deleted there can come back as the model's.
+    there were no room: splices carry no format ranges. Text the writer deleted there
+    can come back as the model's.
   - A write that removes a block and adds another (merging or splitting top-level
     paragraphs, a paragraph turned into a heading): the writer's typing in the removed
     block goes, and text deleted from it can come back in the added one.
   - The rule sees only what the writer deleted, never what they added. A model delete
     can take letters the editor kept from an old sentence inside a pasted one, and
     typing that deleted nothing merges as plain concurrent edits.
-  - A find insert is decided by its match only in flat text. In a quote, list item or
-    paragraph with a hard break it is a diff-placed insert, so it lands if a unit on one
-    side survives.
   - A delete that lands after the call read its room
     ([TODO](TODO.md#deletes-that-land-after-a-write-read-its-room)).
-  - Text the editor retyped (joined lines, a deleted image): a change to it is skipped
-    ([TODO](TODO.md#edits-to-text-the-editor-retyped)).
 - Equal serialized content does not preserve Yjs identity, tombstones or authorship,
   so rebuilding an existing replica from Markdown as a merge path loses all three.
 

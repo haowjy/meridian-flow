@@ -1,15 +1,16 @@
 /**
  * Guards the invariant "Text converges" (`.context/invariants.md`): a write planned on a
- * stale view lands whole after someone deleted text it shares words with, and the writer's
- * delete stands. The server plans a reply's write on the model's view and merges the update
+ * stale view of a plain paragraph lands whole after someone deleted text it shares words
+ * with, and the writer's delete stands. The server plans a reply's write on the model's view and merges the update
  * into the current room, which is what this test does with two Yjs docs. A delete the room
  * already holds when the write plans is decided against (`current`); one that arrives after
  * relies on find windows. Every row runs with the model's client id below and above the
  * writer's, since Yjs orders concurrent inserts at one place by client id.
  *
  * Pins implementation decisions: a model change to text the writer has since deleted is
- * skipped, and a flat paragraph whose formatting the model changed is lowered as without a
- * room (`write-architecture.md`).
+ * skipped; a flat paragraph whose formatting the model changed, and every block that is not
+ * flat text, is lowered as without a room (`write-architecture.md`). The quote and list
+ * rows give `main`'s result.
  */
 
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -37,11 +38,6 @@ const deleteText =
     const from = model.getText(block).indexOf(text);
     model.applyTextEdit(room, block, { from, to: from + text.length }, "");
   };
-/** The writer's editor turning the block into `markdown`, as y-prosemirror syncs it. */
-const editTo =
-  (markdown: string): Writer =>
-  (room) =>
-    model.applyBlockReplacement(room, model.getBlocks(room)[0], codec.parse(markdown).blocks[0]);
 
 const findInsert = { command: "insert", find: "disciple.", content: " DRAFT-B2." } as const;
 const findReplace = { command: "replace", find: "disciple.", content: "disciple. DRAFT-B2." };
@@ -52,8 +48,8 @@ const deleteLine = deleteText(LINE);
 const retype =
   (old: string, text: string): Writer =>
   (room) => {
-    const block = room.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement;
-    const ytext = block.get(0) as Y.XmlText;
+    let ytext = room.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0);
+    while (!(ytext instanceof Y.XmlText)) ytext = (ytext as Y.XmlElement).get(0);
     const from = ytext.toString().indexOf(old);
     ytext.delete(from, old.length);
     for (const [index, char] of [...text].entries()) ytext.insert(from + index, char);
@@ -89,15 +85,6 @@ it.each([
     "before",
     WHOLE,
   ],
-  ["a find insert into a quote", `> ${TEXT}`, findInsert, deleteLine, "before", `> ${WHOLE}`],
-  [
-    "a rewrite of a list item that inserts",
-    `- ${TEXT}`,
-    rewrite(`- A disciple. DRAFT-B2.${LINE} SIDETEXT`),
-    deleteLine,
-    "before",
-    `- ${WHOLE}`,
-  ],
   [
     "a find insert beside the writer's new words",
     TEXT,
@@ -109,14 +96,6 @@ it.each([
     },
     "before",
     `WRITER ${WHOLE}`,
-  ],
-  [
-    "a change to verse after the writer deleted a line",
-    "Line one\\\nLine two\\\nLine three",
-    { command: "replace", find: "three", content: "3" },
-    editTo("Line one\\\nLine three"),
-    "before",
-    "Line one\\\nLine 3",
   ],
   [
     "nothing of a change to text the writer deleted",
@@ -163,14 +142,6 @@ it.each([
     "Keep **this. Keep** end.",
   ],
   [
-    "nothing of a merge of a quote paragraph the writer deleted",
-    "> Alpha beta.\n>\n> Gamma delta long.",
-    rewrite("> Alpha beta. Gamma delta long."),
-    editTo("> Alpha beta."),
-    "before",
-    "> Alpha beta.",
-  ],
-  [
     "a word changed before text the writer typed over",
     SIGHED,
     { command: "replace", find: "sighed", content: "groaned" },
@@ -185,6 +156,22 @@ it.each([
     retype(", and then he wept", " loudly"),
     "before",
     "He **sighed** loudly.",
+  ],
+  [
+    "a word changed in a quote before text the writer typed over, as on main",
+    `> ${SIGHED}`,
+    { command: "replace", find: "sighed", content: "wept" },
+    retype(", and then he wept", " loudly"),
+    "before",
+    "> He wept loudly.",
+  ],
+  [
+    "a word changed in a list item before text the writer typed over, as on main",
+    `- ${SIGHED}`,
+    { command: "replace", find: "sighed", content: "wept" },
+    retype(", and then he wept", " loudly"),
+    "before",
+    "- He wept loudly.",
   ],
 ] as const)("lands %s", (_, markdown, write, writer, deleted, expected) => {
   for (const modelClient of [2, 4]) {
