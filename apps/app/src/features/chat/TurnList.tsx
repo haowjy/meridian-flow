@@ -339,13 +339,14 @@ export function TurnList({
   );
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div className="focus-ring-frame relative flex min-h-0 flex-1 flex-col">
       <div
         ref={viewportRef}
         role="log"
         aria-label={ariaLabel}
         // biome-ignore lint/a11y/noNoninteractiveTabindex: transcript is a scroll region — focusable so keyboard users can scroll it (arrows/PageUp/Down).
         tabIndex={0}
+        data-ring-on-frame=""
         // overflow-x-hidden: `overflow-y:auto` forces the x-axis from `visible` to
         // `auto` (CSS spec), giving an implicit horizontal scroll/rubber-band range we
         // never want — code blocks scroll internally. min-w-0 keeps children from
@@ -354,7 +355,7 @@ export function TurnList({
         // its own scrollTop compensation for above-viewport resizes; browser native
         // scroll anchoring would be a competing second owner, double-correcting and
         // leaving the reader's place off. Disable it so TanStack alone drives scroll.
-        className="focus-ring chat-scroll-fade-bottom size-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none]"
+        className="chat-scroll-fade-bottom outline-none size-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none]"
       >
         <ChatColumn>
           <ol

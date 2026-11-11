@@ -66,7 +66,7 @@ export function ExtraUsagePicker({
                 "focus-ring inline-flex h-8 items-center justify-center rounded-md border px-3 text-sm font-medium tabular-nums transition-colors",
                 "disabled:cursor-not-allowed disabled:opacity-50",
                 selected
-                  ? "border-primary bg-primary/12 text-foreground"
+                  ? "border-border bg-ink-fill-strong text-foreground"
                   : "border-border bg-card text-muted-foreground hover:bg-ink-fill hover:text-foreground",
               )}
             >

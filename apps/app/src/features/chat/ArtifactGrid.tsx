@@ -80,7 +80,7 @@ function ImageArtifact({ image }: { image: Extract<ArtifactRef, { type: "image" 
           <img
             src={image.url}
             alt={label}
-            className="aspect-square w-full object-cover transition-transform group-hover:scale-105"
+            className="aspect-square w-full object-cover transition-transform group-hover:scale-105 group-focus-visible:scale-none"
             loading="lazy"
           />
           {image.label ? (
