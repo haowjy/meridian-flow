@@ -86,10 +86,15 @@ separate browser check covers rendering and native keyboard history.
 | Action | Required result |
 |---|---|
 | Discard an editor change | Text reverts immediately; one Ctrl+Z restores it with restoration provenance and bylines. |
-| Discard the document draft | All pending changes revert, the draft id stays the same, and one Ctrl+Z restores them. |
-| Discard from the dock | The item leaves immediately; the notice says Discarded with Undo. Undo restores the same draft and bylines. |
-| Dock Discard, then type, then notice Undo | The sentence stays; editor Ctrl+Z undoes the sentence, not the dock Discard. |
-| Navigate away or reload | The notice and history end; discarded text persists. |
+| Discard the document draft (band) | All pending changes revert, the draft id stays, the page goes Live, and "Draft of ‹name› discarded." shows in the toolbar row. Undo returns the page to the draft with the same marks and bylines. |
+| Discard from the dock or the Changes list | The item leaves immediately; the notice takes its row's place (a dock: its footer). Undo restores the same draft and bylines. |
+| Discard, open another document, come back | The Changes or dock notice is still there; Undo restores the draft and main does not move. |
+| Discard, then type in that draft or let a reply write to it | The notice goes without a word; editor Ctrl+Z undoes the typing, never the Discard. |
+| A second Discard or an Apply by the same Work | It replaces the notice. |
+| Reload | The notice ends; discarded text persists. |
+| Discard all / the dock's Discard with only text drafts | No question; one notice "N drafts discarded."; one Undo restores every room. |
+| Discard a new document, a move or delete, or a trashed chat's draft | It asks once ("This can't be undone.") in place of its controls, and shows no notice. |
+| Discard the draft of a chapter another session deleted | Main goes back at once to the document opened before (never "This destination is unavailable"); the notice shows there; Undo returns main to the draft. |
 | AI A's removal discarded, then AI B removes the written-back words | No byline names A. |
 | A reply writes through Discard | It continues in the same draft; later edits are new changes. |
 | Discard several selected files | Every selected row leaves before write-back; the final notice paints once. |

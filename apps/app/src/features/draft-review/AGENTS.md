@@ -8,9 +8,10 @@ partitions the text.
 - The room runtime owns projection. The account command owner supplies its cached
   optimistic base and freezes each Apply at the click. Hiding ids, translating
   selections or recutting at dispatch breaks that frozen click.
-- Text Discard is one local transaction whose caller owns history: editor Ctrl+Z, or a
-  pool-held surface notice with its own UndoManager. A Discard in the side never enters editor
-  history.
+- Text Discard is one local transaction, one stack item. Its Undo belongs to the owner's
+  notice (`DraftNotices`, one per draft owner, outliving surfaces); a band Discard's item is
+  also on the reviewing editor's history, and either handle ends the other. A Discard in the
+  side never enters editor history. Only a Discard with no Undo asks first (`canUndoDiscard`).
 - Cached text may paint before first sync, but a row is ready only after sync.
 - The editor extension is a passive painter. A stale frame is mapped while the next
   projection waits, never installed onto unequal prose from another binding.

@@ -154,10 +154,35 @@ occurrence suffix.
 ## Discard
 
 `discard(ref, target, history)` composes against the optimistic base and calls
-`writeDiscardBlocks` in one transaction. `history` is the issuing host's own editor (the
-controller's `reviewEditor`), whose Undo takes it back, or `notice` for a surface with no
-editor; the room's runtime may list more than one attached editor, so the session never picks
-one. Editor Discard is synchronous. Chat-strip and Work Discard publish their notice and a projection-scoped `discarding` target first, so the row
+`writeDiscardBlocks` in one transaction with an origin of its own, so the write is one
+`StackItem`. `history` is the issuing host's own editor (the controller's `reviewEditor`), or
+`notice` for a surface with no editor; the room's runtime may list more than one attached
+editor, so the session never picks one. Either way the session returns one Undo handle, which
+the owner's notice holds. Editor Discard is synchronous.
+
+### Notices
+
+`DraftNotices` (owned by `DraftCommandOwner`, so account-lived) holds one notice per draft
+owner key: the latest Discard with its Undo, or the latest Apply's facts. A newer Apply or
+Discard by the owner replaces it; there is no timer; a reload starts empty. Each notice records
+the surface it was made on (Changes list, a chat's strip, a document's band) and shows only
+there; a band notice shows in that document's identity-row slot, or in the slot of the document
+main went back to. Discard all is one notice over several rooms; an Undo that fails keeps the
+notice with Retry, and Retry takes back only the rooms that failed.
+
+A notice's Undo holds while the draft's prose is as the Discard left it. Any other transaction on
+the `prosemirror` fragment (writer typing, a model write), the room closing or resetting
+(`binding.notices`), or Ctrl+Z popping the item from the reviewing editor ends it silently. So
+the notice and Ctrl+Z can never undo the same Discard twice. While the reviewing editor lives and
+the item is on top of its stack, the notice's Undo is that editor's Undo; once the editor is gone
+(a band Discard sends the page to Live) the item is undone alone through a short-lived manager.
+Both paths record restorations, so marks after an Undo match marks before the Discard. Each Undo
+handle holds a room lease and entry user until it ends, so one notice per owner bounds the rooms
+kept open; `DraftCommandOwner.close()` ends every notice.
+
+A whole-draft text Discard on a draft-only page (live deleted it elsewhere) sends main back at
+once through `ContextRemovalCoordinator.beginOwnRemoval`; the go-back reports where main landed,
+and an Undo while main is still there returns it to the draft's review address. Chat-strip and Work Discard publish their notice and a projection-scoped `discarding` target first, so the row
 and notice paint before the indivisible write-back. Hidden pages drain on visibility
 change rather than waiting for animation frames. Changed base or prose refuses the stale
 write and restores the row.
@@ -170,7 +195,10 @@ Undo captures its own session acknowledgement barrier before releasing notice ow
 because a later item lookup can't prove that retired session's edits landed. The notice
 belongs to its exact session binding, so replacement documents never inherit the manager.
 
-Created-document removal and Work Discard go through the server. Their optimistic
+Created-document removal, move or delete Discards, and a frozen owner's Discard go through the
+server, which has no Undo (#763): `canUndoDiscard` says so before the click, and those ask once
+and show no notice. A Discard all of only text drafts is local, one notice; any other Discard
+all is the server's branch Discard. Their optimistic
 visibility is lifecycle state, never text-group hiding. `4205` maps to terminal `closed`,
 including in-band code-1000 delivery, and `4208` to `removed`.
 
