@@ -15,11 +15,11 @@ a chat. No model send is needed.
    and caret return, not the old paragraph number. Delete the remembered
    paragraph from the other tab; reopening leaves a surviving position or the
    top, never an error.
-3. Open the long chapter in Editor, then open the second document. Reload: both
-   tabs return in order, the last-selected tab is active, and the docked chat
-   keeps its unsent draft. Close and reopen the chapter tab, then open its URL
-   in a new browser tab; the remembered place returns. Carry the chapter into
-   Chat's side panel, move the caret and scroll, then reload; the side-panel
+3. Open the long chapter in Editor, then open the second document. Reload: main
+   shows the second document (the address) and the side's chat keeps its unsent
+   draft. Open another document, then reopen the chapter, then open its URL
+   in a new browser tab; the remembered place returns. Open a chat in main so the
+   chapter is the side's document, move the caret and scroll, then reload; the side
    document returns at its latest place.
 4. Open a Changes card, search passage, or inline draft review. That target
    opens instead of the remembered place. A URL with `?item=` or a fragment

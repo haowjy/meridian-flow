@@ -48,7 +48,7 @@ timeline then means one thing, a door; a second jade would cost the door its onl
 signal.
 
 A fixed-width command column is the escalation if type isn't enough. It costs
-64px, 21% of a 360px docked chat.
+64px, 21% of a 360px side chat.
 
 ## Verbs and tense
 

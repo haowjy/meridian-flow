@@ -1,6 +1,6 @@
 # Project document resource lifecycle
 
-Project documents are local-first resources synchronized with the existing backend. One account-scoped owner coordinates durable metadata, namespace work, exact Yjs content, and server catalog checkpoints. Editor tabs remain browser-tab-local views; neither a tab nor a URL owns document durability.
+Project documents are local-first resources synchronized with the existing backend. One account-scoped owner coordinates durable metadata, namespace work, exact Yjs content, and server catalog checkpoints. Document hosts remain browser-tab-local views; neither a host nor a URL owns document durability.
 
 ## Ownership map
 
@@ -8,7 +8,6 @@ Project documents are local-first resources synchronized with the existing backe
 flowchart TD
   UI[Tree, links, and document commands] --> VIEW[Replica-backed catalog projection]
   UI --> NAV[Readable routes and navigation settlement]
-  UI --> WS[Browser-local Editor workspace]
   VIEW --> REPLICA[AccountResourceReplica]
   NAV --> REPLICA
   REPLICA --> META[IndexedDB resource metadata]
@@ -21,14 +20,14 @@ flowchart TD
   SESSION --> IDB[Yjs IndexedDB persistence]
   SESSION <--> PEER[Same-browser Yjs peers]
   SESSION <--> SERVER[Room-scoped collaboration]
-  WS --> HOST[Stable editor host]
+  NAV --> HOST[Document host]
   SESSION --> HOST
 ```
 
 Three facts must stay separate:
 
 1. A durable resource exists locally.
-2. A browser tab has an Editor view open.
+2. A document host in this browser tab presents it.
 3. The backend has acknowledged namespace metadata and admitted synchronization.
 
 | Owner | Responsibility |
@@ -39,18 +38,18 @@ Three facts must stay separate:
 | [ResourceIdentityFeed](../../../core/resources/resource-identity-feed.ts) and [IdentityContinuity](../context/identity-continuity.ts) | The feed hands each projection to its readers (and announces live identity changes). Continuity, one per account, reconciles recent routes and device recents against the current projection whenever it, or a store, changes: an id is rewritten only when `resourceIdentityIndex` resolves it to a different current id, never from a remembered transition, and never an id a record holds as its own. |
 | [Resource replica package](../../../../../../packages/resource-replica/src/index.ts) | Pure resource, catalog, intent, deletion, adoption, and projection policy. It imports no React, browser storage, HTTP, or Yjs session objects. |
 | [IndexedDB metadata adapter](../../../core/resources/indexeddb-resource-metadata.ts) | Stores account-global resource descriptors, project-qualified intentions, and project-qualified catalog checkpoints with revision CAS. One account-wide reactive read feeds project projections. |
-| [Editor workspace reducer](../../../client/stores/context-tabs-store/editor-workspace-state.ts) | Owns synchronous tab membership, selection, order, stable member identity, and account-scoped `sessionStorage` restoration. |
+| [PresentedDocuments](../context/presented-documents.ts) | The documents this browser tab's hosts mount (main, side, kept). Main's and the side's are presented: the removal coordinator, availability and removed notices read those. `shown` orders all of them newest on screen first, for the kept host and the side's fallback; a close, a Discard or a removal forgets a document there. Nothing persists: main's address decides what main shows. |
 | [Document session runtime](../../../core/editor/.context/CONTEXT.md) | Owns Y.Doc instances, exact persistence incarnations, local replay, peer exchange, registry adoption, transport, and shutdown fences. |
 | [Backend receipts](../../../../../server/server/domains/context/context/context-operation-receipts.ts) | Make move and delete retryable by immutable operation ID and request bytes. |
 
 ## New, write, and acknowledge
 
 1. New atomically reserves an account-global resource handle, Document ID, exact content database, its untitled materialization, provisional Unfiled location, and an ineligible first placement.
-2. Content initialization completes before the editor receives the handle. The workspace opens the resource synchronously and the stable session boundary binds its Y.Doc.
+2. Content initialization completes before the editor receives the handle. The host opens the resource synchronously and the stable session boundary binds its Y.Doc.
 3. First content marks creation eligible. Explicit filing also marks an empty resource eligible and appends the desired location.
 4. The namespace runner persists immutable request bytes before HTTP, records the outcome, then applies it through metadata CAS. Reload, response loss, and another browser context resume the same recorded work.
-5. Acknowledgement adopts the same Y.Doc into authorized registry transport. Metadata, tab labels, the sidebar row, and the readable URL reconcile without replacing the editor ancestry.
-6. If creation collides with a foreign server Document ID, remint changes the resource's current Document ID while retaining its handle, persistence database, Y.Doc, view member, and obsolete-ID alias.
+5. Acknowledgement adopts the same Y.Doc into authorized registry transport. Metadata, header names, the sidebar row, and the readable URL reconcile without replacing the editor ancestry.
+6. If creation collides with a foreign server Document ID, remint changes the resource's current Document ID while retaining its handle, persistence database, Y.Doc, editor host, and obsolete-ID alias.
 
 7. The sidebar's New file and a link's Create carry their destination (scheme, parent identity, missing folders, leaf name) on the create itself. Both await `reserveDocument` before they open the destination ([#836][navigate-first-reserve] tracks opening it first). If a branch's hidden document waits at that name, the server joins it and answers `joined`, or the catalog entry names the reservation in `joinedFrom`. Whichever arrives first runs one transition (`resource-join.ts`): the joined id becomes current, the handle stays, the old id becomes an alias, queued intents are rebased, and the same Y.Doc goes to the joined document's room. The document was hidden only because it is a draft, so there is no draft text to merge: what the writer typed goes live and the draft stays an ordinary draft over it. If another record already holds the joined id, nothing folds; the create reminting as a conflict does.
 
@@ -60,21 +59,21 @@ Closing the view never abandons the resource or cancels synchronization. Explici
 
 `ResourceCatalogAcquisition` is the only catalog cursor and installation owner. React Query triggers acquisition and may cache the returned view, but the durable checkpoint and resource overlay remain authoritative. A received catalog commit and its derived resource observations commit atomically; resource revision fences prevent a late response from overwriting newer local intent.
 
-Trees, reference browsing, wikilink resolution, restored tabs, readable addresses, and stable-ID navigation consume the same projection. A readable path is a locator; Document ID and stable resource handle are identity. Current identity wins over an obsolete remint alias when both appear in the catalog.
+Trees, reference browsing, wikilink resolution, readable addresses, and stable-ID navigation consume the same projection. A readable path is a locator; Document ID and stable resource handle are identity. Current identity wins over an obsolete remint alias when both appear in the catalog.
 
-Known exact content opens locally before remote admission. The returned admission binds another lease to the same local session after route and workspace settlement. Remote ownership reconciliation proceeds separately and waits for an adoption-eligible editor binding; navigation and background probe leases never acknowledge a session that would be released immediately. An unacquired catalog resource uses the server opener. Exact metadata publication is barred from local opens and reconciliation until its synchronized registry session is installed; that session survives navigation preflight until the editor binding owns it, then supplies exact local content for later opens. Missing or uninitialized IndexedDB is never treated as an editable blank cache.
+Known exact content opens locally before remote admission. The returned admission binds another lease to the same local session after route settlement. Remote ownership reconciliation proceeds separately and waits for an adoption-eligible editor binding; navigation and background probe leases never acknowledge a session that would be released immediately. An unacquired catalog resource uses the server opener. Exact metadata publication is barred from local opens and reconciliation until its synchronized registry session is installed; that session survives navigation preflight until the editor binding owns it, then supplies exact local content for later opens. Missing or uninitialized IndexedDB is never treated as an editable blank cache.
 
 ## Rename, move, and delete
 
 File rename, filing, and the identity bar issue one durable resource-location command. The desired projection replaces the old server row immediately; an eventual receipt or catalog refresh converges canonical metadata without remounting content. Folder operations remain on the direct context API because they have no document resource identity.
 
-Delete appends durable intent and hides the exact resource optimistically. A rejected attempt restores it with repair state. A terminal server generation closes matching tabs and session access through the existing availability/removal coordinator. The separate Trash auxiliary route can then read the retained server Markdown (serialized from its frozen Yjs) by Document ID; it is not a retained Editor tab and never reuses purged local content. Path reuse resolves the new Document ID rather than resurrecting stale content. Server-backed storage cleanup requires an authorized terminal transition. Explicit deletion of a never-submitted local resource settles locally and records an exact-database cleanup obligation without a server receipt. Catalog disappearance alone is not deletion evidence.
+Delete appends durable intent and hides the exact resource optimistically. A rejected attempt restores it with repair state. A terminal server generation closes matching hosts and session access through the existing availability/removal coordinator. The separate Trash auxiliary route can then read the retained server Markdown (serialized from its frozen Yjs) by Document ID; it is not a retained document host and never reuses purged local content. Path reuse resolves the new Document ID rather than resurrecting stale content. Server-backed storage cleanup requires an authorized terminal transition. Explicit deletion of a never-submitted local resource settles locally and records an exact-database cleanup obligation without a server receipt. Catalog disappearance alone is not deletion evidence.
 
-## Tabs, history, and loading
+## Hosts, history, and loading
 
-Editor membership is isolated per browser tab/window in `sessionStorage`; content and resource metadata are shared at account scope. Open, selection, close, Back/Forward, and URL changes settle through the accepted navigation operation. Closing the last tab stays empty across screen changes and reload. A late acknowledgement cannot reopen a closed member.
+Presentation is isolated per browser tab/window; content and resource metadata are shared at account scope. Open, Back/Forward and URL changes settle through the accepted navigation operation. Main shows the document its address names, so a late acknowledgement cannot reopen a document the address no longer names.
 
-The application shell and pane geometry render immediately. Eligible warm transitions retain the prior usable editor. Cold waits keep a blank pane for about 500 ms and then show a content-shaped skeleton, with no spinner, loading text, or artificial minimum duration. Pending address state never keys or remounts the editor.
+The application shell and pane geometry render immediately. Eligible transitions retain the prior usable editor. Cold waits keep a blank pane for about 500 ms and then show a content-shaped skeleton, with no spinner, loading text, or artificial minimum duration. Pending address state never keys or remounts the editor.
 
 ## Synchronization and shutdown
 
@@ -86,8 +85,8 @@ The repository has no production users or legacy data. The old Untitled lineage,
 
 ## Deliberate limits
 
-Cold offline application boot, generalized durable folder commands, Scratch/Uploads Editor viewers, socket multiplexing, and multi-pane Editor layout are outside this lifecycle. Scratch and Uploads remain valid chat/reference/tool resources. See [tracked follow-ups](../context/.context/TODO.md) for separate product work.
+Cold offline application boot, generalized durable folder commands, Scratch/Uploads Editor viewers, socket multiplexing, and a layout with more than main and one side item are outside this lifecycle. Scratch and Uploads remain valid chat/reference/tool resources. See [tracked follow-ups](../context/.context/TODO.md) for separate product work.
 
-Cold boot and folder commands are tracked with the [resource adapter follow-ups](../../../core/resources/.context/FUTURE), multi-pane layout with the [project shell follow-ups](FUTURE). Socket multiplexing stays out because WebSocket closes are connection-wide while schema refusals are room-specific.
+Cold boot and folder commands are tracked with the [resource adapter follow-ups](../../../core/resources/.context/FUTURE), a richer layout with the [project shell follow-ups](FUTURE). Socket multiplexing stays out because WebSocket closes are connection-wide while schema refusals are room-specific.
 
 [navigate-first-reserve]: https://github.com/haowjy/meridian-flow/issues/836

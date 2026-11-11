@@ -124,11 +124,11 @@ minutes (`LOCAL_DELETION_UNDO_MS`, `cleanup.notBefore`), and nothing brings it b
 Every rename is local first. File rename (any area, any Work) and the identity bar
 share the durable resource-location command; folder rename admits a folder
 namespace intent through `AccountResourceReplica.setFolderLocation`. The folder
-and its descendants show their new place at once in the tree, open tabs and
+and its descendants show their new place at once in the tree, headers and
 routes, and so does the phone. One placement source, the projected catalog, serves
 every surface, and a route resolves its open document by identity: the document the
 route is bound to (a navigation that named it, or an address answer, both proof; a
-cached tab's guess never binds) is found by id, so a
+cached path's guess never binds) is found by id, so a
 move of it or a folder above it, that move's rollback after a refusal, or another
 document taking the path it holds or left never strands it. `resolveLocalDocumentAddress`
 returns it as `bound` and it outranks the server's answer for that path; admission
@@ -137,8 +137,8 @@ phone host finds the same document by identity meanwhile. Desktop and phone also
 follow the replica's placement (`useFollowOpenDocumentPlacement`): a move or delete
 of the open document changes the URL at once. The route follows only while the selection is
 bound to that document at the current route and its projected locator or owner differs, so a
-pasted or traversed URL is never pulled back to an open tab. A review address owns its path and
-is never followed; its tab still reconciles. A document under a pending
+pasted or traversed URL is never pulled back to a presented document. A review address owns its path and
+is never followed; its document still reconciles. A document under a pending
 move carries `placementPending` for the same reason: a server alias for the path the
 writer just gave it cannot pull the route back.
 
@@ -311,7 +311,7 @@ A list row dropped within one system moves at once. A drop that crosses systems 
 project's areas are one system; User and each Scratch owner and each chat's Uploads
 are their own, `entrySystem` in `entry.ts`) changes ownership, so the list asks first.
 So does every drag that is not a list row (a `reference`, below), even within one
-system: a mention chip, an Editor tab, a path crumb, a Recent row, a receipt or Work
+system: a mention chip, main's document title, a path crumb, a Recent row, a receipt or Work
 change entry, an Uploads entry, a selected Editor link. The
 hover accepts with the first thing the menu would offer and an ellipsis ("Move to
 Act 2…", or "Copy to Act 2…" when Move is disabled); the drop opens a compact menu
@@ -335,7 +335,7 @@ is a new item there and a branch in the list's `choose`. The contract:
 
 - `EntryDrag` (`entry.ts`, held by `drag-session.ts`): `{ entries, source }`. An entry is
   identity (`ref`), the name the preview shows, and the `view` a Copy of it reads (the live
-  document, or the draft a tab or receipt row shows). `source` is `list-row` or `reference`.
+  document, or the draft a title or receipt row shows). `source` is `list-row` or `reference`.
   A drag carries no placement and no grant.
 - `ResolvedDrop` (`move-plan.ts`, from `resolveDrop(view, drag, target)`):
   what a drop is now, before any action decides what to do with it. `sources` are
@@ -375,8 +375,8 @@ document drags as itself and a gone one answers "Some of these items are no long
 
 | Source | Names | View |
 |---|---|---|
-| Editor tab (`ContextTabBar`) | the tab's document | the draft of the Work under review while the tab is under review (`draftCopyView`, owned by draft review); local and draft-only tabs don't drag |
-| Path crumb (`DocumentPath`) | the document (filename) or the folder (read up the placement graph, so no catalog is acquired); the area crumb navigates | the filename follows its tab (the draft while under review); folders live |
+| Main's document title (`MainHeader`) | the document | the draft of the Work under review while the document is under review (`draftCopyView`, owned by draft review); local and draft-only documents don't drag |
+| Path crumb (`DocumentPath`) | the document (filename) or the folder (read up the placement graph, so no catalog is acquired); the area crumb navigates | the filename follows its document (the draft while under review); folders live |
 | Recent row | the document by id, never the path it was opened at | live |
 | Transcript chip (`TranscriptReference`) | an exact reference the host still resolves; syntax links name no entry | live |
 | Composer chip (`ComposerReferenceMenu`) | its document or folder | live |
@@ -402,7 +402,7 @@ Copy duplicates the carried rows into the destination and leaves the sources whe
 they are (`planCopy`, `copyRows` in `execute-copy.ts`). Every carried row is
 copied, the one already in the destination's parent included (its copy takes the
 next free name), and an edge drop may anchor on a carried row. Each entry's `view` goes to the
-server with its root: a tree row copies the live document, a draft tab or receipt row the draft it
+server with its root: a tree row copies the live document, a draft title or receipt row the draft it
 shows. A draft view names its Work and no chat; the server reads that Work's active branch's draft
 of the document, and a Work with no draft of it refuses the Copy (it never reads live text). The copies are
 listed at once under predicted names (`arrivals`, as for Move): the replica holds

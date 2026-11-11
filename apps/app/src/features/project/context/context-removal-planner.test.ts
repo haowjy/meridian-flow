@@ -7,7 +7,6 @@ function tab(documentId: string, path: string): ContextTab {
   return {
     kind: "tracked",
     documentId,
-    tabInstanceId: `tab-${documentId}`,
     scheme: "manuscript",
     path,
     name: path.slice(1),

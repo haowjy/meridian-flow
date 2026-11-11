@@ -68,7 +68,7 @@ export type EditorSurfaceOptions = {
    */
   editorProps: NonNullable<EditorOptions["editorProps"]>;
   /**
-   * Whether this editor may publish the client's caret. A view kept warm
+   * Whether this editor may publish the client's caret. A view hidden
    * behind another one of the same session must not (see `gateCaretPresence`).
    */
   publishPresence: boolean;

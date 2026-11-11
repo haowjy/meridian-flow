@@ -3,7 +3,7 @@
 This directory is the browse surface over the account resource replica. It
 projects project documents, Scratch, and Work Files into the desktop tree,
 phone browser, recent-document chooser, and document hosts. Uploads remain
-chat resources rather than ordinary Editor tabs.
+chat resources rather than documents main opens.
 
 ## Rules
 
@@ -33,7 +33,7 @@ chat resources rather than ordinary Editor tabs.
   one drop route and one drop scope (`useEntryList`/`EntryList`). They carry
   identities, never placement or grants; plans read placement from the replica at hover,
   drop. A list row dropped within one system moves at once; one across systems, and
-  every other source naming a document or folder (chips, tabs, crumbs, Recent rows, receipts,
+  every other source naming a document or folder (chips, main's document title, crumbs, Recent rows, receipts,
   Uploads entries, selected links) asks first, at the pointer (`entry-drag/drop-choice.ts`).
   Those sources start their drag through `entry-drag/reference-source.ts` and nothing else; what a drag may do (Move is refused out
   of an archived or unlisted Work's Scratch) is judged in `resolveDrop`. Contract in
@@ -53,11 +53,19 @@ chat resources rather than ordinary Editor tabs.
   catalog query failed, "Loading files…" while the catalog is not installed yet
   (`isComplete` false), and an empty line once it is and the source is empty.
   A failed or in-flight load must never read as an empty project.
-- Document opening records the active tab, not the intent. The device record
-  updates before the server request, which waits for `whenOnServer`; restored
-  parked tabs do not count as opens.
-- The empty Editor pane is a chooser. Selecting a recent document navigates
-  without seeding a tab; route and removal owners handle continuity and close.
+- Document opening records what main shows, not the intent. The device record
+  updates before the server request, which waits for `whenOnServer`; the side
+  and the kept document do not count as opens.
+- Main with no document is a chooser. Selecting a recent document navigates;
+  route and removal owners handle continuity and removal. Nothing stores open
+  documents: `PresentedDocuments` only records what hosts mount and show. A
+  new way for the writer or a removal to end a document (beyond close, Discard,
+  vanish and the availability batch) must `forget` it there, or the desktop keeps
+  it mounted as the kept host and brings it back in the side.
+- The writer's own delete or Discard of a document begins with the removal
+  coordinator's `beginOwnRemoval`: it silences the removed notice and sends main
+  back to the document shown before. A new door that removes documents for the
+  writer must use it.
 
 ## Child guide
 

@@ -9,15 +9,11 @@ import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useRef } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import { useSelectedContextTab } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import { role } from "@/components/ui/roles";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
-import { useAccountResourceProjection } from "../context/account-feature-context";
-import { projectResourceTab } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import { useIsDraftOnly } from "../context/use-is-draft-only";
-import type { ScreenKey } from "../routing/project-route";
 import { useWorkScope } from "../use-work-scope";
 import { useManageWorks } from "../work/ManageWorksDialog";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
@@ -32,25 +28,22 @@ type LeftSidebarProps = {
   projectId: string;
   projectTitle: string;
   titleEdit: ProjectTitleEdit;
-  activeScreen: ScreenKey;
   editorWorkId: string | null;
   /** The chat on screen: Scratch follows it, and its row reads as current. */
   chatThreadId: string | null;
   contextLive: boolean;
-  activeContextScheme: ProjectContextTreeScheme | null;
-  activeContextPath: string | null;
+  /** The document whose row reads as current: main's, or beside a chat the side's. */
+  activeDocument: ContextTab | null;
 };
 
 export function LeftSidebar({
   projectId,
   projectTitle,
   titleEdit,
-  activeScreen,
   editorWorkId,
   chatThreadId,
   contextLive,
-  activeContextScheme,
-  activeContextPath,
+  activeDocument,
 }: LeftSidebarProps) {
   const manageWorks = useManageWorks();
   const titleEditor = useRef<TitleEditHandle>(null);
@@ -64,9 +57,8 @@ export function LeftSidebar({
     file: ContextFile,
     options?: { focus?: true },
   ) => {
-    // The tree is navigation: on every screen, a pick goes to the Editor, unlike a chat
-    // mention, which peeks in the dock. Identity, not the path: a kept file under a
-    // rename is still this row's document.
+    // The tree is navigation: a pick opens in main. Identity, not the path: a kept file under
+    // a rename is still this row's document.
     void openDocument({
       documentId: file.documentId,
       known: { scheme, file, workId: editorWorkId },
@@ -74,34 +66,12 @@ export function LeftSidebar({
       ...options,
     });
   };
-  // On the Chat screen the row to highlight is the document open in the dock.
-  const selectedTab = useSelectedContextTab(projectId);
-  const { records, placement } = useAccountResourceProjection(projectId);
-  const isDraftOnly = useIsDraftOnly(projectId);
-  const projectedSelected = selectedTab
-    ? projectResourceTab(
-        projectId,
-        selectedTab,
-        records,
-        placement,
-        isDraftOnly(selectedTab.documentId),
-      )
-    : null;
-  const docked =
-    activeScreen === "chat" &&
-    selectedTab &&
-    projectedSelected?.kind !== "removed" &&
-    projectedSelected?.kind !== "terminal"
-      ? projectedSelected?.kind === "projected"
-        ? projectedSelected.tab
-        : selectedTab
-      : null;
-  const treeActiveScheme = docked
-    ? docked.kind === "new"
+  const treeActiveScheme = activeDocument
+    ? activeDocument.kind === "new"
       ? "unfiled"
-      : docked.scheme
-    : activeContextScheme;
-  const treeActivePath = docked ? (docked.kind === "new" ? null : docked.path) : activeContextPath;
+      : activeDocument.scheme
+    : null;
+  const treeActivePath = activeDocument?.kind === "new" ? null : (activeDocument?.path ?? null);
 
   return (
     <nav

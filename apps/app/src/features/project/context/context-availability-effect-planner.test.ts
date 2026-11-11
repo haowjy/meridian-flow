@@ -8,7 +8,6 @@ import type { ProjectDocumentAvailabilityCommand } from "./project-context-avail
 const tab = {
   kind: "tracked",
   documentId: "doc",
-  tabInstanceId: "tab-doc",
   scheme: "manuscript",
   path: "/old.md",
   name: "old.md",
@@ -52,9 +51,10 @@ function plan(by: "navigation" | "review") {
       transitionRevision: 0,
       live: true,
     },
-    tabs: { tabs: [tab], selectedTabKey: tab.tabInstanceId as string },
+    tabs: [tab],
+    mainDocumentId: "doc",
     recentRoutes: [],
-    routeSearch: { screen: "context", scheme: "manuscript", path: "/old.md" },
+    routeSearch: { scheme: "manuscript", path: "/old.md" },
     appliedGenerations: new Map(),
   } as Parameters<typeof planContextAvailabilityBatch>[0]);
 }
@@ -72,7 +72,7 @@ it("a live move relocates a navigation's route but leaves a review address on it
   );
 });
 
-it("a document deleted live keeps the selection on the tab whose draft still holds it", () => {
+it("a document deleted live stays presented while its draft still holds it", () => {
   const selection: ContextRouteSelection = {
     status: "bound",
     revision: 1,
@@ -100,12 +100,12 @@ it("a document deleted live keeps the selection on the tab whose draft still hol
       transitionRevision: 0,
       live: true,
     },
-    tabs: { tabs: [tab], selectedTabKey: tab.tabInstanceId as string },
+    tabs: [tab],
+    mainDocumentId: "doc",
     recentRoutes: [],
-    routeSearch: { screen: "context", scheme: "manuscript", path: "/old.md", work: "work" },
+    routeSearch: { scheme: "manuscript", path: "/old.md", work: "work" },
     appliedGenerations: new Map(),
     held: new Set(["doc"]),
   } as Parameters<typeof planContextAvailabilityBatch>[0]);
   expect(planned.tabs.map((candidate) => candidate.documentId)).toEqual(["doc"]);
-  expect(planned.selectedDocumentId).toBe("doc");
 });

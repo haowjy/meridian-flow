@@ -1,7 +1,7 @@
 /**
  * The session-bound half of an open document: one resource lookup, one live
- * room binding, one server-session capture. Editor tabs and the dock's
- * document both render through it, so a document has exactly one way to reach
+ * room binding, one server-session capture. Main's and the side's
+ * documents both render through it, so a document has exactly one way to reach
  * its `DocumentSession` and no view owns a second Y.Doc, room or capture.
  */
 import {
@@ -22,7 +22,6 @@ type ContextTabSessionProps = {
   projectId: string;
   documentId: string;
   resourceHandle?: string;
-  tabInstanceId?: string;
   availabilityRevision: string;
   /** False for a document with no live room yet (draft-only until Apply promotes it). */
   liveRoom?: boolean;
@@ -37,8 +36,8 @@ type ContextTabSessionProps = {
 };
 
 /**
- * One stable host across local adoption; server retention lasts until the tab
- * closes. A room dropped because the server refused its edits reopens as a
+ * One stable host across local adoption; server retention lasts until the host
+ * unmounts. A room dropped because the server refused its edits reopens as a
  * fresh session: local probe and server binding both start over.
  */
 export function ContextTabSessionBoundary(props: ContextTabSessionProps) {
@@ -51,7 +50,6 @@ function ContextTabSession({
   projectId,
   documentId,
   resourceHandle,
-  tabInstanceId,
   availabilityRevision,
   liveRoom = true,
   bindingOwner = "desktop-document-host",
@@ -76,7 +74,7 @@ function ContextTabSession({
     phase: "probing" | "cached" | "server";
   }>({ identity: resourceIdentity, documentId, handle: null, phase: "probing" });
   const installedHandle = useRef<ResourceContentHandle | null>(null);
-  // A tab can lose its resource handle while keeping its document (a review
+  // A descriptor can lose its resource handle while keeping its document (a review
   // launch re-opens it without one). Same document, same cached session: keep
   // painting it while the exact lookup re-probes, never drop to a skeleton.
   const currentLocal =
@@ -94,7 +92,7 @@ function ContextTabSession({
   useEffect(() => {
     if (!liveRoom) return;
     const abort = new AbortController();
-    const transferToken = tabInstanceId ? opener.transferToken(tabInstanceId, documentId) : null;
+    const transferToken = opener.transferToken(documentId);
     setLocal((prior) => ({
       identity: resourceIdentity,
       documentId,
@@ -199,16 +197,15 @@ function ContextTabSession({
     resourceIdentity,
     resourceLookup,
     resources,
-    tabInstanceId,
   ]);
   useEffect(() => {
-    const transferToken = tabInstanceId ? opener.transferToken(tabInstanceId, documentId) : null;
+    const transferToken = opener.transferToken(documentId);
     return () => {
       queueMicrotask(() => {
         if (transferToken) opener.disposeTransfer(transferToken);
       });
     };
-  }, [documentId, opener, tabInstanceId]);
+  }, [documentId, opener]);
   useEffect(
     () => () => {
       installedHandle.current?.release();
@@ -220,7 +217,6 @@ function ContextTabSession({
     projectId,
     documentId: liveRoom && currentLocal.phase === "server" ? documentId : null,
     owner: bindingOwner,
-    tabInstanceId,
   });
   const automaticRetryRevision = useRef(availabilityRevision);
   useEffect(() => {

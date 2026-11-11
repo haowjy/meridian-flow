@@ -108,7 +108,7 @@ restore) supersedes this deletion through the replica's revival rule.
 Pending deletion hides the catalog subtree immediately. Refusal releases the
 optimistic overlay and leaves failure evidence on the restored folder row.
 Namespace retry and account fencing are the only command delivery mechanism.
-Availability reconciliation closes remote-deleted tabs and sessions; it has no
+Availability reconciliation ends presentation of remote-deleted documents and closes their sessions; it has no
 general durable deletion intake. The inherited session-authority exception for
 adopting or adopted local-origin documents is documented in the context feature.
 The schema drops the removed deletion inbox without discarding the journal.

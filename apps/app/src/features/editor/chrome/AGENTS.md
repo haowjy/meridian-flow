@@ -5,7 +5,7 @@ The React adapter for the headless kernel in
 
 - A surface is one entry in `chrome-surfaces.tsx`, taking the editor and nothing else.
   `EditorView` doesn't know individual surfaces.
-- Pass `active` to `EditorChromeHost`, or warm editors and collapsed docks paint chrome
+- Pass `active` to `EditorChromeHost`, or hidden editors (the kept document, a closed side) paint chrome
   over the visible editor.
 - Use `useChromeLayer`'s `onCloseAutoFocus` and `onEscapeKeyDown`. A lane that opens
   another surface wraps its content in `layer.scope(...)`; don't race Radix teardown with

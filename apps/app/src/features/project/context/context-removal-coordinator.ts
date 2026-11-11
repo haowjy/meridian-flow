@@ -5,17 +5,7 @@ import type {
   ProjectContextTreeScheme,
   WorkingSetRoute,
 } from "@meridian/contracts/protocol";
-import {
-  type ContextTab,
-  commitContextAvailability,
-  commitPlannedContextRemoval,
-  getContextTabs,
-  matchesTabInstance,
-  type ProjectTabsSlice,
-  type ServerContextTab,
-  selectedDocumentIdOf,
-  selectingDocument,
-} from "@/client/stores";
+import type { ContextTab, ServerContextTab } from "@/client/stores";
 import {
   type ReconcileContextRoutesInput,
   readRecentRoutes,
@@ -64,8 +54,9 @@ import {
   selectionAtRoute,
   type TerminalRouteRemoval,
 } from "./context-removal-protocol";
+import { PresentedDocuments } from "./presented-documents";
 import type { ProjectDocumentAvailabilityCommand } from "./project-context-availability-coordinator";
-import type { RemovedNoticeStore } from "./removed-notice-store";
+import type { RemovedNoticeStore, SettleOwnRemoval } from "./removed-notice-store";
 
 type ContextRemovalWorkingSetPort = {
   readRecentRoutes(projectId: string): WorkingSetRoute[];
@@ -86,23 +77,25 @@ export type ContextRemovalRoutePort = {
     target: ContextRouteRequest | { kind: "clear" },
     prepared: PreparedWorkspaceNavigation,
   ): Promise<NavigationSettlement>;
+  /**
+   * The writer is removing `documentId`, which main shows: main opens the document it showed
+   * before, one that still exists and is not among `removing`, else Recently opened. Nothing
+   * moves once `isCurrent` turns false.
+   */
+  goBack(
+    projectId: string,
+    documentId: string,
+    removing: readonly string[],
+    isCurrent: () => boolean,
+  ): void;
 };
 
-type EditorWorkspacePort = {
-  read(projectId: string): ProjectTabsSlice;
-  commit(
-    projectId: string,
-    input: {
-      documentIds: readonly string[];
-      workspaceSelection?: { documentId: string | null };
-    },
-  ): ContextTab[];
-  applyAvailability(
-    projectId: string,
-    prior: ProjectTabsSlice,
-    next: ProjectTabsSlice,
-  ): Promise<void> | void;
-};
+/**
+ * What the views present (`PresentedDocuments`). A removal is planned against it; the views
+ * follow the address and the replica. A close, a Discard or a removal forgets the document, so
+ * no view picks it again and its host unmounts.
+ */
+type PresentedPort = Pick<PresentedDocuments, "documents" | "mainDocumentId" | "forget">;
 
 /** The draft-only documents hosts present (`DraftOnlyPresentations`). */
 export type DraftOnlyPort = {
@@ -145,11 +138,13 @@ export type ContextRouteActivation = {
   transitionRevision: number;
   locator: ContextRouteRequest;
   identity: ContextRouteIdentity;
-  owner: { kind: "workspace"; tab: ContextTab } | { kind: "route-only" };
 };
 
-/** Where the Editor's tabs report documents that closed because they vanished (`RemovedNoticeStore`). */
-export type RemovedPresentationPort = Pick<RemovedNoticeStore, "presentedRemoved">;
+/** Where views report documents they presented that vanished (`RemovedNoticeStore`). */
+export type RemovedPresentationPort = Pick<
+  RemovedNoticeStore,
+  "presentedRemoved" | "markOwnRemoval" | "removalsLanded"
+>;
 
 type CoordinatorProjectState = {
   activeWorkId: string | null;
@@ -212,12 +207,6 @@ const EMPTY_PROJECT_SNAPSHOT: ContextRemovalProjectSnapshot = {
   live: false,
 };
 
-const productionWorkspace: EditorWorkspacePort = {
-  read: getContextTabs,
-  commit: commitPlannedContextRemoval,
-  applyAvailability: commitContextAvailability,
-};
-
 const productionWorkingSet: ContextRemovalWorkingSetPort = {
   readRecentRoutes,
   reconcileContextRoutes,
@@ -228,7 +217,7 @@ export class ContextRemovalCoordinator {
   private readonly projects = new Map<string, CoordinatorProjectState>();
   private readonly routePorts = new Map<string, { token: symbol; port: ContextRemovalRoutePort }>();
   private readonly fallbackRoute: ContextRemovalRoutePort | null;
-  private readonly workspace: EditorWorkspacePort;
+  private readonly presented: PresentedPort;
   private readonly workingSet: ContextRemovalWorkingSetPort;
   private readonly sessions: LiveDocumentSessionAuthority | null;
   private readonly notices: RemovedPresentationPort | null;
@@ -250,7 +239,7 @@ export class ContextRemovalCoordinator {
     accountOrDependencies:
       | string
       | {
-          workspace?: EditorWorkspacePort;
+          presented?: PresentedPort;
           workingSet?: ContextRemovalWorkingSetPort;
           route?: ContextRemovalRoutePort;
           sessions?: LiveDocumentSessionAuthority;
@@ -260,7 +249,7 @@ export class ContextRemovalCoordinator {
         }
       | null = null,
     explicitDependencies: {
-      workspace?: EditorWorkspacePort;
+      presented?: PresentedPort;
       workingSet?: ContextRemovalWorkingSetPort;
       route?: ContextRemovalRoutePort;
       sessions?: LiveDocumentSessionAuthority;
@@ -274,7 +263,7 @@ export class ContextRemovalCoordinator {
         ? accountOrDependencies
         : explicitDependencies;
     this.accountId = typeof accountOrDependencies === "string" ? accountOrDependencies : null;
-    this.workspace = dependencies.workspace ?? productionWorkspace;
+    this.presented = dependencies.presented ?? new PresentedDocuments();
     this.workingSet = dependencies.workingSet ?? productionWorkingSet;
     this.fallbackRoute = dependencies.route ?? null;
     this.sessions = dependencies.sessions ?? null;
@@ -284,10 +273,10 @@ export class ContextRemovalCoordinator {
   }
 
   /**
-   * The documents among `documentIds` whose tabs stay when live loses them: a host presents the
+   * The documents among `documentIds` a view keeps when live loses them: a host presents the
    * document draft-only, or a draft held open still has it: a live delete must not strand the
-   * draft. The draft paints in them; a held live document stays draft-only while a held draft has
-   * it, until it ends or live has the document again.
+   * draft. The draft paints there; a held live document stays draft-only while a held draft has
+   * it, until it ends or live has the document again. The hold's location is the view's.
    */
   private heldByDrafts(projectId: string, documentIds: readonly string[]): Set<string> {
     const held = new Set<string>();
@@ -299,9 +288,9 @@ export class ContextRemovalCoordinator {
       const drafts = this.drafts?.boundDrafts(projectId, documentId) ?? [];
       if (!drafts.length) continue;
       held.add(documentId);
-      const tab = this.workspace
-        .read(projectId)
-        .tabs.find((candidate) => candidate.documentId === documentId);
+      const tab = this.presented
+        .documents(projectId)
+        .find((candidate) => candidate.documentId === documentId);
       const contextLocation =
         tab?.kind === "tracked" ? { scheme: tab.scheme, path: tab.path } : null;
       this.draftOnly?.holdRemovedLive(
@@ -356,31 +345,15 @@ export class ContextRemovalCoordinator {
     ) {
       return false;
     }
-    const tabs = this.workspace.read(activation.projectId).tabs;
-    const owner = activation.owner;
-    const tab =
-      owner.kind === "workspace"
-        ? tabs.find((candidate) => matchesTabInstance(candidate, owner.tab))
-        : null;
-    if (owner.kind === "workspace") {
-      if (
-        !tab ||
-        tab.documentId !== activation.identity.documentId ||
-        this.draftOnly?.isDraftOnly(activation.projectId, tab.documentId)
-      )
-        return false;
-      if (!sameLocator(routeTargetForTab(tab), activation.locator)) {
-        return false;
-      }
-    } else {
-      const route = this.routePorts.get(activation.projectId)?.port ?? this.fallbackRoute;
-      const search = route?.readSearch(activation.projectId);
-      if (
-        activation.identity.kind !== "server" ||
-        !contextRouteMatchesSearch(search, activation.locator)
-      ) {
-        return false;
-      }
+    const tabs = this.presented.documents(activation.projectId);
+    const route = this.routePorts.get(activation.projectId)?.port ?? this.fallbackRoute;
+    const search = route?.readSearch(activation.projectId);
+    if (
+      activation.identity.kind !== "server" ||
+      this.draftOnly?.isDraftOnly(activation.projectId, activation.identity.documentId) ||
+      !contextRouteMatchesSearch(search, activation.locator)
+    ) {
+      return false;
     }
     const fence = state.removalFence;
     if (
@@ -398,17 +371,15 @@ export class ContextRemovalCoordinator {
     ) {
       return true;
     }
-    const route = tab
-      ? workingSetRouteForTab(tab)
-      : workingSetRouteForTarget(activation.identity.documentId, activation.locator);
-    if (route) {
+    const activated = workingSetRouteForTarget(activation.identity.documentId, activation.locator);
+    if (activated) {
       this.workingSet.reconcileContextRoutes(activation.projectId, {
         removedLocators: [],
         survivingOwnedLocators: [
           ...tabs.flatMap((item) => workingSetRouteForTab(item) ?? []),
-          ...(owner.kind === "route-only" ? [route] : []),
+          activated,
         ],
-        promote: route,
+        promote: activated,
         clearAll: false,
       });
     }
@@ -429,9 +400,9 @@ export class ContextRemovalCoordinator {
     const state = this.project(projectId);
     const selection = state.selection;
     const workId = state.activeWorkId;
-    const tab = this.workspace
-      .read(projectId)
-      .tabs.find((candidate) => candidate.documentId === documentId);
+    const tab = this.presented
+      .documents(projectId)
+      .find((candidate) => candidate.documentId === documentId);
     if (
       !workId ||
       !state.live ||
@@ -440,7 +411,7 @@ export class ContextRemovalCoordinator {
       selection.locator.scheme !== "unfiled" ||
       selection.locator.path !== "" ||
       selection.locator.workId !== workId ||
-      selectedDocumentIdOf(this.workspace.read(projectId)) !== documentId ||
+      this.presented.mainDocumentId(projectId) !== documentId ||
       tab?.kind !== "tracked" ||
       tab.origin !== "local-resource" ||
       !sameLocator(routeTargetForTab(tab), target)
@@ -449,10 +420,9 @@ export class ContextRemovalCoordinator {
     }
     const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
     const search = route?.readSearch(projectId);
-    if (!route || search?.screen !== "context") return false;
+    if (!route || !search?.scheme) return false;
     const repair: ContextRouteRepair = {
       expectedSearch: {
-        screen: "context",
         work: search.work,
         chat: search.chat,
         scheme: "unfiled",
@@ -465,7 +435,7 @@ export class ContextRemovalCoordinator {
       const current = this.project(projectId);
       return current.selection.status !== "none" &&
         current.selection.revision === selectionRevision &&
-        selectedDocumentIdOf(this.workspace.read(projectId)) === documentId
+        this.presented.mainDocumentId(projectId) === documentId
         ? applyContextRepairIfCurrent(repair, latest)
         : latest;
     });
@@ -603,9 +573,9 @@ export class ContextRemovalCoordinator {
   }
 
   /**
-   * A destination can install after the terminal command that raced its route.
-   * Reapply that exact command to the newly represented tab instead of leaving
-   * a post-removal tab outside the command's already-settled workspace batch.
+   * A view can present a document after the terminal command that raced its route. Reapply that
+   * exact command to the newly presented document instead of leaving it outside the command's
+   * already-settled batch.
    */
   reconcileInstalledTab(projectId: string, tab: ContextTab): void {
     const key = `${projectId}/${tab.documentId}`;
@@ -666,24 +636,18 @@ export class ContextRemovalCoordinator {
       }
       const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
       const routeSearch = route?.readSearch(projectId) ?? null;
-      const priorWorkspace = this.workspace.read(projectId);
+      const presented = this.presented.documents(projectId);
       plan = planContextAvailabilityBatch({
         commands: committed,
         project: state.snapshot,
-        tabs: priorWorkspace,
+        tabs: presented,
+        mainDocumentId: this.presented.mainDocumentId(projectId),
         recentRoutes: this.workingSet.readRecentRoutes(projectId),
         routeSearch,
         appliedGenerations: this.appliedAvailability,
         held,
       });
 
-      const workspaceSettlement = this.workspace.applyAvailability(projectId, priorWorkspace, {
-        tabs: [...plan.tabs],
-        selectedTabKey: selectingDocument(
-          { tabs: [...plan.tabs], selectedTabKey: null },
-          plan.selectedDocumentId,
-        ).selectedTabKey,
-      });
       const settledPlan = plan;
       const settleLocal = () => {
         this.workingSet.replaceRecentRoutes(projectId, settledPlan.recentRoutes);
@@ -698,6 +662,13 @@ export class ContextRemovalCoordinator {
             kind: record.kind,
           });
         }
+        this.presented.forget(
+          projectId,
+          committed.flatMap((command) => {
+            const id = availabilityDocumentId(command);
+            return command.kind === "available" || held.has(id) ? [] : [id];
+          }),
+        );
         for (const command of committed) {
           const key = `${projectId}/${availabilityDocumentId(command)}`;
           if (command.kind === "terminal-remove") this.terminalAvailability.set(key, command);
@@ -721,7 +692,7 @@ export class ContextRemovalCoordinator {
           committed.flatMap((command) => {
             if (command.kind !== "terminal-remove") return [];
             const id = command.documentId;
-            const tab = priorWorkspace.tabs.find(
+            const tab = presented.find(
               (candidate): candidate is ServerContextTab =>
                 candidate.kind !== "new" && candidate.documentId === id,
             );
@@ -729,6 +700,14 @@ export class ContextRemovalCoordinator {
               ? [tab]
               : [];
           }),
+        );
+        this.notices?.removalsLanded(
+          projectId,
+          committed.flatMap((command) =>
+            command.kind === "terminal-remove" && !held.has(command.documentId)
+              ? [command.documentId]
+              : [],
+          ),
         );
         this.publish(state);
         return settledPlan.sessionEffects;
@@ -744,23 +723,13 @@ export class ContextRemovalCoordinator {
         });
         return Promise.all(effects.map((effect) => this.startSessionEffect(effect)));
       };
-      if (!workspaceSettlement) {
-        const sessionSettlement = settleEffects(settleLocal());
-        return {
-          committedCommandIds: committed.map((command) => command.commandId),
-          replayedCommandIds: replayed.map((command) => command.commandId),
-          staleCommandIds,
-          localSettlement: Promise.resolve(),
-          sessionSettlement,
-        };
-      }
-      const plannedEffects = workspaceSettlement.then(settleLocal);
+      const sessionSettlement = settleEffects(settleLocal());
       return {
         committedCommandIds: committed.map((command) => command.commandId),
         replayedCommandIds: replayed.map((command) => command.commandId),
         staleCommandIds,
-        localSettlement: plannedEffects.then(() => undefined),
-        sessionSettlement: plannedEffects.then(settleEffects, () => []),
+        localSettlement: Promise.resolve(),
+        sessionSettlement,
       };
     }
 
@@ -866,35 +835,39 @@ export class ContextRemovalCoordinator {
     };
   }
 
+  /**
+   * The writer closed a document a view presents (a draft-only page has no Live to return to).
+   * Closing main's document takes main's address to the empty Editor; nothing is chosen in its
+   * place.
+   */
   writerClose(
     projectId: string,
     addressed: ContextTab,
   ): ContextRemovalOutcome | Promise<NavigationSettlement> {
     if (this.unavailable()) return { kind: "noop" };
     const state = this.project(projectId);
-    const slice = this.workspace.read(projectId);
-    const tab = slice.tabs.find((candidate) => matchesTabInstance(candidate, addressed));
     const documentId = addressed.documentId;
+    this.presented.forget(projectId, [documentId]);
+    const presented = this.presented.documents(projectId);
+    const tab = presented.find((candidate) => candidate.documentId === documentId);
     if (!tab) return { kind: "noop" };
     const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
     const transition = reduceRepresentedRemoval(state.selection, [tab], {
       cause: "writer-close",
       documentIds: [documentId],
-      tabInstanceId: tab.tabInstanceId,
     });
     const plan = planContextRemoval({
       activeWorkId: state.activeWorkId,
-      tabs: slice.tabs,
-      selectedTabId: state.activeWorkId ? selectedDocumentIdOf(slice) : null,
+      tabs: presented,
+      selectedTabId: state.activeWorkId ? this.presented.mainDocumentId(projectId) : null,
       admitted: state.admitted,
       route: { cleanup: transition.planning.cleanup, current: transition.planning.current },
       intent: transition.planning.intent,
     });
-    // Closing the shown tab leaves nothing chosen in its place.
     const closesShownDocument =
       plan.outcome.kind === "removal" &&
       (plan.outcome.workspaceSelectedRemoved || plan.outcome.routedDocumentRemoved);
-    if (!closesShownDocument || !route || route.readSearch(projectId).screen !== "context")
+    if (!closesShownDocument || !route?.readSearch(projectId).scheme)
       return this.commitWriterClose(projectId, tab);
     const capturedSelection = state.selection;
     const capturedWork = state.activeWorkId;
@@ -902,19 +875,11 @@ export class ContextRemovalCoordinator {
       projectId,
       { kind: "clear" },
       {
-        isCurrent: () => {
-          const current = this.workspace.read(projectId);
-          const member = current.tabs.find((candidate) => matchesTabInstance(candidate, tab));
-          if (
-            this.unavailable() ||
-            member?.tabInstanceId !== tab.tabInstanceId ||
-            state.selection !== capturedSelection ||
-            state.activeWorkId !== capturedWork ||
-            current !== slice
-          )
-            return false;
-          return true;
-        },
+        isCurrent: () =>
+          !this.unavailable() &&
+          this.presented.documents(projectId).some((member) => member.documentId === documentId) &&
+          state.selection === capturedSelection &&
+          state.activeWorkId === capturedWork,
         commit: () => {
           this.commitWriterClose(projectId, tab);
         },
@@ -924,15 +889,15 @@ export class ContextRemovalCoordinator {
 
   private commitWriterClose(projectId: string, addressed: ContextTab): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
-    const slice = this.workspace.read(projectId);
-    const tab = slice.tabs.find((candidate) => matchesTabInstance(candidate, addressed));
     const documentId = addressed.documentId;
+    const tab = this.presented
+      .documents(projectId)
+      .find((candidate) => candidate.documentId === documentId);
     if (!tab) return { kind: "noop" };
     const state = this.project(projectId);
     const transition = reduceRepresentedRemoval(state.selection, [tab], {
       cause: "writer-close",
       documentIds: [documentId],
-      tabInstanceId: tab.tabInstanceId,
     });
     state.selection = transition.selection;
     const outcome = this.executePlanning(projectId, transition.planning);
@@ -941,18 +906,40 @@ export class ContextRemovalCoordinator {
   }
 
   /**
-   * The catalog no longer places this tab's document. The tab leaves the store and the
-   * notice says why once availability proves a removal; the address stays where it is, so
-   * the view shows the removal in place.
+   * The writer is deleting or Discarding these documents: their removal says nothing, and main,
+   * if it shows one of them, goes at once to the document it showed before, else to Recently
+   * opened. Call before the removal; settle the returned mark as `markOwnRemoval` says.
+   */
+  beginOwnRemoval(projectId: string, documentIds: readonly string[]): SettleOwnRemoval {
+    const settle = this.notices?.markOwnRemoval(projectId, documentIds) ?? (() => undefined);
+    const shown = this.presented.mainDocumentId(projectId);
+    const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
+    if (this.unavailable() || !route || !shown || !documentIds.includes(shown)) return settle;
+    route.goBack(
+      projectId,
+      shown,
+      documentIds,
+      () => !this.unavailable() && this.presented.mainDocumentId(projectId) === shown,
+    );
+    return settle;
+  }
+
+  /**
+   * The catalog no longer places a mounted document. A presented one's notice says why once
+   * availability proves a removal; the address stays where it is, so the view shows the removal
+   * in place. A kept one, off screen, just goes.
    */
   closeVanished(projectId: string, tab: ContextTab): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     if (this.heldByDrafts(projectId, [tab.documentId]).has(tab.documentId)) return { kind: "noop" };
+    this.presented.forget(projectId, [tab.documentId]);
+    if (!this.presented.documents(projectId).some((shown) => shown.documentId === tab.documentId))
+      return { kind: "noop" };
     this.notices?.presentedRemoved(projectId, [tab]);
     return this.commitWriterClose(projectId, tab);
   }
 
-  /** The Work scope changed. The route's selection and the tabs stay: a document's owner is its own. */
+  /** The Work scope changed. The route's selection stays: a document's owner is its own. */
   setActiveWork(projectId: string, activeWorkId: string): void {
     if (this.unavailable()) return;
     const state = this.project(projectId);
@@ -962,22 +949,21 @@ export class ContextRemovalCoordinator {
   }
 
   /**
-   * Closes the tab of a draft-created document whose draft was discarded. Runs when Discard
-   * starts (optimistic close) and again on server confirmation or a remote discard, where it
-   * finds nothing left to remove. A refused Discard does not come back here: the tab stays
-   * closed and the error lives on the draft.
+   * A draft-created document a view presents lost its draft (a Discard). Runs when Discard starts
+   * (optimistic) and again on server confirmation or a remote discard, where it finds nothing left
+   * to remove. A refused Discard does not come back here: the error lives on the draft.
    */
   discardDraft(projectId: string, documentId: string): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
-    const tab = this.workspace
-      .read(projectId)
-      .tabs.find((candidate) => candidate.documentId === documentId);
-    if (tab === undefined || tab.kind !== "tracked" || !tab.tabInstanceId) return { kind: "noop" };
+    this.presented.forget(projectId, [documentId]);
+    const tab = this.presented
+      .documents(projectId)
+      .find((candidate) => candidate.documentId === documentId);
+    if (tab === undefined || tab.kind !== "tracked") return { kind: "noop" };
     const state = this.project(projectId);
     const transition = reduceRepresentedRemoval(state.selection, [tab], {
       cause: "draft-discard",
       documentIds: [tab.documentId],
-      tabInstanceId: tab.tabInstanceId,
     });
     state.selection = transition.selection;
     const outcome = this.executePlanning(projectId, transition.planning);
@@ -1014,12 +1000,11 @@ export class ContextRemovalCoordinator {
   ): ContextRemovalOutcome {
     const { intent, current, cleanup } = effect;
     if (intent.documentIds.length === 0) return { kind: "noop" };
-    const slice = this.workspace.read(projectId);
     const state = this.project(projectId);
     const plan = planContextRemoval({
       activeWorkId: state.activeWorkId,
-      tabs: slice.tabs,
-      selectedTabId: selectedTabIdFor(slice, state.activeWorkId),
+      tabs: this.presented.documents(projectId),
+      selectedTabId: state.activeWorkId ? this.presented.mainDocumentId(projectId) : null,
       admitted: state.admitted,
       route: { cleanup, current },
       intent,
@@ -1045,9 +1030,6 @@ export class ContextRemovalCoordinator {
       return plan.outcome;
     }
 
-    this.workspace.commit(projectId, {
-      documentIds: plan.outcome.removed.map((tab) => tab.documentId),
-    });
     this.workingSet.reconcileContextRoutes(projectId, {
       ...plan.workingSet,
       removedLocators: [...plan.workingSet.removedLocators, ...additionalRemovedLocators],
@@ -1107,7 +1089,7 @@ export class ContextRemovalCoordinator {
     if (!state.activeWorkId) return;
     const plan = planCandidateRejection({
       rejected: rejection.locator,
-      tabs: this.workspace.read(projectId).tabs,
+      tabs: this.presented.documents(projectId),
       admitted: state.admitted,
       recentRoutes: this.workingSet.readRecentRoutes(projectId),
     });
@@ -1154,10 +1136,6 @@ export class ContextRemovalCoordinator {
     };
     for (const listener of state.listeners) listener();
   }
-}
-
-function selectedTabIdFor(slice: ProjectTabsSlice, workId: string | null): string | null {
-  return workId ? selectedDocumentIdOf(slice) : null;
 }
 
 function locatorKey(locator: ContextRouteRequest): string {

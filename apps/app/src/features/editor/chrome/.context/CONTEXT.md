@@ -5,7 +5,7 @@ The Esc chain and policy live in the kernel's
 
 ## Layers
 
-Context hosts and the dock keep inactive editors warm, so the host receives `active`.
+Document hosts keep a hidden editor mounted (the kept document, a closed side), so the host receives `active`.
 
 Menus and popovers are non-modal. A menu item that opens a form therefore closes without
 stealing focus from the form, and the deeper form consumes the next Escape first.

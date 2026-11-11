@@ -22,7 +22,7 @@
  * route keeps the current Editor Work. Having the Editor
  * adopt the chat's Work is a decision for all of chat's doors at once (#625).
  *
- * Visibility: `active` is the chat's visibility, so hiding the dock or opening
+ * Visibility: `active` is the chat's visibility, so hiding the side or opening
  * Settings aborts a follow and dismisses its dialog. ChatView remounts per
  * thread, so switching threads aborts too.
  *
@@ -60,7 +60,7 @@ import {
   useLinkFollower,
 } from "@/features/links";
 import type { FolderMenuHost } from "@/features/project/context/FolderMenu";
-import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { useReviewingLinkDestination } from "@/features/project/review-launch";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
 import { type ChatDoors, type ContextPassageAnchor, useChatDoors } from "./ChatContextNavigation";
@@ -149,14 +149,13 @@ export function useChatLinkFollowing({
     scope === "pending" ? { projectId: null, workId: null } : scope,
   );
 
-  const openReferenceDocument = useOpenChatDocument(projectId);
+  const openReferenceDocument = useOpenProjectDocument(projectId);
   const openLive = useCallback<LinkDestination>(
-    (document, gesture) =>
+    (document) =>
       openReferenceDocument({
         documentId: document.documentId,
         ...(document.trashed ? { trashed: true as const } : {}),
         ...(document.focus ? { focus: true as const } : {}),
-        disposition: gesture === "new-tab" ? "background" : "current",
       }),
     [openReferenceDocument],
   );

@@ -21,14 +21,14 @@ import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { cn } from "@/lib/utils";
 import { useChatRowCommands } from "../chat-list/useChatRowCommands";
 import { useChatNavigation } from "../routing/chat-navigation";
-import type { ProjectSearch } from "../routing/project-route";
 import { SettledSearchField } from "../SearchField";
 import { ChatIndexList, type ChatIndexRowProps } from "./ChatIndexList";
 import { ChatIndexLoading } from "./ChatIndexLoading";
 
 type Filter = "all" | "favorites";
 type Feed = ReturnType<typeof useProjectChatFeed>;
-type ChatIndexUrlSearch = Pick<ProjectSearch, "filter" | "q">;
+/** The index's own search params: the Favorites filter and the settled search text. */
+type ChatIndexUrlSearch = { filter?: "favorites"; q?: string };
 
 export type ChatIndexProps = {
   projectId: string;

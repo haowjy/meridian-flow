@@ -1,11 +1,12 @@
 /**
- * The notice for documents that closed under the writer, one per project.
- * The Editor's tabs push a document when it vanished; the availability record cache says whether and
- * how it was removed, and only a proven removal shows. The tab's own delete or
+ * The notice for documents that vanished from under the writer, one per project.
+ * A view pushes a document it presented when it vanished; the availability record cache says
+ * whether and how it was removed, and only a proven removal shows. The writer's own delete or
  * Discard marks its documents first, so its removals say nothing.
  */
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
-import { type ContextTab, getContextTabs } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
+import type { PresentedDocuments } from "./presented-documents";
 import type {
   ProjectContextAvailabilityCoordinator,
   RemovalAnswer,
@@ -15,7 +16,7 @@ import type {
 export type PresentedRemoval = Readonly<{
   documentId: string;
   title: string;
-  /** The address its tab showed, so the notice knows when the pane has left it. */
+  /** The address its view showed, so the notice knows when the view has left it. */
   route: Readonly<{ scheme: string; path: string }>;
 }>;
 
@@ -38,9 +39,12 @@ const EMPTY: RemovedNoticeSnapshot = { shown: [], waiting: [], version: 0 };
 
 type Entry = { removal: PresentedRemoval; stop: () => void };
 
+/** Settles an own removal with the documents it did not remove. */
+export type SettleOwnRemoval = (kept: readonly string[]) => void;
+
 /**
- * A delete or Discard this tab sent: by covered document, whether the tabs
- * have seen it vanish yet. It lasts until settled and every one has.
+ * A delete or Discard the writer sent: by covered document, whether its removal was seen (a view
+ * saw it vanish, or it landed) yet. It lasts until settled and every one has.
  */
 type OwnRemovalMark = { seen: Map<string, boolean>; settled: boolean };
 
@@ -53,9 +57,10 @@ export class RemovedNoticeStore {
 
   constructor(
     private readonly availability: Pick<ProjectContextAvailabilityCoordinator, "removalRecord">,
+    private readonly presented: Pick<PresentedDocuments, "isPresented">,
   ) {}
 
-  /** Tabs the Editor was presenting closed because their documents vanished. */
+  /** Documents a view was presenting that vanished. */
   presentedRemoved(projectId: string, tabs: readonly ContextTab[]): void {
     const key = projectKey(projectId);
     let changed = false;
@@ -103,31 +108,42 @@ export class RemovedNoticeStore {
   }
 
   /**
-   * The tab is removing these documents itself (a tree delete or Discard), so
-   * their removal says nothing. Only documents a tab presents are covered:
-   * nothing else is ever pushed. Call before the request and settle the
-   * returned mark in a `finally`: "kept" releases it; "removed" keeps each
-   * document covered until its tab saw it vanish.
+   * The writer is removing these documents (a tree delete or Discard), so their removal says
+   * nothing. Only documents a view presents are covered: nothing else is ever pushed. Call
+   * before the request and settle the returned mark with the documents it did not remove: those
+   * are released at once, and each removed one stays covered until its removal lands.
    */
-  markOwnRemoval(
-    projectId: string,
-    documentIds: readonly string[],
-  ): (outcome: "removed" | "kept") => void {
+  markOwnRemoval(projectId: string, documentIds: readonly string[]): SettleOwnRemoval {
     const mark: OwnRemovalMark = { seen: new Map(), settled: false };
     for (const documentId of documentIds) {
-      if (!isPresented(projectId, documentId)) continue;
+      if (!this.presented.isPresented(projectId, documentId)) continue;
       const key = documentKey(projectId, documentId);
       mark.seen.set(key, false);
       const marks = this.ownRemovals.get(key) ?? new Set();
       marks.add(mark);
       this.ownRemovals.set(key, marks);
     }
-    return (outcome) => {
+    return (kept) => {
       if (mark.settled) return;
       mark.settled = true;
+      const keptKeys = new Set(kept.map((documentId) => documentKey(projectId, documentId)));
       for (const [key, seen] of [...mark.seen])
-        if (outcome === "kept" || seen) this.dropOwnRemovalMark(key, mark);
+        if (keptKeys.has(key) || seen) this.dropOwnRemovalMark(key, mark);
     };
+  }
+
+  /**
+   * These documents' removal landed, wherever they are now: a view that had already left one
+   * never sees it vanish, so the marks covering it end here, or at their settling.
+   */
+  removalsLanded(projectId: string, documentIds: readonly string[]): void {
+    for (const documentId of documentIds) {
+      const key = documentKey(projectId, documentId);
+      for (const mark of [...(this.ownRemovals.get(key) ?? [])]) {
+        mark.seen.set(key, true);
+        if (mark.settled) this.dropOwnRemovalMark(key, mark);
+      }
+    }
   }
 
   /**
@@ -185,8 +201,8 @@ export class RemovedNoticeStore {
   }
 
   /**
-   * Whether this tab's own request covers the removal: every sighting is
-   * silent while the mark lives, and the first one counts as seen.
+   * Whether the writer's own request covers the removal: every sighting is silent while the mark
+   * lives, and the first one counts as seen.
    */
   private coveredByOwnRemoval(projectId: string, documentId: string): boolean {
     const key = documentKey(projectId, documentId);
@@ -211,11 +227,4 @@ function projectKey(projectId: string): string {
 
 function documentKey(projectId: string, documentId: string): string {
   return JSON.stringify([projectId, documentId]);
-}
-
-/** Whether this browser tab presents the document in its tabs. */
-function isPresented(projectId: string, documentId: string): boolean {
-  return getContextTabs(projectId).tabs.some(
-    (tab) => tab.kind !== "new" && tab.documentId === documentId,
-  );
 }

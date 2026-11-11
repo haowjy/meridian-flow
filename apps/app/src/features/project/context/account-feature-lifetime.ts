@@ -2,6 +2,7 @@
 
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
+import { browserRecord } from "@/client/storage/browser-record";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { RetainedLiveDocumentReference } from "@/core/editor/document-session-registry";
@@ -13,6 +14,7 @@ import { createLinkSettlements } from "@/features/links/link-settlements";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { IdentityContinuity } from "./identity-continuity";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
+import { PresentedDocuments } from "./presented-documents";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
 import { reconcileRecentAvailability } from "./recent-availability";
 import { RemovedNoticeStore } from "./removed-notice-store";
@@ -24,6 +26,10 @@ export class AccountFeatureLifetime {
   readonly draftCommands;
   /** The draft-only documents mounted hosts present; settled by `DraftOnlySettlement`. */
   readonly draftOnly = new DraftOnlyPresentations();
+  /** What this browser tab's hosts mount: main's document and the side's (presented), the kept one. */
+  readonly presented = new PresentedDocuments((projectId, tab) =>
+    this.removal.reconcileInstalledTab(projectId, tab),
+  );
   readonly removal;
   readonly availability;
   readonly notices;
@@ -73,7 +79,10 @@ export class AccountFeatureLifetime {
       closeCreated: (ref) => {
         this.removal.discardDraft(ref.projectId, ref.documentId);
       },
-      markOwnRemoval: (ref) => this.notices.markOwnRemoval(ref.projectId, [ref.documentId]),
+      markOwnRemoval: (ref) => {
+        const settle = this.removal.beginOwnRemoval(ref.projectId, [ref.documentId]);
+        return (removed) => settle(removed ? [] : [ref.documentId]);
+      },
     });
     this.availability = new ProjectContextAvailabilityCoordinator({
       lookup: lookupProjectContextAvailability,
@@ -83,8 +92,9 @@ export class AccountFeatureLifetime {
       },
       repairProjectCatalog,
     });
-    this.notices = new RemovedNoticeStore(this.availability);
+    this.notices = new RemovedNoticeStore(this.availability, this.presented);
     this.removal = new ContextRemovalCoordinator(accountId, {
+      presented: this.presented,
       sessions: this.registry,
       notices: this.notices,
       drafts: {
@@ -100,6 +110,7 @@ export class AccountFeatureLifetime {
       draftOnly: this.draftOnly,
     });
     this.registry.observeRemovedRooms((session, room) => this.followRemovedRoom(session, room));
+    dropRetiredTabSession(accountId);
     this.resources =
       typeof window === "undefined"
         ? null
@@ -203,4 +214,13 @@ export class AccountFeatureLifetime {
       .catch(() => undefined);
     return attempt;
   }
+}
+
+/** The retired document-tab session holds tab names and paths nothing reads: the writer's own. */
+function dropRetiredTabSession(accountId: string): void {
+  browserRecord(
+    "session",
+    { key: "meridian:editor-workspace:v2", version: 0, accountId },
+    () => undefined,
+  ).write(undefined);
 }

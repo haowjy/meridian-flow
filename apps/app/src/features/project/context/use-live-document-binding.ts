@@ -29,12 +29,10 @@ export function useLiveDocumentBinding({
   projectId,
   documentId,
   owner,
-  tabInstanceId,
 }: {
   projectId: string;
   documentId: string | null;
   owner: "desktop-document-host" | "mobile-project-document-host";
-  tabInstanceId?: string;
 }): LiveDocumentHostBinding {
   const opener = useProjectDocumentLiveOpener();
   const hostId = useRef(`${owner}:${++hostSequence}`);
@@ -57,12 +55,8 @@ export function useLiveDocumentBinding({
     const abort = new AbortController();
     let binding: LiveDocumentBinding | null = null;
     const bindingOwner = `${hostId.current}:attempt:${++attemptRef.current}`;
-    const transferKey = `${tabInstanceId ?? "none"}:${documentId}`;
-    if (firstResolution.current?.key !== transferKey)
-      firstResolution.current = {
-        key: transferKey,
-        value: tabInstanceId ? opener.takeTransfer(tabInstanceId, documentId) : null,
-      };
+    if (firstResolution.current?.key !== documentId)
+      firstResolution.current = { key: documentId, value: opener.takeTransfer(documentId) };
     const initialResolution = firstResolution.current.value;
     setState({ kind: "opening", documentId });
     void (async () => {
@@ -108,7 +102,7 @@ export function useLiveDocumentBinding({
       abort.abort();
       binding?.release();
     };
-  }, [documentId, opener, projectId, retryGeneration, tabInstanceId]);
+  }, [documentId, opener, projectId, retryGeneration]);
 
   const retry = useCallback(() => setRetryGeneration((value) => value + 1), []);
   return useMemo(() => ({ state, retry }), [retry, state]);

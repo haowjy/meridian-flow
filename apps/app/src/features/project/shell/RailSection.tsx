@@ -1,6 +1,6 @@
 /**
- * RailSection — building blocks for lists drawn in the tree's own parts: the
- * right context rail's Recent and a chat's Scratch. Section heads are
+ * RailSection — building blocks for lists drawn in the tree's own parts: a chat's
+ * Scratch. Section heads are
  * `RailPaneHeader`, rows wear `contextTreeFileRowClassName` with the tree's
  * `RowIcon`, and the hint takes the sidebar's hint role.
  */
@@ -11,73 +11,6 @@ import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { RowIcon, rowPaddingLeft } from "../context/ContextTreeRows";
 import { contextTreeFileRowClassName } from "../context/context-row-geometry";
-import { RailPaneHeader } from "../context/RailPaneHeader";
-import { type RailSectionId, useProjectSurfacePrefsStore } from "../layout/surface-prefs-store";
-
-/** A collapsible section under a tree-style head. The tree's heads show no counts, so neither does this. */
-export function CollapsibleRailSection({
-  title,
-  icon,
-  preferenceId,
-  children,
-}: {
-  title: string;
-  icon: LucideIcon;
-  preferenceId: RailSectionId;
-  children: ReactNode;
-}) {
-  const expanded = useProjectSurfacePrefsStore(
-    (state) => state.railPrefs[`${preferenceId}Expanded`],
-  );
-  const setExpanded = useProjectSurfacePrefsStore((state) => state.setRailExpanded);
-  return (
-    <section>
-      <RailPaneHeader
-        label={title}
-        icon={icon}
-        expanded={expanded}
-        onExpandedChange={(next) => setExpanded(preferenceId, next)}
-      />
-      {expanded ? <div>{children}</div> : null}
-    </section>
-  );
-}
-
-/** One file row, as the tree draws it. */
-export function RailFileRow({
-  icon,
-  name,
-  title,
-  onOpen,
-  active = false,
-  depth = 1,
-}: {
-  icon: LucideIcon;
-  name: string;
-  title?: string;
-  onOpen: () => void;
-  /** The document is open beside the writer; the row keeps the tree's selected fill. */
-  active?: boolean;
-  depth?: number;
-}) {
-  return (
-    <div
-      className={contextTreeFileRowClassName(active)}
-      style={{ paddingLeft: rowPaddingLeft(depth) }}
-      title={title}
-    >
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-current={active ? "true" : undefined}
-        className="focus-ring flex min-w-0 flex-1 items-center self-stretch rounded-md text-left"
-      >
-        <RowIcon icon={icon} />
-        <span className="ml-0.5 min-w-0 flex-1 truncate">{name}</span>
-      </button>
-    </div>
-  );
-}
 
 /** One folder row, as the tree draws it: the open or closed folder is its disclosure. */
 export function RailFolderRow({

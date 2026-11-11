@@ -21,22 +21,23 @@ import type { ReactNode } from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
-import type { ProjectViewProps } from "../ProjectView";
 
-export type MobileTopBarProps = Pick<ProjectViewProps, "activeScreen"> & {
+export type MobileTopBarProps = {
+  /** Main shows a chat (or the chat index), not a document. */
+  onChat: boolean;
   projectTitle: string;
   onOpenDrawer: () => void;
   /** Left-aligned location trail; replaces the centered title when set. */
   breadcrumb?: ReactNode;
   actions?: ReactNode;
-  /** Opens the chat sheet over Work or Editor. */
+  /** Opens the chat sheet over a document. */
   chatAction?: ReactNode;
   /** A failed command's row, under the bar. */
   notice?: ReactNode;
 };
 
 export function MobileTopBar({
-  activeScreen,
+  onChat,
   projectTitle,
   onOpenDrawer,
   breadcrumb,
@@ -76,9 +77,7 @@ export function MobileTopBar({
               breadcrumb ? "justify-start self-stretch" : "justify-center",
             )}
           >
-            {breadcrumb ?? (
-              <div className="truncate">{activeScreen === "chat" ? t`Chat` : t`Editor`}</div>
-            )}
+            {breadcrumb ?? <div className="truncate">{onChat ? t`Chat` : t`Editor`}</div>}
           </div>
         </div>
         <div className="flex min-w-11 shrink-0 items-center justify-end">

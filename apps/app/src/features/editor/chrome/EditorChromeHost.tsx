@@ -25,7 +25,7 @@ export function EditorChromeHost({
   active = true,
 }: {
   editor: Editor | null;
-  /** False for an editor kept warm behind the visible one. */
+  /** False for an editor hidden behind the visible one. */
   active?: boolean;
 }) {
   if (!editor || editor.isDestroyed || !active) return null;

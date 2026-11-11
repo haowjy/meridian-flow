@@ -88,7 +88,7 @@ run: it names the first id.
    and pick a folder before the held POST answers. When it is refused the queued move is
    `cancelled`, the create is `needs-repair`, no second POST goes out, and the row's
    Move… offers the folder you chose, and its picker is titled with the row's current
-   name. The route tab that moved to the folder follows the document back to Unfiled and
+   name. The route's document that moved to the folder follows the document back to Unfiled and
    keeps the text and the mark; it never reads "This destination is unavailable."
 6. Same hold, but Delete the row while the POST is held. After the refusal the delete is
    `settled-locally`, the create `superseded`, and nothing is pending.

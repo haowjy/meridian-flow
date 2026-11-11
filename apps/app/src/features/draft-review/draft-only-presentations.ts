@@ -126,7 +126,8 @@ export class DraftOnlyPresentations {
       list = [...this.entries].flatMap(([token, entry]) =>
         entry.projectId === projectId && !this.promoted.has(token) ? [entry] : [],
       );
-      this.byProject.set(projectId, list.length ? list : NONE);
+      if (list.length === 0) list = NONE;
+      this.byProject.set(projectId, list);
     }
     return list;
   }

@@ -1,25 +1,10 @@
 /**
- * Desktop project slot topology and grid structure for stable surfaces.
- *
- * Purpose: define the real project project slots as data instead of baking
- * desktop geometry into the registry/grid/shell. Key decision: this file
- * co-locates the static grid template with the slot list while runtime width
- * CSS variable values remain owned by the shell. Slot className fully owns
- * the visual chrome, and region separation is purely tonal (no borders, no
- * shadows): one chrome for the sidebar, the tab band and the dock
- * (`--color-chrome`), and the lit page rising out of it. SlotGrid never
- * branches on slot kind.
- *
- * History: the optional `context-header` row and the `files` column are gone
- * — the Editor destination absorbs its sidebar/dock expand toggles into the
- * tab strip, while the persistent left sidebar owns the file explorer. The
- * grid is a single body row across every screen with no files column.
- * Chat landing, Work, and Settings render their route pane in `center` (no
- * center surface present); Chat/Context render only the center surface.
+ * The desktop's three fixed slots as data: the sidebar (`rail-l`), main (`center`) and the side
+ * (`dock`), with the one grid template they sit in. Slot className owns the visual chrome, and
+ * region separation is tonal: one chrome for the sidebar, main's band and the side
+ * (`--color-chrome`), and the lit page rising out of it.
  */
-import type { DesktopProjectSlotId, SlotDefinition } from "./types";
-
-export type { DesktopProjectSlotId } from "./types";
+import type { SlotDefinition } from "./types";
 
 export const DESKTOP_PROJECT_SLOTS: SlotDefinition[] = [
   // The side panels and the centre's band are one chrome surface with no lines between
@@ -29,10 +14,7 @@ export const DESKTOP_PROJECT_SLOTS: SlotDefinition[] = [
   { id: "dock", className: "relative bg-chrome" },
 ];
 
-/**
- * Single grid template across every screen. The file tree lives in `rail-l`,
- * not as its own grid track.
- */
+/** One grid template; the file tree lives in `rail-l`, not as its own track. */
 export function getDesktopGridTemplate(): {
   areas: string;
   columns: string;
@@ -44,5 +26,3 @@ export function getDesktopGridTemplate(): {
       "var(--project-left-width) var(--project-left-handle-width) minmax(var(--project-main-min-width), 1fr) var(--project-dock-handle-width) var(--project-dock-width)",
   };
 }
-
-export type DesktopProjectSlots = readonly DesktopProjectSlotId[];

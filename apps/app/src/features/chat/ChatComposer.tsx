@@ -12,9 +12,9 @@ import {
 } from "@/components/app/composer";
 import type { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import {
-  useCanOpenChatReference,
-  useOpenChatDocument,
-} from "@/features/project/context/open-chat-document";
+  canOpenReference,
+  useOpenProjectDocument,
+} from "@/features/project/context/open-project-document";
 import { useAskTakeover } from "./ask/useAskTakeover";
 import { AnchoredCards } from "./ChatCards";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
@@ -85,11 +85,10 @@ function ChatComposerComponent({
   // While an ask is open it takes the box's place; nothing runs, so Stop is not offered.
   const takeover = useAskTakeover(accountId, threadId, composer);
   const dock = useDraftDock({ threadId, generating, active });
-  const openReferenceDocument = useOpenChatDocument(projectId);
-  const canOpenReference = useCanOpenChatReference();
+  const openReferenceDocument = useOpenProjectDocument(projectId);
   const onOpenReference = useCommittedEvent((reference: { uri: string; documentId: string }) => {
     if (!canOpenReference(reference.uri)) return;
-    void openReferenceDocument({ documentId: reference.documentId, disposition: "current" });
+    void openReferenceDocument({ documentId: reference.documentId });
   });
 
   return (

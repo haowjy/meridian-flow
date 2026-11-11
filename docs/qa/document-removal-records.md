@@ -142,8 +142,8 @@ known-id denial can include its record without allowing content access.
 10. A Work Restore that commits before a Work delete's retirement runs keeps
    the restored live room. Restart with `HOOK_PAUSE_AT=draft.beforeRetirement
    HOOK_PAUSE_FILE=<file>`, touch the file, delete a Work whose scratch holds an
-   open document, restore the Work, reopen the document in a tab, then delete
-   the file. The tab stays connected (no `4208`) and typing saves.
+   open document, restore the Work, reopen the document in main, then delete
+   the file. The document stays connected (no `4208`) and typing saves.
 8. Time the document-lock hold separately from fixture setup with ten drafts
    and many pending parts. Assert no room close before commit and check every
    part actually settled; do not treat skipped work or a busy-host sample as a
@@ -158,7 +158,7 @@ documents or drafts.
 ## Browser finish
 
 Sign in, create/open a document, delete it using its Files menu, and confirm
-the tab/tree update without an error. Capture a screenshot outside this repo.
+the document and tree update without an error. Capture a screenshot outside this repo.
 
 ## Document trash
 
@@ -193,53 +193,52 @@ the tab/tree update without an error. Capture a screenshot outside this repo.
    list. Selecting a row shows the read-only document, and Back returns to the
    list.
 
-An already-open live tab still follows terminal resource cleanup when another
-actor deletes its document: the tab closes and the removal notice appears. The
-read-only Trash view is an auxiliary route, not a retained Editor tab.
+A document a host already presents still follows terminal resource cleanup when another
+actor deletes it: its presentation ends and the removal notice appears. The
+read-only Trash view is an auxiliary route, not a document host.
 
 ## Removal notices in the browser
 
-Two tabs of one signed-in browser (A and B), plus `./mf doc rm` as another
+Two browser tabs of one signed-in browser (A and B), plus `./mf doc rm` as another
 device. Every removal by a person names the actor from the record: "<name> deleted
 <title>." ("<title> was deleted." without a display name), never "you" or "elsewhere".
 After the removal commits, a live delete closes the document's **live** rooms
 `4208` and leaves its draft rooms open; a discarded creation's draft rooms close
 `4208`.
 
-Each case names the destination A's tab is hosted on. A **live tab** shows the
-manuscript document itself; a **draft tab** shows it through A's Work draft
+Each case names where A shows the document: main (the address), the side, or
+kept (the last document that left main, hidden). A **live document** is the
+manuscript document itself; a **draft document** shows it through A's Work draft
 (the Work has a draft of it, with pending changes or none). Unless a case says
-otherwise, A's tabs are live tabs.
+otherwise, A's documents are live documents.
 
-- A has a draft tab of a document (once with pending changes, once with none
-  left after a per-change Discard); B deletes it from Files. The tab stays,
+- A has a draft document in main (once with pending changes, once with none
+  left after a per-change Discard); B deletes it from Files. Main stays on it,
   its draft room stays connected (no `4208`) and typing saves; it shows the
-  deleted state instead of a removal chip. A live tab of the same document in
-  another Work closes as below.
-- A shows a document with a long one beside it; B deletes it from Files. A
-  falls back to the long document and the tab strip's free end shows a dashed
-  chip "<name> deleted <title>." ("<title> was deleted." without a name); nothing covers the text. B says
-  nothing. Selecting another tab clears the chip; so does Dismiss.
-- A's only tab is deleted (`./mf doc rm`): the landing's top margin says the
-  sentence; the Recently opened list does not move.
-- B deletes a folder holding three of A's open tabs: one chip, "<name> deleted 3
+  deleted state instead of a removal chip. A live copy of the same document in
+  another Work ends as below.
+- A's main shows a document; B deletes it from Files. Main stays at its address in the
+  removed state and main's header shows a chip "<name> deleted <title>." ("<title> was
+  deleted." without a name); B says nothing. Navigating in main clears the chip; so does
+  Dismiss.
+- A's only presented document is deleted (`./mf doc rm`): the sentence shows in main; the
+  Recently opened list does not move.
+- B deletes a folder holding A's main, side and kept documents: one chip, "<name> deleted 3
   documents (one, two, and three).", the names in its tooltip.
 - Hold B's delete (route `**/context/entries/*/delete` to abort in both tabs, delete,
-  wait 15 s, unroute, toggle B offline and online): A's tab closes at once with
+  wait 15 s, unroute, toggle B offline and online): A's document ends at once with
   no chip, and the chip appears once the delete commits and A is focused, as
   long as A did not navigate meanwhile.
-- A sits on Chat while B deletes one of A's Editor tabs: nothing shows on
-  Chat; going to the Editor shows the chip once, and the next Editor
-  navigation clears it.
-- A opens a document beside Chat (the dock); B deletes it: the dock returns to
-  "Recent" and its header's free end says the sentence in a chip.
-- Narrow the window to 900 px with the dock open: the chip keeps a short
-  sentence ("1 document deleted"), the full one in its tooltip; the tabs
-  scroll instead.
+- A's main shows a chat with a document in the side; B deletes that document: the
+  chat is untouched and the side stops showing it. The notice lives in main's header,
+  so nothing shows beside the chat.
+- Narrow the window to just over 984 px with the side open: the chip keeps a short
+  sentence ("1 document deleted"), the full one in its tooltip. Below 984 px the
+  side folds closed.
 - Phone shell (a coarse pointer; `agent-browser` needs an init script that
   answers `(pointer: coarse)`): the top bar's notice row says the sentence;
   browsing a folder clears it.
-- A deletes from its own Files menu (a document in a tab, or in the dock), or
+- A deletes from its own Files menu (a document in main or the side), or
   Discards a created document from its review: nothing is said.
 - B Discards a created document A is reviewing: A says "<name> discarded <title>
   from the draft." Reopen its review address: the pane says the
@@ -256,9 +255,9 @@ otherwise, A's tabs are live tabs.
 - The app's surfaces for a Work with pending changes to a deleted document
   (seed with `./mf`: a draft-mode chat's reply edits the document, then delete
   it from the tree). There is no confirmation dialog. The live row leaves at
-  once, with no toast and no Work explanation. The chat dock row and the Work page's Changes to
+  once, with no toast and no Work explanation. The chat's draft dock row and the Work page's Changes to
   review row keep the file with "Deleted from the manuscript" on its status
-  line; an open draft tab stays open. A dock with
+  line; an open draft document stays open. A draft dock with
   several files, or Work Files' "Apply all", asks first: "Applying
   brings back <title>, which was deleted from the manuscript." with Cancel and
   Apply, in the footer below the rows (as Discard all's question does): no row
@@ -268,42 +267,42 @@ otherwise, A's tabs are live tabs.
   the delete, then Apply all: the list asks again by name and the row says
   "This document was deleted from the manuscript. Apply again to bring it
   back." Create a new document at the deleted one's path: Apply remains offered
-  in Work Files, the chat dock and the editor. Apply restores the draft at the
+  in Work Files, the chat's draft dock and the editor. Apply restores the draft at the
   next free name, and the surface says where it landed.
-- The draft editor's manuscript state never moves the page. With a draft tab
-  open, `./mf doc rm` its document from another device: "Deleted from the
+- The draft editor's manuscript state never moves the page. With a draft document
+  in main, `./mf doc rm` its document from another device: "Deleted from the
   manuscript" appears in the identity row's free end (desktop) or the review
   row (phone), and the heading's top is unchanged before and after
   (`getBoundingClientRect().top`). A narrow slot shows the short label; the
-  button opens the full sentence. After Apply draft, reselecting the tab shows
+  button opens the full sentence. After Apply draft, reopening the document shows
   "<title> is back in the manuscript." in the same place, with Dismiss.
-- B runs Work Files' Discard all while A holds a draft tab of a deleted document
-  or of a created document only the draft has: A's tab closes (the draft's
+- B runs Work Files' Discard all while A holds a draft document of a deleted document
+  or of a created document only the draft has: A's presentation ends (the draft's
   metadata answers `gone` once retired, without a content grant) and A's
-  Editor stays usable. Before the fix the created document's tab looped
+  Editor stays usable. Before the fix the created document looped
   ("Maximum update depth exceeded" in `EditorReviewIntentClaimant`) and the
   project failed to load.
   A draft left with no changes (apply its only change from the editor, so the
-  list is empty) whose document is then deleted from another device keeps its
-  tab on the draft, across a reload too, and typing in it lists the document
+  list is empty) whose document is then deleted from another device keeps
+  main on the draft, across a reload too, and typing in it lists the document
   again as deleted: the review address resolves through the draft
   (`admitDrafts`), while a path still finds the document gone.
 - A stale 4208 (an init script dispatching the close on the page's `/ws/yjs`
   socket while the document exists): the room reconnects within a few hundred
-  ms and typing saves. A second stale 4208 on the same tab reconnects too.
+  ms and typing saves. A second stale 4208 on the same document reconnects too.
 - A stale 4208 while `POST /api/projects/:projectId/context/availability`
-  fails: the tab says "Access lost (not saving to the server)"; once lookups
+  fails: the document says "Access lost (not saving to the server)"; once lookups
   succeed (focus, online or the 60 s poll) the room reconnects and typing
   saves.
 - Discard every change of an existing document's draft while it is open in a
-  live tab or the dock, then `./mf doc rm` it: the removal's chip shows (the
-  Discard left no mark). The same with a draft tab: the draft is still active
-  with no changes, so the tab stays writable as in the draft-tab case above.
-- B Discards a created document A reviews in the dock beside Chat: A's dock
-  says "<name> discarded <title> from the draft." beside "Recent".
-- A folder delete closing several tabs reads "<name> deleted 3 documents
+  live document in main or the side, then `./mf doc rm` it: the removal's chip shows (the
+  Discard left no mark). The same with a draft document: the draft is still active
+  with no changes, so the document stays writable as in the draft-document case above.
+- B Discards a created document A reviews in the side beside a chat: A's side stops
+  showing it; main's header chip is not expected while main holds the chat.
+- A folder delete ending several presentations reads "<name> deleted 3 documents
   (one, two, and three)." (names in the locale's list form).
-- A holds unsent text in a live tab (block its `/ws/yjs` sockets, type), B
-  deletes: A closes with the notice and the unsent text is lost (a recorded
-  divergence). In a draft tab the room stays, so the text saves once the
+- A holds unsent text in a live document (block its `/ws/yjs` sockets, type), B
+  deletes: A's presentation ends with the notice and the unsent text is lost (a recorded
+  divergence). In a draft document the room stays, so the text saves once the
   sockets unblock.

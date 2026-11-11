@@ -1,4 +1,4 @@
-/** Shared pinned new-chat composer for the center, dock, and phone. */
+/** Shared pinned new-chat composer for the main, the side, and the phone. */
 import { t } from "@lingui/core/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { useEffect, useMemo, useRef } from "react";
@@ -13,9 +13,9 @@ import { useReferenceBrowserCatalog } from "@/features/editor/references/useRefe
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
 import { FolderMenuContext, type FolderMenuHost } from "@/features/project/context/FolderMenu";
 import {
-  useCanOpenChatReference,
-  useOpenChatDocument,
-} from "@/features/project/context/open-chat-document";
+  canOpenReference,
+  useOpenProjectDocument,
+} from "@/features/project/context/open-project-document";
 import { useWorkScope } from "@/features/project/use-work-scope";
 import { DeletedChatCard } from "./DeletedChatCard";
 import { useCreationComposer } from "./useCreationComposer";
@@ -46,7 +46,7 @@ export function CreationComposer({
   const composerRef = useRef<ComposerHandle>(null);
   // An explicit New chat focuses the empty composer showing it. The hero is
   // not New chat's target: it focuses at mount where a keyboard is likely.
-  // The frame lets a just-revealed dock drop `inert` first. A composer that
+  // The frame lets a just-revealed side drop `inert` first. A composer that
   // mounts fresh already sees the request id in this same render, so mount
   // timing never races the host publishing it.
   useEffect(() => {
@@ -84,15 +84,14 @@ export function CreationComposer({
     null,
     creation.draft.chatId,
   );
-  const openDocument = useOpenChatDocument(projectId);
+  const openDocument = useOpenProjectDocument(projectId);
   const folders = useMemo<FolderMenuHost>(
     () => ({
       projectId,
-      openDocument: (documentId) => void openDocument({ documentId, disposition: "current" }),
+      openDocument: (documentId) => void openDocument({ documentId }),
     }),
     [openDocument, projectId],
   );
-  const canOpenReference = useCanOpenChatReference();
   // The Work's default shows until the writer picks a mode here, and only a
   // picked mode is sent: a stale default from another tab never overwrites a newer one.
   const writeMode = choices?.aiWriteMode ?? work?.defaultAiWriteMode ?? "direct";
@@ -152,7 +151,7 @@ export function CreationComposer({
         availableSkills={availableSkills.skills}
         onOpenReference={(reference) => {
           if (!canOpenReference(reference.uri)) return;
-          void openDocument({ documentId: reference.documentId, disposition: "current" });
+          void openDocument({ documentId: reference.documentId });
         }}
         uploadPort={chatUploadPort}
         uploadScope={{ kind: "chat", projectId, chatId: creation.draft.chatId }}

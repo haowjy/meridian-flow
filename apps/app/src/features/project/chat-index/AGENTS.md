@@ -1,6 +1,6 @@
 # Project chat index
 
-- It renders only as a page, the center at `/p/<project>/chats` and the phone Chat screen. The dock has
+- It renders only as a page, the center at `/p/<project>/chats` and the phone Chat screen. The side has
   no index.
 - Chats grow without bound: the list pages and searches on the server and is virtualized. Don't copy
   the Work collection UI here.

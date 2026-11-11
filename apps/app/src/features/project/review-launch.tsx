@@ -1,16 +1,15 @@
 /**
  * The one review-launch path. Every launcher (the composer strip, a change card, a link to a draft,
  * the Work page, the version menu, the phone) calls `openAiDraft`: it sets the document's view to
- * that draft, with the clicked change as the pin's change, and opens the document. In Write the
- * route command opens it and writes the address; beside the chat the tab store does. Whichever
- * host holds the document then paints the draft and focuses the change. Latest launch wins.
+ * that draft, with the clicked change as the pin's change, and opens the document in main: the
+ * route command opens it and writes the address. Main's host then paints the draft and focuses
+ * the change. Latest launch wins.
  */
 
 import type { EventRecord } from "@meridian/contracts/observability";
 import { createContext, type ReactNode, useCallback, useContext, useRef } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import { useContextTabsActions } from "@/client/stores";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
@@ -18,9 +17,6 @@ import type { LinkDestination } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
 import { contextTabFromDraftGroup } from "./context/context-tab-from-draft";
-import { BesideChatContext } from "./context/open-chat-document";
-import { claimOpenIntent } from "./context/open-intent";
-import { useProjectDocumentNavigationProjectId } from "./context/open-project-document";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
 
@@ -76,7 +72,6 @@ export function ReviewLaunchProvider({
 }) {
   const accountId = useAccountId();
   const sequence = useRef(0);
-  const beside = useContext(BesideChatContext);
   const openEditorReview = useCallback<EditorReviewCommand>(
     async (target) => {
       // The pin is written once the document is open, so a cancelled or failed navigation leaves
@@ -90,11 +85,6 @@ export function ReviewLaunchProvider({
           },
         });
       const tab = contextTabFromDraftGroup(target);
-      // Beside the chat the tab store opens and selects; there is no address to route to.
-      if (beside && tab) {
-        if (beside(tab, claimOpenIntent()).kind === "opened") pin();
-        return;
-      }
       const launch = ++sequence.current;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const result = await openContextRoute(
@@ -119,7 +109,7 @@ export function ReviewLaunchProvider({
       }
       throw new Error("Editor review navigation did not settle after retry");
     },
-    [openContextRoute, projectId, accountId, beside],
+    [openContextRoute, projectId, accountId],
   );
 
   return (
@@ -177,9 +167,6 @@ export function useAiDraftLauncher() {
  */
 export function useReviewingLinkDestination(open: LinkDestination): LinkDestination {
   const openEditorReview = useOptionalOpenEditorReview();
-  const projectId = useProjectDocumentNavigationProjectId();
-  const accountId = useAccountId();
-  const { openTab } = useContextTabsActions();
   return useCallback(
     (document, gesture) => {
       const { review } = document;
@@ -190,22 +177,12 @@ export function useReviewingLinkDestination(open: LinkDestination): LinkDestinat
         ...review,
         draftOnly: true,
       };
-      if (gesture === "new-tab") {
-        // The writer keeps their place: the review joins the tab strip without a route change,
-        // opened on its draft (a draft-created document has no Live).
-        const tab = contextTabFromDraftGroup(target);
-        if (projectId && tab && openTab(projectId, tab).kind === "opened")
-          setDocumentView(accountId, projectId, target.documentId, {
-            pin: { ownerKey: target.ownerKey, itemKey: target.itemKey },
-          });
-        return Promise.resolve();
-      }
       if (!openEditorReview)
         throw new Error("Opening a draft requires the project review handoff owner");
       return openEditorReview(target).catch((error) => {
         console.error("[editor-review] launch failed", error);
       });
     },
-    [open, openEditorReview, projectId, accountId, openTab],
+    [open, openEditorReview],
   );
 }

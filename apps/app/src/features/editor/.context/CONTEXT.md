@@ -68,7 +68,7 @@ are not manuscript content. Desktop review is editable; phone review is
 read-only. Projection, commands and history belong to the
 [draft-review runtime](../../draft-review/.context/draft-review.md).
 
-Each document host (an Editor tab, the dock, the phone) has its own review
+Each document host (main, the side, the phone) has its own review
 (`features/project/DocumentReview.tsx`); its chrome and change bars read that
 review's projection, and `EditorView` does not own a second review controller.
 The review controls live in the identity bar's path row: `DocumentVersionMenu`
@@ -85,7 +85,7 @@ selection or undo manager. An empty review stays in the same draft room.
 
 `useInlineReviewFocus` registers the mounted editor for controller-owned jumps
 and releases only its own claim on unmount. Same-entry URL replacements
-disable router scroll restoration so editor anchor navigation owns scrolling. Dock/Work rows and their notice paint before
+disable router scroll restoration so editor anchor navigation owns scrolling. Side/Work rows and their notice paint before
 the atomic write-back; editor marks remain derived from actual text.
 
 ## Schema and repair
@@ -105,7 +105,7 @@ collapses when neither has anything to say. The fence bar carries Refresh. The
 repair bar says only that text was removed; its Details popover holds every
 recovered excerpt with Copy, then the cause and Dismiss, so the excerpts never
 push the manuscript down. The popover anchors to the whole bar and takes its
-width, so it fits a narrow dock pane. Dismiss hides the bar until the session
+width, so it fits a narrow side pane. Dismiss hides the bar until the session
 reports another repair and sends focus to the editor, or to Refresh while the
 fence holds the editor read-only; one `SchemaNotices` owns both bars for that. Copy goes through `clipboard.ts`
 and reports a refusal on that excerpt; a pending Copied reset never erases it.

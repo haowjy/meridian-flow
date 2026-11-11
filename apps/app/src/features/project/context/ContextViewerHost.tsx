@@ -4,8 +4,8 @@
  * Fetches the active file through `useProjectContextRead` (the signed-URL
  * read route), chooses the matching viewer body for its kind, and composes the
  * shared `ReadOnlyViewerFrame`. Every host's own chrome names the file: the
- * Editor's document path, the dock's title chip, the phone's top bar. Only
- * images, PDFs and binaries land here from the dock; a text file mounts the
+ * main's title chip, the side header, the phone's top bar. Only
+ * images, PDFs and binaries land here from the side; a text file mounts the
  * editor.
  */
 
@@ -26,7 +26,7 @@ import { TextViewer } from "./viewers/TextViewer";
 export type ContextViewerHostProps = {
   projectId: string;
   tab: Extract<ContextTab, { kind: "viewer" }>;
-  /** The surface's material; the dock paints its own and passes `bg-transparent`. */
+  /** The surface's material; the side paints its own and passes `bg-transparent`. */
   className?: string;
 };
 

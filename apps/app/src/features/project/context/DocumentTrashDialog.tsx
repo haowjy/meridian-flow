@@ -370,7 +370,6 @@ function TrashedDocumentView({
       if (!isCurrent()) return null;
       const opened = await openDocument({
         documentId,
-        disposition: "current",
         refreshIdentity: true,
       });
       return opened.kind === "committed"

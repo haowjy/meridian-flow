@@ -14,7 +14,7 @@
  * frame names. What has been spoken is the slice's, so a remount repeats no announcement.
  *
  * One host per chat per tab: the desktop shell keeps one `ChatSurface` and moves it between
- * the center and the dock, so a chat has one mounted `ChatView` and so one view. Two would
+ * main and the side, so a chat has one mounted `ChatView` and so one view. Two would
  * each announce. A dev-only registry warns when a second mounts for a chat that has one.
  */
 import type { AiWriteMode } from "@meridian/contracts/works";

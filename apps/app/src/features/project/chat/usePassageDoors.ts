@@ -5,10 +5,10 @@ import { navigateToPassage } from "@/core/editor/passage-navigation";
 import { dismissPassageNotice, reportPassageChanged } from "@/core/editor/passage-notice-store";
 import type { ContextPassageAnchor } from "@/features/chat/ChatContextNavigation";
 import { LatestNavigationCoordinator } from "@/features/chat/latest-navigation-coordinator";
-import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 
-/** The document the resolver named, and the dock claim the door took when it was clicked. */
-export type PassageDoorResolved = { documentId: string; claim?: number };
+/** The document the resolver named. */
+export type PassageDoorResolved = { documentId: string };
 
 export type PassageDoors = {
   /** A newer intent (any door, any transcript link) retires a passage still landing, and its notice. */
@@ -23,7 +23,7 @@ export type PassageDoors = {
 
 export function usePassageDoors(projectId: string, activeWorkId: string | null): PassageDoors {
   const coordinator = useRef(new LatestNavigationCoordinator());
-  const openDocument = useOpenChatDocument(projectId);
+  const openDocument = useOpenProjectDocument(projectId);
 
   // A landing belongs to the scope it began in. Changing project or work retires it
   // exactly as a newer door would.
@@ -51,7 +51,6 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
               documentId,
               workId: workId ?? undefined,
               signal,
-              claim: resolved.claim,
             }),
         });
         // Report only while this door is still the writer's latest: a stale

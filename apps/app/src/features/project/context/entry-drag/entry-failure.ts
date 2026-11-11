@@ -12,9 +12,8 @@ import {
   projectResourceNeedsRepair,
 } from "@meridian/resource-replica";
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
-import { getContextTabs } from "@/client/stores";
 import { notifyFailure } from "@/components/app/failure-toast";
-import type { RemovedNoticeStore } from "../removed-notice-store";
+import type { ContextRemovalCoordinator } from "../context-removal-coordinator";
 import { copyFailures, copyFailureTitle } from "./copy-refusal";
 import type { EntryRef } from "./entry";
 import { copyRows } from "./execute-copy";
@@ -31,7 +30,7 @@ import {
 } from "./move-plan";
 
 export type EntryContext = ReplicaContext & {
-  notices?: Pick<RemovedNoticeStore, "markOwnRemoval"> | null;
+  removal?: Pick<ContextRemovalCoordinator, "beginOwnRemoval"> | null;
 };
 
 export type EntryFailure = { key: string } & (
@@ -115,7 +114,7 @@ async function retryFailure(
     await runMove(context, rows, failure.destination);
   } else if (failure.kind === "delete") {
     if (entryNameNow(view, failure.entry))
-      await runDelete(context, { ...failure.entry, name: failure.name });
+      await runDelete(context, [{ ...failure.entry, name: failure.name }]);
   } else if (failure.copy) {
     const copies = failure.copy.copies.flatMap((row) => {
       const name = entryNameNow(view, row.entry);
@@ -174,42 +173,51 @@ export async function runCopy(
     });
 }
 
-/** The documents on the writer's own tabs that deleting `entry` takes away. */
+/** The documents deleting `entry` takes away. */
 async function ownRemovals(context: EntryContext, entry: EntryRef): Promise<string[]> {
   if (entry.kind === "file") return [entry.id];
-  const { projectId } = context;
   const view = await currentView(context);
-  return getContextTabs(projectId).tabs.flatMap((tab) =>
-    tab.kind !== "new" &&
-    within(view, parentOf(view, { kind: "file", id: tab.documentId }), entry.id)
-      ? [tab.documentId]
-      : [],
-  );
+  return view.records.flatMap(({ resource }) => {
+    const documentId = resource.identity.documentId;
+    return within(view, parentOf(view, { kind: "file", id: documentId }), entry.id)
+      ? [documentId]
+      : [];
+  });
 }
 
+/**
+ * Deletes one gesture's entries: one own removal covers every document they take away, so main's
+ * go-back skips all of them. A refused entry toasts and keeps its documents.
+ */
 export async function runDelete(
   context: EntryContext,
-  { name, ...entry }: EntryRef & { name: string },
+  entries: readonly (EntryRef & { name: string })[],
 ): Promise<void> {
-  const { resources, projectId, notices } = context;
-  const settleMark = notices?.markOwnRemoval(projectId, await ownRemovals(context, entry));
-  try {
-    if (entry.kind === "folder") await resources.deleteFolder(projectId, entry.id);
-    else {
-      const key = await resources.keyForDocument(projectId, entry.id);
-      if (!key) throw new Error("Document resource is unavailable");
-      await resources.deleteDocument(projectId, key);
-    }
-    settleMark?.("removed");
-  } catch {
-    settleMark?.("kept");
-    showFailure(context, {
-      key: entryToast(projectId, crypto.randomUUID()),
-      kind: "delete",
-      entry,
-      name,
-    });
-  }
+  const { resources, projectId, removal } = context;
+  const covered = await Promise.all(entries.map((entry) => ownRemovals(context, entry)));
+  const settleMark = removal?.beginOwnRemoval(projectId, covered.flat());
+  const kept = await Promise.all(
+    entries.map(async ({ name, ...entry }, index) => {
+      try {
+        if (entry.kind === "folder") await resources.deleteFolder(projectId, entry.id);
+        else {
+          const key = await resources.keyForDocument(projectId, entry.id);
+          if (!key) throw new Error("Document resource is unavailable");
+          await resources.deleteDocument(projectId, key);
+        }
+        return [];
+      } catch {
+        showFailure(context, {
+          key: entryToast(projectId, crypto.randomUUID()),
+          kind: "delete",
+          entry,
+          name,
+        });
+        return covered[index] ?? [];
+      }
+    }),
+  );
+  settleMark?.(kept.flat());
 }
 
 function rowFailure(

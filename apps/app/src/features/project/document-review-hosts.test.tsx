@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * One review per document across the Editor and the dock: off a document's address the Editor's
- * frame stays mounted with the selected tab while the dock holds the same document.
+ * One review per document across main and the side: off a document's address main's
+ * frame stays mounted while the side holds the same document.
  */
 import "fake-indexeddb/auto";
 

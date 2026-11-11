@@ -8,7 +8,7 @@
   at minimum a read-only view of the last known content, following the schema-fence
   read-only state.
 
-- `EditorSurfaceFrame.tsx` toolbar row in the dock: at the narrowest width (280px) the
+- `EditorSurfaceFrame.tsx` toolbar row in the side: at the narrowest width (280px) the
   last control starts off-screen, nothing shows the row scrolls, and a vertical wheel
   doesn't move it. Give the clipped edge a visible cue (a fade, or wheel-to-horizontal
   scrolling) without moving controls into a menu.
