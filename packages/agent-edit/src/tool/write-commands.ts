@@ -516,7 +516,7 @@ export function createWriteCommands(deps: {
     plan: { edits: readonly ResolvedEdit[]; ir: SemanticEditIRV1 } | { blocks: readonly Block[] };
     creation?: { createdDocument: boolean; refuseUnlessEmpty?: InternalWriteResult };
     copy?: { from: string; edges: boolean };
-    /** Changes the plan left out because the room deleted all of the text they change. */
+    /** Changes the plan did not make because the room deleted text they change or sit in. */
     skipped?: number;
   }
 

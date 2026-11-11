@@ -16,14 +16,15 @@ one transaction the host owns, and route inverses through `prepareSave`.
 
 ## Deletes that land after a write read its room
 
-A block rewrite is lowered around what its room copy has deleted
+A block rewrite is decided against what its room copy has deleted
 (`withoutRemovedUnits`), but only what the copy holds when the call reads it. A
 delete that lands later still meets a lowering that kept those units. For a draft
 write the window runs from the call's room read to the step's save: the rest of the
 model step, its generation and later tool calls included, seconds to minutes. For a
 direct save it is the time to the save. Find writes into a paragraph or heading are
-placed by their windows and survive it; other rewrites can split. Fix by lowering the
-staged update again at save time against the room it merges into.
+placed by their windows and survive it; other rewrites can split. The rule is a pure
+function of the two blocks and the deleted units, so the fix is to run it again at
+save time against the room the update merges into.
 
 ## Edits to text the editor retyped
 
@@ -31,6 +32,34 @@ Joining two lines or deleting an inline image makes the editor delete the follow
 text and insert it again as new items. A model change planned on the old items lands
 on deleted text, so it is skipped and the result says so; before, it was lost without
 a word. Landing it needs the retyped text matched to the old by content.
+
+## Formatting in a paragraph the writer deleted from
+
+When the model changes bold, italics, a link or a paragraph's attributes in a flat
+paragraph that has room deletions, the paragraph is lowered as if there were no room,
+so text the writer deleted there can come back as the model's. Deciding it by the rule
+needs the splice path to carry format ranges applied on the view with its deletions
+left in, as `main`'s block diff does. That is a format-only replacement through
+`ResolvedEdit`, `applyInlineReplacements`, `editSegments`, the semantic IR and server
+provenance, which mark only text replacements today. The structural diff is not the
+answer: there the model's bold extends over text the writer typed over a deletion
+beside it when the model's client id is higher (`He **sighed loudly**.`).
+
+## Blocks a write removes and adds
+
+A write that removes a block and adds another (merging or splitting top-level
+paragraphs, a paragraph turned into a heading) is not decided against room deletions:
+the writer's typing in the removed block goes, and text deleted from it can come back
+in the added one. Covering it means deciding the replaced scope as one sequence, block
+edges included, in `replaceScope`'s alignment.
+
+## Changes the room added
+
+The rule sees what the writer deleted, never what they added. A pasted sentence can
+keep letters of the old one, which a model delete then takes (`MinKeep end.`), and a
+landing change cannot tell a plain delete from typed-over text, which is why a change
+that covers any deleted unit is skipped. Both need the port to also report where the
+room holds text the view lacks.
 
 ## Deferred until earned
 

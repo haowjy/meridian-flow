@@ -121,7 +121,7 @@ export function renderSettledReceipts(
   ];
 }
 
-function degradedReceipts(accepted: readonly ReceiptIdentity[], revision: string | null) {
+function degradedReceipts(accepted: readonly AcceptedEdit[], revision: string | null) {
   return accepted.map((edit) =>
     settledReceipt(
       edit,
@@ -131,6 +131,7 @@ function degradedReceipts(accepted: readonly ReceiptIdentity[], revision: string
         writeId: edit.writeId,
         echo: [],
         awarenessDegraded: true,
+        ...(edit.skipped ? { skipped: edit.skipped } : {}),
       }),
     ),
   );

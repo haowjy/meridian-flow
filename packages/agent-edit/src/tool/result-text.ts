@@ -153,9 +153,10 @@ function notes(result: AgentEditResultV1): string[] {
     );
   if (result.unchanged) lines.push(UNCHANGED_NOTE);
   if (result.skipped) {
-    const changes = result.skipped === 1 ? "1 change was" : `${result.skipped} changes were`;
     lines.push(
-      `skipped: ${changes} not made; the text it changes was deleted since your last read.`,
+      result.skipped === 1
+        ? "skipped: 1 change was not made; the text it changes was deleted since your last read."
+        : `skipped: ${result.skipped} changes were not made; the text they change was deleted since your last read.`,
     );
   }
   if (result.awarenessDegraded) {
