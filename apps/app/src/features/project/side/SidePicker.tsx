@@ -53,7 +53,7 @@ type Row = {
   key: string;
   pick: HeldPick;
   name: string;
-  detail?: string;
+  meta?: string;
 };
 
 export function SidePicker({
@@ -196,13 +196,13 @@ function SidePickerLists({
             key: `chat:${chat.chatId}`,
             pick: { kind: "chat" as const, chatId: chat.chatId },
             name: chatTitle(chat.chatId, chat.title),
-            detail: chat.edited ? t`Edited this` : t`Read this`,
+            meta: chat.edited ? t`Edited this` : t`Read this`,
           })),
           ...previousChapter(loaded, mainDocumentId).map((file) => ({
             key: `document:${file.documentId}`,
             pick: { kind: "document" as const, documentId: file.documentId },
             name: file.name,
-            detail: t`Previous chapter`,
+            meta: t`Previous chapter`,
           })),
           ...(related.data?.mentions ?? []).flatMap((mention) => {
             const name = nameOf(mention.documentId);
@@ -212,7 +212,7 @@ function SidePickerLists({
                     key: `document:${mention.documentId}`,
                     pick: { kind: "document" as const, documentId: mention.documentId },
                     name,
-                    detail: t`Mentioned`,
+                    meta: t`Mentioned`,
                   },
                 ]
               : [];
@@ -225,7 +225,7 @@ function SidePickerLists({
               key: `document:${row.documentId}`,
               pick: { kind: "document" as const, documentId: row.documentId },
               name: row.name,
-              detail: row.edited ? t`Wrote` : t`Read`,
+              meta: row.edited ? t`Wrote` : t`Read`,
             }))
         : [],
   );
@@ -281,7 +281,7 @@ function SidePickerLists({
               key: `document:${file.entryId}`,
               pick: { kind: "document" as const, documentId: file.entryId },
               name: file.name,
-              detail: file.parents.at(-1),
+              meta: file.parents.at(-1),
             }))
           : []),
         ...filterThreadsByTitle(chats, query).map((chat) => ({
@@ -304,7 +304,7 @@ function SidePickerLists({
       onSelect={() => choose(item.pick)}
       leading={<ItemIcon pick={item.pick} name={item.name} />}
       title={item.name}
-      detail={item.detail}
+      meta={item.meta}
       trailing={
         side.source === "held" && sameItem(item.pick, shownNow) ? (
           <Pin className="size-3.5 shrink-0 text-muted-foreground" aria-label={t`Held`} />
