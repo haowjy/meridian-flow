@@ -59,8 +59,8 @@ export type ContextViewerSurfaceControllerProps = {
   ) => void;
   onOpenContextTarget: OpenContextRoute;
   /**
-   * Clears the Editor's selected document without closing tabs, landing on the
-   * recently-opened chooser.
+   * Lands on the recently-opened chooser. No tab closes and the selected tab stays
+   * selected in the store; the pane shows no document there.
    */
   onShowEditorRecents: (options: NavigationOptions) => void;
   /** The Editor owns the current screen, including while its route verdict masks the body. */
