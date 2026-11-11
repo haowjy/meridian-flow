@@ -7,18 +7,24 @@
  */
 
 import type { EventRecord } from "@meridian/contracts/observability";
-import { createContext, type ReactNode, useCallback, useContext, useRef } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDestination } from "@/features/links";
+import { usePhoneShell } from "@/hooks/use-phone-shell";
 import type { ContextUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
 import { contextTabFromDraftGroup } from "./context/context-tab-from-draft";
-import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
+import {
+  type BesideHint,
+  type OpenContextRoute,
+  useOpenedFromChat,
+} from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
+import { useOptionalHoldBeside } from "./side/SideView";
 
 export type AiDraftLaunchTarget = {
   ownerKey: string;
@@ -30,6 +36,8 @@ export type AiDraftLaunchTarget = {
   draftOnly?: boolean;
   /** A projection-local change to focus, only if that projection still paints. */
   focus?: ReviewFocus;
+  /** The chat the launch was made from: the new entry keeps it beside the document. */
+  beside?: BesideHint;
 };
 
 type EditorReviewCommand = (target: AiDraftLaunchTarget) => Promise<void>;
@@ -99,6 +107,7 @@ export function ReviewLaunchProvider({
             itemKey: target.itemKey,
             reviewOwner: target.ownerKey,
             changeId: target.focus?.id,
+            ...(target.beside ? { beside: target.beside } : {}),
             canCommit: () => sequence.current === launch,
             afterCommit: pin,
           },
@@ -120,14 +129,20 @@ export function ReviewLaunchProvider({
 }
 
 export function useOpenEditorReview(): EditorReviewCommand {
-  const command = useContext(EditorReviewCommandContext);
+  const command = useOptionalOpenEditorReview();
   if (!command) throw new Error("Opening a draft requires the project review handoff owner");
   return command;
 }
 
 /** For a surface that only sometimes launches a review (a link to a draft), and may mount without an owner. */
 export function useOptionalOpenEditorReview(): EditorReviewCommand | null {
-  return useContext(EditorReviewCommandContext);
+  const command = useContext(EditorReviewCommandContext);
+  const beside = useOpenedFromChat();
+  return useMemo(
+    () =>
+      command && beside ? (target: AiDraftLaunchTarget) => command({ beside, ...target }) : command,
+    [command, beside],
+  );
 }
 
 export function useAiDraftLauncher() {
@@ -165,11 +180,27 @@ export function useAiDraftLauncher() {
  * Work's review (by item identity, as the review launch does), and every
  * other document to the surface's own live opener.
  */
-export function useReviewingLinkDestination(open: LinkDestination): LinkDestination {
+export function useReviewingLinkDestination(
+  open: LinkDestination,
+  /** The Work the link's surface opens documents in; a hold beside keeps it. */
+  workId?: string,
+): LinkDestination {
   const openEditorReview = useOptionalOpenEditorReview();
+  const holdBeside = useOptionalHoldBeside();
+  // The phone's side holds chats only: a background open there opens in main.
+  const phone = usePhoneShell() === true;
   return useCallback(
     (document, gesture) => {
       const { review } = document;
+      // A cmd-click (or middle click) opens the document beside main, where it is held.
+      if (!review && gesture === "new-tab" && holdBeside && !phone) {
+        holdBeside({
+          kind: "document",
+          documentId: document.documentId,
+          ...(workId ? { workId } : {}),
+        });
+        return Promise.resolve();
+      }
       if (!review) return open(document, gesture);
       // A hidden target exists only in the draft: it is a draft-only review, never a live tab.
       const target: AiDraftLaunchTarget = {
@@ -183,6 +214,6 @@ export function useReviewingLinkDestination(open: LinkDestination): LinkDestinat
         console.error("[editor-review] launch failed", error);
       });
     },
-    [open, openEditorReview],
+    [open, openEditorReview, holdBeside, workId, phone],
   );
 }

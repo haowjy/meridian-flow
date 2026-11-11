@@ -53,6 +53,7 @@ function send(overrides: Partial<Omit<SendProjectChatArgs, "threadActions" | "se
     agent,
     workId: "no-work",
     workAiWriteMode: "direct",
+    draftScope: { kind: "new-chat", id: "550e8400-e29b-41d4-a716-446655440000" },
     ...overrides,
     threadActions,
     selectChat,

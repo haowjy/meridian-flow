@@ -10,7 +10,7 @@ import {
   canonicalDocumentPath,
   projectAddressMatchesContextTarget,
 } from "./local-document-address";
-import type { OpenContextRoute } from "./ProjectNavigationContext";
+import { BESIDE_STATE_KEY, type OpenContextRoute } from "./ProjectNavigationContext";
 import { type ProjectAddress, type ProjectDestination, scratchOwnerKey } from "./project-address";
 import type { createProjectNavigation } from "./project-navigation";
 import { type ContextRouteRequest, contextRouteRequest } from "./project-route";
@@ -154,7 +154,12 @@ export function createEditorDocumentCommand({
       }
       return navigation.transition(
         next.address,
-        { replace: options?.replace ?? false, state: next.state },
+        {
+          replace: options?.replace ?? false,
+          state: options?.beside
+            ? { ...next.state, [BESIDE_STATE_KEY]: options.beside }
+            : next.state,
+        },
         {
           isCurrent: () => options?.canCommit?.() !== false,
           commit,

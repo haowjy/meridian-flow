@@ -6,6 +6,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { History, Plus } from "lucide-react";
+import type { ReactNode } from "react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -28,6 +29,7 @@ export function MainHeader({
   onNewDocument,
   sidebarToggle,
   sideToggle,
+  closedSide,
 }: {
   projectId: string;
   /** Main's document; null on the Recently opened landing, which the door then marks current. */
@@ -37,6 +39,8 @@ export function MainHeader({
   onNewDocument?: () => void;
   sidebarToggle: PaneHeaderRailToggle;
   sideToggle: PaneHeaderRailToggle;
+  /** While the side is closed: the control naming what it would show. */
+  closedSide?: ReactNode;
 }) {
   return (
     <PaneHeader
@@ -59,23 +63,26 @@ export function MainHeader({
         </div>
       }
       actions={
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={onNewDocument}
-              disabled={!onNewDocument}
-              title={!onNewDocument ? t`Open a Work to create an Untitled document` : undefined}
-              aria-label={t`New document`}
-              className="focus-ring relative isolate grid size-8 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-0 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
-            >
-              <Plus className="size-3.5" aria-hidden />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            <Trans>New document</Trans>
-          </TooltipContent>
-        </Tooltip>
+        <>
+          {closedSide}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={onNewDocument}
+                disabled={!onNewDocument}
+                title={!onNewDocument ? t`Open a Work to create an Untitled document` : undefined}
+                aria-label={t`New document`}
+                className="focus-ring relative isolate grid size-8 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-0 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
+              >
+                <Plus className="size-3.5" aria-hidden />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <Trans>New document</Trans>
+            </TooltipContent>
+          </Tooltip>
+        </>
       }
     />
   );
