@@ -20,6 +20,14 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   one, so never wire a node's `draggable` or default DnD to reposition blocks.
   Figures move by cut and paste; drag-to-place is wanted and must be built as delete
   plus insert ([#111](https://github.com/haowjy/meridian-flow/issues/111)).
+- A find write rewrites only its matches. It splices the content into the serialized
+  block group, reparses it, and replaces each match's text window whole at its
+  position (`cutTextWindows`, `windowHunks`). Never re-derive a match's edit by
+  diffing the block: the diff keeps words the content shares with nearby text and
+  anchors the new text to them, and the write is planned on the model's view, so a
+  concurrent delete of those words splits and reorders it. Only a scope `replace`
+  (`in`, whole document), which has no known position, is word-diffed, and keeps
+  that exposure ([TODO](TODO.md#stale-view-scope-replace)).
 - Equal serialized content does not preserve Yjs identity, tombstones or authorship,
   so rebuilding an existing replica from Markdown as a merge path loses all three.
 
