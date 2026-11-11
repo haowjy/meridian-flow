@@ -1,0 +1,7 @@
+# Board-as-document browser proof
+
+Throwaway design evidence, not a product feature. From this directory run `pnpm install --ignore-workspace` and `pnpm dev`, then open the Vite URL. Open the second client with the button; tabs must use the same browser profile and remain open. The room exists only in their memory, not on disk. Reset replaces the room's text; the stress button replaces it with 300 cards and 500 arrows. Do not use with real writing.
+
+Select text and use Make link to assign a target id. Link marks are shown as underlined text, not markdown source syntax. Draw from a card's right handle to another card's left handle, or to blank paper for a loose end. Click an arrow label to edit; select an arrow and press Delete to remove its whole line. Drag cards or notes; Ctrl/⌘ Z undoes text, not layout. This proof has no markdown import/export, real document references, server, offline persistence or authentication.
+
+Frames are represented by heading notes, not containers. Row handles demonstrate growing nodes; the line format doesn't store which row a connection lands on, so it snaps back to the card. New cards use a simple grid, not neighbour-aware placement. Bezier edges are not obstacle routed. Layout entries are retained after text is deleted; they are not garbage collected. The second tab must join an existing live tab; simultaneously opening an empty room can seed twice. Browser dialogs are intentionally crude.
