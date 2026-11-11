@@ -667,6 +667,36 @@
   }
 }
 
+/* Forced colours drop every fill and shadow, which is all that marks a selected tab, the
+   current row or a pressed toggle here. The system colours come through only with
+   `forced-color-adjust: none`, so the marked control paints SelectedItem itself and its
+   descendants take its text colour (their own muted tokens would be unforced). A tab that is
+   an empty button laid over its label marks the chip it covers instead. */
+@media (forced-colors: active) {
+  :is(
+      [role="tab"][aria-selected="true"]:not(:empty),
+      :has(> [role="tab"][aria-selected="true"]:empty),
+      [role="radio"][aria-checked="true"],
+      [aria-pressed="true"],
+      [data-list-row][data-selected="true"],
+      [aria-current]:not([aria-current="false"], li, [data-list-item])
+    ) {
+    forced-color-adjust: none;
+    background-color: SelectedItem;
+    color: SelectedItemText;
+    outline-color: SelectedItemText;
+    outline-offset: -4px;
+    & * {
+      color: inherit;
+    }
+  }
+  /* A menu's group rule is a 1px fill. */
+  [role="separator"]:not([tabindex]) {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
+
 /* Login hero — soft jade+cinnabar radial behind the needle, and a matching
    glow on the needle itself. Colors stay token-derived (no literals in TSX). */
 @utility login-hero-glow {

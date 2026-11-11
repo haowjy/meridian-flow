@@ -177,6 +177,30 @@
     0 0 0 5px var(--review-ring);
 }
 
+/* Forced colours drop the tint and the shadow lines, which are all that mark added text. It is
+   underlined instead, a whole added block framed, and the change in focus drawn heavier. */
+@media (forced-colors: active) {
+  .meridian-editor .ProseMirror .meridian-review-added {
+    text-decoration: underline 1px;
+    text-underline-offset: 0.2em;
+  }
+
+  .meridian-editor .ProseMirror .meridian-review-added.meridian-review-emphasized {
+    text-decoration-thickness: 3px;
+  }
+
+  .meridian-editor .ProseMirror .meridian-review-block.meridian-review-added {
+    outline: 1px solid CanvasText;
+    outline-offset: 3px;
+  }
+
+  .meridian-editor
+    .ProseMirror
+    .meridian-review-block.meridian-review-added.meridian-review-emphasized {
+    outline-width: 3px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .meridian-editor .ProseMirror .meridian-review-added,
   .meridian-editor .ProseMirror .meridian-review-removal-toggle::before {

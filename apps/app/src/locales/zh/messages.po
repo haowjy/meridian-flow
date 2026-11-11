@@ -1924,10 +1924,14 @@ msgstr ""
 msgid "Confirming your purchase…"
 msgstr ""
 
+#: src/components/app/ConnectionBanner.tsx
+msgid "Connection lost. Retrying…"
+msgstr ""
+
 #. placeholder {0}: state.attempt
 #: src/components/app/ConnectionBanner.tsx
-msgid "Connection lost. Retrying… attempt {0}"
-msgstr ""
+#~ msgid "Connection lost. Retrying… attempt {0}"
+#~ msgstr ""
 
 #: src/features/import/ImportPanel.tsx
 msgid "Continue…"
@@ -4826,10 +4830,14 @@ msgstr ""
 msgid "Reconnected"
 msgstr ""
 
+#: src/components/app/ConnectionBanner.tsx
+msgid "Reconnecting…"
+msgstr ""
+
 #. placeholder {0}: state.attempt
 #: src/components/app/ConnectionBanner.tsx
-msgid "Reconnecting… attempt {0}"
-msgstr ""
+#~ msgid "Reconnecting… attempt {0}"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Redid"
