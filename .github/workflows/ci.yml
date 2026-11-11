@@ -179,8 +179,16 @@ jobs:
       # pg_bigm package, so build the same pinned version against the runner's server.
       - name: Install pg_bigm
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends postgresql-server-dev-16 libicu-dev
+          install() {
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends postgresql-server-dev-16 libicu-dev
+          }
+          # ubuntu.com names (the image's Azure mirror and archive.ubuntu.com) sometimes stop resolving on
+          # the runners for hours; kernel.org carries the same archive.
+          install || {
+            echo "http://mirrors.edge.kernel.org/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
+            install
+          }
           SUDO=sudo tools/postgres/install-pg-bigm.sh
       - name: Start Postgres
         run: |
