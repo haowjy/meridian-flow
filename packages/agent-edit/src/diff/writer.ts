@@ -3,9 +3,10 @@
  * target leaves alone keeps its identity, and a peer's concurrent edits to those items survive.
  *
  * Blocks are matched by key (equal blocks are untouched); a changed block pairs with the most similar
- * target block in its gap and is edited in place when both are flat paragraph-like text. Text is diffed
- * by word and written as inserts and deletes (insert first, as `applyTextEdit` does), marks by `format`,
- * attributes by set or remove. Only a type change or a different nesting rebuilds the element. Never use
+ * target block in its gap and is edited in place when both have the same type; a container is written
+ * the same way over its children. Text is diffed by word and written as inserts and deletes (insert
+ * first, as `applyTextEdit` does), marks by `format`, attributes by set or remove. Only a type change
+ * or inline content of a different shape rebuilds the element. Never use
  * `updateYFragment` here: its one prefix/suffix diff per text retypes everything between two edits, so a
  * peer's deletion in the middle would be undone.
  */
@@ -52,7 +53,7 @@ export function pmToY(node: PMNode): Y.XmlElement {
 export interface WriteStats {
   kept: number;
   edited: number; // written in place: text/attr edits on the existing element
-  replaced: number; // element deleted and rebuilt (type change, non-flat content)
+  replaced: number; // element deleted and rebuilt (type change, different inline shape)
   inserted: number;
   deleted: number;
 }
@@ -145,9 +146,30 @@ export function writeBlocks(
   target: readonly PMNode[],
   copies?: RestorationLink[],
 ): WriteStats {
-  const preserve = copies !== undefined;
   const stats: WriteStats = { kept: 0, edited: 0, replaced: 0, inserted: 0, deleted: 0 };
-  const current = readBlocks(frag, schema);
+  writeChildren(frag, readBlocks(frag, schema), target, stats, copies, true);
+  return stats;
+}
+
+/** A container (quote, list, table, ...) whose children are blocks: written child by child. */
+const nests = (cur: PMNode, tgt: PMNode) =>
+  cur.type === tgt.type && !tgt.isTextblock && cur.childCount > 0 && tgt.childCount > 0;
+
+/**
+ * Writes `target` into the block children of `parent`, which hold `current`. A paired container is
+ * written the same way over its own children, so a block added or removed inside a quote, list or
+ * table leaves the container's element, and anything aimed at it, in place. `record` says whether
+ * this level maps restored copies back to their source (an enclosing rebuild already does).
+ */
+function writeChildren(
+  parent: Y.XmlFragment | Y.XmlElement,
+  current: readonly PMNode[],
+  target: readonly PMNode[],
+  stats: WriteStats,
+  copies: RestorationLink[] | undefined,
+  record: boolean,
+): void {
+  const preserve = copies !== undefined;
   // Gaps between equal blocks, as [curFrom, curTo, tgtFrom, tgtTo].
   const gaps: Array<[number, number, number, number]> = [];
   let ci = 0;
@@ -167,27 +189,24 @@ export function writeBlocks(
     }
   }
   if (g) gaps.push(g);
+  const doc = parent.doc as Y.Doc;
   // Right to left, so earlier element indexes stay valid.
   for (const [c0, c1, t0, t1] of gaps.reverse()) {
-    // Pair old and new blocks in order by similarity: an edited paragraph is written in place.
+    // Pair old and new blocks in order by similarity: an edited block is written in place.
     const pairs: Array<[number, number]> = [];
     let from = c0;
     for (let t = t0; t < t1; t++) {
       let best = -1;
-      // A lone flat rewrite has no competing alignment: retain its container even when
-      // no words survived, so a late key still has a live parent.
-      const oneToOneFlat =
+      // A lone rewrite has no competing alignment: retain its element even when no words
+      // survived, so a late key still has a live parent.
+      const oneToOne =
         c1 - c0 === 1 &&
         t1 - t0 === 1 &&
         current[c0].type === target[t].type &&
-        flat(current[c0]) &&
-        flat(target[t]);
-      let bestSim = preserve || oneToOneFlat ? -1 : 0.3;
+        ((flat(current[c0]) && flat(target[t])) || nests(current[c0], target[t]));
+      let bestSim = preserve || oneToOne ? -1 : 0.3;
       for (let c = from; c < c1; c++) {
-        const sim =
-          current[c].type === target[t].type
-            ? containerSimilarity(frag.get(c) as Y.XmlElement, current[c], target[t])
-            : 0;
+        const sim = similarity(current[c], target[t], true);
         if (
           sim > bestSim ||
           (current[c].textContent === "" &&
@@ -208,12 +227,17 @@ export function writeBlocks(
       preserve &&
       (pairs.length !== c1 - c0 ||
         pairs.length !== t1 - t0 ||
-        pairs.some(([c, t]) => !sameShape(frag.get(c) as Y.XmlElement, target[t])));
+        pairs.some(
+          ([c, t]) =>
+            !nests(current[c], target[t]) && !sameShape(parent.get(c) as Y.XmlElement, target[t]),
+        ));
     // Only a structural gap needs a source map; capture it before deleting containers can
     // collect their descendants.
-    const before = rebuilt ? copyUnits(frag.toArray().slice(c0, c1) as Y.XmlElement[]) : null;
+    const before =
+      rebuilt && record ? copyUnits(parent.toArray().slice(c0, c1) as Y.XmlElement[]) : null;
     // Yjs splits with Array.splice. Pre-splitting in clock order keeps a full rewrite from
     // shifting all later paragraphs' new word items at each boundary; no clocks are allocated.
+    // A nested level's items are inside the enclosing level's paired subtrees, already split.
     const runs: Array<{ text: Y.XmlText; offsets: number[] }> = [];
     const visit = (element: Y.XmlElement) => {
       for (const child of element.toArray()) {
@@ -228,9 +252,9 @@ export function writeBlocks(
         }
       }
     };
-    for (const [c] of pairs) visit(frag.get(c) as Y.XmlElement);
-    (frag.doc as Y.Doc).transact((transaction) => splitTextBoundaries(transaction, runs));
-    const clock = Y.getState((frag.doc as Y.Doc).store, (frag.doc as Y.Doc).clientID);
+    for (const [c] of pairs) visit(parent.get(c) as Y.XmlElement);
+    doc.transact((transaction) => splitTextBoundaries(transaction, runs));
+    const clock = Y.getState(doc.store, doc.clientID);
     const pairedC = new Map(pairs);
     const pairedT = new Set(pairs.map(([, t]) => t));
     // Walk the gap backwards: delete unpaired old blocks, edit paired ones, insert new ones.
@@ -238,7 +262,7 @@ export function writeBlocks(
     for (let c = c1 - 1; c >= c0 - 1; c--) {
       const t = c >= c0 ? pairedC.get(c) : t0 - 1;
       if (t === undefined) {
-        frag.delete(c, 1);
+        parent.delete(c, 1);
         stats.deleted++;
         continue;
       }
@@ -246,12 +270,12 @@ export function writeBlocks(
       const ins: PMNode[] = [];
       for (let k = t + 1; k < tPtr; k++) if (!pairedT.has(k)) ins.push(target[k]);
       if (ins.length) {
-        frag.insert(c + 1, ins.map(pmToY));
+        parent.insert(c + 1, ins.map(pmToY));
         stats.inserted += ins.length;
       }
       tPtr = t;
       if (c < c0) break;
-      const el = frag.get(c) as Y.XmlElement;
+      const el = parent.get(c) as Y.XmlElement;
       const tgt = target[t];
       if (el.nodeName === tgt.type.name && flat(tgt) && flat(current[c]) && el.length <= 1) {
         editAttrs(el, tgt);
@@ -262,12 +286,16 @@ export function writeBlocks(
         }
         editText(text, children(tgt));
         stats.edited++;
+      } else if (nests(current[c], tgt)) {
+        editAttrs(el, tgt);
+        writeChildren(el, children(current[c]), children(tgt), stats, copies, record && !rebuilt);
+        stats.edited++;
       } else if (sameShape(el, tgt)) {
         editContent(el, tgt);
         stats.edited++;
       } else {
-        frag.delete(c, 1);
-        frag.insert(c, [pmToY(tgt)]);
+        parent.delete(c, 1);
+        parent.insert(c, [pmToY(tgt)]);
         stats.replaced++;
       }
     }
@@ -275,13 +303,12 @@ export function writeBlocks(
       copies.push(
         ...copiedUnits(
           before,
-          copyUnits(frag.toArray().slice(c0, c0 + t1 - t0) as Y.XmlElement[]),
-          (frag.doc as Y.Doc).clientID,
+          copyUnits(parent.toArray().slice(c0, c0 + t1 - t0) as Y.XmlElement[]),
+          doc.clientID,
           clock,
         ),
       );
   }
-  return stats;
 }
 
 const children = (node: PMNode): PMNode[] => {
@@ -302,21 +329,6 @@ function runs(node: PMNode): Array<PMNode | PMNode[]> {
     else out.push([child]);
   });
   return out;
-}
-
-/**
- * `similarity` for a container (a quote) of the same shape as its target, by the words it holds, so
- * an edited quote is edited in place: rebuilding it would leave a model's earlier view of it
- * pointing at a deleted block.
- */
-function containerSimilarity(el: Y.XmlElement, current: PMNode, target: PMNode): number {
-  if (current.isTextblock || !sameShape(el, target)) return similarity(current, target, true);
-  const words = (n: PMNode) => splitWords(n.textContent).filter((w) => w.trim());
-  const [x, y] = [words(current), words(target)];
-  if (!x.length || !y.length) return 0;
-  let common = 0;
-  for (const [op, n] of diffKeys(x, y)) if (op === DIFF_EQUAL) common += n;
-  return common / Math.min(x.length, y.length);
 }
 
 function sameShape(el: Y.XmlElement, target: PMNode): boolean {
