@@ -26,7 +26,6 @@ import {
   isEditorContextTab,
   reviewEntryOf,
   reviewOwnerOfTab,
-  selectedTabOf,
   type TabView,
   tabKey,
   useContextTabs,
@@ -384,9 +383,4 @@ export function useOpenDocumentActions(projectId: string): {
       setView: (key, view) => store().setTabState(projectId, key, { view }),
     };
   }, [projectId, coordinator, writing, openInWrite, openChatDocument, activeWorkId]);
-}
-
-/** The selected tab record, for readers that need the stored tab rather than its resolution. */
-export function getSelectedContextTab(projectId: string): ContextTab | null {
-  return selectedTabOf(getContextTabs(projectId));
 }

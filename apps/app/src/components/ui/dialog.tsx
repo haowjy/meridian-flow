@@ -54,9 +54,7 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
 }) {
-  // Radix returns focus only to a `Dialog.Trigger`; most dialogs here open from a
-  // menu or a command, so focus goes back to whatever held it when this opened.
-  const opener = useRef<HTMLElement | null>(null);
+  const focus = useOpenerFocus(onOpenAutoFocus, onCloseAutoFocus);
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -66,20 +64,7 @@ function DialogContent({
           "fixed top-[50%] left-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-modal data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:rounded-lg",
           className,
         )}
-        onOpenAutoFocus={(event) => {
-          const active = document.activeElement;
-          opener.current =
-            active instanceof HTMLElement && active !== document.body ? active : null;
-          onOpenAutoFocus?.(event);
-        }}
-        onCloseAutoFocus={(event) => {
-          onCloseAutoFocus?.(event);
-          const to = opener.current;
-          opener.current = null;
-          if (event.defaultPrevented || !to?.isConnected) return;
-          event.preventDefault();
-          to.focus();
-        }}
+        {...focus}
         {...props}
       >
         {children}
@@ -93,6 +78,42 @@ function DialogContent({
       </DialogPrimitive.Content>
     </DialogPortal>
   );
+}
+
+type AutoFocusHandler = (event: Event) => void;
+
+/**
+ * Focus handlers for a dialog's content. Radix returns focus only to a `Dialog.Trigger`;
+ * most dialogs here open from a menu or a command, so on close focus goes back to whatever
+ * held it when the dialog opened, unless `onCloseAutoFocus` prevents it.
+ */
+function useOpenerFocus(onOpenAutoFocus?: AutoFocusHandler, onCloseAutoFocus?: AutoFocusHandler) {
+  const opener = useRef<HTMLElement | null>(null);
+  return {
+    onOpenAutoFocus: (event: Event) => {
+      const active = document.activeElement;
+      opener.current = active instanceof HTMLElement && active !== document.body ? active : null;
+      onOpenAutoFocus?.(event);
+    },
+    onCloseAutoFocus: (event: Event) => {
+      onCloseAutoFocus?.(event);
+      const to = opener.current;
+      opener.current = null;
+      if (event.defaultPrevented || !to?.isConnected) return;
+      event.preventDefault();
+      to.focus();
+    },
+  };
+}
+
+/**
+ * For `onOpenAutoFocus` on a phone overlay: Radix would focus the first control and paint
+ * its ring, so the content takes focus instead. It must take it: without a focused element
+ * inside, the focus trap never engages and Tab escapes behind the overlay.
+ */
+function focusContentOnOpen(event: Event) {
+  event.preventDefault();
+  (event.target as HTMLElement | null)?.focus({ preventScroll: true });
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
@@ -153,4 +174,6 @@ export {
   DialogPortal,
   DialogTitle,
   DialogTrigger,
+  focusContentOnOpen,
+  useOpenerFocus,
 };

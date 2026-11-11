@@ -1,5 +1,5 @@
 /**
- * The app's named looks. Every heading, group label, row, secondary line, hint and
+ * The app's named looks. Every heading, group label, row, secondary line and
  * interactive fill comes from one of these roles, so re-pointing a role restyles every
  * screen at once. Call sites add layout (padding, truncation), never type or colour.
  */
@@ -16,15 +16,11 @@ export const role = {
   secondary: "text-muted-foreground",
   /** Facts beside or under a row's name: age, former place, counts. */
   rowSecondary: "text-xs text-muted-foreground",
-  /** A line that explains or qualifies; it differs from body text by size, not a paler ink. */
-  hint: "text-xs text-muted-foreground",
   /** A line standing in for rows: loading, empty, no results. Callers set its inset. */
   emptyLine: "py-1.5 text-xs text-muted-foreground",
 
   /** Hover on a transparent row or control. Filled controls use the `interactive` layer. */
   hover: "hover:bg-ink-fill",
-  /** A static well: a badge, a track, a code block. */
-  well: "bg-ink-fill",
   /** The open row, the shown tab, the current chat or value, rows in a selection. Ink, never jade. */
   selected: "bg-ink-fill-strong",
   /** A control whose menu is open wears the selected fill. */
