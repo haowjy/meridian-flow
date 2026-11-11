@@ -39,7 +39,7 @@ import {
 } from "@/features/links";
 import { useReferenceDragStart } from "@/features/project/context/entry-drag/reference-source";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { useReviewingLinkDestination } from "@/features/project/review-launch";
+import { useLinkPlacement } from "@/features/project/review-launch";
 
 import { useEditorScope } from "../../editor-scope";
 
@@ -59,7 +59,11 @@ export function useEditorLinkDestination(): LinkDestination {
       }),
     [openDocument, workId],
   );
-  return useReviewingLinkDestination(openLive, workId ?? undefined);
+  const place = useLinkPlacement(projectId, null);
+  return useCallback<LinkDestination>(
+    (document, gesture) => place(document, gesture, openLive, workId),
+    [place, openLive, workId],
+  );
 }
 
 /** Runtime over the scope's document index and the holder address supplied by its surface. */
