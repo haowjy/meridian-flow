@@ -187,7 +187,12 @@ export function PickerRow({
           {meta ? <RowMeta>{meta}</RowMeta> : null}
         </>
       ) : (
-        <span className="flex w-full min-w-0 flex-1 flex-col justify-center gap-0.5">
+        <span
+          className={cn(
+            "flex w-full min-w-0 flex-1 flex-col justify-center",
+            kind === "identity" && "gap-0.5",
+          )}
+        >
           <span className="flex min-w-0 items-baseline justify-between gap-2">
             <span className="truncate font-medium">{title}</span>
             {meta ? <RowMeta>{meta}</RowMeta> : null}
