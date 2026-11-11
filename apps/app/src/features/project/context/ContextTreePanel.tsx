@@ -1,4 +1,4 @@
-/** One area's document tree in a sidebar list: Manuscript, Knowledge Base, Your files, Unfiled. */
+/** One area's document tree in a sidebar list: Manuscript, Knowledge, Your files, Unfiled. */
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
