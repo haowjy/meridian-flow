@@ -8,24 +8,21 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
-import { ChevronsUpDown, Pencil, Plus, Search } from "lucide-react";
+import { ChevronsUpDown, Pencil, Plus } from "lucide-react";
 import { type RefObject, useRef, useState } from "react";
 import { useThreadStore } from "@/client/stores";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
-import {
-  dropdownGroupLabelClass,
-  dropdownMenuSeparatorClass,
-  dropdownResultsClass,
-  dropdownRowContainerClass,
-  dropdownRowVariants,
-  dropdownSearchClass,
-  dropdownSurfaceVariants,
-} from "@/components/ui/dropdown-presentation";
+import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
-import { Input } from "@/components/ui/input";
-import { handleListKeys } from "@/components/ui/list-keys";
+import {
+  Picker,
+  PickerLine,
+  PickerResults,
+  PickerRow,
+  PickerSearch,
+  PickerSection,
+} from "@/components/ui/picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { role } from "@/components/ui/roles";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { PaneTitle } from "@/features/project/PaneTitle";
 import { relativeTime } from "@/features/project/relative-time";
@@ -64,6 +61,7 @@ export function ThreadSwitcherPopover({
   const { openChat: onSelectThread, openNewChat } = useChatNavigation();
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   const contentRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const focusHandoff = useRef(false);
   const { workItems, primaryThreads, threadById, ungroupedThreads } =
     useProjectThreadGroups(projectId);
@@ -100,6 +98,34 @@ export function ThreadSwitcherPopover({
     onRename?.();
   };
 
+  const threadRow = (thread: ThreadListItem) => {
+    const active = thread.id === activeThreadId;
+    return (
+      <PickerRow
+        key={thread.id}
+        current={active ? "page" : false}
+        onSelect={() => selectThread(thread.id)}
+        title={displayThreadTitle(thread.title)}
+        detail={
+          <>
+            <span className="sr-only">
+              <Trans>Agent:</Trans>{" "}
+            </span>
+            {thread.agentName ?? "General"}
+          </>
+        }
+        meta={relativeTime(thread.updatedAt, now)}
+        actions={
+          active ? (
+            <IconButton size="xs" label={t`Rename chat`} onClick={startRename} className="mr-1">
+              <Pencil className="size-3.5" aria-hidden />
+            </IconButton>
+          ) : null
+        }
+      />
+    );
+  };
+
   return (
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
@@ -125,7 +151,7 @@ export function ThreadSwitcherPopover({
           const content = contentRef.current;
           const currentRow = content?.querySelector<HTMLElement>('[aria-current="page"]');
           (
-            content?.querySelector<HTMLElement>("[data-switcher-search]") ??
+            searchRef.current ??
             currentRow ??
             content?.querySelector<HTMLElement>("[data-list-item]")
           )?.focus();
@@ -135,145 +161,47 @@ export function ThreadSwitcherPopover({
           if (focusHandoff.current) event.preventDefault();
           focusHandoff.current = false;
         }}
-        onKeyDown={handleListKeys}
       >
-        <button
-          data-list-item
-          type="button"
-          className={cn(dropdownRowVariants(), "[&_svg]:text-muted-foreground")}
-          onClick={() => {
-            focusHandoff.current = true;
-            changeOpen(false);
-            void openNewChat();
-          }}
-        >
-          <Plus aria-hidden />
-          <Trans>New chat</Trans>
-        </button>
-        {showSearch ? (
-          <div className="py-1">
-            <div className="relative">
-              <Search
-                className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden
-              />
-              <Input
-                data-list-item
-                data-switcher-search
-                type="search"
-                value={query}
-                aria-label={t`Search chats`}
-                placeholder={t`Search chats`}
-                onChange={(event) => setQuery(event.target.value)}
-                className={cn(dropdownSearchClass, "shadow-none")}
-              />
-            </div>
-          </div>
-        ) : null}
-
-        <div className={dropdownMenuSeparatorClass} />
-        <div className={cn(dropdownResultsClass, "max-h-72")}>
-          {filteredThreads.length === 0 ? (
-            <p className={cn("px-2", role.emptyLine)}>
-              <Trans>No matching chats</Trans>
-            </p>
-          ) : (
-            <div className="flex flex-col">
-              {visibleWorkItems.map((group) => (
-                <section key={group.id} aria-label={showGroupHeaders ? group.name : undefined}>
-                  {showGroupHeaders ? (
-                    <h3 className={dropdownGroupLabelClass}>{group.name}</h3>
-                  ) : null}
-                  <ul className="flex flex-col">
-                    {group.threadIds.map((id) => {
-                      const thread = threadById.get(id);
-                      if (!thread) return null;
-                      return (
-                        <ThreadSwitchItem
-                          key={id}
-                          thread={thread}
-                          active={id === activeThreadId}
-                          now={now}
-                          onSelect={selectThread}
-                          onRename={startRename}
-                        />
-                      );
-                    })}
-                  </ul>
-                </section>
-              ))}
-              {visibleUngrouped.length > 0 ? (
-                <ul className="flex flex-col">
-                  {visibleUngrouped.map((thread) => (
-                    <ThreadSwitchItem
-                      key={thread.id}
-                      thread={thread}
-                      active={thread.id === activeThreadId}
-                      now={now}
-                      onSelect={selectThread}
-                      onRename={startRename}
-                    />
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          )}
-        </div>
+        <Picker label={t`Switch chat`}>
+          <PickerSection>
+            <PickerRow
+              leading={<Plus className="text-muted-foreground" aria-hidden />}
+              title={<Trans>New chat</Trans>}
+              onSelect={() => {
+                focusHandoff.current = true;
+                changeOpen(false);
+                void openNewChat();
+              }}
+            />
+          </PickerSection>
+          {showSearch ? (
+            <PickerSearch
+              ref={searchRef}
+              value={query}
+              onChange={setQuery}
+              label={t`Search chats`}
+            />
+          ) : null}
+          <PickerResults>
+            {filteredThreads.length === 0 ? (
+              <PickerLine>
+                <Trans>No matching chats</Trans>
+              </PickerLine>
+            ) : null}
+            {visibleWorkItems.map((group) => (
+              <PickerSection key={group.id} label={showGroupHeaders ? group.name : undefined}>
+                {group.threadIds.map((id) => {
+                  const thread = threadById.get(id);
+                  return thread ? threadRow(thread) : null;
+                })}
+              </PickerSection>
+            ))}
+            {visibleUngrouped.length > 0 ? (
+              <PickerSection>{visibleUngrouped.map(threadRow)}</PickerSection>
+            ) : null}
+          </PickerResults>
+        </Picker>
       </PopoverContent>
     </Popover>
-  );
-}
-
-function ThreadSwitchItem({
-  thread,
-  active,
-  now,
-  onSelect,
-  onRename,
-}: {
-  thread: ThreadListItem;
-  active: boolean;
-  now: number;
-  onSelect: (threadId: string) => void;
-  onRename?: () => void;
-}) {
-  const title = displayThreadTitle(thread.title);
-  const rel = relativeTime(thread.updatedAt, now);
-  const agentName = thread.agentName ?? "General";
-  return (
-    <li
-      className={cn(
-        dropdownRowContainerClass,
-        "group flex min-w-0 items-center transition-colors hover:bg-ink-fill",
-      )}
-      data-selected={active}
-      data-list-row
-    >
-      <button
-        data-list-item
-        type="button"
-        aria-current={active ? "page" : undefined}
-        onClick={() => onSelect(thread.id)}
-        className={cn(dropdownRowVariants({ interactive: false }), "flex-1")}
-      >
-        <span className="min-w-0 flex-1 truncate">{title}</span>
-        <span className="min-w-0 max-w-24 shrink-0 truncate text-xs font-medium text-muted-foreground">
-          <span className="sr-only">
-            <Trans>Agent:</Trans>{" "}
-          </span>
-          {agentName}
-        </span>
-        {rel ? (
-          <span className="shrink-0 text-xs font-normal tabular-nums text-muted-foreground">
-            {rel}
-          </span>
-        ) : null}
-      </button>
-      {active ? (
-        <IconButton size="xs" label={t`Rename chat`} onClick={onRename} className="mr-1">
-          <Pencil className="size-3.5" aria-hidden />
-        </IconButton>
-      ) : null}
-    </li>
   );
 }
