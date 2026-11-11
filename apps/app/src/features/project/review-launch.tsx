@@ -6,6 +6,7 @@
  * `EditorReviewIntentClaimant` then carries the clicked change's focus to the host that paints it.
  */
 
+import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import type { EventRecord } from "@meridian/contracts/observability";
 import {
   createContext,
@@ -114,6 +115,7 @@ export function EditorReviewHandoffProvider({
         });
         return;
       }
+      const ownerWorkId = workIdOfDraftOwnerKey(target.ownerKey);
       const staged = { ...target, sequence: ++sequence.current };
       latest.current = staged;
       claimed.current = null;
@@ -128,6 +130,9 @@ export function EditorReviewHandoffProvider({
             {
               ...target.contextLocation,
               documentId: target.documentId,
+              // The review is the owner's: a Work's draft opens in that Work, not the one the Editor
+              // happens to be on, or no Editor host would admit it.
+              ...(ownerWorkId ? { workId: ownerWorkId } : {}),
             },
             {
               replaceIfSameDocument: true,
