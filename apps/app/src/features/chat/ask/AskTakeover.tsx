@@ -250,10 +250,7 @@ function QuestionTakeover({
             type="button"
             aria-pressed={picked === option.label}
             onClick={() => choose({ kind: "option", label: option.label })}
-            className={cn(
-              "focus-ring flex w-full items-start gap-[var(--chat-space-block)] rounded-lg border border-border-subtle bg-background px-[var(--chat-space-block)] py-[var(--chat-space-inline)] text-left transition-colors hover:border-focus hover:bg-ink-fill",
-              picked === option.label && "border-focus bg-ink-fill",
-            )}
+            className="focus-ring interactive flex w-full items-start gap-[var(--chat-space-block)] rounded-lg border border-border-subtle bg-background px-[var(--chat-space-block)] py-[var(--chat-space-inline)] text-left"
           >
             <span className="min-w-0 flex-1">
               <span className="block text-compact font-medium text-foreground">{option.label}</span>
@@ -275,7 +272,6 @@ function QuestionTakeover({
         className={cn(
           "flex items-end gap-[var(--chat-space-inline)] rounded-lg border border-border-subtle bg-background py-1 pl-[var(--chat-space-block)] focus-within:border-focus",
           several ? "pr-[var(--chat-space-block)]" : "pr-1",
-          entry.choice?.kind === "text" && "border-focus",
         )}
       >
         <textarea
@@ -311,10 +307,7 @@ function QuestionTakeover({
           variant="quiet"
           size="sm"
           aria-pressed={entry.choice?.kind === "skipped"}
-          className={cn(
-            "border border-transparent",
-            entry.choice?.kind === "skipped" && "border-focus bg-ink-fill text-foreground",
-          )}
+          className={cn(entry.choice?.kind === "skipped" && "text-foreground")}
           onClick={() => choose({ kind: "skipped" })}
         >
           {t`Skip`}
