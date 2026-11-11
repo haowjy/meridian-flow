@@ -6825,6 +6825,10 @@ msgstr "你正在研究什么？"
 msgid "What are you writing?"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "What happened to each part"
+msgstr ""
+
 #: src/components/app/ToastRegion.tsx
 #~ msgid "What is running in the background, with its controls."
 #~ msgstr ""
