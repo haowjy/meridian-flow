@@ -7,3 +7,7 @@
 - Phone: the chat sheet belongs to the history position it opened over (`MobileProject.tsx`). A chat link
   that replaces the current entry instead of pushing (a draft of the document already showing) leaves the
   sheet on top of the review. Not seen: tapping that draft did nothing in review.
+- A desktop window narrower than main's 360px floor plus an open panel (a 390px window with a mouse, sidebar or
+  side panel opened by hand) pushes main past the window edge: the review bar's "Apply draft" sits off screen.
+  `useNarrowWindowHold` (`ProjectView.tsx`) only starts the panels closed. Fix: below that width an opened
+  panel overlays main and closes on a pick, as the phone drawer does.
