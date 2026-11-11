@@ -32,8 +32,9 @@ writer acts; cinnabar is a scarce seal.
 - **Scope:** authenticated app shell, project views, chat/thread surfaces, context/document surfaces, and marketing-adjacent pages that share the brand language.
 
 The shell has at most two region tones: chrome for both side panels (the sidebar and the
-dock) and the tab band, and page for the main view. The two sit close together, so a
-hairline separates each side panel from the centre. The raised step serves cards, menus
+dock) and the tab band, and page for the main view. The two sit close together, so the
+page is a sheet set into the chrome with a hairline on its top and sides; no line runs
+the height of the window between a side panel and the centre. The raised step serves cards, menus
 and the composer, and a jade-grey review ground sits under draft chrome only while a
 draft is under review.
 
@@ -47,7 +48,8 @@ Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 - `review` — chrome with a little jade, under draft chrome and the reviewing tab.
 - `foreground` / `muted-foreground` — the two inks. A hint differs by size, never by a paler ink.
 - `ink-fill` / `ink-fill-strong` — foreground at 5% and 10%: hover and wells, then current, selected, open and pressed. Filled controls take them through the `interactive` layer.
-- `border` / `border-subtle` — foreground at 15% and 9%, for hairlines, including the seam between each side panel and the centre.
+- `border` / `border-subtle` — foreground at 15% and 9%, for hairlines. They are translucent: two that overlap darken.
+- `page-edge` — `border-subtle` resolved onto the page, opaque, for the page sheet's edge and its folder tab's outline, whose strokes meet.
 - `focus` — the one keyboard focus colour, 3:1 or better on every surface.
 - `primary` / `jade-text` — jade fills and icons, and jade text; never a wall or routine selection.
 - `cinnabar` — the brand seal. `gold` — favourites only.
@@ -61,7 +63,7 @@ them here.
 ## Shell shape and atmosphere
 
 - The sidebar, the document band and the dock are one chrome. The dock shows one document or its native occupant on that chrome, never tabs or a view switch. Only the main view's sheet (`page-sheet`) paints page; the editor takes its host's surface.
-- The page rises from chrome with the same top radius as its active document tab. The centered chat header's title chip is the same tab-chip grammar — the chat page continuing up into the band. A hairline (`border-subtle`) separates each side panel from the page; no structural shadow.
+- The page rises from chrome with the same top radius as its active document tab. The centered chat header's title chip is the same tab-chip grammar — the chat page continuing up into the band. The page is a sheet with a `page-edge` hairline on its top and sides and rounded top corners; the active tab is a folder tab whose outline is one shape, flaring outward into the sheet's edge. No structural shadow.
 - Dark mode re-points surfaces, inks and accents only (`themes.css`); state fills and borders follow the foreground.
 - Headings, group labels, rows, hints, empty lines and fills come from `role` (`apps/app/src/components/ui/roles.ts`).
 

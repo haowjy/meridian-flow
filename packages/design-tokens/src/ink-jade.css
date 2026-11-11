@@ -35,6 +35,9 @@
   --color-ink-fill-strong: color-mix(in oklab, var(--color-foreground) 10%, transparent);
   --color-border: color-mix(in oklab, var(--color-foreground) 15%, transparent);
   --color-border-subtle: color-mix(in oklab, var(--color-foreground) 9%, transparent);
+  /* The subtle border resolved onto the page, hence opaque: for an outline whose strokes
+     meet or overlap (the page sheet and its folder tab), where a translucent line darkens. */
+  --color-page-edge: color-mix(in oklab, var(--color-foreground) 9%, var(--color-background));
   /* Keyboard focus. Must hold 3:1 against every surface in a current row. */
   --color-focus: oklch(0.5 0.08 175);
 
