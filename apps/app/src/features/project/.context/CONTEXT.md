@@ -39,7 +39,8 @@ on the record: main's document with no tab in it, a chat, or an address that nam
 active chip after the tabs, so a link to a deleted chapter keeps its URL and shows the removed page
 in a tab of its own. New document (+) follows the document tabs only, never a chat or an
 unavailable address, where it would read as a new one of those. Document tabs follow Chrome: one
-width for all (240px, shrinking together to their icon; the open tab keeps room for its ×), the ×
+width for all (240px, shrinking together to the start of their name, with no icon; the open tab keeps room
+for its ×), the ×
 in the same place on each, and while the writer closes tabs with the pointer the widths hold until
 the pointer leaves the strip, so the next × lands under it (`holdTabWidth`; one value per window,
 since each document has its own band). A chat in main keeps its own width. Past that the strip

@@ -292,7 +292,14 @@ function DocumentTabChip({
       active={active}
       reviewing={reviewing}
       divider={divider}
-      tabProps={{ ...drag, style: heldWidth === null ? undefined : { flex: `0 0 ${heldWidth}px` } }}
+      tabProps={{
+        ...drag,
+        style: heldWidth === null ? undefined : { flex: `0 0 ${heldWidth}px` },
+        // Anywhere on the tab, its close included, as in Chrome.
+        onAuxClick: (event) => {
+          if (event.button === 1) closeByPointer(event.currentTarget);
+        },
+      }}
       // Every tab is one width, as in Chrome: 240px, all shrinking together when the band is full,
       // to the start of its name (a chapter's number). No icon: every document's would be the same.
       // The open tab keeps room for its close; the strip scrolls past that.
@@ -311,9 +318,6 @@ function DocumentTabChip({
           onSelect(document);
           // Each document's page has its own band: the focus follows to this tab in the new one.
           if (focused) holdFocus(() => selectedTabFor(document.documentId));
-        }}
-        onAuxClick={(event) => {
-          if (event.button === 1) closeByPointer(event.currentTarget.parentElement);
         }}
         // The whole chip is the hit target; the close button sits above it. The overlay carries
         // the name, so the visible label is hidden from assistive tech.
@@ -337,7 +341,7 @@ function DocumentTabChip({
 /** Main's address names nothing: its tab says so, and closing it leaves the address. */
 export function UnavailableTabChip({ name, onClose }: { name: string; onClose: () => void }) {
   return (
-    <TabChipFrame active divider={false} className="max-w-60 shrink-0">
+    <TabChipFrame active divider={false}>
       <FileQuestion aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       <span
         role="tab"
@@ -398,15 +402,33 @@ function setHeldTabWidth(width: number | null) {
 function holdTabWidth(chip: HTMLElement | null) {
   if (!chip) return;
   const first = heldTabWidth === null;
-  setHeldTabWidth(chip.getBoundingClientRect().width);
+  // An inactive tab's width: at the minimum the open tab is wider (it keeps room for its close),
+  // and holding that would widen every tab under the pointer.
+  const inactive = chip
+    .closest("[data-main-tab-strip]")
+    ?.querySelector('[role=tab][aria-selected="false"]')?.parentElement;
+  setHeldTabWidth((inactive ?? chip).getBoundingClientRect().width);
   if (!first) return;
+  // Released when the pointer crosses out of the strip, presses anywhere else (a touch tap fires
+  // no move), or leaves the window from it. Closing main's tab redraws the strip, and for a frame
+  // the pointer is over the band behind it: that crossing comes from outside the strip, so it
+  // doesn't count.
+  const inStrip = (node: EventTarget | null) =>
+    node instanceof Element && node.closest("[data-main-tab-strip]") !== null;
   const release = (event: PointerEvent) => {
-    if (event.target instanceof Element && event.target.closest("[data-main-tab-strip]")) return;
-    window.removeEventListener("pointermove", release, true);
+    const crossedOut =
+      event.type === "pointerover" && !inStrip(event.target) && inStrip(event.relatedTarget);
+    const pressedElsewhere = event.type === "pointerdown" && !inStrip(event.target);
+    const leftWindow =
+      event.type === "pointerout" && event.relatedTarget === null && inStrip(event.target);
+    if (!crossedOut && !pressedElsewhere && !leftWindow) return;
+    for (const type of RELEASE_EVENTS) window.removeEventListener(type, release, true);
     setHeldTabWidth(null);
   };
-  window.addEventListener("pointermove", release, true);
+  for (const type of RELEASE_EVENTS) window.addEventListener(type, release, true);
 }
+
+const RELEASE_EVENTS = ["pointerover", "pointerdown", "pointerout"] as const;
 
 function useHeldTabWidth(): number | null {
   return useSyncExternalStore(
