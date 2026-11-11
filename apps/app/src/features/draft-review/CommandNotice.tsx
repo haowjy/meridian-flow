@@ -70,7 +70,7 @@ export function CommandNotice({
     if (asking) footer.current?.scrollIntoView?.({ block: "nearest" });
   }, [asking]);
   if (!question && !notice) return null;
-  const button = "text-button shrink-0 disabled:opacity-50 coarse:min-h-11 coarse:min-w-11";
+  const button = "text-button shrink-0 text-xs disabled:opacity-50 coarse:min-h-11 coarse:min-w-11";
   if (!question && notice) return <DraftNoticeLine notice={notice} />;
   return (
     <div
@@ -181,7 +181,7 @@ export function DraftNoticeLine({
       </span>
       <button
         type="button"
-        className="text-button shrink-0 disabled:opacity-50 coarse:min-h-11"
+        className="text-button shrink-0 text-xs disabled:opacity-50 coarse:min-h-11"
         disabled={notice.status === "undoing"}
         onClick={undo}
       >
