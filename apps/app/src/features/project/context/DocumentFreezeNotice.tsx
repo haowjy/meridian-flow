@@ -15,6 +15,6 @@ export function DocumentFreezeNotice({
   return freeze.kind === "work" ? (
     <ArchivedWorkNotice projectId={projectId} work={freeze.work} className={className} />
   ) : (
-    <TrashedChatNotice projectId={projectId} ownerKey={freeze.ownerKey} className={className} />
+    <TrashedChatNotice ownerKey={freeze.ownerKey} className={className} />
   );
 }

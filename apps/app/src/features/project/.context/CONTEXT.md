@@ -142,7 +142,8 @@ composer). `display` is the chat main shows (`new` or one thread), null when mai
 created from `/chats` takes main; one created from the side's composer is held beside. A link
 followed inside a chat opens the page in main, and the entry records that chat as its beside
 hint. A link or door to a page that chat drafted opens its draft (`useOwnerDraftOpener` in
-`review-launch.tsx`), with or without a passage; a cmd-click, ctrl-click or middle click holds the
+`review-launch.tsx`), with or without a passage (a passage door opens the draft at its top: draft
+editors don't register as passage targets yet); a cmd-click, ctrl-click or middle click holds the
 page beside main instead, on that draft when the chat has one. No chat sits beside a chat, so a chat in main takes the side's picker down
 to documents.
 
@@ -156,10 +157,15 @@ A chat delete belongs to the project, not the list (`shell/sidebar/chat-deletes.
 the phone's drawer and remounting the sidebar, and ends on the next delete, Dismiss, leaving the
 project, signing out or a reload. The delete takes main to `/chats` and lets go of a held side pick
 at once; the chat's saved composer words and unsent records stay held (`beginOwnChatDelete` in
-`client/chat-submissions/deleted-chat.ts`) until the notice ends without Undo. Undo returns main to
+`client/chat-submissions/deleted-chat.ts`) until the notice ends without Undo, and then go only if
+the server still says the chat is deleted: no answer keeps them for the next load's sweep, since
+another tab or device may have restored it. Undo returns main to
 the chat only if main is still on `/chats`, and the pick only if nothing has been picked since. A
 chat with a reply running asks first: the server stops the run in the delete and Undo can't
-restart it. Undo and a trashed chat's Restore are the one `restoreProjectChat`. Nothing lists
+restart it. Every restore goes through `ChatDeletes` (Undo, and `restore` for a trashed chat's
+Restore line), so a restore of the chat a notice names ends the notice without dropping anything.
+`restoreProjectChat` resets the chat's snapshot query rather than invalidating it: a cached
+"deleted" error would read as proof the chat is gone when it next mounts. Nothing lists
 trashed chats; after a reload a deleted chat is reachable only by its address.
 
 The displayed-chat variant is derived from the URL. Primary-list lookups may supply Work and

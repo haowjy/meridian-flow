@@ -13,7 +13,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { isThreadAwaitingCreation } from "@/client/chat-submissions";
 import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import {
   readHeldPick,
@@ -37,8 +36,6 @@ export type ChatNavigation = {
   display: ChatDisplay | null;
   /** The last chat opened in main. */
   lastChatId: string | null;
-  /** An unacknowledged first send from before a reload needs a visible host. */
-  recoveringFirstSend: boolean;
   /** Main goes to this chat: every chat door (a row, a mention, a link) is this one open. */
   openChat: (threadId: string, options?: { replace?: boolean }) => Promise<void>;
   /** Main goes to a new chat's composer, which takes focus unless `focus` is false. */
@@ -82,9 +79,6 @@ export function useProjectChatNavigation({
   const urlChatId = mainChat?.kind === "thread" ? mainChat.threadId : null;
   const display = mainChat;
   const surfaceThreadId = urlChatId ?? lastChatId;
-  const [recoveringFirstSend] = useState(() =>
-    isThreadAwaitingCreation(accountId, surfaceThreadId),
-  );
   const [newChatRequest, setNewChatRequest] = useState<number | null>(null);
   const nextFocusRequestId = useRef(1);
   const mainKind = mainChat?.kind ?? null;
@@ -151,10 +145,9 @@ export function useProjectChatNavigation({
       ...commands,
       display: stableDisplay,
       lastChatId,
-      recoveringFirstSend,
       newChatFocusRequestId,
     }),
-    [commands, stableDisplay, lastChatId, recoveringFirstSend, newChatFocusRequestId],
+    [commands, stableDisplay, lastChatId, newChatFocusRequestId],
   );
 }
 
