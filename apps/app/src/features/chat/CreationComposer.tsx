@@ -16,6 +16,7 @@ import {
   useCanOpenChatReference,
   useOpenChatDocument,
 } from "@/features/project/context/open-chat-document";
+import { useWorkScope } from "@/features/project/use-work-scope";
 import { DeletedChatCard } from "./DeletedChatCard";
 import { useCreationComposer } from "./useCreationComposer";
 
@@ -58,6 +59,7 @@ export function CreationComposer({
     creation.updateChoices({ workId: newChatWorkId });
   }, [creation.updateChoices, newChatFocusRequestId, newChatWorkId]);
   const works = useWorks(projectId);
+  const workScope = useWorkScope(projectId);
   const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;
   const defaultAgent = agents.agents?.find(
@@ -65,8 +67,8 @@ export function CreationComposer({
   );
   const agent = choices?.agent ?? defaultAgent ?? null;
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
-  const initialWork = works.works?.find((work) => !isWorkArchived(work)) ?? null;
-  const workId = choices?.workId ?? initialWork?.id ?? works.noWork?.id ?? null;
+  // Until the writer picks one here, a new chat starts in the Work the sidebar shows, None included.
+  const workId = choices?.workId ?? workScope.workId;
   const selected = workId
     ? workFromSnapshot(
         works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null,

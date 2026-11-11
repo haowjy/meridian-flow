@@ -15,6 +15,7 @@
  * document inside the answer and lands on the anchor if the open result allows. No lookup
  * stands between the answer and the open.
  */
+import { draftOwnerKey } from "@meridian/contracts/branches";
 import { type ReactNode, useCallback, useContext, useMemo } from "react";
 import { useLineage } from "@/client/query/useLineageTitle";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -37,7 +38,7 @@ import {
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { BesideChatContext, useOpenChatDocument } from "../context/open-chat-document";
 import { claimOpenIntent, isCurrentOpenIntent } from "../context/open-intent";
-import { useReviewingLinkDestination } from "../review-launch";
+import { useOwnerDraftOpener, useReviewingLinkDestination } from "../review-launch";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { canonicalDoorUri } from "./canonical-door-uri";
 import { usePassageDoors } from "./usePassageDoors";
@@ -140,12 +141,27 @@ export function ProjectChatContextNavigationProvider({
   );
   // Only a hidden document reaches the review handoff, so its live fallback is never used.
   const openReviewing = useReviewingLinkDestination(reviewOnly);
+  // The chat's own drafts: its Work's, or under No Work its lineage's. A link to a document the
+  // chat drafted opens that draft, the way its draft strip does.
+  const ownerKey = !activeWork
+    ? null
+    : activeWork.id !== noWorkId
+      ? draftOwnerKey({ kind: "work", workId: activeWork.id })
+      : rootThreadId
+        ? draftOwnerKey({ kind: "lineage", rootThreadId })
+        : null;
+  const openDrafted = useOwnerDraftOpener(projectId, ownerKey);
   // A hidden document is a review. Beside the chat it opens in the dock, as everything
   // beside the chat does; elsewhere the review handoff opens it in the Editor.
   const openFound = useCallback(
     (door: Placement, document: LinkDocumentRef, gesture: Parameters<LinkDestination>[1]) => {
       const { review } = document;
-      if (!review) return Promise.resolve(openLive(door, document));
+      if (!review) {
+        // A passage lands in Live text. A superseded door opens nothing, as `openLive` decides.
+        const stale = door.claim !== null && !isCurrentOpenIntent(door.claim);
+        const drafted = stale || door.passage ? null : openDrafted(document.documentId, gesture);
+        return drafted ?? Promise.resolve(openLive(door, document));
+      }
       if (door.claim !== null && !isCurrentOpenIntent(door.claim)) return Promise.resolve();
       if (besideChat && door.claim !== null) {
         const tab = contextTabFromDraftGroup({
@@ -162,7 +178,7 @@ export function ProjectChatContextNavigationProvider({
       }
       return openReviewing(document, gesture);
     },
-    [besideChat, openLive, openReviewing],
+    [besideChat, openLive, openReviewing, openDrafted],
   );
   // Only a route-backed door overrides the follower's missing outcome: its route says so in
   // place. A resource door has no route, so it keeps the follower's shared outcome.
