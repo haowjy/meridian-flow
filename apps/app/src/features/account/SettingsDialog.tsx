@@ -475,11 +475,11 @@ function UsageSection() {
       <div className="space-y-5">
         <UsageCard variant="compact" />
 
-        <Link to="/billing" className="inline-block">
-          <Button type="button" variant="outline">
+        <Button asChild variant="outline">
+          <Link to="/billing">
             <Trans>Manage billing</Trans>
-          </Button>
-        </Link>
+          </Link>
+        </Button>
       </div>
     </div>
   );
