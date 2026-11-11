@@ -170,7 +170,6 @@ export function WorkPickerPanel({
               return (
                 <PickerRow
                   key={work.id}
-                  kind="descriptive"
                   ref={
                     current
                       ? focusRefs?.selected
