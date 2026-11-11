@@ -10,6 +10,7 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   cachedOwnerDrafts,
   patchOwnerDrafts,
+  relistedOwnerDraft,
   useOwnerDraftsFrozen,
 } from "@/client/query/useOwnerDrafts";
 import { documentBasename } from "@/client/query/work-branch-files";
@@ -328,13 +329,20 @@ export function useWorkBranchCommands({
                 },
               }
             : {}),
-          // The row comes back with the prose, before the list's next read lists it again.
-          undone: () => {
-            if (item)
-              patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
-                rows.some((listed) => listed.itemKey === item.itemKey) ? rows : [...rows, item],
-              );
+          // The row comes back with the prose. The list is read again only once the server lists
+          // the draft: a read before then drops the row, and a page opened on it would close.
+          undone: async (landed) => {
+            if (!item) {
+              refresh([draft.documentId]);
+              return landed.then(() => false);
+            }
+            patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
+              rows.some((listed) => listed.itemKey === item.itemKey) ? rows : [...rows, item],
+            );
+            await landed;
+            const listed = await relistedOwnerDraft(queryClient, projectId, ownerKey, item.itemKey);
             refresh([draft.documentId]);
+            return listed;
           },
         },
       };
