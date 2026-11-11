@@ -15,7 +15,6 @@ import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDestination } from "@/features/links";
-import { usePhoneShell } from "@/hooks/use-phone-shell";
 import type { ContextUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
 import { contextTabFromDraftGroup } from "./context/context-tab-from-draft";
@@ -188,13 +187,11 @@ export function useReviewingLinkDestination(
 ): LinkDestination {
   const openEditorReview = useOptionalOpenEditorReview();
   const holdBeside = useOptionalHoldBeside();
-  // The phone's side holds chats only: a background open there opens in main.
-  const phone = usePhoneShell() === true;
   return useCallback(
     (document, gesture) => {
       const { review } = document;
       // A cmd-click (or middle click) opens the document beside main, where it is held.
-      if (!review && gesture === "new-tab" && holdBeside && !phone) {
+      if (!review && gesture === "new-tab" && holdBeside) {
         holdBeside({
           kind: "document",
           documentId: document.documentId,
@@ -215,7 +212,7 @@ export function useReviewingLinkDestination(
         console.error("[editor-review] launch failed", error);
       });
     },
-    [open, openEditorReview, holdBeside, workId, phone],
+    [open, openEditorReview, holdBeside, workId],
   );
 }
 

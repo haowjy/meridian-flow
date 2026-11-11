@@ -467,7 +467,6 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
         main={mainForSide}
         mainIsLocal={main.document.local || main.document.tab?.kind === "new"}
         besideChatId={props.besideChatId}
-        chatsOnly={usePhone}
       >
         <HydratedReviewControllers
           {...displayedProps}

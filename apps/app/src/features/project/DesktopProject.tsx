@@ -10,18 +10,15 @@
  * `side/SideView`'s resolution.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { readDocumentView } from "@/client/project-shell/document-views";
 import type { ContextTab } from "@/client/stores";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { ChatPaneController } from "./ChatPaneController";
 import { ChatSurface } from "./chat/ChatSurface";
-import { useAccountId, useShownDocuments } from "./context/account-feature-context";
+import { useShownDocuments } from "./context/account-feature-context";
 import { DocumentHost, MainDocumentStatus } from "./context/DocumentHost";
 import { RecentDocumentsLanding } from "./context/RecentDocumentsLanding";
-import { recentOpening } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { useNewDocument } from "./context/use-new-document";
-import { useRecordOpenedDocument } from "./context/use-record-opened-document";
 import {
   NO_HELD_PANELS,
   type PanelSlotId,
@@ -32,7 +29,7 @@ import {
 import type { ReviewScopedProjectProps } from "./ProjectView";
 import { useChatNavigation } from "./routing/chat-navigation";
 import { isProjectRouteMasked, ProjectRouteBoundary } from "./routing/ProjectRouteBoundary";
-import { openDocumentInEditor } from "./routing/use-open-document-in-editor";
+import { useOpenInMain } from "./routing/use-open-document-in-editor";
 import { LeftSidebar } from "./shell/LeftSidebar";
 import { MainHeader } from "./shell/MainHeader";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
@@ -98,7 +95,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const shown = useShownDocuments(projectId);
   const side = useSideItem();
   const sideTab = side.item?.kind === "document" ? side.tab : null;
-  useRecordSidePick(projectId, side.source === "held" ? sideTab : null);
   // While the side is closed, main's header names what it would show; pressing it opens the side.
   const closedSide = sideOpen ? null : (
     <ClosedSideButton
@@ -116,12 +112,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     ) ?? null;
 
   const open = props.onOpenContextTarget;
-  const accountId = useAccountId();
-  // The draft the document shows travels with it: its address names that draft.
-  const openInMain = (tab: ContextTab) =>
-    void openDocumentInEditor(open, tab, {
-      review: readDocumentView(accountId, projectId, tab.documentId).pin,
-    });
+  const openInMain = useOpenInMain(projectId, open);
   const onNewDocument = useNewDocument(projectId, props.contextLive ? open : null);
 
   const documentHost = (tab: ContextTab, place: "main" | "side" | "kept"): SlotGridHost => ({
@@ -299,23 +290,6 @@ function SideEmpty({ projectId }: { projectId: string }) {
       <SideEmptyHeader projectId={projectId} />
     </div>
   );
-}
-
-/** A document the writer picked beside counts as recently opened, once per pick. */
-function useRecordSidePick(projectId: string, picked: ContextTab | null) {
-  const record = useRecordOpenedDocument();
-  const recorded = useRef<string | null>(null);
-  useEffect(() => {
-    if (!picked) {
-      recorded.current = null;
-      return;
-    }
-    if (recorded.current === picked.documentId) return;
-    const opening = recentOpening(projectId, picked, new Date().toISOString(), false);
-    if (!opening) return;
-    recorded.current = picked.documentId;
-    record(opening);
-  }, [picked, projectId, record]);
 }
 
 /**

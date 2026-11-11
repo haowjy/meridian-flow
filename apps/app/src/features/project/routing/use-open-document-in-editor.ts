@@ -2,8 +2,9 @@
 
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback } from "react";
-import type { DraftPin } from "@/client/project-shell/document-views";
+import { type DraftPin, readDocumentView } from "@/client/project-shell/document-views";
 import { type ContextTab, isEditorContextTab } from "@/client/stores";
+import { useAccountId } from "../context/account-feature-context";
 import { type OpenContextRoute, useOpenContextRoute } from "./ProjectNavigationContext";
 import { contextRouteRequest } from "./project-route";
 
@@ -49,5 +50,20 @@ export function useOpenDocumentInEditor() {
       if (open) void openDocumentInEditor(open, target, options);
     },
     [open],
+  );
+}
+
+/** Opens a document in main on what its view paints: the draft it shows travels with it. */
+export function useOpenInMain(
+  projectId: string,
+  open: OpenContextRoute,
+): (tab: ContextTab) => void {
+  const accountId = useAccountId();
+  return useCallback(
+    (tab) =>
+      void openDocumentInEditor(open, tab, {
+        review: readDocumentView(accountId, projectId, tab.documentId).pin,
+      }),
+    [open, accountId, projectId],
   );
 }
