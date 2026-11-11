@@ -67,7 +67,8 @@ function SideBand({
   trailing,
 }: {
   projectId: string;
-  name: string;
+  /** Null while the side shows nothing. */
+  name: string | null;
   icon: ReactNode;
   actions?: ReactNode;
   onOpenInMain?: () => void;
@@ -190,7 +191,7 @@ export function SideEmptyHeader({ projectId }: { projectId: string }) {
   return (
     <SideBand
       projectId={projectId}
-      name={side.pending ? t`Finding what goes with this…` : t`Choose what sits beside`}
+      name={side.pending ? t`Finding what goes with this…` : null}
       icon={null}
     />
   );

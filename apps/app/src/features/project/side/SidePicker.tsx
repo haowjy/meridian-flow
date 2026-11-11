@@ -57,8 +57,8 @@ export function SidePicker({
   icon,
 }: {
   projectId: string;
-  /** What the side shows now, as its trigger names it. */
-  name: string;
+  /** What the side shows now, as its trigger names it; null while it shows nothing. */
+  name: string | null;
   icon: ReactNode;
 }) {
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
@@ -77,13 +77,17 @@ export function SidePicker({
           ref={triggerRef}
           type="button"
           data-side-picker-trigger
-          aria-label={t`Choose what sits beside, now ${name}`}
+          aria-label={
+            name === null ? t`Choose what sits beside` : t`Choose what sits beside, now ${name}`
+          }
           aria-expanded={open}
           aria-haspopup="dialog"
           className={cn("focus-ring min-w-0 text-left", titleChipClass("quiet"))}
         >
           {icon}
-          <span className="min-w-0 truncate text-xs font-medium">{name}</span>
+          <span className="min-w-0 truncate text-xs font-medium">
+            {name ?? t`Choose what sits beside`}
+          </span>
           <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
         </button>
       </PopoverTrigger>
