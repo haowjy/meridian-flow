@@ -62,15 +62,15 @@ export function CreationComposer({
   const agent = choices?.agent ?? defaultAgent ?? null;
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
   // A new chat takes the Work scope unless the writer picked another Work for this draft.
-  // An archived Work refuses new chats, so the sidebar's archived scope starts None.
   const scope = useWorkScope(projectId);
-  const snapshot = works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null;
-  const scoped = scope.workId ? workFromSnapshot(snapshot, scope.workId) : null;
-  const defaultWorkId =
-    scoped?.isNoWork === false && isWorkArchived(scoped) ? works.noWork?.id : scoped?.id;
-  const workId = choices?.workId ?? defaultWorkId ?? null;
-  const selected = workId ? workFromSnapshot(snapshot, workId) : null;
-  // A Work the writer picked here can still be archived from outside: no Work then.
+  const workId = choices?.workId ?? scope.workId;
+  const selected = workId
+    ? workFromSnapshot(
+        works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null,
+        workId,
+      )
+    : null;
+  // An archived Work refuses new chats, so it is never the new chat's Work.
   const work = selected && (selected.isNoWork || !isWorkArchived(selected)) ? selected : null;
   const references = useReferenceBrowserCatalog(
     projectId,
