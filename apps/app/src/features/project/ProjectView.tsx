@@ -113,7 +113,7 @@ export type ProjectViewProps = {
   /** Awaitable route-owner commands used by future collection/detail leaves. */
   routeCommands: ProjectRouteCommands;
   /** Browser route adapter for atomic removal repairs. */
-  contextRemovalRoute: ContextRemovalRoutePort;
+  contextRemovalRoute: Omit<ContextRemovalRoutePort, "goBack">;
   /** Main's document scheme, when the address names a document. */
   activeContextScheme: ProjectContextTreeScheme | null;
   /** A Work's Scratch route: its owning Work. Null for every other document. */

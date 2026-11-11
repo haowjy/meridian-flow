@@ -62,6 +62,10 @@ chat resources rather than documents main opens.
   new way for the writer or a removal to end a document (beyond close, Discard,
   vanish and the availability batch) must `forget` it there, or the desktop keeps
   it mounted as the kept host and brings it back in the side.
+- The writer's own delete or Discard of a document begins with the removal
+  coordinator's `beginOwnRemoval`: it silences the removed notice and sends main
+  back to the document shown before. A new door that removes documents for the
+  writer must use it.
 
 ## Child guide
 

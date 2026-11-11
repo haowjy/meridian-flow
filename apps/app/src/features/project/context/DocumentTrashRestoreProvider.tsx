@@ -22,7 +22,7 @@ import {
 import { documentLocationName } from "../../chat/document-display-name";
 import {
   useOptionalAccountResourceReplica,
-  useOptionalRemovedNotices,
+  useOptionalContextRemovalCoordinator,
 } from "./account-feature-context";
 import { runDelete } from "./entry-drag/entry-failure";
 import { restoreTrashedDocuments, type TrashRestoreOutcome } from "./restore-trashed-document";
@@ -67,7 +67,7 @@ export function DocumentTrashRestoreProvider({
 }) {
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
-  const removedNotices = useOptionalRemovedNotices();
+  const removal = useOptionalContextRemovalCoordinator();
   const [notice, setNotice] = useState<RestoredNotice | null>(null);
   const [states, setStates] = useState<ReadonlyMap<string, TrashRestoreState>>(() => new Map());
   const restoring = useRef(new Set<string>());
@@ -178,7 +178,7 @@ export function DocumentTrashRestoreProvider({
                 undo: () => {
                   for (const entry of restored)
                     void runDelete(
-                      { resources, projectId, notices: removedNotices },
+                      { resources, projectId, removal },
                       { kind: "file", id: entry.documentId, name: entry.name },
                     );
                 },
@@ -193,7 +193,7 @@ export function DocumentTrashRestoreProvider({
           for (const id of ids) restoring.current.delete(id);
         });
     },
-    [projectId, queryClient, removedNotices, resources, settle, setState],
+    [projectId, queryClient, removal, resources, settle, setState],
   );
 
   const value = useMemo(() => ({ states, restore, restoreInto }), [states, restore, restoreInto]);
