@@ -83,8 +83,8 @@ Work has no Work-level write-mode control and no "Apply it now or keep them for
 review?" confirmation; each chat owns its write mode.
 
 25. Open a Work page. It **shows no write-mode control**. Open a chat in it: the
-    composer has a **Draft or Auto-apply menu** showing "Drafts (N)" while N changes
-    wait for review. Switching one chat's mode leaves the others as they were.
+    composer has a **Draft or Auto-apply menu** whose chip says the mode only, also in
+    the side panel, never a count of waiting drafts. Switching one chat's mode leaves the others as they were.
 
 ## Creation, Work goals, and account settings
 

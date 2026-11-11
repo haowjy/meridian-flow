@@ -900,6 +900,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                     availableWorks={props.availableWorks}
                     activeScreen={screen}
                     placement={chatPlacement}
+                    mountsWithPage
                     // Mounted-but-hidden when the dock is collapsed, so the live
                     // conversation survives a close/reopen.
                     visible={!chatIndexShowing && (chatPlacement === "center" || isOpen("chat"))}

@@ -47,7 +47,7 @@ import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
-import { claimEditorFocus, focusIsFree } from "./focus-on-open";
+import { claimEditorFocus, focusIsFree, focusOnLoad } from "./focus-on-open";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaNotices } from "./SchemaNotices";
 import { SyncStatus } from "./SyncStatus";
@@ -356,16 +356,19 @@ function ActiveSessionEditorView({
     return () => dom.removeEventListener("focusout", onFocusOut);
   }, [afterPaintRelease, editor, inReview]);
 
-  // A document the writer just made takes the caret at its start, unless something else
+  // A document the writer just made takes the caret at its start, and the Editor's first
+  // document after a page load takes it where the editor keeps it, unless something else
   // (a dialog that stays open, a field) already holds focus.
   useEffect(() => {
-    if (!editor || editor.isDestroyed || inReview || !active || !effectiveEditable) return;
-    if (!claimEditorFocus(focusKey)) return;
+    if (!editor || editor.isDestroyed || !active || !effectiveEditable) return;
+    const made = !inReview && claimEditorFocus(focusKey);
+    if (!made && container !== "editor") return;
     afterPaintRelease(() => {
-      if (!editor.isDestroyed && focusIsFree())
+      if (!made) focusOnLoad(editor);
+      else if (!editor.isDestroyed && focusIsFree())
         editor.commands.focus("start", { scrollIntoView: false });
     });
-  }, [afterPaintRelease, active, editor, effectiveEditable, focusKey, inReview]);
+  }, [afterPaintRelease, active, container, editor, effectiveEditable, focusKey, inReview]);
 
   useEffect(() => {
     if (!editor || inReview || !active) return;

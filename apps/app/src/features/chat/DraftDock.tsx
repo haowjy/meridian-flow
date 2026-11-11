@@ -97,8 +97,8 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     >
       {confirming || askingApply ? null : dock.showCommands ? (
         <ReviewActions
-          scope="all"
-          density="short"
+          scope={multi ? "all" : "document"}
+          density="full"
           disabled={!dock.canCommand}
           onDiscard={() => (multi ? setConfirmingDiscard(true) : dock.discard())}
           onApply={dock.canApply ? startApply : undefined}

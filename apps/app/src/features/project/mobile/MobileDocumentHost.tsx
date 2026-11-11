@@ -20,6 +20,11 @@ import type { ContextTab } from "@/client/stores";
 import { isDraftOnly } from "@/client/stores";
 import { PaintCapture, PaintHold } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
+import {
+  DocumentStatePortal,
+  DocumentStateSlotProvider,
+} from "@/features/editor/document-state-slot";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { ContextDocumentHost, type EditableContextTab } from "../context/ContextDocumentHost";
@@ -177,7 +182,13 @@ function PhoneDocument({
   const reviewing = review?.documentId === tab.documentId && review.shown;
   const freeze = useDocumentFreeze(projectId, tab, reviewing ? controller.ownerKey : null);
   return (
-    <>
+    <DocumentStateSlotProvider>
+      {/* Live or Draft at the toolbar row's end, as on a desktop; a review's header shows its own. */}
+      {reviewing ? null : (
+        <DocumentStatePortal>
+          <DocumentVersionMenu projectId={projectId} tab={tab} />
+        </DocumentStatePortal>
+      )}
       {/* The frozen document's line, as above a desktop document: it also explains a review's
           missing controls. */}
       {freeze ? (
@@ -201,7 +212,7 @@ function PhoneDocument({
           presentation={PHONE_DOCUMENT_PRESENTATION}
         />
       </div>
-    </>
+    </DocumentStateSlotProvider>
   );
 }
 

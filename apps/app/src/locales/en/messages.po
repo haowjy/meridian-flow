@@ -746,8 +746,8 @@ msgid "{unanswered, plural, one {# unanswered} other {# unanswered}}"
 msgstr "{unanswered, plural, one {# unanswered} other {# unanswered}}"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-msgid "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
-msgstr "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
+#~ msgid "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
+#~ msgstr "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{who} deleted {name} before this reply saved its change."
@@ -1070,8 +1070,12 @@ msgid "AI write mode"
 msgstr "AI write mode"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-msgid "AI write mode: {spokenValue}"
-msgstr "AI write mode: {spokenValue}"
+msgid "AI write mode: {localizedValue}"
+msgstr "AI write mode: {localizedValue}"
+
+#: src/components/app/work-composer-controls/WriteModeControl.tsx
+#~ msgid "AI write mode: {spokenValue}"
+#~ msgstr "AI write mode: {spokenValue}"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Align center"
@@ -2953,13 +2957,21 @@ msgstr "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 msgid "Draft review"
 msgstr "Draft review"
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {count} documents"
+msgstr "Drafted {count} documents"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted 1 document"
+msgstr "Drafted 1 document"
+
 #: src/features/editor/DocumentVersionMenu.tsx
 msgid "Drafts"
 msgstr "Drafts"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-msgid "Drafts ({waiting})"
-msgstr "Drafts ({waiting})"
+#~ msgid "Drafts ({waiting})"
+#~ msgstr "Drafts ({waiting})"
 
 #: src/features/editor/DocumentDraftHint.tsx
 msgid "Drafts for this"

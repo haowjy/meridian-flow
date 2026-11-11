@@ -152,6 +152,8 @@ export type ChatViewProps = {
   composerStrip?: ReactNode;
   /** False while the chat is mounted but hidden (collapsed dock, Settings). */
   active?: boolean;
+  /** False when the chat opens without the writer asking for it: its composer leaves focus where it is. */
+  takeFocus?: boolean;
 };
 
 export function ChatView({
@@ -165,6 +167,7 @@ export function ChatView({
   historySettled,
   composerStrip,
   active = true,
+  takeFocus = true,
 }: ChatViewProps) {
   const actions = useThreadActions();
   useThreadWorkProjections({ threadId, projectId });
@@ -623,7 +626,7 @@ export function ChatView({
     projectId,
   ]);
 
-  useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
+  useThreadNavigationAnnounce(threadId, pageTitle, composerRef, takeFocus);
 
   useChatThreadSession({
     threadId,

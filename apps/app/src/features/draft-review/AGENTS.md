@@ -15,7 +15,8 @@ partitions the text.
 - The editor extension is a passive painter. A stale frame is mapped while the next
   projection waits, never installed onto unequal prose from another binding.
 - Empty review means no differences, not a server close, so a local Discard doesn't
-  navigate to live.
+  navigate to live (the editor's Ctrl+Z can still bring it back). An Apply that empties
+  the review does: `useReviewHeader` returns the page to live unless another draft waits.
 - Work and chat commands keep their creation-bound Work authority; sharing a projection
   doesn't borrow Editor command authority.
 - Unknown attribution isn't known-empty membership: show the text without a byline, and

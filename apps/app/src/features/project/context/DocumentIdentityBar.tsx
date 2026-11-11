@@ -483,4 +483,4 @@ function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
 }
 
 /** The review actions' form at each collapse level (document-identity-row.css has the rest). */
-const ACTIONS_DENSITY = ["full", "short", "short", "icon", "icon"] as const;
+const ACTIONS_DENSITY = ["full", "full", "full", "icon", "icon"] as const;
