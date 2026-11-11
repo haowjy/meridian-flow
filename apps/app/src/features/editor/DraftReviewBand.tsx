@@ -24,9 +24,9 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Eye, EyeOff, List } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import { PaintCapture } from "@/components/app/PaintHold";
+import { PaintCapture, useAfterPaintRelease } from "@/components/app/PaintHold";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -46,6 +46,7 @@ import {
   useReviewHeader,
 } from "@/features/draft-review/useReviewHeader";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
+import { focusIsFree, lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 
 export type DraftReviewBandProps = {
@@ -53,10 +54,15 @@ export type DraftReviewBandProps = {
   itemKey: string;
   /** Set for a draft-only document: closes its tab instead of returning to live. */
   onCloseDraftOnly?: () => void;
-  /** Opens another draft of the Work in review (the editor's launcher). */
-  onOpenDraft: (row: ReviewFileTarget) => void;
+  /** Opens another draft of the Work in review (the editor's launcher); `takeFocus` as in `useReviewHeader`. */
+  onOpenDraft: (row: ReviewFileTarget, takeFocus?: boolean) => void;
   /** Opens the identity row's rename field; absent when the document cannot be renamed. */
   onRename?: () => void;
+  /** Puts the caret back in the document when the review closes under the writer's focus. */
+  onFocusDocument: () => void;
+  /** Opened by Apply or Next draft from the previous draft's controls: take the focus once they show. */
+  focusOnOpen?: boolean;
+  onOpenFocused?: () => void;
 };
 
 /**
@@ -71,7 +77,15 @@ export function DraftReviewBand({
 }: DraftReviewBandProps & {
   children: (parts: { version: ReactNode; controls: ReactNode }) => ReactNode;
 }) {
-  const header = useReviewHeader(props);
+  const controlsRef = useRef<HTMLSpanElement>(null);
+  // The draft whose Apply or Discard ran with focus in the controls and opened
+  // nothing: focus follows to what replaces them until the writer moves it.
+  const [refocusFor, setRefocusFor] = useState<string | null>(null);
+  const header = useReviewHeader({
+    ...props,
+    onEndedWithFocus: () => setRefocusFor(props.itemKey),
+  });
+  const focusInControls = () => controlsRef.current?.contains(document.activeElement) === true;
   const { controller, view, locked, finished } = header;
   const { status } = view;
   // The stepper walks the text changes; a pending move or delete is listed, not stepped to.
@@ -81,6 +95,44 @@ export function DraftReviewBand({
   // version menu carries Show changes, and the list and stepper give way before
   // Discard and Apply do (document-identity-row.css, collapse 4).
   const coarse = useCoarsePointer();
+  const { itemKey, focusOnOpen, onOpenFocused, onFocusDocument } = props;
+  const afterPaintRelease = useAfterPaintRelease();
+  useEffect(() => {
+    if (!focusOnOpen || !controlsRef.current) return;
+    onOpenFocused?.();
+    // The pane may still be covered while the draft paints.
+    afterPaintRelease(() => {
+      // The change list button acts on nothing, unlike Apply and Discard.
+      const first = controlsRef.current?.querySelector<HTMLElement>("button:not(:disabled)");
+      if (first && focusIsFree()) moveFocus(first, { ring: lastInputWasKeyboard() });
+    });
+  }, [focusOnOpen, onOpenFocused, afterPaintRelease, itemKey]);
+  // The pane may swap this band out with its tab when the review closes.
+  const pending = useRef({ refocusFor, onFocusDocument });
+  pending.current = { refocusFor, onFocusDocument };
+  useEffect(
+    () => () => {
+      if (pending.current.refocusFor !== null && focusIsFree()) pending.current.onFocusDocument();
+    },
+    [],
+  );
+  useEffect(() => {
+    if (refocusFor === null) return;
+    const controls = controlsRef.current;
+    if (!focusIsFree() && !controls?.contains(document.activeElement)) {
+      setRefocusFor(null);
+    } else if (!itemKey) {
+      // The review closed: Back to live or the last change took the controls away.
+      setRefocusFor(null);
+      onFocusDocument();
+    } else if (itemKey !== refocusFor) {
+      setRefocusFor(null);
+    } else if (finished) {
+      const next = controls?.querySelector<HTMLElement>("[data-review-next]");
+      if (next && next !== document.activeElement)
+        moveFocus(next, { ring: lastInputWasKeyboard() });
+    }
+  }, [refocusFor, itemKey, finished, onFocusDocument]);
   if (!props.itemKey) return children({ version: null, controls: null });
 
   const version = (
@@ -101,6 +153,7 @@ export function DraftReviewBand({
   );
   const controls = (
     <span
+      ref={controlsRef}
       className="ml-auto flex shrink-0 items-center gap-1.5 font-sans text-xs"
       data-draft-review-controls
     >
@@ -129,7 +182,7 @@ export function DraftReviewBand({
         completing={header.completing}
         next={header.next}
         draftOnly={header.draftOnly}
-        onOpenNext={header.openDraft}
+        onOpenNext={(row) => header.openDraft(row, focusInControls())}
         onShowLive={header.showLive}
       />
       {finished ? null : (
@@ -138,8 +191,8 @@ export function DraftReviewBand({
           disabled={locked}
           applyDisabled={!header.canApply}
           applying={header.completing === "apply"}
-          onDiscard={header.discardDraft}
-          onApply={header.applyDraft}
+          onDiscard={() => header.discardDraft(focusInControls())}
+          onApply={() => header.applyDraft(focusInControls())}
         />
       )}
     </span>

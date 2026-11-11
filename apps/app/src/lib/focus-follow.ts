@@ -75,3 +75,17 @@ export function moveFocus(element: HTMLElement, { ring }: { ring: boolean }) {
   }
   element.focus({ focusVisible: ring });
 }
+
+/**
+ * Nothing the writer chose holds the focus: the element that had it went away, or a
+ * paint cover (`PaintHold`) is holding it while the pane's content changes.
+ */
+export function focusIsFree() {
+  const active = document.activeElement;
+  return (
+    !active ||
+    active === document.body ||
+    !active.isConnected ||
+    active.matches("[data-paint-status], [data-paint-frame]")
+  );
+}

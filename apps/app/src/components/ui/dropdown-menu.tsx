@@ -1,6 +1,7 @@
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
 import type * as React from "react";
+import { useCallback, useRef } from "react";
 
 import { cn } from "@/lib/utils";
 import {
@@ -221,6 +222,26 @@ function DropdownMenuSubContent({
   );
 }
 
+/**
+ * Runs a menu item's action after the menu has closed and put focus back on its
+ * trigger. A dialog the action opens then returns focus to that trigger when it
+ * closes; run from the item itself, it would return to an item that is gone.
+ */
+function useMenuActionDispatch() {
+  const pending = useRef<(() => void) | null>(null);
+  const dispatch = useCallback((action: () => void) => {
+    pending.current = action;
+  }, []);
+  const onCloseAutoFocus = useCallback(() => {
+    const action = pending.current;
+    if (!action) return;
+    pending.current = null;
+    // Radix focuses the trigger after this handler, in the same dispatch.
+    queueMicrotask(action);
+  }, []);
+  return { dispatch, onCloseAutoFocus };
+}
+
 export {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -237,4 +258,5 @@ export {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
+  useMenuActionDispatch,
 };

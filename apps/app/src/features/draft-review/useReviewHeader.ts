@@ -27,8 +27,13 @@ export type ReviewHeaderOptions = {
   itemKey: string;
   /** Set for a draft-only document: closes its tab instead of returning to live. */
   onCloseDraftOnly?: () => void;
-  /** Opens another draft of the Work in review (the presenting container's launcher). */
-  onOpenDraft: (row: ReviewFileTarget) => void;
+  /**
+   * Opens another draft of the Work in review (the presenting container's
+   * launcher). `takeFocus`: the writer's focus was in the controls that open it.
+   */
+  onOpenDraft: (row: ReviewFileTarget, takeFocus?: boolean) => void;
+  /** A command run with focus in the controls ended this draft's changes without opening another. */
+  onEndedWithFocus?: () => void;
 };
 
 export type ReviewHeaderModel = {
@@ -37,7 +42,7 @@ export type ReviewHeaderModel = {
   /** A draft-only document has no live version: its way out closes the tab. */
   draftOnly: boolean;
   /** Opens another draft of the Work in review (the presenting container's launcher). */
-  openDraft: (row: ReviewFileTarget) => void;
+  openDraft: (row: ReviewFileTarget, takeFocus?: boolean) => void;
   /** The next draft in the switcher, if the Work has one. */
   next: ReviewFileTarget | null;
   locked: boolean;
@@ -58,8 +63,9 @@ export type ReviewHeaderModel = {
    */
   failedElsewhere: { row: ReviewFileTarget; failure: BranchCommandFailure }[];
   showLive: () => void;
-  applyDraft: () => void;
-  discardDraft: () => void;
+  /** `takeFocus`: the writer's focus was in the controls, so it follows to what replaces them. */
+  applyDraft: (takeFocus?: boolean) => void;
+  discardDraft: (takeFocus?: boolean) => void;
 };
 
 /**
@@ -104,6 +110,7 @@ export function useReviewHeader({
   itemKey,
   onCloseDraftOnly,
   onOpenDraft,
+  onEndedWithFocus,
 }: ReviewHeaderOptions): ReviewHeaderModel {
   const { controller, files } = useDraftReview();
   const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
@@ -146,12 +153,15 @@ export function useReviewHeader({
   }, [itemKey]);
   // Local Discard stays in this draft. Only an Apply that landed advances to another file: a
   // refusal shows on the draft the writer applied, so it must not move them first.
-  const dispose = (mode: "apply" | "discard") => {
+  const dispose = (mode: "apply" | "discard", takeFocus: boolean) => {
     if (locked) return;
     const start = controller.startDraft(mode, { documentId, itemKey });
-    if (mode !== "apply" || !next || !start.sent) return;
+    if (!start.sent) return;
     void start.outcome.then((outcome) => {
-      if (outcome.kind === "done" && shown.current === itemKey) onOpenDraft(next);
+      if (outcome.kind !== "done") return;
+      if (mode === "apply" && next) {
+        if (shown.current === itemKey) onOpenDraft(next, takeFocus);
+      } else if (takeFocus) onEndedWithFocus?.();
     });
   };
   return {
@@ -166,8 +176,8 @@ export function useReviewHeader({
     commandError,
     failedElsewhere,
     showLive,
-    applyDraft: () => dispose("apply"),
-    discardDraft: () => dispose("discard"),
+    applyDraft: (takeFocus) => dispose("apply", takeFocus === true),
+    discardDraft: (takeFocus) => dispose("discard", takeFocus === true),
     draftOnly: Boolean(onCloseDraftOnly),
     openDraft: onOpenDraft,
   };

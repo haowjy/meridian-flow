@@ -5664,6 +5664,14 @@ msgstr ""
 msgid "Switching Work…"
 msgstr ""
 
+#: src/features/editor/SessionEditor.tsx
+msgid "Tab types a tab. To leave the document, press Escape, then Tab."
+msgstr ""
+
+#: src/features/editor/SessionEditor.tsx
+#~ msgid "Tab types a tab. To leave the page, press Escape, then Tab."
+#~ msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Table"
