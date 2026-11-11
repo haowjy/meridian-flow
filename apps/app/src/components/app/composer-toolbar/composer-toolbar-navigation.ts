@@ -28,13 +28,13 @@ export type NavigationEvent =
   | { type: "inputs.changed"; input: ToolbarNavigationInput }
   | { type: "layout.measured"; layout: ComposerToolbarLayout }
   | { type: "root.triggered" }
-  | { type: "root.dismissRequested"; cause: "escape" | "outside" }
+  | { type: "root.dismissRequested"; cause: "escape" | "outside" | "focus" }
   | { type: "root.rowFocused"; controlId: ComposerControlId }
   | { type: "panel.triggered" | "panel.blockingTriggered"; controlId: ComposerControlId }
   | {
       type: "panel.dismissRequested";
       panel: PanelSession;
-      cause: "escape" | "outside" | "programmatic";
+      cause: "escape" | "outside" | "focus" | "programmatic";
     }
   | {
       type: "panel.backRequested" | "panel.blockingStarted" | "panel.terminalClose";
@@ -161,9 +161,10 @@ export function reduceNavigation(state: NavigationState, event: NavigationEvent)
         overflow[0] ? { kind: "root.row", controlId: overflow[0] } : { kind: "root.content" },
       );
     case "root.dismissRequested":
-      return state.surface.kind === "root"
-        ? withFocus({ ...state, surface: { kind: "closed" } }, { kind: "overflow.trigger" })
-        : state;
+      if (state.surface.kind !== "root") return state;
+      return event.cause === "focus"
+        ? { ...state, surface: { kind: "closed" } }
+        : withFocus({ ...state, surface: { kind: "closed" } }, { kind: "overflow.trigger" });
     case "panel.triggered":
     case "panel.blockingTriggered": {
       const target = panelInput(state, event.controlId);
@@ -178,11 +179,15 @@ export function reduceNavigation(state: NavigationState, event: NavigationEvent)
       return openPanel(state, event.controlId, event.type === "panel.blockingTriggered");
     }
     case "panel.dismissRequested":
-      return current(state, event.panel) &&
-        state.surface.kind === "panel" &&
-        state.surface.lock === "dismissible"
-        ? closePanel(state)
-        : state;
+      if (
+        !current(state, event.panel) ||
+        state.surface.kind !== "panel" ||
+        state.surface.lock !== "dismissible"
+      )
+        return state;
+      return event.cause === "focus"
+        ? { ...state, surface: { kind: "closed" } }
+        : closePanel(state);
     case "panel.backRequested":
       if (
         !current(state, event.panel) ||
