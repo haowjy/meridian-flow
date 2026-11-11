@@ -192,6 +192,8 @@ export type ComposerHandle = {
   restoreSnapshot: (snapshot: ComposerDraftSnapshot, expectedRevision?: number) => boolean;
   /** Adds plain text after the draft, as its own paragraph when the draft holds anything. */
   appendText: (text: string) => void;
+  /** Types text at the caret, as the writer's own keys would, even while the box is hidden. */
+  typeText: (text: string) => void;
 };
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(props, ref) {
@@ -457,6 +459,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         if (hasContent) editor.commands.insertContentAt(editor.state.doc.content.size, paragraph);
         else editor.commands.setContent({ type: "doc", content: [paragraph] });
       },
+      typeText: (text) => {
+        if (!editor || editor.isDestroyed || !text) return;
+        editor.view.dispatch(editor.state.tr.insertText(text));
+      },
     }),
     [editor, hasContent, restoreSnapshot, snapshot],
   );
@@ -669,8 +675,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             <>
               <input
                 ref={fileRef}
-                className="sr-only"
                 type="file"
+                hidden
                 multiple
                 onChange={(event) => {
                   attachFiles(

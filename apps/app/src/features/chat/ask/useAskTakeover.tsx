@@ -179,6 +179,7 @@ export function useAskTakeover(
         presence.report();
       }}
       onSettle={() => commands.settle(open.ask.id)}
+      onTypeIntoMessage={(text) => composer.current?.typeText(text)}
       onAnswer={(answer, sent) => {
         // The answer carries the draft; a report waiting on its interval would only repeat it.
         presence.stop();

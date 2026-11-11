@@ -8,7 +8,15 @@ import { plural, t } from "@lingui/core/macro";
 import type { AskAnswer, QuestionAnswer, ThreadAsk } from "@meridian/contracts/threads";
 import type { OpenAsk } from "@meridian/thread-client";
 import { ArrowUp } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { FailureCard } from "@/components/app/FailureCard";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -36,7 +44,11 @@ export type AskTakeoverProps = {
   refused?: boolean;
   /** Read the chat again: the server closed the ask without saying how. */
   onSettle: () => void;
+  /** Keys the writer meant for their message, typed as the takeover took the box's place. */
+  onTypeIntoMessage?: (text: string) => void;
 };
+
+const TypeIntoMessage = createContext<((text: string) => void) | undefined>(undefined);
 
 export function AskTakeover({
   open,
@@ -45,7 +57,30 @@ export function AskTakeover({
   onAnswer,
   refused,
   onSettle,
+  onTypeIntoMessage,
 }: AskTakeoverProps) {
+  return (
+    <TypeIntoMessage.Provider value={onTypeIntoMessage}>
+      <AskTakeoverBody
+        open={open}
+        draft={draft}
+        onDraftChange={onDraftChange}
+        onAnswer={onAnswer}
+        refused={refused}
+        onSettle={onSettle}
+      />
+    </TypeIntoMessage.Provider>
+  );
+}
+
+function AskTakeoverBody({
+  open,
+  draft,
+  onDraftChange,
+  onAnswer,
+  refused,
+  onSettle,
+}: Omit<AskTakeoverProps, "onTypeIntoMessage">) {
   const { ask, attempt } = open;
   if (attempt?.state === "unsettled") {
     // The ask is closed; only how it ended is unknown. Nothing here may answer it again.
@@ -97,10 +132,43 @@ export function AskTakeover({
   );
 }
 
+/** How long a pause ends the typing the takeover interrupted. */
+const TYPING_PAUSE_MS = 1000;
+
 function TakeoverFrame({ labelledBy, children }: { labelledBy: string; children: ReactNode }) {
   const frame = useRef<HTMLDivElement>(null);
+  const typeInto = useContext(TypeIntoMessage);
+  const typeIntoMessage = useRef(typeInto);
+  const tookFromComposer = useRef<boolean | null>(null);
+  typeIntoMessage.current = typeInto;
   // The box this replaces may have held focus; hiding it would drop focus on the page.
-  useEffect(() => focusControls(frame.current), []);
+  useEffect(() => {
+    const root = frame.current;
+    // Read once: a repeated effect finds the focus this one moved.
+    tookFromComposer.current ??= document.activeElement?.closest("[data-composer]") != null;
+    focusControls(root);
+    if (!root || !tookFromComposer.current) return;
+    // The writer was typing when the question arrived: the keys already on their way belong to
+    // their message, which waits under the takeover, and none may answer the question. The
+    // first key that isn't text, or a pause, hands the keyboard to the takeover.
+    let pause = window.setTimeout(stop, TYPING_PAUSE_MS);
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.isComposing) return;
+      const text = event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
+      if (!text && event.key !== "Enter") return stop();
+      event.preventDefault();
+      event.stopPropagation();
+      if (text) typeIntoMessage.current?.(event.key);
+      window.clearTimeout(pause);
+      pause = window.setTimeout(stop, TYPING_PAUSE_MS);
+    }
+    function stop() {
+      window.clearTimeout(pause);
+      root?.removeEventListener("keydown", onKeyDown, true);
+    }
+    root.addEventListener("keydown", onKeyDown, true);
+    return stop;
+  }, []);
   return (
     <section
       ref={frame}

@@ -8,6 +8,7 @@ import {
   dropdownRowVariants,
   dropdownSurfaceVariants,
 } from "@/components/ui/dropdown-presentation";
+import { handleListKeys } from "@/components/ui/list-keys";
 import { OverflowMenuTrigger } from "@/components/ui/overflow-menu";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -351,7 +352,7 @@ export function ComposerToolbar({
               {panel.render(commands(state.surface.panel))}
             </>
           ) : (
-            <ul>
+            <ul onKeyDown={handleListKeys}>
               {overflow.map((control) => (
                 <li key={control.id}>
                   {control.kind === "status" ? (
@@ -361,6 +362,7 @@ export function ComposerToolbar({
                     </div>
                   ) : (
                     <Button
+                      data-list-item
                       {...triggerBinding(control, "root-row").buttonProps}
                       ref={triggerBinding(control, "root-row").ref}
                       variant="ghost"
