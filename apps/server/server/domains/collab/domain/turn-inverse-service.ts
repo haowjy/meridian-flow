@@ -329,8 +329,9 @@ function prepare(
         simulation.liveRemoved(),
         inverseParts,
       );
-      if (planned.cause) {
-        for (const part of parts) skip(part, planned.cause);
+      if ("causes" in planned) {
+        for (const [i, part] of parts.entries())
+          skip(part, planned.causes[i] as TurnInverseSkipCause);
         continue;
       }
       for (const { part, direction: partDirection } of planned.selection) {
