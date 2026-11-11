@@ -23,6 +23,7 @@ interface AcceptedEdit extends ReceiptIdentity {
   touchedBlocks: readonly BlockItemId[];
   deletedBlocks: readonly BlockItemId[];
   copied?: CopySummary;
+  skipped?: number;
 }
 interface ReceiptCut {
   before: readonly (readonly BlockSnapshot[])[];
@@ -84,6 +85,7 @@ export function renderReceipt(
     ...(edit.copied
       ? { copied: { summary: edit.copied, edges: copyEdgeLines(edit.copied, after) } }
       : {}),
+    ...(edit.skipped ? { skipped: edit.skipped } : {}),
   });
 }
 
@@ -119,7 +121,7 @@ export function renderSettledReceipts(
   ];
 }
 
-function degradedReceipts(accepted: readonly ReceiptIdentity[], revision: string | null) {
+function degradedReceipts(accepted: readonly AcceptedEdit[], revision: string | null) {
   return accepted.map((edit) =>
     settledReceipt(
       edit,
@@ -129,6 +131,7 @@ function degradedReceipts(accepted: readonly ReceiptIdentity[], revision: string
         writeId: edit.writeId,
         echo: [],
         awarenessDegraded: true,
+        ...(edit.skipped ? { skipped: edit.skipped } : {}),
       }),
     ),
   );

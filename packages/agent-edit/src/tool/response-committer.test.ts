@@ -5,7 +5,7 @@
  * - Response snapshot ownership and host-finalized lifecycle
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type * as Y from "yjs";
 import { createStaticDocumentLinks } from "../ports/static-document-links.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
