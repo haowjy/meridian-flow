@@ -206,7 +206,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                   threadId={chatThread}
                   open={open}
                   onShowRecents={onShowRecents}
-                  onNewDocument={onNewDocument}
                   sidebarToggle={sidebarToggle}
                   contextToggle={sideToggle}
                   closedSide={closedSide}
@@ -252,7 +251,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           editorWorkId={props.editorWorkId}
           chatThreadId={chatOnScreen}
           contextLive={props.contextLive}
-          activeDocument={mainTab ?? (mainChat ? sideTab : null)}
+          activeDocument={mainTab}
         />
       ),
     },

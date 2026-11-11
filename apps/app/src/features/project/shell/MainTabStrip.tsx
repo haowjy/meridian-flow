@@ -109,7 +109,7 @@ export function MainTabStrip({
       : undefined;
   useActiveTabVisibility(stripRef, mainKey ?? (current ? "current" : null));
   const lastActive =
-    current || unrecorded ? true : tabs.at(-1) && mainTabKey(tabs.at(-1) as MainTab) === mainKey;
+    unrecorded !== undefined || (tabs.at(-1) && mainTabKey(tabs.at(-1) as MainTab) === mainKey);
   return (
     <div
       role="tablist"
@@ -150,31 +150,40 @@ export function MainTabStrip({
             onClose={() => commands.close({ kind: "document", document: unrecorded })}
           />
         ) : null}
-        {current}
+        {current ? (
+          // The active item never shrinks: the inactive tabs give way first, then the strip scrolls.
+          <div data-active-tab className="flex max-w-60 shrink-0 scroll-mx-1.5 items-stretch">
+            {current}
+          </div>
+        ) : null}
       </div>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={onNewDocument}
-            disabled={!onNewDocument}
-            title={!onNewDocument ? t`Open a Work to create an Untitled document` : undefined}
-            aria-label={t`New document`}
-            className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
-          >
-            {tabs.length > 0 && !lastActive ? (
-              <span
-                aria-hidden
-                className="absolute top-1/2 left-0 h-3.5 w-px -translate-y-1/2 bg-border"
-              />
-            ) : null}
-            <Plus className="size-3.5" aria-hidden />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          <Trans>New document</Trans>
-        </TooltipContent>
-      </Tooltip>
+      {/* New document follows document tabs only: after main's other item (a chat) it would read
+          as a new one of those. */}
+      {current ? null : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={onNewDocument}
+              disabled={!onNewDocument}
+              title={!onNewDocument ? t`Open a Work to create an Untitled document` : undefined}
+              aria-label={t`New document`}
+              className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
+            >
+              {tabs.length > 0 && !lastActive ? (
+                <span
+                  aria-hidden
+                  className="absolute top-1/2 left-0 h-3.5 w-px -translate-y-1/2 bg-border"
+                />
+              ) : null}
+              <Plus className="size-3.5" aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <Trans>New document</Trans>
+          </TooltipContent>
+        </Tooltip>
+      )}
     </div>
   );
 }
@@ -278,7 +287,7 @@ function DocumentTabChip({
         title={document.kind === "new" ? document.name : document.path}
       />
       <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      <span aria-hidden className="min-w-0 flex-1 truncate text-left text-xs">
+      <span aria-hidden className="min-w-0 truncate text-left text-xs">
         {document.name}
       </span>
       <TabCloseButton name={document.name} active={active} onClose={onClose} />
@@ -379,7 +388,10 @@ export function TabChipFrame({
       className={cn(
         // No h-full: items-stretch sizes the chip so the active tab's top margin subtracts from
         // its height. scroll-mx: scrolled into view, the active tab keeps room for its flares.
-        "group w-40 shrink-0 scroll-mx-1.5 gap-1.5",
+        "group scroll-mx-1.5 gap-1.5",
+        // Tabs keep their names' width up to a cap; inactive ones shrink to their icon first.
+        "max-w-60",
+        active ? "shrink-0" : "min-w-10",
         tabChipClass(active),
         // Under review the chip takes the review strip's tone, so tab and band read as one.
         reviewing && "[--tab-chip-surface:var(--color-review)]",

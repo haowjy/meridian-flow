@@ -2749,8 +2749,8 @@ msgid "Edited {count} documents"
 msgstr "Edited {count} documents"
 
 #: src/features/project/side/SideHeader.tsx
-msgid "Edited {mainName}"
-msgstr "Edited {mainName}"
+#~ msgid "Edited {mainName}"
+#~ msgstr "Edited {mainName}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Edited 1 document"
@@ -2764,7 +2764,6 @@ msgstr "Edited after it uploaded. The imported copy is the earlier version."
 msgid "Edited file"
 msgstr "Edited file"
 
-#: src/features/project/side/SideHeader.tsx
 #: src/features/project/side/SidePicker.tsx
 msgid "Edited this"
 msgstr "Edited this"
@@ -3410,12 +3409,12 @@ msgid "Large"
 msgstr "Large"
 
 #: src/features/project/side/SideHeader.tsx
-msgid "Last chat"
-msgstr "Last chat"
+#~ msgid "Last chat"
+#~ msgstr "Last chat"
 
 #: src/features/project/side/SideHeader.tsx
-msgid "Last document"
-msgstr "Last document"
+#~ msgid "Last document"
+#~ msgstr "Last document"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Last name"
@@ -5750,8 +5749,8 @@ msgid "This chat now uses {0}."
 msgstr "This chat now uses {0}."
 
 #: src/features/project/side/SideHeader.tsx
-msgid "This chat read it"
-msgstr "This chat read it"
+#~ msgid "This chat read it"
+#~ msgstr "This chat read it"
 
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
@@ -5763,8 +5762,8 @@ msgid "This chat was deleted."
 msgstr "This chat was deleted."
 
 #: src/features/project/side/SideHeader.tsx
-msgid "This chat wrote it"
-msgstr "This chat wrote it"
+#~ msgid "This chat wrote it"
+#~ msgstr "This chat wrote it"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
@@ -6523,8 +6522,8 @@ msgid "You can't copy there."
 msgstr "You can't copy there."
 
 #: src/features/project/side/SideHeader.tsx
-msgid "You followed a link from here"
-msgstr "You followed a link from here"
+#~ msgid "You followed a link from here"
+#~ msgstr "You followed a link from here"
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."

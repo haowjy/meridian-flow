@@ -19,7 +19,6 @@ export type ChatPaneControllerProps = {
   threadId: string | null;
   open: OpenContextRoute;
   onShowRecents: (options: { replace: boolean }) => void;
-  onNewDocument?: () => void;
   sidebarToggle: PaneHeaderRailToggle;
   contextToggle: PaneHeaderRailToggle;
   /** While the side is closed: the control naming what it would show. */
@@ -31,7 +30,6 @@ export function ChatPaneController({
   threadId,
   open,
   onShowRecents,
-  onNewDocument,
   sidebarToggle,
   contextToggle,
   closedSide,
@@ -49,7 +47,6 @@ export function ChatPaneController({
       // continues up into the band.
       current={<ChatThreadTitle projectId={projectId} threadId={threadId} variant="tab" />}
       onShowRecents={onShowRecents}
-      onNewDocument={onNewDocument}
       sidebarToggle={sidebarToggle}
       sideToggle={contextToggle}
       closedSide={closedSide}
