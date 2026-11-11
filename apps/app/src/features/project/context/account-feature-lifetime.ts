@@ -7,6 +7,7 @@ import type { RetainedLiveDocumentReference } from "@/core/editor/document-sessi
 import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
+import { DraftOnlyPresentations } from "@/features/draft-review/draft-only-presentations";
 import { createLinkSettlements } from "@/features/links/link-settlements";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { IdentityContinuity } from "./identity-continuity";
@@ -20,6 +21,8 @@ export class AccountFeatureLifetime {
   readonly runtime;
   readonly registry;
   readonly draftCommands;
+  /** The draft-only documents mounted hosts present; settled by `DraftOnlySettlement`. */
+  readonly draftOnly = new DraftOnlyPresentations();
   readonly removal;
   readonly availability;
   readonly notices;
@@ -67,7 +70,7 @@ export class AccountFeatureLifetime {
         this.removedRooms.add(stop);
       },
       closeCreated: (ref) => {
-        this.removal.discardDraft(ref.projectId, ref.ownerKey, ref.itemKey);
+        this.removal.discardDraft(ref.projectId, ref.documentId);
       },
       markOwnRemoval: (ref) => this.notices.markOwnRemoval(ref.projectId, [ref.documentId]),
     });
@@ -84,6 +87,7 @@ export class AccountFeatureLifetime {
       sessions: this.registry,
       notices: this.notices,
       drafts: this.draftCommands,
+      draftOnly: this.draftOnly,
     });
     this.registry.observeRemovedRooms((session, room) => this.followRemovedRoom(session, room));
     this.resources =

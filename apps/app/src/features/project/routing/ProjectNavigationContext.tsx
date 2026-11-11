@@ -9,6 +9,8 @@ export type OpenContextOptions = {
   /** Replace only when the route already names this document; otherwise push. */
   replaceIfSameDocument?: boolean;
   tab?: ContextTab;
+  /** Live lacks the document: its draft created it, or live deleted it while the draft keeps it. */
+  draftOnly?: boolean;
   /** The destination is a document the writer just made: its editor takes the caret once live. */
   focus?: true;
   /** Runs only after successful destination workspace installation. */

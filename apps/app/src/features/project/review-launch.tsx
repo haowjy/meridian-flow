@@ -30,7 +30,7 @@ export type AiDraftLaunchTarget = {
   itemKey: string;
   contextLocation: Pick<ContextUri, "scheme" | "path">;
   documentName?: string;
-  /** Live doesn't hold the document (created by the draft, or deleted live): the tab is draft-only. */
+  /** Live doesn't hold the document: the draft created it, or live deleted it. */
   draftOnly?: boolean;
   /** A projection-local change to focus, only if that projection still paints. */
   focus?: ReviewFocus;
@@ -105,6 +105,7 @@ export function ReviewLaunchProvider({
           {
             replaceIfSameDocument: true,
             tab: tab ?? undefined,
+            draftOnly: target.draftOnly,
             itemKey: target.itemKey,
             reviewOwner: target.ownerKey,
             changeId: target.focus?.id,
@@ -177,6 +178,7 @@ export function useAiDraftLauncher() {
 export function useReviewingLinkDestination(open: LinkDestination): LinkDestination {
   const openEditorReview = useOptionalOpenEditorReview();
   const projectId = useProjectDocumentNavigationProjectId();
+  const accountId = useAccountId();
   const { openTab } = useContextTabsActions();
   return useCallback(
     (document, gesture) => {
@@ -189,9 +191,13 @@ export function useReviewingLinkDestination(open: LinkDestination): LinkDestinat
         draftOnly: true,
       };
       if (gesture === "new-tab") {
-        // The writer keeps their place: the review joins the tab strip without a route change.
+        // The writer keeps their place: the review joins the tab strip without a route change,
+        // opened on its draft (a draft-created document has no Live).
         const tab = contextTabFromDraftGroup(target);
-        if (projectId && tab) openTab(projectId, tab);
+        if (projectId && tab && openTab(projectId, tab).kind === "opened")
+          setDocumentView(accountId, projectId, target.documentId, {
+            pin: { ownerKey: target.ownerKey, itemKey: target.itemKey },
+          });
         return Promise.resolve();
       }
       if (!openEditorReview)
@@ -200,6 +206,6 @@ export function useReviewingLinkDestination(open: LinkDestination): LinkDestinat
         console.error("[editor-review] launch failed", error);
       });
     },
-    [open, openEditorReview, projectId, openTab],
+    [open, openEditorReview, projectId, accountId, openTab],
   );
 }

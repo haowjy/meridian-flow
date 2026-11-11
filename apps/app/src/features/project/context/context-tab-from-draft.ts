@@ -7,9 +7,9 @@
  * to match and review lands on an empty pane (#153). The document itself is
  * real — its `documents` row and Yjs state exist from write time — only the
  * tree manifest entry is missing, so review entry builds the tab from draft
- * metadata instead. Review overlays are idempotent by document, Work and draft;
- * mounted instance IDs and tokens fence their close and promotion. Live
- * metadata can enrich every overlay without changing those identities.
+ * metadata instead. The tab is only the document's descriptor: which draft it
+ * shows is its view's pin, and whether live lacks it is the host's
+ * (`useDraftOnlyPresentation`).
  *
  * Filetype/schema derive purely from the path (same contracts registry the
  * tree uses): a prose document's stored name has no extension and is markdown,
@@ -20,18 +20,9 @@ import type { ContextTab } from "@/client/stores";
 import type { ContextUri } from "@/lib/context-uri";
 
 export function contextTabFromDraftGroup(group: {
-  ownerKey: string;
   documentId: string;
-  itemKey: string;
   contextLocation?: Pick<ContextUri, "scheme" | "path"> | null;
   documentName?: string | null;
-  /**
-   * Live doesn't hold the document: the draft created it, or live deleted it and this
-   * draft still has it. Gives the tab a review entry (draft-only) so the tab lifecycle
-   * follows the draft's: cleared when Apply brings the document into the tree, closed
-   * when the draft leaves the Work's list.
-   */
-  draftOnly?: boolean;
 }): Extract<ContextTab, { kind: "tracked" }> | null {
   const location = group.contextLocation;
   if (!location?.path) return null;
@@ -53,12 +44,5 @@ export function contextTabFromDraftGroup(group: {
     editable: true,
     filetype,
     schemaType: classification.schemaType,
-    ...(group.draftOnly
-      ? {
-          reviews: {
-            [group.ownerKey]: { itemKey: group.itemKey, tabInstanceToken: crypto.randomUUID() },
-          },
-        }
-      : {}),
   };
 }

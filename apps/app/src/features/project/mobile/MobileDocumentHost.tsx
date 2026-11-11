@@ -17,7 +17,6 @@ import { Trans } from "@lingui/react/macro";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { useLayoutEffect } from "react";
 import type { ContextTab } from "@/client/stores";
-import { isDraftOnly } from "@/client/stores";
 import { PaintCapture, PaintHold } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { PassageNotice } from "@/features/editor/PassageNotice";
@@ -36,7 +35,6 @@ import type { MobileDocumentRoute } from "./mobile-document-route";
 
 export type MobileDocumentHostProps = {
   projectId: string;
-  editorWorkId: string;
   route: MobileDocumentRoute;
   localTab?: Extract<ContextTab, { kind: "new" | "tracked" }>;
 };
@@ -54,7 +52,7 @@ export function MobileDocumentHost(props: MobileDocumentHostProps) {
       className="relative h-full min-h-0"
     >
       <PaintCapture
-        surface={`${props.localTab ? "local" : props.route.tab && isDraftOnly(props.route.tab) ? "draft-only" : "server"}:${props.localTab?.documentId ?? props.route.tab?.documentId ?? props.route.path}`}
+        surface={`${props.localTab ? "local" : props.route.draftOnly ? "draft-only" : "server"}:${props.localTab?.documentId ?? props.route.tab?.documentId ?? props.route.path}`}
       />
       <MobileDocumentHostForRoute {...props} />
     </PaintHold>
@@ -63,24 +61,17 @@ export function MobileDocumentHost(props: MobileDocumentHostProps) {
 
 function MobileDocumentHostForRoute(props: MobileDocumentHostProps) {
   if (props.localTab)
-    return (
-      <MobileLocalDocumentHost
-        projectId={props.projectId}
-        workId={props.editorWorkId}
-        tab={props.localTab}
-      />
-    );
+    return <MobileLocalDocumentHost projectId={props.projectId} tab={props.localTab} />;
   const tab = props.route.tab;
   // A pending new-document draft has no live room and the server refuses one: its
   // draft room is hosted alone, exactly as the desktop does.
-  if (tab?.kind === "tracked" && isDraftOnly(tab))
+  if (tab?.kind === "tracked" && props.route.draftOnly)
     return <MobileDraftOnlyDocumentHost {...props} tab={tab} />;
   return <MobileServerDocumentHost {...props} />;
 }
 
 function MobileDraftOnlyDocumentHost({
   projectId,
-  editorWorkId,
   route,
   tab,
 }: MobileDocumentHostProps & { tab: Extract<ContextTab, { kind: "tracked" }> }) {
@@ -105,11 +96,9 @@ function MobileDraftOnlyDocumentHost({
 
 function MobileLocalDocumentHost({
   projectId,
-  workId,
   tab,
 }: {
   projectId: string;
-  workId: string;
   tab: Extract<ContextTab, { kind: "new" | "tracked" }>;
 }) {
   const removal = useContextRemovalCoordinator();
@@ -123,7 +112,6 @@ function MobileLocalDocumentHost({
       tabs: [tab],
       selectedDocumentId: tab.documentId,
       locator: selected.locator,
-      scope: workId,
     });
     if (workspace.kind === "materialized-local") {
       removal.redirectMaterializedLocal(
@@ -145,7 +133,7 @@ function MobileLocalDocumentHost({
           owner: { kind: "route-only" },
         });
     }
-  }, [projectId, workId, tab, removal, state]);
+  }, [projectId, tab, removal, state]);
   // No review wraps a local pointer, so it brings the column `MobileDocumentReview` gives the
   // other two: the frame below takes its height from a flex parent.
   return (
@@ -239,7 +227,7 @@ function useMobileRouteBinding({
     // A draft-only tab is never live at its cached path, so the path doesn't identify it: a
     // review binds on arrival, and a plain URL there waits for the address answer.
     const catalogSettled = !isFetching && !isError;
-    const draftOnly = activeTab !== null && isDraftOnly(activeTab);
+    const draftOnly = route.draftOnly;
     if (activeTab && !draftOnly && catalogSettled) {
       contextRemoval.bindRouteSelection(
         projectId,
@@ -272,6 +260,7 @@ function useMobileRouteBinding({
     addressState,
     route.rootThreadId,
     route.workId,
+    route.draftOnly,
   ]);
 
   useLayoutEffect(() => {
@@ -293,8 +282,7 @@ function useMobileRouteBinding({
   }, [activate, activeTab, contextRemoval, projectId, removalState]);
 }
 
-function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocumentHostProps) {
-  const workId = editorWorkId;
+function MobileServerDocumentHost({ projectId, route }: MobileDocumentHostProps) {
   const activeContextScheme = route.scheme;
   const activeContextPath = route.path;
   const activeTab = route.tab;

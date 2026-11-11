@@ -32,10 +32,12 @@ export function resolveRouteOwner({
   activeContextScheme,
   activeContextPath,
   activeContextChat,
+  isDraftOnly,
 }: VisibleEditorRoute & {
   tabs: readonly ContextTab[];
   selectedTabId?: string | null;
   selection: ContextRouteSelection;
+  isDraftOnly: (documentId: string) => boolean;
 }) {
   const selectedDocumentId = localDocumentId ?? selectedTabId ?? undefined;
   const locator =
@@ -53,7 +55,7 @@ export function resolveRouteOwner({
     selectedDocumentId,
     locator,
     boundDocumentId,
-    scope: editorWorkId,
+    isDraftOnly,
   });
   const selected = tabs.find((tab) => tab.documentId === selectedDocumentId) ?? null;
   return {

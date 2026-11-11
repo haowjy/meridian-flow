@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { projectResourceTab } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
+import { useIsDraftOnly } from "../context/use-draft-only-presentation";
 import type { ScreenKey } from "../routing/project-route";
 import { useWorkScope } from "../use-work-scope";
 import { useManageWorks } from "../work/ManageWorksDialog";
@@ -76,8 +77,15 @@ export function LeftSidebar({
   // On the Chat screen the row to highlight is the document open in the dock.
   const selectedTab = useSelectedContextTab(projectId);
   const { records, placement } = useAccountResourceProjection(projectId);
+  const isDraftOnly = useIsDraftOnly(projectId);
   const projectedSelected = selectedTab
-    ? projectResourceTab(projectId, selectedTab, records, placement)
+    ? projectResourceTab(
+        projectId,
+        selectedTab,
+        records,
+        placement,
+        isDraftOnly(selectedTab.documentId),
+      )
     : null;
   const docked =
     activeScreen === "chat" &&
