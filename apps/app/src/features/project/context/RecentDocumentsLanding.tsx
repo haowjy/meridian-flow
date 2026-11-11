@@ -32,7 +32,7 @@ import { relativeTime } from "../relative-time";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { projectAddressHref } from "../routing/project-address";
 import { fileKindIcon } from "./context-file-icon";
-import { schemeLabel } from "./context-schemes";
+import { schemeLocation } from "./context-schemes";
 import { useReferenceDrag } from "./entry-drag/reference-source";
 import { useOpenProjectDocument } from "./open-project-document";
 import { RemovedDocumentLandingNotice } from "./RemovedDocumentNotice";
@@ -179,13 +179,16 @@ function RecentDocumentRow({
         controlProps={drag}
         leading={<RowIcon icon={fileKindIcon(item.name)} />}
         title={item.name}
-        // Where it lives: the source, then the folder inside it.
         detail={
           item.address.kind === "document"
-            ? `${schemeLabel(item.address.scheme)}${item.address.path.replace(/\/[^/]+$/, "").replaceAll("/", " / ")}`
+            ? schemeLocation(
+                item.address.scheme,
+                item.address.path.split("/").filter(Boolean).slice(0, -1),
+              )
             : null
         }
-        meta={relativeTime(item.openedAt, now)}
+        // The age is for the eye; the row's name is the document and where it lives.
+        meta={<span aria-hidden>{relativeTime(item.openedAt, now)}</span>}
       />
     </div>
   );
