@@ -10,7 +10,8 @@ import { PanelToggleSpacer } from "./PanelToggleButton";
  * title/breadcrumb, and far-right actions + an expand control for the right
  * rail. It paints NOTHING of its own — the center slot's chrome shows through
  * (same grammar as the document tab strip), and the pane's `page-sheet` body
- * rises out of it below. No bottom border: separation is tonal.
+ * rises out of it below. No bottom border: the sheet draws its own edge, and
+ * the band overlaps it so an active chip covers that edge (`tab-band`).
  *
  * The panel toggles are the shell's corner buttons (`ProjectShell`). When a
  * rail is closed its toggle floats over this band, so the band reserves its
