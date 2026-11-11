@@ -75,7 +75,6 @@ export function AgentPickerPanel({
                   return (
                     <PickerRow
                       key={rowId}
-                      kind="descriptive"
                       current={active}
                       ref={
                         active
