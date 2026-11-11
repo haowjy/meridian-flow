@@ -192,8 +192,18 @@ export type DraftOwnerHint = {
   owner: DraftOwnerKey;
 };
 
+/**
+ * A chat in the project started or ended a reply, or asked the writer or was answered, from any
+ * client: the project's chat list (its Working and Waiting marks) is stale. Truth-free, like the
+ * hints above.
+ */
+export type ProjectChatsHint = {
+  type: "project-chats-hint";
+  projectId: ProjectId;
+};
+
 /** What a project's catalog subscription receives. */
-export type CatalogChannelMessage = CatalogWakeHint | DraftOwnerHint;
+export type CatalogChannelMessage = CatalogWakeHint | DraftOwnerHint | ProjectChatsHint;
 
 export function catalogScopeKey(scope: CatalogScope): string {
   switch (scope.kind) {
