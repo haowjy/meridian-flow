@@ -13,9 +13,10 @@
  * and Home/End move and select.
  */
 import type { LucideIcon } from "lucide-react";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { role } from "@/components/ui/roles";
+import { tabListKeys } from "@/components/ui/tab-keys";
 import { cn } from "@/lib/utils";
 
 export type SegmentedTabOption<T extends string> = {
@@ -42,41 +43,17 @@ export function SegmentedTabs<T extends string>({
   fill?: boolean;
   className?: string;
 }) {
-  const enabled = options.filter((option) => !option.disabled);
-  // Tab lands on the selected segment, or the first one that can be picked.
-  const tabStop = enabled.some((option) => option.value === value) ? value : enabled[0]?.value;
-
-  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    const at = enabled.findIndex((option) => option.value === value);
-    const last = enabled.length - 1;
-    const next =
-      event.key === "ArrowRight"
-        ? at >= last
-          ? 0
-          : at + 1
-        : event.key === "ArrowLeft"
-          ? at <= 0
-            ? last
-            : at - 1
-          : event.key === "Home"
-            ? 0
-            : event.key === "End"
-              ? last
-              : null;
-    const target = next === null ? undefined : enabled[next];
-    if (!target) return;
-    event.preventDefault();
-    onChange(target.value);
-    event.currentTarget
-      .querySelector<HTMLElement>(`[data-tab-value="${CSS.escape(target.value)}"]`)
-      ?.focus();
-  }
+  const keys = tabListKeys(
+    options.filter((option) => !option.disabled).map((option) => option.value),
+    value,
+    onChange,
+  );
 
   return (
     <div
       role="tablist"
       aria-label={label}
-      onKeyDown={onKeyDown}
+      onKeyDown={keys.onKeyDown}
       className={cn(
         "flex shrink-0 items-center rounded-lg bg-ink-fill p-0.5",
         !fill && "self-center",
@@ -93,7 +70,7 @@ export function SegmentedTabs<T extends string>({
             role="tab"
             data-tab-value={option.value}
             aria-selected={active}
-            tabIndex={option.value === tabStop ? 0 : -1}
+            tabIndex={keys.tabIndex(option.value)}
             disabled={option.disabled}
             onClick={() => onChange(option.value)}
             className={cn(

@@ -4486,7 +4486,7 @@ msgstr "now"
 msgid "Numbered list"
 msgstr "Numbered list"
 
-#: src/components/app/composer/ConnectionLine.tsx
+#: src/client/providers/TransportProvider.tsx
 msgid "Offline"
 msgstr "Offline"
 
@@ -4880,7 +4880,6 @@ msgid "Reconnected"
 msgstr "Reconnected"
 
 #: src/client/providers/TransportProvider.tsx
-#: src/components/app/composer/ConnectionLine.tsx
 msgid "Reconnecting…"
 msgstr "Reconnecting…"
 
@@ -5092,13 +5091,17 @@ msgstr "Restored {0} of {requested} items to {destinationName}."
 
 #. placeholder {0}: only.name
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "Restored {0} to {destinationName}."
-msgstr "Restored {0} to {destinationName}."
+#~ msgid "Restored {0} to {destinationName}."
+#~ msgstr "Restored {0} to {destinationName}."
 
 #. placeholder {0}: document.name
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Restored {0}, but couldn't open it. Try again from the file list."
 msgstr "Restored {0}, but couldn't open it. Try again from the file list."
+
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
+msgid "Restored {name} to {destinationName}."
+msgstr "Restored {name} to {destinationName}."
 
 #. placeholder {0}: documentDisplayName(landing.landedAt)
 #: src/features/chat/TurnEditsReceipt.tsx

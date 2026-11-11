@@ -227,12 +227,10 @@ before and says so. Three owners, one concept each:
   through the shared local replica before the server commits it.
   `useRemovalRecord` is the one React reader: the notice, `SyncStatus`, the
   review room owner and the reopened review address.
-- **The notice store.** `RemovedNoticeStore` holds one notice per project and
-  surface (`editor`: Editor tabs on both shells; `dock`: the dock's
-  document). Whatever presented a document pushes it when it vanished:
-  `ContextRemovalCoordinator` for Editor tabs (`closeVanished`, a
-  `terminal-remove` that closed tabs, `discardDraft`), and
-  `useDesktopDockPresentation` for the dock. An entry shows once the cache
+- **The notice store.** `RemovedNoticeStore` holds one notice per project, for
+  the Editor's tabs on both shells. `ContextRemovalCoordinator` pushes a tab's
+  document when it vanished (`closeVanished`, a `terminal-remove` that closed
+  tabs, `discardDraft`). An entry shows once the cache
   says `removed`; a Work's removal and an authority loss drop it.
 - **The sentence.** `removalSentence` in `RemovedDocumentNotice.tsx` owns
   every copy rule as plain strings, so tooltips reuse them. A removal names
