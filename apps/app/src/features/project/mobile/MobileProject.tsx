@@ -47,11 +47,15 @@ type MobileProjectProps = ReviewScopedProjectProps;
 export function MobileProject(props: MobileProjectProps) {
   const { recoveringFirstSend } = useChatNavigation();
   // The sheet is the phone's dock: it opens over Work or Editor only. On the
-  // Chat screen the chat is already the page. A first send recovering after a
-  // reload opens it at mount.
-  const [chatOpen, setChatOpen] = useState(
-    () => props.activeScreen !== "chat" && recoveringFirstSend,
+  // Chat screen the chat is already the page. It belongs to the history entry
+  // it opened over, so a destination the chat opens shows on top and Back
+  // returns to the chat. A first send recovering after a reload opens it at mount.
+  const destination = props.routeLocationKey ?? "";
+  const [chatOpenOver, setChatOpenOver] = useState(() =>
+    props.activeScreen !== "chat" && recoveringFirstSend ? destination : null,
   );
+  const chatOpen = chatOpenOver === destination && props.activeScreen !== "chat";
+  const setChatOpen = (open: boolean) => setChatOpenOver(open ? destination : null);
   const openChatSheet = () => {
     setChatOpen(true);
   };
@@ -164,7 +168,7 @@ export function MobileProject(props: MobileProjectProps) {
           {renderActiveView(props, workDeletion, creating, () => setCreating(null), localTab)}
         </ProjectRouteBoundary>
       </main>
-      <Sheet open={chatOpen && props.activeScreen !== "chat"} onOpenChange={setChatOpen}>
+      <Sheet open={chatOpen} onOpenChange={setChatOpen}>
         <SheetContent
           side="right"
           showCloseButton={false}
