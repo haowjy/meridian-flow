@@ -49,7 +49,7 @@ separate browser check covers rendering and native keyboard history.
 
 ## Review is a function of text
 
-1. Open a change from the chat dock and from Work Files. Counts, list, stepper,
+1. Open a change from the chat dock and from the Changes source. Counts, list, stepper,
    and paint agree. Removed text is red and struck; new text is green. Unknown
    authorship does not hide the change or invent a byline. An empty paragraph
    holding a red removal does not also show “Start writing…”.
@@ -101,7 +101,7 @@ separate browser check covers rendering and native keyboard history.
 | Notice Undo before deferred write-back | The row returns and no Yjs update is emitted. |
 | Peer text arrives before deferred Discard | The stale Discard refuses with its item failure; intervening text survives and the row returns. |
 
-Repeat the notice cells in Work Files, including an opening room and Undo after
+Repeat the notice cells in the Changes source, including an opening room and Undo after
 the server pending list omitted the discarded item. A per-change Discard inside
 a hidden created text document is local; whole-created-document Discard is the
 removal case below.
@@ -123,10 +123,10 @@ Work Apply all sends one frozen click per text draft, never a Work-wide Apply.
 | Apply a deletion before the first answer | The base ends at the applied text; the deletion does not reappear. |
 | Room record before answer, then answer before record | No flicker or duplicate insertion; each head settles once. |
 | Refuse the middle click | Its change returns with an item failure, then the next frozen click sends. |
-| Refuse `{status:"refused",reason:"not_found"}` at desktop, narrow desktop, and coarse-pointer phone | The focused bar, identity row, Work Files status, and dock show the failure exactly once; paragraph and row tops do not move. |
+| Refuse `{status:"refused",reason:"not_found"}` at desktop, narrow desktop, and coarse-pointer phone | The focused bar, identity row, Changes source status, and dock show the failure exactly once; paragraph and row tops do not move. |
 | Drop the answer | The same body and id retry after 1, 2, and 4 seconds; then the item shows Retry and no successor sends. |
 | Slow ten clicks | Groups leave together; Applying uses reserved space after 500 ms and completion is FIFO. |
-| Navigate to Work Files during the head | The owner receives the answer and record and settles without a mounted editor. |
+| Navigate to the Changes source during the head | The owner receives the answer and record and settles without a mounted editor. |
 | Hold the final draft update, click Apply, archive the Work in another tab | The unsent click refuses silently, with no failure or Applying/Retry limbo. Unarchive and reopen: a fresh Apply works. |
 | Sent Apply loses its answer and the session rebuilds | The sent id remains pending until retry, lookup, or its room record; unsent successors refuse. |
 | Reload with queued clicks | The sent head may finish; unsent clicks return as draft work. |

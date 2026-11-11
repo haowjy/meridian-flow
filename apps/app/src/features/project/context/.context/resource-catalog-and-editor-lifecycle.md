@@ -173,7 +173,7 @@ opened as blank documents.
 ## Editor versus chat resources
 
 Editor trees list project document schemes only. Scratch documents open in
-main through links, Work Files and a chat's Scratch section, owned by their
+main through links and the sidebar's Scratch section, owned by their
 Work or, for a No Work chat, by their lineage; nothing in the Editor browses
 Scratch, and a Scratch crumb links nowhere. Uploads remain storage and
 reference/tool resources; their direct URLs show the viewing-not-available state.
