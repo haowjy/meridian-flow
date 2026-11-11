@@ -100,7 +100,7 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
     cancel: controller.keepEditing,
   });
   return (
-    <div ref={scrollOwner} className="app-scroll">
+    <div ref={scrollOwner} className="app-scroll scroll-pt-14 coarse:scroll-pt-18">
       <article className="project-screen-column min-w-0 gap-5 pb-12">
         <WorkScreenHeader
           title={<WorkHeading projectId={projectId} work={work} />}
