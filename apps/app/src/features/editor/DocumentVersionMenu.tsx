@@ -16,7 +16,6 @@ import {
 import { DraftChipFace, draftChipHitClass } from "@/features/draft-review/DraftChip";
 import { tabLocation } from "@/features/project/context/identity-location";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
-import { workDisplayName } from "@/lib/work-name";
 import { hintReviewTarget } from "./draft-hint-review";
 
 /**
@@ -33,10 +32,9 @@ export function DocumentVersionMenu({ projectId, tab }: { projectId: string; tab
   if (tab.kind === "new" || !location.path) return null;
   const contextLocation = { scheme: location.scheme, path: location.path };
 
-  const ownerName = (hint: DocumentDraftHint) => {
+  const ownerWork = (hint: DocumentDraftHint) => {
     const workId = workIdOfDraftOwnerKey(hint.owner);
-    const work = workId ? works?.find((candidate) => candidate.id === workId) : undefined;
-    return work ? workDisplayName(work) : hint.label;
+    return workId ? works?.find((candidate) => candidate.id === workId) : undefined;
   };
 
   return (
@@ -67,8 +65,8 @@ export function DocumentVersionMenu({ projectId, tab }: { projectId: string; tab
               className="h-auto min-h-8 flex-col items-start gap-0.5"
             >
               <WorkIdentity
-                name={ownerName(hint)}
-                unavailableLabel={t`Unnamed draft`}
+                work={ownerWork(hint)}
+                unavailableLabel={hint.label || t`Unnamed draft`}
                 className="text-sm font-normal"
               />
               {hint.tree ? (

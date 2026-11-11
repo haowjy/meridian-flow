@@ -669,8 +669,12 @@ msgid "{needsYou} waiting on you"
 msgstr "{needsYou} waiting on you"
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
-msgid "{pending} documents to review"
-msgstr "{pending} documents to review"
+msgid "{pending, plural, one {# document to review} other {# documents to review}}"
+msgstr "{pending, plural, one {# document to review} other {# documents to review}}"
+
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+#~ msgid "{pending} documents to review"
+#~ msgstr "{pending} documents to review"
 
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/draft-review/ReviewStepper.tsx
@@ -1657,7 +1661,7 @@ msgstr "Changing the position of {source}…"
 msgid "Changing work"
 msgstr "Changing work"
 
-#. placeholder {0}: target.name
+#. placeholder {0}: workDisplayName(target)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Changing work to {0}"
 msgstr "Changing work to {0}"
@@ -1767,12 +1771,16 @@ msgstr "Choose Work for new chat"
 
 #. placeholder {0}: work.name
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
-msgid "Choose Work for new chat, currently {0}"
-msgstr "Choose Work for new chat, currently {0}"
+#~ msgid "Choose Work for new chat, currently {0}"
+#~ msgstr "Choose Work for new chat, currently {0}"
 
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
-msgid "Choose Work for new chat, currently {unavailableLabel}"
-msgstr "Choose Work for new chat, currently {unavailableLabel}"
+msgid "Choose Work for new chat, currently {name}"
+msgstr "Choose Work for new chat, currently {name}"
+
+#: src/features/project/chat/NewThreadComposerToolbar.tsx
+#~ msgid "Choose Work for new chat, currently {unavailableLabel}"
+#~ msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
 #: src/features/chat/ask/permission-request.ts
 msgid "Clear the goal"
@@ -4201,7 +4209,6 @@ msgstr "New"
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/work/WorkChatsTab.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
-#: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "New chat"
 
@@ -6265,7 +6272,7 @@ msgstr "This chat was deleted."
 msgid "This chat's current Work could not be found. Refresh the page and try again."
 msgstr "This chat's current Work could not be found. Refresh the page and try again."
 
-#. placeholder {0}: outcome.currentWork.name
+#. placeholder {0}: workDisplayName(outcome.currentWork)
 #. placeholder {0}: workDisplayName(work)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat's Work changed to {0}"
@@ -6765,6 +6772,7 @@ msgid "Untitled"
 msgstr "Untitled"
 
 #: src/features/chat/derivation/SourceChatLink.tsx
+#: src/lib/thread-title.ts
 msgid "Untitled chat"
 msgstr "Untitled chat"
 
