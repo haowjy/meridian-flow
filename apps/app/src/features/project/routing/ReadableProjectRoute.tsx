@@ -149,8 +149,11 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   const draftOnlyDocuments = useOptionalDraftOnlyPresentations();
   const resources = useAccountResourceProjection(projectId);
   const localDocumentOf = useMemo(
-    () => (resources.snapshot ? localDocumentsOf(projectId, resources) : null),
-    [projectId, resources.snapshot, resources.records, resources.placement],
+    () =>
+      resources.snapshot
+        ? localDocumentsOf({ records: resources.records, placement: resources.placement })
+        : null,
+    [resources.snapshot, resources.records, resources.placement],
   );
   // A history entry's pointer names an untitled document by its handle, and the replica says
   // which document that is, whether or not a tab still holds it.

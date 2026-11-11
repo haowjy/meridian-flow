@@ -138,7 +138,7 @@ export async function validateEditorWorkspaceTabs({
           if (!projection) throw new Error("Resource projection is unavailable");
           const record = resourceRecordForTab(projection.records, tab);
           return {
-            tab: record ? contextTabFromResource(projectId, record, projection.placement) : null,
+            tab: record ? contextTabFromResource(record, projection.placement) : null,
             removedRoute: null,
           };
         }
@@ -151,9 +151,7 @@ export async function validateEditorWorkspaceTabs({
         }
         if (!projection) throw new Error("Resource projection is unavailable");
         const record = resourceRecordForTab(projection.records, tab);
-        const projected = record
-          ? contextTabFromResource(projectId, record, projection.placement)
-          : null;
+        const projected = record ? contextTabFromResource(record, projection.placement) : null;
         return {
           tab: projected,
           removedRoute: projected ? null : workingSetRouteForTab(tab),

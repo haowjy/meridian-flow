@@ -123,7 +123,6 @@ export function serverTabFromFile(
 
 /** One optimistic tab projection for a durable editable resource. */
 export function contextTabFromResource(
-  projectId: string,
   record: ResourceRecord,
   placement: ResourcePlacement,
 ): Extract<ContextTab, { kind: "new" | "tracked" }> | null {
@@ -231,7 +230,7 @@ export function projectResourceTab(
   // A chat's upload cached before its chat had a handle names no tab owner: the tab keeps its own.
   const located = placement.resourceLocation(record);
   if (located && !tabOwnerOf(located)) return { kind: "none" };
-  const projected = contextTabFromResource(projectId, record, placement);
+  const projected = contextTabFromResource(record, placement);
   // The projection re-describes the resource, not the open: the instance id is the open's own.
   return projected
     ? {
