@@ -58,7 +58,7 @@ export function WorkScopePicker({
         <button
           type="button"
           className={cn(
-            "group focus-ring mx-2 flex h-8 shrink-0 items-center gap-2 rounded-md px-2 text-left",
+            "group focus-ring mx-2 flex h-8 coarse:h-11 shrink-0 items-center gap-2 rounded-md px-2 text-left",
             role.row,
             role.selected,
           )}

@@ -5,6 +5,7 @@ import { useBlocker } from "@tanstack/react-router";
 import { type LucideIcon, Maximize2, MessageSquare, Pin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { isThreadAwaitingCreation } from "@/client/chat-submissions";
+import { useDismissalFocus } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
@@ -70,7 +71,8 @@ export function MobileProject(props: MobileProjectProps) {
   const mainChatId = props.chatDisplay?.kind === "thread" ? props.chatDisplay.threadId : null;
   const openInMain = useOpenInMain(props.projectId, props.onOpenContextTarget);
   const SheetIcon = sideTab ? fileKindIcon(sideTab.name) : MessageSquare;
-  const closeSheet = () => setSheetOpen(false);
+  const sheet = useDismissalFocus(setSheetOpen);
+  const closeSheet = () => sheet.onOpenChange(false);
   const sheetVisible = sheetOpen && sheetName !== null;
   // The sheet is no history entry, so Back while it is open dismisses it and leaves main where it is.
   useBlocker({
@@ -134,10 +136,11 @@ export function MobileProject(props: MobileProjectProps) {
           {renderActiveView(props)}
         </ProjectRouteBoundary>
       </main>
-      <Sheet open={sheetVisible} onOpenChange={setSheetOpen}>
+      <Sheet open={sheetVisible} onOpenChange={sheet.onOpenChange}>
         <SheetContent
           side="right"
           showCloseButton={false}
+          {...sheet.content}
           className="w-full max-w-full gap-0 p-0 sm:max-w-full"
         >
           <SheetTitle className="sr-only">{sheetName ?? t`Beside`}</SheetTitle>

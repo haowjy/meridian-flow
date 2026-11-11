@@ -1,21 +1,17 @@
 /**
- * DraftReviewBand — a document's review controls, as part of the identity row
- * (`DocumentIdentityBar`) rather than a header of their own: the version chip
- * (`DocumentVersionMenu`) right after the breadcrumb, then, on the right, the stepper, Show
- * changes, Discard draft and Apply draft (the per-change bar's Discard and
- * Apply act on one change; these name their scope). They sit at the end of the
- * row's first line or wrap to a second one, so entering or leaving review may
- * add or remove that line.
+ * DraftReviewBand — a document's review controls: the version chip
+ * (`DocumentVersionMenu`), which takes the Live chip's place on the toolbar row, and the
+ * controls on a line of their own above the toolbar (`DocumentIdentityBar`): the change
+ * list, the stepper, Show changes, Discard draft and Apply draft (the per-change bar's
+ * Discard and Apply act on one change; these name their scope).
  *
  * The list button, left of the stepper, opens this document's own change list
  * (`DocumentChanges`) in a popover under the row, independent of marks
  * visibility. Focusing a row closes it; dispositions leave it open until the
  * last change is handled. Completion stays in the identity row.
  *
- * The row lays the two parts out (`children` receives them): the chip beside the
- * breadcrumb, the controls wrapping to a line of their own when the first is too
- * narrow for both. Label collapse and invisible phone hit boxes also belong to
- * the identity row (document-identity-row.css).
+ * The bar lays the two parts out (`children` receives them). Label collapse and
+ * invisible phone hit boxes belong to the review line (document-identity-row.css).
  *
  * Refusals are not here. The focused change's bar carries the open draft's;
  * the rest sit under the row (`DraftReviewFailureNotices`).
@@ -88,7 +84,9 @@ export function DraftReviewBand({
     ...props,
     onEndedWithFocus: () => setRefocusFor(props.itemKey),
   });
-  const focusInControls = () => controlsRef.current?.contains(document.activeElement) === true;
+  const questionRef = useRef<HTMLSpanElement>(null);
+  const focusInControls = () =>
+    [controlsRef, questionRef].some((ref) => ref.current?.contains(document.activeElement));
   const { controller, view, locked, finished } = header;
   const { status } = view;
   // The stepper walks the text changes; a pending move or delete is listed, not stepped to.
@@ -191,14 +189,7 @@ export function DraftReviewBand({
         onOpenNext={(row) => header.openDraft(row, focusInControls())}
         onShowLive={header.showLive}
       />
-      {finished ? null : header.asking ? (
-        <DiscardQuestion
-          scope="document"
-          onKeep={header.keepDraft}
-          returnFocus={() => controlsRef.current?.querySelector("[data-review-actions] button")}
-          onConfirm={() => header.confirmDiscard(focusInControls())}
-        />
-      ) : (
+      {finished || header.asking ? null : (
         <ReviewActions
           scope="document"
           disabled={locked}
@@ -210,7 +201,29 @@ export function DraftReviewBand({
       )}
     </span>
   );
-  return children({ version, controls });
+  // The question is a sentence: beside the controls when the line has room, else on a line of
+  // its own, never cut by the controls' fixed width.
+  const question =
+    !finished && header.asking ? (
+      <span ref={questionRef} className="contents">
+        <DiscardQuestion
+          scope="document"
+          className="ml-auto"
+          onKeep={header.keepDraft}
+          returnFocus={() => controlsRef.current?.querySelector("[data-review-actions] button")}
+          onConfirm={() => header.confirmDiscard(focusInControls())}
+        />
+      </span>
+    ) : null;
+  return children({
+    version,
+    controls: (
+      <>
+        {controls}
+        {question}
+      </>
+    ),
+  });
 }
 
 /**

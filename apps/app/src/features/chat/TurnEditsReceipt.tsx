@@ -213,7 +213,7 @@ export function TurnEditsReceipt({
             event.stopPropagation();
             setExpanded((value) => !value);
           }}
-          className="focus-ring -mx-1 flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] rounded-md px-1 text-left"
+          className="focus-ring -mx-1 flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] rounded-md px-1 text-left coarse:min-h-11"
         >
           <ChevronDown
             className={cn(

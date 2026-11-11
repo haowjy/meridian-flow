@@ -11,6 +11,7 @@ import {
   CommandNotice,
   type CommandQuestion,
   DraftNoticeLine,
+  noticeAction,
   useDraftNotice,
 } from "@/features/draft-review/CommandNotice";
 import { draftCopyView } from "@/features/draft-review/copy-view";
@@ -23,6 +24,8 @@ import { hasTreeLine, reviewHasNoRoom, treeLineOf } from "@/features/draft-revie
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
+import { escapeCssIdent } from "@/lib/css-selector";
+import { useFocusSuccession } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { RowIcon } from "../../context/ContextTreeRows";
 import { fileKindIcon } from "../../context/context-file-icon";
@@ -209,89 +212,108 @@ export function ChangesSource({
       : undefined;
   const inList = noticeAt !== undefined;
   const inBar = notice !== null && !inList && !question && !hasFiles;
+  // A Discard's focus follows to its notice's Undo; an Undo's, to the row it brings back.
+  const undone = useRef<string | null>(null);
+  if (rowNotice !== null) undone.current = rowNotice;
+  const list = useRef<HTMLDivElement>(null);
+  useFocusSuccession(
+    list,
+    true,
+    (element) =>
+      noticeAction(element) ??
+      (undone.current
+        ? element.querySelector<HTMLElement>(
+            `[data-change-row="${escapeCssIdent(undone.current)}"] button`,
+          )
+        : null),
+  );
 
   return (
-    <SourcePane
-      label={scope.heading}
-      bar={
-        question ? (
-          <div className="min-w-0 flex-1">
-            <CommandNotice notice={null} question={question} />
-          </div>
-        ) : inBar && notice ? (
-          <DraftNoticeLine notice={notice} className="min-w-0 flex-1" />
-        ) : hasFiles ? (
-          <ReviewActions
-            scope="all"
-            density="full"
-            touch={touch}
-            disabled={archived}
-            discardAsks={controller.discardAllAsks(everyDraft)}
-            onDiscard={() => void controller.disposeDrafts("discard", everyDraft)}
-            onApply={controller.canApply && files.every(applicable) ? startApplyAll : undefined}
-            applyDisabled={held.some((read) => read.status !== "ready")}
+    <div ref={list} className="contents">
+      <SourcePane
+        label={scope.heading}
+        bar={
+          question ? (
+            <div className="min-w-0 flex-1">
+              <CommandNotice notice={null} question={question} />
+            </div>
+          ) : inBar && notice ? (
+            <DraftNoticeLine notice={notice} className="min-w-0 flex-1" />
+          ) : hasFiles ? (
+            <ReviewActions
+              scope="all"
+              density="full"
+              touch={touch}
+              disabled={archived}
+              discardAsks={controller.discardAllAsks(everyDraft)}
+              onDiscard={() => void controller.disposeDrafts("discard", everyDraft)}
+              onApply={controller.canApply && files.every(applicable) ? startApplyAll : undefined}
+              applyDisabled={held.some((read) => read.status !== "ready")}
+            />
+          ) : null
+        }
+      >
+        {hasFiles && archived ? (
+          <SourceHint>
+            <Trans>This Work is archived. Unarchive it to apply or discard its changes.</Trans>
+          </SourceHint>
+        ) : hasFiles && controller.frozen ? (
+          <SourceHint>
+            <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>
+          </SourceHint>
+        ) : null}
+        {hasFiles ? (
+          <ul className="flex flex-col px-2">
+            {files.map((file, index) => (
+              <Fragment key={file.documentId}>
+                {inList && notice && index === noticeAt ? (
+                  <li>
+                    <DraftNoticeLine notice={notice} />
+                  </li>
+                ) : null}
+                <ChangeRow
+                  projectId={projectId}
+                  ownerKey={ownerKey}
+                  file={file}
+                  textChanges={
+                    readOf(file)?.status === "ready"
+                      ? readOf(file)?.listedChanges.length
+                      : undefined
+                  }
+                  active={isOpen(file)}
+                  canApply={controller.canApply && applicable(file)}
+                  controller={controller}
+                  touch={touch}
+                  onPicked={onPicked}
+                />
+              </Fragment>
+            ))}
+            {inList && notice && noticeAt !== undefined && noticeAt >= files.length ? (
+              <li>
+                <DraftNoticeLine notice={notice} />
+              </li>
+            ) : null}
+          </ul>
+        ) : drafts.status === "error" ? (
+          <InlineErrorRow
+            message={t`Changes couldn’t load.`}
+            onRetry={drafts.refetch}
+            actionLabel={t`Retry changes`}
           />
-        ) : null
-      }
-    >
-      {hasFiles && archived ? (
-        <SourceHint>
-          <Trans>This Work is archived. Unarchive it to apply or discard its changes.</Trans>
-        </SourceHint>
-      ) : hasFiles && controller.frozen ? (
-        <SourceHint>
-          <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>
-        </SourceHint>
-      ) : null}
-      {hasFiles ? (
-        <ul className="flex flex-col px-2">
-          {files.map((file, index) => (
-            <Fragment key={file.documentId}>
-              {inList && notice && index === noticeAt ? (
-                <li>
-                  <DraftNoticeLine notice={notice} />
-                </li>
-              ) : null}
-              <ChangeRow
-                projectId={projectId}
-                ownerKey={ownerKey}
-                file={file}
-                textChanges={
-                  readOf(file)?.status === "ready" ? readOf(file)?.listedChanges.length : undefined
-                }
-                active={isOpen(file)}
-                canApply={controller.canApply && applicable(file)}
-                controller={controller}
-                touch={touch}
-                onPicked={onPicked}
-              />
-            </Fragment>
-          ))}
-          {inList && notice && noticeAt !== undefined && noticeAt >= files.length ? (
-            <li>
-              <DraftNoticeLine notice={notice} />
-            </li>
-          ) : null}
-        </ul>
-      ) : drafts.status === "error" ? (
-        <InlineErrorRow
-          message={t`Changes couldn’t load.`}
-          onRetry={drafts.refetch}
-          actionLabel={t`Retry changes`}
-        />
-      ) : drafts.status === "loading" ? (
-        <SourceHint status>
-          <Trans>Loading changes…</Trans>
-        </SourceHint>
-      ) : (
-        <SourceHint>{scope.empty}</SourceHint>
-      )}
-      {notice && !inList && !inBar ? (
-        <div className="mx-2">
-          <CommandNotice notice={notice} />
-        </div>
-      ) : null}
-    </SourcePane>
+        ) : drafts.status === "loading" ? (
+          <SourceHint status>
+            <Trans>Loading changes…</Trans>
+          </SourceHint>
+        ) : (
+          <SourceHint>{scope.empty}</SourceHint>
+        )}
+        {notice && !inList && !inBar ? (
+          <div className="mx-2">
+            <CommandNotice notice={notice} />
+          </div>
+        ) : null}
+      </SourcePane>
+    </div>
   );
 }
 
@@ -347,7 +369,7 @@ function ChangeRow({
   const command = controller.owner.state(file.draft.itemKey);
 
   return (
-    <li>
+    <li data-change-row={file.documentId}>
       <ListRow
         onOpen={review}
         current={active}
