@@ -76,7 +76,7 @@ export function ListRow({
     "aria-describedby": describedBy,
     style: depth ? { paddingLeft: (density === "list" ? 6 : 8) + depth * 16 } : undefined,
     className: cn(
-      "flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md text-left text-sm text-inherit no-underline outline-hidden select-none [&_svg]:pointer-events-none [&_svg]:shrink-0",
+      "flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md text-left text-sm text-inherit no-underline outline-none select-none [&_svg]:pointer-events-none [&_svg]:shrink-0",
       density === "list"
         ? "min-h-7 px-1.5 py-1 [@media(hover:none)]:min-h-11 coarse:min-h-11"
         : "min-h-8 px-2 py-0.5 coarse:min-h-11 [&_svg]:size-4",
