@@ -53,7 +53,7 @@ export function DiscardQuestion({
   useEffect(() => {
     keep.current?.focus();
   }, []);
-  const button = cn("text-button", touch ? "min-h-11" : "coarse:min-h-11");
+  const button = cn("text-button text-xs", touch ? "min-h-11" : "coarse:min-h-11");
   return (
     <span
       data-discard-question={scope}
