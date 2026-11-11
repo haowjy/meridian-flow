@@ -16,7 +16,7 @@ import { useRenameThread } from "@/client/query/useRenameThread";
 import { announce } from "@/client/stores";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { TitleEditSlot } from "@/features/project/shell/TitleEditSlot";
-import { titleChipClass } from "@/features/project/shell/title-chip";
+import { titleChipClass } from "@/features/project/shell/tab-chip";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import { ThreadSwitcherPopover } from "./ThreadSwitcherPopover";

@@ -16,7 +16,7 @@ import { workUpdateFailure } from "@/client/query/work-update-failure";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { TitleEditSlot } from "../shell/TitleEditSlot";
-import { titleChipClass } from "../shell/title-chip";
+import { titleChipClass } from "../shell/tab-chip";
 
 // The heading shrinks beside the status; it clips nothing itself, so a refused
 // rename's message can hang below it. The text inside truncates instead.
