@@ -1,12 +1,11 @@
 /** Resolves browser-local resource history without turning missing ownership into a default. */
 
-import type { WorkingSetRoute } from "@meridian/contracts/protocol";
 import {
   type ResourcePlacement,
   type ResourceRecord,
   resourceIdentityIndex,
 } from "@meridian/resource-replica";
-import { type ContextTab, isEditorContextTab } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { contextTabFromResource } from "../context/context-tab-from-file";
 import type { ContextRouteRequest } from "./project-route";
@@ -72,20 +71,4 @@ export function resolveLocalDocumentSelection(input: {
       target: routeTargetForTab(document),
     };
   return { kind: "unavailable" };
-}
-
-/** Screen entry may resume an open identity, never reopen a historical path. */
-export function selectEditorEntryTab(input: {
-  tabs: readonly ContextTab[];
-  selectedDocumentId: string | undefined;
-  recentRoutes: readonly WorkingSetRoute[];
-}): ContextTab | null {
-  const eligible = input.tabs.filter(isEditorContextTab);
-  const selected = eligible.find((tab) => tab.documentId === input.selectedDocumentId);
-  if (selected) return selected;
-  for (const route of input.recentRoutes) {
-    const tab = eligible.find((tab) => tab.documentId === route.documentId);
-    if (tab) return tab;
-  }
-  return null;
 }

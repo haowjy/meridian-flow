@@ -6,7 +6,7 @@
  * Whatever lies on the document's path is highlighted at every level.
  *
  * The crumbs only navigate: a pick opens the document the way this screen
- * opens documents (`useOpenDocumentInDock`). Renaming and moving belong to the
+ * opens documents: in main. Renaming and moving belong to the
  * lists. The identity row owns collapse priority; parent crumbs yield before controls.
  */
 
@@ -20,8 +20,9 @@ import { DropdownMenuContent } from "@/components/ui/dropdown-menu";
 import { role } from "@/components/ui/roles";
 import { useReviewCopy } from "@/features/draft-review/copy-view";
 import { cn } from "@/lib/utils";
-import { useDockBrowseScratch } from "../dock/use-dock-browse-scratch";
-import { useOpenDocumentInDock } from "../dock/use-open-document-in-dock";
+import { useOnScreenChatScratchSource } from "../chat/use-chat-scratch-source";
+import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
+import { contextRouteRequest } from "../routing/project-route";
 import { useAccountResourceProjection } from "./account-feature-context";
 import { schemeIcon, schemeLabel } from "./context-schemes";
 import { folderChain } from "./entry-drag/move-plan";
@@ -200,14 +201,13 @@ function OpenCrumbMenu({ browse, depth }: { browse: Browse; depth: number }) {
 /** The project menu a document's crumbs browse, opened along the document's own path. */
 function useDocumentPathMenu(projectId: string, tab: ContextTab, depth: number): PathMenu | null {
   const locatedTab = tab.kind === "new" ? null : tab;
-  const openDocument = useOpenDocumentInDock();
+  const openContextRoute = useOpenContextRoute();
   const own = useMemo(
     () => (locatedTab ? { scheme: locatedTab.scheme, owner: tabContextOwner(locatedTab) } : null),
     [locatedTab],
   );
   const heading = useOwnAreaHeading(projectId, own);
-  // The Scratch at the menu's root is the one on screen; the document's own area is separate.
-  const scratch = useDockBrowseScratch(projectId);
+  const scratch = useOnScreenChatScratchSource(projectId);
   const project = useProject(projectId);
   const source = useProjectMenuSource({
     projectId,
@@ -225,9 +225,9 @@ function useDocumentPathMenu(projectId: string, tab: ContextTab, depth: number):
   const onPick = useCallback(
     (node: DrillNode) => {
       const next = source.tabFor(node.id);
-      if (next) openDocument(next);
+      if (next) void openContextRoute?.(contextRouteRequest(next), { replace: false });
     },
-    [openDocument, source],
+    [openContextRoute, source],
   );
   if (!locatedTab || !current || openAt.length === 0) return null;
   return {

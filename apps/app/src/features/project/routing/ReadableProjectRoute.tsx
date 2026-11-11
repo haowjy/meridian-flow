@@ -20,22 +20,15 @@ import {
   getProjectContextAvailability,
   getProjectDocumentAddress,
 } from "@/client/api/projects-api";
-import { type DraftPin, endPin, readDocumentView } from "@/client/project-shell/document-views";
+import { type DraftPin, endPin } from "@/client/project-shell/document-views";
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { fetchCurrentDraftMetadata, useDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { projectWorkBranchFiles } from "@/client/query/work-branch-files";
-import {
-  type ContextTab,
-  getContextTabs,
-  isEditorScheme,
-  selectedDocumentIdOf,
-  useContextTabs,
-  useContextTabsStore,
-} from "@/client/stores";
-import { readRecentRoutes, type WorkingSetHydrationPlan } from "@/client/working-set";
+import { type ContextTab, isEditorScheme } from "@/client/stores";
+import type { WorkingSetHydrationPlan } from "@/client/working-set";
 import { parseContextUri } from "@/lib/context-uri";
 import { originalBrowserSearch } from "@/router-search";
 import {
@@ -43,6 +36,8 @@ import {
   useContextRemovalCoordinator,
   useDraftCommandOwner,
   useOptionalDraftOnlyPresentations,
+  useOptionalPresentedDocuments,
+  usePresentedDocuments,
   useProjectContextAvailabilityCoordinator,
 } from "../context/account-feature-context";
 import { routeTargetForTab } from "../context/context-removal-planner";
@@ -86,18 +81,13 @@ import {
   parseProjectAddress,
   withoutReview,
 } from "./project-address";
-import {
-  localDocumentsOf,
-  resolveLocalDocumentSelection,
-  selectEditorEntryTab,
-} from "./project-local-selection";
+import { localDocumentsOf, resolveLocalDocumentSelection } from "./project-local-selection";
 import {
   createProjectNavigation,
   type DisplayedProjectSelection,
   type NavigationSettlement,
   type PreparedWorkspaceNavigation,
 } from "./project-navigation";
-import type { ScreenKey } from "./project-route";
 import {
   type ContextRouteRequest,
   contextRouteRequest,
@@ -105,12 +95,6 @@ import {
   type ProjectRouteCommands,
   type ProjectSearch,
 } from "./project-route";
-import { reviewRouteOptions } from "./use-open-document-in-editor";
-
-function screen(destination: ProjectDestination): ScreenKey {
-  if (destination.kind === "chat" || destination.kind === "chat-index") return "chat";
-  return "context";
-}
 
 type ReadableProjectRouteProps = {
   project: Project;
@@ -131,21 +115,25 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
           destination: { kind: "chat-index" },
         };
   const destination = address.destination;
-  const activeScreen = screen(destination);
   const [navigation, setNavigation] = useState<ReturnType<typeof createProjectNavigation> | null>(
     null,
   );
   const chat = useProjectChatNavigation({
     accountId: user.userId,
     projectId,
-    activeScreen,
-    urlChatId: destination.kind === "chat" ? destination.chatId : null,
+    mainChat:
+      destination.kind === "chat"
+        ? { kind: "thread", threadId: destination.chatId }
+        : destination.kind === "chat-index"
+          ? { kind: "index" }
+          : null,
     go: (next, options) => go(toDestination(next), options),
   });
   // The Work scope is stored, never read from the address: a Work-scoped page lens, not a place.
   const editorScope = useWorkScopeState(projectId);
   const workId = editorScope.workId;
-  const { tabs: workspaceTabs } = useContextTabs(projectId);
+  const presentedDocuments = usePresentedDocuments(projectId);
+  const presented = useOptionalPresentedDocuments();
   const draftOnlyDocuments = useOptionalDraftOnlyPresentations();
   const resources = useAccountResourceProjection(projectId);
   const localDocumentOf = useMemo(
@@ -156,7 +144,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     [resources.snapshot, resources.records, resources.placement],
   );
   // A history entry's pointer names an untitled document by its handle, and the replica says
-  // which document that is, whether or not a tab still holds it.
+  // which document that is.
   const localDocument = resolveLocalDocumentSelection({
     pointer:
       destination.kind === "editor" || destination.kind === "document"
@@ -176,14 +164,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       ? { accountId: user.userId, projectId, resourceHandle: localResourceHandle }
       : undefined;
   const localDocumentTab = localDocument.kind === "resolved" ? localDocument.document : null;
-  // The tab mirrors what the history entry names: reinstalled if it was closed.
-  useLayoutEffect(() => {
-    if (!localDocumentTab) return;
-    const store = useContextTabsStore.getState();
-    if (getContextTabs(projectId).tabs.some((tab) => tab.documentId === localDocumentId))
-      void store.selectTab(projectId, localDocumentId ?? null);
-    else store.openTab(projectId, localDocumentTab, undefined, { select: true });
-  }, [projectId, localDocumentId]);
   const shown = useRef<DisplayedProjectSelection>({});
   shown.current = { local: localPointer };
   useBlocker({
@@ -442,6 +422,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         projectId,
         accountId: user.userId,
         read: () => ({ ...latest.current, addressDocumentId: addressDocumentIdRef.current }),
+        presented: () => presented?.documents(projectId) ?? [],
         lookup: (documentId) =>
           getProjectContextAvailability(projectId, [documentId]).then(
             (result) => result.resolutions[0] ?? { kind: "failed" as const },
@@ -453,7 +434,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         enterRoute: (locator, documentId, by) =>
           contextRemoval.enterRoute(projectId, locator, documentId, by),
       }),
-    [contextRemoval, draftOnlyDocuments, projectId, user.userId],
+    [contextRemoval, draftOnlyDocuments, presented, projectId, user.userId],
   );
   const remoteAnswer = reviewBoundAddressResult(addressBinding, documentLookup.data);
   const holdsBound =
@@ -525,7 +506,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     },
     editorDrafts,
     (documentId) =>
-      workspaceTabs.some((tab) => tab.documentId === documentId) &&
+      presentedDocuments.some((tab) => tab.documentId === documentId) &&
       !draftOnlyDocuments?.isDraftOnly(projectId, documentId),
     reconciledDocumentAddress.view,
   );
@@ -534,7 +515,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     projectId,
     documentResult,
     documentLookup.dataUpdatedAt,
-    (documentId) => workspaceTabs.some((tab) => tab.documentId === documentId),
+    (documentId) => draftOnlyDocuments?.isDraftOnly(projectId, documentId) ?? false,
   );
   const routeBinding = addressRouteBinding(
     addressBinding,
@@ -660,9 +641,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         ? undefined
         : (documentIssue ??
           (reviewItemKey
-            ? // Review installs the tab; until it has, the address is still being repaired.
-              address.itemKey === reviewItemKey &&
-              workspaceTabs.some((tab) => tab.documentId === addressDocumentId)
+            ? // Until the address carries the item, it is still being repaired.
+              address.itemKey === reviewItemKey && addressDocumentId
               ? undefined
               : "loading"
             : documentDestination
@@ -699,19 +679,20 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
           accountId: user.userId,
           address: latest.current.address,
           scope: workId,
+          presented: presented?.documents(projectId) ?? [],
         },
         target,
         preparedTab,
         itemKey,
       ),
-    [projectId, user.userId, workId],
+    [presented, projectId, user.userId, workId],
   );
   // A document the server never accepted keeps its stable local identity when its placement is
-  // refused, and the route bound to it follows that identity back to Unfiled. Its own tab already
-  // went there; the path it was filed at no longer names it.
+  // refused, and the route bound to it follows that identity back to Unfiled. Its host already
+  // shows it there; the path it was filed at no longer names it.
   const departedLocalTab =
     boundDocumentId && documentDestination
-      ? workspaceTabs.find(
+      ? presentedDocuments.find(
           (tab) =>
             tab.documentId === boundDocumentId &&
             (tab.kind === "new" ||
@@ -825,10 +806,9 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     if (result.kind === "failed") throw result.error;
   };
   const routeCommands: ProjectRouteCommands = {
-    // Selecting no document keeps every open tab. Already on the chooser is a
-    // no-op. A local draft is also `/editor`; its history pointer is the
-    // selection. Navigation clears that pointer. Departure freezes it, so Back
-    // returns to the draft.
+    // Already on the chooser is a no-op. A local draft is also `/editor`; its history pointer
+    // names it. Navigation clears that pointer. Departure freezes it, so Back returns to the
+    // draft.
     showEditorRecents: (options) => {
       const onChooser =
         destination.kind === "editor" &&
@@ -842,7 +822,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   // back into this same pointer-bearing destination on every render.
   const localTarget = localDocument.kind === "resolved" ? localDocument.target : null;
   const search: ProjectSearch = {
-    screen: activeScreen,
     work: locatorOwner.workId,
     chat: locatorOwner.rootThreadId,
     scheme: localDocumentId
@@ -863,31 +842,9 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     activeContextPath: search.path ?? null,
     activeContextChat: search.chat ?? null,
   };
-  const showEditor = (options?: { afterCommit?: () => void }) => {
-    if (workId && contextRemoval.getProjectSnapshot(projectId).live) {
-      const workspace = getContextTabs(projectId);
-      const tab = selectEditorEntryTab({
-        tabs: workspace.tabs,
-        selectedDocumentId: selectedDocumentIdOf(workspace) ?? undefined,
-        recentRoutes: readRecentRoutes(projectId),
-      });
-      if (tab)
-        return openContext(
-          { ...routeTargetForTab(tab), documentId: tab.documentId },
-          {
-            ...options,
-            ...reviewRouteOptions(readDocumentView(user.userId, projectId, tab.documentId).pin),
-          },
-        );
-    }
-    return go(toDestination({ kind: "editor" }), { replace: false, ...options });
-  };
-
   return (
     <ProjectNavigationProvider
-      screen={activeScreen}
       openContextRoute={openContext}
-      screenCommands={{ showEditor }}
       isCurrentNavigation={(ticket) => latest.current.navigation?.isCurrent(ticket) ?? false}
       captureNavigation={captureNavigation}
       trash={{ destination: trashDestination, navigate: navigateTrash }}
@@ -901,15 +858,12 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         >
           {documentDestination && !localDocumentId ? (
             <ProjectAddressDocument
-              projectId={projectId}
               href={location.href}
               entryKey={location.state.__TSR_key ?? ""}
               address={address}
               // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
               result={admissibleResult}
-              localFile={reconciledDocumentAddress.localFile}
               reviewItemKey={reviewItemKey}
-              draftOnly={draftOnly}
               workId={workId}
               navigation={navigation}
               onAdmission={setAdmission}
@@ -918,7 +872,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
           <ProjectView
             project={project}
             projectId={projectId}
-            activeScreen={activeScreen}
             chatDisplay={chat.display}
             entryHydration={entryHydration}
             routeLocationKey={location.state.__TSR_key ?? location.href}

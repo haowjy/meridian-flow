@@ -2,9 +2,8 @@
 /** Navigate first: an explicit review launch commits its destination without waiting on a live-identity lookup. */
 import "fake-indexeddb/auto";
 import { createMemoryHistory } from "@tanstack/react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { setDocumentView } from "@/client/project-shell/document-views";
-import { useContextTabsStore } from "@/client/stores";
 import { createEditorDocumentCommand } from "./editor-document-command";
 import { parseProjectAddress } from "./project-address";
 import { createProjectNavigation } from "./project-navigation";
@@ -12,15 +11,12 @@ import { createProjectNavigation } from "./project-navigation";
 const projectId = "550e8400-e29b-41d4-a716-446655440000";
 const workId = "700db898-57fb-4ffa-8366-46ad6a3880be";
 
-beforeEach(() => {
-  useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: true });
-});
-
 function setup(
   lookup: () => Promise<{ kind: "failed" }>,
   path = `/p/${projectId}/chats`,
   addressDocumentId?: string,
   draftOnly: readonly string[] = [],
+  presented: readonly never[] = [],
 ) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const navigation = createProjectNavigation(
@@ -55,6 +51,7 @@ function setup(
       documentCatalog: null,
       addressDocumentId,
     }),
+    presented: () => presented,
     lookup,
     isDraftOnly: (documentId) => draftOnly.includes(documentId),
     admitDraftReview: () => undefined,
@@ -88,19 +85,19 @@ describe("review launch navigation", () => {
       filetype: "markdown" as const,
       schemaType: "document" as const,
     } as never;
-    useContextTabsStore.getState().openTab(projectId, hidden);
     const { open, history } = setup(
       vi.fn(async () => ({ kind: "failed" as const })),
       `/p/${projectId}/editor/manuscript/Scene.md?owner=work:${workId}&item=branch-hidden:doc-hidden`,
       "doc-hidden",
       ["doc-hidden"],
+      [hidden],
     );
     const live = { ...(hidden as object), documentId: "doc-live" } as never;
     await open({ scheme: "manuscript", path: "/Scene.md", documentId: "doc-live" }, { tab: live });
     expect(history.location.href).not.toContain("item=");
   });
 
-  it("re-selecting a draft-only tab keeps its review identity (item=), since no live document exists", async () => {
+  it("reopening a draft-only document keeps its review identity (item=), since no live document exists", async () => {
     const { open, history } = setup(
       vi.fn(async () => ({ kind: "failed" as const })),
       undefined,
@@ -119,7 +116,6 @@ describe("review launch navigation", () => {
       editable: true,
       filetype: "markdown" as const,
       schemaType: "document" as const,
-      tabInstanceId: "tab-1",
     } as never;
     const result = await open(
       { scheme: "manuscript", path: "Scene", documentId: "doc-1" },

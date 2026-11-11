@@ -7,37 +7,34 @@ import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import {
-  type DesktopProjectSlotId,
-  occupantOf,
+  type DesktopPanels,
   type PanelSlotId,
   ResizeHandle,
   SLOT_WIDTH_BOUNDS,
   SlotGrid,
-  type SlotGridSurface,
-  type SurfaceLayoutMap,
+  type SlotGridHost,
 } from "../layout";
 import { DESKTOP_PROJECT_SLOTS, getDesktopGridTemplate } from "../layout/desktop-layout";
 
 export type ProjectShellProps = {
-  /** Merged placement + the panel prefs for every stable surface. */
-  layout: SurfaceLayoutMap;
-  /** Stable surfaces rendered once as direct children of the grid container. */
-  surfaces: readonly SlotGridSurface[];
+  /** Whether each panel is open, and its width. */
+  panels: DesktopPanels;
+  /** Hosts keyed by what they hold, rendered as direct children of the grid container. */
+  hosts: readonly SlotGridHost[];
   /** Commit a panel slot's width. */
   onSetSlotWidth: (slot: PanelSlotId, widthPx: number) => void;
   /** Open or close a panel slot. */
   onSetSlotOpen: (slot: PanelSlotId, open: boolean) => void;
-  /** A running agent while the dock is closed: the dock toggle carries a spinner. */
+  /** A running agent while the side is closed: its toggle carries a spinner. */
   dockActivity?: boolean;
   /** Minimum width (px) the main column may shrink to. */
   mainMinWidth?: number;
-  /** Main column content. */
-  children: ReactNode;
+  children?: ReactNode;
 };
 
 export function ProjectShell({
-  layout,
-  surfaces,
+  panels,
+  hosts,
   onSetSlotWidth,
   onSetSlotOpen,
   dockActivity = false,
@@ -45,22 +42,16 @@ export function ProjectShell({
   children,
 }: ProjectShellProps) {
   const gridRef = useRef<HTMLDivElement | null>(null);
-  const leftOccupant = visibleOccupantOf(layout, "rail-l");
-  const centerOccupant = visibleOccupantOf(layout, "center");
-  const dockOccupant = visibleOccupantOf(layout, "dock");
-  const leftWidth = leftOccupant ? layout[leftOccupant].width : 0;
-  const dockWidth = dockOccupant ? layout[dockOccupant].width : 0;
-  const hasRoutePane = children !== null && children !== undefined && children !== false;
-  const routePaneArea: "center" | null = hasRoutePane && !centerOccupant ? "center" : null;
+  const railOpen = panels["rail-l"].open;
+  const dockOpen = panels.dock.open;
+  const leftWidth = railOpen ? panels["rail-l"].width : 0;
+  const dockWidth = dockOpen ? panels.dock.width : 0;
   const desktopGridTemplate = getDesktopGridTemplate();
-  const railOpen = leftOccupant !== null;
-  const dockOpen = dockOccupant !== null;
-  const hasDock = occupantOf(layout, "dock") !== null;
 
-  // `[` toggles the sidebar, `]` the dock. Read through a ref so the listener
+  // `[` toggles the sidebar, `]` the side. Read through a ref so the listener
   // never re-binds while still seeing fresh layout state.
-  const toggleRef = useRef({ railOpen, dockOpen, hasDock, onSetSlotOpen });
-  toggleRef.current = { railOpen, dockOpen, hasDock, onSetSlotOpen };
+  const toggleRef = useRef({ railOpen, dockOpen, onSetSlotOpen });
+  toggleRef.current = { railOpen, dockOpen, onSetSlotOpen };
   useEffect(() => {
     function isEditableTarget(target: EventTarget | null): boolean {
       if (!(target instanceof HTMLElement)) return false;
@@ -74,7 +65,7 @@ export function ProjectShell({
       const current = toggleRef.current;
       e.preventDefault();
       if (e.key === "[") current.onSetSlotOpen("rail-l", !current.railOpen);
-      else if (current.hasDock) current.onSetSlotOpen("dock", !current.dockOpen);
+      else current.onSetSlotOpen("dock", !current.dockOpen);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -84,8 +75,7 @@ export function ProjectShell({
     <SlotGrid
       gridRef={gridRef}
       slots={DESKTOP_PROJECT_SLOTS}
-      layout={layout}
-      surfaces={surfaces}
+      hosts={hosts}
       // The grid shows only in the center field's rounded top-left notch.
       className="relative h-full w-full bg-chrome"
       gridTemplateAreas={desktopGridTemplate.areas}
@@ -97,7 +87,7 @@ export function ProjectShell({
           // rail is collapsed; when open, leave the var unset so the utility's
           // own fallback applies — globals.css is the single owner of the
           // corner radius value.
-          "--chrome-corner": leftOccupant ? undefined : "0px",
+          "--chrome-corner": railOpen ? undefined : "0px",
           "--project-left-width": `${leftWidth}px`,
           // Resize handles render as transparent absolute overlays centered on
           // these grid seams; zero-width tracks remove the visible empty strip.
@@ -108,19 +98,8 @@ export function ProjectShell({
         } as CSSProperties
       }
     >
-      {routePaneArea ? (
-        <div
-          // chrome-field: route panes fill the center cell with
-          // no center surface behind them — they must paint exactly what the
-          // center slot would (band + rising page-sheet grammar).
-          className="chrome-field relative z-0 flex min-h-0 flex-col"
-          style={{ gridArea: routePaneArea }}
-          data-project-route-pane
-        >
-          {children}
-        </div>
-      ) : null}
-      {leftOccupant ? (
+      {children}
+      {railOpen ? (
         <div className="relative z-20 min-h-0 overflow-visible" style={{ gridArea: "left-resize" }}>
           <ResizeHandle
             gridRef={gridRef}
@@ -133,7 +112,7 @@ export function ProjectShell({
           />
         </div>
       ) : null}
-      {dockOccupant ? (
+      {dockOpen ? (
         <div className="relative z-20 min-h-0 overflow-visible" style={{ gridArea: "dock-resize" }}>
           <ResizeHandle
             gridRef={gridRef}
@@ -156,15 +135,13 @@ export function ProjectShell({
         label={railOpen ? t`Close sidebar  [` : t`Open sidebar  [`}
         onClick={() => onSetSlotOpen("rail-l", !railOpen)}
       />
-      {hasDock ? (
-        <CornerToggle
-          side="right"
-          open={dockOpen}
-          busy={!dockOpen && dockActivity}
-          label={dockOpen ? t`Close side panel  ]` : t`Open side panel  ]`}
-          onClick={() => onSetSlotOpen("dock", !dockOpen)}
-        />
-      ) : null}
+      <CornerToggle
+        side="right"
+        open={dockOpen}
+        busy={!dockOpen && dockActivity}
+        label={dockOpen ? t`Close side panel  ]` : t`Open side panel  ]`}
+        onClick={() => onSetSlotOpen("dock", !dockOpen)}
+      />
     </SlotGrid>
   );
 }
@@ -199,10 +176,4 @@ function CornerToggle({
       {busy ? <span aria-hidden className="streaming-dot absolute top-1 right-1 size-1.5" /> : null}
     </IconButton>
   );
-}
-
-function visibleOccupantOf(layout: SurfaceLayoutMap, slot: DesktopProjectSlotId) {
-  const surfaceId = occupantOf(layout, slot);
-  if (!surfaceId) return null;
-  return layout[surfaceId].collapsed ? null : surfaceId;
 }

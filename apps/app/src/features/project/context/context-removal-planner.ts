@@ -17,9 +17,7 @@ import {
 export type ContextRemovalIntent = {
   cause: "writer-close" | "catalog-unavailable" | "authority-unavailable" | "draft-discard";
   documentIds: readonly string[];
-  /** Writer close and draft settlement address a mounted tab, not every document representation. */
-  tabInstanceId?: string;
-  /** Documents a draft keeps on screen when live loses them: their tabs stay. */
+  /** Documents a draft keeps on screen when live loses them: their views keep them. */
   held?: ReadonlySet<string>;
 };
 
@@ -103,8 +101,6 @@ export function contextTabEligibleForRemoval(
   intent: ContextRemovalIntent,
 ): boolean {
   if (!intent.documentIds.includes(tab.documentId)) return false;
-  if (intent.tabInstanceId !== undefined && tab.tabInstanceId !== intent.tabInstanceId)
-    return false;
   switch (intent.cause) {
     case "writer-close":
       return true;

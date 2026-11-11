@@ -1,6 +1,6 @@
 /**
- * The Scratch a chat has on screen, as the rail's section and the dock
- * document's menu both read it: the lineage's for a No Work chat, the Work's
+ * The Scratch a chat has on screen, as the rail's section and the document
+ * menus both read it: the lineage's for a No Work chat, the Work's
  * for a chat on a named Work (with the lineage left behind by a rebind kept
  * findable), named "Scratch for this chat" or "Scratch for <Work>". Null while
  * the chat is unknown, so the callers show nothing rather than guess.
@@ -12,6 +12,7 @@ import { useWorks } from "@/client/query/useWorks";
 import { workFromSnapshot } from "@/client/query/works-projection-acquisition";
 import { chatScratchOwner } from "@/features/chat/chat-scratch-owner";
 import type { ScratchSource } from "../context/use-scratch-catalogs";
+import { chatSurfaceThreadId, useChatNavigation } from "../routing/chat-navigation";
 
 export function useChatScratchSource(
   projectId: string,
@@ -42,4 +43,12 @@ export function useChatScratchSource(
           : t`Scratch`,
     };
   }, [Boolean(owner), Boolean(thread), rootThreadId, workId, earlierRootThreadId, workName]);
+}
+
+/**
+ * The Scratch a document menu offers at its root: the chat on screen's, in main or the side,
+ * never the one the open document belongs to.
+ */
+export function useOnScreenChatScratchSource(projectId: string): ScratchSource | null {
+  return useChatScratchSource(projectId, chatSurfaceThreadId(useChatNavigation()));
 }

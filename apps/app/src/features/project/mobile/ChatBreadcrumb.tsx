@@ -4,19 +4,15 @@
  * The index is the chat's ancestor, so it is reached the phone way (an
  * ancestor crumb, never a back chevron). The current segment stays the chat
  * switcher so switching and New chat remain one tap away. On the index itself
- * the trail is a lone, non-interactive "Chats". The Chat screen's top bar only:
- * the chat sheet over Work or Editor has no index to climb to. A refused
+ * the trail is a lone, non-interactive "Chats". The top bar over main's chat only:
+ * the chat sheet over a document has no index to climb to. A refused
  * rename spans the width under the top bar (its positioned ancestor), not the
  * narrow trail.
  */
 import { t } from "@lingui/core/macro";
 
 import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
-import {
-  type ChatDisplay,
-  displayedChatThreadId,
-  useChatNavigation,
-} from "../routing/chat-navigation";
+import { type ChatDisplay, useChatNavigation } from "../routing/chat-navigation";
 import { MobileBreadcrumb } from "./MobileBreadcrumb";
 
 export function ChatBreadcrumb({
@@ -24,7 +20,7 @@ export function ChatBreadcrumb({
   display,
 }: {
   projectId: string;
-  /** Only meaningful on the Chat screen. */
+  /** Main's chat, or the index. */
   display: ChatDisplay;
 }) {
   const { openChatIndex } = useChatNavigation();
@@ -33,7 +29,7 @@ export function ChatBreadcrumb({
   const current = (
     <ChatThreadTitle
       projectId={projectId}
-      threadId={displayedChatThreadId(display)}
+      threadId={display.threadId}
       failureClassName="inset-x-2"
     />
   );

@@ -313,7 +313,7 @@ export function ChatView({
       leave: (moved) => {
         navigation.forgetChat(threadId);
         if (moved) void navigation.openNewChat(undefined, { replace: true });
-        else if (displayedChatThreadId(navigation.display) === threadId)
+        else if (displayedChatThreadId(navigation) === threadId)
           void navigation.openNewChat(undefined, { replace: true });
       },
     },

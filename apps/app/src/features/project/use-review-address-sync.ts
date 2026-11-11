@@ -15,7 +15,6 @@ import {
   setDocumentView,
   useDocumentView,
 } from "@/client/project-shell/document-views";
-import { useContextTabs, useContextTabsStore, useSelectedDocumentId } from "@/client/stores";
 import { useAccountId } from "./context/account-feature-context";
 import type { ReviewAddressAdmission } from "./use-review-admission";
 
@@ -49,15 +48,12 @@ function arrivalOf(history: RouterHistory, key: string): string {
 
 export function useReviewAddressSync({
   projectId,
-  selectsTab,
   locationKey: entryKey,
   reviewOwner,
   address,
   writeItemKey,
 }: {
   projectId: string;
-  /** The desktop's Write shows the selected tab: an arriving address selects the one it names. */
-  selectsTab: boolean;
   /** The rendered history entry's key. */
   locationKey: string | undefined;
   /** Whose draft the address's item reviews (`addressReviewOwner`); null while unresolved. */
@@ -83,21 +79,9 @@ export function useReviewAddressSync({
   /** The arrival, and main's document in it, whose address main's view has taken in. */
   const arrived = useRef<string | undefined>(undefined);
   const pin = useDocumentView(accountId, projectId, documentId ?? null).pin;
-  const selectedDocumentId = useSelectedDocumentId(projectId);
-
-  // The address can resolve before its tab is installed: selecting waits for the tab.
-  const named = useContextTabs(projectId).tabs.find((tab) => tab.documentId === documentId);
-  useLayoutEffect(() => {
-    if (!selectsTab || arrived.current === locationKey) return;
-    if (!named || named.documentId === selectedDocumentId) return;
-    // The address wins over the persisted selection. With no tab yet, the route installs one.
-    void useContextTabsStore.getState().selectTab(projectId, named.documentId, named);
-  }, [selectsTab, locationKey, named, selectedDocumentId, projectId]);
 
   useLayoutEffect(() => {
     if (locationKey === undefined || !documentId || arrived.current === locationKey) return;
-    // On the desktop the address is taken in once its tab is the one Write shows.
-    if (selectsTab && documentId !== selectedDocumentId) return;
     if (address.itemKey && (address.admission !== "admitted" || !reviewOwner)) return;
     arrived.current = locationKey;
     const next =
@@ -111,16 +95,7 @@ export function useReviewAddressSync({
     const current = readDocumentView(accountId, projectId, documentId).pin;
     if (samePin(next, current) || (!next && !current)) return;
     setDocumentView(accountId, projectId, documentId, next ? { pin: next } : { version: "live" });
-  }, [
-    documentId,
-    selectsTab,
-    selectedDocumentId,
-    locationKey,
-    reviewOwner,
-    address,
-    accountId,
-    projectId,
-  ]);
+  }, [documentId, locationKey, reviewOwner, address, accountId, projectId]);
 
   useEffect(() => {
     if (!documentId || arrived.current !== locationKey) return;

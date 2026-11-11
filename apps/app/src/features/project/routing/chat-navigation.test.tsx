@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * Chat commands keep the writer's screen: on the Chat screen they navigate;
- * elsewhere they point the dock at the chat and reveal it. The current chat is
- * this tab's own, and a chat the server no longer has is let go.
+ * A sent chat takes main when main is the chat index; beside a document it only becomes the
+ * current chat, which the side shows. The current chat is this tab's own, and a chat the
+ * server no longer has is let go.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - tab-local remembered chat navigation
@@ -20,7 +20,6 @@ import {
   useProjectChatNavigation,
 } from "./chat-navigation";
 import type { ProjectDestination } from "./project-address";
-import type { ScreenKey } from "./project-route";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -37,7 +36,9 @@ let navigation: ChatNavigation;
 let effects: ReturnType<typeof vi.fn<(callback?: () => void) => void>>;
 let threadActions: ReturnType<typeof useThreadActions>;
 
-function Harness(props: { activeScreen: ScreenKey; urlChatId: string | null }) {
+type MainChat = Parameters<typeof useProjectChatNavigation>[0]["mainChat"];
+
+function Harness({ mainChat }: { mainChat: MainChat }) {
   threadActions = useThreadActions();
   navigation = useProjectChatNavigation({
     accountId: ACCOUNT,
@@ -47,17 +48,17 @@ function Harness(props: { activeScreen: ScreenKey; urlChatId: string | null }) {
       effects(options.afterCommit);
       return { kind: "applied" };
     },
-    ...props,
+    mainChat,
   });
   return null;
 }
 
-function render(activeScreen: ScreenKey, urlChatId: string | null = null) {
+function render(mainChat: MainChat) {
   act(() =>
     root.render(
       <QueryClientProvider client={client}>
         <ThreadStoreProvider now={0}>
-          <Harness activeScreen={activeScreen} urlChatId={urlChatId} />
+          <Harness mainChat={mainChat} />
         </ThreadStoreProvider>
       </QueryClientProvider>,
     ),
@@ -78,25 +79,25 @@ afterEach(() => {
   act(() => root.unmount());
 });
 
-it("shows a sent chat on the Chat screen and only remembers it elsewhere", () => {
-  render("chat");
+it("shows a sent chat in main from the index and only remembers it beside a document", () => {
+  render({ kind: "index" });
   act(() => navigation.acceptCreatedChat("sent"));
   expect(go).toHaveBeenCalledWith({ kind: "chat", chatId: "sent" });
   expect(readCurrentChat(ACCOUNT, PROJECT)).toBe("sent");
   // The route settles the URL onto the new chat; re-rendering with it reflects
   // the thread variant (the hook alone cannot observe the navigation completing).
-  render("chat", "sent");
+  render({ kind: "thread", threadId: "sent" });
   expect(navigation.display).toEqual({ kind: "thread", threadId: "sent" });
 
   go.mockClear();
-  render("context");
+  render(null);
   act(() => navigation.acceptCreatedChat("docked"));
   expect(go).not.toHaveBeenCalled();
-  expect(chatSurfaceThreadId(navigation.display)).toBe("docked");
+  expect(chatSurfaceThreadId(navigation)).toBe("docked");
 });
 
 it("keeps a first send whose pre-creation 404 is still cached once it is acknowledged", () => {
-  render("chat", "sent");
+  render({ kind: "thread", threadId: "sent" });
   const snapshot = client
     .getQueryCache()
     .build(client, { queryKey: threadSnapshotQueryOptions("sent").queryKey });

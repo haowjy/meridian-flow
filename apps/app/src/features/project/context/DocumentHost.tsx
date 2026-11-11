@@ -1,0 +1,534 @@
+/**
+ * DocumentHost — one document in a view, on the desktop or the phone. The host is keyed by its
+ * document: moving it between main and the side changes only its place, so its editor (undo,
+ * caret, scroll) survives the move. Main's host also binds the address to its document and
+ * records the opening; a host off main does neither.
+ *
+ * A `kept` host is the last document that left main, mounted hidden so its undo survives a
+ * return: it reviews nothing, presents nothing, and writes neither a pin nor the address.
+ */
+import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import { AlertCircle, Loader2 } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { ContextTab } from "@/client/stores";
+import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { ReviewToast } from "@/features/draft-review/ReviewToast";
+import { DocumentStateSlotProvider } from "@/features/editor/document-state-slot";
+import { PassageNotice } from "@/features/editor/PassageNotice";
+import { cn } from "@/lib/utils";
+import { DocumentReviewProvider } from "../DocumentReview";
+import { MobileDocumentReview } from "../mobile/MobileDocumentReview";
+import { MobileRefusalNotice } from "../mobile/MobileRefusalNotice";
+import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
+import { contextRouteRequest } from "../routing/project-route";
+import type { MainDocument } from "../views";
+import {
+  useAccountResourceProjection,
+  useAccountResourceReplica,
+  useContextRemovalCoordinator,
+  useOptionalPresentedDocuments,
+} from "./account-feature-context";
+import { ContextDocumentHost, type EditableContextTab } from "./ContextDocumentHost";
+import { ContextViewerHost } from "./ContextViewerHost";
+import { selectionAtRoute } from "./context-removal-protocol";
+import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
+import { projectResourceTab } from "./context-tab-from-file";
+import { DocumentFreezeNotice } from "./DocumentFreezeNotice";
+import { DocumentIdentityBar } from "./DocumentIdentityBar";
+import { DocumentPaneChrome } from "./DocumentPaneChrome";
+import { PHONE_DOCUMENT_PRESENTATION } from "./document-presentation";
+import type { PresentedPlace } from "./presented-documents";
+import { recentOpening } from "./recent-opening";
+import { useContextRemovalProject } from "./use-context-removal-project";
+import { useDocumentFreeze } from "./use-document-freeze";
+import { useDocumentLiveness } from "./use-draft-only-presentation";
+import { settleWriterClose } from "./use-follow-open-document-placement";
+import {
+  type IdentityCommitOwnership,
+  type IdentityCommitted,
+  identityCommitMayNavigate,
+  identityCommitRoute,
+} from "./use-identity-commit";
+import { useIsDraftOnly } from "./use-is-draft-only";
+import { useRecordOpenedDocument } from "./use-record-opened-document";
+
+export type DocumentPlace = PresentedPlace;
+
+export type DocumentHostProps = {
+  projectId: string;
+  tab: ContextTab;
+  place: DocumentPlace;
+  /** Whether the host's slot is on screen: main always, the side while it is open. */
+  visible: boolean;
+  /** Main's address answer; set only while the host is main's. */
+  main?: MainDocument;
+  presentation: "desktop" | "phone";
+  /** The desktop's band above the page: main's header or the side's. */
+  header?: ReactNode;
+  editorWorkId: string | null;
+};
+
+export function DocumentHost(props: DocumentHostProps) {
+  const { projectId, place } = props;
+  const tab = useCurrentDescriptor(projectId, props.tab, place === "main");
+  const onScreen = place !== "kept" && props.visible;
+  usePresentDocument(projectId, tab, place);
+  return (
+    <DocumentReviewProvider projectId={projectId} tab={tab} showing={onScreen}>
+      {place === "main" && props.main ? (
+        <MainDocumentBinding projectId={projectId} tab={tab} main={props.main} />
+      ) : null}
+      {props.presentation === "phone" ? (
+        <PhoneDocumentFrame projectId={projectId} tab={tab} local={props.main?.local === true} />
+      ) : (
+        <DesktopDocumentFrame {...props} tab={tab} onScreen={onScreen} />
+      )}
+    </DocumentReviewProvider>
+  );
+}
+
+/**
+ * Off main, a host follows its document through a rename or a move by the replica's
+ * placement; main's host gets the same from its address, which follows the document.
+ */
+function useCurrentDescriptor(projectId: string, tab: ContextTab, main: boolean): ContextTab {
+  const { records, placement } = useAccountResourceProjection(projectId);
+  const isDraftOnly = useIsDraftOnly(projectId);
+  if (main) return tab;
+  const projected = projectResourceTab(tab, records, placement, isDraftOnly(tab.documentId));
+  return projected.kind === "projected" ? projected.tab : tab;
+}
+
+/** Main's and the side's documents are what removals, notices and availability act on. */
+function usePresentDocument(projectId: string, tab: ContextTab, place: DocumentPlace) {
+  const presented = useOptionalPresentedDocuments();
+  const [token] = useState(() => crypto.randomUUID());
+  useLayoutEffect(() => {
+    if (!presented) return;
+    if (place === "kept") presented.withdraw(token);
+    else presented.present(token, projectId, tab, place);
+  }, [presented, token, projectId, tab, place]);
+  useLayoutEffect(() => () => presented?.withdraw(token), [presented, token]);
+}
+
+/**
+ * Binds the route's locator to main's document, or rejects it once the catalog has settled
+ * without one, and records the opening once live has the document. Renders nothing.
+ */
+function MainDocumentBinding({
+  projectId,
+  tab,
+  main,
+}: {
+  projectId: string;
+  tab: ContextTab;
+  main: MainDocument;
+}) {
+  const contextRemoval = useContextRemovalCoordinator();
+  const state = useContextRemovalProject(projectId);
+  const { selection } = state;
+
+  useLayoutEffect(() => {
+    if (selection.status === "none") return;
+    if (main.local) {
+      // The pointer route (`unfiled`, no path) and a path route the pointer holds: both bind to
+      // the local document, so a move of it carries the route instead of rejecting its old path.
+      const workspace = resolveWorkspaceRoute({
+        tabs: [tab],
+        selectedDocumentId: tab.documentId,
+        locator: selection.locator,
+      });
+      if (workspace.kind === "materialized-local")
+        contextRemoval.redirectMaterializedLocal(
+          projectId,
+          selection.revision,
+          tab.documentId,
+          workspace.target,
+        );
+      else if (workspace.kind === "owner" && selection.status === "candidate")
+        contextRemoval.bindRouteSelection(
+          projectId,
+          selection.revision,
+          workspace.identity,
+          "answer",
+        );
+      return;
+    }
+    if (main.scheme === null || main.path === null) return;
+    if (
+      !selectionAtRoute(selection, {
+        scheme: main.scheme,
+        path: main.path,
+        workId: main.workId ?? undefined,
+        rootThreadId: main.rootThreadId ?? undefined,
+      })
+    )
+      return;
+    // A draft-only document is never live at its cached path, so the path doesn't identify it:
+    // a review binds on arrival, and a plain URL there waits for the address answer.
+    if (!main.draftOnly && !main.isFetching && !main.isError)
+      contextRemoval.bindRouteSelection(
+        projectId,
+        selection.revision,
+        { kind: "server", documentId: tab.documentId },
+        "answer",
+      );
+  }, [contextRemoval, projectId, selection, main, tab]);
+
+  // The route is remembered once it is bound to this document; a draft-only document's path dies
+  // with its draft, so it never is.
+  const liveness = useDocumentLiveness(projectId, tab);
+  useLayoutEffect(() => {
+    if (
+      main.draftOnly ||
+      liveness === "draft-only" ||
+      selection.status !== "bound" ||
+      selection.identity.documentId !== tab.documentId
+    )
+      return;
+    contextRemoval.activate({
+      projectId,
+      selectionRevision: selection.revision,
+      transitionRevision: state.transitionRevision,
+      locator: selection.locator,
+      identity: selection.identity,
+    });
+  }, [
+    contextRemoval,
+    projectId,
+    selection,
+    state.transitionRevision,
+    tab,
+    main.draftOnly,
+    liveness,
+  ]);
+
+  // Recency is recorded from the document actually in main, once per arrival.
+  const record = useRecordOpenedDocument();
+  const recorded = useRef<string | null>(null);
+  useEffect(() => {
+    if (liveness !== "live") {
+      recorded.current = null;
+      return;
+    }
+    if (recorded.current === tab.documentId) return;
+    const opening = recentOpening(projectId, tab, new Date().toISOString(), false);
+    if (!opening) return;
+    recorded.current = tab.documentId;
+    record(opening);
+  }, [liveness, tab, projectId, record]);
+  return null;
+}
+
+/** Desktop: the band, then the page (main's) or the side's body, then the document itself. */
+function DesktopDocumentFrame({
+  projectId,
+  tab,
+  place,
+  header,
+  onScreen,
+  editorWorkId,
+}: DocumentHostProps & { onScreen: boolean }) {
+  return (
+    <div
+      className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col"
+      role={place === "main" ? "main" : undefined}
+    >
+      {header}
+      <PaintScope active={onScreen}>
+        <PaintHold
+          status={t`Opening ${tab.name}`}
+          className={cn("relative flex min-h-0 flex-1 flex-col", place === "main" && "page-sheet")}
+        >
+          <PaintCapture surface={tab.documentId} />
+          <DocumentStateSlotProvider>
+            <DesktopDocumentChrome
+              projectId={projectId}
+              tab={tab}
+              place={place}
+              editorWorkId={editorWorkId}
+            />
+            {tab.kind === "viewer" ? (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <ContextViewerHost
+                  projectId={projectId}
+                  tab={tab}
+                  className={place === "main" ? undefined : "bg-transparent"}
+                />
+              </div>
+            ) : (
+              <div className="relative min-h-0 flex-1">
+                <EditableDocument
+                  projectId={projectId}
+                  tab={tab}
+                  active={onScreen}
+                  editorClassName={place === "main" ? undefined : "bg-transparent"}
+                />
+              </div>
+            )}
+          </DocumentStateSlotProvider>
+        </PaintHold>
+      </PaintScope>
+    </div>
+  );
+}
+
+function EditableDocument({
+  projectId,
+  tab,
+  active,
+  editorClassName,
+}: {
+  projectId: string;
+  tab: EditableContextTab;
+  active: boolean;
+  editorClassName?: string;
+}) {
+  const freeze = useHostFreeze(projectId, tab);
+  const resources = useAccountResourceReplica();
+  const onUntitledBecameNonEmpty = useCallback(async () => {
+    if (tab.kind === "new") await resources.markCreateEligible({ handle: tab.resourceHandle });
+  }, [resources, tab]);
+  return (
+    <ContextDocumentHost
+      projectId={projectId}
+      tab={tab}
+      active={active}
+      readOnly={freeze !== null}
+      editorClassName={editorClassName}
+      onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
+    />
+  );
+}
+
+/**
+ * One freeze source on every shell: an archived Work freezes its own files and its drafts'
+ * reviews; a trashed chat freezes its drafts' reviews.
+ */
+function useHostFreeze(projectId: string, tab: ContextTab) {
+  const { controller } = useDraftReview();
+  const review = controller.inlineReview;
+  const reviewing = review?.documentId === tab.documentId && review.shown;
+  return useDocumentFreeze(projectId, tab, reviewing ? controller.ownerKey : null);
+}
+
+/** The document's identity and state, its notices and its review's toast. */
+function DesktopDocumentChrome({
+  projectId,
+  tab,
+  place,
+  editorWorkId,
+}: {
+  projectId: string;
+  tab: ContextTab;
+  place: DocumentPlace;
+  editorWorkId: string | null;
+}) {
+  const { controller } = useDraftReview();
+  const freeze = useHostFreeze(projectId, tab);
+  const removal = useContextRemovalCoordinator();
+  const openRoute = useOpenContextRoute();
+  const draftOnly = useDocumentLiveness(projectId, tab) === "draft-only";
+  // A chat's Scratch belongs to no Work, so archiving the scope's Work never freezes it. The
+  // reviewed file itself may be project-owned, so only its own Work's archive freezes its
+  // identity row.
+  const fileInWork =
+    tab.kind !== "new" && isWorkScopedScheme(tab.scheme) && tab.rootThreadId === undefined;
+  const onCommitted = (
+    documentId: string,
+    next: IdentityCommitted,
+    ownership: IdentityCommitOwnership,
+  ) => {
+    // Main's address follows its own document's rename or move; a side document follows the
+    // replica's placement on its own.
+    if (place !== "main" || !openRoute) return;
+    if (!identityCommitMayNavigate(ownership, tab.documentId, documentId)) return;
+    const { request, options } = identityCommitRoute(documentId, next);
+    void openRoute(request, options).then(
+      (settlement) => {
+        if (settlement.kind === "failed") reportError(settlement.error);
+      },
+      (error: unknown) => reportError(error),
+    );
+  };
+  return (
+    <>
+      <DocumentIdentityBar
+        key={tab.documentId}
+        variant="state"
+        projectId={projectId}
+        editorWorkId={editorWorkId}
+        tab={tab}
+        readOnly={Boolean(fileInWork && freeze?.kind === "work")}
+        onCloseDraftOnly={
+          draftOnly ? () => settleWriterClose(removal.writerClose(projectId, tab)) : undefined
+        }
+        onCommitted={onCommitted}
+        onOpenExisting={(scheme, path, owner) => {
+          void openRoute?.(
+            contextRouteRequest({
+              scheme,
+              path,
+              workId: owner.workId,
+              rootThreadId: owner.rootThreadId,
+            }),
+          );
+        }}
+      />
+      <DocumentPaneChrome
+        projectId={projectId}
+        tab={tab}
+        freeze={freeze}
+        reviewNotices={place === "main"}
+      />
+      {controller.toast ? (
+        <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The phone's one document. No identity bar: the top bar's breadcrumb names the document, and a
+ * refused create or move is said here. An untitled document has no review to wrap it.
+ */
+function PhoneDocumentFrame({
+  projectId,
+  tab,
+  local,
+}: {
+  projectId: string;
+  tab: ContextTab;
+  local: boolean;
+}) {
+  const removal = useContextRemovalCoordinator();
+  const draftOnly = useDocumentLiveness(projectId, tab) === "draft-only";
+  const name = tab.name;
+  return (
+    <PaintHold
+      status={name ? t`Opening ${name}` : t`Opening draft`}
+      className="relative h-full min-h-0"
+    >
+      <PaintCapture surface={tab.documentId} />
+      {tab.kind === "viewer" ? (
+        <ContextViewerHost projectId={projectId} tab={tab} />
+      ) : local ? (
+        <div className="flex h-full min-h-0 flex-col">
+          <PhoneEditor projectId={projectId} tab={tab} />
+        </div>
+      ) : (
+        <MobileDocumentReview
+          projectId={projectId}
+          tab={tab}
+          // A draft-only document has no live version to return to: its review closes it.
+          onCloseDraftOnly={
+            draftOnly ? () => settleWriterClose(removal.writerClose(projectId, tab)) : undefined
+          }
+        >
+          <PhoneEditor projectId={projectId} tab={tab}>
+            <PassageNotice documentId={tab.documentId} />
+          </PhoneEditor>
+        </MobileDocumentReview>
+      )}
+    </PaintHold>
+  );
+}
+
+function PhoneEditor({
+  projectId,
+  tab,
+  children,
+}: {
+  projectId: string;
+  tab: EditableContextTab;
+  children?: ReactNode;
+}) {
+  const freeze = useHostFreeze(projectId, tab);
+  return (
+    <>
+      {freeze ? (
+        <DocumentFreezeNotice
+          projectId={projectId}
+          freeze={freeze}
+          className="shrink-0 px-2 pt-2"
+        />
+      ) : null}
+      <MobileRefusalNotice projectId={projectId} tab={tab} className="shrink-0 px-4" />
+      <div className="relative min-h-0 flex-1">
+        {children}
+        <ContextDocumentHost
+          projectId={projectId}
+          tab={tab}
+          active
+          readOnly={freeze !== null}
+          presentation={PHONE_DOCUMENT_PRESENTATION}
+        />
+      </div>
+    </>
+  );
+}
+
+/**
+ * Main while its address has no document to paint: opening, or not found. A candidate route the
+ * settled catalog and address both lack is rejected here, so the route stops waiting on it.
+ */
+export function MainDocumentStatus({ projectId, main }: { projectId: string; main: MainDocument }) {
+  const contextRemoval = useContextRemovalCoordinator();
+  const { selection } = useContextRemovalProject(projectId);
+  const { scheme, path, catalogResolved, addressState, isError, isFetching } = main;
+  useLayoutEffect(() => {
+    if (scheme === null || path === null || selection.status !== "candidate") return;
+    if (
+      !selectionAtRoute(selection, {
+        scheme,
+        path,
+        workId: main.workId ?? undefined,
+        rootThreadId: main.rootThreadId ?? undefined,
+      })
+    )
+      return;
+    if (catalogResolved && !isFetching && !isError && addressState === "settled")
+      contextRemoval.rejectRouteCandidate(projectId, selection.revision);
+  }, [
+    contextRemoval,
+    projectId,
+    selection,
+    scheme,
+    path,
+    main.workId,
+    main.rootThreadId,
+    catalogResolved,
+    addressState,
+    isError,
+    isFetching,
+  ]);
+  const opening = addressState === "pending" || (isFetching && !catalogResolved);
+  const failed = !opening && (isError || catalogResolved);
+  return (
+    <div
+      className={cn(
+        "grid h-full place-items-center px-6 text-center text-sm",
+        failed ? "text-destructive" : "text-muted-foreground",
+      )}
+    >
+      <PaintCapture
+        state={opening ? "pending" : failed ? "failed" : "painted"}
+        surface={opening ? "opening" : failed ? "error" : "viewer"}
+      />
+      {opening ? (
+        <div className="flex items-center gap-2">
+          <Loader2 className="size-4 animate-spin" aria-hidden />
+          <Trans>Opening document…</Trans>
+        </div>
+      ) : failed ? (
+        <div className="flex items-center gap-2">
+          <AlertCircle className="size-4" aria-hidden />
+          <Trans>Couldn't open this document.</Trans>
+        </div>
+      ) : null}
+    </div>
+  );
+}

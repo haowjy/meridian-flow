@@ -18,7 +18,6 @@ import { Folder, FolderOpen } from "lucide-react";
 import { type RefObject, useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
-import { useSelectedDocumentId } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import type { DeleteTarget } from "../context/ContextEntryActions";
@@ -34,18 +33,17 @@ import { useDeleteContextEntry } from "../context/use-delete-context-entry";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
 import { useScratchCatalogs } from "../context/use-scratch-catalogs";
 import { useTreeExpansion } from "../context/use-tree-expansion";
-import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { DockedRailSection } from "../shell/DockedRailSection";
 import { RailEmptyHint, RailFolderRow } from "../shell/RailSection";
 import { type SourceDrop, SourceHint, SourcePane } from "../shell/sidebar/SourcePane";
+import { useOptionalMainItem } from "../views";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
-/** The document open beside the writer, if any: the dock's on the Chat screen, the selected tab in the Editor. */
-function useOpenDocumentId(projectId: string): string | undefined {
-  const screen = useProjectScreen();
-  const selected = useSelectedDocumentId(projectId);
-  return screen === "chat" || screen === "context" ? (selected ?? undefined) : undefined;
+/** The document main shows, if any: its row reads as current. */
+function useOpenDocumentId(): string | undefined {
+  const item = useOptionalMainItem()?.item;
+  return item?.kind === "document" ? item.documentId : undefined;
 }
 
 /** A chat's Scratch: its catalogs, the list areas they make, and the load state. */
@@ -258,7 +256,7 @@ function ChatScratchTree({
   onPicked?: () => void;
 }) {
   const { source, primary, earlier, editable, hasEarlier, ready } = scratch;
-  const openId = useOpenDocumentId(projectId);
+  const openId = useOpenDocumentId();
   const deletion = useDeleteContextEntry(projectId);
   const folderIds = useMemo(() => {
     if (!ready) return null;

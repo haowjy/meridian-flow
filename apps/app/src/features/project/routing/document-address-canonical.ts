@@ -29,15 +29,3 @@ export function canonicalDocumentAddress(
         : undefined;
   return { ...address, destination, owner };
 }
-
-/** Hidden review tabs have no live catalog to refresh their canonical labels. */
-export function canonicalReviewTabPatch(
-  tab: { scheme: string; path: string; name: string },
-  destination: Extract<ProjectAddress["destination"], { kind: "document" }>,
-  name: string,
-): { scheme: typeof destination.scheme; path: string; name: string } | null {
-  const path = `/${destination.path}`;
-  return tab.scheme === destination.scheme && tab.path === path && tab.name === name
-    ? null
-    : { scheme: destination.scheme, path, name };
-}

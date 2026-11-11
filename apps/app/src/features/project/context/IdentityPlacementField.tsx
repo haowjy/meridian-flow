@@ -121,7 +121,7 @@ export function IdentityPlacementField({
       .openDocument(
         projectId,
         { handle: tab.resourceHandle },
-        `identity-field:${tab.tabInstanceId ?? tab.resourceHandle}`,
+        `identity-field:${tab.resourceHandle}`,
         abort.signal,
       )
       .then((result) => {

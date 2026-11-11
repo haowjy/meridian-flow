@@ -2,7 +2,7 @@
 import { createContext, type ReactNode, useContext, useLayoutEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import type { NavigationSettlement, ProjectLeaveGuard } from "./project-navigation";
-import type { ContextRouteRequest, ScreenKey } from "./project-route";
+import type { ContextRouteRequest } from "./project-route";
 
 export type OpenContextOptions = {
   replace?: boolean;
@@ -13,8 +13,8 @@ export type OpenContextOptions = {
   draftOnly?: boolean;
   /** The destination is a document the writer just made: its editor takes the caret once live. */
   focus?: true;
-  /** Runs only after successful destination workspace installation. */
-  afterCommit?: (installed: ContextTab | undefined) => void;
+  /** Runs only once the navigation committed. */
+  afterCommit?: () => void;
   /** Persist an inline review in this Editor history entry. Omission opens live. */
   itemKey?: string;
   /** Whose draft `itemKey` reviews (`work:<id>` or `lineage:<root>`); omitted, the Editor's Work. */
@@ -31,9 +31,7 @@ export type OpenContextRoute = (
 
 const ProjectNavigationContext = createContext<{
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
-  screen?: ScreenKey;
   open: OpenContextRoute;
-  screenCommands?: ScreenCommands;
   isCurrentNavigation?: (ticket: import("./project-navigation").ProjectNavigationTicket) => boolean;
   capture?: () => () => boolean;
   trash: {
@@ -52,15 +50,11 @@ export function ProjectNavigationProvider({
   captureNavigation,
   trash,
   isCurrentContextRoute,
-  screen,
   registerLeaveGuard,
-  screenCommands,
   isCurrentNavigation,
 }: {
-  screen?: ScreenKey;
   children: ReactNode;
   openContextRoute: OpenContextRoute;
-  screenCommands?: ScreenCommands;
   isCurrentNavigation?: (ticket: import("./project-navigation").ProjectNavigationTicket) => boolean;
   captureNavigation?: () => () => boolean;
   trash: {
@@ -76,13 +70,11 @@ export function ProjectNavigationProvider({
   return (
     <ProjectNavigationContext.Provider
       value={{
-        screen,
         open: openContextRoute,
         capture: captureNavigation,
         trash,
         isCurrentContextRoute,
         registerLeaveGuard,
-        screenCommands,
         isCurrentNavigation,
       }}
     >
@@ -121,22 +113,8 @@ export function useProjectLeaveGuard(guard: ProjectLeaveGuard) {
   );
 }
 
-/** Opt-in presentation for the dock header; ordinary document opens keep their own policy. */
-
-export type ScreenCommands = {
-  showEditor: (options?: { afterCommit?: () => void }) => Promise<NavigationSettlement>;
-};
-export function useScreenCommands() {
-  return useContext(ProjectNavigationContext)?.screenCommands;
-}
 export function useIsCurrentNavigation() {
   return useContext(ProjectNavigationContext)?.isCurrentNavigation;
-}
-
-export function useProjectScreen(): ScreenKey {
-  const screen = useContext(ProjectNavigationContext)?.screen;
-  if (!screen) throw new Error("Project screen navigation is required");
-  return screen;
 }
 
 /** The route-owned Trash overlay destination and its one navigation operation. */

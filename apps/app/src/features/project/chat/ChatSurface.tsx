@@ -1,52 +1,31 @@
 /**
- * ChatSurface — the single, persistent chat instance for the desktop project.
+ * ChatSurface — the one chat instance in the project view.
  *
- * Mounted ONCE above the destination switch (see `DesktopProject`) and never
- * unmounted when the user moves between Chat / Work / Editor — so the
- * conversation never reloads: the WS stream, scroll position, and composer
- * draft all survive a destination change. The project SlotGrid moves this
- * same instance between the centered Chat slot and the right dock slot by
- * changing only its persistent slot's grid-area.
+ * Mounted once and never unmounted while the project is open, so the conversation never
+ * reloads: the stream, scroll position and composer draft survive a move. The desktop moves
+ * this same instance between main and the side by grid-area; only the band above it changes
+ * (`header`), so the conversation below keeps its place in the tree.
  *
- * In the dock it renders through `DockShell`, which adds the chat switcher
- * header (and, on Work, the transient file view over the body). The shell is a
- * passthrough in `center` placement so this subtree keeps the same tree
- * position across center↔dock moves — the chat is never reconciled away.
- *
- * The phone's chat sheet is the exception: it mounts the surface only while
- * the sheet is open, and supplies its own header via `renderHeader`.
+ * The phone's chat sheet mounts the surface only while the sheet is open, with its own header.
  */
 import type { Work } from "@meridian/contracts/protocol";
 import type { ReactNode } from "react";
-import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
 import { cn } from "@/lib/utils";
-import { DockHeader, type DockHeaderProps } from "../dock/DockHeader";
-import { DockShell } from "../dock/DockShell";
-import type { ContextRouteRequest, ScreenKey } from "../routing/project-route";
+import type { ContextRouteRequest } from "../routing/project-route";
 import { ChatScreen } from "./ChatScreen";
-
-/** `center` = the wide main column (Chat screen); `dock` = right rail (Work, Editor). */
-export type ChatPlacement = "center" | "dock";
 
 export type ChatSurfaceProps = {
   projectId: string;
   threadId: string | null;
   activeWork: Work | null;
   availableWorks: readonly Work[];
-  /** Active screen — drives the dock view set when this surface is docked. */
-  activeScreen: ScreenKey;
-  placement: ChatPlacement;
-  /** When false the surface is hidden (e.g. Settings / closed dock) WITHOUT unmounting. */
+  /** Main's chat sits on the page; the side's on the chrome. */
+  place: "main" | "side";
+  /** When false the surface is hidden (the side closed, or main on the index) WITHOUT unmounting. */
   visible: boolean;
-  /**
-   * Collapse the dock. Only meaningful in `dock` placement — the dock header
-   * carries the close control (matching the Context rail). The centered chat
-   * owns no close (its rail toggles live in the PaneHeader).
-   */
-  onCloseDock?: () => void;
   onOpenContextTarget?: (target: ContextRouteRequest) => void;
-  /** Dock header renderer; omit for the default desktop header. The phone chat sheet supplies its own. */
-  renderHeader?: (args: DockHeaderProps) => ReactNode;
+  /** The band above the conversation. */
+  header?: ReactNode;
 };
 
 export function ChatSurface({
@@ -54,53 +33,38 @@ export function ChatSurface({
   threadId,
   activeWork,
   availableWorks,
-  activeScreen,
-  placement,
+  place,
   visible,
-  onCloseDock,
   onOpenContextTarget,
-  renderHeader,
+  header,
 }: ChatSurfaceProps) {
-  const threadSelect = <ChatThreadTitle projectId={projectId} threadId={threadId} />;
   return (
     <div
       aria-hidden={!visible}
-      // Hidden (Settings / collapsed dock) but still mounted for persistence —
-      // `inert` keeps the live-but-invisible composer/messages out of the tab
-      // order and pointer flow so keystrokes can't land in an unseen chat.
+      // Hidden but still mounted for persistence: `inert` keeps the live-but-invisible
+      // composer and messages out of the tab order and pointer flow.
       inert={!visible}
       className={cn(
-        "main-pane flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
-        placement === "center" && "page-sheet",
+        "flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
         !visible && "pointer-events-none opacity-0",
       )}
     >
-      <DockShell
-        projectId={projectId}
-        placement={placement}
-        screen={activeScreen}
-        visible={visible}
-        renderHeader={(args) => {
-          const headerProps: DockHeaderProps = {
-            ...args,
-            onClose: onCloseDock,
-            threadSelect,
-            threadId,
-          };
-          return renderHeader ? renderHeader(headerProps) : <DockHeader {...headerProps} />;
-        }}
-      >
-        {(showPrimary) => (
-          <ChatScreen
-            projectId={projectId}
-            threadId={threadId}
-            activeWork={activeWork}
-            availableWorks={availableWorks}
-            onOpenContextTarget={onOpenContextTarget}
-            visible={visible && showPrimary}
-          />
+      {header}
+      <div
+        className={cn(
+          "main-pane flex min-h-0 flex-1 flex-col overflow-hidden",
+          place === "main" && "page-sheet",
         )}
-      </DockShell>
+      >
+        <ChatScreen
+          projectId={projectId}
+          threadId={threadId}
+          activeWork={activeWork}
+          availableWorks={availableWorks}
+          onOpenContextTarget={onOpenContextTarget}
+          visible={visible}
+        />
+      </div>
     </div>
   );
 }
