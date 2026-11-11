@@ -91,7 +91,7 @@ export function ContextTabBar({
         </Tooltip>
       ) : null}
       {/* The left padding is room for the first tab's flare, which this scroller would clip. */}
-      <div className="flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden pl-2">
+      <div className="flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden pl-1.5">
         {tabs.map((tab, index) => {
           const isActive = (member: ContextTab) =>
             activeTabInstanceId
@@ -263,7 +263,7 @@ function TabChipFrame({
         // subtracts from its height instead of overflowing the strip.
         // scroll-mx: scrolled into view, the active tab keeps room for its flares,
         // which the strip's scroller would clip at its edge.
-        "group w-40 shrink-0 scroll-mx-2 gap-1.5",
+        "group w-40 shrink-0 scroll-mx-1.5 gap-1.5",
         tabChipClass(active),
         // Under review the chip surfaces the review strip's tone so tab and
         // banner read as one continuous surface.

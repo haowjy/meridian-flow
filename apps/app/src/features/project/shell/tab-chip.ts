@@ -11,15 +11,15 @@ import { cn } from "@/lib/utils";
 /**
  * `active` is the folder tab the page rises into; otherwise the chip is an
  * inactive tab with a hover pill. Both fill the band's height, so an active
- * chip's base sits on the band's bottom edge where the page begins.
- *
- * `tone`: a `tab` dims while inactive; a `title` leaves colour to its text.
+ * chip's base sits on the band's bottom edge where the page begins. An
+ * inactive chip dims; content that sets its own colour (a title) is unaffected.
  */
-export function tabChipClass(active: boolean, tone: "tab" | "title" = "tab") {
+export function tabChipClass(active: boolean) {
   return cn(
     "relative flex items-center self-stretch px-3",
-    active ? "tab-chip-active" : "tab-chip-inactive",
-    tone === "tab" && (active ? "text-foreground" : "text-muted-foreground hover:text-foreground"),
+    active
+      ? "tab-chip-active text-foreground"
+      : "tab-chip-inactive text-muted-foreground hover:text-foreground",
   );
 }
 
@@ -27,12 +27,12 @@ export function tabChipClass(active: boolean, tone: "tab" | "title" = "tab") {
  * The pane band's title chip, shared by the switcher trigger and the in-tab
  * rename so renaming keeps the chip and its text exactly where they were.
  * `tab`: the page's own title. `quiet`: a title where no page rises (the
- * side panel), which keeps only the hover pill.
+ * side panel, the phone's top bar), which keeps only the hover pill.
  */
 export function titleChipClass(variant: "quiet" | "tab") {
   return cn(
     "w-fit min-w-0 max-w-full gap-[var(--chat-space-inline)]",
-    tabChipClass(variant === "tab", "title"),
+    tabChipClass(variant === "tab"),
     variant === "quiet" && "-ml-2 coarse:min-h-11",
   );
 }
