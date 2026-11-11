@@ -8,7 +8,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { useWorkMutations } from "@/client/query/work-command-store";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
+import { lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { useProjectLeaveGuard } from "../routing/ProjectNavigationContext";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { ArchivedWorkNotice } from "./ArchivedWorkNotice";
@@ -35,6 +36,9 @@ export type WorkDetailScreenProps = {
   projectId: string;
   work: AddressableWork;
   routeCommands: ProjectRouteCommands;
+  /** Just created here: its title takes the focus the creation dialog let go. */
+  focusTitle?: boolean;
+  onTitleFocused?: () => void;
 };
 
 /**
@@ -86,7 +90,13 @@ export function WorkScreenHeader({
   );
 }
 
-export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailScreenProps) {
+export function WorkDetailScreen({
+  projectId,
+  work,
+  routeCommands,
+  focusTitle = false,
+  onTitleFocused,
+}: WorkDetailScreenProps) {
   const mutations = useWorkMutations(projectId);
   const controller = useWorkMetadataController(work, async (data) => {
     const error = await mutations.update({ workId: work.id, data });
@@ -94,6 +104,13 @@ export function WorkDetailScreen({ projectId, work, routeCommands }: WorkDetailS
   });
   const scrollOwner = useRef<HTMLDivElement>(null);
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!focusTitle) return;
+    const title = scrollOwner.current?.querySelector<HTMLElement>("h1 button");
+    if (!title) return;
+    moveFocus(title, { ring: lastInputWasKeyboard() });
+    onTitleFocused?.();
+  }, [focusTitle, onTitleFocused]);
   useProjectLeaveGuard({
     request: controller.request,
     dirty: () => controller.dirty,

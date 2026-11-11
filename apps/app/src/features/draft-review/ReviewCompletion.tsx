@@ -50,6 +50,7 @@ export function ReviewNextAction({
       size={size}
       variant={next ? "default" : "outline"}
       className={className}
+      data-review-next
       onClick={() => (next ? onOpenNext(next) : onShowLive())}
     >
       {next ? (

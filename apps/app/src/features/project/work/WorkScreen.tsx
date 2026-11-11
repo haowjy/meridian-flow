@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { role } from "@/components/ui/roles";
@@ -24,6 +24,9 @@ export type WorkScreenProps = {
 
 export function WorkScreen({ projectId, routeWork, routeCommands, deletion }: WorkScreenProps) {
   const createWork = useCreateWork(projectId, routeCommands);
+  // The dialog and the button that opened it are gone once the Work opens, so
+  // the new Work's title takes the focus.
+  const [created, setCreated] = useState<string | null>(null);
   const recovery = useWorkCreationRecovery(
     projectId,
     routeWork.status === "creating" ? routeWork.workId : null,
@@ -44,7 +47,9 @@ export function WorkScreen({ projectId, routeWork, routeCommands, deletion }: Wo
           }}
           submitLabel={t`Create Work`}
           onClose={() => void routeCommands.closeWork({ replace: true })}
-          onCreate={({ name, details }) => createWork.create({ name, goal: details || undefined })}
+          onCreate={({ name, details }) =>
+            setCreated(createWork.create({ name, goal: details || undefined }))
+          }
         />
       </>
     );
@@ -68,6 +73,8 @@ export function WorkScreen({ projectId, routeWork, routeCommands, deletion }: Wo
         projectId={projectId}
         work={routeWork.work}
         routeCommands={routeCommands}
+        focusTitle={created === routeWork.work.id}
+        onTitleFocused={() => setCreated(null)}
       />
     );
 

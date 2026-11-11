@@ -9,7 +9,7 @@ import { memo, useEffect, useId, useState } from "react";
 import type { ThreadUserStateCommandView } from "@/client/query/thread-user-state-commands";
 import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem, useMenuActionDispatch } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -69,6 +69,7 @@ export const ProjectChatRow = memo(function ProjectChatRow({
 }: ProjectChatRowProps) {
   const { i18n } = useLingui();
   const [menuOpen, setMenuOpen] = useState(false);
+  const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
   const [focusWithin, setFocusWithin] = useState(false);
   const instanceId = useId();
   const title = item.title || t`New chat`;
@@ -197,6 +198,7 @@ export const ProjectChatRow = memo(function ProjectChatRow({
             <OverflowMenu
               open={menuOpen}
               onOpenChange={setMenuOpen}
+              onCloseAutoFocus={onCloseAutoFocus}
               label={t`Actions for ${title}`}
               triggerClassName="[@media(hover:none)]:size-11"
               triggerProps={{
@@ -213,7 +215,10 @@ export const ProjectChatRow = memo(function ProjectChatRow({
                 <span>{item.isFavorite ? t`Remove from favorites` : t`Add to favorites`}</span>
               </DropdownMenuItem>
               {onDelete ? (
-                <DropdownMenuItem variant="destructive" onSelect={() => onDelete(item)}>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={() => dispatch(() => onDelete(item))}
+                >
                   <span>{t`Delete chat`}</span>
                 </DropdownMenuItem>
               ) : null}

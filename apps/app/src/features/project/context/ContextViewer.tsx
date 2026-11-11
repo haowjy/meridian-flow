@@ -11,7 +11,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { type ContextTab, isDraftOnly } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -126,6 +126,7 @@ export function ContextViewer({
     recordedDocumentRef.current = openedDocumentId;
     recordOpenedDocument(opening);
   }, [active, openedDocumentId, projectId, recordOpenedDocument]);
+  const [focusReview, setFocusReview] = useState<string | null>(null);
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const settledTab = paneState.kind === "optimistic-loading" ? paneState.settledTab : null;
   const activeTabId = (activeTab ?? settledTab)?.documentId ?? null;
@@ -211,6 +212,8 @@ export function ContextViewer({
                 tab={activeTab}
                 readOnly={fileFrozen}
                 onCloseDraftOnly={isDraftOnly(activeTab) ? () => onCloseTab(activeTab) : undefined}
+                focusReview={focusReview}
+                onFocusReview={setFocusReview}
                 onCommitted={onCommitted}
                 onOpenExisting={onOpenExisting}
               />

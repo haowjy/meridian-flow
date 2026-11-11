@@ -21,14 +21,17 @@ export function DeleteChatDialog({
   target,
   onCancel,
   onConfirm,
+  onCloseAutoFocus,
 }: {
   target: DeleteChatTarget | null;
   onCancel: () => void;
   onConfirm: () => void;
+  /** After a delete the button that opened this is gone with its row. */
+  onCloseAutoFocus: (event: Event) => void;
 }) {
   return (
     <Dialog open={target !== null} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>
             <Trans>Delete chat?</Trans>
