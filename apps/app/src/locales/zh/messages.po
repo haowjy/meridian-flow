@@ -1310,6 +1310,10 @@ msgstr ""
 #~ msgid "Before"
 #~ msgstr ""
 
+#: src/features/project/side/SidePicker.tsx
+msgid "Beside"
+msgstr ""
+
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #. placeholder {1}: formatPreset(amountOptions.maxUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
@@ -1733,6 +1737,14 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Choose tabs"
+msgstr ""
+
+#: src/features/project/side/SideHeader.tsx
+msgid "Choose what sits beside"
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "Choose what sits beside, now {name}"
 msgstr ""
 
 #: src/features/project/work/WorkDetail.tsx
@@ -2254,6 +2266,10 @@ msgstr ""
 msgid "Couldn't find {source}."
 msgstr ""
 
+#: src/features/project/side/SideHeader.tsx
+msgid "Couldn't find what goes with this."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't finish that step"
 msgstr "这一步没能完成"
@@ -2270,6 +2286,10 @@ msgstr ""
 #: src/features/chat/TurnEditsReceipt.tsx
 #~ msgid "Couldn't load change details."
 #~ msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "Couldn't load chats"
+msgstr ""
 
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "Couldn't load chats."
@@ -2315,6 +2335,10 @@ msgstr ""
 #: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Couldn't load Trash."
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "Couldn't load what goes with this."
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
@@ -3041,6 +3065,10 @@ msgstr ""
 msgid "Edited {count} documents"
 msgstr ""
 
+#: src/features/project/side/SideHeader.tsx
+msgid "Edited {mainName}"
+msgstr ""
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Edited 1 document"
 msgstr ""
@@ -3051,6 +3079,11 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Edited file"
+msgstr ""
+
+#: src/features/project/side/SideHeader.tsx
+#: src/features/project/side/SidePicker.tsx
+msgid "Edited this"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -3259,6 +3292,18 @@ msgstr ""
 msgid "Filter subagents"
 msgstr "筛选子代理"
 
+#: src/features/project/side/SidePicker.tsx
+msgid "Find a chat"
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "Find a document or chat"
+msgstr ""
+
+#: src/features/project/side/SideHeader.tsx
+msgid "Finding what goes with this…"
+msgstr ""
+
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
 msgstr "已完成"
@@ -3297,6 +3342,22 @@ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 msgid "Folders can't be attached"
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "Follow {mainName}"
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "Follow this chat"
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "For {mainName}"
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "For this chat"
 msgstr ""
 
 #: src/features/chat/derivation/DeriveTurnActions.tsx
@@ -3390,6 +3451,17 @@ msgstr ""
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading 3"
+msgstr ""
+
+#: src/features/project/mobile/MobileProject.tsx
+#: src/features/project/side/ClosedSideButton.tsx
+#: src/features/project/side/SidePicker.tsx
+msgid "Held"
+msgstr ""
+
+#: src/features/project/mobile/MobileProject.tsx
+#: src/features/project/side/SideHeader.tsx
+msgid "Held here. Follow main again"
 msgstr ""
 
 #: src/features/import/reason-copy.ts
@@ -3687,6 +3759,14 @@ msgstr "语言"
 msgid "Large"
 msgstr ""
 
+#: src/features/project/side/SideHeader.tsx
+msgid "Last chat"
+msgstr ""
+
+#: src/features/project/side/SideHeader.tsx
+msgid "Last document"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "Last name"
 msgstr "姓"
@@ -3849,6 +3929,7 @@ msgstr ""
 #: src/features/project/chat/ChatScratch.tsx
 #: src/features/project/context/FolderMenu.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/side/SidePicker.tsx
 msgid "Loading…"
 msgstr ""
 
@@ -3898,6 +3979,10 @@ msgstr ""
 #. placeholder {0}: row.label
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "Mention {0}"
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "Mentioned"
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -4149,9 +4234,19 @@ msgstr ""
 #: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/chat/ChatScreen.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/side/SideHeader.tsx
+#: src/features/project/side/SidePicker.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "新对话"
+
+#: src/features/project/side/SideHeader.tsx
+msgid "New chat about {aboutName}"
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "New chat about {mainName}"
+msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/shell/MainHeader.tsx
@@ -4274,6 +4369,10 @@ msgstr ""
 msgid "No longer available"
 msgstr ""
 
+#: src/features/project/side/SidePicker.tsx
+msgid "No matches"
+msgstr ""
+
 #: src/features/chat/tool-result-preview.ts
 msgid "No matches found before the search stopped"
 msgstr ""
@@ -4336,6 +4435,10 @@ msgstr ""
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/lib/work-name.ts
 msgid "None"
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "None yet"
 msgstr ""
 
 #: src/components/app/composer/Composer.tsx
@@ -4434,6 +4537,10 @@ msgstr ""
 msgid "Nothing was added. Your files are kept for 7 days so you can try again."
 msgstr ""
 
+#: src/features/project/side/SidePicker.tsx
+msgid "Nothing yet"
+msgstr ""
+
 #: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/lib/date-groups.ts
 msgid "now"
@@ -4522,8 +4629,8 @@ msgid "Open a Work to create an Untitled document"
 msgstr ""
 
 #: src/features/project/mobile/MobileProject.tsx
-msgid "Open chat"
-msgstr ""
+#~ msgid "Open chat"
+#~ msgstr ""
 
 #: src/features/project/context/ContextTabBar.tsx
 #~ msgid "Open context files"
@@ -4599,6 +4706,10 @@ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Opening the link"
+msgstr ""
+
+#: src/features/project/side/SideHeader.tsx
+msgid "Opening…"
 msgstr ""
 
 #: src/features/chat/ask/AskTakeover.tsx
@@ -4709,6 +4820,10 @@ msgstr ""
 msgid "Previous change"
 msgstr ""
 
+#: src/features/project/side/SidePicker.tsx
+msgid "Previous chapter"
+msgstr ""
+
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/SettingsDialog.tsx
 msgid "Profile"
@@ -4769,6 +4884,7 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 #: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/project/side/SidePicker.tsx
 msgid "Read"
 msgstr ""
 
@@ -4779,6 +4895,10 @@ msgstr ""
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Read report from {line}"
 msgstr "已读取来自 {line} 的报告"
+
+#: src/features/project/side/SidePicker.tsx
+msgid "Read this"
+msgstr ""
 
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Read-only document in Trash."
@@ -4820,6 +4940,14 @@ msgstr ""
 
 #: src/features/billing/BillingPage.tsx
 msgid "Recent activity"
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "Recent chats"
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "Recent documents"
 msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -5074,6 +5202,10 @@ msgstr ""
 #: src/features/project/context/document-delete-undo.tsx
 #~ msgid "Restoring {0}"
 #~ msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "Results"
+msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Resume my documents on any device"
@@ -5353,6 +5485,14 @@ msgstr "分享了附件"
 
 #: src/features/import/ImportPanel.tsx
 msgid "Show"
+msgstr ""
+
+#: src/features/project/side/ClosedSideButton.tsx
+msgid "Show {name} beside"
+msgstr ""
+
+#: src/features/project/mobile/MobileProject.tsx
+msgid "Show {sheetName}"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
@@ -6180,6 +6320,10 @@ msgstr ""
 msgid "This chat now uses {0}."
 msgstr ""
 
+#: src/features/project/side/SideHeader.tsx
+msgid "This chat read it"
+msgstr ""
+
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "This chat uses {0}."
@@ -6187,6 +6331,10 @@ msgstr ""
 
 #: src/client/api/meridian-error.ts
 msgid "This chat was deleted."
+msgstr ""
+
+#: src/features/project/side/SideHeader.tsx
+msgid "This chat wrote it"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
@@ -6945,6 +7093,10 @@ msgstr "写作中"
 msgid "Writing the handoff brief"
 msgstr ""
 
+#: src/features/project/side/SidePicker.tsx
+msgid "Wrote"
+msgstr ""
+
 #: src/features/project/context/DocumentPropertyValue.tsx
 msgid "Yes"
 msgstr ""
@@ -6974,6 +7126,10 @@ msgstr ""
 
 #: src/features/project/context/entry-drag/copy-refusal.ts
 msgid "You can't copy there."
+msgstr ""
+
+#: src/features/project/side/SideHeader.tsx
+msgid "You followed a link from here"
 msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
