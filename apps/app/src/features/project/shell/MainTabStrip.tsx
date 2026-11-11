@@ -410,9 +410,9 @@ function holdTabWidth(chip: HTMLElement | null) {
   setHeldTabWidth((inactive ?? chip).getBoundingClientRect().width);
   if (!first) return;
   // Released when the pointer crosses out of the strip, presses anywhere else (a touch tap fires
-  // no move), or leaves the window from it. Closing main's tab redraws the strip, and for a frame
-  // the pointer is over the band behind it: that crossing comes from outside the strip, so it
-  // doesn't count.
+  // no move), or a mouse leaves the window from it; a touch lift also reports leaving to nowhere.
+  // Closing main's tab redraws the strip, and for a frame the pointer is over the band behind it:
+  // that crossing comes from outside the strip, so it doesn't count.
   const inStrip = (node: EventTarget | null) =>
     node instanceof Element && node.closest("[data-main-tab-strip]") !== null;
   const release = (event: PointerEvent) => {
@@ -420,7 +420,10 @@ function holdTabWidth(chip: HTMLElement | null) {
       event.type === "pointerover" && !inStrip(event.target) && inStrip(event.relatedTarget);
     const pressedElsewhere = event.type === "pointerdown" && !inStrip(event.target);
     const leftWindow =
-      event.type === "pointerout" && event.relatedTarget === null && inStrip(event.target);
+      event.type === "pointerout" &&
+      event.pointerType === "mouse" &&
+      event.relatedTarget === null &&
+      inStrip(event.target);
     if (!crossedOut && !pressedElsewhere && !leftWindow) return;
     for (const type of RELEASE_EVENTS) window.removeEventListener(type, release, true);
     setHeldTabWidth(null);
