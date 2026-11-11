@@ -185,18 +185,17 @@ ineligible document available.
 A removed document empties its view and nothing else moves. Neither the
 planner nor the coordinator picks a neighbouring document or repairs the address: a trash,
 a lost access or a document that was never there leaves the address as written, and
-the route says "unavailable" there. `useAddressResultAfterRemoval` keeps the address
-lookup's stale "available" answer from presenting the document again (the removal would
-close it at once, in a loop) until a read after the removal and the replica's living
-record say it is back, so a restore returns the document at the same address. Trash's
-restore and a restored Work (Undo of a Work delete) invalidate the address lookups to
-supply that read. This guard is temporary: it exists only for that stale "available"
-answer, and phase 10 removes it together with the answer (`DIVERGENCE/companion-shell.md`,
-Phase 8). Its one exemption is a document shown through its draft: the address's own draft
-row says live lacks it, or a host presents it draft-only. A draft held over a document
-deleted live keeps painting, and admission has nothing to install for it. The draft row is
-the evidence, not a host's hold, so a chapter the writer deleted while its draft was under
-review (main went back, no host holds it) opens as the draft.
+the route says "unavailable" there. The address lookup is cached, and an answer from
+before the removal would present the document again (the removal would close it at once, in
+a loop). So when the coordinator commits a removal it rewrites every cached answer naming the
+document to "unavailable" (`AddressAnswersPort`, wired to the query cache in
+`account-feature-lifetime.ts`), and a document becoming available again, Trash's restore and a
+restored Work (Undo of a Work delete) invalidate the lookups, so a restore returns the document
+at the same address. A document a draft still holds (a host presents it draft-only, or a
+pinned draft is bound to it) is left out of the rewrite: a draft held over a document deleted
+live keeps painting, and admission has nothing to install for it. A chapter the writer
+deleted while its draft was under review opens as the draft from its review address, whose
+answer the server gives afresh.
 
 Every editable document keeps `ContextTabSessionBoundary` as the same React ancestor.
 Resource-backed documents resolve through their stable resource handle before and after

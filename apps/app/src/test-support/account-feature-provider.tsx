@@ -1,19 +1,22 @@
 /** Test composition for feature suites that need one complete account lifetime. */
+import { QueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { AccountFeatureComposition } from "@/features/project/context/account-feature-context";
 
 export * from "@/features/project/context/account-feature-context";
 
 export function AccountFeatureTestProvider({
   accountId,
-  repairProjectCatalog = async () => undefined,
+  queryClient,
   children,
 }: {
   accountId: string;
-  repairProjectCatalog?: (projectId: string) => Promise<void>;
+  queryClient?: QueryClient;
   children: React.ReactNode;
 }) {
+  const [ownClient] = useState(() => new QueryClient());
   return (
-    <AccountFeatureComposition accountId={accountId} repairProjectCatalog={repairProjectCatalog}>
+    <AccountFeatureComposition accountId={accountId} queryClient={queryClient ?? ownClient}>
       {children}
     </AccountFeatureComposition>
   );
