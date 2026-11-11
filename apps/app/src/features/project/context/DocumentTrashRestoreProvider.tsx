@@ -175,13 +175,15 @@ export function DocumentTrashRestoreProvider({
           text: restoredText(restored, entries.length, destinationName),
           ...(resources
             ? {
-                undo: () => {
-                  for (const entry of restored)
-                    void runDelete(
-                      { resources, projectId, removal },
-                      { kind: "file", id: entry.documentId, name: entry.name },
-                    );
-                },
+                undo: () =>
+                  void runDelete(
+                    { resources, projectId, removal },
+                    restored.map((entry) => ({
+                      kind: "file" as const,
+                      id: entry.documentId,
+                      name: entry.name,
+                    })),
+                  ),
               }
             : {}),
         });

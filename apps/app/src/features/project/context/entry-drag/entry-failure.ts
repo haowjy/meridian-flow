@@ -114,7 +114,7 @@ async function retryFailure(
     await runMove(context, rows, failure.destination);
   } else if (failure.kind === "delete") {
     if (entryNameNow(view, failure.entry))
-      await runDelete(context, { ...failure.entry, name: failure.name });
+      await runDelete(context, [{ ...failure.entry, name: failure.name }]);
   } else if (failure.copy) {
     const copies = failure.copy.copies.flatMap((row) => {
       const name = entryNameNow(view, row.entry);
@@ -185,29 +185,39 @@ async function ownRemovals(context: EntryContext, entry: EntryRef): Promise<stri
   });
 }
 
+/**
+ * Deletes one gesture's entries: one own removal covers every document they take away, so main's
+ * go-back skips all of them. A refused entry toasts and keeps its documents.
+ */
 export async function runDelete(
   context: EntryContext,
-  { name, ...entry }: EntryRef & { name: string },
+  entries: readonly (EntryRef & { name: string })[],
 ): Promise<void> {
   const { resources, projectId, removal } = context;
-  const settleMark = removal?.beginOwnRemoval(projectId, await ownRemovals(context, entry));
-  try {
-    if (entry.kind === "folder") await resources.deleteFolder(projectId, entry.id);
-    else {
-      const key = await resources.keyForDocument(projectId, entry.id);
-      if (!key) throw new Error("Document resource is unavailable");
-      await resources.deleteDocument(projectId, key);
-    }
-    settleMark?.("removed");
-  } catch {
-    settleMark?.("kept");
-    showFailure(context, {
-      key: entryToast(projectId, crypto.randomUUID()),
-      kind: "delete",
-      entry,
-      name,
-    });
-  }
+  const covered = await Promise.all(entries.map((entry) => ownRemovals(context, entry)));
+  const settleMark = removal?.beginOwnRemoval(projectId, covered.flat());
+  const kept = await Promise.all(
+    entries.map(async ({ name, ...entry }, index) => {
+      try {
+        if (entry.kind === "folder") await resources.deleteFolder(projectId, entry.id);
+        else {
+          const key = await resources.keyForDocument(projectId, entry.id);
+          if (!key) throw new Error("Document resource is unavailable");
+          await resources.deleteDocument(projectId, key);
+        }
+        return [];
+      } catch {
+        showFailure(context, {
+          key: entryToast(projectId, crypto.randomUUID()),
+          kind: "delete",
+          entry,
+          name,
+        });
+        return covered[index] ?? [];
+      }
+    }),
+  );
+  settleMark?.(kept.flat());
 }
 
 function rowFailure(

@@ -180,7 +180,7 @@ export class DraftCommandOwner {
       ): Promise<{ disposition: "closed" | "removed"; liveUri?: string } | null>;
       removed?(ref: DraftRef): void;
       closeCreated?(ref: DraftRef): void;
-      markOwnRemoval?(ref: DraftRef): (outcome: "removed" | "kept") => void;
+      markOwnRemoval?(ref: DraftRef): (removed: boolean) => void;
     } = {},
   ) {}
   subscribe = (listener: () => void) => {
@@ -857,11 +857,11 @@ export class DraftCommandOwner {
       });
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") {
-        settleOwn?.("removed");
+        settleOwn?.(true);
         this.setState(ref.itemKey, { hidden: true, discarding: null });
         return { kind: "done" };
       }
-      settleOwn?.("kept");
+      settleOwn?.(false);
       this.setState(ref.itemKey, {
         hidden: false,
         discarding: null,
@@ -869,7 +869,7 @@ export class DraftCommandOwner {
       });
       return { kind: "change-refused", code: result.status };
     } catch {
-      settleOwn?.("kept");
+      settleOwn?.(false);
       if (this.active)
         this.setState(ref.itemKey, {
           hidden: false,

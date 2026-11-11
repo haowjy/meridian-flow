@@ -39,9 +39,12 @@ const EMPTY: RemovedNoticeSnapshot = { shown: [], waiting: [], version: 0 };
 
 type Entry = { removal: PresentedRemoval; stop: () => void };
 
+/** Settles an own removal with the documents it did not remove. */
+export type SettleOwnRemoval = (kept: readonly string[]) => void;
+
 /**
- * A delete or Discard the writer sent: by covered document, whether a view has seen it vanish
- * yet. It lasts until settled and every one has.
+ * A delete or Discard the writer sent: by covered document, whether its removal was seen (a view
+ * saw it vanish, or it landed) yet. It lasts until settled and every one has.
  */
 type OwnRemovalMark = { seen: Map<string, boolean>; settled: boolean };
 
@@ -107,13 +110,10 @@ export class RemovedNoticeStore {
   /**
    * The writer is removing these documents (a tree delete or Discard), so their removal says
    * nothing. Only documents a view presents are covered: nothing else is ever pushed. Call
-   * before the request and settle the returned mark in a `finally`: "kept" releases it;
-   * "removed" keeps each document covered until a view saw it vanish.
+   * before the request and settle the returned mark with the documents it did not remove: those
+   * are released at once, and each removed one stays covered until its removal lands.
    */
-  markOwnRemoval(
-    projectId: string,
-    documentIds: readonly string[],
-  ): (outcome: "removed" | "kept") => void {
+  markOwnRemoval(projectId: string, documentIds: readonly string[]): SettleOwnRemoval {
     const mark: OwnRemovalMark = { seen: new Map(), settled: false };
     for (const documentId of documentIds) {
       if (!this.presented.isPresented(projectId, documentId)) continue;
@@ -123,12 +123,27 @@ export class RemovedNoticeStore {
       marks.add(mark);
       this.ownRemovals.set(key, marks);
     }
-    return (outcome) => {
+    return (kept) => {
       if (mark.settled) return;
       mark.settled = true;
+      const keptKeys = new Set(kept.map((documentId) => documentKey(projectId, documentId)));
       for (const [key, seen] of [...mark.seen])
-        if (outcome === "kept" || seen) this.dropOwnRemovalMark(key, mark);
+        if (keptKeys.has(key) || seen) this.dropOwnRemovalMark(key, mark);
     };
+  }
+
+  /**
+   * These documents' removal landed, wherever they are now: a view that had already left one
+   * never sees it vanish, so the marks covering it end here, or at their settling.
+   */
+  removalsLanded(projectId: string, documentIds: readonly string[]): void {
+    for (const documentId of documentIds) {
+      const key = documentKey(projectId, documentId);
+      for (const mark of [...(this.ownRemovals.get(key) ?? [])]) {
+        mark.seen.set(key, true);
+        if (mark.settled) this.dropOwnRemovalMark(key, mark);
+      }
+    }
   }
 
   /**
