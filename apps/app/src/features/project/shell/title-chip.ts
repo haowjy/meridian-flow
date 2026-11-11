@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 /**
  * Shared by the switcher trigger and the in-tab rename so renaming keeps the
  * chip and its text exactly where they were. `tab`: h-9 plus the grammar's top
- * margin exactly fill the h-10 band, so the chip's base (and its flares) sit on
+ * margin exactly fill the h-10 band, so the chip's base sits on
  * the band's bottom edge where the page begins. `quiet`: an inactive document
  * tab's hover, the inset pill over the band's full height.
  */
