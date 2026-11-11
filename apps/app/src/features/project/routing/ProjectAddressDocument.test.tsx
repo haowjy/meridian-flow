@@ -1,27 +1,17 @@
 // @vitest-environment jsdom
-/** Authorized tab publication and alias admission under delayed navigation.
+/** The document an address names, and alias admission under delayed navigation.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - alias-repair error ownership
  */
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { act } from "react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { ProjectAddressDocument } from "./ProjectAddressDocument";
+import { addressedDocument, ProjectAddressDocument } from "./ProjectAddressDocument";
 import type { ProjectAddress } from "./project-address";
 import { createProjectNavigation } from "./project-navigation";
-
-const { openTab } = vi.hoisted(() => ({
-  openTab: vi.fn(),
-}));
-vi.mock("@/client/stores", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/client/stores")>()),
-  useContextTabsActions: () => ({ openTab }),
-}));
-
-beforeEach(() => openTab.mockReset());
 
 function navigationFixture(
   href: string,
@@ -71,13 +61,7 @@ function documentResult(kind: "current" | "alias"): DocumentAddressResult {
   } as DocumentAddressResult;
 }
 
-it("preserves a proven local resource handle during readable-route admission", async () => {
-  openTab.mockReturnValue({ kind: "opened" });
-  const href = "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/doc";
-  const navigation = navigationFixture(href, {
-    replaceEntry: () => undefined,
-    navigate: vi.fn(),
-  });
+it("keeps a proven local resource handle on the document an address names", () => {
   const localFile: CatalogFile = {
     kind: "file",
     entryId: "doc-id",
@@ -98,52 +82,27 @@ it("preserves a proven local resource handle during readable-route admission", a
     resourceOrigin: "local",
     localContent: true,
   };
-
-  await withReactRoot(
-    <ProjectAddressDocument
-      projectId="project-id"
-      href={href}
-      entryKey="entry"
-      address={{
-        projectId: "550e8400-e29b-41d4-a716-446655440000",
-        destination: { kind: "document", scheme: "kb", path: "doc" },
-      }}
-      result={documentResult("current")}
-      localFile={localFile}
-      workId={"00000000-0000-4000-8000-000000000009"}
-      navigation={navigation}
-      onAdmission={vi.fn()}
-    />,
-    async () => {
-      expect(openTab).toHaveBeenLastCalledWith(
-        "project-id",
-        expect.objectContaining({
-          documentId: "doc-id",
-          name: "doc",
-          path: "/doc",
-          resourceHandle: "resource-id",
-          origin: "local-resource",
-        }),
-        expect.any(Function),
-        // Nothing is selected: the address's document takes the selection.
-        { select: true },
-      );
+  const addressed = addressedDocument(
+    {
+      projectId: "550e8400-e29b-41d4-a716-446655440000",
+      destination: { kind: "document", scheme: "kb", path: "doc" },
     },
+    documentResult("current"),
+    localFile,
+    undefined,
   );
-  navigation.dispose();
+  expect(addressed?.tab).toMatchObject({
+    documentId: "doc-id",
+    name: "doc",
+    path: "/doc",
+    resourceHandle: "resource-id",
+    origin: "local-resource",
+  });
 });
 
-it.each([
-  "current",
-  "before-replace",
-] as const)("settles a rejected alias repair only while it owns the entry (superseded: %s)", async (superseded) => {
+it("settles a rejected alias repair as an error while it owns the entry", async () => {
   const href = "/p/550e8400-e29b-41d4-a716-446655440000/editor/kb/before";
-  let navigation!: ReturnType<typeof createProjectNavigation>;
-  openTab.mockImplementation(() => {
-    if (superseded === "before-replace") navigation.beginIntent();
-    return { kind: "opened" };
-  });
-  navigation = navigationFixture(href, {
+  const navigation = navigationFixture(href, {
     replaceEntry: () => {
       throw new Error("router rejected replacement");
     },
@@ -157,7 +116,6 @@ it.each([
   try {
     await withReactRoot(
       <ProjectAddressDocument
-        projectId="project-id"
         href={href}
         entryKey="entry"
         address={address}
@@ -167,15 +125,9 @@ it.each([
         onAdmission={onAdmission}
       />,
       async () => {
-        expect(onAdmission).toHaveBeenLastCalledWith(
-          expect.objectContaining({ issue: superseded === "current" ? "error" : "loading" }),
-        );
+        expect(onAdmission).toHaveBeenLastCalledWith(expect.objectContaining({ issue: "error" }));
         await act(async () => undefined);
-        expect(onAdmission).toHaveBeenLastCalledWith(
-          expect.objectContaining({
-            issue: superseded === "current" ? "error" : "loading",
-          }),
-        );
+        expect(onAdmission).toHaveBeenLastCalledWith(expect.objectContaining({ issue: "error" }));
       },
     );
   } finally {
@@ -183,7 +135,7 @@ it.each([
   }
 });
 
-it("keeps a draft-only document out of the live view and repairs only its review address", async () => {
+it("keeps a review address out of the live view and repairs only its review address", async () => {
   const noWorkId = "00000000-0000-4000-8000-000000000009";
   const projectId = "550e8400-e29b-41d4-a716-446655440000";
   const href = `/p/${projectId}/editor/manuscript/doc`;
@@ -195,7 +147,6 @@ it("keeps a draft-only document out of the live view and repairs only its review
   const onAdmission = vi.fn();
   await withReactRoot(
     <ProjectAddressDocument
-      projectId={projectId}
       href={href}
       entryKey="entry"
       address={{
@@ -204,24 +155,13 @@ it("keeps a draft-only document out of the live view and repairs only its review
       }}
       result={result}
       reviewItemKey="draft-1"
-      draftOnly={{
-        documentId: "doc-id",
-        documentName: "doc",
-        contextLocation: { scheme: "manuscript", path: "/doc" },
-        draft: {} as never,
-        draftOnly: true,
-      }}
       workId={noWorkId}
       navigation={navigation}
       onAdmission={onAdmission}
     />,
     async () => {
       await act(async () => {});
-      // An arriving review address opens the draft-only document's tab, never a live one.
-      expect(openTab).toHaveBeenCalledOnce();
-      expect(openTab.mock.calls[0]?.[1]).toMatchObject({
-        documentId: "doc-id",
-      });
+      // A review address never admits the live document.
       expect(onAdmission).not.toHaveBeenCalled();
       expect(replaceEntry).toHaveBeenCalledOnce();
       // A review address names its draft's owner itself, so a copy opens the same draft.

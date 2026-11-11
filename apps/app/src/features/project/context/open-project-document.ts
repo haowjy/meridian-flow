@@ -1,4 +1,4 @@
-import { isWorkScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   AvailabilityGeneration,
   CatalogFileEntry,
@@ -20,15 +20,9 @@ import { contextRouteRequest } from "../routing/project-route";
  * Opening a project document by id — the app's one answer to "take me there".
  *
  * Doors that already render a catalog row carry its identity; id-only doors
- * resolve one. Both commit a tab and route before the destination acquires its
- * live session, so availability work cannot hold navigation hostage.
- *
- * Two dispositions, because a writer who asked for a new tab did not ask to
- * leave the sentence they are in: `current` moves the pane to the document,
- * and `background` opens it on the tab strip and stays put. There is no
- * browser-tab disposition — the manuscript is a live collaborative session,
- * and a second window on it costs the writer their place to reach a document
- * that was already one tab away.
+ * resolve one. Both commit main's address before the destination acquires its
+ * live session, so availability work cannot hold navigation hostage. Every
+ * door opens the document in main.
  */
 
 import {
@@ -52,13 +46,7 @@ import {
   projectCatalogFile,
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
-import {
-  type ContextTab,
-  isEditorScheme,
-  type ServerContextTab,
-  useContextTabsActions,
-  useContextTabsStore,
-} from "@/client/stores";
+import { type ContextTab, isEditorScheme } from "@/client/stores";
 import {
   type OpenContextRoute,
   useOpenContextRoute,
@@ -66,9 +54,9 @@ import {
 } from "../routing/ProjectNavigationContext";
 import {
   useOptionalAccountResourceReplica,
-  useOptionalContextRemovalCoordinator,
+  useOptionalPresentedDocuments,
 } from "./account-feature-context";
-import { contextTabFromFile, serverTabFromFile } from "./context-tab-from-file";
+import { contextTabFromFile } from "./context-tab-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
 export interface LiveDocumentBinding {
@@ -112,8 +100,8 @@ export type ProjectDocumentLiveOpenRequest = {
 
 type ExactOpenResolution = ProjectContextIdentityResolution | { kind: "failed" | "malformed" };
 export type AvailableOpenResolution = Extract<ExactOpenResolution, { kind: "available" }>;
-export type TransferToken = { readonly id: string; readonly tabInstanceId: string };
-type TransferPlacement = "editor" | "dock";
+/** A resolved open handed to the host that mounts its document: one host per document. */
+export type TransferToken = { readonly id: string; readonly documentId: string };
 
 /** Exact-resolution application operation, independent from navigation effects. */
 export class ProjectDocumentLiveOpener {
@@ -121,7 +109,6 @@ export class ProjectDocumentLiveOpener {
     string,
     { token: TransferToken; resolution: AvailableOpenResolution }
   >();
-  private dockTransfer: TransferToken | null = null;
   constructor(
     private readonly dependencies: {
       availability: {
@@ -151,42 +138,37 @@ export class ProjectDocumentLiveOpener {
   }
 
   replaceTransfer(
-    tabInstanceId: string,
+    documentId: string,
     resolution: AvailableOpenResolution | undefined,
-    placement?: TransferPlacement,
   ): TransferToken | null {
-    if (placement === "dock" && this.dockTransfer) this.disposeTransfer(this.dockTransfer);
-    const prior = this.transfers.get(tabInstanceId);
+    const prior = this.transfers.get(documentId);
     if (prior) this.disposeTransfer(prior.token);
-    if (!resolution) return null;
-    const token = Object.freeze({ id: crypto.randomUUID(), tabInstanceId });
-    this.transfers.set(tabInstanceId, { token, resolution });
-    if (placement === "dock") this.dockTransfer = token;
+    if (!resolution || resolution.documentId !== documentId) return null;
+    const token = Object.freeze({ id: crypto.randomUUID(), documentId });
+    this.transfers.set(documentId, { token, resolution });
     return token;
   }
 
-  transferToken(tabInstanceId: string, documentId: string): TransferToken | null {
-    const transfer = this.transfers.get(tabInstanceId);
-    return transfer?.resolution.documentId === documentId ? transfer.token : null;
+  transferToken(documentId: string): TransferToken | null {
+    return this.transfers.get(documentId)?.token ?? null;
   }
 
-  takeTransfer(tabInstanceId: string, documentId: string): AvailableOpenResolution | null {
-    const transfer = this.transfers.get(tabInstanceId);
-    if (!transfer || transfer.resolution.documentId !== documentId) return null;
-    this.transfers.delete(tabInstanceId);
-    if (this.dockTransfer === transfer.token) this.dockTransfer = null;
+  takeTransfer(documentId: string): AvailableOpenResolution | null {
+    const transfer = this.transfers.get(documentId);
+    if (!transfer) return null;
+    this.transfers.delete(documentId);
     return transfer.resolution;
   }
 
   disposeTransfer(token: TransferToken): void {
-    if (this.transfers.get(token.tabInstanceId)?.token === token)
-      this.transfers.delete(token.tabInstanceId);
-    if (this.dockTransfer === token) this.dockTransfer = null;
+    if (this.transfers.get(token.documentId)?.token === token)
+      this.transfers.delete(token.documentId);
   }
 
-  pruneTransfers(activeTabInstanceIds: ReadonlySet<string>): void {
+  /** A transfer no view presents, nor is about to, is let go. */
+  pruneTransfers(presentedDocumentIds: ReadonlySet<string>): void {
     for (const transfer of this.transfers.values()) {
-      if (!activeTabInstanceIds.has(transfer.token.tabInstanceId))
+      if (!presentedDocumentIds.has(transfer.token.documentId))
         this.disposeTransfer(transfer.token);
     }
   }
@@ -300,18 +282,12 @@ export type OpenProjectDocumentRequest = {
   known?: KnownDocumentIdentity;
   /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
   workId?: string;
-  disposition?: "current" | "background";
-  beside?: (
-    tab: ServerContextTab,
-    focus?: true,
-  ) => { kind: "opened"; tab: ContextTab } | { kind: "cancelled" };
   focus?: true;
   signal?: AbortSignal;
 };
 
-export type OpenDocumentPlacement = "editor" | "dock" | "background";
 export type OpenDocumentOutcome =
-  | { kind: "committed"; documentId: string; placement: OpenDocumentPlacement }
+  | { kind: "committed"; documentId: string }
   | { kind: "trashed"; documentId: string }
   | { kind: "cancelled" }
   | { kind: "refused"; reason: "gone" | "no-viewer" | "lookup-failed" };
@@ -321,11 +297,6 @@ export type OpenProjectDocument = (
 
 type NavigationAdapterDependencies = {
   opener: Pick<ProjectDocumentLiveOpener, "resolveIdentity" | "replaceTransfer">;
-  openTab(
-    projectId: string,
-    tab: ReturnType<typeof contextTabFromFile>,
-    isCurrent?: () => boolean,
-  ): import("@/client/stores").OpenEditorTabResult;
   openRoute: OpenContextRoute | null;
   captureNavigation?: () => () => boolean;
   openTrash(documentId: string): Promise<unknown>;
@@ -333,7 +304,6 @@ type NavigationAdapterDependencies = {
     import("@/core/resources/account-resource-replica").AccountResourceReplica,
     "accountId" | "observeProjection" | "readProjectionState"
   > | null;
-  reconcileInstalledTab?: (projectId: string, tab: ContextTab) => void;
 };
 
 function identityForRecord(
@@ -365,7 +335,7 @@ function identityForRecord(
 }
 
 type CommitResult =
-  | { kind: "applied"; placement: OpenDocumentPlacement }
+  | { kind: "applied" }
   | { kind: "cancelled" }
   | { kind: "no-viewer" }
   | { kind: "failed" };
@@ -393,26 +363,20 @@ export class ProjectDocumentNavigationAdapter {
       refreshIdentity,
       known,
       workId,
-      disposition = "current",
-      beside,
       focus,
       signal,
     }: OpenProjectDocumentRequest,
   ): Promise<OpenDocumentOutcome> {
-    const navigationIsCurrent =
-      disposition === "current" ? this.dependencies.captureNavigation?.() : undefined;
-    const token = disposition === "current" ? ++this.attempt : this.attempt;
+    const navigationIsCurrent = this.dependencies.captureNavigation?.();
+    const token = ++this.attempt;
     const controller = new AbortController();
     this.pending.add(controller);
-    if (disposition === "current") {
-      this.current?.abort();
-      this.current = controller;
-    }
+    this.current?.abort();
+    this.current = controller;
     const abort = () => controller.abort();
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) controller.abort();
-    const canCommit = () =>
-      !controller.signal.aborted && (disposition === "background" || token === this.attempt);
+    const canCommit = () => !controller.signal.aborted && token === this.attempt;
     const isCurrent = () => canCommit() && navigationIsCurrent?.() !== false;
 
     try {
@@ -429,58 +393,23 @@ export class ProjectDocumentNavigationAdapter {
               : "gone",
         };
       }
-      const projection = this.dependencies.resources?.readProjectionState(projectId);
-      const record =
-        projection?.kind === "ready"
-          ? projection.snapshot.records.find(
-              (candidate) => candidate.resource.identity.documentId === documentId,
-            )
-          : undefined;
-      if (!refreshIdentity && record?.resource.lifecycle.kind === "terminal")
+      const identified = await this.identify(projectId, {
+        documentId,
+        refreshIdentity,
+        known,
+        workId,
+        isCurrent,
+      });
+      if (identified.kind === "cancelled") return identified;
+      if (identified.kind === "refused") return identified;
+      if (identified.kind === "trashed")
         return this.openTrash(documentId, controller.signal, isCurrent);
-
-      let identity = refreshIdentity ? undefined : known;
-      if (!refreshIdentity && !identity && projection?.kind === "ready" && record) {
-        identity =
-          identityForRecord(
-            projectId,
-            record,
-            resourcePlacementForSnapshot(projectId, projection.snapshot),
-          ) ?? undefined;
-      }
-
-      let transfer: AvailableOpenResolution | undefined;
-      if (!identity) {
-        const resolution = await this.dependencies.opener.resolveIdentity(projectId, documentId);
-        if (!isCurrent()) return { kind: "cancelled" };
-        if (resolution.kind === "deleted")
-          return this.openTrash(documentId, controller.signal, isCurrent);
-        if (resolution.kind !== "available") {
-          return {
-            kind: "refused",
-            reason: resolution.kind === "not-visible" ? "gone" : "lookup-failed",
-          };
-        }
-        transfer = resolution;
-        const scheme = schemeForEntry(resolution.entry);
-        if (!scheme) return { kind: "refused", reason: "lookup-failed" };
-        identity = {
-          scheme,
-          file: projectCatalogFile(resolution.entry),
-          workId: resolution.entry.scope.kind === "work" ? resolution.entry.scope.workId : workId,
-          rootThreadId:
-            resolution.entry.scope.kind === "lineage"
-              ? resolution.entry.scope.rootThreadId
-              : undefined,
-          chatId:
-            resolution.entry.scope.kind === "chat" ? resolution.entry.scope.chatId : undefined,
-        };
-      }
+      const { identity, transfer } = identified;
 
       if (refreshIdentity && this.dependencies.resources) {
         // Restoring a deleted ancestor republishes the document through the catalog. Do not
-        // install its tab while the replica still holds the prior terminal record: that record
-        // would immediately close the tab and clear the destination.
+        // open it while the replica still holds the prior terminal record: that record would
+        // immediately read as its removal.
         try {
           await waitForLivingProjection(
             this.dependencies.resources,
@@ -496,7 +425,7 @@ export class ProjectDocumentNavigationAdapter {
         if (!isCurrent()) return { kind: "cancelled" };
       }
 
-      if (disposition === "current" && !this.dependencies.openRoute)
+      if (!this.dependencies.openRoute)
         throw new Error("Opening a project document requires the project route owner");
       const committed = await this.commitFile({
         projectId,
@@ -505,8 +434,6 @@ export class ProjectDocumentNavigationAdapter {
         workId: identity.workId ?? workId,
         rootThreadId: identity.rootThreadId,
         chatId: identity.chatId,
-        disposition,
-        beside,
         focus,
         isCurrent,
         canCommit,
@@ -515,13 +442,101 @@ export class ProjectDocumentNavigationAdapter {
       if (committed.kind === "failed") return { kind: "refused", reason: "lookup-failed" };
       if (committed.kind === "no-viewer") return { kind: "refused", reason: "no-viewer" };
       return committed.kind === "applied"
-        ? { kind: "committed", documentId, placement: committed.placement }
+        ? { kind: "committed", documentId }
         : { kind: "cancelled" };
     } finally {
       signal?.removeEventListener("abort", abort);
       this.pending.delete(controller);
       if (this.current === controller) this.current = null;
     }
+  }
+
+  /**
+   * Where a document lives now: the caller's known row, the replica's record, or one lookup.
+   * A lookup's answer rides along as the transfer the host's session takes.
+   */
+  private async identify(
+    projectId: string,
+    {
+      documentId,
+      refreshIdentity,
+      known,
+      workId,
+      isCurrent,
+    }: Pick<OpenProjectDocumentRequest, "documentId" | "refreshIdentity" | "known" | "workId"> & {
+      isCurrent: () => boolean;
+    },
+  ): Promise<
+    | { kind: "identified"; identity: KnownDocumentIdentity; transfer?: AvailableOpenResolution }
+    | { kind: "trashed" }
+    | { kind: "cancelled" }
+    | { kind: "refused"; reason: "gone" | "lookup-failed" }
+  > {
+    const projection = this.dependencies.resources?.readProjectionState(projectId);
+    const record =
+      projection?.kind === "ready"
+        ? projection.snapshot.records.find(
+            (candidate) => candidate.resource.identity.documentId === documentId,
+          )
+        : undefined;
+    if (!refreshIdentity && record?.resource.lifecycle.kind === "terminal")
+      return { kind: "trashed" };
+
+    let identity = refreshIdentity ? undefined : known;
+    if (!refreshIdentity && !identity && projection?.kind === "ready" && record) {
+      identity =
+        identityForRecord(
+          projectId,
+          record,
+          resourcePlacementForSnapshot(projectId, projection.snapshot),
+        ) ?? undefined;
+    }
+
+    let transfer: AvailableOpenResolution | undefined;
+    if (!identity) {
+      const resolution = await this.dependencies.opener.resolveIdentity(projectId, documentId);
+      if (!isCurrent()) return { kind: "cancelled" };
+      if (resolution.kind === "deleted") return { kind: "trashed" };
+      if (resolution.kind !== "available") {
+        return {
+          kind: "refused",
+          reason: resolution.kind === "not-visible" ? "gone" : "lookup-failed",
+        };
+      }
+      transfer = resolution;
+      const scheme = schemeForEntry(resolution.entry);
+      if (!scheme) return { kind: "refused", reason: "lookup-failed" };
+      identity = {
+        scheme,
+        file: projectCatalogFile(resolution.entry),
+        workId: resolution.entry.scope.kind === "work" ? resolution.entry.scope.workId : workId,
+        rootThreadId:
+          resolution.entry.scope.kind === "lineage"
+            ? resolution.entry.scope.rootThreadId
+            : undefined,
+        chatId: resolution.entry.scope.kind === "chat" ? resolution.entry.scope.chatId : undefined,
+      };
+    }
+    return { kind: "identified", identity, ...(transfer ? { transfer } : {}) };
+  }
+
+  /**
+   * The descriptor a view paints a document from, resolved like an open but navigating nowhere:
+   * the side's fallback document. Null when the document no longer opens.
+   */
+  async describe(projectId: string, documentId: string): Promise<ContextTab | null> {
+    const identified = await this.identify(projectId, { documentId, isCurrent: () => true });
+    if (identified.kind !== "identified") return null;
+    const { identity, transfer } = identified;
+    if (!isEditorScheme(identity.scheme)) return null;
+    this.dependencies.opener.replaceTransfer(documentId, transfer);
+    return contextTabFromFile(
+      identity.scheme,
+      identity.file,
+      identity.rootThreadId
+        ? { rootThreadId: identity.rootThreadId }
+        : { workId: identity.workId ?? null },
+    );
   }
 
   private async openTrash(
@@ -542,95 +557,46 @@ export class ProjectDocumentNavigationAdapter {
     workId: string | undefined;
     rootThreadId?: string;
     chatId?: string;
-    disposition: "current" | "background";
-    beside?: OpenProjectDocumentRequest["beside"];
     focus?: true;
     isCurrent: () => boolean;
     canCommit: () => boolean;
     transfer?: AvailableOpenResolution;
   }): Promise<CommitResult> {
-    const owner: ContextOwner = input.chatId
-      ? { chatThreadId: input.chatId }
-      : input.rootThreadId
-        ? { rootThreadId: input.rootThreadId }
-        : { workId: input.workId ?? null };
-    const tab = isEditorScheme(input.scheme)
-      ? {
-          ...contextTabFromFile(input.scheme, input.file, owner),
-          tabInstanceId: crypto.randomUUID(),
-        }
-      : undefined;
     if (!input.isCurrent()) return { kind: "cancelled" };
-
-    if (input.disposition === "current" && input.beside) {
-      let besideTab: ServerContextTab | null = null;
-      try {
-        besideTab = serverTabFromFile(input.scheme, input.file, owner);
-        if (besideTab) besideTab = { ...besideTab, tabInstanceId: tab?.tabInstanceId };
-      } catch {
-        besideTab = null;
-      }
-      if (besideTab) {
-        const placed = input.beside(besideTab, input.focus);
-        this.current = null;
-        if (placed.kind === "opened" && placed.tab.tabInstanceId)
-          this.dependencies.opener.replaceTransfer(
-            placed.tab.tabInstanceId,
-            input.transfer,
-            "dock",
-          );
-        return placed.kind === "opened"
-          ? { kind: "applied", placement: "dock" }
-          : { kind: "cancelled" };
-      }
-    }
-
-    if (input.disposition === "current") {
-      if (input.scheme === "uploads") {
-        this.current = null;
-        return { kind: "no-viewer" };
-      }
-      if (!this.dependencies.openRoute)
-        throw new Error("Opening a project document requires the project route owner");
+    // An upload belongs to its chat and has no Editor address.
+    if (!isEditorScheme(input.scheme)) {
       this.current = null;
-      const settlement = await this.dependencies.openRoute(
-        contextRouteRequest({
-          scheme: input.scheme,
-          path: input.file.path,
-          workId: input.workId,
-          rootThreadId: input.rootThreadId,
-          documentId: input.file.documentId,
-        }),
-        {
-          tab,
-          ...(input.focus ? { focus: true as const } : {}),
-          isCurrent: input.isCurrent,
-          canCommit: input.canCommit,
-          afterCommit: (installed) => {
-            if (installed?.tabInstanceId) {
-              this.dependencies.opener.replaceTransfer(
-                installed.tabInstanceId,
-                input.transfer,
-                "editor",
-              );
-              this.dependencies.reconcileInstalledTab?.(input.projectId, installed);
-            }
-          },
-        },
-      );
-      return settlement.kind === "failed"
-        ? { kind: "failed" }
-        : settlement.kind === "applied"
-          ? { kind: "applied", placement: "editor" }
-          : { kind: "cancelled" };
+      return { kind: "no-viewer" };
     }
-
-    if (tab) {
-      const installed = this.dependencies.openTab(input.projectId, tab, input.isCurrent);
-      if (installed.kind !== "opened")
-        return installed.kind === "superseded" ? { kind: "cancelled" } : { kind: "failed" };
-    }
-    return input.canCommit() ? { kind: "applied", placement: "background" } : { kind: "cancelled" };
+    const owner: ContextOwner = input.rootThreadId
+      ? { rootThreadId: input.rootThreadId }
+      : { workId: input.workId ?? null };
+    const tab = contextTabFromFile(input.scheme, input.file, owner);
+    const openRoute = this.dependencies.openRoute;
+    if (!openRoute) throw new Error("Opening a project document requires the project route owner");
+    this.current = null;
+    const settlement = await openRoute(
+      contextRouteRequest({
+        scheme: input.scheme,
+        path: input.file.path,
+        workId: input.workId,
+        rootThreadId: input.rootThreadId,
+        documentId: input.file.documentId,
+      }),
+      {
+        tab,
+        ...(input.focus ? { focus: true as const } : {}),
+        isCurrent: input.isCurrent,
+        canCommit: input.canCommit,
+        afterCommit: () =>
+          this.dependencies.opener.replaceTransfer(input.file.documentId, input.transfer),
+      },
+    );
+    return settlement.kind === "failed"
+      ? { kind: "failed" }
+      : settlement.kind === "applied"
+        ? { kind: "applied" }
+        : { kind: "cancelled" };
   }
 }
 
@@ -696,9 +662,8 @@ export function ProjectDocumentNavigationProvider({
   const { navigate: openTrash } = useProjectTrashNavigation();
   const opener = useProjectDocumentLiveOpener();
   const resources = useOptionalAccountResourceReplica();
-  const removal = useOptionalContextRemovalCoordinator();
+  const presented = useOptionalPresentedDocuments();
   const openContextRoute = useOpenContextRoute();
-  const { openTab } = useContextTabsActions();
   useEffect(() => {
     if (!resources) return;
     return resources.observeProjection(
@@ -707,42 +672,37 @@ export function ProjectDocumentNavigationProvider({
       () => undefined,
     );
   }, [projectId, resources]);
+  // A transfer is taken by the host that mounts its document; one whose document no view
+  // presents is let go. Checked after the commit that ended a presentation, whose own new host
+  // presents in the same commit.
   useEffect(() => {
-    const prune = () => {
-      const active = new Set<string>();
-      for (const project of Object.values(useContextTabsStore.getState().byProject)) {
-        for (const tab of project.tabs) if (tab.tabInstanceId) active.add(tab.tabInstanceId);
-      }
-      opener.pruneTransfers(active);
+    if (!presented) return;
+    let live = true;
+    const prune = () =>
+      queueMicrotask(() => {
+        if (live)
+          opener.pruneTransfers(
+            new Set(presented.documents(projectId).map((tab) => tab.documentId)),
+          );
+      });
+    const stop = presented.subscribe(prune);
+    return () => {
+      live = false;
+      stop();
     };
-    const stopTabs = useContextTabsStore.subscribe(prune);
-    prune();
-    return stopTabs;
-  }, [opener]);
+  }, [opener, presented, projectId]);
   const owner = useMemo<ProjectDocumentNavigationOwner>(
     () => ({
       projectId,
       adapter: new ProjectDocumentNavigationAdapter({
         opener,
-        openTab,
         openRoute: openContextRoute,
         captureNavigation,
         openTrash,
         resources,
-        reconcileInstalledTab: (installedProjectId, tab) =>
-          removal?.reconcileInstalledTab(installedProjectId, tab),
       }),
     }),
-    [
-      openContextRoute,
-      openTab,
-      openTrash,
-      opener,
-      projectId,
-      captureNavigation,
-      removal,
-      resources,
-    ],
+    [openContextRoute, openTrash, opener, projectId, captureNavigation, resources],
   );
   useEffect(() => () => owner.adapter.dispose(), [owner]);
 
@@ -758,6 +718,23 @@ export function useOpenProjectDocument(projectId: string | undefined): OpenProje
         return { kind: "refused", reason: "lookup-failed" };
       return owner.adapter.open(projectId, request);
     },
+    [owner, projectId],
+  );
+}
+
+/** Whether a chat's reference opens in main: an upload belongs to its chat and has no Editor address. */
+export function canOpenReference(uri: string): boolean {
+  return !uri.startsWith("uploads://");
+}
+
+/** Resolves a document's descriptor without opening it (`describe`). */
+export function useDescribeProjectDocument(
+  projectId: string,
+): (documentId: string) => Promise<ContextTab | null> {
+  const owner = useContext(ProjectDocumentNavigationContext);
+  return useCallback(
+    async (documentId) =>
+      owner?.projectId === projectId ? owner.adapter.describe(projectId, documentId) : null,
     [owner, projectId],
   );
 }

@@ -56,6 +56,13 @@ function admission(boundSession: DocumentSession): AdmittedLiveDocument {
   };
 }
 
+/** No open is in flight from a door, so no transfer to take over. */
+const noTransfer = {
+  transferToken: () => null,
+  takeTransfer: () => null,
+  disposeTransfer: () => undefined,
+};
+
 describe("ContextTabSessionBoundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -67,6 +74,7 @@ describe("ContextTabSessionBoundary", () => {
     resourceReplica.keyForDocument.mockResolvedValue({ handle: "resource-a" });
     resourceReplica.openDocument.mockResolvedValue({ kind: "unavailable", reason: "changed" });
     const opener = {
+      ...noTransfer,
       open: vi.fn(async () => ({ kind: "opened", admission: admission(serverSession) })),
     };
     const observed: Array<{ value: DocumentSession | null; failed: boolean }> = [];
@@ -97,6 +105,7 @@ describe("ContextTabSessionBoundary", () => {
     resourceReplica.keyForDocument.mockResolvedValue({ handle: "resource-a" });
     resourceReplica.openDocument.mockResolvedValue({ kind: "unavailable", reason: "changed" });
     const opener = {
+      ...noTransfer,
       open: vi
         .fn()
         .mockResolvedValueOnce({ kind: "unavailable", reason: "adoption-pending" })
@@ -146,7 +155,7 @@ describe("ContextTabSessionBoundary", () => {
     });
   });
 
-  it("keeps a warm cached editor mounted while its availability is reprobed", async () => {
+  it("keeps a cached editor mounted while its availability is reprobed", async () => {
     const cachedSession = session();
     let finishReprobe!: () => void;
     const reprobe = new Promise<void>((resolve) => {
@@ -167,7 +176,7 @@ describe("ContextTabSessionBoundary", () => {
           handle: { session: cachedSession, release: secondRelease },
         };
       });
-    const opener = { open: vi.fn() };
+    const opener = { ...noTransfer, open: vi.fn() };
     let advanceAvailability!: () => void;
     const observed: Array<DocumentSession | null> = [];
 
@@ -211,7 +220,7 @@ describe("ContextTabSessionBoundary", () => {
     expect(secondRelease).toHaveBeenCalledOnce();
   });
 
-  it("releases a warm cached editor when its availability becomes terminal", async () => {
+  it("releases a cached editor when its availability becomes terminal", async () => {
     const cachedSession = session();
     const release = vi.fn();
     resourceReplica.keyForDocument.mockResolvedValue({ handle: "resource-a" });
@@ -221,7 +230,7 @@ describe("ContextTabSessionBoundary", () => {
         handle: { session: cachedSession, release },
       })
       .mockResolvedValueOnce({ kind: "unavailable", reason: "terminal" });
-    const opener = { open: vi.fn(async () => ({ kind: "unavailable" })) };
+    const opener = { ...noTransfer, open: vi.fn(async () => ({ kind: "unavailable" })) };
     let advanceAvailability!: () => void;
     const observed: Array<DocumentSession | null> = [];
 

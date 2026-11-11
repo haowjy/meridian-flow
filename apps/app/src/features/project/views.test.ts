@@ -1,8 +1,8 @@
-/** Routed phone document identity proofs across every editable catalog scheme. */
+/** Main's document identity proofs across every editable catalog scheme. */
 
 import { describe, expect, it } from "vitest";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
-import { resolveMobileDocumentRoute } from "./mobile-document-route";
+import { resolveMainDocument } from "./views";
 
 const file: CatalogFile = {
   kind: "file",
@@ -20,7 +20,7 @@ const file: CatalogFile = {
   schemaType: "document",
 };
 
-describe("phone draft-only review route", () => {
+describe("main's draft-only review route", () => {
   const draftTab = {
     kind: "tracked",
     documentId: "document-draft",
@@ -33,9 +33,9 @@ describe("phone draft-only review route", () => {
   } as const;
   const emptyCatalog = { findPath: () => null, findDocument: () => null } as never;
   const route = (
-    overrides: Partial<Parameters<typeof resolveMobileDocumentRoute>[0]> = {},
-  ): ReturnType<typeof resolveMobileDocumentRoute> =>
-    resolveMobileDocumentRoute({
+    overrides: Partial<Parameters<typeof resolveMainDocument>[0]> = {},
+  ): ReturnType<typeof resolveMainDocument> =>
+    resolveMainDocument({
       enabled: true,
       scheme: "manuscript",
       path: "/new-chapter.md",

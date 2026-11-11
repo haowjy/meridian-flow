@@ -1,32 +1,25 @@
 /** Stable-ID navigation commands and normalized context-removal CAS snapshots, not browser grammar. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
-/** The kind of item the address names in main: a chat, or a document. The centre follows it. */
-export type ScreenKey = "chat" | "context";
-
+/**
+ * Main's document as the removal coordinator compares it: its locator, absent when main holds no
+ * document. A snapshot for compare-and-swap repairs, not an address grammar (`project-address`).
+ */
 export type ProjectSearch = {
-  screen?: ScreenKey;
   scheme?: ProjectContextTreeScheme;
   path?: string;
   /** A Work's Scratch note: its owning Work. Absent for every other document. */
   work?: string;
   /** A chat's Scratch note: its lineage, by the first chat's id. */
   chat?: string;
-  /** The chat index's Favorites filter; owned by `features/project/chat-index`. */
-  filter?: "favorites";
-  /** The chat index's settled search text; owned by `features/project/chat-index`. */
-  q?: string;
 };
 
 export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): boolean {
   return (
-    left.screen === right.screen &&
     left.scheme === right.scheme &&
     left.path === right.path &&
     left.work === right.work &&
-    left.chat === right.chat &&
-    left.filter === right.filter &&
-    left.q === right.q
+    left.chat === right.chat
   );
 }
 
@@ -92,7 +85,6 @@ export function sameContextTarget(a: ContextRouteRequest, b: ContextRouteRequest
 
 export type ContextRouteRepair = {
   expectedSearch: {
-    screen: "context";
     work: string | undefined;
     chat?: string | undefined;
     scheme: ProjectContextTreeScheme;
@@ -114,7 +106,6 @@ export function openContextRouteSearch(
 ): ProjectSearch {
   return stripEmptySearch({
     ...search,
-    screen: "context",
     work: target.workId,
     chat: target.rootThreadId,
     scheme: target.scheme,
@@ -129,7 +120,6 @@ export function contextRouteMatchesSearch(
 ): boolean {
   if (!search) return false;
   return (
-    search.screen === "context" &&
     search.scheme === target.scheme &&
     search.path === target.path &&
     search.chat === target.rootThreadId &&
@@ -157,7 +147,6 @@ export function applyContextRepairIfCurrent(
 ): ProjectSearch {
   const expected = repair.expectedSearch;
   if (
-    latest.screen !== expected.screen ||
     latest.work !== expected.work ||
     latest.chat !== expected.chat ||
     latest.scheme !== expected.scheme ||

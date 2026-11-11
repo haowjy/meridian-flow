@@ -55,12 +55,11 @@ export async function navigateToPassage(input: {
   try {
     const opened = await input.openDocument(input.documentId).catch(() => null);
     if (cancelled() || !opened || opened.kind !== "committed") return { kind: "unavailable" };
-    if (opened.placement === "background") return { kind: "unavailable" };
     const timeoutMs = input.timeoutMs ?? 10_000;
     const timeout = AbortSignal.timeout(timeoutMs);
     const waitSignal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
     const show = input.showPassage ?? showPassageInTarget;
-    // A document is in one host at a time; when it moves (Write to the dock), the old host's
+    // A document is in one host at a time; when it moves between hosts, the old host's
     // editor retires and the new one is waited for.
     while (!waitSignal.aborted) {
       const target = await whenLiveEditor(input.documentId, waitSignal);

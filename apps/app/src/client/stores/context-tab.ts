@@ -1,4 +1,7 @@
-/** Editor view identity and membership, independent of React and persistence. */
+/**
+ * The descriptor a document host paints from: identity, owner and kind, derived per view from
+ * the catalog, a draft row or the replica. Nothing stores it.
+ */
 import type {
   ContextOwner,
   DocumentFileType,
@@ -65,7 +68,6 @@ export function tabContextOwner(owner: TabOwner): ContextOwner {
 
 export type ContextTab =
   | ({
-      tabInstanceId?: string;
       kind: "tracked";
       documentId: string;
       scheme: ProjectContextTreeScheme;
@@ -86,7 +88,6 @@ export type ContextTab =
       localOnly?: true;
     } & TabOwner)
   | ({
-      tabInstanceId?: string;
       kind: "viewer";
       documentId: string;
       scheme: ProjectContextTreeScheme;
@@ -99,7 +100,6 @@ export type ContextTab =
       resourceHandle?: string;
     } & TabOwner)
   | {
-      tabInstanceId?: string;
       kind: "new";
       documentId: string;
       name: string;
@@ -107,37 +107,6 @@ export type ContextTab =
     };
 
 export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" }>;
-
-/** The tab store's slice for one project: one selection, whatever the Work scope or mode. */
-export type ProjectTabsSlice = {
-  tabs: ContextTab[];
-  /** `tabKey` of the selected tab. */
-  selectedTabKey: string | null;
-};
-
-/** Stable across a document's identity changes: the tab instance, else the document. */
-export function tabKey(tab: ContextTab): string {
-  return tab.tabInstanceId ?? tab.documentId;
-}
-
-export function selectedTabOf(slice: ProjectTabsSlice): ContextTab | null {
-  return slice.selectedTabKey === null
-    ? null
-    : (slice.tabs.find((tab) => tabKey(tab) === slice.selectedTabKey) ?? null);
-}
-
-export function selectedDocumentIdOf(slice: ProjectTabsSlice): string | null {
-  return selectedTabOf(slice)?.documentId ?? null;
-}
-
-/** The slice with the tab for `documentId` selected (none if absent). */
-export function selectingDocument(
-  slice: ProjectTabsSlice,
-  documentId: string | null,
-): ProjectTabsSlice {
-  const tab = documentId === null ? null : slice.tabs.find((t) => t.documentId === documentId);
-  return { ...slice, selectedTabKey: tab ? tabKey(tab) : null };
-}
 
 /**
  * The one scheme the Editor never opens: uploads belong to a chat and open in
@@ -147,19 +116,7 @@ export function isEditorScheme(scheme: ProjectContextTreeScheme): boolean {
   return scheme !== "uploads";
 }
 
-/**
- * Workspace admission: the persisted workspace keeps every Work's scratch tabs, whatever the
- * Work scope: a Scratch document's owner is its identity, not the scope's.
- */
+/** Whether a main view can hold the document: every kind but an upload. */
 export function isEditorContextTab(tab: ContextTab): boolean {
   return tab.kind === "new" || isEditorScheme(tab.scheme);
-}
-
-/** Capture the mounted tab before asynchronous navigation or metadata work. */
-export function matchesTabInstance(tab: ContextTab, addressed: ContextTab): boolean {
-  return (
-    Boolean(addressed.tabInstanceId) &&
-    tab.tabInstanceId === addressed.tabInstanceId &&
-    tab.documentId === addressed.documentId
-  );
 }

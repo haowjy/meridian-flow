@@ -12,7 +12,6 @@ import {
   projectResourceNeedsRepair,
 } from "@meridian/resource-replica";
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
-import { getContextTabs } from "@/client/stores";
 import { notifyFailure } from "@/components/app/failure-toast";
 import type { RemovedNoticeStore } from "../removed-notice-store";
 import { copyFailures, copyFailureTitle } from "./copy-refusal";
@@ -174,17 +173,16 @@ export async function runCopy(
     });
 }
 
-/** The documents on the writer's own tabs that deleting `entry` takes away. */
+/** The documents deleting `entry` takes away; the notice store keeps the presented ones. */
 async function ownRemovals(context: EntryContext, entry: EntryRef): Promise<string[]> {
   if (entry.kind === "file") return [entry.id];
-  const { projectId } = context;
   const view = await currentView(context);
-  return getContextTabs(projectId).tabs.flatMap((tab) =>
-    tab.kind !== "new" &&
-    within(view, parentOf(view, { kind: "file", id: tab.documentId }), entry.id)
-      ? [tab.documentId]
-      : [],
-  );
+  return view.records.flatMap(({ resource }) => {
+    const documentId = resource.identity.documentId;
+    return within(view, parentOf(view, { kind: "file", id: documentId }), entry.id)
+      ? [documentId]
+      : [];
+  });
 }
 
 export async function runDelete(

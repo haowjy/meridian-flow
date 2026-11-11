@@ -2,7 +2,7 @@
 
 import { isWorkScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
-import { type ContextTab, type ProjectTabsSlice, selectedDocumentIdOf } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import {
   buildWorkingSetRoute,
   reconcileSnapshotContextRoutes,
@@ -31,7 +31,6 @@ export type ContextAvailabilityLocalBatchPlan = Readonly<{
   projectId: string;
   commands: readonly ProjectDocumentAvailabilityCommand[];
   tabs: readonly ContextTab[];
-  selectedDocumentId: string | null;
   selection: ContextRouteSelection;
   admitted: ContextRouteRequest | null;
   removalFence: ContextRemovalProjectSnapshot["removalFence"];
@@ -63,17 +62,19 @@ export function planContextAvailabilityBatch(
   input: Readonly<{
     commands: readonly ProjectDocumentAvailabilityCommand[];
     project: ContextRemovalProjectSnapshot;
-    tabs: ProjectTabsSlice;
+    /** What the views present (`PresentedDocuments`). */
+    tabs: readonly ContextTab[];
+    /** The document main presents, if any. */
+    mainDocumentId: string | null;
     recentRoutes: readonly WorkingSetRoute[];
     routeSearch: ProjectSearch | null;
     appliedGenerations: ReadonlyMap<string, AppliedAvailabilityCommand>;
-    /** Documents a draft keeps on screen: their tabs stay when live loses them. */
+    /** Documents a draft keeps on screen: their views keep them when live loses them. */
     held?: ReadonlySet<string>;
   }>,
 ): ContextAvailabilityLocalBatchPlan {
   const projectId = input.commands[0]?.projectId ?? "";
-  let tabs = [...input.tabs.tabs];
-  let selectedDocumentId = selectedDocumentIdOf(input.tabs);
+  let tabs = [...input.tabs];
   let selection = input.project.selection;
   let admitted = input.project.admitted;
   let removalFence = input.project.removalFence;
@@ -214,7 +215,7 @@ export function planContextAvailabilityBatch(
       command.kind === "terminal-remove",
     );
     selection = transition.selection;
-    const selectedTabId = input.project.activeWorkId ? selectedDocumentId : null;
+    const selectedTabId = input.project.activeWorkId ? input.mainDocumentId : null;
     const removal = planContextRemoval({
       activeWorkId: input.project.activeWorkId,
       tabs,
@@ -227,9 +228,6 @@ export function planContextAvailabilityBatch(
       intent,
     });
     if (removal.outcome.kind !== "noop") tabs = [...removal.outcome.remaining];
-    // A tab a draft holds open keeps the selection: the draft still paints in it.
-    if (selectedDocumentId === id && !tabs.some((tab) => tab.documentId === id))
-      selectedDocumentId = null;
     const exactRecentRoutes = recentRoutes.filter((route) => route.documentId === id);
     const workingSet = {
       ...removal.workingSet,
@@ -279,7 +277,6 @@ export function planContextAvailabilityBatch(
     if (isUnavailable(input.routeSearch?.work) && routeSearch) {
       routeSearch = {
         ...routeSearch,
-        screen: "context",
         work: undefined,
         chat: undefined,
         scheme: undefined,
@@ -292,7 +289,6 @@ export function planContextAvailabilityBatch(
     projectId,
     commands: input.commands,
     tabs,
-    selectedDocumentId,
     selection,
     admitted,
     removalFence,

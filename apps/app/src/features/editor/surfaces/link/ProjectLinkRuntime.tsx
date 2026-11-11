@@ -44,20 +44,18 @@ import { useReviewingLinkDestination } from "@/features/project/review-launch";
 import { useEditorScope } from "../../editor-scope";
 
 /**
- * The Editor's destination: the document opens in this editor's pane, or on
- * the tab strip for a new-tab gesture, using the holder's link scope.
+ * The Editor's destination: the document opens in main, using the holder's link scope.
  */
 export function useEditorLinkDestination(): LinkDestination {
   const { projectId, workId } = useEditorScope();
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
   const openLive = useCallback<LinkDestination>(
-    (document, gesture) =>
+    (document) =>
       openDocument({
         documentId: document.documentId,
         ...(document.trashed ? { trashed: true as const } : {}),
         ...(document.focus ? { focus: true as const } : {}),
         workId: workId ?? undefined,
-        disposition: gesture === "new-tab" ? "background" : "current",
       }),
     [openDocument, workId],
   );

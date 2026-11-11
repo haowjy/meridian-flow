@@ -222,7 +222,7 @@ export function ContextDocumentHost({
                 className={editorClassName}
                 projectId={projectId}
                 documentId={tab.documentId}
-                focusKey={tab.tabInstanceId}
+                focusKey={tab.documentId}
                 session={session ?? undefined}
                 bindingKey={bindingKey}
                 // A warm editor is hidden, not gone. Its chrome portals to
@@ -250,7 +250,6 @@ export function ContextDocumentHost({
       projectId={projectId}
       documentId={tab.documentId}
       resourceHandle={tab.resourceHandle}
-      tabInstanceId={tab.tabInstanceId}
       availabilityRevision={availabilityRevision}
       liveRoom={liveness === "live"}
       bindingOwner={presentation.bindingOwner}

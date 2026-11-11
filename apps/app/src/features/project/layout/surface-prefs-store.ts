@@ -74,17 +74,15 @@ export function normalizeDocumentPrefs(prefs?: Partial<DocumentPrefs> | null): D
   };
 }
 
-export type RailSectionId = "scratch" | "recent";
+export type RailSectionId = "scratch";
 /** The rail sections docked under a list, each trading height with it. */
 export type DockedRailSectionId = "scratch";
 export type RailPrefs = {
   scratchExpanded: boolean;
-  recentExpanded: boolean;
   scratchHeight: number | null;
 };
 export const DEFAULT_RAIL_PREFS: RailPrefs = {
   scratchExpanded: false,
-  recentExpanded: true,
   scratchHeight: null,
 };
 
@@ -97,7 +95,6 @@ function savedHeight(height: unknown): number | null {
 export function normalizeRailPrefs(prefs?: Partial<RailPrefs> | null): RailPrefs {
   return {
     scratchExpanded: typeof prefs?.scratchExpanded === "boolean" ? prefs.scratchExpanded : false,
-    recentExpanded: typeof prefs?.recentExpanded === "boolean" ? prefs.recentExpanded : true,
     scratchHeight: savedHeight(prefs?.scratchHeight),
   };
 }

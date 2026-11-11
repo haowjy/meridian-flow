@@ -1,20 +1,20 @@
 /**
- * useFollowOpenDocumentPlacement — take the Editor route to wherever the replica
- * now places the open document, and close a tab the replica no longer places.
+ * useFollowOpenDocumentPlacement — take main's address to wherever the replica now places its
+ * document, and say once that a presented document the replica no longer places was removed.
  *
- * Desktop and phone both need this. The phone host derives its document from the
- * URL's catalog, so a move that leaves that catalog would otherwise strand the
- * editor on the old path.
+ * Desktop and phone both need this: main's host derives its document from the address's
+ * catalog, so a move that leaves that catalog would otherwise strand it on the old path. The
+ * removed document stays where it was shown, in its removed state; nothing closes it.
  */
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useEffect } from "react";
-import { useContextTabs, useContextTabsActions } from "@/client/stores";
+import { useEffect, useRef } from "react";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import { contextRouteRequest, sameContextTarget } from "../routing/project-route";
 import {
   useAccountResourceProjection,
   useContextRemovalCoordinator,
+  usePresentedDocuments,
   useProjectContextAvailabilityCoordinator,
 } from "./account-feature-context";
 import { routeTargetForTab } from "./context-removal-planner";
@@ -32,15 +32,15 @@ export function useFollowOpenDocumentPlacement(input: {
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   activeContextChat?: string | null;
-  routeDisplayed: boolean;
   onOpenContextTarget: OpenContextRoute;
 }): void {
-  const { tabs } = useContextTabs(input.projectId);
-  const { reconcileResourceTab } = useContextTabsActions();
+  const presented = usePresentedDocuments(input.projectId);
   const resourceProjection = useAccountResourceProjection(input.projectId);
   const contextRemoval = useContextRemovalCoordinator();
   const availability = useProjectContextAvailabilityCoordinator();
   const isDraftOnly = useIsDraftOnly(input.projectId);
+  // A removal is said once per document: the document stays presented in its removed state.
+  const removed = useRef(new Set<string>());
 
   useEffect(() => {
     const route =
@@ -57,50 +57,44 @@ export function useFollowOpenDocumentPlacement(input: {
       route && !(input.selection.status === "bound" && input.selection.by === "review")
         ? routeSelectionDocumentId(input.selection, route)
         : null;
-    for (const tab of tabs) {
+    const gone = new Set<string>();
+    for (const tab of presented) {
       const projection = projectResourceTab(
-        input.projectId,
         tab,
         resourceProjection.records,
         resourceProjection.placement,
         isDraftOnly(tab.documentId),
       );
       if (projection.kind === "none") continue;
-      if (projection.kind === "terminal") {
-        // A terminal resource has already disappeared from the live catalog. Close its
-        // represented tab through the same removal path as an optimistic disappearance;
-        // closeVanished keeps live drafts open while ordinary tabs leave silently.
+      if (projection.kind === "terminal" || projection.kind === "removed") {
+        gone.add(tab.documentId);
+        if (removed.current.has(tab.documentId)) continue;
+        removed.current.add(tab.documentId);
+        // closeVanished keeps a document a live draft still holds, and says the rest went.
         contextRemoval.closeVanished(input.projectId, tab);
-        void availability
-          .acceptCommittedDelete({
-            projectId: input.projectId,
-            deletedDocumentIds: projection.documentIds,
-            generation: projection.generation,
-            deletionVersion: projection.deletionVersion,
-          })
-          .catch((error: unknown) => reportError(error));
+        if (projection.kind === "terminal")
+          void availability
+            .acceptCommittedDelete({
+              projectId: input.projectId,
+              deletedDocumentIds: projection.documentIds,
+              generation: projection.generation,
+              deletionVersion: projection.deletionVersion,
+            })
+            .catch((error: unknown) => reportError(error));
         continue;
       }
-      if (projection.kind === "removed") {
-        contextRemoval.closeVanished(input.projectId, tab);
-        continue;
-      }
-      // A route is the tab's only while the selection is bound to it there; a URL the writer
-      // just pasted or traversed to is never pulled back to an open tab's placement.
-      const routeFollowsTab =
-        input.routeDisplayed &&
+      // A route is the document's only while the selection is bound to it there; a URL the
+      // writer just pasted or traversed to is never pulled back to a shown document's placement.
+      if (
         route !== null &&
         tab.kind !== "new" &&
         projection.tab.kind !== "new" &&
         boundDocumentId === tab.documentId &&
-        !sameContextTarget(routeTargetForTab(projection.tab), route);
-      if (routeFollowsTab && projection.tab.kind !== "new")
+        !sameContextTarget(routeTargetForTab(projection.tab), route)
+      )
         void input
           .onOpenContextTarget(
             contextRouteRequest({ ...projection.tab, documentId: projection.tab.documentId }),
-            // Keep the tab at the route's old locator until replacement is accepted. The
-            // prepared tab and address then commit together, so admission can retain the
-            // already-open document by identity while a move or rename is in flight.
             { replace: true, tab: projection.tab },
           )
           .then(
@@ -109,11 +103,10 @@ export function useFollowOpenDocumentPlacement(input: {
             },
             (error: unknown) => reportError(error),
           );
-      else
-        void reconcileResourceTab(input.projectId, projection.resourceHandle, projection.tab).catch(
-          (error: unknown) => reportError(error),
-        );
     }
+    // A restored document can be removed again later.
+    for (const documentId of removed.current)
+      if (!gone.has(documentId)) removed.current.delete(documentId);
   }, [
     input.activeContextChat,
     input.activeContextWork,
@@ -122,15 +115,13 @@ export function useFollowOpenDocumentPlacement(input: {
     input.editorWorkId,
     input.onOpenContextTarget,
     input.projectId,
-    input.routeDisplayed,
     input.selection,
     availability,
     contextRemoval,
     isDraftOnly,
-    reconcileResourceTab,
     resourceProjection.records,
     resourceProjection.placement,
-    tabs,
+    presented,
   ]);
 }
 

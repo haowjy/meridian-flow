@@ -2,7 +2,6 @@
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useLayoutEffect, useMemo, useRef } from "react";
-import type { ScreenKey } from "../routing/project-route";
 import { contextRouteRequest } from "../routing/project-route";
 import { useContextRemovalCoordinator } from "./account-feature-context";
 import type { ContextRemovalRoutePort } from "./context-removal-coordinator";
@@ -11,7 +10,6 @@ import { useContextRemovalProject } from "./use-context-removal-project";
 
 export type ProjectContextRemovalControllerProps = {
   projectId: string;
-  activeScreen: ScreenKey;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   /** A chat's Scratch route names its lineage here. */
@@ -28,7 +26,6 @@ export type ProjectContextRemovalControllerProps = {
 
 export function ProjectContextRemovalController({
   projectId,
-  activeScreen,
   activeContextScheme,
   activeContextPath,
   activeContextChat,
@@ -78,7 +75,7 @@ export function ProjectContextRemovalController({
   const previousLocalDocument = useRef(localDocumentId);
   useLayoutEffect(() => {
     const locator =
-      activeScreen === "context" && activeContextScheme !== null && activeContextPath !== null
+      activeContextScheme !== null && activeContextPath !== null
         ? contextRouteRequest({
             scheme: activeContextScheme,
             path: activeContextPath,
@@ -98,7 +95,6 @@ export function ProjectContextRemovalController({
     activeContextChat,
     activeContextPath,
     activeContextScheme,
-    activeScreen,
     coordinator,
     activeContextWork,
     projectId,

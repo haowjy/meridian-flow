@@ -13,6 +13,7 @@ import { createLinkSettlements } from "@/features/links/link-settlements";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { IdentityContinuity } from "./identity-continuity";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
+import { PresentedDocuments } from "./presented-documents";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
 import { reconcileRecentAvailability } from "./recent-availability";
 import { RemovedNoticeStore } from "./removed-notice-store";
@@ -24,6 +25,10 @@ export class AccountFeatureLifetime {
   readonly draftCommands;
   /** The draft-only documents mounted hosts present; settled by `DraftOnlySettlement`. */
   readonly draftOnly = new DraftOnlyPresentations();
+  /** What this browser tab's hosts present: main's document, the side's, the one kept for undo. */
+  readonly presented = new PresentedDocuments((projectId, tab) =>
+    this.removal.reconcileInstalledTab(projectId, tab),
+  );
   readonly removal;
   readonly availability;
   readonly notices;
@@ -83,8 +88,9 @@ export class AccountFeatureLifetime {
       },
       repairProjectCatalog,
     });
-    this.notices = new RemovedNoticeStore(this.availability);
+    this.notices = new RemovedNoticeStore(this.availability, this.presented);
     this.removal = new ContextRemovalCoordinator(accountId, {
+      presented: this.presented,
       sessions: this.registry,
       notices: this.notices,
       drafts: {
