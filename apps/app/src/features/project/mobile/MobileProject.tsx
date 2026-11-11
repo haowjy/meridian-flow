@@ -1,6 +1,7 @@
 /** Renders the mobile project workspace. */
 
 import { t } from "@lingui/core/macro";
+import { useBlocker } from "@tanstack/react-router";
 import { type LucideIcon, Maximize2, MessageSquare, Pin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { isThreadAwaitingCreation } from "@/client/chat-submissions";
@@ -51,6 +52,16 @@ export function MobileProject(props: MobileProjectProps) {
     arrivedAt.current = props.routeLocationKey;
     setSheetOpen(false);
   }, [props.routeLocationKey]);
+  // The sheet is no history entry, so Back while it is open closes it and leaves main where it is.
+  const sheetShown = useRef(false);
+  useBlocker({
+    shouldBlockFn: ({ action }) => {
+      if (action !== "BACK" || !sheetShown.current) return false;
+      setSheetOpen(false);
+      return true;
+    },
+    enableBeforeUnload: false,
+  });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const main = useMainItem();
   const crumbs = contextBreadcrumbSegments(
@@ -70,6 +81,8 @@ export function MobileProject(props: MobileProjectProps) {
   const openInMain = useOpenInMain(props.projectId, props.onOpenContextTarget);
   const SheetIcon = sideTab ? fileKindIcon(sideTab.name) : MessageSquare;
   const closeSheet = () => setSheetOpen(false);
+  const sheetVisible = sheetOpen && sheetName !== null;
+  sheetShown.current = sheetVisible;
   const sheetTitle = sheetName ? (
     <PhoneSideTitle projectId={props.projectId} name={sheetName} icon={SheetIcon} />
   ) : null;
@@ -123,7 +136,7 @@ export function MobileProject(props: MobileProjectProps) {
           {renderActiveView(props)}
         </ProjectRouteBoundary>
       </main>
-      <Sheet open={sheetOpen && sheetName !== null} onOpenChange={setSheetOpen}>
+      <Sheet open={sheetVisible} onOpenChange={setSheetOpen}>
         <SheetContent
           side="right"
           showCloseButton={false}
