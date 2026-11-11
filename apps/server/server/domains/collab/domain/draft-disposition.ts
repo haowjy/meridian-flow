@@ -22,6 +22,12 @@ import type {
 } from "./ports/draft-disposition-store.js";
 
 export type PartDisposition = "applied" | "pending" | "discarded";
+/**
+ * The writer's apply or discard of a part, if they made one. It outranks whatever the kernel
+ * says about the part's text (a sibling change applied, or the writer typed over it).
+ */
+export const settledCause = (disposition: PartDisposition) =>
+  disposition === "applied" || disposition === "discarded" ? disposition : null;
 export interface DraftDispositionView {
   draft: DraftSnapshot;
   /** Released creation bytes have no snapshot, Apply record or projection. */

@@ -222,13 +222,6 @@ function prepare(
       direction === "undo"
         ? targets.filter((part) => !rolledBack(part))
         : document.history.filter((part) => part.actionId === selectedAction && !rolledBack(part));
-    const disposition = (part: StoredInversePart) =>
-      (direction === "redo"
-        ? reversals.find((candidate) =>
-            candidate.targets.some((target) => partKey(target) === partKey(part)),
-          )
-        : part
-      )?.disposition ?? part.disposition;
     const skips: TurnInverseSkip[] = [];
     const simulation = simulateInverse(document, {
       rolledBack: index.rolledBack,
@@ -370,16 +363,7 @@ function prepare(
     );
     for (const classified of [...computed.values()].flatMap((result) => result.skipped)) {
       const part = targets.find((target) => partKey(target) === partKey(classified.part));
-      if (part)
-        skip(
-          part,
-          entryPlanner.settledCause(disposition(part)) ??
-            (classified.reasons.includes("inaccessible ancestor")
-              ? "paragraph_removed"
-              : classified.state === "undone"
-                ? "already_undone"
-                : "edited_since"),
-        );
+      if (part) skip(part, entryPlanner.turnSkipCause(part, direction, reversals, classified));
     }
     const emittedEditIds = new Set(
       [...computed.values()].flatMap((result) => result.edits.map((edit) => edit.targetEditId)),
@@ -388,7 +372,7 @@ function prepare(
       const key = partKey(selected.part);
       const target = targets.find((part) => partKey(part) === key);
       if (target && !classifiedKeys.has(key) && !emittedEditIds.has(selected.part.editId))
-        skip(target, entryPlanner.settledCause(disposition(target)) ?? "edited_since");
+        skip(target, entryPlanner.turnSkipCause(target, direction, reversals, null));
     }
     const steps = order.flatMap((step): InverseStep[] => {
       if (step.kind === "tree") return [{ ...step, actionId, actionKind: kind }];

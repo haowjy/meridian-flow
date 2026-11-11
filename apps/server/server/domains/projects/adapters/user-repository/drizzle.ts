@@ -3,7 +3,7 @@
 import type { UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { users } from "@meridian/database/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   AccountLinkConflictError,
   type EnsureUserInput,
@@ -26,20 +26,29 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
       // transaction holding a key-share on it through a foreign key, with a pooled
       // connection held meanwhile. A plain read and a non-key UPDATE never wait there.
       const [current] = await db
-        .select({ id: users.id })
+        .select({
+          id: users.id,
+          email: users.email,
+          name: users.name,
+          avatarUrl: users.avatarUrl,
+        })
         .from(users)
-        .where(
-          and(
-            eq(users.externalId, input.externalId),
-            eq(users.email, input.email),
-            input.name === null ? isNull(users.name) : eq(users.name, input.name),
-            input.avatarUrl === null
-              ? isNull(users.avatarUrl)
-              : eq(users.avatarUrl, input.avatarUrl),
-          ),
-        )
+        .where(eq(users.externalId, input.externalId))
         .limit(1);
-      if (current) return current.id as UserId;
+      // This row holds the email (it is unique), so a profile-only change cannot conflict.
+      if (current?.email === input.email) {
+        if (current.name !== input.name || current.avatarUrl !== input.avatarUrl) {
+          await db
+            .update(users)
+            .set({
+              name: input.name,
+              avatarUrl: input.avatarUrl,
+              updatedAt: new Date().toISOString(),
+            })
+            .where(eq(users.id, current.id));
+        }
+        return current.id as UserId;
+      }
 
       return db.transaction(async (tx) => {
         // The lock serializes exact database email keys only; unique indexes
@@ -58,14 +67,6 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
         }
 
         const now = new Date().toISOString();
-        if (emailOwner) {
-          const [updated] = await tx
-            .update(users)
-            .set({ name: input.name, avatarUrl: input.avatarUrl, updatedAt: now })
-            .where(eq(users.externalId, input.externalId))
-            .returning({ id: users.id });
-          if (updated) return updated.id as UserId;
-        }
         const [row] = await tx
           .insert(users)
           .values({

@@ -4,7 +4,7 @@ import { type InverseSelection, prepareEditRoots } from "@meridian/agent-edit/in
 import type { TurnInverseSkipCause } from "@meridian/contracts/protocol";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
-import type { PartDisposition } from "./draft-disposition.js";
+import { type PartDisposition, settledCause } from "./draft-disposition.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import {
   type Entry,
@@ -82,14 +82,9 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     | "discarded"
     | "changed";
   // A closed draft keeps its apply record: a part is in the manuscript if it was applied,
-  // and gone otherwise. Every closed-draft answer below derives from this one rule.
+  // and gone otherwise.
   const closedPartCause = (part: StoredInversePart) =>
-    part.disposition === "applied" ? ("applied" as const) : ("discarded" as const);
-  // An open draft's part the kernel can no longer reach (a sibling change in its paragraph was
-  // applied or discarded, or the writer typed over it) is still the writer's: the apply or
-  // discard they chose outranks the kernel's "items changed since".
-  const settledCause = (disposition: PartDisposition) =>
-    disposition === "applied" || disposition === "discarded" ? disposition : null;
+    settledCause(part.disposition) ?? "discarded";
   type TextOmission = {
     ordinal: number;
     cause:
@@ -120,13 +115,34 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
         target.ordinal === original.ordinal ? target.editId === original.editId : false,
       ),
     );
-  function changedReason(part: StoredInversePart, inspection: Inspection): TextOmission["cause"] {
-    const state = inspection.states([part])[0];
-    return state.reasons.includes("inaccessible ancestor")
-      ? "paragraph_removed"
-      : state.state === "undone"
-        ? "already_removed"
-        : "edited_since";
+  type KernelState = { state: string; reasons: readonly string[] };
+  // The one place a part's cause is decided: the writer's apply or discard first, then what the
+  // kernel found. Both the per-edit omissions and the per-turn skips take it from here.
+  function partCause(disposition: PartDisposition, kernel: KernelState | null) {
+    const settled = settledCause(disposition);
+    if (settled) return settled;
+    if (!kernel) return "edited_since" as const;
+    return kernel.reasons.includes("inaccessible ancestor")
+      ? ("paragraph_removed" as const)
+      : kernel.state === "undone"
+        ? ("already_removed" as const)
+        : ("edited_since" as const);
+  }
+  // A part being reverted is applied by definition, so only a discard can explain why it stays.
+  const omissionCause = (disposition: PartDisposition, kernel: KernelState | null) => {
+    const cause = partCause(disposition === "applied" ? "pending" : disposition, kernel);
+    return cause === "applied" ? ("edited_since" as const) : cause;
+  };
+  /** `partCause` in the turn protocol's words, for a part found `kernel` after `direction`. */
+  function turnSkipCause(
+    part: StoredInversePart,
+    direction: "undo" | "redo",
+    inverseParts: readonly StoredInversePart[],
+    kernel: KernelState | null,
+  ): TurnInverseSkipCause {
+    const settledBy = direction === "redo" ? (inverseOf(part, inverseParts) ?? part) : part;
+    const cause = partCause(settledBy.disposition, kernel);
+    return cause === "already_removed" ? "already_undone" : cause;
   }
 
   function textSelection(
@@ -150,7 +166,10 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       if (!refused)
         selection.push({ part: original, direction: direction === "undo" ? "invert" : "reapply" });
       else if (refused === "changed")
-        partial.push({ ordinal: original.ordinal, cause: changedReason(original, inspection) });
+        partial.push({
+          ordinal: original.ordinal,
+          cause: omissionCause("pending", inspection.states([original])[0]),
+        });
       else return { selection, partial, refusal: refused };
     }
     return { selection, partial, refusal: null };
@@ -320,23 +339,15 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     for (const [i, part] of entry.parts.entries()) {
       const state = states[i];
       const originDestination = document.destinationOf(part.origin);
-      const kernelReason =
-        state?.state === "undone"
-          ? "already_removed"
-          : state?.reasons.includes("inaccessible ancestor")
-            ? "paragraph_removed"
-            : state?.state !== "active"
-              ? "edited_since"
-              : null;
       const reason = originDestination.frozen
         ? "draft_archived"
         : originDestination.kind === "draft" && originDestination.state === "gone"
           ? "discarded"
           : inspection.rolledBack(part)
             ? "rolled_back"
-            : kernelReason && part.disposition === "discarded"
-              ? "discarded"
-              : kernelReason;
+            : state?.state === "active"
+              ? null
+              : omissionCause(part.disposition, state ?? null);
       if (reason) skipped.push({ ordinal: part.ordinal, cause: reason });
       else selection.push({ part, direction: "invert" });
     }
@@ -350,7 +361,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     textPlan,
     turnTextPlan,
     treePlan,
-    settledCause,
+    turnSkipCause,
     version,
     queryDestination,
     draftIdOf,
