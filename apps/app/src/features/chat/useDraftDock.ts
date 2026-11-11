@@ -1,15 +1,8 @@
 /** The chat's pending changes and creation-bound Work commands. Selective items send complete classes; whole-draft items send whole commands. No disposition navigates. */
 import { t } from "@lingui/core/macro";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
+import { useDraftNotice } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
@@ -42,14 +35,10 @@ export function useDraftDock({
     controller.owner.snapshot,
     controller.owner.snapshot,
   );
-  const dismiss = useRef(controller.dismissNotice);
-  useLayoutEffect(() => {
-    dismiss.current = controller.dismissNotice;
-  }, [controller.dismissNotice]);
-  useEffect(() => {
-    if (!active) dismiss.current();
-    return () => dismiss.current();
-  }, [active, threadId]);
+  // The owner's notice, if this chat's strip made it.
+  const owned = useDraftNotice(controller.ownerKey);
+  const notice =
+    active && owned?.surface.kind === "dock" && owned.surface.threadId === threadId ? owned : null;
   const listedFiles = useOwnerDrafts(controller.projectId, controller.ownerKey).files ?? [];
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
@@ -111,7 +100,6 @@ export function useDraftDock({
 
   const review = useCallback(
     (file: DockFile, change?: ReviewChange) => {
-      controller.dismissNotice();
       // A draft-only picture has no review room: it opens as a preview.
       if (!file.row.draft.hasDraft && !reviewHasNoRoom(file.row.draft)) {
         if (file.row.draft.binary)
@@ -132,6 +120,14 @@ export function useDraftDock({
     (file) => file.row.draft.hasDraft || file.row.draft.isNew || hasTreeLine(file.row.draft),
   );
 
+  const discardItems = (files: readonly DockFile[]) => {
+    // A frozen owner's draft takes only the whole draft's Discard, which the server ends.
+    const whole = controller.frozen;
+    return files.map((file) => ({
+      draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
+      target: whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
+    }));
+  };
   /**
    * Sends the strip's command. An Apply brings back only the deleted documents in `restore`;
    * it resolves to the files a delete the strip hadn't shown yet held back (`needs-restore`).
@@ -139,12 +135,13 @@ export function useDraftDock({
   const send = useCallback(
     (mode: "apply" | "discard", restore: ReadonlySet<string> = new Set()) => {
       const files = mode === "apply" ? applicable : actionableFiles;
-      // A frozen owner's draft takes only the whole draft's Discard, which the server ends.
-      const whole = mode === "discard" && controller.frozen;
-      const items = files.map((file) => ({
-        draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
-        target: whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
-      }));
+      const items =
+        mode === "discard"
+          ? discardItems(files)
+          : files.map((file) => ({
+              draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
+              target: targetOfChanges(file.actionable),
+            }));
       if (items.length === 0) return Promise.resolve([]);
       // The runner hides every file's selection at the click and returns each as
       // its own command answers; the records carry the outcomes.
@@ -165,7 +162,12 @@ export function useDraftDock({
     generating,
     controller,
     files,
-    mounted: files.length > 0 || controller.notice !== null,
+    notice,
+    mounted: files.length > 0 || notice !== null,
+    /** The strip's Discard carries no Undo for one of its files, so it asks first. */
+    discardAsks: discardItems(actionableFiles).some(({ draft, target }) =>
+      controller.discardAsks(draft, target),
+    ),
     changeCount: totalChanges(files),
     /** Unread previews keep the controls visible but disabled until their scope is known. */
     showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),

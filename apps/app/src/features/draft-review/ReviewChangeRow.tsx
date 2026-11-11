@@ -119,10 +119,8 @@ export function ReviewChangeRow({
             density="icon"
             touch={touch}
             className={touch ? undefined : "gap-0.5"}
-            onDiscard={(event) => {
-              event.stopPropagation();
-              onDiscard();
-            }}
+            discardAsks={Boolean(change.tree)}
+            onDiscard={onDiscard}
             onApply={
               canApply
                 ? (event) => {

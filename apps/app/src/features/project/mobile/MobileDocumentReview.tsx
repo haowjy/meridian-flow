@@ -20,7 +20,9 @@ import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { ContextTab } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
+import { useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import type { DraftNotice } from "@/features/draft-review/draft-notices";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
@@ -60,6 +62,7 @@ export function MobileDocumentReview({
   });
   const [listOpen, setListOpen] = useState(false);
   const manuscriptState = useManuscriptState(projectId, tab);
+  const notice = useDocumentNotice(projectId, documentId);
   useEffect(() => {
     if (!itemKey) setListOpen(false);
   }, [itemKey]);
@@ -73,10 +76,16 @@ export function MobileDocumentReview({
             tab={tab}
             header={header}
             manuscriptState={manuscriptState}
+            notice={notice}
             onOpenList={() => setListOpen(true)}
           />
         ) : (
-          <LiveDraftEntry projectId={projectId} tab={tab} manuscriptState={manuscriptState} />
+          <LiveDraftEntry
+            projectId={projectId}
+            tab={tab}
+            manuscriptState={manuscriptState}
+            notice={notice}
+          />
         )}
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         {itemKey ? (
@@ -98,14 +107,16 @@ function LiveDraftEntry({
   projectId,
   tab,
   manuscriptState,
+  notice,
 }: {
   projectId: string;
   tab: ContextTab;
   manuscriptState: ManuscriptState | null;
+  notice: DraftNotice | null;
 }) {
   const hints = useDocumentDraftHints(projectId, tab.documentId, { enabled: tab.kind !== "new" });
   const drafted = hints.length > 0;
-  if (!drafted && !manuscriptState) return null;
+  if (!drafted && !manuscriptState && !notice) return null;
   return (
     <div
       data-phone-draft-entry
@@ -116,7 +127,7 @@ function LiveDraftEntry({
       }}
     >
       {drafted ? <DocumentVersionMenu projectId={projectId} tab={tab} touch /> : null}
-      <ManuscriptStateSlot state={manuscriptState} touch />
+      <ManuscriptStateSlot state={manuscriptState} notice={notice} touch />
     </div>
   );
 }
@@ -126,12 +137,14 @@ function ReviewTop({
   tab,
   header,
   manuscriptState,
+  notice,
   onOpenList,
 }: {
   projectId: string;
   tab: ContextTab;
   header: ReviewHeaderModel;
   manuscriptState: ManuscriptState | null;
+  notice: DraftNotice | null;
   onOpenList: () => void;
 }) {
   const { status } = header.view;
@@ -143,6 +156,7 @@ function ReviewTop({
         tab={tab}
         header={header}
         manuscriptState={manuscriptState}
+        notice={notice}
         onOpenList={onOpenList}
       />
     </>

@@ -3,6 +3,8 @@ import { t } from "@lingui/core/macro";
 import { List } from "lucide-react";
 import type { ContextTab } from "@/client/stores";
 import { changeListLabel } from "@/features/draft-review/DocumentChanges";
+import type { DraftNotice } from "@/features/draft-review/draft-notices";
+import { DiscardQuestion } from "@/features/draft-review/ReviewActions";
 import {
   ReviewFailureNotices,
   ReviewStateInline,
@@ -17,6 +19,7 @@ export function MobileReviewHeader({
   tab,
   header,
   manuscriptState,
+  notice,
   onOpenList,
 }: {
   projectId: string;
@@ -24,6 +27,7 @@ export function MobileReviewHeader({
   header: ReviewHeaderModel;
   /** What live did to this document; it takes the row's free end. */
   manuscriptState: ManuscriptState | null;
+  notice: DraftNotice | null;
   onOpenList: () => void;
 }) {
   const { controller, view, finished } = header;
@@ -64,7 +68,17 @@ export function MobileReviewHeader({
             }}
           />
         </div>
-        <ManuscriptStateSlot state={manuscriptState} touch />
+        {header.asking ? (
+          <DiscardQuestion
+            touch
+            scope="document"
+            className="flex-1"
+            onKeep={header.keepDraft}
+            onConfirm={header.confirmDiscard}
+          />
+        ) : (
+          <ManuscriptStateSlot state={manuscriptState} notice={notice} touch />
+        )}
         <ReviewStateInline
           touch
           finished={finished}

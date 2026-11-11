@@ -10,7 +10,7 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { draftMetadataQueryOptions } from "@/client/query/useDraftMetadata";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
@@ -58,7 +58,12 @@ export type ReviewHeaderModel = {
   failedElsewhere: { row: ReviewFileTarget; failure: BranchCommandFailure }[];
   showLive: () => void;
   applyDraft: () => void;
+  /** Discard draft: at once when it carries an Undo, else it asks first (`asking`). */
   discardDraft: () => void;
+  /** Discard draft's question is open: it can't be undone. */
+  asking: boolean;
+  keepDraft: () => void;
+  confirmDiscard: () => void;
 };
 
 /**
@@ -144,6 +149,8 @@ export function useReviewHeader({
   }, [itemKey]);
   // Local Discard stays in this draft. Only an Apply that landed advances to another file: a
   // refusal shows on the draft the writer applied, so it must not move them first.
+  const [askingFor, setAskingFor] = useState<string | null>(null);
+  const asking = askingFor === itemKey && Boolean(itemKey) && !locked;
   const dispose = (mode: "apply" | "discard") => {
     if (locked) return;
     const start = controller.startDraft(mode, { documentId, itemKey });
@@ -165,7 +172,14 @@ export function useReviewHeader({
     failedElsewhere,
     showLive,
     applyDraft: () => dispose("apply"),
-    discardDraft: () => dispose("discard"),
+    discardDraft: () =>
+      controller.discardAsks({ documentId, itemKey }) ? setAskingFor(itemKey) : dispose("discard"),
+    asking,
+    keepDraft: () => setAskingFor(null),
+    confirmDiscard: () => {
+      setAskingFor(null);
+      dispose("discard");
+    },
     draftOnly: Boolean(onCloseDraftOnly),
     openDraft: onOpenDraft,
   };
