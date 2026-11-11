@@ -11,27 +11,9 @@
  */
 
 import type { Editor } from "@tiptap/core";
+import { focusIsFree, holdFocus } from "@/lib/focus-follow";
 
 const armed = new Set<string>();
-
-/**
- * A page load into the Editor gives the caret to the first document it shows, so the
- * writer's first keys land in the text rather than in the side panel's chat. Open until
- * the writer's first key or press: from then on, focus is theirs to place.
- */
-let loadFocusOpen = typeof window !== "undefined";
-const stopOnInput = new Set<() => void>();
-if (loadFocusOpen) {
-  const close = () => {
-    loadFocusOpen = false;
-    for (const stop of stopOnInput) stop();
-    stopOnInput.clear();
-    window.removeEventListener("keydown", close, true);
-    window.removeEventListener("pointerdown", close, true);
-  };
-  window.addEventListener("keydown", close, true);
-  window.addEventListener("pointerdown", close, true);
-}
 
 /** Called at the moment an open commits, with the tab instance it installed. */
 export function armEditorFocus(tabInstanceId: string): void {
@@ -44,37 +26,35 @@ export function claimEditorFocus(tabInstanceId: string | undefined): boolean {
 }
 
 /**
- * Gives `editor` the caret where it keeps it while it is the Editor's shown document after a
- * page load and nothing else holds focus. Until the writer's first key or press it puts the
- * caret back whenever focus falls free: the shown editor can be swapped in, or rebound,
- * after the paint cover lifts, and a warm copy mounts hidden or inert beside it. Not on a
- * touch screen: focusing a text there opens the on-screen keyboard over it.
+ * A page load into the Editor gives the caret to the document it shows, so the writer's
+ * first keys land in the text rather than in the side panel's chat. Held from the load
+ * until the writer takes the focus (a key, a press, focus placed anywhere else, even
+ * before an editor has painted); not on a touch screen, where focusing a text opens the
+ * on-screen keyboard over it. Editors join as they paint and leave as they unmount.
  */
-export function focusOnLoad(editor: Editor): void {
-  if (!loadFocusOpen || window.matchMedia?.("(pointer: coarse)").matches) return;
-  const dom = editor.view.dom;
-  const settle = () => {
-    if (!loadFocusOpen || editor.isDestroyed) return true;
-    if (focusIsFree() && dom.getClientRects().length > 0 && !dom.closest("[inert]"))
-      editor.view.focus();
-    return false;
-  };
-  if (settle()) return;
-  const observer = new MutationObserver(() => {
-    if (settle()) observer.disconnect();
+const loadEditors = new Set<Editor>();
+let loadFocusOpen =
+  typeof window !== "undefined" && !window.matchMedia?.("(pointer: coarse)").matches;
+if (loadFocusOpen) {
+  holdFocus(shownLoadEditor, () => {
+    loadFocusOpen = false;
+    loadEditors.clear();
   });
-  observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-  stopOnInput.add(() => observer.disconnect());
 }
 
-/** Focus may land only while nobody else holds it: a dialog or input that stays open keeps its caret. */
-export function focusIsFree(): boolean {
-  const active = document.activeElement;
-  return (
-    !active ||
-    active === document.body ||
-    !active.isConnected ||
-    // The paint cover parks focus on its status line while it stands in for an editor.
-    active.hasAttribute("data-paint-status")
-  );
+/** The registered editor that is on screen: a warm copy mounts hidden or inert beside it. */
+function shownLoadEditor(): HTMLElement | null {
+  for (const editor of loadEditors) {
+    const dom = editor.isDestroyed ? null : editor.view.dom;
+    if (dom && dom.getClientRects().length > 0 && !dom.closest("[inert]")) return dom;
+  }
+  return null;
+}
+
+/** Joins `editor` to the load's hold while it can still take the caret; returns its leave. */
+export function focusOnLoad(editor: Editor): () => void {
+  if (!loadFocusOpen) return () => {};
+  loadEditors.add(editor);
+  if (focusIsFree()) shownLoadEditor()?.focus();
+  return () => loadEditors.delete(editor);
 }
