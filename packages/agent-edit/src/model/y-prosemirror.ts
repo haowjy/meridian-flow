@@ -13,6 +13,7 @@ import type {
   MinimalOp,
   ProjectedBlock,
   RoomNodeState,
+  RoomTextblock,
 } from "../ports/model.js";
 import { findItem, itemsInRange } from "../yjs-mutation.js";
 import {
@@ -118,16 +119,12 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       return removedUnits(unwrapBlock(block), unwrapDoc(current));
     },
 
-    removedLeafUnits(block, path, current) {
-      return removedLeafUnits(nodeAt(unwrapBlock(block), path), unwrapDoc(current));
+    roomTextblock(block, path, current) {
+      return roomTextblock(nodeAt(unwrapBlock(block), path), unwrapDoc(current));
     },
 
     roomNodeState(block, path, current) {
       return roomNodeState(nodeAt(unwrapBlock(block), path), unwrapDoc(current));
-    },
-
-    roomAddedAfter(block, path, unit, current) {
-      return roomAddedAfter(nodeAt(unwrapBlock(block), path), unit, unwrapDoc(current));
     },
 
     roomAddedInside(block, path, current) {
@@ -577,102 +574,82 @@ function deletedInRoom(item: Y.Item | null, current: Y.Doc): boolean {
 }
 
 /**
- * `removedUnits` for a text leaf at any depth. A unit is a text character or an inline atom,
- * so offsets are the leaf node's ProseMirror content offsets.
+ * One walk of the room's items under a textblock of the view. A unit is a text character or
+ * an inline atom, so offsets are the textblock's ProseMirror content offsets. The walk reads
+ * the room's list, which holds every view item (split or deleted as the room has it) and the
+ * room's own in between; an item the view holds deleted is skipped, so an old tombstone at a
+ * boundary never hides text the room added there, and a boundary runs across atom and run edges.
  */
-function removedLeafUnits(leaf: Y.XmlElement, current: Y.Doc): Span[] {
+function roomTextblock(leaf: Y.XmlElement, current: Y.Doc): RoomTextblock {
+  const view = leaf.doc;
   const size = leaf
     .toArray()
     .reduce((sum, child) => sum + (child instanceof Y.XmlText ? child.length : 1), 0);
-  if (deletedInRoom(leaf._item, current)) return size > 0 ? [{ from: 0, to: size }] : [];
-  const runs: Span[] = [];
-  const push = (from: number, to: number) => {
-    const last = runs.at(-1);
+  const roomItem = leaf._item && findItem(current, leaf._item.id);
+  if (
+    !view ||
+    !roomItem ||
+    !(roomItem.content instanceof Y.ContentType) ||
+    deletedInRoom(leaf._item, current)
+  )
+    return { removed: size > 0 ? [{ from: 0, to: size }] : [], added: [] };
+  const removed: Span[] = [];
+  const added = new Set<number>();
+  const remove = (from: number, to: number) => {
+    const last = removed.at(-1);
     if (last && last.to === from) last.to = to;
-    else runs.push({ from, to });
+    else removed.push({ from, to });
   };
-  let offset = 0;
-  for (const child of leaf.toArray()) {
-    if (!(child instanceof Y.XmlText)) {
-      const item = (child as Y.XmlElement)._item;
-      if (deletedInRoom(item, current)) push(offset, offset + 1);
-      offset += 1;
+  let unit = 0;
+  for (let child = roomItem.content.type._start; child; child = child.right) {
+    if (!(child.content instanceof Y.ContentType)) continue;
+    const type = child.content.type;
+    const mine = findItem(view, child.id);
+    if (mine?.deleted) continue;
+    if (!(type instanceof Y.XmlText)) {
+      if (!mine) {
+        if (!child.deleted) added.add(unit);
+        continue;
+      }
+      if (child.deleted) remove(unit, unit + 1);
+      unit += 1;
       continue;
     }
-    const textItem = child._item && findItem(current, child._item.id);
-    if (!textItem || textItem.deleted) {
-      if (child.length > 0) push(offset, offset + child.length);
-      offset += child.length;
-      continue;
-    }
-    for (let item = child._start; item; item = item.right) {
-      if (item.deleted || !item.countable) continue;
+    for (let item = type._start; item; item = item.right) {
+      if (!item.countable) continue;
+      const gone = item.deleted || child.deleted;
+      if (!mine) {
+        if (!gone) added.add(unit);
+        continue;
+      }
       const { client, clock } = item.id;
       let cursor = clock;
-      for (const live of itemsInRange(current, { client, clock, len: item.length })) {
-        if (live.item.deleted) continue;
-        if (live.clock > cursor) push(offset + cursor - clock, offset + live.clock - clock);
-        cursor = live.clock + live.len;
+      for (const piece of itemsInRange(view, { client, clock, len: item.length })) {
+        if (piece.clock > cursor && !gone) added.add(unit);
+        cursor = piece.clock + piece.len;
+        if (piece.item.deleted) continue;
+        if (gone) remove(unit, unit + piece.len);
+        unit += piece.len;
       }
-      if (cursor < clock + item.length) push(offset + cursor - clock, offset + item.length);
-      offset += item.length;
+      if (cursor < clock + item.length && !gone) added.add(unit);
     }
   }
-  return runs;
+  if (unit !== size) throw new Error(`Room walk lost alignment: ${unit} units for ${size}`);
+  return { removed, added: [...added].sort((x, y) => x - y) };
 }
 
 function roomNodeState(node: Y.XmlElement, current: Y.Doc): RoomNodeState {
-  if (deletedInRoom(node._item, current)) return { removed: true, changedAttrs: [] };
+  if (deletedInRoom(node._item, current)) return { removed: true, changed: {} };
   const item = node._item && findItem(current, node._item.id);
   const live = item?.content instanceof Y.ContentType ? item.content.type : null;
-  if (!(live instanceof Y.XmlElement)) return { removed: true, changedAttrs: [] };
+  if (!(live instanceof Y.XmlElement)) return { removed: true, changed: {} };
   const mine = node.getAttributes() as Record<string, unknown>;
   const theirs = live.getAttributes() as Record<string, unknown>;
-  const changedAttrs = [...new Set([...Object.keys(mine), ...Object.keys(theirs)])].filter(
-    (key) => JSON.stringify(mine[key] ?? null) !== JSON.stringify(theirs[key] ?? null),
-  );
-  return { removed: false, changedAttrs };
-}
-
-/** The id of one unit of a textblock in the view: a text character or an inline atom. */
-function unitId(leaf: Y.XmlElement, unit: number): Y.ID | null {
-  let offset = 0;
-  for (const child of leaf.toArray()) {
-    if (!(child instanceof Y.XmlText)) {
-      if (offset === unit) return (child as Y.XmlElement)._item?.id ?? null;
-      offset += 1;
-      continue;
-    }
-    for (let item = child._start; item; item = item.right) {
-      if (item.deleted || !item.countable) continue;
-      if (unit < offset + item.length)
-        return Y.createID(item.id.client, item.id.clock + unit - offset);
-      offset += item.length;
-    }
-  }
-  return null;
-}
-
-function roomAddedAfter(leaf: Y.XmlElement, unit: number, current: Y.Doc): boolean {
-  const view = leaf.doc;
-  if (!view) return false;
-  let next: Y.Item | null;
-  if (unit < 0) {
-    const first = leaf.get(0);
-    const text =
-      first instanceof Y.XmlText && first._item ? findItem(current, first._item.id) : null;
-    next =
-      text?.content instanceof Y.ContentType ? (text.content.type._start as Y.Item | null) : null;
-  } else {
-    const id = unitId(leaf, unit);
-    const item = id && findItem(current, id);
-    if (!id || !item) return false;
-    // The next unit is in the same room item: nothing was put between them.
-    if (id.clock < item.id.clock + item.length - 1) return false;
-    next = item.right;
-  }
-  for (; next && !findItem(view, next.id); next = next.right) if (!next.deleted) return true;
-  return false;
+  const changed: Record<string, unknown> = {};
+  for (const key of new Set([...Object.keys(mine), ...Object.keys(theirs)]))
+    if (JSON.stringify(mine[key] ?? null) !== JSON.stringify(theirs[key] ?? null))
+      changed[key] = theirs[key] ?? null;
+  return { removed: false, changed };
 }
 
 function roomAddedInside(node: Y.XmlElement, current: Y.Doc): boolean {

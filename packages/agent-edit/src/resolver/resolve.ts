@@ -718,6 +718,7 @@ function replaceScope(
             before,
             after,
             placed,
+            (atom) => ctx.codec.serialize([atom.type.schema.nodes.paragraph.create(null, atom)]),
           );
           if (lowered) {
             skipped += lowered.skipped;

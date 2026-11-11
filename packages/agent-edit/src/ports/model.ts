@@ -68,8 +68,22 @@ export type MinimalOp =
 export interface RoomNodeState {
   /** The node, or a node above it, is deleted in the room. */
   removed: boolean;
-  /** Attributes whose value in the room differs from the view's. */
-  changedAttrs: string[];
+  /** Attributes whose value in the room differs from the view's, with the room's value. */
+  changed: Record<string, unknown>;
+}
+
+/**
+ * SPIKE: what the room did to one textblock of the view since the view, from one walk of the
+ * room's items. Items the view itself holds deleted are invisible to it.
+ */
+export interface RoomTextblock {
+  /** Runs of the view's units the room deleted. */
+  removed: Span[];
+  /**
+   * Boundaries where the room holds live text or atoms the view lacks: `n` is between unit
+   * `n - 1` and unit `n`, 0 the textblock's start.
+   */
+  added: number[];
 }
 
 /**
@@ -157,22 +171,11 @@ export interface AgentEditModel extends DocumentModel {
    */
   removedUnits(block: BlockRef, current: DocHandle): Span[];
 
-  /** SPIKE: `removedUnits` for the text leaf at `path` under `block`, inline atoms included. */
-  removedLeafUnits(block: BlockRef, path: readonly number[], current: DocHandle): Span[];
+  /** SPIKE: the room's deletions and additions in the textblock at `path` under `block`. */
+  roomTextblock(block: BlockRef, path: readonly number[], current: DocHandle): RoomTextblock;
 
   /** SPIKE: what the room did to the node at `path` under `block`. */
   roomNodeState(block: BlockRef, path: readonly number[], current: DocHandle): RoomNodeState;
-
-  /**
-   * SPIKE: whether the room holds text the view lacks directly after unit `unit` of the
-   * textblock at `path` (-1: at the textblock's start).
-   */
-  roomAddedAfter(
-    block: BlockRef,
-    path: readonly number[],
-    unit: number,
-    current: DocHandle,
-  ): boolean;
 
   /** SPIKE: whether the room holds anything the view lacks inside the node at `path`. */
   roomAddedInside(block: BlockRef, path: readonly number[], current: DocHandle): boolean;

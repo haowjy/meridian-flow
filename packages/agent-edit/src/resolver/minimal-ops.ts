@@ -5,9 +5,15 @@
 
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
 import { Fragment, type Mark } from "prosemirror-model";
-import type { Block, Span } from "../codec-types.js";
+import type { Block } from "../codec-types.js";
 import type { BlockRef, DocHandle } from "../handles.js";
-import type { AgentEditModel, LeafFormat, LeafSplice, MinimalOp } from "../ports/model.js";
+import type {
+  AgentEditModel,
+  LeafFormat,
+  LeafSplice,
+  MinimalOp,
+  RoomTextblock,
+} from "../ports/model.js";
 import { wordHunks } from "../word-hunks.js";
 import { alignBlocks } from "./block-alignment.js";
 import type { TextWindow } from "./find.js";
@@ -39,6 +45,8 @@ interface LowerContext {
   path: readonly number[];
   /** One private-use character per distinct inline atom, shared by both sides of a diff. */
   atoms: Map<string, string>;
+  /** An atom as the codec writes it: stored-only attributes are not part of what the model saw. */
+  atomKey: (atom: Block) => string;
 }
 
 /**
@@ -52,8 +60,9 @@ export function lowerBlock(
   before: Block,
   after: Block,
   windows: [TextWindow[] | undefined, TextWindow[] | undefined] | null,
+  atomKey: (atom: Block) => string,
 ): LoweredBlock | null {
-  const ctx: LowerContext = { model, block, current, path: [], atoms: new Map() };
+  const ctx: LowerContext = { model, block, current, path: [], atoms: new Map(), atomKey };
   const placed =
     windows?.[0] && windows[1] ? leafWindows(before, after, windows[0], windows[1]) : null;
   const out: LoweredBlock = { ops: [], skipped: 0 };
@@ -67,6 +76,9 @@ export function lowerBlock(
 }
 
 class Unsupported extends Error {}
+
+/** SPIKE: the real code asks the codec which attributes it serializes. */
+const STORED_ONLY_ATTRS = new Set(["uploadToken"]);
 
 function lowerNode(
   ctx: LowerContext,
@@ -84,16 +96,24 @@ function lowerNode(
   const attrs: Record<string, unknown> = {};
   for (const key of Object.keys(after.attrs)) {
     if (JSON.stringify(before.attrs[key]) === JSON.stringify(after.attrs[key])) continue;
-    if (state?.removed || state?.changedAttrs.includes(key)) out.skipped += 1;
-    else attrs[key] = after.attrs[key];
+    // The codec never writes these, so a reparsed node always lacks them: not the model's change.
+    if (STORED_ONLY_ATTRS.has(key)) continue;
+    if (state?.removed) out.skipped += 1;
+    else if (state && key in state.changed) {
+      // The room changed it since the view: its value stands. The same value is no conflict.
+      if (JSON.stringify(state.changed[key]) !== JSON.stringify(after.attrs[key] ?? null))
+        out.skipped += 1;
+    } else attrs[key] = after.attrs[key];
   }
   if (Object.keys(attrs).length > 0) out.ops.push({ kind: "attrs", path, attrs });
 
   if (before.isTextblock) {
     const leafIndex = counter.leaf++;
     if (before.eq(after) || before.content.eq(after.content)) return;
-    const removed = ctx.current ? ctx.model.removedLeafUnits(ctx.block, path, ctx.current) : [];
-    const decided = decideLeaf({ ...ctx, path }, before, after, removed, placed?.get(leafIndex));
+    const room = ctx.current
+      ? ctx.model.roomTextblock(ctx.block, path, ctx.current)
+      : { removed: [], added: [] };
+    const decided = decideLeaf({ ...ctx, path }, before, after, room, placed?.get(leafIndex));
     out.skipped += decided.skipped;
     if (decided.splices.length + decided.formats.length > 0)
       out.ops.push({ kind: "text", path, splices: decided.splices, formats: decided.formats });
@@ -120,7 +140,7 @@ function lowerNode(
         // A delete deletes what the model saw. Where the room added text inside the node,
         // the node stays and only the view's units go.
         if (ctx.current && ctx.model.roomAddedInside(ctx.block, [...path, step.old], ctx.current))
-          emptyTextblocks(olds[step.old], [...path, step.old], out);
+          emptyTextblocks(ctx, olds[step.old], [...path, step.old], out);
         else out.ops.push({ kind: "delete", path: [...path, step.old] });
         break;
       case "add": {
@@ -138,7 +158,8 @@ function lowerNode(
   }
 }
 
-function emptyTextblocks(node: Block, path: number[], out: LoweredBlock): void {
+/** Empty the textblocks of a node the model removed; a child the room added nothing to goes. */
+function emptyTextblocks(ctx: LowerContext, node: Block, path: number[], out: LoweredBlock): void {
   if (node.isTextblock) {
     if (node.content.size > 0)
       out.ops.push({
@@ -150,7 +171,12 @@ function emptyTextblocks(node: Block, path: number[], out: LoweredBlock): void {
     return;
   }
   node.forEach((child, _offset, index) => {
-    emptyTextblocks(child, [...path, index], out);
+    const at = [...path, index];
+    const typedIn =
+      ctx.current !== undefined && ctx.model.roomAddedInside(ctx.block, at, ctx.current);
+    // The first child stays even when untouched: a list item must open with a paragraph.
+    if (typedIn || child.isTextblock || index === 0) emptyTextblocks(ctx, child, at, out);
+    else out.ops.push({ kind: "delete", path: at });
   });
 }
 
@@ -182,7 +208,7 @@ function unitString(ctx: LowerContext, leaf: Block): string {
       text += child.text ?? "";
       return;
     }
-    const key = JSON.stringify(child.toJSON());
+    const key = ctx.atomKey(child);
     let code = ctx.atoms.get(key);
     if (!code) {
       code = String.fromCharCode(0xf000 + ctx.atoms.size);
@@ -220,9 +246,14 @@ function decideLeaf(
   ctx: LowerContext,
   before: Block,
   after: Block,
-  removed: readonly Span[],
+  room: RoomTextblock,
   placed: [TextWindow[], TextWindow[]] | undefined,
 ): LeafDecision {
+  const removed = room.removed;
+  const added = new Set(room.added);
+  /** The room put text strictly inside [from, to). */
+  const addedInside = (from: number, to: number) =>
+    room.added.some((boundary) => boundary > from && boundary < to);
   const a = unitString(ctx, before);
   const b = unitString(ctx, after);
   const size = a.length;
@@ -353,13 +384,9 @@ function decideLeaf(
     else lands = hunk.at === hunk.end || deadIn(hunk.from, hunk.to) === 0;
     // An insert where the room also put text has no side to take: Yjs would order the two
     // by client id, and the room's text may be the rest of a word (`t` + `ears`).
-    if (
-      lands &&
-      hunk.from === hunk.to &&
-      ctx.current &&
-      ctx.model.roomAddedAfter(ctx.block, ctx.path, hunk.from - 1, ctx.current)
-    )
-      lands = false;
+    if (lands && hunk.from === hunk.to && added.has(hunk.from)) lands = false;
+    // A replace of text the writer typed inside would strand their typing beside the new text.
+    if (lands && hunk.at < hunk.end && addedInside(hunk.from, hunk.to)) lands = false;
     if (!lands) {
       const sameRun = skipRunEnd >= 0 && deadIn(skipRunEnd, hunk.from) === hunk.from - skipRunEnd;
       if (!sameRun) skipped += 1;
@@ -371,19 +398,22 @@ function decideLeaf(
     if (deadIn(hunk.from, hunk.to) === 0) {
       // A replace has two places to anchor its new text: before the range or after it.
       // Take the one where the room added nothing; with room text at both, it is not made.
-      const replaces = hunk.from < hunk.to && content.size > 0 && ctx.current !== undefined;
-      const added = (unit: number) =>
-        ctx.model.roomAddedAfter(ctx.block, ctx.path, unit, ctx.current as DocHandle);
-      const after = replaces && added(hunk.to - 1);
-      if (after && added(hunk.from - 1)) {
+      const replaces = hunk.from < hunk.to && content.size > 0;
+      const after = replaces && added.has(hunk.to);
+      if (after && added.has(hunk.from)) {
         skipped += 1;
         continue;
       }
+      // Insert-first carries text only; a replace that carries an atom keeps the default side.
+      let textOnly = true;
+      content.forEach((node) => {
+        if (!node.isText) textOnly = false;
+      });
       splices.push({
         from: hunk.from,
         to: hunk.to,
         content,
-        ...(after ? { insertFirst: true } : {}),
+        ...(after && textOnly ? { insertFirst: true } : {}),
       });
       continue;
     }

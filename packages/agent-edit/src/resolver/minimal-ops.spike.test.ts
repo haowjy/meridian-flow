@@ -540,6 +540,57 @@ const rows: Row[] = [
     bindingTypeAfter("sighed", " deeply"),
     "He sighs deeply, and then he wept.",
   ],
+  // ── From the second review ──
+  [
+    "X1 verse: both type at the start of a line",
+    "Line one\\\nLine two",
+    insertAfter("Line one", "!"),
+    typeAfter("Line one", " W"),
+    "Line one W\\\nLine two",
+  ],
+  [
+    "X2 verse: writer types at a line's start, model inserts a line before it",
+    "Line one\\\nLine two",
+    rewrite("Line one\\\nNew\\\nLine two"),
+    (room) => {
+      const { text } = textHolding(room, "Line two");
+      for (const [i, c] of [..."WRITER "].entries()) text.insert(i, c);
+    },
+    undefined,
+  ],
+  [
+    "X3 writer typed inside the word the model replaces",
+    SIGHED,
+    find("sighed", "sighs"),
+    typeAfter("sig", "x"),
+    "He sigxhed, and then he wept.",
+  ],
+  [
+    "X4 both set the same heading level",
+    "# Chapter One",
+    rewrite("## Chapter One"),
+    (room) => top(room, 0).setAttribute("level", 2 as unknown as string),
+    "## Chapter One",
+  ],
+  [
+    "X5 model removes an item with a nested list the writer did not touch; writer typed in the item",
+    "- one\n- two\n  - inner\n- three",
+    rewrite("- one\n- three"),
+    typeAfter("two", " W"),
+    "- one\n- &#x20;W\n- three",
+  ],
+  [
+    "X6 image upload in flight, model edits text beside it",
+    "See ![a cat](c.png) here.",
+    find("here", "there"),
+    (room) => {
+      const p = top(room, 0);
+      const image = p.toArray().find((c) => c instanceof Y.XmlElement) as Y.XmlElement;
+      image.setAttribute("src", "LANDED.png");
+      image.removeAttribute("uploadToken");
+    },
+    "See ![a cat](LANDED.png) there.",
+  ],
   // ── Top-level structure ──
   [
     "S1 model splits a paragraph, writer types in the tail",
@@ -557,6 +608,26 @@ const rows: Row[] = [
   ],
 ];
 
+/**
+ * An edited document: one character typed and deleted at every boundary of every text run,
+ * before the model reads. Every point the writer or the model can insert at then has an old
+ * tombstone beside it, as any real document has.
+ */
+function addHistory(room: Y.Doc): void {
+  const visit = (type: Y.XmlFragment | Y.XmlElement) => {
+    for (const child of type.toArray()) {
+      if (child instanceof Y.XmlText) {
+        for (let at = child.length; at >= 0; at -= 1) {
+          child.insert(at, "~");
+          child.delete(at, 1);
+        }
+      } else if (child instanceof Y.XmlElement) visit(child);
+    }
+  };
+  room.transact(() => visit(room.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)));
+}
+let history = false;
+
 function run(row: Row, modelClient: number, minimalOps: boolean): string {
   const [, markdown, write, writer] = row;
   const room = new Y.Doc({ gc: false });
@@ -565,6 +636,7 @@ function run(row: Row, modelClient: number, minimalOps: boolean): string {
     schema.node("doc", null, codec.parse(markdown).blocks),
     room.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
   );
+  if (history) addHistory(room);
   const view = new Y.Doc({ gc: false });
   view.clientID = modelClient;
   Y.applyUpdate(view, Y.encodeStateAsUpdate(room));
@@ -595,7 +667,8 @@ function run(row: Row, modelClient: number, minimalOps: boolean): string {
 
 const show = (value: string) => value.replace(/\n/g, "⏎");
 
-it("prints every case", () => {
+it.each([false, true])("prints every case (history %s)", (withHistory) => {
+  history = withHistory;
   const lines: string[] = [];
   const failed: string[] = [];
   for (const row of rows) {
@@ -626,6 +699,7 @@ function undoRun(row: Row, modelClient: number, minimalOps: boolean): string {
     schema.node("doc", null, codec.parse(markdown).blocks),
     room.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
   );
+  if (history) addHistory(room);
   const view = new Y.Doc({ gc: false });
   view.clientID = modelClient;
   Y.applyUpdate(view, Y.encodeStateAsUpdate(room));
@@ -684,6 +758,7 @@ function undoRun(row: Row, modelClient: number, minimalOps: boolean): string {
 }
 
 it("prints undo of every case", () => {
+  history = false;
   const lines: string[] = [];
   for (const row of rows) {
     const main = [2, 4].map((client) => undoRun(row, client, false));
@@ -699,7 +774,8 @@ it("prints undo of every case", () => {
  * clean when it is the writer's text with the model's change made whole, or (for a change to
  * text the writer deleted) the writer's text untouched. Anything else is garbled.
  */
-it("class run", () => {
+it.each([false, true])("class run (history %s)", (withHistory) => {
+  history = withHistory;
   const wrappers: Array<[string, (text: string) => string]> = [
     ["paragraph", (t) => t],
     ["bold-led paragraph", (t) => `**Lead.** ${t}`],
