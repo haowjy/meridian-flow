@@ -404,6 +404,7 @@ function FileRow({
       <div
         role="button"
         tabIndex={0}
+        aria-current={active ? "page" : undefined}
         onClick={row.activate(select)}
         onKeyDown={activateOnKey(row.activate(select))}
         {...row.rowProps}

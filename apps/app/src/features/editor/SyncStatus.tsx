@@ -40,7 +40,6 @@ import {
 import type { RemovalAnswer } from "@/features/project/context/project-context-availability-coordinator";
 import { RemovedDocumentSentence } from "@/features/project/context/RemovedDocumentNotice";
 
-/** Matches ConnectionBanner's RECONNECTED_VISIBLE_MS. */
 const SAVED_CONFIRMATION_VISIBLE_MS = 3_000;
 
 /** idle: never offline (or confirmation done); awaiting: offline seen, server not yet caught up. */
