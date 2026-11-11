@@ -293,13 +293,11 @@ msgstr "{0} is text, so it was added as a document in assets. The chip links to 
 
 #. placeholder {0}: other.needsYou
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "{0} needs you"
-msgstr "{0} needs you"
+#~ msgid "{0} needs you"
+#~ msgstr "{0} needs you"
 
 #. placeholder {0}: children.length
-#. placeholder {0}: other.running
 #: src/features/chat/RunningSubagentsStrip.tsx
-#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "{0} running"
 msgstr "{0} running"
 
@@ -340,11 +338,21 @@ msgstr "{0} subagents finished ({1} stopped)"
 msgid "{0} tok/s"
 msgstr "{0} tok/s"
 
+#. placeholder {0}: other.needsYou
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "{0} waiting on you"
+msgstr "{0} waiting on you"
+
 #. placeholder {0}: only.name
 #. placeholder {1}: only.as
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "{0} will be renamed {1}"
 msgstr "{0} will be renamed {1}"
+
+#. placeholder {0}: other.running
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "{0} working"
+msgstr "{0} working"
 
 #: src/features/chat/ask/permission-request.ts
 msgid "{agent} wants to archive {work}?"
@@ -649,8 +657,12 @@ msgid "{needsLook, plural, one {# needs a look} other {# need a look}}"
 msgstr "{needsLook, plural, one {# needs a look} other {# need a look}}"
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
-msgid "{needsYou} needs you"
-msgstr "{needsYou} needs you"
+#~ msgid "{needsYou} needs you"
+#~ msgstr "{needsYou} needs you"
+
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "{needsYou} waiting on you"
+msgstr "{needsYou} waiting on you"
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 msgid "{pending} documents to review"
@@ -3412,6 +3424,10 @@ msgstr "hr"
 msgid "Id"
 msgstr "Id"
 
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Idle"
+msgstr "Idle"
+
 #: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -4120,8 +4136,8 @@ msgid "Names cannot end with '/'"
 msgstr "Names cannot end with '/'"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Needs you"
-msgstr "Needs you"
+#~ msgid "Needs you"
+#~ msgstr "Needs you"
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "New"
@@ -5140,7 +5156,6 @@ msgstr "rule"
 
 #: src/features/chat/subagent/SubagentMark.tsx
 #: src/features/chat/SubagentHeader.tsx
-#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Running"
 msgstr "Running"
 
@@ -5329,8 +5344,8 @@ msgid "Settings sections"
 msgstr "Settings sections"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Settled"
-msgstr "Settled"
+#~ msgid "Settled"
+#~ msgstr "Settled"
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "Shared an attachment"
@@ -6791,6 +6806,10 @@ msgstr "Wait for this response to finish, then try again."
 msgid "Waiting for your review"
 msgstr "Waiting for your review"
 
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Waiting on you"
+msgstr "Waiting on you"
+
 #: src/features/import/import-presentation.ts
 msgid "Waiting to organize {name}"
 msgstr "Waiting to organize {name}"
@@ -6884,6 +6903,7 @@ msgstr "Work couldn’t load"
 #~ msgstr "Work view"
 
 #: src/features/chat/SpawnReportCard.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Working"
 msgstr "Working"
 
