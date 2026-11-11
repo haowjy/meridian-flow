@@ -91,6 +91,8 @@ function runSeed(seed: number): {
   repaired: number;
   undone: number;
   refused: number;
+  widened: number;
+  leftPending: number;
 } {
   const random = rng(seed);
   const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)] as T;
@@ -98,6 +100,8 @@ function runSeed(seed: number): {
   const applies: TreeOp[][] = [];
   let undone = 0;
   let refused = 0;
+  let widened = 0;
+  let leftPending = 0;
 
   const deliver = (from: Replica, to: Replica) => {
     const fromIndex = replicas.indexOf(from);
@@ -193,11 +197,22 @@ function runSeed(seed: number): {
       if (action < 0.93) {
         const shownBefore = fingerprint(materialize(writer.doc, view));
         const liveBefore = fingerprint(materialize(writer.doc, LIVE));
-        // Half the whole Applies take only what can land and leave the rest drafted.
-        const landing = !some && random() < 0.5;
-        const copies = landing
-          ? writer.applyLanding(view.draft, "user:w").copies
-          : writer.apply(view.draft, "user:w", some);
+        // Apply lands what can land and leaves the rest pending.
+        const pendingBefore = viewOps(writer.doc, view).filter((op) => op.draft === view.draft);
+        const landed = writer.applyLanding(view.draft, "user:w", some);
+        if (process.env.TREE_DEBUG && fingerprint(materialize(writer.doc, view)) !== shownBefore) {
+          console.info("DEBUG seed", seed, "step", step, "some", some);
+          console.info("pending", JSON.stringify(pendingBefore));
+          console.info("copies", JSON.stringify(landed.copies));
+          console.info("left", landed.left.map((op) => op.id), "blocked", landed.blocked);
+          console.info("before\n" + shownBefore);
+          console.info("after\n" + fingerprint(materialize(writer.doc, view)));
+          console.info("live\n" + fingerprint(materialize(writer.doc, LIVE)));
+        }
+        const copies = landed.copies;
+        const landing = landed.left.length > 0;
+        if (landed.blocked) widened += 1;
+        if (landing) leftPending += 1;
         applies.push(copies);
         if (random() < 0.3) {
           // Undo of an Apply at once: live and the draft both read as before it.
@@ -281,6 +296,8 @@ function runSeed(seed: number): {
     repaired,
     undone,
     refused,
+    widened,
+    leftPending,
   };
 }
 
@@ -292,6 +309,8 @@ describe("file tree log under random concurrent edits", () => {
     let repaired = 0;
     let undone = 0;
     let refused = 0;
+    let widened = 0;
+    let leftPending = 0;
     for (let seed = FIRST_SEED; seed < FIRST_SEED + SEEDS; seed += 1) {
       const result = runSeed(seed);
       ops += result.ops;
@@ -300,6 +319,8 @@ describe("file tree log under random concurrent edits", () => {
       repaired += result.repaired;
       undone += result.undone;
       refused += result.refused;
+      widened += result.widened;
+      leftPending += result.leftPending;
     }
     // The run must actually reach the hard cases, or it proves nothing about them.
     expect(skipped).toBeGreaterThan(0);
@@ -307,7 +328,7 @@ describe("file tree log under random concurrent edits", () => {
     expect(undone).toBeGreaterThan(0);
     expect(refused).toBeGreaterThan(0);
     console.info(
-      `tree property: ${SEEDS} seeds, ${ops} live ops, ${skipped} cycle skips, ${kept} folders kept by a child, ${repaired} replicas left with stuck pending updates and repaired by a state-vector sync, ${undone} Applies undone at once, ${refused} later undos of an Apply refused as built on`,
+      `tree property: ${SEEDS} seeds, ${ops} live ops, ${skipped} cycle skips, ${kept} folders kept by a child, ${repaired} replicas left with stuck pending updates and repaired by a state-vector sync, ${undone} Applies undone at once, ${refused} later undos of an Apply refused as built on, ${leftPending} Applies that left records pending, ${widened} Applies that took nothing because what could land was tied to what could not`,
     );
   }, 600_000);
 

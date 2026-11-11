@@ -43,15 +43,11 @@ function start() {
   return { doc, w, folder, chapter, names, at, valid };
 }
 
-/** Drafted records that act on a node the view shows in Trash: what review reports as "deleted in live". */
+/** Drafted records review reports as "deleted in live": their node stands in the view only because they are pending. */
 function targetGone(doc: Y.Doc, view: View): TreeOp[] {
   const projection: TreeProjection = materialize(doc, view);
   return viewOps(doc, view).filter(
-    (op) =>
-      op.draft === view.draft &&
-      op.type !== "delete" &&
-      op.type !== "restore" &&
-      projection.nodes.get(op.node)?.trashed === true,
+    (op) => op.draft === view.draft && projection.nodes.get(op.node)?.keptByPending === true,
   );
 }
 
@@ -138,9 +134,10 @@ describe("part 1: a draft and live changed the same thing", () => {
     t.w.rename(D, CHAT, other, "Renamed");
     t.w.move(LIVE, WRITER, b, a);
     expect(t.w.view(D).skipped).toEqual([{ op: drafted.id, reason: "cycle" }]);
-    const copies = t.w.apply("work-1", WRITER);
-    const live = t.w.view(LIVE);
-    expect(live.skipped.map((s) => s.op)).toEqual([copies[0]?.id]);
+    const { copies, left } = t.w.applyLanding("work-1", WRITER);
+    expect(copies.map((op) => op.type)).toEqual(["rename"]);
+    expect(left.map((op) => op.id)).toEqual([drafted.id]);
+    expect(t.w.view(LIVE).skipped).toEqual([]);
     expect(t.at(b)).toMatchObject({ parent: a });
     expect(t.at(a)).toMatchObject({ parent: ROOT });
     expect(t.at(other)?.displayName).toBe("Renamed");
@@ -173,29 +170,61 @@ describe("part 1: a draft and live changed the same thing", () => {
     expect([a, b, c].every((n) => t.at(n)?.trashed === false)).toBe(true);
   });
 
-  it("9. draft moved and renamed a chapter, live deleted it: the chapter stays in Trash; the drafted records are reported, and take effect if it is restored", () => {
+  it("9. draft moved and renamed a chapter, live deleted it: the Work's view still shows it, marked; Apply leaves the change pending until it is restored", () => {
+    const t = start();
+    const arc = t.folder("Arc 3");
+    const ch = t.chapter("Chapter 49");
+    const other = t.chapter("Chapter 50");
+    t.w.move(D, CHAT, ch, arc);
+    t.w.rename(D, CHAT, ch, "The Fall");
+    t.w.rename(D, CHAT, other, "Lands");
+    t.w.delete(LIVE, WRITER, ch);
+    expect(t.at(ch)?.trashed).toBe(true);
+    expect(t.at(ch, D)).toMatchObject({
+      parent: arc,
+      displayName: "The Fall",
+      trashed: false,
+      keptByPending: true,
+    });
+    expect(targetGone(t.doc, D).map((op) => op.type)).toEqual(["move", "rename"]);
+    const before = fingerprint(t.w.view(D));
+    const { copies, left } = t.w.applyLanding("work-1", WRITER);
+    expect(copies.map((op) => op.node)).toEqual([other]);
+    expect(left.map((op) => op.type)).toEqual(["move", "rename"]);
+    expect(t.at(ch)).toMatchObject({ trashed: true, parent: ROOT, name: "Chapter 49" });
+    expect(fingerprint(t.w.view(D))).toBe(before);
+    // The writer restores it in live: the mark goes, and the same records now land.
+    t.w.restore(LIVE, WRITER, ch);
+    expect(t.at(ch, D)).toMatchObject({ parent: arc, displayName: "The Fall", keptByPending: false });
+    expect(t.w.applyLanding("work-1", WRITER).left).toEqual([]);
+    expect(t.at(ch)).toMatchObject({ parent: arc, displayName: "The Fall", trashed: false });
+    t.valid();
+  });
+
+  it("9b. the draft deleted it too: the delete wins in the Work's view", () => {
     const t = start();
     const arc = t.folder("Arc 3");
     const ch = t.chapter("Chapter 49");
     t.w.move(D, CHAT, ch, arc);
-    t.w.rename(D, CHAT, ch, "The Fall");
+    t.w.delete(D, CHAT, ch);
     t.w.delete(LIVE, WRITER, ch);
-    expect(t.at(ch, D)?.trashed).toBe(true);
-    expect(targetGone(t.doc, D).map((op) => op.type)).toEqual(["move", "rename"]);
-    // The writer restores it in live: the draft's view shows the drafted place and name again.
-    t.w.restore(LIVE, WRITER, ch);
-    expect(t.at(ch, D)).toMatchObject({ parent: arc, displayName: "The Fall", trashed: false });
-    expect(targetGone(t.doc, D)).toEqual([]);
-    t.valid();
+    expect(t.at(ch, D)).toMatchObject({ trashed: true, keptByPending: false });
   });
 
-  it("10. draft edited a chapter's text, live deleted the chapter: the tree shows it in Trash in both views", () => {
+  it("10. draft edited a chapter's text, live deleted the chapter (and its folder): the Work's view still shows it, marked", () => {
     const t = start();
-    const ch = t.chapter("Chapter 49");
-    // The text draft is not in the tree list. The tree's part: the chapter is in Trash in the
-    // draft's view too, so review can say the edit has nothing to land on until it is restored.
-    t.w.delete(LIVE, WRITER, ch);
+    const f = t.folder("Doomed");
+    const ch = t.chapter("Letter", f);
+    t.w.delete(LIVE, WRITER, f);
+    // The text draft is not in the tree list; the view is told which documents the Work holds
+    // a pending text draft of.
+    const view = materialize(t.doc, D, new Set([ch]));
+    expect(view.nodes.get(ch)).toMatchObject({ trashed: false, keptByPending: true });
+    expect(view.nodes.get(f)).toMatchObject({ trashed: false, keptByChild: true });
+    expect(treeViolations(view)).toEqual([]);
+    // Without a pending text draft, and in live, it is in Trash.
     expect(t.at(ch, D)?.trashed).toBe(true);
+    expect(t.at(ch)?.trashed).toBe(true);
   });
 
   it("11. draft deleted a chapter, live edited its text: the delete applies; the tree list holds what review needs to warn", () => {
@@ -425,7 +454,8 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
     expect(t.w.view(D).skipped).toEqual([{ op: loop.id, reason: "cycle" }]);
     expect(targetGone(t.doc, D).map((op) => op.node)).toEqual([gone]);
     const before = fingerprint(t.w.view(D));
-    const { copies, left } = t.w.applyLanding("work-1", WRITER);
+    const { copies, left, blocked } = t.w.applyLanding("work-1", WRITER);
+    expect(blocked).toBe(false);
     expect(copies.map((op) => op.type)).toEqual(["rename"]);
     expect(left.map((op) => op.id)).toEqual([loop.id, lost.id]);
     expect(t.at(ch)?.displayName).toBe("Renamed");
@@ -460,14 +490,45 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
     const t = reorganisation();
     const other = t.chapter("Elsewhere");
     const copies = t.w.apply("work-1", WRITER);
+    // Neither a change elsewhere nor a new document beside what the Apply made blocks the Undo.
     t.w.rename(LIVE, WRITER, other, "Still elsewhere");
-    const second = start();
-    void second;
+    t.chapter("Unrelated, also at the top");
     expect(t.w.undoApply(copies)).toBe("undone");
     const again = t.w.apply("work-1", WRITER);
     t.chapter("New scene", t.arc); // lands inside a folder the Apply created
     expect(t.w.undoApply(again)).toBe("superseded");
     expect(t.at(t.arc)?.trashed).toBe(false);
+    t.valid();
+  });
+
+  it("Undo of an Apply that only created a folder, after a document was put in it: refused", () => {
+    const t = start();
+    const arc = t.folder("Arc", ROOT, D, CHAT);
+    const copies = t.w.apply("work-1", WRITER);
+    const scene = t.chapter("Scene", arc);
+    expect(t.w.undoApply(copies)).toBe("superseded");
+    expect(t.at(scene)).toMatchObject({ parent: arc, trashed: false });
+    const moved = start();
+    const arc2 = moved.folder("Arc", ROOT, D, CHAT);
+    const ch = moved.chapter("Chapter 1");
+    const copies2 = moved.w.apply("work-1", WRITER);
+    moved.w.move(LIVE, WRITER, ch, arc2);
+    expect(moved.w.undoApply(copies2)).toBe("superseded");
+  });
+
+  it("Undo of an Apply that moved a folder, after a change inside that folder: allowed, and the change stands", () => {
+    const t = start();
+    const f = t.folder("F");
+    const g = t.folder("G");
+    const ch = t.chapter("Chapter 1", f);
+    t.w.move(D, CHAT, f, g);
+    const copies = t.w.apply("work-1", WRITER);
+    t.w.rename(LIVE, WRITER, ch, "Renamed inside");
+    const added = t.chapter("Added inside", f);
+    expect(t.w.undoApply(copies)).toBe("undone");
+    expect(t.at(f)?.parent).toBe(ROOT);
+    expect(t.at(ch)).toMatchObject({ parent: f, displayName: "Renamed inside" });
+    expect(t.at(added)).toMatchObject({ parent: f, trashed: false });
     t.valid();
   });
 });

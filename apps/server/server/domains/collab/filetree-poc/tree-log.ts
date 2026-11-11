@@ -37,6 +37,8 @@ type OpBase = {
   undoes?: string;
   /** On a live copy made by Apply: who applied it. `actor` stays the drafting author. */
   appliedBy?: Actor;
+  /** On a live copy made by Apply: the draft it came from. */
+  fromDraft?: DraftId;
 };
 
 export type CreateOp = OpBase & {
@@ -84,6 +86,12 @@ export type TreeNode = {
   trashed: boolean;
   /** Deleted, but shown because something not deleted with it is inside. */
   keptByChild: boolean;
+  /**
+   * Deleted in live, but shown in this Work's view because the Work has a pending change to it
+   * (a drafted move or rename, or drafted text). Review marks it "deleted in live", and Apply
+   * leaves the change pending until the node is restored.
+   */
+  keptByPending: boolean;
   blob?: BlobRef;
   createdBy: Actor;
   /** The op that last changed where it is or what it is called. */
@@ -124,8 +132,13 @@ export function viewOps(doc: Y.Doc, view: View): TreeOp[] {
   return [...live, ...all.filter((op) => op.draft === view.draft && !settled.has(op.id))];
 }
 
-export function materialize(doc: Y.Doc, view: View): TreeProjection {
-  return replay(viewOps(doc, view));
+/** `pendingText`: documents this Work holds a pending text draft of, which the list cannot see. */
+export function materialize(
+  doc: Y.Doc,
+  view: View,
+  pendingText?: ReadonlySet<string>,
+): TreeProjection {
+  return replay(viewOps(doc, view), { draft: view.draft, pendingText });
 }
 
 type Working = {
@@ -142,7 +155,15 @@ type Working = {
   arrivedAt: number;
 };
 
-export function replay(ops: readonly TreeOp[]): TreeProjection {
+export function replay(
+  ops: readonly TreeOp[],
+  /** The Work whose view this is (null for live), and the documents it holds pending text of. */
+  of: { draft?: DraftId | null; pendingText?: ReadonlySet<string> } = {},
+): TreeProjection {
+  const pendingText = of.pendingText ?? new Set<string>();
+  // A delete is the viewed Work's own while it is pending and after it was applied.
+  const ownDelete = (op: TreeOp) =>
+    op.draft !== null || (of.draft != null && op.fromDraft === of.draft);
   const nodes = new Map<string, Working>([
     [
       ROOT,
@@ -165,6 +186,18 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
   // with a delete is decided against the final tree, so the outcome doesn't depend on whether a
   // concurrent move out of the folder replayed before or after the delete.
   const deletes = new Map<string, Set<string>>();
+  // The same record of deletes, for drafted deletes only, and the nodes a drafted record other
+  // than a delete acts on: together they say which live deletes the draft's own work outlives.
+  const draftDeletes = new Map<string, Set<string>>();
+  const pendingOps = new Map<string, Set<string>>();
+  // A drafted change and the drafted record that takes it back leave nothing pending.
+  const pend = (op: TreeOp) => {
+    if (op.draft === null) return;
+    const on = pendingOps.get(op.node) ?? new Set<string>();
+    if (op.undoes !== undefined && on.has(op.undoes)) on.delete(op.undoes);
+    else on.add(op.id);
+    pendingOps.set(op.node, on);
+  };
 
   const isAncestor = (maybeAncestor: string, of: string): boolean => {
     let at: string | null = of;
@@ -235,6 +268,7 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
           skipped.push({ op: op.id, reason: "cycle" });
           continue;
         }
+        pend(op);
         arrival(node, op, index, node.parent !== op.parent);
         node.parent = op.parent;
         node.rank = op.rank;
@@ -247,6 +281,7 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
           skipped.push({ op: op.id, reason: "missing-node" });
           continue;
         }
+        pend(op);
         arrival(node, op, index, node.name !== op.name);
         node.name = op.name;
         node.lastChangedBy = op.actor;
@@ -261,6 +296,11 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
         const record = deletes.get(op.node) ?? new Set<string>();
         for (const member of op.cascade) record.add(member);
         deletes.set(op.node, record);
+        if (ownDelete(op)) {
+          const drafted = draftDeletes.get(op.node) ?? new Set<string>();
+          for (const member of op.cascade) drafted.add(member);
+          draftDeletes.set(op.node, drafted);
+        }
         continue;
       }
       case "restore": {
@@ -269,10 +309,15 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
           continue;
         }
         deletes.delete(op.node);
+        draftDeletes.delete(op.node);
         const restored = nodes.get(op.node);
         if (restored) restored.arrivedAt = index;
         // Restoring a node also restores the delete of any folder above it, so it shows.
-        for (const [deleted] of deletes) if (isAncestor(deleted, op.node)) deletes.delete(deleted);
+        for (const [deleted] of deletes)
+          if (isAncestor(deleted, op.node)) {
+            deletes.delete(deleted);
+            draftDeletes.delete(deleted);
+          }
         continue;
       }
     }
@@ -284,6 +329,21 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
     for (const member of cascade)
       if (nodes.has(member) && isAncestor(node, member)) deleted.add(member);
   }
+  // A live delete does not take a node this Work has a pending change to, unless the Work
+  // deleted it too: the node stays in the Work's view, marked, as today's overlay keeps it.
+  const draftDeleted = new Set<string>();
+  for (const [node, cascade] of draftDeletes) {
+    draftDeleted.add(node);
+    for (const member of cascade)
+      if (nodes.has(member) && isAncestor(node, member)) draftDeleted.add(member);
+  }
+  const keptByPending = new Set<string>();
+  const pendingOn = [...pendingOps].flatMap(([node, on]) => (on.size > 0 ? [node] : []));
+  for (const node of [...pendingOn, ...pendingText])
+    if (deleted.has(node) && !draftDeleted.has(node)) {
+      deleted.delete(node);
+      keptByPending.add(node);
+    }
   // A node nobody deleted keeps every folder above it standing: a concurrent create or move
   // into a deleted folder is never hidden in the trash.
   const keptByChild = new Set<string>();
@@ -329,6 +389,7 @@ export function replay(ops: readonly TreeOp[]): TreeProjection {
       rank: node.rank,
       trashed,
       keptByChild: keptByChild.has(node.id),
+      keptByPending: keptByPending.has(node.id),
       ...(node.blob ? { blob: node.blob } : {}),
       createdBy: node.createdBy,
       lastChangedBy: node.lastChangedBy,
@@ -483,10 +544,11 @@ export class TreeWriter {
    * one transaction. Copies keep the drafting actor; `appliedBy` is the receipt's second name.
    */
   apply(draft: DraftId, appliedBy: Actor, only?: readonly string[]): TreeOp[] {
+    return this.applyLanding(draft, appliedBy, only).copies;
+  }
+
+  private applyChosen(draft: DraftId, appliedBy: Actor, chosen: ReadonlySet<string>): TreeOp[] {
     const pending = viewOps(this.doc, { draft }).filter((op) => op.draft === draft);
-    const chosen = only
-      ? stableSelection(viewOps(this.doc, LIVE), pending, prerequisites(pending, only))
-      : new Set(pending.map((op) => op.id));
     const live = this.view(LIVE);
     const copies: TreeOp[] = [];
     for (const op of pending) {
@@ -497,6 +559,7 @@ export class TreeWriter {
         draft: null,
         appliedFrom: op.id,
         appliedBy,
+        fromDraft: draft,
       } as TreeOp;
       // The undo of a live copy returns to where live had it, not where the draft saw it.
       if (copy.type === "move") {
@@ -515,25 +578,50 @@ export class TreeWriter {
   }
 
   /**
-   * Applies what can land and leaves the rest drafted: a record the draft's view skips (a move
-   * that would put a folder inside itself) and a record whose node live has in Trash stay
-   * pending, so the writer can fix the cause and apply again, or discard them.
+   * Applies what can land and leaves the rest drafted. Two kinds of record cannot land: one the
+   * draft's view skips (a move that would put a folder inside itself), and a move or rename of
+   * a node live has in Trash (the view keeps it standing only because this change is pending).
+   * They stay pending with whatever stands on them, so the writer can fix the cause and apply
+   * again, or discard them. `blocked` is true when the records that could land are tied to one
+   * that cannot (dependent moves) so that taking them alone would change the draft's view:
+   * then nothing is taken.
    */
-  applyLanding(draft: DraftId, appliedBy: Actor): { copies: TreeOp[]; left: TreeOp[] } {
+  applyLanding(
+    draft: DraftId,
+    appliedBy: Actor,
+    only?: readonly string[],
+  ): { copies: TreeOp[]; left: TreeOp[]; blocked: boolean } {
     const view = this.view({ draft });
     const pending = viewOps(this.doc, { draft }).filter((op) => op.draft === draft);
     const skipped = new Set(view.skipped.map((skip) => skip.op));
-    const left = pending.filter(
+    const cannot = pending.filter(
       (op) =>
         skipped.has(op.id) ||
-        (op.type !== "delete" && op.type !== "restore" && view.nodes.get(op.node)?.trashed),
+        ((op.type === "move" || op.type === "rename") && view.nodes.get(op.node)?.keptByPending),
     );
-    if (left.length === 0) return { copies: this.apply(draft, appliedBy), left };
-    const leftIds = new Set(dependents(pending, left.map((op) => op.id)));
-    const landing = pending.filter((op) => !leftIds.has(op.id)).map((op) => op.id);
-    const copies = landing.length > 0 ? this.apply(draft, appliedBy, landing) : [];
-    const applied = new Set(copies.map((copy) => copy.appliedFrom));
-    return { copies, left: pending.filter((op) => !applied.has(op.id)) };
+    const leftIds = dependents(pending, cannot.map((op) => op.id));
+    const wanted = only ? prerequisites(pending, only) : new Set(pending.map((op) => op.id));
+    const landing = new Set([...wanted].filter((id) => !leftIds.has(id)));
+    if (landing.size === 0) return { copies: [], left: pending, blocked: false };
+    const live = viewOps(this.doc, LIVE);
+    // The draft's view must read the same after: take the selection if it keeps it, else the
+    // drafted records up to the last chosen one less what cannot land, else nothing.
+    let chosen: Set<string> | undefined;
+    if (keepsView(live, pending, landing)) chosen = landing;
+    else {
+      const last = Math.max(...pending.flatMap((op, at) => (landing.has(op.id) ? [at] : [])));
+      const prefix = new Set(
+        pending
+          .slice(0, last + 1)
+          .map((op) => op.id)
+          .filter((id) => !leftIds.has(id)),
+      );
+      if (keepsView(live, pending, prefix)) chosen = prefix;
+    }
+    if (!chosen) return { copies: [], left: pending, blocked: true };
+    const taken = chosen;
+    const copies = this.applyChosen(draft, appliedBy, taken);
+    return { copies, left: pending.filter((op) => !taken.has(op.id)), blocked: false };
   }
 
   /**
@@ -545,11 +633,16 @@ export class TreeWriter {
     const all = opsOf(this.doc).toArray();
     const settled = settlementsOf(this.doc);
     const ids = new Set(copies.map((copy) => copy.id));
-    const touched = new Set(copies.flatMap((copy) => needs(copy)));
+    // Built on: a later live record acts on a node the Apply acted on, or puts something into a
+    // folder the Apply created. A later change inside a folder the Apply only moved is not.
+    const actedOn = new Set(copies.map((copy) => copy.node));
+    const created = new Set(copies.flatMap((copy) => (copy.type === "create" ? [copy.node] : [])));
     const last = Math.max(...all.flatMap((op, index) => (ids.has(op.id) ? [index] : [])));
     for (const op of all.slice(last + 1)) {
-      if (op.draft !== null || settled.get(op.id) === "undone") continue;
-      if (needs(op).some((node) => touched.has(node))) return "superseded";
+      if (op.draft !== null || settled.get(op.id) === "undone" || ids.has(op.id)) continue;
+      if (actedOn.has(op.node)) return "superseded";
+      if ((op.type === "create" || op.type === "move") && created.has(op.parent))
+        return "superseded";
     }
     this.doc.transact(() => {
       for (const copy of copies) {
@@ -678,25 +771,24 @@ export function prerequisites(pending: readonly TreeOp[], only: readonly string[
 }
 
 /**
- * A partial Apply must leave the draft's view as it was. Moves can depend on each other in ways
- * the closure doesn't see (a drafted move is valid only after an earlier one), so the selection
- * is checked by replay, and widened to every drafted op up to the last chosen one when it would
- * change the view. That prefix always keeps it, because it replays the same sequence.
+ * Whether applying `chosen` leaves the draft's view as it was: the view of live plus every
+ * pending record, against the view after the chosen ones have become live copies.
  */
-export function stableSelection(
+export function keepsView(
   live: readonly TreeOp[],
   pending: readonly TreeOp[],
-  chosen: Set<string>,
-): Set<string> {
-  const before = fingerprint(replay([...live, ...pending]));
-  const ordered = [
+  chosen: ReadonlySet<string>,
+): boolean {
+  const draft = pending[0]?.draft ?? null;
+  const before = fingerprint(replay([...live, ...pending], { draft }));
+  const after = [
     ...live,
-    ...pending.filter((op) => chosen.has(op.id)),
+    ...pending
+      .filter((op) => chosen.has(op.id))
+      .map((op) => ({ ...op, draft: null, fromDraft: draft ?? undefined }) as TreeOp),
     ...pending.filter((op) => !chosen.has(op.id)),
   ];
-  if (fingerprint(replay(ordered)) === before) return chosen;
-  const last = Math.max(...pending.flatMap((op, index) => (chosen.has(op.id) ? [index] : [])));
-  return new Set(pending.slice(0, last + 1).map((op) => op.id));
+  return fingerprint(replay(after, { draft })) === before;
 }
 
 /** The chosen ops plus every drafted op that stands on a node one of them creates, transitively. */
@@ -762,7 +854,7 @@ export function fingerprint(projection: TreeProjection): string {
     if (depth > projection.nodes.size) return;
     for (const child of childrenOf(projection, parent, true)) {
       lines.push(
-        `${"  ".repeat(depth)}${child.trashed ? "~" : ""}${child.keptByChild ? "!" : ""}${child.kind[0]}:${child.displayName}#${child.id}@${child.rank}`,
+        `${"  ".repeat(depth)}${child.trashed ? "~" : ""}${child.keptByChild ? "!" : ""}${child.keptByPending ? "?" : ""}${child.kind[0]}:${child.displayName}#${child.id}@${child.rank}`,
       );
       walk(child.id, depth + 1);
     }
