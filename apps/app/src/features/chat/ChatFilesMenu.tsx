@@ -235,7 +235,6 @@ function UploadRow({
   const failure = failed ? t`Couldn’t delete this file. Try again.` : null;
   return (
     <PickerRow
-      kind="descriptive"
       onSelect={onInsert}
       buttonProps={{ ...drag, "aria-label": t`Add ${name} to your message` }}
       leading={<Icon aria-hidden className="text-muted-foreground" />}

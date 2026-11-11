@@ -16,7 +16,7 @@ import { handleListKeys } from "@/components/ui/list-keys";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../context-file-icon";
-import { schemeIcon, schemeLabel } from "../context-schemes";
+import { schemeIcon, schemeLabel, schemeLocation } from "../context-schemes";
 import type { FileSuggestion } from "./file-suggestions";
 
 /** A row with an optional right-edge annotation (e.g. "new folder"). */
@@ -110,11 +110,9 @@ export const FileSuggestionList = forwardRef<
                 ? suggestion.hint
                 : hideParents
                   ? ""
-                  : suggestion.parents.length
-                    ? `${schemeLabel(suggestion.scheme)} / ${suggestion.parents.join(" / ")}`
-                    : suggestion.path === "/"
-                      ? ""
-                      : schemeLabel(suggestion.scheme);
+                  : suggestion.path === "/"
+                    ? ""
+                    : schemeLocation(suggestion.scheme, suggestion.parents);
               return (
                 <li key={suggestion.entryId}>
                   <button

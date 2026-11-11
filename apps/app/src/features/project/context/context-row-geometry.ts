@@ -23,8 +23,8 @@ const selectionRunShape =
 export const contextTreeSelectedRowClassName = cn(role.selected, selectionRunShape);
 
 /**
- * A row's frame: tree rows, Trash rows, chat rows and the right rail's Recent
- * rows wear it, so height, padding, text and the hover and selected fills
+ * A row's frame: tree rows, Trash rows and the right rail's Recent rows wear it
+ * (other lists use `ListRow`), so height, padding, text and the hover and selected fills
  * cannot drift apart. Hover is inactive-only: the active row keeps its fill.
  */
 export function contextTreeFileRowClassName(active: boolean, selected = false): string {
