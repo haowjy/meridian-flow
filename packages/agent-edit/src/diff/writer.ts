@@ -5,7 +5,7 @@
  * Blocks are matched by key (equal blocks are untouched); a changed block pairs with the most similar
  * target block in its gap and is edited in place when both are flat paragraph-like text. Text is diffed
  * by word and written as inserts and deletes (insert first, as `applyTextEdit` does), marks by `format`,
- * attributes by set or remove. Only a type change or non-flat content rebuilds the element. Never use
+ * attributes by set or remove. Only a type change or a different nesting rebuilds the element. Never use
  * `updateYFragment` here: its one prefix/suffix diff per text retypes everything between two edits, so a
  * peer's deletion in the middle would be undone.
  */
@@ -185,7 +185,9 @@ export function writeBlocks(
       let bestSim = preserve || oneToOneFlat ? -1 : 0.3;
       for (let c = from; c < c1; c++) {
         const sim =
-          current[c].type === target[t].type ? similarity(current[c], target[t], true) : 0;
+          current[c].type === target[t].type
+            ? containerSimilarity(frag.get(c) as Y.XmlElement, current[c], target[t])
+            : 0;
         if (
           sim > bestSim ||
           (current[c].textContent === "" &&
@@ -260,7 +262,7 @@ export function writeBlocks(
         }
         editText(text, children(tgt));
         stats.edited++;
-      } else if (preserve && sameShape(el, tgt)) {
+      } else if (sameShape(el, tgt)) {
         editContent(el, tgt);
         stats.edited++;
       } else {
@@ -300,6 +302,21 @@ function runs(node: PMNode): Array<PMNode | PMNode[]> {
     else out.push([child]);
   });
   return out;
+}
+
+/**
+ * `similarity` for a container (a quote) of the same shape as its target, by the words it holds, so
+ * an edited quote is edited in place: rebuilding it would leave a model's earlier view of it
+ * pointing at a deleted block.
+ */
+function containerSimilarity(el: Y.XmlElement, current: PMNode, target: PMNode): number {
+  if (current.isTextblock || !sameShape(el, target)) return similarity(current, target, true);
+  const words = (n: PMNode) => splitWords(n.textContent).filter((w) => w.trim());
+  const [x, y] = [words(current), words(target)];
+  if (!x.length || !y.length) return 0;
+  let common = 0;
+  for (const [op, n] of diffKeys(x, y)) if (op === DIFF_EQUAL) common += n;
+  return common / Math.min(x.length, y.length);
 }
 
 function sameShape(el: Y.XmlElement, target: PMNode): boolean {
