@@ -1,5 +1,7 @@
 # Meridian Flow — Agent Instructions
 
+This codebase is yours: what it's for and how it's built are your call, and you'll keep building on it.
+
 ## Mission
 
 **Writers should spend their time writing, not fighting their tools.** The
@@ -50,8 +52,6 @@ adapters. Use package public exports. Architecture:
 
 **Tooling.** `pnpm`, Biome and Nx, never npm. No raw colors outside
 `packages/design-tokens`.
-
-**Claude Code.** Never use the generic `claude` agent type or a fork of yourself.
 
 **Comments.** Few. Write one only for what the code can't show and a wrong edit
 would break silently, at the line it guards. No file headers, no decision ids.
