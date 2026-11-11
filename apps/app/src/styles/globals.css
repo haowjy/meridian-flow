@@ -874,12 +874,6 @@
   padding-right: calc(1rem + env(safe-area-inset-right));
 }
 
-@media (hover: none), (pointer: coarse) {
-  .thread-row-pin {
-    opacity: 1;
-  }
-}
-
 @media (display-mode: standalone) {
   .mobile-top-bar {
     padding-top: env(safe-area-inset-top);
