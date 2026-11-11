@@ -2,7 +2,7 @@
 
 import { t } from "@lingui/core/macro";
 import { type LucideIcon, Maximize2, MessageSquare, Pin } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
@@ -38,9 +38,13 @@ export function MobileProject(props: MobileProjectProps) {
   // The sheet is the phone's side: never open on arrival, except for a first send recovering
   // after a reload, which needs its chat on screen.
   const [sheetOpen, setSheetOpen] = useState(() => !onChat && chat.recoveringFirstSend);
-  // Any open goes to main: the sheet closes rather than cover where the writer went.
+  // Any open goes to main: the sheet closes rather than cover where the writer went. Arriving is
+  // not an open, so a recovering first send keeps its sheet.
+  const arrivedAt = useRef(props.routeLocationKey);
   useEffect(() => {
-    if (props.routeLocationKey) setSheetOpen(false);
+    if (arrivedAt.current === props.routeLocationKey) return;
+    arrivedAt.current = props.routeLocationKey;
+    setSheetOpen(false);
   }, [props.routeLocationKey]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const main = useMainItem();
