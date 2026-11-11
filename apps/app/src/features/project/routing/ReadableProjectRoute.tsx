@@ -71,7 +71,7 @@ import {
   ProjectAddressDocument,
   useAddressResultAfterRemoval,
 } from "./ProjectAddressDocument";
-import { ProjectNavigationProvider } from "./ProjectNavigationContext";
+import { besideHintOf, ProjectNavigationProvider } from "./ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import {
   addressLineage,
@@ -873,6 +873,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
             project={project}
             projectId={projectId}
             chatDisplay={chat.display}
+            besideChatId={besideHintOf(location.state)?.chatId ?? null}
             entryHydration={entryHydration}
             routeLocationKey={location.state.__TSR_key ?? location.href}
             routeIssues={{

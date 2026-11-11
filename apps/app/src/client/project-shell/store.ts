@@ -1,9 +1,9 @@
 /**
  * The project's stored shell state, per (account, project) in this browser tab and seeded once from
  * the device by `tab-first-remembered-id`, so two browser tabs on one project do not fight over it.
- * It holds the Work scope and the sidebar list; the held pick joins it in a later phase.
+ * It holds the Work scope, the sidebar list, the side's held pick and the last chat opened in main.
  */
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { readRememberedId, writeRememberedId } from "../tab-first-remembered-id";
 
 /** A Work row id, or `none` for No Work. Only the Work picker writes it. */
@@ -13,6 +13,30 @@ export const NO_SCOPE = "none";
 /** Which list the left sidebar shows. Only the Write | Chat switch writes it; no address follows it. */
 export type SidebarList = "files" | "chats";
 export const DEFAULT_SIDEBAR_LIST: SidebarList = "files";
+
+/**
+ * What the writer picked to sit beside main. While set, the side does not follow main. A chat
+ * with no id is a new chat's composer.
+ */
+export type HeldPick =
+  | { kind: "document"; documentId: string }
+  | { kind: "chat"; chatId: string | null };
+
+const NEW_CHAT = "chat:";
+
+function encodeHeld(held: HeldPick): string {
+  return held.kind === "document"
+    ? `document:${held.documentId}`
+    : `${NEW_CHAT}${held.chatId ?? ""}`;
+}
+
+function decodeHeld(stored: string | null): HeldPick | null {
+  if (stored?.startsWith("document:") && stored.length > "document:".length)
+    return { kind: "document", documentId: stored.slice("document:".length) };
+  if (stored?.startsWith(NEW_CHAT))
+    return { kind: "chat", chatId: stored.slice(NEW_CHAT.length) || null };
+  return null;
+}
 
 const listeners = new Map<string, Set<() => void>>();
 const recordKey = (accountId: string, projectId: string) => `${accountId}:${projectId}`;
@@ -42,6 +66,29 @@ export function writeSidebarList(accountId: string, projectId: string, list: Sid
   notify(accountId, projectId);
 }
 
+export function readHeldPick(accountId: string, projectId: string): HeldPick | null {
+  return decodeHeld(readRememberedId("held", accountId, projectId));
+}
+
+/** Set by a pick in the side's picker; null releases it. */
+export function writeHeldPick(accountId: string, projectId: string, held: HeldPick | null): void {
+  const next = held ? encodeHeld(held) : null;
+  if (readRememberedId("held", accountId, projectId) === next) return;
+  writeRememberedId("held", accountId, projectId, next);
+  notify(accountId, projectId);
+}
+
+/** The last chat opened in main: where the bare address lands, and the chat index's reopen chip. */
+export function readLastChat(accountId: string, projectId: string): string | null {
+  return readRememberedId("chat", accountId, projectId);
+}
+
+export function writeLastChat(accountId: string, projectId: string, chatId: string | null): void {
+  if (readLastChat(accountId, projectId) === chatId) return;
+  writeRememberedId("chat", accountId, projectId, chatId);
+  notify(accountId, projectId);
+}
+
 function subscribe(accountId: string, projectId: string, listener: () => void) {
   const key = recordKey(accountId, projectId);
   const set = listeners.get(key) ?? new Set();
@@ -67,5 +114,24 @@ export function useSidebarList(accountId: string, projectId: string): SidebarLis
     (listener) => subscribe(accountId, projectId, listener),
     () => readSidebarList(accountId, projectId),
     () => DEFAULT_SIDEBAR_LIST,
+  );
+}
+
+/** The held pick, re-read when this tab's pick changes. Decoded from one stored string, so stable. */
+export function useHeldPick(accountId: string, projectId: string): HeldPick | null {
+  const stored = useSyncExternalStore(
+    (listener) => subscribe(accountId, projectId, listener),
+    () => readRememberedId("held", accountId, projectId),
+    () => null,
+  );
+  return useMemo(() => decodeHeld(stored), [stored]);
+}
+
+/** The last chat opened in main, re-read when it changes. */
+export function useLastChat(accountId: string, projectId: string): string | null {
+  return useSyncExternalStore(
+    (listener) => subscribe(accountId, projectId, listener),
+    () => readLastChat(accountId, projectId),
+    () => null,
   );
 }

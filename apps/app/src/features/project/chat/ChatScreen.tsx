@@ -41,6 +41,8 @@ export type ChatScreenProps = {
   projectId: string;
   /** ProjectView's resolved thread. */
   threadId: string | null;
+  /** With no thread: the document the new chat's composer attaches. */
+  about?: string | null;
   activeWork: Work | null;
   availableWorks: readonly Work[];
   onOpenContextTarget?: (target: ContextRouteRequest) => void;
@@ -52,6 +54,7 @@ export type ChatScreenProps = {
 export function ChatScreen({
   projectId,
   threadId,
+  about = null,
   activeWork,
   availableWorks,
   onOpenContextTarget,
@@ -73,6 +76,7 @@ export function ChatScreen({
         footer={
           <CreationComposer
             projectId={projectId}
+            about={about}
             newChatFocusRequestId={newChatFocusRequestId}
             newChatWorkId={newChatWorkId}
             onNewChatFocusHandled={consumeNewChatFocusRequest}

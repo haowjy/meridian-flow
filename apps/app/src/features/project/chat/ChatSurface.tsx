@@ -11,12 +11,15 @@
 import type { Work } from "@meridian/contracts/protocol";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { OpenedFromChat } from "../routing/ProjectNavigationContext";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { ChatScreen } from "./ChatScreen";
 
 export type ChatSurfaceProps = {
   projectId: string;
   threadId: string | null;
+  /** A new chat's composer beside a document attaches that document. */
+  about?: string | null;
   activeWork: Work | null;
   availableWorks: readonly Work[];
   /** Main's chat sits on the page; the side's on the chrome. */
@@ -31,6 +34,7 @@ export type ChatSurfaceProps = {
 export function ChatSurface({
   projectId,
   threadId,
+  about = null,
   activeWork,
   availableWorks,
   place,
@@ -56,14 +60,18 @@ export function ChatSurface({
           place === "main" && "page-sheet",
         )}
       >
-        <ChatScreen
-          projectId={projectId}
-          threadId={threadId}
-          activeWork={activeWork}
-          availableWorks={availableWorks}
-          onOpenContextTarget={onOpenContextTarget}
-          visible={visible}
-        />
+        {/* Every open made inside this chat keeps it beside what it opens. */}
+        <OpenedFromChat chatId={threadId}>
+          <ChatScreen
+            projectId={projectId}
+            threadId={threadId}
+            about={about}
+            activeWork={activeWork}
+            availableWorks={availableWorks}
+            onOpenContextTarget={onOpenContextTarget}
+            visible={visible}
+          />
+        </OpenedFromChat>
       </div>
     </div>
   );

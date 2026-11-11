@@ -64,16 +64,14 @@ import { type MainReviewAddress, MainReviewAddressContext } from "./DocumentRevi
 import { useProjectSurfacePrefsStore } from "./layout";
 import { MobileProject } from "./mobile/MobileProject";
 import { ReviewLaunchProvider } from "./review-launch";
-import {
-  type ChatDisplay,
-  displayedChatThreadId,
-  useChatNavigation,
-} from "./routing/chat-navigation";
+import { type ChatDisplay, useChatNavigation } from "./routing/chat-navigation";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import type { ProjectRouteIssue, ProjectRouteMask } from "./routing/ProjectRouteBoundary";
 import type { LocalDocument } from "./routing/project-local-selection";
 import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
+import { SideViewProvider, useChatOnScreen } from "./side/SideView";
+import type { MainForSide } from "./side/side-item";
 import { useReviewAddressSync } from "./use-review-address-sync";
 import type { ReviewAddressAdmission } from "./use-review-admission";
 import { useWorkScopeState, type WorkScope } from "./use-work-scope";
@@ -97,6 +95,8 @@ export type ProjectViewProps = {
   project: Project;
   /** The chat main shows; null when main holds no chat. */
   chatDisplay: ChatDisplay | null;
+  /** The chat this history entry was opened from: it stays beside the document. */
+  besideChatId: string | null;
   activeLocalDocumentId?: string;
   /** The untitled document the history entry names, as the replica holds it. */
   activeLocalDocument?: LocalDocument;
@@ -256,19 +256,8 @@ export function ProjectView(props: ProjectViewProps) {
   } | null>(null);
   const workingSetHydration =
     retriedHydration?.entry === props.entryHydration ? retriedHydration.plan : props.entryHydration;
-  const { threads: projectThreads } = useProjectThreads(props.projectId);
   const worksQuery = useWorks(props.projectId);
   const { works, noWork } = worksQuery;
-  const chatNavigation = useChatNavigation();
-  // The index shows nothing chat-scoped: the draft review scope goes to null there, even
-  // though the current chat stays warm behind it.
-  const displayedChatThread = displayedChatThreadId(chatNavigation);
-  const chatThread = projectThreads?.find((thread) => thread.id === displayedChatThread);
-  const chatWork = chatThread?.workId
-    ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId)
-    : null;
-  const chatWorkId = chatWork?.id ?? null;
-  const chatOwner = chatOwnerKey(chatWork, chatThread?.rootThreadId ?? null);
   const editorScope = useWorkScopeState(props.projectId);
   const editorWorkId = editorScope.workId;
   const editorWork =
@@ -301,11 +290,6 @@ export function ProjectView(props: ProjectViewProps) {
   const resolvedProps = {
     ...props,
     onSelectContextPath: onSelectEditorContextPath,
-    chatWork,
-    chatOwner,
-    chatWorkId,
-    // The review scope's thread: the displayed chat, null on the index.
-    chatThreadId: displayedChatThread,
     availableWorks: works ?? [],
     editorScope,
     editorWorkId,
@@ -355,12 +339,6 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
     scheme?: ProjectContextTreeScheme,
     options?: { replace?: boolean },
   ) => void;
-  chatWork: Work | null;
-  /** The draft review scope's Work: the displayed chat's Work, null on the index. */
-  chatOwner: string;
-  chatWorkId: string | null;
-  /** The draft review scope's thread: the displayed chat, null on the index. */
-  chatThreadId: string | null;
   availableWorks: readonly Work[];
   editorScope: WorkScope;
   editorWorkId: string | null;
@@ -373,6 +351,8 @@ type ProjectIdentityProps = { projectTitle: string; titleEdit: ProjectTitleEdit 
 
 export type ReviewScopedProjectProps = ResolvedProjectViewProps &
   ProjectIdentityProps & {
+    /** The chat on screen's Work (main's chat, or the side's beside a document). */
+    chatWork: Work | null;
     chatCommands: WorkBranchCommands;
     /** Main keeps its previous document painted while the new address loads. */
     retainEditorWhileLoading?: boolean;
@@ -470,13 +450,30 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     }
   });
   if (usePhone === null) return null;
+  const mainForSide: MainForSide = props.chatDisplay
+    ? props.chatDisplay.kind === "thread"
+      ? { kind: "chat", chatId: props.chatDisplay.threadId }
+      : { kind: "chat-index" }
+    : main.item?.kind === "document"
+      ? { kind: "document", documentId: main.item.documentId }
+      : main.document.requested && (props.routeIssues?.editor === "loading" || !props.contextLive)
+        ? { kind: "opening" }
+        : { kind: "landing" };
   return (
     <MainViewProvider value={main}>
-      <HydratedReviewControllers
-        {...displayedProps}
-        retainEditorWhileLoading={retainEditorWhileLoading}
-        usePhone={usePhone}
-      />
+      <SideViewProvider
+        projectId={props.projectId}
+        main={mainForSide}
+        mainIsLocal={main.document.local || main.document.tab?.kind === "new"}
+        besideChatId={props.besideChatId}
+        chatsOnly={usePhone}
+      >
+        <HydratedReviewControllers
+          {...displayedProps}
+          retainEditorWhileLoading={retainEditorWhileLoading}
+          usePhone={usePhone}
+        />
+      </SideViewProvider>
     </MainViewProvider>
   );
 }
@@ -490,11 +487,19 @@ function HydratedReviewControllers({
   usePhone: boolean;
   retainEditorWhileLoading?: boolean;
 }) {
+  // Under None the draft scope is the chat on screen: beside a document, the side's chat.
+  const chatThreadId = useChatOnScreen();
+  const { threads: projectThreads } = useProjectThreads(props.projectId);
+  const { works, noWork } = useWorks(props.projectId);
+  const chatThread = projectThreads?.find((thread) => thread.id === chatThreadId);
+  const chatWork = chatThread?.workId
+    ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId)
+    : null;
   const chatCommands = useWorkBranchCommands({
     projectId: props.projectId,
-    work: props.chatWork,
-    ownerKey: props.chatOwner,
-    threadId: props.chatThreadId,
+    work: chatWork,
+    ownerKey: chatOwnerKey(chatWork, chatThread?.rootThreadId ?? null),
+    threadId: chatThreadId,
   });
   const accountId = useAccountId();
   const draftOnly = useOptionalDraftOnlyPresentations();
@@ -545,7 +550,7 @@ function HydratedReviewControllers({
     activeContextChat: props.activeContextChat,
     onOpenContextTarget: props.onOpenContextTarget,
   });
-  const scopedProps = { ...props, chatCommands };
+  const scopedProps = { ...props, chatWork, chatCommands };
   return (
     <MainReviewAddressContext.Provider value={main ? mainAddress : null}>
       <DraftOnlySettlement projectId={props.projectId} />

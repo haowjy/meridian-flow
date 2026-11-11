@@ -66,10 +66,7 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 import { FolderMenuContext } from "@/features/project/context/FolderMenu";
-import {
-  displayedChatThreadId,
-  useChatNavigation,
-} from "@/features/project/routing/chat-navigation";
+import { useChatNavigation } from "@/features/project/routing/chat-navigation";
 import { defaultThreadTitle, displayThreadTitle } from "@/lib/thread-title";
 import { prewarmMarkdownStreaming } from "@/rich-content/markdown-stream-service";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
@@ -313,7 +310,8 @@ export function ChatView({
       leave: (moved) => {
         navigation.forgetChat(threadId);
         if (moved) void navigation.openNewChat(undefined, { replace: true });
-        else if (displayedChatThreadId(navigation) === threadId)
+        // Only main's chat leaving moves main; the side resolves again on its own.
+        else if (navigation.display?.kind === "thread" && navigation.display.threadId === threadId)
           void navigation.openNewChat(undefined, { replace: true });
       },
     },
