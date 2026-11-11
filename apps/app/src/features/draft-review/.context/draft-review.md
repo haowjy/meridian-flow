@@ -171,9 +171,11 @@ main went back to, or, when main went to Recently opened, in that landing's top 
 removed-documents notice). If the writer moved before the go-back resolved, the notice ends. Apply
 facts from a band stay out of the store: the identity row shows them from the owner's per-document
 facts (`useManuscriptState`). Discard all is one notice over several rooms. A room's Undo is done
-once the prose is back in the room, which sends it whenever it can; a room that turned read-only
-(its Work archived) ends the notice. An Undo that throws keeps the notice with Retry, and Retry
-takes back only the rooms that failed.
+once the prose is back in the room, which sends it whenever it can: the notice ends and the row
+returns at once, offline too. Only the view's follow back to the draft waits for the server's
+acknowledgement (`landed`), since a draft-only document's review address resolves only once the
+server holds its text. A room that turned read-only (its Work archived) ends the notice. An Undo
+that throws keeps the notice with Retry, and Retry takes back only the rooms that failed.
 
 A notice's Undo holds while the draft's prose is as the Discard left it. Any other transaction on
 the `prosemirror` fragment (writer typing, a model write), the room closing or resetting

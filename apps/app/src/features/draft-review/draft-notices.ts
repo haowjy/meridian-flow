@@ -18,10 +18,11 @@ export type NoticeSubject =
 /** One room's share of a Discard's Undo (`startDraftDiscardSession`). */
 export type DiscardUndo = {
   /**
-   * `ok` once the prose is back in the room; `gone`: nothing is left to take back (the room
-   * ended or turned read-only, or the write never landed).
+   * Takes the room's share back now. `ok` once the prose is back in the room, with `landed`
+   * settling when the server holds it; `gone`: nothing is left to take back (the room ended or
+   * turned read-only, or the write never landed).
    */
-  undo(): Promise<"ok" | "failed" | "gone">;
+  undo(): { answer: "ok" | "failed" | "gone"; landed: Promise<void> };
   end(): void;
 };
 
@@ -204,24 +205,24 @@ export class DraftNotices {
       return "failed";
     this.update(ownerKey, id, () => ({ status: "undoing" }));
     // Retry takes back only the rooms that failed: a part that undid has ended and left the list.
-    const answers = await Promise.all(
-      [...parts].map(async (part) => {
-        const answer = await part.handle.undo();
-        if (answer === "ok") part.undone?.();
-        return { part, answer };
-      }),
-    );
+    const answers = [...parts].map((part) => ({ part, ...part.handle.undo() }));
+    for (const { part, answer } of answers) if (answer === "ok") part.undone?.();
     const failed = answers.flatMap(({ part, answer }) => (answer === "failed" ? [part] : []));
-    if (this.notices.get(ownerKey)?.id !== id) return failed.length ? "failed" : "ok";
-    if (failed.length === 0) {
-      this.notices.delete(ownerKey);
-      this.parts.delete(id);
-      this.publish();
-      return "ok";
+    if (this.notices.get(ownerKey)?.id === id) {
+      if (failed.length === 0) {
+        this.notices.delete(ownerKey);
+        this.parts.delete(id);
+        this.publish();
+      } else {
+        this.parts.set(id, failed);
+        this.update(ownerKey, id, () => ({ status: "failed", ...this.subjectOf(failed) }));
+      }
     }
-    this.parts.set(id, failed);
-    this.update(ownerKey, id, () => ({ status: "failed", ...this.subjectOf(failed) }));
-    return "failed";
+    if (failed.length) return "failed";
+    // A view following the Undo waits for the server to hold the prose: a draft-only document's
+    // review address resolves only once its draft has text again.
+    await Promise.all(answers.map(({ landed }) => landed));
+    return "ok";
   }
 
   private subjectOf(parts: readonly DiscardPart[]) {

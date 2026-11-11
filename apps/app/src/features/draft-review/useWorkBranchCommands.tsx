@@ -282,6 +282,10 @@ export function useWorkBranchCommands({
       if (target.kind === "draft" && !discardsLocally(draft, target)) {
         if (!item) return none(blocked());
         const outcome = owner.discardOnServer(ref(draft), item, frozen).then((answer) => {
+          if (answer.kind === "done")
+            patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
+              rows.filter((listed) => listed.itemKey !== item.itemKey),
+            );
           refresh([draft.documentId]);
           return answer;
         });
