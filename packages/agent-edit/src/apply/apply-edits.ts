@@ -31,6 +31,11 @@ type PlannedEdit =
       kind: "block";
       edit: Extract<ResolvedEdit, { kind: "block" }>;
       blockId: string;
+    }
+  | {
+      kind: "ops";
+      edit: Extract<ResolvedEdit, { kind: "ops" }>;
+      blockId: string;
     };
 
 interface ApplyAccumulator {
@@ -130,6 +135,11 @@ function preflightEdit(
       return preflightDelete(doc, model, edit);
     case "block":
       return preflightBlockReplacement(doc, model, edit);
+    case "ops": {
+      const live = validateLiveBlock(doc, model, edit.block, "target");
+      if (!live.ok) return live;
+      return { ok: true, plan: { kind: "ops", edit, blockId: model.getBlockId(edit.block) } };
+    }
   }
 }
 
@@ -284,6 +294,10 @@ function executePlan(
       model.applyBlockReplacement(doc, plan.edit.block, plan.edit.replacement);
       accumulator.touchedHashes.add(plan.blockId);
       break;
+    case "ops":
+      model.applyMinimalOps(doc, plan.edit.block, plan.edit.ops);
+      accumulator.touchedHashes.add(plan.blockId);
+      break;
   }
 }
 
@@ -322,6 +336,7 @@ function referencedElements(edit: ResolvedEdit): Ref[] {
     case "textRanges":
     case "delete":
     case "block":
+    case "ops":
       return [edit.block];
     case "insert":
       return edit.after ? [edit.after] : [];

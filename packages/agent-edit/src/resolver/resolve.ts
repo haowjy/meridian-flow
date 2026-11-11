@@ -26,6 +26,7 @@ import {
   type TextWindow,
 } from "./find.js";
 import { type HashLocateContext, hashLocateContext, locateBlockByHash } from "./hash-locator.js";
+import { lowerBlock } from "./minimal-ops.js";
 import { isFlatText, withoutRemovedUnits } from "./room-removals.js";
 import {
   type BlockScope,
@@ -77,6 +78,8 @@ export interface ResolveWriteContext {
    * place is then decided against what the room deleted since the view (`room-removals.ts`).
    */
   current?: DocHandle;
+  /** SPIKE: lower in-place rewrites as minimal operations (`minimal-ops.ts`). */
+  minimalOps?: boolean;
 }
 
 /** Ref assignment for a write, or `"preassigned"` for nodes whose refs are already assigned. */
@@ -684,7 +687,10 @@ function replaceScope(
     structuralBoundary = undefined;
   };
 
-  for (const step of alignBlocks(oldNodes, newBlocks, canRewriteInPlace)) {
+  const canPair = minimalOpsOn(ctx)
+    ? (old: Block, next: Block) => old.type === next.type
+    : canRewriteInPlace;
+  for (const step of alignBlocks(oldNodes, newBlocks, canPair)) {
     switch (step.kind) {
       case "remove":
         if (structuralBoundary !== step.structuralBoundary) flushStructural();
@@ -704,6 +710,32 @@ function replaceScope(
           windows.old[step.old],
           windows.new[step.next],
         ];
+        if (minimalOpsOn(ctx)) {
+          const lowered = lowerBlock(
+            ctx.model,
+            oldBlocks[step.old],
+            ctx.current,
+            before,
+            after,
+            placed,
+          );
+          if (lowered) {
+            skipped += lowered.skipped;
+            anchor = oldBlocks[step.old];
+            insertionRun = {};
+            if (lowered.ops.length === 0) keptBlocks = true;
+            else
+              edits.push({
+                documentId: params.documentAddress.documentId,
+                file: params.documentAddress.filePath,
+                kind: "ops",
+                block: oldBlocks[step.old],
+                ops: lowered.ops,
+                structuralBoundary: step.structuralBoundary,
+              });
+            break;
+          }
+        }
         const removed =
           ctx.current && isFlatText(before)
             ? ctx.model.removedUnits(oldBlocks[step.old], ctx.current)
@@ -759,6 +791,11 @@ function replaceScope(
   return { edits, skipped, ...(keptBlocks ? { keptBlocks: true } : {}) };
 }
 
+/** SPIKE: `SPIKE_MINIMAL_OPS=1` turns the lowering on for a whole test run. */
+function minimalOpsOn(ctx: { minimalOps?: boolean }): boolean {
+  return ctx.minimalOps ?? process.env.SPIKE_MINIMAL_OPS === "1";
+}
+
 /** A block keeps its element only as the same node type and heading level. */
 function canRewriteInPlace(old: Block, next: Block): boolean {
   if (old.type !== next.type) return false;
@@ -797,6 +834,9 @@ function semanticIrForResolvedEdits(
         deleted.push(...sliceLineage(lineage, replacement.span.start, replacement.span.end));
       }
       outputRuns = semanticRunsForTextRanges(lineage, edit);
+    } else if (edit.kind === "ops") {
+      // SPIKE: the semantic IR for operations is designed, not built.
+      scope.push(...ctx.model.getVisibleContentLineage(edit.block));
     } else if (edit.kind === "insert") {
       if (edit.newText.length > 0) {
         outputRuns = [

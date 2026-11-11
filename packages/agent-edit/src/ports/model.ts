@@ -31,6 +31,41 @@ export interface InlineTextReplacement {
   content: Fragment;
 }
 
+/** SPIKE: a splice of one text leaf's inline units (a text character or an inline atom each). */
+export interface LeafSplice {
+  from: number;
+  to: number;
+  content: Fragment;
+}
+
+/** SPIKE: one mark set (`attrs`) or cleared (`null`) over a run of a text leaf's units. */
+export interface LeafFormat {
+  from: number;
+  to: number;
+  mark: string;
+  attrs: Record<string, unknown> | null;
+}
+
+/**
+ * SPIKE: the minimal operation set. `path` is child indexes from the top-level block down to
+ * the node the operation addresses, in the document the operations were planned on.
+ */
+export type MinimalOp =
+  | { kind: "text"; path: readonly number[]; splices: LeafSplice[]; formats: LeafFormat[] }
+  | { kind: "attrs"; path: readonly number[]; attrs: Record<string, unknown> }
+  /** Insert `nodes` under the container at `path`, after its child `after` (-1: first). */
+  | { kind: "insert"; path: readonly number[]; after: number; nodes: readonly Block[] }
+  /** Delete the node at `path`. */
+  | { kind: "delete"; path: readonly number[] };
+
+/** SPIKE: what the room did to one node of the view since the view. */
+export interface RoomNodeState {
+  /** The node, or a node above it, is deleted in the room. */
+  removed: boolean;
+  /** Attributes whose value in the room differs from the view's. */
+  changedAttrs: string[];
+}
+
 /**
  * Block-operation seam carrying block semantics and the plain-text and structural mutation verbs.
  *
@@ -115,6 +150,15 @@ export interface AgentEditModel extends DocumentModel {
    * is the model's view of `current`'s room, so the two share item identities.
    */
   removedUnits(block: BlockRef, current: DocHandle): Span[];
+
+  /** SPIKE: `removedUnits` for the text leaf at `path` under `block`, inline atoms included. */
+  removedLeafUnits(block: BlockRef, path: readonly number[], current: DocHandle): Span[];
+
+  /** SPIKE: what the room did to the node at `path` under `block`. */
+  roomNodeState(block: BlockRef, path: readonly number[], current: DocHandle): RoomNodeState;
+
+  /** SPIKE: apply minimal operations to one top-level block, addressed on its state before any of them. */
+  applyMinimalOps(doc: DocHandle, block: BlockRef, ops: readonly MinimalOp[]): void;
 
   /**
    * Every top-level block with its display hash and ProseMirror node, built in one walk so

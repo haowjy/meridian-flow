@@ -58,6 +58,12 @@ export type ResolvedEdit = {
       block: BlockRef;
       replacement: Block;
     }
+  | {
+      /** SPIKE: minimal operations inside one top-level block. */
+      kind: "ops";
+      block: BlockRef;
+      ops: readonly import("../ports/model.js").MinimalOp[];
+    }
 );
 
 export type EditResolutionErrorCode =

@@ -137,6 +137,7 @@ function editOutput(edit: ResolvedEdit): string {
     case "block":
       return edit.replacement.textContent;
     case "delete":
+    case "ops":
       return "";
   }
 }

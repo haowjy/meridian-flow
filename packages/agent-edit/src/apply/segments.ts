@@ -34,7 +34,7 @@ export function editSegments(
       // Earlier offsets survive each independent transaction by executing right to left.
       for (const replacements of [...groups.values()].reverse())
         segments.push([{ ...edit, replacements }]);
-    } else if (edit.kind === "block") {
+    } else if (edit.kind === "block" || edit.kind === "ops") {
       structuralEnd = undefined;
       segments.push([edit]);
     } else {

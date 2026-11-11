@@ -10,7 +10,9 @@ import type {
   ContentLineage,
   InlineReplacementResult,
   InlineTextReplacement,
+  MinimalOp,
   ProjectedBlock,
+  RoomNodeState,
 } from "../ports/model.js";
 import { findItem, itemsInRange } from "../yjs-mutation.js";
 import {
@@ -114,6 +116,18 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
 
     removedUnits(block, current) {
       return removedUnits(unwrapBlock(block), unwrapDoc(current));
+    },
+
+    removedLeafUnits(block, path, current) {
+      return removedLeafUnits(nodeAt(unwrapBlock(block), path), unwrapDoc(current));
+    },
+
+    roomNodeState(block, path, current) {
+      return roomNodeState(nodeAt(unwrapBlock(block), path), unwrapDoc(current));
+    },
+
+    applyMinimalOps(_doc, block, ops) {
+      applyMinimalOps(unwrapBlock(block), ops);
     },
 
     projectBlocks(doc) {
@@ -532,4 +546,220 @@ function marksToAttributes(marks: readonly Mark[]): Record<string, unknown> | un
 
 function createBindingMetadata(): BindingMetadata {
   return { mapping: new Map(), isOMark: new Map() };
+}
+
+// ─── SPIKE: minimal operations ──────────────────────────────────────
+
+function nodeAt(block: Y.XmlElement, path: readonly number[]): Y.XmlElement {
+  let node = block;
+  for (const index of path) {
+    const child = node.get(index);
+    if (!(child instanceof Y.XmlElement)) throw new Error("Path does not address an element");
+    node = child;
+  }
+  return node;
+}
+
+function deletedInRoom(item: Y.Item | null, current: Y.Doc): boolean {
+  for (let at = item; at; at = (at.parent as Y.AbstractType<unknown>)._item) {
+    const live = findItem(current, at.id);
+    if (!live || live.deleted) return true;
+  }
+  return false;
+}
+
+/**
+ * `removedUnits` for a text leaf at any depth. A unit is a text character or an inline atom,
+ * so offsets are the leaf node's ProseMirror content offsets.
+ */
+function removedLeafUnits(leaf: Y.XmlElement, current: Y.Doc): Span[] {
+  const size = leaf
+    .toArray()
+    .reduce((sum, child) => sum + (child instanceof Y.XmlText ? child.length : 1), 0);
+  if (deletedInRoom(leaf._item, current)) return size > 0 ? [{ from: 0, to: size }] : [];
+  const runs: Span[] = [];
+  const push = (from: number, to: number) => {
+    const last = runs.at(-1);
+    if (last && last.to === from) last.to = to;
+    else runs.push({ from, to });
+  };
+  let offset = 0;
+  for (const child of leaf.toArray()) {
+    if (!(child instanceof Y.XmlText)) {
+      const item = (child as Y.XmlElement)._item;
+      if (deletedInRoom(item, current)) push(offset, offset + 1);
+      offset += 1;
+      continue;
+    }
+    const textItem = child._item && findItem(current, child._item.id);
+    if (!textItem || textItem.deleted) {
+      if (child.length > 0) push(offset, offset + child.length);
+      offset += child.length;
+      continue;
+    }
+    for (let item = child._start; item; item = item.right) {
+      if (item.deleted || !item.countable) continue;
+      const { client, clock } = item.id;
+      let cursor = clock;
+      for (const live of itemsInRange(current, { client, clock, len: item.length })) {
+        if (live.item.deleted) continue;
+        if (live.clock > cursor) push(offset + cursor - clock, offset + live.clock - clock);
+        cursor = live.clock + live.len;
+      }
+      if (cursor < clock + item.length) push(offset + cursor - clock, offset + item.length);
+      offset += item.length;
+    }
+  }
+  return runs;
+}
+
+function roomNodeState(node: Y.XmlElement, current: Y.Doc): RoomNodeState {
+  if (deletedInRoom(node._item, current)) return { removed: true, changedAttrs: [] };
+  const item = node._item && findItem(current, node._item.id);
+  const live = item?.content instanceof Y.ContentType ? item.content.type : null;
+  if (!(live instanceof Y.XmlElement)) return { removed: true, changedAttrs: [] };
+  const mine = node.getAttributes() as Record<string, unknown>;
+  const theirs = live.getAttributes() as Record<string, unknown>;
+  const changedAttrs = [...new Set([...Object.keys(mine), ...Object.keys(theirs)])].filter(
+    (key) => JSON.stringify(mine[key] ?? null) !== JSON.stringify(theirs[key] ?? null),
+  );
+  return { removed: false, changedAttrs };
+}
+
+/**
+ * Every address is resolved to its Yjs type before anything changes, so an operation's
+ * path and offsets mean the block as planned whatever ran before it.
+ */
+function applyMinimalOps(block: Y.XmlElement, ops: readonly MinimalOp[]): void {
+  const resolved = ops.map((op) => {
+    if (op.kind === "insert") {
+      const parent = nodeAt(block, op.path);
+      const after = op.after < 0 ? null : parent.get(op.after);
+      return { op, parent, after };
+    }
+    return { op, node: nodeAt(block, op.path) };
+  });
+  for (const entry of resolved) {
+    const { op } = entry;
+    if (op.kind === "text") applyLeafEdit(entry.node as Y.XmlElement, op);
+    else if (op.kind === "attrs") {
+      for (const [key, value] of Object.entries(op.attrs)) {
+        if (value === null || value === undefined)
+          (entry.node as Y.XmlElement).removeAttribute(key);
+        else (entry.node as Y.XmlElement).setAttribute(key, value as string);
+      }
+    } else if (op.kind === "insert") {
+      const parent = entry.parent as Y.XmlElement;
+      const index = entry.after ? parent.toArray().indexOf(entry.after as Y.XmlElement) + 1 : 0;
+      parent.insert(
+        index,
+        op.nodes.map((node) => pmNodeToYElement(node, createBindingMetadata())),
+      );
+    } else {
+      const node = entry.node as Y.XmlElement;
+      const parent = node.parent as Y.XmlElement;
+      const index = parent.toArray().indexOf(node);
+      if (index >= 0) parent.delete(index, 1);
+    }
+  }
+}
+
+function applyLeafEdit(leaf: Y.XmlElement, op: Extract<MinimalOp, { kind: "text" }>): void {
+  if (leaf.length === 0) leaf.insert(0, [new Y.XmlText()]);
+  const parts = () => {
+    let start = 0;
+    return leaf.toArray().map((child, index) => {
+      const length = child instanceof Y.XmlText ? child.length : 1;
+      const part = { child, index, start, length };
+      start += length;
+      return part;
+    });
+  };
+  // Formats run first: they don't move offsets, and they never cover a splice.
+  for (const format of op.formats) {
+    for (const part of parts()) {
+      if (!(part.child instanceof Y.XmlText)) continue;
+      const from = Math.max(format.from, part.start);
+      const to = Math.min(format.to, part.start + part.length);
+      if (from < to)
+        part.child.format(from - part.start, to - from, { [format.mark]: format.attrs });
+    }
+  }
+  for (const splice of [...op.splices].reverse()) {
+    for (const part of parts().reverse()) {
+      const from = Math.max(splice.from, part.start);
+      const to = Math.min(splice.to, part.start + part.length);
+      if (from >= to) continue;
+      if (part.child instanceof Y.XmlText) part.child.delete(from - part.start, to - from);
+      else leaf.delete(part.index, 1);
+    }
+    if (splice.content.size === 0) continue;
+    // Deletes above leave every unit before `from` where it was.
+    const before = parts();
+    let target: (typeof before)[number] | undefined;
+    for (const part of before)
+      if (
+        part.child instanceof Y.XmlText &&
+        splice.from >= part.start &&
+        splice.from <= part.start + part.length
+      )
+        target = part;
+    if (!target) {
+      const index = before.findIndex((part) => part.start >= splice.from);
+      const text = new Y.XmlText();
+      leaf.insert(index < 0 ? leaf.length : index, [text]);
+      target = { child: text, index: 0, start: splice.from, length: 0 };
+    }
+    // Prefer the text that ends at the splice: an insert after a match stays with the match.
+    const ending = before.find(
+      (part) => part.child instanceof Y.XmlText && part.start + part.length === splice.from,
+    );
+    if (ending && ending.length > 0) target = ending;
+    const groups = normalizeContent({
+      childCount: splice.content.childCount,
+      child: (i: number) => splice.content.child(i),
+    } as unknown as PMNode);
+    const lead = Array.isArray(groups[0]) ? (groups.shift() as PMNode[]) : [];
+    const insertText = (text: Y.XmlText, at: number, nodes: readonly PMNode[]) => {
+      let offset = at;
+      for (const node of nodes) {
+        const attributes = Object.fromEntries(
+          node.marks.map((mark) => [mark.type.name, mark.attrs]),
+        );
+        text.insert(offset, node.text ?? "", attributes);
+        offset += node.text?.length ?? 0;
+      }
+    };
+    if (groups.length === 0) {
+      insertText(target.child as Y.XmlText, splice.from - target.start, lead);
+      continue;
+    }
+    // An inline atom is a child of the leaf, so it can only go between two text runs.
+    const left = before.find(
+      (part) => part.child instanceof Y.XmlText && part.start + part.length === splice.from,
+    );
+    const right = before.find(
+      (part) => part.child instanceof Y.XmlText && part.start === splice.from && part !== left,
+    );
+    if (!left && !right && target.length > 0 && splice.from > target.start)
+      throw new Error("SPIKE: an inline atom inside a text run needs the run split");
+    const tail = Array.isArray(groups.at(-1)) ? (groups.pop() as PMNode[]) : [];
+    if (lead.length > 0 && left) insertText(left.child as Y.XmlText, left.length, lead);
+    else if (lead.length > 0) groups.unshift(lead);
+    if (tail.length > 0 && right) insertText(right.child as Y.XmlText, 0, tail);
+    else if (tail.length > 0) groups.push(tail);
+    const index = left
+      ? left.index + 1
+      : right
+        ? right.index
+        : before.filter((part) => part.start + part.length <= splice.from).length;
+    leaf.insert(
+      index,
+      groups.map((group) =>
+        Array.isArray(group)
+          ? textNodesToYText(group)
+          : pmNodeToYElement(group, createBindingMetadata()),
+      ),
+    );
+  }
 }
