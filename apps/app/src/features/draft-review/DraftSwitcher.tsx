@@ -93,6 +93,7 @@ export function DraftSwitcher({
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={t`Document version`}
+        data-version-chip
         disabled={disabled && showing === "live"}
         data-draft-review-chip={showing === "live" ? "" : undefined}
         className={cn(draftChipHitClass(touch), "disabled:opacity-50")}

@@ -19,7 +19,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { OpenDocument } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
-import { useDocumentNotice } from "@/features/draft-review/CommandNotice";
+import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { DraftNotice } from "@/features/draft-review/draft-notices";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
@@ -110,7 +110,11 @@ function ManuscriptStateRow({
         paddingRight: "calc(0.25rem + env(safe-area-inset-right))",
       }}
     >
-      <ManuscriptStateSlot state={state} notice={notice} touch />
+      {notice ? (
+        <DraftNoticeLine notice={notice} className="flex-1" />
+      ) : (
+        <ManuscriptStateSlot state={state} touch />
+      )}
     </div>
   );
 }

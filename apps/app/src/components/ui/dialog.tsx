@@ -10,6 +10,7 @@ import type * as React from "react";
 import { useRef } from "react";
 import { IconButton } from "@/components/ui/icon-button";
 import { role } from "@/components/ui/roles";
+import { focusIsFree } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -107,6 +108,34 @@ function useOpenerFocus(onOpenAutoFocus?: AutoFocusHandler, onCloseAutoFocus?: A
 }
 
 /**
+ * For a phone overlay whose picks hand the focus on (the drawer, the side sheet): the focus
+ * goes back to the opener only after a dismissal (Escape, a tap outside, the returned
+ * `onOpenChange(false)`) and only when nothing else has taken it.
+ */
+function useDismissalFocus(
+  onOpenChange: (open: boolean) => void,
+  onOpenAutoFocus?: AutoFocusHandler,
+) {
+  const dismissed = useRef(false);
+  const content = useOpenerFocus(
+    (event) => {
+      dismissed.current = false;
+      onOpenAutoFocus?.(event);
+    },
+    (event) => {
+      if (!dismissed.current || !focusIsFree()) event.preventDefault();
+    },
+  );
+  return {
+    onOpenChange: (open: boolean) => {
+      dismissed.current = !open;
+      onOpenChange(open);
+    },
+    content,
+  };
+}
+
+/**
  * For `onOpenAutoFocus` on a phone overlay: Radix would focus the first control and paint
  * its ring, so the content takes focus instead. It must take it: without a focused element
  * inside, the focus trap never engages and Tab escapes behind the overlay.
@@ -175,5 +204,6 @@ export {
   DialogTitle,
   DialogTrigger,
   focusContentOnOpen,
+  useDismissalFocus,
   useOpenerFocus,
 };

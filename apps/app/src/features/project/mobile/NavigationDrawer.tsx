@@ -5,7 +5,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import { focusContentOnOpen } from "@/components/ui/dialog";
+import { focusContentOnOpen, useDismissalFocus } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { TreeCreationProvider } from "../context/TreeCreationProvider";
@@ -50,6 +50,11 @@ export function NavigationDrawer({
   const openDocument = useOpenProjectDocument(projectId);
   const scope = useWorkScope(projectId);
   const manageWorks = useManageWorks();
+  const dismissal = useDismissalFocus(
+    onOpenChange,
+    // iOS Safari paints :focus-visible on Radix's programmatic focus of the first nav item.
+    focusContentOnOpen,
+  );
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
     file: ContextFile,
@@ -65,12 +70,11 @@ export function NavigationDrawer({
     });
   };
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={dismissal.onOpenChange}>
       <SheetContent
         side="left"
         showCloseButton={false}
-        // iOS Safari paints :focus-visible on Radix's programmatic focus of the first nav item.
-        onOpenAutoFocus={focusContentOnOpen}
+        {...dismissal.content}
         // Width leaves a >=56px scrim tap target on small phones (375px ->
         // 319px drawer); 320px cap matches standard mobile nav-drawer sizing.
         // The animated SheetContent stays visually bare (transparent, no
@@ -114,7 +118,7 @@ export function NavigationDrawer({
             <WorkspaceNavBody projectId={projectId}>
               {/* The drawer's own creation seam: closing the drawer unmounts it, ending any inline create. */}
               <TreeCreationProvider expandSidebar={keepOpen}>
-                <div className="flex shrink-0 py-1">
+                <div className="flex shrink-0 flex-col py-1">
                   <WorkScopePicker
                     projectId={projectId}
                     workId={scope.workId}

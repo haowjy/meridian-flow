@@ -27,12 +27,16 @@ climbed out of. A pick opens in main, like every door.
 Crumb menus carry no actions. A local-new or draft-only document is not in a
 catalog yet, so its path is passive until it joins one. Browsable paths keep
 their Radix roots and triggers mounted at rest; only the open browsing body acquires catalogs, and its initial trail
-is set once that source resolves. The identity row is wrapping-first, one rule for main and the side: the review
-controls move to a second line before anything shortens, and only a line too
-narrow for them alone collapses labels to icons, hides the stepper count, then
-collapses Apply to its icon; parent crumbs drop only when the leaf would be cut.
-Coarse pointers give each control a 44px box and grow the row to fit, and the
-filename yields its width (see [CONTEXT.md](CONTEXT.md)). Renaming and
+is set once that source resolves.
+
+A review's controls take a line of their own above the toolbar (the review line), one rule for
+main and the side: only a line too narrow for them collapses labels to icons, hides the stepper
+count, then collapses Apply to its icon (`fitReviewLine`, `document-identity-row.css`). A
+Discard's notice takes that line when the Discard ends the review, and shares it, wrapping,
+when it does not; it never sits in the toolbar row, which a narrow pane can't widen. In the
+notice only the document's name shortens: the verb and Undo always show. The phone's review
+header gives the notice a row of its own under its first row. Coarse pointers give each
+control a 44px box. Renaming and
 moving a homed document belong to the lists (Files, Scratch section, phone
 browser); see the KB's path-navigates-lists-edit page.
 

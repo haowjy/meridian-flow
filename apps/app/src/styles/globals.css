@@ -675,6 +675,11 @@
       border-color: currentColor;
     }
   }
+  /* A filled button loses its fill: a frame keeps it apart from the quiet one beside it
+     (Apply from Discard). */
+  button:is([data-variant="default"], [data-variant="destructive"]) {
+    border: 2px solid ButtonText;
+  }
   /* A menu's group rule is a 1px fill. */
   [role="separator"]:not([tabindex]) {
     forced-color-adjust: none;
@@ -871,7 +876,7 @@
 
 /** Plain collapsible row (reasoning / activity toggles) — text, not a card. */
 @utility disclosure-trigger {
-  @apply focus-ring flex w-full min-w-0 items-center gap-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground;
+  @apply focus-ring flex w-full min-w-0 items-center gap-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground coarse:min-h-11;
 }
 
 /* Standard screen-reader-only pattern: visually hidden but exposed to

@@ -192,7 +192,7 @@ it("announces a Stop only once its outcome is known, and a failed one only as a 
       ...announcements.announce.mock.calls.map(([copy]) => `say:${copy}`),
       ...announcements.announceError.mock.calls.map(([copy]) => `error:${copy}`),
     ].map((line) =>
-      /stopped/i.test(line) ? "say:withdrawn" : /already/i.test(line) ? "say:already" : line,
+      /stopped|undone/i.test(line) ? "say:withdrawn" : /already/i.test(line) ? "say:already" : line,
     );
     expect(heard, id).toEqual(expected);
     await show([]);
