@@ -143,7 +143,8 @@ async function resolveSwitch(
   handle: string | null | undefined,
 ): Promise<Resolution> {
   let work: Work;
-  if (handle) {
+  // `work` results print No Work as `none`, so the model may copy that back.
+  if (handle && handle !== "none") {
     const found = await workByHandle(deps, thread.projectId, handle);
     if (isToolError(found)) return { ok: false, result: found };
     if (workLifecycleState(found) === "deleted") {
@@ -457,7 +458,7 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
   async switch(deps, thread, { work }) {
     // Joins the answer's transaction under an Allow.
     const rebound = await deps.transaction(() =>
-      switchThreadWork(deps, { threadId: thread.id as ThreadId, workId: work.id }),
+      switchThreadWork(deps, { threadId: thread.id as ThreadId, workId: work.id }, "model"),
     );
     return { handle: rebound.after.handle, name: rebound.after.name };
   },
