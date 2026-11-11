@@ -42,5 +42,5 @@ A text-only click on a hidden creation reveals it at its own row, and the branch
 loses only `created` (`endCreatedFact`, a new revision), so its move or delete stays a
 pending tree line on the now-live document.
 
-[frozen]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/frozen-apply-clicks.md
-[later]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/later-action-wins-at-apply.md
+[frozen]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#the-click-owns-its-meaning
+[later]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#when-draft-and-live-both-changed-the-later-action-wins

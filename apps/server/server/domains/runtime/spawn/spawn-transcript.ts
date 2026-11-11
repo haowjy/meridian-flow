@@ -194,7 +194,7 @@ export async function persistReturnResult(
         }
       }
       const isError = !output.ok;
-      // A refusal reaches the model as its message (D65); `result` keeps the outcome.
+      // A refusal reaches the model as its message; `result` keeps the outcome.
       const modelOutput = output.ok ? output : output.message;
       const toolRow = contentForBlockInput({
         turnId: transcript.turnId,

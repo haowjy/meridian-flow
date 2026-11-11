@@ -19,7 +19,7 @@ export interface AgentRevisionBinding {
   revision: AgentRevision | null;
   configuration: ResolvedAgentConfiguration;
   invocationOverlay: InvocationOverlay | null;
-  /** Packaged skills the user invoked in this thread, by slug, pinned as read (D64). */
+  /** Packaged skills the user invoked in this thread, by slug, pinned as read. */
   invokedSkills: Readonly<Record<string, RetainedSkillReference>>;
 }
 export interface AgentCatalogEntry {
@@ -103,7 +103,7 @@ export interface AgentRevisionStore {
   readThreadBinding(threadId: string): Promise<AgentRevisionBinding | undefined>;
   /**
    * Pins a user-invoked skill on the thread's binding, replacing an earlier
-   * pin of the same slug (D64). False when the thread has no binding.
+   * pin of the same slug. False when the thread has no binding.
    */
   recordInvokedSkill(
     threadId: string,

@@ -1,5 +1,5 @@
 /**
- * Late-peer recovery (spec-content-rebase "Late peers", D21, D33, D35). A peer update authored before the peer
+ * Late-peer recovery (spec-content-rebase "Late peers"). A peer update authored before the peer
  * got a rebase can type into top-level blocks the rebase deleted or retyped; Yjs merges that into dead
  * state (`late-peer.ts` detects it). A stale frame is not current intent, so on text a rebase changed it
  * contributes only its net surviving typing, and nothing else:
@@ -9,7 +9,7 @@
  *   whatever Yjs items or frames they came in. Inner whitespace stays; only the paragraph's outer edges
  *   are trimmed. Spans with surviving other text between them stay apart, so two typed words never fuse.
  *   Green in review, the writer decides. The words the rebase replaced are never revived around it.
- * - The frame's deletions never apply (log-only, D35), including deletions of typing recovered from earlier
+ * - The frame's deletions never apply (log-only), including deletions of typing recovered from earlier
  *   frames: a reconnect resends the peer's whole delete set, and once the peer has received the server's
  *   state that set holds the recovered characters too (they sit in the block the rebase deleted). Nothing
  *   tells that echo from a backspace, so acting on it would erase writing. A backspace the peer typed into
@@ -59,7 +59,7 @@ export interface LateRecovery {
   update: Uint8Array | null;
   /** Each paragraph of the peer's typing written or rewritten into the draft. */
   written: string[];
-  /** Characters of dead text the frame deleted, which stay as they are (log-only, D35). */
+  /** Characters of dead text the frame deleted, which stay as they are (log-only). */
   dropped: number;
   /** The memory to pass with the next frame on this draft, once this one is persisted. */
   memory: LateTyping;

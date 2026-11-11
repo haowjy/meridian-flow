@@ -1,6 +1,6 @@
 /**
  * The corner every object overlay hangs in — the object row, the code fence's
- * chip cluster, whatever comes next (ruling 8, mockup 03b).
+ * chip cluster, whatever comes next.
  *
  * Two placements, one look. `inside` is rendered in the object's own node-view
  * element and needs no measurement at all; `over` is portalled into the

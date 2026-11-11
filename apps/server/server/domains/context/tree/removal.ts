@@ -96,7 +96,7 @@ export function createDocumentRemoval(
       // A Work cascade keeps hidden creations' tree uses: `restoreWorkDocuments` brings their
       // membership back with the tombstone, while a revealed document needs none. Any other
       // removal ends each branch's creation of the document but keeps its moves and deletes,
-      // a branch's pending intent, as it keeps the drafts (D79, D80): Apply brings it back.
+      // a branch's pending intent, as it keeps the drafts: Apply brings it back.
       const retired = input.workId
         ? living.filter((row) => !row.hidden).map((row) => row.id)
         : removed;

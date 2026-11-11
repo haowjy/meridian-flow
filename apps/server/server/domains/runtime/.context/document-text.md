@@ -66,4 +66,4 @@ attempt. Stale text in pinned unanswered messages is replaced while writer words
 mentions stay verbatim. `DocumentRevisions.current` reads settled authority only: a
 response-staged overlay visible to it is a contract failure, not a lookup fallback.
 
-[kb-model-view]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/model-view-frontier.md
+[kb-model-view]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/model-view.md

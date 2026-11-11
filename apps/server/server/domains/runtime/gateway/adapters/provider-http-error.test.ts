@@ -1,7 +1,7 @@
 /** Provider SDK errors map to one retry policy and keep the provider's status and message as evidence.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Provider retry and error taxonomy (kb/decisions/engineering/runtime/model-call-gateway.md)
+ * - Provider retry and error taxonomy (kb/wiki/architecture/model-gateway.md#calls-time-out-on-stalls-not-on-a-deadline)
  */
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";

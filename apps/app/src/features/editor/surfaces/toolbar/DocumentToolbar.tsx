@@ -3,7 +3,7 @@
  *
  * It carries the document-level verbs and never contextual ones: the geometry
  * is fixed, so controls never move, vanish, or gain neighbors as the caret
- * travels (ruling 15). Contextual verbs belong to the surfaces anchored to the
+ * travels. Contextual verbs belong to the surfaces anchored to the
  * block that owns them. `EditorSurfaceFrame` docks this row above the scroll
  * area, prose-aligned; the row itself is bare, with no card chrome.
  *

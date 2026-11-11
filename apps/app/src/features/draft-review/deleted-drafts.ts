@@ -1,5 +1,5 @@
 /**
- * Drafts whose document live deleted (D79): the draft keeps it, and Apply brings it back
+ * Drafts whose document live deleted: the draft keeps it, and Apply brings it back
  * before merging.
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";

@@ -404,11 +404,11 @@ export interface ProviderConfig {
  *
  * Policy knobs:
  * - `attemptStallMs`: inactivity (stall) timeout for one provider attempt
- *   (default 120s). Enforced by the deadline helper, which aborts the in-flight
+ *   (default `DEFAULT_ATTEMPT_STALL_MS`). Enforced by the deadline helper, which aborts the in-flight
  *   provider stream when no progress arrives within the window. Every stream
  *   event re-arms it, so a slow-but-streaming model is never killed. 0 disables.
  * - `attemptCeilingMs`: absolute backstop for one provider attempt (default
- *   10 min), fixed from attempt start. Not the normal terminator; 0 disables it
+ *   `DEFAULT_ATTEMPT_CEILING_MS`), fixed from attempt start. Not the normal terminator; 0 disables it
  *   for self-hosted models. Timeouts are retryable.
  * - `retry`: controls per-provider retry with exponential backoff. Only
  *   retries before committed output (visible text or a tool call) has been

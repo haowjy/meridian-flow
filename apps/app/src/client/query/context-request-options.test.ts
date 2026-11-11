@@ -2,8 +2,8 @@
  * Context request options behavior.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Scratch request ownership (kb/decisions/work/model/lineage-scratch.md)
- * - upload request ownership (kb/decisions/chat/composer/context-upload-intake.md)
+ * - Scratch request ownership (kb/wiki/product/work/scratch.md)
+ * - upload request ownership (kb/wiki/product/chat/uploads.md)
  */
 import { describe, expect, it } from "vitest";
 import { contextRequestOptionsForScheme } from "./context-request-options";

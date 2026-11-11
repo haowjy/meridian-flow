@@ -16,7 +16,7 @@ export type TurnEditedDocumentScope = "live" | "draft";
 /**
  * Where a turn's edit landed: live, or the draft of the owner whose branch held it (from the
  * edit's draft row). A draft-scoped edit is read and reversed at that draft destination, so
- * it stays on the turn's receipt after a live delete its draft outlived (D79).
+ * it stays on the turn's receipt after a live delete its draft outlived.
  */
 export type TurnEditedDocumentId =
   | { documentId: DocumentId; scope: "live" }

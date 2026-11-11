@@ -2,7 +2,7 @@
  * Real catalog/Work-authority integration for canonical document-link navigation.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - catalog-backed canonical navigation under Work-specific readability (kb/decisions/collab/drafts/model/branch-created-documents-are-hidden-live.md)
+ * - catalog-backed canonical navigation under Work-specific readability (kb/wiki/architecture/documents/links.md#following-a-link-is-one-procedure)
  */
 
 import type { DraftOwner } from "@meridian/contracts";

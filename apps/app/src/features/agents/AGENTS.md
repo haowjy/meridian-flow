@@ -4,8 +4,7 @@
   included: it is a real system catalog entry. Existing conversations display
   their retained definition; slugs can change, so looking one up would rewrite
   history.
-- The picker only selects. Unavailable Agents are omitted, and removal waits for
-  a management screen.
+- The picker only selects. Unavailable Agents are omitted.
 - Agents are identified by name; avatar imagery is for humans.
 
 Selection and identity surfaces: [`.context/CONTEXT.md`](.context/CONTEXT.md).

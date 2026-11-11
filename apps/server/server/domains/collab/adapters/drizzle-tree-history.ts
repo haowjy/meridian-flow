@@ -1,7 +1,7 @@
 /**
  * The model's moves and deletes in a document's edit history, live or drafted: the row its call
- * records in the tree mutation's own transaction (a handle on the per-document, per-chat counter, D76), the
- * Works whose drafts outlive a delete (D79), and the document a chat's own tree entry moved or
+ * records in the tree mutation's own transaction (a handle on the per-document, per-chat counter), the
+ * Works whose drafts outlive a delete, and the document a chat's own tree entry moved or
  * deleted away from a path, so `undo`, `redo` and `revert` can still name it there.
  */
 import { editHandle, type UpdateJournal } from "@meridian/agent-edit/integration";

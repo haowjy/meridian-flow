@@ -18,7 +18,7 @@
  * synchronously, so a caller never has to know a frame is pending. Only the
  * DOM write waits.
  *
- * View state is deliberately DISPOSABLE (decision 2026-07-29): nothing here
+ * View state is deliberately DISPOSABLE: nothing here
  * persists, and a viewer that is destroyed and rebuilt opens fitted. There is
  * no restore path to keep honest.
  */

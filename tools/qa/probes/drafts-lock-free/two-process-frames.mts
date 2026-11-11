@@ -2,7 +2,7 @@
  * Two server processes over one draft (the P6 cell without sockets): each process has its own
  * draft coordinator, store and room, and a row one process commits reaches the other only
  * through the database. Every way this process's committed replica advances must carry what it
- * adds into its room (decision D25), or the next frame typed into that room is fenced:
+ * adds into its room, or the next frame typed into that room is fenced:
  *
  * - `two-process-frames`: two tabs type at once, one per process.
  * - `two-process-fold`: A's content rebase incorporates a row B committed before the rebase's append.

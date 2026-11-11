@@ -1,8 +1,8 @@
 /**
- * The bounded-attempt owner (decision D13): a miss leaves its commit scope before the next
+ * The bounded-attempt owner: a miss leaves its commit scope before the next
  * attempt captures anything (a retry never computes under the failed attempt's locks), and
  * every candidate a failed attempt owned is disposed, one whose own write succeeded inside
- * the rolled-back scope included. A second owner cannot start inside a commit scope (D16a).
+ * the rolled-back scope included. A second owner cannot start inside a commit scope.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Draft attempt unwind and ownership transfer

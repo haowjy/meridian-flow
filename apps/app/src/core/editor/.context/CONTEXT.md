@@ -146,6 +146,9 @@ identity in anchors or holds.
   selection, and a moved range has just been removed. Redo and a caret keep
   y-tiptap's mapped selection. Destroying the editor is terminal and
   discards only that mounted navigation history. Dock, Work, tree-only Apply, and title changes never enter it.
+  Known limit: the dock and Editor views of one document share a collaborative
+  origin, so one view's Undo can take back the other's edits, and two views
+  uploading at once can overwrite each other's upload tokens.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks
@@ -314,8 +317,10 @@ keyboard, pointer, drop, or draft-recovery answer.
   that inside code`). A picture over a fence is refused (`Can’t put a picture
   inside code`) and a tree row too (`Can’t mention inside code`), each with no
   caret. Inline code is not a fence: a tree row or picture there snaps to the
-  span's edge; a text slice stays in the span. A file that is not a picture
-  shows `Only pictures can be dropped here` while dragging. A drop never changes
+  span's edge; a text slice stays in the span. A dragged file over a fence is
+  refused (`Can’t put a file inside code`); a file the editor can't place shows
+  `A file can’t go there.` while dragging, and a picture that can't stand at the
+  caret shows `A picture cannot go there.` A drop never changes
   the rows or columns of any table (nested ones too) or spills out of its cell.
   One that would is refused: `Can’t put that in a
   table cell` when it lands in a cell, `Can’t move part of a table` when a

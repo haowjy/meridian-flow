@@ -2,7 +2,7 @@
  * Database coverage for response transaction atomicity.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - best-effort post-commit refresh isolated from durable response settlement (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - best-effort post-commit refresh isolated from durable response settlement (kb/wiki/architecture/collaboration/durability-and-honest-outcomes.md#honest-results)
  */
 
 import { eq } from "drizzle-orm";
@@ -107,7 +107,7 @@ describe("response transaction atomicity (postgres)", () => {
     await harness.expectSuccessfulCommit("retry-response");
   });
 
-  // D42: a mixed save that fails after beta's live append leaves nothing, live or drafted.
+  // a mixed save that fails after beta's live append leaves nothing, live or drafted.
   it("rolls back a live and a drafted document when the save fails after the live append", async () => {
     const harness = createHarness(db);
     await harness.seedAndStage(MIXED_RETRY_RESPONSE, { liveBeta: true });

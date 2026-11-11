@@ -1,5 +1,5 @@
 /**
- * The document an `undo`, `redo` or `revert` names by path (D76). A path no visible document
+ * The document an `undo`, `redo` or `revert` names by path. A path no visible document
  * holds names the document this chat's latest move or delete took away from it after the visible
  * document has no matching stack entry; a deleted one
  * is authorized where its restore would bring it back (its own folder and source, which may

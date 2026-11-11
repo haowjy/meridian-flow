@@ -459,7 +459,7 @@ async function admitDraftSync(
   } catch (cause) {
     // The bound edit grant was refused under the seam's locks; `beforeSync` answers it.
     if (cause instanceof FileEditRefusedError) throw cause;
-    // Not a refusal (D30): the client reconnects and its handshake carries the missing prefix.
+    // Not a refusal: the client reconnects and its handshake carries the missing prefix.
     if (cause instanceof DraftPrefixMissingError) refuse(WS_CLOSE.DRAFT_PREFIX_MISSING, cause);
     if (cause instanceof DraftStaleUpdateError) {
       if (!(await input.services.documentSync.resolveDraftHocuspocusRoom(room.draftId)))

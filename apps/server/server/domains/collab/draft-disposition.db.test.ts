@@ -2,7 +2,7 @@
  * Historical receipt evidence cannot be reconstructed from active-only policy or mutable placement.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - rolling subagent receipt attribution up to its owning spawn (kb/decisions/collab/drafts/model/shared-branch-per-work.md)
+ * - rolling subagent receipt attribution up to its owning spawn (kb/wiki/architecture/collaboration/draft-review.md#who-wrote-a-change)
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";

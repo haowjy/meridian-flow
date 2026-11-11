@@ -1,6 +1,5 @@
 /**
- * Tree entries in a document's edit history (moves, deletes, restores and settlements; D76,
- * PR 3): their stack facts, judged by state, never by row presence. An entry is undoable while
+ * Tree entries in a document's edit history (moves, deletes, restores and settlements): their stack facts, judged by state, never by row presence. An entry is undoable while
  * its destination still holds the state its latest application left; redoable while it still
  * holds the state its undo left; applied or discarded only when a later settlement row says so.
  */

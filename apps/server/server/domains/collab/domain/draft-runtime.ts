@@ -294,8 +294,8 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
 
   /**
    * The one way a replica becomes the draft's committed replica, and so the one way content
-   * reaches this process's registered rooms (decision D25); a room that registers, or misses a
-   * delivery, behind it is brought up by `reconcileRoom` (D26). It runs when the transaction the replica was
+   * reaches this process's registered rooms; a room that registers, or misses a
+   * delivery, behind it is brought up by `reconcileRoom`. It runs when the transaction the replica was
    * read or written in commits (a savepoint's rows only once its root commits too), installs
    * only past the replica installed by then, and hands the rooms what separates the two. A
    * lower or equal revision installs nothing and sends nothing: the committed replica already
@@ -340,7 +340,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
   }
 
   /**
-   * The other half of delivery (decision D26): `install` sends each transition to the rooms
+   * The other half of delivery: `install` sends each transition to the rooms
    * registered when it installs, and this repairs a room that joined, or missed a delivery,
    * behind `replica`. The room gets the replica's structs past its state vector and the
    * replica's delete set, so a delete-only gap is covered too.

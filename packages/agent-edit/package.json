@@ -13,8 +13,7 @@
   "scripts": {
     "build": "tsc --noEmit -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
-    "demo": "tsx demo/harness.ts"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@meridian/markup": "workspace:*",

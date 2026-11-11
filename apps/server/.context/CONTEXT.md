@@ -175,12 +175,8 @@ primitives in `server/lib/`:
 
 ## Model gateway deadlines
 
-`domains/runtime/gateway` guards each model attempt with an inactivity (stall)
-timer re-armed by every stream event (`MODEL_CALL_STALL_MS`, default 120_000ms)
-plus an absolute ceiling backstop (`MODEL_CALL_TIMEOUT_MS`, default 600_000ms,
-0 disables). Either abort surfaces as a retryable provider error, and an attempt
-aborted before any committed output (visible text or a tool call) may retry; the
-stall guard never kills a slow-but-streaming model.
+Each model attempt has a stall timer and an absolute ceiling, owned by
+`domains/runtime/gateway` ([gateway context](../server/domains/runtime/gateway/.context/CONTEXT.md)).
 
 ## Observability event sink
 

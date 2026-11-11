@@ -389,7 +389,7 @@ export function commitPlannedContextRemoval(
 }
 
 /**
- * Coordinator-only: live deleted a document whose drafts survive (D79), so its tab stays,
+ * Coordinator-only: live deleted a document whose drafts survive, so its tab stays,
  * presented draft-only in the Works whose drafts still have it.
  */
 export function commitDraftHold(projectId: string, documentId: string, reviews: ReviewEntries) {
