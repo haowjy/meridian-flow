@@ -18,14 +18,14 @@ export type LocalDocument = Extract<ContextTab, { kind: "new" | "tracked" }>;
  * The replica holds the handle-to-document pairing: a history entry's pointer names the handle,
  * and the replica says which document that is now, open in a tab or not.
  */
-export function localDocumentsOf(
-  projectId: string,
-  projection: { records: readonly ResourceRecord[]; placement: ResourcePlacement },
-): (resourceHandle: string) => LocalDocument | null {
+export function localDocumentsOf(projection: {
+  records: readonly ResourceRecord[];
+  placement: ResourcePlacement;
+}): (resourceHandle: string) => LocalDocument | null {
   const index = resourceIdentityIndex(projection.records);
   return (resourceHandle) => {
     const record = index.byHandle(resourceHandle);
-    return record ? contextTabFromResource(projectId, record, projection.placement) : null;
+    return record ? contextTabFromResource(record, projection.placement) : null;
   };
 }
 
