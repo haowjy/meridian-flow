@@ -162,7 +162,7 @@ export function ThreadSwitcherPopover({
           focusHandoff.current = false;
         }}
       >
-        <Picker>
+        <Picker label={t`Switch chat`}>
           <PickerSection>
             <PickerRow
               leading={<Plus className="text-muted-foreground" aria-hidden />}
