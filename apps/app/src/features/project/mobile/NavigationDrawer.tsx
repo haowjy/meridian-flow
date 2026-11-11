@@ -5,6 +5,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
+import { focusContentOnOpen } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { TreeCreationProvider } from "../context/TreeCreationProvider";
@@ -66,18 +67,8 @@ export function NavigationDrawer({
       <SheetContent
         side="left"
         showCloseButton={false}
-        // Radix Dialog auto-focuses the first focusable on open; with the close
-        // button hidden that's a nav item, and iOS Safari paints :focus-visible
-        // on that programmatic focus. Prevent the default, then focus the sheet
-        // container itself (event.target — Radix dispatches this event on the
-        // content element, which has tabIndex=-1 via FocusScope). The explicit
-        // focus matters: Radix's focus trap only engages once focus enters the
-        // scope, so preventDefault alone lets Tab escape to content behind the
-        // overlay. Keyboard tabbing from here still rings nav items as usual.
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          (event.target as HTMLElement | null)?.focus({ preventScroll: true });
-        }}
+        // iOS Safari paints :focus-visible on Radix's programmatic focus of the first nav item.
+        onOpenAutoFocus={focusContentOnOpen}
         // Width leaves a >=56px scrim tap target on small phones (375px ->
         // 319px drawer); 320px cap matches standard mobile nav-drawer sizing.
         // The animated SheetContent stays visually bare (transparent, no

@@ -14,6 +14,8 @@ import {
   DialogOverlay,
   DialogPortal,
   DialogTitle,
+  focusContentOnOpen,
+  useOpenerFocus,
 } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -37,18 +39,13 @@ export function PhoneTakeover({
   belowTitle?: ReactNode;
   children: ReactNode;
 }) {
+  const focus = useOpenerFocus(focusContentOnOpen);
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
-        // Radix would focus the close button and paint its ring on open. The content
-        // takes focus instead: without a focused element inside, the focus trap never
-        // engages and Tab escapes behind the overlay.
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          (event.target as HTMLElement | null)?.focus({ preventScroll: true });
-        }}
+        {...focus}
         className="fixed inset-0 z-50 flex flex-col bg-background outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
       >
         {/* Solid background, no backdrop-filter: iOS repaints a blurred header badly. */}
@@ -107,11 +104,7 @@ export function PhoneSheet({
         showCloseButton={false}
         className="max-h-[78svh] gap-0 rounded-t-xl border-border-subtle p-0 outline-none"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-        // The sheet takes focus, not its close button: see PhoneTakeover.
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          (event.target as HTMLElement | null)?.focus({ preventScroll: true });
-        }}
+        onOpenAutoFocus={focusContentOnOpen}
         {...content}
       >
         <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-border" />

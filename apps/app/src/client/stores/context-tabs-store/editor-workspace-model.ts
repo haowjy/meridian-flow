@@ -93,8 +93,6 @@ export type TabState = {
   reviewPin?: ReviewPin;
 };
 
-export const TAB_STATE_KEYS = ["view", "preview", "reviewPin"] as const;
-
 export function tabStateOf(tab: ContextTab): TabState {
   const { view, preview, reviewPin } = tab;
   return {
