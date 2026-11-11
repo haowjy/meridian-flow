@@ -13,6 +13,7 @@ import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protoco
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type DraftPin, returnDraftsToLive } from "@/client/project-shell/document-views";
+import { arriveMainTab, refreshMainTab } from "@/client/project-shell/main-tabs";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -453,6 +454,24 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
       prior.current = null;
     }
   });
+  // Main arriving at a document is the one write that opens or selects its tab, once per arrival
+  // at an address; after that its descriptor only refreshes the tab while it is open.
+  const accountId = useAccountId();
+  const arrived =
+    onDocument && props.contextLive && !props.routeIssues?.main && !props.routeIssues?.editor
+      ? requestedMain.document.document
+      : null;
+  const arrivedAt = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!arrived) return;
+    const tab = { kind: "document", document: arrived } as const;
+    if (arrivedAt.current === props.routeLocationKey)
+      refreshMainTab(accountId, props.projectId, tab);
+    else {
+      arrivedAt.current = props.routeLocationKey;
+      arriveMainTab(accountId, props.projectId, tab);
+    }
+  }, [accountId, props.projectId, props.routeLocationKey, arrived]);
   if (usePhone === null) return null;
   const mainForSide: MainForSide = props.chatDisplay
     ? props.chatDisplay.kind === "thread"

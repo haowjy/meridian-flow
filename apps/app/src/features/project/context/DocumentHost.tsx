@@ -81,6 +81,8 @@ export type DocumentHostProps = {
    */
   focusReview?: string | null;
   onFocusReview?: (itemKey: string | null) => void;
+  /** Closes main's tab (desktop): a draft-only page's close, since it has no Live to return to. */
+  onCloseMain?: () => void;
 };
 
 export function DocumentHost(props: DocumentHostProps) {
@@ -252,6 +254,7 @@ function DesktopDocumentFrame({
   editorWorkId,
   focusReview,
   onFocusReview,
+  onCloseMain,
 }: DocumentHostProps & { onScreen: boolean }) {
   return (
     <div
@@ -273,6 +276,7 @@ function DesktopDocumentFrame({
               editorWorkId={editorWorkId}
               focusReview={focusReview}
               onFocusReview={onFocusReview}
+              onCloseMain={place === "main" ? onCloseMain : undefined}
             />
             {document.kind === "viewer" ? (
               <div className="flex min-h-0 flex-1 flex-col">
@@ -351,6 +355,7 @@ function DesktopDocumentChrome({
   editorWorkId,
   focusReview,
   onFocusReview,
+  onCloseMain,
 }: {
   projectId: string;
   document: OpenDocument;
@@ -358,6 +363,7 @@ function DesktopDocumentChrome({
   editorWorkId: string | null;
   focusReview?: string | null;
   onFocusReview?: (itemKey: string | null) => void;
+  onCloseMain?: () => void;
 }) {
   const { controller } = useDraftReview();
   const freeze = useHostFreeze(projectId, document);
@@ -397,7 +403,9 @@ function DesktopDocumentChrome({
         document={document}
         readOnly={Boolean(fileInWork && freeze?.kind === "work")}
         onCloseDraftOnly={
-          draftOnly ? () => settleWriterClose(removal.writerClose(projectId, document)) : undefined
+          draftOnly
+            ? (onCloseMain ?? (() => settleWriterClose(removal.writerClose(projectId, document))))
+            : undefined
         }
         focusReview={focusReview}
         onFocusReview={onFocusReview}

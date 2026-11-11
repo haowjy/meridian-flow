@@ -9,12 +9,15 @@
  * mounted (main, side, kept). One document is in at most one host. What the side shows is
  * `side/SideView`'s resolution.
  */
+
+import { t } from "@lingui/core/macro";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useMainTabs } from "@/client/project-shell/main-tabs";
 import type { OpenDocument } from "@/client/stores";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { ChatPaneController } from "./ChatPaneController";
 import { ChatSurface } from "./chat/ChatSurface";
-import { useShownDocuments } from "./context/account-feature-context";
+import { useAccountId, useShownDocuments } from "./context/account-feature-context";
 import { DocumentHost, MainDocumentStatus } from "./context/DocumentHost";
 import { RecentDocumentsLanding } from "./context/RecentDocumentsLanding";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
@@ -26,12 +29,14 @@ import {
   useDesktopPanels,
   useProjectSurfacePrefsActions,
 } from "./layout";
+import { pathLeafName } from "./mobile/context-location";
 import type { ReviewScopedProjectProps } from "./ProjectView";
 import { useChatNavigation } from "./routing/chat-navigation";
 import { isProjectRouteMasked, ProjectRouteBoundary } from "./routing/ProjectRouteBoundary";
 import { useOpenInMain } from "./routing/use-open-document-in-editor";
 import { LeftSidebar } from "./shell/LeftSidebar";
 import { MainHeader } from "./shell/MainHeader";
+import { UnavailableTabChip, useMainTabCommands } from "./shell/MainTabStrip";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import { ClosedSideButton } from "./side/ClosedSideButton";
@@ -106,14 +111,26 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // The newest document shown that is off screen stays mounted, hidden. A document moving
   // between main and the side passes through here while main's address loads, so it never
   // remounts.
+  const accountId = useAccountId();
+  const { tabs } = useMainTabs(accountId, projectId);
   const keptTab =
     shown.find(
-      (tab) => tab.documentId !== mainTab?.documentId && tab.documentId !== sideTab?.documentId,
+      (tab) =>
+        tab.documentId !== mainTab?.documentId &&
+        tab.documentId !== sideTab?.documentId &&
+        tabs.some((open) => open.document.documentId === tab.documentId),
     ) ?? null;
 
   const open = props.onOpenContextTarget;
   const openInMain = useOpenInMain(projectId, open);
   const onNewDocument = useNewDocument(projectId, props.contextLive ? open : null);
+  const showRecents = props.routeCommands.showEditorRecents;
+  const onShowRecents = useCallback(
+    (options: { replace: boolean }) => void showRecents(options),
+    [showRecents],
+  );
+  const mainKey = mainTab ? `document:${mainTab.documentId}` : null;
+  const tabCommands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
 
   // Each document has its own host, so the draft that takes the focus when its controls show is
   // held here.
@@ -132,12 +149,18 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         editorWorkId={props.editorWorkId}
         focusReview={focusReview}
         onFocusReview={setFocusReview}
+        onCloseMain={
+          place === "main"
+            ? () => tabCommands.close({ kind: "document", document: tab })
+            : undefined
+        }
         header={
           place === "main" ? (
             <MainHeader
               projectId={projectId}
-              document={tab}
-              onShowRecents={() => void props.routeCommands.showEditorRecents({ replace: false })}
+              open={open}
+              mainKey={mainKey}
+              onShowRecents={onShowRecents}
               onNewDocument={onNewDocument}
               sidebarToggle={sidebarToggle}
               sideToggle={sideToggle}
@@ -184,6 +207,9 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 <ChatPaneController
                   projectId={projectId}
                   threadId={chatThread}
+                  open={open}
+                  onShowRecents={onShowRecents}
+                  onNewDocument={onNewDocument}
                   sidebarToggle={sidebarToggle}
                   contextToggle={sideToggle}
                   closedSide={closedSide}
@@ -244,8 +270,18 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         <main className="flex min-h-0 flex-1 flex-col">
           <MainHeader
             projectId={projectId}
-            document={null}
-            onShowRecents={() => void props.routeCommands.showEditorRecents({ replace: false })}
+            open={open}
+            mainKey={null}
+            landing={!main.document.requested}
+            current={
+              main.document.requested && mask.issue && mask.issue !== "loading" ? (
+                <UnavailableTabChip
+                  name={main.document.path ? pathLeafName(main.document.path) : t`Unavailable`}
+                  onClose={tabCommands.closeMain}
+                />
+              ) : undefined
+            }
+            onShowRecents={onShowRecents}
             onNewDocument={onNewDocument}
             sidebarToggle={sidebarToggle}
             sideToggle={sideToggle}

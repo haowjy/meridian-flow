@@ -5,6 +5,7 @@ import type {
   ProjectContextTreeScheme,
   WorkingSetRoute,
 } from "@meridian/contracts/protocol";
+import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import type { OpenDocument, ServerOpenDocument } from "@/client/stores";
 import {
   type ReconcileContextRoutesInput,
@@ -291,6 +292,12 @@ export class ContextRemovalCoordinator {
     this.drafts = dependencies.drafts ?? null;
     this.draftOnly = dependencies.draftOnly ?? null;
     this.addresses = dependencies.addresses ?? null;
+  }
+
+  /** These documents are closed, Discarded or removed: no view picks them again and their tabs close. */
+  private forget(projectId: string, documentIds: readonly string[]): void {
+    this.presented.forget(projectId, documentIds);
+    if (this.accountId) dropMainTabDocuments(this.accountId, projectId, documentIds);
   }
 
   /**
@@ -687,7 +694,7 @@ export class ContextRemovalCoordinator {
           const id = availabilityDocumentId(command);
           return command.kind === "available" || held.has(id) ? [] : [id];
         });
-        this.presented.forget(projectId, gone);
+        this.forget(projectId, gone);
         if (gone.length > 0) this.addresses?.removed(projectId, gone);
         if (committed.some((command) => command.kind === "available"))
           this.addresses?.available(projectId);
@@ -869,7 +876,7 @@ export class ContextRemovalCoordinator {
     if (this.unavailable()) return { kind: "noop" };
     const state = this.project(projectId);
     const documentId = addressed.documentId;
-    this.presented.forget(projectId, [documentId]);
+    this.forget(projectId, [documentId]);
     const presented = this.presented.documents(projectId);
     const tab = presented.find((candidate) => candidate.documentId === documentId);
     if (!tab) return { kind: "noop" };
@@ -964,7 +971,7 @@ export class ContextRemovalCoordinator {
   closeVanished(projectId: string, tab: OpenDocument): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     if (this.heldByDrafts(projectId, [tab.documentId]).has(tab.documentId)) return { kind: "noop" };
-    this.presented.forget(projectId, [tab.documentId]);
+    this.forget(projectId, [tab.documentId]);
     if (!this.presented.documents(projectId).some((shown) => shown.documentId === tab.documentId))
       return { kind: "noop" };
     this.notices?.presentedRemoved(projectId, [tab]);
@@ -989,7 +996,7 @@ export class ContextRemovalCoordinator {
   discardDraft(projectId: string, documentId: string): ContextRemovalOutcome {
     if (this.unavailable() || this.projects.get(projectId)?.goingBack.has(documentId))
       return { kind: "noop" };
-    this.presented.forget(projectId, [documentId]);
+    this.forget(projectId, [documentId]);
     const tab = this.presented
       .documents(projectId)
       .find((candidate) => candidate.documentId === documentId);
