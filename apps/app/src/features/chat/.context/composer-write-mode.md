@@ -54,9 +54,11 @@ No client path writes a write mode into a cache. Queue, cancel and `switched` ev
 invalidate the Works query and project thread lists instead, and `useSwitchView`
 does the same when another tab changes the record's `write_mode` item ids.
 
-"Drafts (3)" counts the Work's pending document drafts while the draft dock lists
-only this chat's changes, so "Drafts (2)" beside a one-document dock is correct. The
-read carries no mode gate because the count matters most from Auto-apply. While the
+The mode chip says the mode ("Draft" or "Auto-apply") and nothing else, on every
+composer. It once read "Drafts (3)" when drafts waited, and writers read the count as
+the mode. What waits is shown by the draft dock (this chat's changes) and the Work
+picker's badge (the Work's). The chip is the last control to fold into the toolbar's
+overflow, because the writer must see how the AI will write before sending. While the
 dock projection loads, its count and availability are `null`, distinct from loaded
 zero/false, so loading never implies nothing is pending.
 

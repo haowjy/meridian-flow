@@ -82,10 +82,42 @@ export function moveFocus(element: HTMLElement, { ring }: { ring: boolean }) {
  */
 export function focusIsFree() {
   const active = document.activeElement;
-  return (
-    !active ||
-    active === document.body ||
-    !active.isConnected ||
-    active.matches("[data-paint-status], [data-paint-frame]")
-  );
+  return !active || active === document.body || !active.isConnected || heldByPaint(active);
+}
+
+const heldByPaint = (element: Element) =>
+  element.matches("[data-paint-status], [data-paint-frame]");
+
+/**
+ * Puts the focus on `target()` whenever it falls free, for a destination that may not be
+ * shown yet or may be swapped for another copy after it took the focus. Ends at the
+ * writer's first key or press, or when focus lands anywhere outside the target, and then
+ * calls `onTaken`. The returned stop ends it without calling `onTaken`.
+ */
+export function holdFocus(target: () => HTMLElement | null, onTaken?: () => void): () => void {
+  const settle = () => {
+    if (focusIsFree()) target()?.focus();
+  };
+  const outside = (event: FocusEvent) => {
+    const to = event.target;
+    if (to instanceof Element && (heldByPaint(to) || target()?.contains(to))) return;
+    taken();
+  };
+  const observer = new MutationObserver(settle);
+  const stop = () => {
+    observer.disconnect();
+    window.removeEventListener("keydown", taken, true);
+    window.removeEventListener("pointerdown", taken, true);
+    document.removeEventListener("focusin", outside, true);
+  };
+  function taken() {
+    stop();
+    onTaken?.();
+  }
+  window.addEventListener("keydown", taken, true);
+  window.addEventListener("pointerdown", taken, true);
+  document.addEventListener("focusin", outside, true);
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+  settle();
+  return stop;
 }

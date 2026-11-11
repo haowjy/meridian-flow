@@ -37,6 +37,7 @@ import {
 import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
+import { focusIsFree } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { DocumentStateSlotHost } from "./document-state-slot";
@@ -44,7 +45,7 @@ import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
-import { claimEditorFocus, focusIsFree } from "./focus-on-open";
+import { claimEditorFocus, focusOnLoad } from "./focus-on-open";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaNotices } from "./SchemaNotices";
 import { SyncStatus } from "./SyncStatus";
@@ -76,8 +77,10 @@ type SessionEditorProps = {
   holderUri?: string | null;
   /** An addressed construction receipt; null withdraws this editor's receipt. */
   onConstructed?: (editor: Editor | null) => void;
-  /** The tab instance this editor serves; it claims that instance's focus-on-open intent. */
+  /** The document this editor serves; it claims that document's focus-on-open intent. */
   focusKey?: string;
+  /** Main's document: the page load's caret goes here (`focusOnLoad`), never to a side or a sheet. */
+  loadFocus?: boolean;
   /** Reopens the room after the server refused its updates (draft review only). */
   onReopen?: () => void;
 };
@@ -144,6 +147,7 @@ function ActiveSessionEditorView({
   session,
   onConstructed,
   focusKey,
+  loadFocus = false,
   onReopen,
   holderUri: reviewHolderUri,
   snapshot,
@@ -353,16 +357,26 @@ function ActiveSessionEditorView({
     return () => dom.removeEventListener("focusout", onFocusOut);
   }, [afterPaintRelease, editor, inReview]);
 
-  // A document the writer just made takes the caret at its start, unless something else
+  // A document the writer just made takes the caret at its start, and main's first
+  // document after a page load takes it where the editor keeps it, unless something else
   // (a dialog that stays open, a field) already holds focus.
   useEffect(() => {
-    if (!editor || inReview || !active || !effectiveEditable) return;
-    if (!claimEditorFocus(focusKey)) return;
+    if (!editor || !active || !effectiveEditable) return;
+    const made = !inReview && claimEditorFocus(focusKey);
+    if (!made && !loadFocus) return;
+    let release: (() => void) | null = null;
+    let mounted = true;
     afterPaintRelease(() => {
-      if (!editor.isDestroyed && focusIsFree())
+      if (!mounted) return;
+      if (!made) release = focusOnLoad(editor);
+      else if (!editor.isDestroyed && focusIsFree())
         editor.commands.focus("start", { scrollIntoView: false });
     });
-  }, [afterPaintRelease, active, editor, effectiveEditable, focusKey, inReview]);
+    return () => {
+      mounted = false;
+      release?.();
+    };
+  }, [afterPaintRelease, active, loadFocus, editor, effectiveEditable, focusKey, inReview]);
 
   useEffect(() => {
     if (!editor || inReview || !active) return;

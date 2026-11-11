@@ -400,6 +400,14 @@ msgid "{binary} is a binary file."
 msgstr "{binary} is a binary file."
 
 #: src/features/chat/DraftDock.tsx
+msgid "{changes, plural, one {Apply this chat's change to {name}} other {Apply this chat's # changes to {name}}}"
+msgstr "{changes, plural, one {Apply this chat's change to {name}} other {Apply this chat's # changes to {name}}}"
+
+#: src/features/chat/DraftDock.tsx
+msgid "{changes, plural, one {Discard this chat's change to {name}} other {Discard this chat's # changes to {name}}}"
+msgstr "{changes, plural, one {Discard this chat's change to {name}} other {Discard this chat's # changes to {name}}}"
+
+#: src/features/chat/DraftDock.tsx
 msgid "{count, plural, one {# change} other {# changes}}"
 msgstr "{count, plural, one {# change} other {# changes}}"
 
@@ -759,8 +767,8 @@ msgid "{unanswered, plural, one {# unanswered} other {# unanswered}}"
 msgstr "{unanswered, plural, one {# unanswered} other {# unanswered}}"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-msgid "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
-msgstr "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
+#~ msgid "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
+#~ msgstr "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{who} deleted {name} before this reply saved its change."
@@ -1086,8 +1094,12 @@ msgid "AI write mode"
 msgstr "AI write mode"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-msgid "AI write mode: {spokenValue}"
-msgstr "AI write mode: {spokenValue}"
+msgid "AI write mode: {localizedValue}"
+msgstr "AI write mode: {localizedValue}"
+
+#: src/components/app/work-composer-controls/WriteModeControl.tsx
+#~ msgid "AI write mode: {spokenValue}"
+#~ msgstr "AI write mode: {spokenValue}"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Align center"
@@ -1213,9 +1225,13 @@ msgstr "Apply all"
 msgid "Apply draft"
 msgstr "Apply draft"
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Apply draft of {name}"
+msgstr "Apply draft of {name}"
+
 #: src/features/draft-review/ReviewActions.tsx
-msgid "Apply draft of {subject}"
-msgstr "Apply draft of {subject}"
+#~ msgid "Apply draft of {subject}"
+#~ msgstr "Apply draft of {subject}"
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Apply is temporarily unavailable."
@@ -1224,6 +1240,14 @@ msgstr "Apply is temporarily unavailable."
 #: src/features/draft-review/DraftCommandStatus.tsx
 msgid "Apply is waiting for confirmation."
 msgstr "Apply is waiting for confirmation."
+
+#: src/features/chat/DraftDock.tsx
+msgid "Apply this chat's changes to {documents} documents"
+msgstr "Apply this chat's changes to {documents} documents"
+
+#: src/features/chat/DraftDock.tsx
+msgid "Apply this chat's changes to {name}"
+msgstr "Apply this chat's changes to {name}"
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/draft-review/ReviewCompletion.tsx
@@ -2938,9 +2962,13 @@ msgstr "Discard changes"
 msgid "Discard draft"
 msgstr "Discard draft"
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Discard draft of {name}"
+msgstr "Discard draft of {name}"
+
 #: src/features/draft-review/ReviewActions.tsx
-msgid "Discard draft of {subject}"
-msgstr "Discard draft of {subject}"
+#~ msgid "Discard draft of {subject}"
+#~ msgstr "Discard draft of {subject}"
 
 #: src/features/draft-review/ReviewActions.tsx
 msgid "Discard these drafts? This can't be undone."
@@ -2949,6 +2977,14 @@ msgstr "Discard these drafts? This can't be undone."
 #: src/features/draft-review/ReviewActions.tsx
 msgid "Discard this change? This can't be undone."
 msgstr "Discard this change? This can't be undone."
+
+#: src/features/chat/DraftDock.tsx
+msgid "Discard this chat's changes to {documents} documents"
+msgstr "Discard this chat's changes to {documents} documents"
+
+#: src/features/chat/DraftDock.tsx
+msgid "Discard this chat's changes to {name}"
+msgstr "Discard this chat's changes to {name}"
 
 #: src/features/chat/DraftDock.tsx
 #~ msgid "Discard this chat's changes?"
@@ -3051,13 +3087,21 @@ msgstr "Draft review"
 msgid "Draft: {owner}"
 msgstr "Draft: {owner}"
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {count} documents"
+msgstr "Drafted {count} documents"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted 1 document"
+msgstr "Drafted 1 document"
+
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Drafts"
 msgstr "Drafts"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-msgid "Drafts ({waiting})"
-msgstr "Drafts ({waiting})"
+#~ msgid "Drafts ({waiting})"
+#~ msgstr "Drafts ({waiting})"
 
 #: src/features/editor/DocumentDraftHint.tsx
 #~ msgid "Drafts for this"

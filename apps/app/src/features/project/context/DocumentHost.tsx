@@ -17,7 +17,11 @@ import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
-import { DocumentStateSlotProvider } from "@/features/editor/document-state-slot";
+import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
+import {
+  DocumentStatePortal,
+  DocumentStateSlotProvider,
+} from "@/features/editor/document-state-slot";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { cn } from "@/lib/utils";
 import { DocumentReviewProvider } from "../DocumentReview";
@@ -285,6 +289,7 @@ function DesktopDocumentFrame({
                   tab={tab}
                   active={onScreen}
                   editorClassName={place === "main" ? undefined : "bg-transparent"}
+                  loadFocus={place === "main"}
                 />
               </div>
             )}
@@ -300,11 +305,13 @@ function EditableDocument({
   tab,
   active,
   editorClassName,
+  loadFocus,
 }: {
   projectId: string;
   tab: EditableOpenDocument;
   active: boolean;
   editorClassName?: string;
+  loadFocus: boolean;
 }) {
   const freeze = useHostFreeze(projectId, tab);
   const resources = useAccountResourceReplica();
@@ -318,6 +325,7 @@ function EditableDocument({
       active={active}
       readOnly={freeze !== null}
       editorClassName={editorClassName}
+      loadFocus={loadFocus}
       onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
     />
   );
@@ -471,8 +479,16 @@ function PhoneEditor({
   children?: ReactNode;
 }) {
   const freeze = useHostFreeze(projectId, tab);
+  const review = useDraftReview().controller.inlineReview;
   return (
-    <>
+    <DocumentStateSlotProvider>
+      {/* The version chip lives at the toolbar row's end, as on a desktop; a review, painted or on
+          its way, shows its own chip in its header. */}
+      {review?.documentId === tab.documentId ? null : (
+        <DocumentStatePortal>
+          <DocumentVersionMenu projectId={projectId} tab={tab} />
+        </DocumentStatePortal>
+      )}
       {freeze ? (
         <DocumentFreezeNotice
           projectId={projectId}
@@ -491,7 +507,7 @@ function PhoneEditor({
           presentation={PHONE_DOCUMENT_PRESENTATION}
         />
       </div>
-    </>
+    </DocumentStateSlotProvider>
   );
 }
 
