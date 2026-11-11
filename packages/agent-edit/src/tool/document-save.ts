@@ -51,6 +51,7 @@ export interface StagedResponseUpdate extends JournaledUpdate {
   /** The view this write planned on, immediately before it was applied. */
   preOwnSnapshot: Uint8Array;
   copied?: CopySummary;
+  skipped?: number;
 }
 
 /** What a document's save reads from the reply's buffer for it. */

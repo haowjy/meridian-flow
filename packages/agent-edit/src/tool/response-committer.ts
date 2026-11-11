@@ -218,6 +218,8 @@ export interface ResponseStageUpdateInput {
   semanticEditIr?: SemanticEditIRV1;
   /** A copy's receipt, which its settled receipt repeats instead of echoing the text. */
   copied?: CopySummary;
+  /** Changes the write left out, which its settled receipt repeats. */
+  skipped?: number;
   /** The reply's own-mutation sequence, which this write joins once its save settles. */
   reply?: ReplyMutations;
 }
@@ -927,6 +929,7 @@ export function createResponseCommitter(deps: {
       deletedBlocks: input.deletedBlocks.map(({ clientID, clock }) => ({ clientID, clock })),
       preOwnSnapshot: input.preOwnSnapshot,
       ...(input.copied ? { copied: input.copied } : {}),
+      ...(input.skipped ? { skipped: input.skipped } : {}),
     });
     buffer.nextStageSeq += 1;
     const stagedState = responses.get(input.responseId);

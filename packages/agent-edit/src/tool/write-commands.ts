@@ -357,7 +357,7 @@ export function createWriteCommands(deps: {
           documentBlocksDetail(resolved.error.details),
         );
       }
-      if (resolved.edits.length === 0) return formatUnchangedSuccess();
+      if (resolved.edits.length === 0) return formatUnchangedSuccess(resolved.skipped);
       overwrite = resolved;
     }
     // Copies and bound nodes carry what they name; written content into an empty document is
@@ -378,6 +378,7 @@ export function createWriteCommands(deps: {
       docId: address.documentId,
       filePath: address.filePath,
       plan: overwrite ? { edits: overwrite.edits, ir: overwrite.ir } : { blocks: written.blocks },
+      ...(overwrite?.skipped ? { skipped: overwrite.skipped } : {}),
       creation: {
         createdDocument: context.createdDocument === true,
         ...(overwriting ? {} : { refuseUnlessEmpty: alreadyExists }),
@@ -478,7 +479,7 @@ export function createWriteCommands(deps: {
             );
           }
           validateResolvedIr(resolved.ir, address.documentId, appliedPlanDoc);
-          if (resolved.edits.length === 0) return formatUnchangedSuccess();
+          if (resolved.edits.length === 0) return formatUnchangedSuccess(resolved.skipped);
           return finishPreparedEdit({
             command,
             session,
@@ -491,6 +492,7 @@ export function createWriteCommands(deps: {
             docId: address.documentId,
             filePath: address.filePath,
             plan: { edits: resolved.edits, ir: resolved.ir },
+            ...(resolved.skipped ? { skipped: resolved.skipped } : {}),
             ...(from && copiedNodes ? { copy: { from: from.path, edges: true } } : {}),
           });
         }),
@@ -514,6 +516,8 @@ export function createWriteCommands(deps: {
     plan: { edits: readonly ResolvedEdit[]; ir: SemanticEditIRV1 } | { blocks: readonly Block[] };
     creation?: { createdDocument: boolean; refuseUnlessEmpty?: InternalWriteResult };
     copy?: { from: string; edges: boolean };
+    /** Changes the plan left out because the room deleted all of the text they change. */
+    skipped?: number;
   }
 
   /** One acceptance boundary for every edit; report failures cannot enter its restoration path. */
@@ -614,6 +618,7 @@ export function createWriteCommands(deps: {
         preOwnSnapshot,
         semanticEditIr,
         copied,
+        ...(edit.skipped ? { skipped: edit.skipped } : {}),
         interactionContext,
         ...(context.frontiers?.reply ? { reply: context.frontiers.reply } : {}),
       });
@@ -685,6 +690,7 @@ export function createWriteCommands(deps: {
             touchedBlocks,
             deletedBlocks,
             copied,
+            ...(edit.skipped ? { skipped: edit.skipped } : {}),
           },
           planned,
           snapshotProjected(echoProjected, links.codec),

@@ -16,12 +16,21 @@ one transaction the host owns, and route inverses through `prepareSave`.
 
 ## Deletes that land after a write read its room
 
-A block rewrite is lowered around the characters its room copy has deleted
-(`withoutRemovedText`), but only those the copy holds when the call reads it. A delete
-that lands later (a draft write staged until the step's save, or one racing a direct
-save) still meets a lowering that kept those characters. Find writes into a paragraph
-or heading are placed by their windows and survive it; other rewrites can split. Fix
-by lowering the staged update again at save time against the room it merges into.
+A block rewrite is lowered around what its room copy has deleted
+(`withoutRemovedUnits`), but only what the copy holds when the call reads it. A
+delete that lands later still meets a lowering that kept those units. For a draft
+write the window runs from the call's room read to the step's save: the rest of the
+model step, its generation and later tool calls included, seconds to minutes. For a
+direct save it is the time to the save. Find writes into a paragraph or heading are
+placed by their windows and survive it; other rewrites can split. Fix by lowering the
+staged update again at save time against the room it merges into.
+
+## Edits to text the editor retyped
+
+Joining two lines or deleting an inline image makes the editor delete the following
+text and insert it again as new items. A model change planned on the old items lands
+on deleted text, so it is skipped and the result says so; before, it was lost without
+a word. Landing it needs the retyped text matched to the old by content.
 
 ## Deferred until earned
 
