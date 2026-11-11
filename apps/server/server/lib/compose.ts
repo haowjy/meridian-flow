@@ -811,16 +811,27 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     scheduleAfterCommit: runAfterDrizzleCommit,
     // A hint is lossy: a missed one leaves a list stale until its next read, never wrong.
     onLifecycleCommitted: (threadId) =>
-      void ports.threadRepos.threads
-        .findById(threadId)
-        .then((thread) => {
-          if (thread)
-            ports.contextCatalogWakeHub.publish({
-              type: "project-chats-hint",
-              projectId: thread.projectId,
-            });
-        })
-        .catch(() => undefined),
+      backgroundTasks.track(
+        ports.threadRepos.threads
+          .findById(threadId)
+          .then((thread) => {
+            if (thread)
+              ports.contextCatalogWakeHub.publish({
+                type: "project-chats-hint",
+                projectId: thread.projectId,
+              });
+          })
+          .catch((error) =>
+            emitEvent(ports.eventSink, {
+              level: "warn",
+              source: "threads.event_hub",
+              name: "project_chats_hint.failed",
+              correlation: { threadId },
+              payload: unknownToEventPayload(error),
+            }),
+          ),
+        "project chats hint",
+      ),
   });
   const importOrganizer = createProductionImportOrganizer({
     db: ports.db,
