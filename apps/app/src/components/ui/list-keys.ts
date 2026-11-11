@@ -9,8 +9,9 @@ const TEXT_FIELD = "input, textarea, [contenteditable='true']";
  * - Up and Down move between the `[data-list-item]` stops and wrap at the ends.
  * - Home and End jump to the first and last stop, except in a text field, where they
  *   move the caret.
- * - Left and Right move between the buttons of one `[data-list-row]` (a row with its
- *   own actions), except in a text field.
+ * - Left and Right move between the buttons of one `[data-list-row]` (a row and the
+ *   actions beside it), except in a text field. A list beside other focusable content
+ *   can route keys by this attribute, so a row carries it even with no actions.
  * - Enter presses the focused stop.
  *
  * A search field can be a stop too, so Down leaves it for the first row. Escape
