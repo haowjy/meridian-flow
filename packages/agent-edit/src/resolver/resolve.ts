@@ -1,11 +1,5 @@
 import { CodecParseError, type ParsedContent, type ParsedContentWithSpans } from "@meridian/markup";
-import { Fragment } from "prosemirror-model";
-import {
-  type EditResolutionErrorCode,
-  inlineReplacementText,
-  type ResolvedEdit,
-  type ResolvedInlineReplacement,
-} from "../apply/types.js";
+import type { EditResolutionErrorCode, ResolvedEdit } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import type { DocumentAddress } from "../document-address.js";
@@ -15,7 +9,6 @@ import { normalizeLineageRanges } from "../lineage/range-set.js";
 import type { WriteLinkAssigner } from "../links/assign-refs.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticEditIRV1, SemanticOutputRun } from "../semantic-edit-ir.js";
-import { type WordHunk, wordHunks } from "../word-hunks.js";
 import { alignBlocks } from "./block-alignment.js";
 import {
   cutTextWindows,
@@ -26,7 +19,7 @@ import {
   type TextWindow,
 } from "./find.js";
 import { type HashLocateContext, hashLocateContext, locateBlockByHash } from "./hash-locator.js";
-import { isFlatText, withoutRemovedUnits } from "./room-removals.js";
+import { isFlatTextblock, lowerBlock } from "./lower-block.js";
 import {
   type BlockScope,
   resolveScope,
@@ -74,7 +67,7 @@ export interface ResolveWriteContext {
   inputRevision?: string;
   /**
    * The current room when `doc` is the model's view of it. A flat text block rewritten in
-   * place is then decided against what the room deleted since the view (`room-removals.ts`).
+   * place is then decided against what the room deleted since the view (`lower-block.ts`).
    */
   current?: DocHandle;
 }
@@ -543,22 +536,6 @@ function planFindMatches(
   return { steps };
 }
 
-function replacementWindowOutput(
-  source: string,
-  replacements: readonly ResolvedInlineReplacement[],
-): string {
-  const first = replacements[0];
-  if (!first) return "";
-  let sourceCursor = first.span.start;
-  let output = "";
-  for (const replacement of replacements) {
-    output += source.slice(sourceCursor, replacement.span.start);
-    output += inlineReplacementText(replacement);
-    sourceCursor = replacement.span.end;
-  }
-  return output;
-}
-
 function groupFindMatches(matches: readonly TextFindMatch[]): FindMatchGroup[] {
   const groups: FindMatchGroup[] = [];
   for (const match of matches) {
@@ -699,51 +676,38 @@ function replaceScope(
       case "change": {
         flushStructural();
         const before = oldNodes[step.old];
-        let after = newBlocks[step.next];
-        let placed: [TextWindow[] | undefined, TextWindow[] | undefined] | null = windows && [
-          windows.old[step.old],
-          windows.new[step.next],
-        ];
-        const removed =
-          ctx.current && isFlatText(before)
-            ? ctx.model.removedUnits(oldBlocks[step.old], ctx.current)
-            : [];
-        const rewrite =
-          removed.length > 0
-            ? withoutRemovedUnits(
-                before,
-                after,
-                removed,
-                placed ? windowHunks(before, after, ...placed) : undefined,
-              )
-            : null;
-        if (rewrite) {
-          after = rewrite.after;
-          placed = rewrite.windows;
-          skipped += rewrite.skipped;
-          anchor = oldBlocks[step.old];
-          insertionRun = {};
-          if (before.eq(after)) {
-            keptBlocks = true;
-            break;
-          }
+        const after = newBlocks[step.next];
+        const lowered = lowerBlock(
+          ctx,
+          oldBlocks[step.old],
+          before,
+          after,
+          windows && [windows.old[step.old], windows.new[step.next]],
+        );
+        anchor = oldBlocks[step.old];
+        insertionRun = {};
+        if (lowered) {
+          skipped += lowered.skipped;
+          if (lowered.ops.length === 0) keptBlocks = true;
+          else
+            edits.push({
+              documentId: params.documentAddress.documentId,
+              file: params.documentAddress.filePath,
+              block: oldBlocks[step.old],
+              structuralBoundary: step.structuralBoundary,
+              kind: "ops",
+              ops: lowered.ops,
+            });
+          break;
         }
-        const replacements = flatReplacements(before, after, placed);
         edits.push({
           documentId: params.documentAddress.documentId,
           file: params.documentAddress.filePath,
           block: oldBlocks[step.old],
           structuralBoundary: step.structuralBoundary,
-          ...(replacements
-            ? {
-                kind: "textRanges" as const,
-                replacements,
-                output: replacementWindowOutput(before.textContent, replacements),
-              }
-            : { kind: "block" as const, replacement: after }),
+          kind: "block",
+          replacement: after,
         });
-        anchor = oldBlocks[step.old];
-        insertionRun = {};
         break;
       }
       case "keep":
@@ -759,10 +723,17 @@ function replaceScope(
   return { edits, skipped, ...(keptBlocks ? { keptBlocks: true } : {}) };
 }
 
-/** A block keeps its element only as the same node type and heading level. */
+/**
+ * A block keeps its element as the same node type. A heading's level changes in place only
+ * where the lowering sets it as an attribute; any other heading is replaced to change level.
+ */
 function canRewriteInPlace(old: Block, next: Block): boolean {
   if (old.type !== next.type) return false;
-  return old.type.name !== "heading" || old.attrs.level === next.attrs.level;
+  return (
+    old.type.name !== "heading" ||
+    old.attrs.level === next.attrs.level ||
+    (isFlatTextblock(old) && isFlatTextblock(next))
+  );
 }
 
 function serializeReplacementBlocks(
@@ -790,13 +761,24 @@ function semanticIrForResolvedEdits(
   const deleted: LineageRange[] = [];
   const mappedEdits = edits.map((edit) => {
     let outputRuns: SemanticOutputRun[] = [];
-    if (edit.kind === "textRanges") {
+    if (edit.kind === "ops") {
       const lineage = ctx.model.getVisibleContentLineage(edit.block);
       scope.push(...lineage);
-      for (const replacement of edit.replacements) {
-        deleted.push(...sliceLineage(lineage, replacement.span.start, replacement.span.end));
+      let output = 0;
+      for (const op of edit.ops) {
+        if (op.kind !== "text") continue;
+        for (const splice of op.splices) {
+          deleted.push(...sliceLineage(lineage, splice.from, splice.to));
+          const text = splice.content.textBetween(0, splice.content.size, "");
+          if (text.length > 0)
+            outputRuns.push({
+              kind: "fresh",
+              payload: text,
+              output: { from: output, to: output + text.length },
+            });
+          output += text.length;
+        }
       }
-      outputRuns = semanticRunsForTextRanges(lineage, edit);
     } else if (edit.kind === "insert") {
       if (edit.newText.length > 0) {
         outputRuns = [
@@ -844,39 +826,6 @@ function semanticIrForResolvedEdits(
       : { kind: "mappedEdits", edits: mappedEdits },
     deleted: normalizedDeleted,
   };
-}
-
-function semanticRunsForTextRanges(
-  lineage: readonly LineageRange[],
-  edit: Extract<ResolvedEdit, { kind: "textRanges" }>,
-): SemanticOutputRun[] {
-  const first = edit.replacements[0];
-  if (!first) return [];
-  const runs: SemanticOutputRun[] = [];
-  let sourceCursor = first.span.start;
-  let outputCursor = 0;
-  for (const replacement of edit.replacements) {
-    for (const source of sliceLineage(lineage, sourceCursor, replacement.span.start)) {
-      runs.push({
-        kind: "preserved",
-        source,
-        output: { from: outputCursor, to: outputCursor + source.length },
-        materialization: "retained",
-      });
-      outputCursor += source.length;
-    }
-    const text = inlineReplacementText(replacement);
-    if (text.length > 0) {
-      runs.push({
-        kind: "fresh",
-        payload: text,
-        output: { from: outputCursor, to: outputCursor + text.length },
-      });
-      outputCursor += text.length;
-    }
-    sourceCursor = replacement.span.end;
-  }
-  return runs;
 }
 
 function sameLineageRanges(left: readonly LineageRange[], right: readonly LineageRange[]): boolean {
@@ -941,61 +890,4 @@ function error(
   details?: Record<string, unknown>,
 ): ResolveWriteFailure {
   return { ok: false, error: { code, message, ...(details ? { details } : {}) } };
-}
-
-/**
- * A known cut's text is replaced whole at its position. Re-deriving it by diffing
- * the block would keep words the cut shares with text around it, anchor the new
- * text to those, and a concurrent delete of them would split and reorder it.
- * Undefined when the text outside the windows differs, so they don't describe this pair.
- */
-function windowHunks(
-  before: Block,
-  after: Block,
-  oldWindows: readonly TextWindow[] | undefined,
-  newWindows: readonly TextWindow[] | undefined,
-): WordHunk[] | undefined {
-  if (!oldWindows || !newWindows || oldWindows.length !== newWindows.length) return;
-  const oldText = before.textContent;
-  const newText = after.textContent;
-  const hunks: WordHunk[] = [];
-  let oldCursor = 0;
-  let newCursor = 0;
-  for (const [index, old] of oldWindows.entries()) {
-    const next = newWindows[index];
-    if (oldText.slice(oldCursor, old.from) !== newText.slice(newCursor, next.from)) return;
-    // A cut that rewrites its text unchanged (marks included) is no edit.
-    if (!before.content.cut(old.from, old.to).eq(after.content.cut(next.from, next.to)))
-      hunks.push({ from: old.from, to: old.to, text: newText.slice(next.from, next.to) });
-    oldCursor = old.to;
-    newCursor = next.to;
-  }
-  return oldText.slice(oldCursor) === newText.slice(newCursor) ? hunks : undefined;
-}
-
-/** Fall back to block replacement unless exact splices reproduce structure and marks too. */
-function flatReplacements(
-  before: Block,
-  after: Block,
-  windows: [TextWindow[] | undefined, TextWindow[] | undefined] | null,
-): ResolvedInlineReplacement[] | undefined {
-  if (!isFlatText(before) || !isFlatText(after)) return;
-  const hunks =
-    (windows && windowHunks(before, after, ...windows)) ??
-    wordHunks(before.textContent, after.textContent);
-  if (!hunks.length) return;
-  const replacements = hunks.map((h) => ({
-    span: { start: h.from, end: h.to },
-    content: Fragment.empty,
-  }));
-  let shift = 0;
-  for (let i = 0; i < hunks.length; i++) {
-    const h = hunks[i];
-    replacements[i].content = after.content.cut(h.from + shift, h.from + shift + h.text.length);
-    shift += h.text.length - (h.to - h.from);
-  }
-  let replay = before.content;
-  for (const r of [...replacements].reverse())
-    replay = replay.cut(0, r.span.start).append(r.content).append(replay.cut(r.span.end));
-  return before.copy(replay).eq(after) ? replacements : undefined;
 }

@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import { Doc, XmlElement } from "yjs";
 import { editSegments } from "../apply/segments.js";
-import { inlineReplacementText, type ResolvedEdit } from "../apply/types.js";
+import { opsOutput, type ResolvedEdit } from "../apply/types.js";
 import { type AgentEditCodec, createAgentEditCodecFactory } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";
 import {
@@ -73,8 +73,8 @@ describe("resolveWrite", () => {
     );
 
     expect(edits).toHaveLength(1);
-    expect(edits[0]).toMatchObject({ kind: "textRanges", block: omega });
-    expect(edits[0].kind === "textRanges" ? edits[0].output : null).toBe("!");
+    expect(edits[0]).toMatchObject({ kind: "ops", block: omega });
+    expect(edits[0].kind === "ops" ? opsOutput(edits[0].ops) : null).toBe("!");
   });
 
   it("decomposes a block range replace across block/delete/insert primitives", () => {
@@ -83,8 +83,8 @@ describe("resolveWrite", () => {
     const range = `${model.getBlockId(alpha)}..${model.getBlockId(gamma)}`;
 
     const fewer = expectOk(resolve(doc, { command: "replace", content: "One", in: range }));
-    expect(fewer.map((edit) => edit.kind)).toEqual(["textRanges", "delete", "delete"]);
-    expect(fewer[0].kind === "textRanges" ? fewer[0].block : null).toBe(alpha);
+    expect(fewer.map((edit) => edit.kind)).toEqual(["ops", "delete", "delete"]);
+    expect(fewer[0].kind === "ops" ? fewer[0].block : null).toBe(alpha);
     expect(fewer[1].kind === "delete" ? fewer[1].block : null).toBe(beta);
 
     const more = expectOk(
@@ -94,7 +94,7 @@ describe("resolveWrite", () => {
         in: rangeFor("Alpha\n\nBeta"),
       }),
     );
-    expect(more.map((edit) => edit.kind)).toEqual(["textRanges", "textRanges", "insert"]);
+    expect(more.map((edit) => edit.kind)).toEqual(["ops", "ops", "insert"]);
   });
 
   it("matches find text with NFC normalization while preserving original spans", () => {
@@ -103,14 +103,10 @@ describe("resolveWrite", () => {
     const edits = expectOk(resolve(doc, { command: "replace", content: "tea", find: "café" }));
 
     expect(edits).toHaveLength(1);
-    expect(edits[0]).toMatchObject({
-      kind: "textRanges",
-      replacements: [{ span: { start: 0, end: 5 } }],
-      output: "tea",
-    });
     const [edit] = edits;
-    if (edit?.kind !== "textRanges") throw new Error("expected textRanges");
-    expect(edit.replacements.map(inlineReplacementText)).toEqual(["tea"]);
+    if (edit?.kind !== "ops") throw new Error("expected ops");
+    expect(edit.ops).toMatchObject([{ kind: "text", splices: [{ from: 0, to: 5 }] }]);
+    expect(opsOutput(edit.ops)).toBe("tea");
   });
 
   it("scopes find-based writes to the around window", () => {
@@ -123,7 +119,7 @@ describe("resolveWrite", () => {
     );
 
     expect(replace).toHaveLength(1);
-    expect(replace[0]).toMatchObject({ kind: "textRanges", block: blocks[4] });
+    expect(replace[0]).toMatchObject({ kind: "ops", block: blocks[4] });
   });
 
   it("returns representative resolution errors", () => {
@@ -248,7 +244,7 @@ describe("resolveWrite", () => {
         in: fixture.target.displayHash,
       }),
     )[0];
-    expect(displayedReplace.kind === "textRanges" ? displayedReplace.block : null).toBe(
+    expect(displayedReplace.kind === "ops" ? displayedReplace.block : null).toBe(
       fixture.target.block,
     );
 
@@ -340,26 +336,15 @@ function expectOk(result: ResolveWriteResult): ResolvedEdit[] {
   return result.edits;
 }
 
-it("groups the same exact word splices by edit, sentence or paragraph", () => {
-  const doc = createDoc("She did what she wanted. She left.");
-  const edits = expectOk(
-    resolve(doc, { command: "replace", content: "I do what I wanted. I left.", in: 1 }),
-  );
-  expect(edits[0].kind).toBe("textRanges");
-  expect(editSegments(doc, model, edits, "edit")).toHaveLength(4);
-  expect(editSegments(doc, model, edits, "sentence")).toHaveLength(2);
-  expect(editSegments(doc, model, edits, "paragraph")).toHaveLength(1);
-});
-
-it("falls back to one block segment for changed marks and hard breaks", () => {
-  for (const [before, after] of [
-    ["She carries a sword.", "She carries a **sword**."],
-    ["She carries a sword.  \nShe leaves.", "I carry a sword.  \nI leave."],
+it("lowers changed marks as operations and falls back to one block segment for hard breaks", () => {
+  for (const [before, after, kind] of [
+    ["She carries a sword.", "She carries a **sword**.", "ops"],
+    ["She carries a sword.  \nShe leaves.", "I carry a sword.  \nI leave.", "block"],
   ]) {
     const doc = createDoc(before);
     const edits = expectOk(resolve(doc, { command: "replace", content: after, in: 1 }));
     expect(edits).toHaveLength(1);
-    expect(edits[0].kind).toBe("block");
+    expect(edits[0].kind).toBe(kind);
     expect(editSegments(doc, model, edits)).toHaveLength(1);
   }
 });

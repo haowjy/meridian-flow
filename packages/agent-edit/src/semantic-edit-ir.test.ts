@@ -40,12 +40,18 @@ const base = (payload = "😀"): SemanticEditIRV1 => ({
     edits: [
       {
         edit: {
-          kind: "textRanges",
+          kind: "ops",
           documentId: "doc-1",
           file: "chapter.md",
           block: {} as never,
-          replacements: [{ span: { start: 0, end: 2 }, content: inlineText(payload) }],
-          output: payload,
+          ops: [
+            {
+              kind: "text",
+              path: [],
+              splices: [{ from: 0, to: 2, content: inlineText(payload) }],
+              formats: [],
+            },
+          ],
         },
         outputRuns: [{ kind: "fresh", payload, output: { from: 0, to: payload.length } }],
       },

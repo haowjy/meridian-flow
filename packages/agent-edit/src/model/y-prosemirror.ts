@@ -8,8 +8,8 @@ import { toRef, unwrapBlock, unwrapDoc } from "../handles.js";
 import type {
   AgentEditModel,
   ContentLineage,
-  InlineReplacementResult,
-  InlineTextReplacement,
+  EditOp,
+  EditOpsResult,
   ProjectedBlock,
 } from "../ports/model.js";
 import { findItem, itemsInRange } from "../yjs-mutation.js";
@@ -104,16 +104,20 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       deleteBlock(unwrapDoc(doc), unwrapBlock(block));
     },
 
-    applyInlineReplacements(doc, block, replacements) {
-      return applyInlineReplacements(unwrapDoc(doc), unwrapBlock(block), replacements, schema);
+    applyOps(_doc, block, ops) {
+      return applyOps(unwrapBlock(block), ops);
     },
 
     applyBlockReplacement(doc, block, replacement) {
       applyBlockDiff(unwrapDoc(doc), unwrapBlock(block), replacement);
     },
 
-    removedUnits(block, current) {
-      return removedUnits(unwrapBlock(block), unwrapDoc(current));
+    roomTextblock(block, path, current) {
+      return roomTextblock(nodeAt(unwrapBlock(block), path), unwrapDoc(current));
+    },
+
+    roomNodeRemoved(block, path, current) {
+      return deletedInRoom(nodeAt(unwrapBlock(block), path)._item, unwrapDoc(current));
     },
 
     projectBlocks(doc) {
@@ -242,64 +246,77 @@ function writePmBlock(doc: Y.Doc, block: Y.XmlElement, replacement: PMNode): voi
   updateYFragment(doc, block as unknown as Y.XmlFragment, replacement, createBindingMetadata());
 }
 
-export function applyInlineReplacements(
-  doc: Y.Doc,
-  block: Y.XmlElement | BlockRef,
-  replacements: readonly InlineTextReplacement[],
-  schema: Schema,
-): InlineReplacementResult {
-  const element = unwrapBlock(toRef(block));
-  const current = projectBlocks(doc, schema).find(
-    (block) => unwrapBlock(block.ref) === element,
-  )?.node;
-  if (!current) throw new Error("Y.XmlElement is not a top-level block in this document");
-  const blockType = element.nodeName;
-  if (current.type.name !== blockType) return blockTypeMismatch(blockType, current.type.name);
-  if (!canReplaceInline(current) || !hasFlatInlineContent(current)) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: `Text edits require flat inline content in ${current.type.name} blocks`,
-    };
+/**
+ * Every path and offset is checked before anything changes, so an operation means the
+ * block as planned whatever ran before it, and a write that does not fit leaves it alone.
+ */
+function applyOps(block: Y.XmlElement, ops: readonly EditOp[]): EditOpsResult {
+  const nodes: Y.XmlElement[] = [];
+  for (const op of ops) {
+    const node = findNode(block, op.path);
+    const problem = node ? opProblem(node, op) : "its path does not address an element";
+    if (!node || problem) return invalidOp(`Cannot apply a ${op.kind} operation: ${problem}`);
+    nodes.push(node);
   }
+  for (const [index, op] of ops.entries()) {
+    if (op.kind === "text") applyTextOp(nodes[index], op);
+    else
+      for (const [key, value] of Object.entries(op.attrs)) {
+        if (value === null || value === undefined) nodes[index].removeAttribute(key);
+        else nodes[index].setAttribute(key, value as string);
+      }
+  }
+  return { ok: true };
+}
 
-  if (element.length === 0 && current.content.size === 0) element.insert(0, [new Y.XmlText()]);
-  const text = element.get(0);
-  if (!(text instanceof Y.XmlText) || element.length !== 1) {
-    return { ok: false, code: "invalid_write", message: "Text edits require one flat Y.XmlText" };
+function invalidOp(message: string): EditOpsResult {
+  return { ok: false, code: "invalid_write", message };
+}
+
+/** Why `op` cannot be applied to `node`, if it cannot. */
+function opProblem(node: Y.XmlElement, op: EditOp): string | undefined {
+  if (op.kind === "attrs") return undefined;
+  const children = node.toArray();
+  if (node.nodeName === "code_block" || children.length > 1 || !children.every(isXmlText))
+    return "text edits require one flat run of text";
+  const size = node.length === 0 ? 0 : (children[0] as Y.XmlText).length;
+  let cursor = 0;
+  for (const { from, to, content } of op.splices) {
+    if (from < cursor || to < from || to > size) return `invalid splice ${from}..${to} of ${size}`;
+    let inline = true;
+    content.forEach((child) => {
+      inline &&= child.isText;
+    });
+    if (!inline) return "spliced content must be text";
+    cursor = to;
   }
-  for (const replacement of [...replacements].reverse()) {
-    const { from, to } = replacement.span;
+  for (const { from, to } of op.formats)
+    if (from < 0 || to <= from || to > size)
+      return `invalid format range ${from}..${to} of ${size}`;
+  return undefined;
+}
+
+function isXmlText(child: unknown): child is Y.XmlText {
+  return child instanceof Y.XmlText;
+}
+
+function applyTextOp(leaf: Y.XmlElement, op: Extract<EditOp, { kind: "text" }>): void {
+  if (leaf.length === 0) leaf.insert(0, [new Y.XmlText()]);
+  const text = leaf.get(0) as Y.XmlText;
+  // Formats don't move offsets, so they go first.
+  for (const { from, to, mark, attrs } of op.formats)
+    text.format(from, to - from, { [mark]: attrs });
+  // Right to left, so earlier offsets stay where they were planned. Each splice deletes, then
+  // inserts after its deleted units, as the editor's binding places a replacement.
+  for (const { from, to, content } of [...op.splices].reverse()) {
     if (to > from) text.delete(from, to - from);
     let offset = from;
-    replacement.content.forEach((node) => {
-      if (!node.isText) throw new Error("Exact text replacement requires text nodes");
+    content.forEach((node) => {
       const attributes = Object.fromEntries(node.marks.map((mark) => [mark.type.name, mark.attrs]));
       text.insert(offset, node.text ?? "", attributes);
       offset += node.text?.length ?? 0;
     });
   }
-  return { ok: true };
-}
-
-function canReplaceInline(block: PMNode): boolean {
-  return block.isTextblock && block.type.name !== "code_block";
-}
-
-function hasFlatInlineContent(block: PMNode): boolean {
-  return block.content.size === block.textContent.length;
-}
-
-function blockTypeMismatch(
-  actual: string,
-  expected: string,
-): { ok: false; code: "not_found"; message: string; details: Record<string, unknown> } {
-  return {
-    ok: false,
-    code: "not_found",
-    message: `Block type changed from ${actual} to ${expected}; re-read before writing`,
-    details: { actual, expected },
-  };
 }
 
 export function insertBlocks(
@@ -370,33 +387,65 @@ function collectVisibleContentLineage(block: Y.XmlElement): ContentLineage[] {
   return lineage;
 }
 
+/** The element at `path` under `block`, or undefined when the path leaves the elements. */
+function findNode(block: Y.XmlElement, path: readonly number[]): Y.XmlElement | undefined {
+  let node = block;
+  for (const index of path) {
+    const child = node.get(index);
+    if (!(child instanceof Y.XmlElement)) return undefined;
+    node = child;
+  }
+  return node;
+}
+
+function nodeAt(block: Y.XmlElement, path: readonly number[]): Y.XmlElement {
+  const node = findNode(block, path);
+  if (!node) throw new Error(`Path ${path.join("/")} does not address an element`);
+  return node;
+}
+
+/** Whether `current` holds the item deleted, or an item above it; one it keeps none for counts too. */
+function deletedInRoom(item: Y.Item | null, current: Y.Doc): boolean {
+  for (let at = item; at; at = (at.parent as Y.AbstractType<unknown>)._item) {
+    const live = findItem(current, at.id);
+    if (!live || live.deleted) return true;
+  }
+  return false;
+}
+
 /**
- * The flat text block's character runs whose items `current` holds deleted, in document
- * order. A clock `current` keeps no item for was collected, so it counts as deleted too.
+ * The textblock's units that `current` has deleted, in order. A unit is a text character or
+ * an inline atom. A clock `current` keeps no item for was collected, so it counts as deleted.
  */
-function removedUnits(block: Y.XmlElement, current: Y.Doc): Span[] {
+function roomTextblock(leaf: Y.XmlElement, current: Y.Doc): Span[] {
   const runs: Span[] = [];
+  const remove = (from: number, to: number) => {
+    const last = runs.at(-1);
+    if (last && last.to === from) last.to = to;
+    else runs.push({ from, to });
+  };
   let offset = 0;
-  for (const text of block.toArray()) {
-    if (!(text instanceof Y.XmlText)) continue;
-    const textItem = text._item && findItem(current, text._item.id);
-    if (!textItem || textItem.deleted) {
-      runs.push({ from: offset, to: offset + text.length });
-      offset += text.length;
+  for (const child of leaf.toArray()) {
+    if (!(child instanceof Y.XmlText)) {
+      if (deletedInRoom(child._item, current)) remove(offset, offset + 1);
+      offset += 1;
       continue;
     }
-    for (let item = text._start; item; item = item.right) {
+    if (deletedInRoom(child._item, current)) {
+      if (child.length > 0) remove(offset, offset + child.length);
+      offset += child.length;
+      continue;
+    }
+    for (let item = child._start; item; item = item.right) {
       if (item.deleted || !item.countable) continue;
       const { client, clock } = item.id;
       let cursor = clock;
       for (const live of itemsInRange(current, { client, clock, len: item.length })) {
         if (live.item.deleted) continue;
-        if (live.clock > cursor)
-          runs.push({ from: offset + cursor - clock, to: offset + live.clock - clock });
+        if (live.clock > cursor) remove(offset + cursor - clock, offset + live.clock - clock);
         cursor = live.clock + live.len;
       }
-      if (cursor < clock + item.length)
-        runs.push({ from: offset + cursor - clock, to: offset + item.length });
+      if (cursor < clock + item.length) remove(offset + cursor - clock, offset + item.length);
       offset += item.length;
     }
   }

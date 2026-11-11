@@ -242,10 +242,16 @@ function textEdit(
   return {
     documentId: "doc-1",
     file: "chapter.md",
-    kind: "textRanges",
+    kind: "ops",
     block: toRef(element),
-    replacements: [{ span, content: inlineText(newText) }],
-    output: newText,
+    ops: [
+      {
+        kind: "text",
+        path: [],
+        splices: [{ from: span.start, to: span.end, content: inlineText(newText) }],
+        formats: [],
+      },
+    ],
   };
 }
 function remoteTextUpdate(

@@ -1,22 +1,15 @@
-import type { Fragment } from "prosemirror-model";
 import type { Block } from "../codec-types.js";
 import type { BlockRef } from "../handles.js";
+import type { EditOp } from "../ports/model.js";
 
-export interface ResolvedSpan {
-  start: number;
-  end: number;
-}
-
-/** Inline nodes that replace one plain-text span of a block. */
-export interface ResolvedInlineReplacement {
-  span: ResolvedSpan;
-  /** Inline content applied as given; its text is the replacement's semantic payload. */
-  content: Fragment;
-}
-
-/** The replacement's plain text, derived from its nodes for semantic IR and output. */
-export function inlineReplacementText(replacement: ResolvedInlineReplacement): string {
-  return replacement.content.textBetween(0, replacement.content.size, "");
+/** The text an `ops` edit puts in, in order: its output for the semantic IR. */
+export function opsOutput(ops: readonly EditOp[]): string {
+  let output = "";
+  for (const op of ops)
+    if (op.kind === "text")
+      for (const splice of op.splices)
+        output += splice.content.textBetween(0, splice.content.size, "");
+  return output;
 }
 
 /**
@@ -30,11 +23,10 @@ export type ResolvedEdit = {
   structuralBoundary?: object;
 } & (
   | {
-      kind: "textRanges";
+      /** The smallest changes to one block's text, formatting and attributes. */
+      kind: "ops";
       block: BlockRef;
-      replacements: Array<ResolvedInlineReplacement>;
-      /** Semantic projection of the exact replacement window; never used to drive mutation. */
-      output: string;
+      ops: readonly EditOp[];
     }
   | {
       kind: "insert";

@@ -5,8 +5,7 @@
  */
 
 import type { SemanticEditIRV1, SemanticOutputRun } from "@meridian/agent-edit/integration";
-import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
-import { Fragment } from "prosemirror-model";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
@@ -17,13 +16,6 @@ import {
   PROVENANCE_TARGETS_TYPE,
   ProvenanceMaterializationError,
 } from "./provenance.js";
-
-const schema = buildDocumentSchema();
-
-/** Plain inline content standing in for a resolved text replacement. */
-function inlineText(text: string): Fragment {
-  return text.length === 0 ? Fragment.empty : Fragment.from(schema.text(text));
-}
 
 const _authorityId = "00000000-0000-4000-8000-000000000100" as DocumentAuthorityId;
 
@@ -51,7 +43,7 @@ describe("provenance materialization", () => {
 
     createSemanticProvenanceWriter().writeCertifiedFacts(
       doc as never,
-      mappedTextIr(proseBlock(doc), source, "kit and cat", [
+      mappedTextIr(proseBlock(doc), source, [
         { kind: "fresh", payload: "kit", output: { from: 0, to: 3 } },
         {
           kind: "preserved",
@@ -95,7 +87,7 @@ describe("provenance materialization", () => {
 
     createSemanticProvenanceWriter().writeCertifiedFacts(
       doc as never,
-      mappedTextIr(proseBlock(doc), source, "catkit", [
+      mappedTextIr(proseBlock(doc), source, [
         { kind: "fresh", payload: "kit", output: { from: 3, to: 6 } },
         { kind: "restoration", root: source, payload: "cat", output: { from: 0, to: 3 } },
       ]),
@@ -127,112 +119,12 @@ describe("provenance materialization", () => {
     expect(() =>
       createSemanticProvenanceWriter().writeCertifiedFacts(
         doc as never,
-        mappedTextIr(proseBlock(doc), source, "XY", [
+        mappedTextIr(proseBlock(doc), source, [
           { kind: "restoration", root: source, payload: "XY", output: { from: 0, to: 2 } },
         ]),
         before,
       ),
     ).toThrow(/length-for-length/);
-  });
-
-  it("locates grouped same-block edits by their final output spans", () => {
-    const doc = proseDoc("one two");
-    const source = textRange(doc);
-    const firstRoot = { ...source, length: 3 };
-    const secondRoot = { ...source, clock: source.clock + 4, length: 3 };
-    const block = proseBlock(doc);
-    const text = proseText(doc);
-    const before = Y.encodeStateVector(doc);
-    text.delete(4, 3);
-    text.insert(4, "TWO");
-    text.delete(0, 3);
-    text.insert(0, "ONE!");
-
-    createSemanticProvenanceWriter().writeCertifiedFacts(
-      doc as never,
-      {
-        version: 1,
-        documentId: "document",
-        inputRevision: "revision" as never,
-        scope: [firstRoot, secondRoot],
-        deleted: [firstRoot, secondRoot],
-        intent: {
-          kind: "mappedEdits",
-          edits: [
-            {
-              edit: {
-                kind: "textRanges",
-                documentId: "document",
-                file: "document.md",
-                block: block as never,
-                replacements: [{ span: { start: 0, end: 3 }, content: inlineText("ONE!") }],
-                output: "ONE!",
-              },
-              outputRuns: [
-                {
-                  kind: "restoration",
-                  root: firstRoot,
-                  payload: "ONE",
-                  output: { from: 0, to: 3 },
-                },
-                { kind: "fresh", payload: "!", output: { from: 3, to: 4 } },
-              ],
-            },
-            restorationTextEdit(block, secondRoot, 4, "TWO"),
-          ],
-        },
-      },
-      before,
-    );
-
-    const visible = materializeCandidateProvenance(doc, [
-      { target: firstRoot, root: firstRoot, birthClass: "writer_protected" },
-      { target: secondRoot, root: secondRoot, birthClass: "writer_protected" },
-    ]);
-    expect(visible[0]).toMatchObject({ root: firstRoot, birthClass: "writer_protected" });
-    expect(visible.at(-1)).toMatchObject({
-      root: secondRoot,
-      birthClass: "writer_protected",
-    });
-  });
-
-  it("locates equal-anchor insertions in their stable application order", () => {
-    const doc = proseDoc("abbase");
-    const source = textRange(doc);
-    const firstRoot = { ...source, length: 1 };
-    const secondRoot = { ...source, clock: source.clock + 1, length: 1 };
-    const block = proseBlock(doc);
-    const text = proseText(doc);
-    const before = Y.encodeStateVector(doc);
-    text.delete(0, 2);
-    text.insert(0, "A");
-    text.insert(0, "B");
-
-    createSemanticProvenanceWriter().writeCertifiedFacts(
-      doc as never,
-      {
-        version: 1,
-        documentId: "document",
-        inputRevision: "revision" as never,
-        scope: [firstRoot, secondRoot],
-        deleted: [firstRoot, secondRoot],
-        intent: {
-          kind: "mappedEdits",
-          edits: [
-            restorationInsertion(block, firstRoot, "A"),
-            restorationInsertion(block, secondRoot, "B"),
-          ],
-        },
-      },
-      before,
-    );
-
-    const visible = materializeCandidateProvenance(doc, [
-      { target: firstRoot, root: firstRoot, birthClass: "writer_protected" },
-      { target: secondRoot, root: secondRoot, birthClass: "writer_protected" },
-    ]);
-    expect(visible[0]).toMatchObject({ root: secondRoot, birthClass: "writer_protected" });
-    expect(visible[1]).toMatchObject({ root: firstRoot, birthClass: "writer_protected" });
   });
 
   it("locates a certified structural carry from its replaced input block", () => {
@@ -386,61 +278,9 @@ function structuralCarryIr(
   };
 }
 
-function restorationTextEdit(
-  block: Y.XmlElement,
-  root: { clientID: number; clock: number; length: number },
-  start: number,
-  payload: string,
-) {
-  return {
-    edit: {
-      kind: "textRanges" as const,
-      documentId: "document",
-      file: "document.md",
-      block: block as never,
-      replacements: [{ span: { start, end: start + root.length }, content: inlineText(payload) }],
-      output: payload,
-    },
-    outputRuns: [
-      {
-        kind: "restoration" as const,
-        root,
-        payload,
-        output: { from: 0, to: payload.length },
-      },
-    ],
-  };
-}
-
-function restorationInsertion(
-  block: Y.XmlElement,
-  root: { clientID: number; clock: number; length: number },
-  payload: string,
-) {
-  return {
-    edit: {
-      kind: "textRanges" as const,
-      documentId: "document",
-      file: "document.md",
-      block: block as never,
-      replacements: [{ span: { start: 0, end: 0 }, content: inlineText(payload) }],
-      output: payload,
-    },
-    outputRuns: [
-      {
-        kind: "restoration" as const,
-        root,
-        payload,
-        output: { from: 0, to: payload.length },
-      },
-    ],
-  };
-}
-
 function mappedTextIr(
   block: Y.XmlElement,
   source: { clientID: number; clock: number; length: number },
-  output: string,
   outputRuns: SemanticOutputRun[],
 ): SemanticEditIRV1 {
   return {
@@ -454,12 +294,11 @@ function mappedTextIr(
       edits: [
         {
           edit: {
-            kind: "textRanges",
+            kind: "block",
             documentId: "document",
             file: "document.md",
             block: block as never,
-            replacements: [{ span: { start: 0, end: source.length }, content: inlineText(output) }],
-            output: output,
+            replacement: {} as never,
           },
           outputRuns,
         },
@@ -493,14 +332,11 @@ function appendCertifiedCarry(
         edits: [
           {
             edit: {
-              kind: "textRanges",
+              kind: "block",
               documentId: "document",
               file: "document.md",
               block: paragraph as never,
-              replacements: [
-                { span: { start: 0, end: source.length }, content: inlineText(value) },
-              ],
-              output: value,
+              replacement: {} as never,
             },
             outputRuns: [{ kind: "preserved", source, output: { from: 0, to: value.length } }],
           },
