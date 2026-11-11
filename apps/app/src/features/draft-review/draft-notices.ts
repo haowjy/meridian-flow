@@ -178,6 +178,13 @@ export class DraftNotices {
     }
   }
 
+  /** The writer left the project: its notices end, and the rooms their Undo held go. */
+  endProject(projectId: string) {
+    const leaving = [...this.notices.values()].filter((notice) => notice.projectId === projectId);
+    for (const notice of leaving) this.drop(notice);
+    if (leaving.length) this.publish();
+  }
+
   close() {
     this.closed = true;
     for (const notice of [...this.notices.values()]) this.drop(notice);
