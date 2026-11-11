@@ -63,7 +63,7 @@ export function AgentPickerPanel({
               <Trans>No agents available.</Trans>
             </PickerLine>
           ) : (
-            // biome-ignore lint/a11y/noStaticElementInteractions: only notes that the writer has moved through the list.
+            // biome-ignore lint/a11y/noStaticElementInteractions: only notes that the writer has moved through the list. slop-lint: allow suppression the reason is stated in this comment
             <div onPointerMove={engage} onKeyDown={engage}>
               <PickerSection>
                 {agents.map((agent) => {
