@@ -61,6 +61,47 @@ type PersistedSurfacePrefsBlob = {
   documentPrefs?: Partial<DocumentPrefs> | null;
 };
 
+type Saved = Record<string, unknown>;
+const record = (value: unknown): Saved =>
+  value && typeof value === "object" ? (value as Saved) : {};
+
+/**
+ * Version 4 (`main`) kept a width and collapsed flag per surface and for the dock slot;
+ * version 5 kept open/closed per mode, which maps only where every mode agrees. What
+ * does not map is left out and `merge` fills it with its default.
+ */
+function migrateSurfacePrefs(persisted: unknown, version: number): PersistedSurfacePrefsBlob {
+  const blob = record(persisted);
+  const kept = {
+    railPrefs: record(blob.railPrefs),
+    documentPrefs: record(blob.documentPrefs),
+  };
+  if (version === 4) {
+    const threads = record(record(blob.prefs).threads);
+    const dock = record(record(blob.slotPrefs).dock);
+    const open = (collapsed: unknown) => (typeof collapsed === "boolean" ? !collapsed : undefined);
+    return {
+      ...kept,
+      widths: { "rail-l": threads.width as number, dock: dock.width as number },
+      panels: { sidebarOpen: open(threads.collapsed), sideOpen: open(dock.collapsed) },
+    };
+  }
+  if (version === 5) {
+    const modes = Object.values(record(blob.modes)).map(record);
+    const agreed = (key: string) => {
+      const values = new Set(modes.map((mode) => mode[key]));
+      const [only] = values;
+      return values.size === 1 && typeof only === "boolean" ? only : undefined;
+    };
+    return {
+      ...kept,
+      widths: record(blob.widths),
+      panels: { sidebarOpen: agreed("railOpen"), sideOpen: agreed("dockOpen") },
+    };
+  }
+  return {};
+}
+
 /** How an open document's chrome is set; shared across documents on this device. */
 export type DocumentPrefs = { propertiesOpen: boolean };
 export const DEFAULT_DOCUMENT_PREFS: DocumentPrefs = { propertiesOpen: false };
@@ -159,8 +200,7 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
       {
         name: "meridian:project-surface-layout",
         version: 6,
-        // Version 5 kept open/closed per mode; nothing of it carries over.
-        migrate: () => ({}),
+        migrate: migrateSurfacePrefs,
         storage: createJSONStorage(() => ({
           getItem: (key) => {
             try {
