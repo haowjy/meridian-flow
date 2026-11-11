@@ -1,14 +1,7 @@
 /**
- * Pane-band doors between a destination's index and its current item.
- *
- * - `IndexTabChip` — an icon-only door to the index (All chats, All Work),
- *   right after the sidebar toggle. Active when the index is the page below
- *   (the page rises into it); otherwise an inactive tab.
- * - `ReturnTabChip` — on the index, the remembered item (the current chat, the
- *   last opened Work) as an inactive tab: the way back, like an open document
- *   tab beside Recents.
+ * An icon-only door in a pane's band to a landing (Recently opened), right after the sidebar
+ * toggle. Active when the landing is the page below (the page rises into it).
  */
-import { t } from "@lingui/core/macro";
 import type { LucideIcon } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -43,18 +36,5 @@ export function IndexTabChip({
         {label}
       </TooltipContent>
     </Tooltip>
-  );
-}
-
-export function ReturnTabChip({ title, onClick }: { title: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={t`Back to ${title}`}
-      className={cn("focus-ring min-w-0 max-w-64", tabChipClass(false))}
-    >
-      <span className="truncate px-1 text-sm font-medium">{title}</span>
-    </button>
   );
 }

@@ -26,10 +26,7 @@ import { useCreationComposer } from "./useCreationComposer";
 export function CreationComposer({
   projectId,
   about = null,
-  variant = "pinned",
-  autoFocus = false,
   newChatFocusRequestId = null,
-  newChatWorkId,
   onNewChatFocusHandled,
   onAboutChange,
 }: {
@@ -38,35 +35,24 @@ export function CreationComposer({
   about?: string | null;
   /** What the new chat is about as its draft stands, for the side's name. */
   onAboutChange?: (about: NewChatAbout) => void;
-  /** `hero` — the chat index's centered composer; `pinned` — the empty chat's footer. */
-  variant?: "pinned" | "hero";
-  autoFocus?: boolean;
   /**
    * A one-shot New chat focus intent for the pinned composer, supplied by the
    * host (project routing owns the request; this composer stays unaware of
    * project routing beyond this prop).
    */
   newChatFocusRequestId?: number | null;
-  /** Explicit Work scope carried by a context-specific New chat action. */
-  newChatWorkId?: string;
   onNewChatFocusHandled?: (id: number) => void;
 }) {
   const creation = useCreationComposer(projectId);
   const composerRef = useRef<ComposerHandle>(null);
-  // An explicit New chat focuses the empty composer showing it. The hero is
-  // not New chat's target: it focuses at mount where a keyboard is likely.
-  // The frame lets a just-revealed side drop `inert` first. A composer that
+  // An explicit New chat focuses the empty composer showing it. The frame lets a just-revealed side drop `inert` first. A composer that
   // mounts fresh already sees the request id in this same render, so mount
   // timing never races the host publishing it.
   useEffect(() => {
-    if (variant === "hero" || newChatFocusRequestId == null) return;
+    if (newChatFocusRequestId == null) return;
     requestAnimationFrame(() => composerRef.current?.focus());
     onNewChatFocusHandled?.(newChatFocusRequestId);
-  }, [newChatFocusRequestId, variant, onNewChatFocusHandled]);
-  useEffect(() => {
-    if (newChatFocusRequestId == null || newChatWorkId === undefined) return;
-    creation.updateChoices({ workId: newChatWorkId });
-  }, [creation.updateChoices, newChatFocusRequestId, newChatWorkId]);
+  }, [newChatFocusRequestId, onNewChatFocusHandled]);
   const works = useWorks(projectId);
   const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;
@@ -151,8 +137,7 @@ export function CreationComposer({
         key={creation.draft.key}
         initialDraft={creation.draft.initialDraft}
         ref={composerRef}
-        variant={variant}
-        autoFocus={autoFocus}
+        autoFocus={false}
         onSubmit={async (envelope) =>
           Boolean(choicesReady && context && creation.submit(envelope, context))
         }

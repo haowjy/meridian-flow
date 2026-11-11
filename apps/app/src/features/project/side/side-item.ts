@@ -48,7 +48,7 @@ export type MainForSide =
   | { kind: "document"; documentId: string }
   | { kind: "chat"; chatId: string }
   /** The new-chat composer: main is a chat with none yet. */
-  | { kind: "chat-index" }
+  | { kind: "new-chat" }
   /** Recently opened: main names no document. */
   | { kind: "landing" }
   /** The address names a document that is still resolving. */
@@ -99,7 +99,7 @@ export function mainItem(main: MainForSide): Item | null {
       : null;
 }
 
-const mainIsChat = (main: MainForSide) => main.kind === "chat" || main.kind === "chat-index";
+const mainIsChat = (main: MainForSide) => main.kind === "chat" || main.kind === "new-chat";
 
 /** The held pick as the side shows it: a new chat's composer is about main's document. */
 function heldItem(held: HeldPick, main: MainForSide): Item {

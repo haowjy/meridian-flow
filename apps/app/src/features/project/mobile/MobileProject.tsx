@@ -8,7 +8,6 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { ChatSurface } from "../chat/ChatSurface";
-import { ChatIndex } from "../chat-index/ChatIndex";
 import { DocumentHost, MainDocumentStatus } from "../context/DocumentHost";
 import { RecentDocumentsLanding } from "../context/RecentDocumentsLanding";
 import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice";
@@ -189,13 +188,11 @@ function PhoneSideTitle({ projectId, name }: { projectId: string; name: string }
 
 function renderActiveView(props: MobileProjectProps) {
   if (props.chatDisplay) {
-    if (props.chatDisplay.kind === "index")
-      return <ChatIndex projectId={props.projectId} namedByChrome />;
     return (
       <WorkBranchCommandsBoundary value={props.chatCommands}>
         <MobileChatHost
           projectId={props.projectId}
-          threadId={props.chatDisplay.threadId}
+          threadId={props.chatDisplay.kind === "thread" ? props.chatDisplay.threadId : null}
           activeWork={props.chatWork}
           availableWorks={props.availableWorks}
           onOpenContextTarget={props.onOpenContextTarget}

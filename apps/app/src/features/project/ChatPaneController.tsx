@@ -11,9 +11,6 @@ import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
-import { ChatIndexChip } from "./chat-index/ChatIndexButton";
-import { useChatNavigation } from "./routing/chat-navigation";
-
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ChatPaneControllerProps = {
@@ -32,14 +29,12 @@ export function ChatPaneController({
   contextToggle,
   closedSide,
 }: ChatPaneControllerProps) {
-  const { openChatIndex } = useChatNavigation();
   const activity = useThreadActivity({
     threadId: threadId ?? "",
     seed: null,
   });
   return (
     <PaneHeader
-      leading={<ChatIndexChip active={false} onClick={() => void openChatIndex()} />}
       title={
         <ChatThreadTitle
           projectId={projectId}

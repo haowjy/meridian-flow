@@ -13,7 +13,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import type { ContextTab } from "@/client/stores";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
-import { ChatIndexController } from "./ChatIndexController";
 import { ChatPaneController } from "./ChatPaneController";
 import { ChatSurface } from "./chat/ChatSurface";
 import { useAccountId, useShownDocuments } from "./context/account-feature-context";
@@ -163,8 +162,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const sideChat = side.item?.kind === "chat" ? side.item : null;
   const chatThread = useHostChatId();
   const chatOnScreen = useChatOnScreen();
-  const chatIndexShowing = mainChat?.kind === "index";
-  const chatInMain = mainChat?.kind === "thread";
+  const chatInMain = mainChat !== null;
   const chatHost: SlotGridHost = {
     key: "chat",
     slot: chatInMain ? "center" : sideChat && sideOpen ? "dock" : null,
@@ -242,19 +240,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     ...documentHosts,
     chatHost,
   ];
-  if (chatIndexShowing)
-    hosts.push({
-      key: "chat-index",
-      slot: "center",
-      children: (
-        <ChatIndexController
-          projectId={projectId}
-          sidebarToggle={sidebarToggle}
-          contextToggle={sideToggle}
-        />
-      ),
-    });
-  else if (!mainChat && !mainTab)
+  if (!mainChat && !mainTab)
     hosts.push({
       key: "main",
       slot: "center",

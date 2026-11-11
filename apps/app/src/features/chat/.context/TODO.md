@@ -34,8 +34,8 @@ rows, and delete the whole-project list. Consumers are listed in the issue.
 
 A chat's Favorite reaches the screen three ways: projected onto each fetched
 feed page, rewritten into cached pages by `syncChatFeeds` after every command
-step, and read again per row by `useProjectChatUserState`. The cached copy exists
-only for the Favorites filter. Keep feed caches as server truth, hold Favorite
+step, and projected again by the sidebar's Chats list onto its scoped rows. The
+cached copy exists only for the Favorites filter. Keep feed caches as server truth, hold Favorite
 records in one per-project map, and apply it at read time for rows and filter
 alike.
 

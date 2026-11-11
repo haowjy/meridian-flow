@@ -92,7 +92,7 @@ after a server commit.
 1. Open a seeded chat. Type prose and select an `@` reference. Reload before the
    250 ms debounce; both return. Open the chat in the Editor, type another draft,
    reload, and repeat on a phone viewport.
-2. On All chats, type into the new-chat composer and insert a reference. Reload;
+2. On `/chats` (a new chat in main), type into its composer and insert a reference. Reload;
    the project draft returns. Changing the prospective Work does not strand it.
 3. Send a draft, reload while admission is pending and after acknowledgement;
    the journal/transcript owns the message and no duplicate composer draft returns.

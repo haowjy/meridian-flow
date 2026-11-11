@@ -112,7 +112,7 @@ function useCompanion(
           ? [{ item: { kind: "chat", chatId: lastChatId }, reason: "last-chat" }]
           : [],
       };
-    case "chat-index":
+    case "new-chat":
       return { status: "ready", candidates: lastDocuments };
     case "document": {
       if (mainIsLocal) return { status: "ready", candidates: [] };
@@ -316,11 +316,11 @@ export function SideViewProvider({
 
   const mainChat = main.kind === "chat" ? main.chatId : null;
   const sideChat = side.item?.kind === "chat" ? side.item : null;
-  const chatOnScreen = mainChat ?? (main.kind === "chat-index" ? null : (sideChat?.chatId ?? null));
+  const chatOnScreen = mainChat ?? (main.kind === "new-chat" ? null : (sideChat?.chatId ?? null));
   // The thread the one chat host renders. It keeps the last chat it showed while no chat is on
   // screen, so a stream and the transcript stay warm behind a picked document.
   const showing: string | null | undefined =
-    mainChat ?? (main.kind === "chat-index" ? lastChatId : sideChat ? sideChat.chatId : undefined);
+    mainChat ?? (main.kind === "new-chat" ? null : sideChat ? sideChat.chatId : undefined);
   const [hostChatId, setHostChatId] = useState<string | null>(showing ?? lastChatId);
   if (showing !== undefined && showing !== hostChatId) setHostChatId(showing);
 
