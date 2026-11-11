@@ -83,7 +83,7 @@ export function writeHeldPick(accountId: string, projectId: string, held: HeldPi
   notify(accountId, projectId);
 }
 
-/** The last chat opened in main: where the bare address lands, and the chat index's reopen chip. */
+/** The last chat opened in main: where the bare address lands. */
 export function readLastChat(accountId: string, projectId: string): string | null {
   return readRememberedId("chat", accountId, projectId);
 }

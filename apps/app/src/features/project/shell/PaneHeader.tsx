@@ -35,8 +35,8 @@ export type PaneHeaderProps = {
   /** Right-aligned actions (e.g. share), before the right toggle. */
   actions?: ReactNode;
   /**
-   * Full-height chip right after the left toggle (the chat index door). Placed
-   * on the same x as the Editor's Recently opened chip in both sidebar states.
+   * Full-height chip right after the left toggle (main's Recently opened door), at the same x
+   * in both sidebar states.
    */
   leading?: ReactNode;
   /** A failed command's row; placement follows the pane's width. */

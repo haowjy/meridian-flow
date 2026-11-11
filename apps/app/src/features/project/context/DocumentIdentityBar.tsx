@@ -11,7 +11,7 @@ import { projectResourceNeedsRepair } from "@meridian/resource-replica";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
@@ -38,7 +38,7 @@ import { useRepairOnFreshFailure } from "./use-repair-on-fresh-failure";
 export type DocumentIdentityBarProps = {
   projectId: string;
   editorWorkId: string | null;
-  tab: ContextTab;
+  tab: OpenDocument;
   /** The document can't be renamed or moved (its Work is archived). */
   readOnly?: boolean;
   onCloseDraftOnly?: () => void;
@@ -238,7 +238,7 @@ function IdentityChipSlot({
   onChooseHome,
 }: {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   show: boolean;
   onChooseHome: () => void;
 }) {
@@ -255,7 +255,7 @@ function IdentityChipSlot({
 const DEVICE_ONLY_GRACE_MS = 2_000;
 
 /** Device-only with a 2s sustained grace: the warning only claims the slot once unsynced words have persisted for 2 seconds, so a normal quick materialization never flashes warning.... */
-function useDeviceOnly(projectId: string, tab: ContextTab): boolean {
+function useDeviceOnly(projectId: string, tab: OpenDocument): boolean {
   const { records } = useAccountResourceProjection(projectId);
   const resource = records.find(({ resource }) =>
     tab.kind === "new"

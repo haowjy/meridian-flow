@@ -54,7 +54,6 @@ function ChatsList({
       // The drawer closes once the navigation commits: a rejected one leaves it open.
       onOpenChat={(threadId) => void chat.openChat(threadId).then(() => onPicked?.())}
       onNewChat={() => void chat.openNewChat().then(() => onPicked?.())}
-      onShowAllChats={() => void chat.openChatIndex().then(() => onPicked?.())}
       onShowWork={onShowWork}
       // Renders nothing while no chat is open.
       footer={

@@ -13,7 +13,7 @@ import { Trans } from "@lingui/react/macro";
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
@@ -32,15 +32,15 @@ import {
   useContextRemovalCoordinator,
   useOptionalPresentedDocuments,
 } from "./account-feature-context";
-import { ContextDocumentHost, type EditableContextTab } from "./ContextDocumentHost";
+import { ContextDocumentHost, type EditableOpenDocument } from "./ContextDocumentHost";
 import { ContextViewerHost } from "./ContextViewerHost";
 import { selectionAtRoute } from "./context-removal-protocol";
 import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
-import { projectResourceTab } from "./context-tab-from-file";
 import { DocumentFreezeNotice } from "./DocumentFreezeNotice";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { PHONE_DOCUMENT_PRESENTATION } from "./document-presentation";
+import { projectResourceTab } from "./open-document-from-file";
 import type { MountedPlace } from "./presented-documents";
 import { recentOpening } from "./recent-opening";
 import { useContextRemovalProject } from "./use-context-removal-project";
@@ -60,14 +60,14 @@ export type DocumentPlace = MountedPlace;
 
 export type DocumentHostProps = {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   place: DocumentPlace;
   /** Whether the host's slot is on screen: main always, the side while it is open. */
   visible: boolean;
   /** Main's address answer; set only while the host is main's. */
   main?: MainDocument;
   presentation: "desktop" | "phone";
-  /** The desktop's band above the page: main's header or the side's. */
+  /** The band above the page: main's header or the side's. On the phone only the sheet has one. */
   header?: ReactNode;
   editorWorkId: string | null;
   /**
@@ -90,7 +90,16 @@ export function DocumentHost(props: DocumentHostProps) {
         <MainDocumentBinding projectId={projectId} tab={tab} main={props.main} />
       ) : null}
       {props.presentation === "phone" ? (
-        <PhoneDocumentFrame projectId={projectId} tab={tab} local={props.main?.local === true} />
+        place === "main" ? (
+          <PhoneDocumentFrame projectId={projectId} tab={tab} local={props.main?.local === true} />
+        ) : (
+          <div className="flex h-full min-h-0 flex-col">
+            {props.header}
+            <div className="min-h-0 flex-1">
+              <PhoneDocumentFrame projectId={projectId} tab={tab} local={false} />
+            </div>
+          </div>
+        )
       ) : (
         <DesktopDocumentFrame {...props} tab={tab} onScreen={onScreen} />
       )}
@@ -102,7 +111,7 @@ export function DocumentHost(props: DocumentHostProps) {
  * Off main, a host follows its document through a rename or a move by the replica's
  * placement; main's host gets the same from its address, which follows the document.
  */
-function useCurrentDescriptor(projectId: string, tab: ContextTab, main: boolean): ContextTab {
+function useCurrentDescriptor(projectId: string, tab: OpenDocument, main: boolean): OpenDocument {
   const { records, placement } = useAccountResourceProjection(projectId);
   const isDraftOnly = useIsDraftOnly(projectId);
   if (main) return tab;
@@ -111,7 +120,7 @@ function useCurrentDescriptor(projectId: string, tab: ContextTab, main: boolean)
 }
 
 /** Main's and the side's documents are what removals, notices and availability act on. */
-function useMountDocument(projectId: string, tab: ContextTab, place: DocumentPlace) {
+function useMountDocument(projectId: string, tab: OpenDocument, place: DocumentPlace) {
   const presented = useOptionalPresentedDocuments();
   const [token] = useState(() => crypto.randomUUID());
   useLayoutEffect(() => {
@@ -130,7 +139,7 @@ function MainDocumentBinding({
   main,
 }: {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   main: MainDocument;
 }) {
   const contextRemoval = useContextRemovalCoordinator();
@@ -293,7 +302,7 @@ function EditableDocument({
   editorClassName,
 }: {
   projectId: string;
-  tab: EditableContextTab;
+  tab: EditableOpenDocument;
   active: boolean;
   editorClassName?: string;
 }) {
@@ -318,7 +327,7 @@ function EditableDocument({
  * One freeze source on every shell: an archived Work freezes its own files and its drafts'
  * reviews; a trashed chat freezes its drafts' reviews.
  */
-function useHostFreeze(projectId: string, tab: ContextTab) {
+function useHostFreeze(projectId: string, tab: OpenDocument) {
   const { controller } = useDraftReview();
   const review = controller.inlineReview;
   const reviewing = review?.documentId === tab.documentId && review.shown;
@@ -335,7 +344,7 @@ function DesktopDocumentChrome({
   onFocusReview,
 }: {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   place: DocumentPlace;
   editorWorkId: string | null;
   focusReview?: string | null;
@@ -416,7 +425,7 @@ function PhoneDocumentFrame({
   local,
 }: {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   local: boolean;
 }) {
   const removal = useContextRemovalCoordinator();
@@ -458,7 +467,7 @@ function PhoneEditor({
   children,
 }: {
   projectId: string;
-  tab: EditableContextTab;
+  tab: EditableOpenDocument;
   children?: ReactNode;
 }) {
   const freeze = useHostFreeze(projectId, tab);

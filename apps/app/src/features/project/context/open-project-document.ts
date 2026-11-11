@@ -46,7 +46,7 @@ import {
   projectCatalogFile,
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
-import { type ContextTab, isEditorScheme } from "@/client/stores";
+import { isEditorScheme, type OpenDocument } from "@/client/stores";
 import {
   type BesideHint,
   type OpenContextRoute,
@@ -58,7 +58,7 @@ import {
   useOptionalAccountResourceReplica,
   useOptionalPresentedDocuments,
 } from "./account-feature-context";
-import { contextTabFromFile } from "./context-tab-from-file";
+import { openDocumentFromFile } from "./open-document-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
 export interface LiveDocumentBinding {
@@ -539,7 +539,7 @@ export class ProjectDocumentNavigationAdapter {
     projectId: string,
     documentId: string,
     workId?: string,
-  ): Promise<ContextTab | null> {
+  ): Promise<OpenDocument | null> {
     const identified = await this.identify(projectId, {
       documentId,
       workId,
@@ -551,7 +551,7 @@ export class ProjectDocumentNavigationAdapter {
     const { identity, transfer } = identified;
     if (!isEditorScheme(identity.scheme)) return null;
     this.dependencies.opener.replaceTransfer(documentId, transfer);
-    return contextTabFromFile(
+    return openDocumentFromFile(
       identity.scheme,
       identity.file,
       identity.rootThreadId
@@ -594,7 +594,7 @@ export class ProjectDocumentNavigationAdapter {
     const owner: ContextOwner = input.rootThreadId
       ? { rootThreadId: input.rootThreadId }
       : { workId: input.workId ?? null };
-    const tab = contextTabFromFile(input.scheme, input.file, owner);
+    const tab = openDocumentFromFile(input.scheme, input.file, owner);
     const openRoute = this.dependencies.openRoute;
     if (!openRoute) throw new Error("Opening a project document requires the project route owner");
     this.current = null;
@@ -756,7 +756,7 @@ export function canOpenReference(uri: string): boolean {
 /** Resolves a document's descriptor without opening it (`describe`). */
 export function useDescribeProjectDocument(
   projectId: string,
-): (documentId: string, workId?: string) => Promise<ContextTab | null> {
+): (documentId: string, workId?: string) => Promise<OpenDocument | null> {
   const owner = useContext(ProjectDocumentNavigationContext);
   return useCallback(
     async (documentId, workId) =>

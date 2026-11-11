@@ -5,14 +5,14 @@
  */
 
 export {
-  type ContextTab,
-  isEditorContextTab,
+  isEditorOpenDocument,
   isEditorScheme,
+  type OpenDocument,
   replaceOwner,
-  type ServerContextTab,
+  type ServerOpenDocument,
   type TabOwner,
   tabContextOwner,
-} from "./context-tab";
+} from "./open-document";
 export type { ProjectStoreActions, ProjectStoreState } from "./project-store";
 export {
   loadProjectList,

@@ -27,7 +27,7 @@ import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { fetchCurrentDraftMetadata, useDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { projectWorkBranchFiles } from "@/client/query/work-branch-files";
-import { type ContextTab, isEditorScheme } from "@/client/stores";
+import { isEditorScheme, type OpenDocument } from "@/client/stores";
 import type { WorkingSetHydrationPlan } from "@/client/working-set";
 import { parseContextUri } from "@/lib/context-uri";
 import { originalBrowserSearch } from "@/router-search";
@@ -69,7 +69,6 @@ import {
   type AddressAdmission,
   addressedDocument,
   ProjectAddressDocument,
-  useAddressResultAfterRemoval,
 } from "./ProjectAddressDocument";
 import { besideHintOf, ProjectNavigationProvider } from "./ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
@@ -112,7 +111,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       ? parsed.address
       : {
           projectId: project.id,
-          destination: { kind: "chat-index" },
+          destination: { kind: "new-chat" },
         };
   const destination = address.destination;
   const [navigation, setNavigation] = useState<ReturnType<typeof createProjectNavigation> | null>(
@@ -124,8 +123,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     mainChat:
       destination.kind === "chat"
         ? { kind: "thread", threadId: destination.chatId }
-        : destination.kind === "chat-index"
-          ? { kind: "index" }
+        : destination.kind === "new-chat"
+          ? { kind: "new" }
           : null,
     go: (next, options) => go(toDestination(next), options),
   });
@@ -512,17 +511,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   );
   const documentResult = gated.result;
   const draftOnly = gated.outcome === "ready" ? gated.draftOnly : undefined;
-  // Shown through its draft: the address's own draft row says live lacks the document, or a host
-  // already presents it draft-only. A delete that went back from the draft leaves no host to ask.
-  const shownThroughItsDraft = (documentId: string) =>
-    draftOnly?.documentId === documentId ||
-    (draftOnlyDocuments?.isDraftOnly(projectId, documentId) ?? false);
-  const admissibleResult = useAddressResultAfterRemoval(
-    projectId,
-    documentResult,
-    documentLookup.dataUpdatedAt,
-    shownThroughItsDraft,
-  );
   const routeBinding = addressRouteBinding(
     addressBinding,
     documentResult,
@@ -543,7 +531,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   const reviewItemKey = address.itemKey ?? draftOnly?.draft.itemKey;
   const addressedNow = addressedDocument(
     address,
-    admissibleResult,
+    documentResult,
     reconciledDocumentAddress.localFile,
     draftOnly,
   );
@@ -572,10 +560,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
             closeState.closed)
           ? "loading"
           : "unavailable"
-        : // An answer the removal state outlives says the document is gone, without a re-read.
-          admissibleResult === undefined
-          ? "unavailable"
-          : undefined;
+        : undefined;
   // A review address names its document: when it is unavailable because the
   // document was removed, it says so instead. A plain path names no document
   // once nothing lives there, so it stays "unavailable".
@@ -677,7 +662,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     };
   }
   const contextDestination = useCallback(
-    (target: ContextRouteRequest, preparedTab?: ContextTab, itemKey?: string) =>
+    (target: ContextRouteRequest, preparedTab?: OpenDocument, itemKey?: string) =>
       prepareEditorDestination(
         {
           projectId,
@@ -867,7 +852,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
               entryKey={location.state.__TSR_key ?? ""}
               address={address}
               // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
-              result={admissibleResult}
+              result={documentResult}
               reviewItemKey={reviewItemKey}
               workId={workId}
               navigation={navigation}

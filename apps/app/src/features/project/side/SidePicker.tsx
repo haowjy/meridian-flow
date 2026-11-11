@@ -55,14 +55,11 @@ export function SidePicker({
   projectId,
   name,
   icon,
-  chatsOnly = false,
 }: {
   projectId: string;
-  /** What the side shows now, as its trigger names it. */
-  name: string;
+  /** What the side shows now, as its trigger names it; null while it shows nothing. */
+  name: string | null;
   icon: ReactNode;
-  /** The phone's sheet holds chats only. */
-  chatsOnly?: boolean;
 }) {
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   const [open, setOpen] = useState(false);
@@ -80,13 +77,17 @@ export function SidePicker({
           ref={triggerRef}
           type="button"
           data-side-picker-trigger
-          aria-label={t`Choose what sits beside, now ${name}`}
+          aria-label={
+            name === null ? t`Choose what sits beside` : t`Choose what sits beside, now ${name}`
+          }
           aria-expanded={open}
           aria-haspopup="dialog"
           className={cn("focus-ring min-w-0 text-left", titleChipClass("quiet"))}
         >
           {icon}
-          <span className="min-w-0 truncate text-xs font-medium">{name}</span>
+          <span className="min-w-0 truncate text-xs font-medium">
+            {name ?? t`Choose what sits beside`}
+          </span>
           <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
         </button>
       </PopoverTrigger>
@@ -108,7 +109,6 @@ export function SidePicker({
             query={query}
             onQueryChange={setQuery}
             searchRef={searchRef}
-            chatsOnly={chatsOnly}
             trigger={triggerRef}
             onDone={() => changeOpen(false)}
           />
@@ -123,7 +123,6 @@ function SidePickerLists({
   query,
   onQueryChange,
   searchRef,
-  chatsOnly,
   trigger,
   onDone,
 }: {
@@ -131,7 +130,6 @@ function SidePickerLists({
   query: string;
   onQueryChange: (query: string) => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
-  chatsOnly: boolean;
   trigger: React.RefObject<HTMLButtonElement | null>;
   onDone: () => void;
 }) {
@@ -142,10 +140,9 @@ function SidePickerLists({
   const { pickSide, releaseSide } = useShellCommands(projectId);
   const mainDocumentId = main.kind === "document" ? main.documentId : null;
   const mainChatId = main.kind === "chat" ? main.chatId : null;
-  const offersChats = fitsBeside({ kind: "chat", chatId: null }, main, chatsOnly);
-  const offersDocuments = !chatsOnly;
+  const offersChats = fitsBeside({ kind: "chat", chatId: null }, main);
 
-  const catalogs = useContextCatalogViews(projectId, FIND_SCHEMES, { enabled: offersDocuments });
+  const catalogs = useContextCatalogViews(projectId, FIND_SCHEMES, {});
   const loaded = FIND_SCHEMES.flatMap((scheme) => {
     const catalog = catalogs[scheme].catalog;
     return catalog ? [{ scheme, catalog }] : [];
@@ -153,7 +150,7 @@ function SidePickerLists({
   const nameOf = (documentId: string) => findInCatalogs(loaded, documentId)?.name ?? null;
 
   const related = useDocumentRelated(projectId, mainDocumentId);
-  const chatDocuments = useThreadRecentDocuments(offersDocuments ? mainChatId : null);
+  const chatDocuments = useThreadRecentDocuments(mainChatId);
   const recent = useRecentDocuments(projectId);
   const { threads, isError: threadsFailed } = useProjectThreads(projectId);
   const chats = useMemo(
@@ -169,16 +166,14 @@ function SidePickerLists({
   const keep = (rows: Row[]) => {
     const seen = new Set<string>();
     return rows.filter((row) => {
-      if (seen.has(row.key) || !fitsBeside(row.pick, main, chatsOnly)) return false;
+      if (seen.has(row.key) || !fitsBeside(row.pick, main)) return false;
       seen.add(row.key);
       return true;
     });
   };
   // A chat's documents include its uploads and may name a removed one: only those that open
   // beside are offered.
-  const touched = offersDocuments
-    ? (chatDocuments.documents ?? []).filter((row) => row.kind === "tracked")
-    : [];
+  const touched = (chatDocuments.documents ?? []).filter((row) => row.kind === "tracked");
   const touchedIds = touched.map((row) => row.documentId).join(",");
   const { request } = descriptions;
   useEffect(() => {
@@ -258,32 +253,30 @@ function SidePickerLists({
   const searching = query.trim().length > 0;
   const found: Row[] = searching
     ? keep([
-        ...(offersDocuments
-          ? matchFileSuggestions(
-              loaded.flatMap(({ scheme, catalog }) =>
-                catalog.files().flatMap((file) =>
-                  file.editable
-                    ? [
-                        {
-                          entryId: file.documentId,
-                          scheme,
-                          path: file.path,
-                          name: file.name,
-                          kind: "file" as const,
-                          parents: file.path.split("/").filter(Boolean).slice(0, -1),
-                        },
-                      ]
-                    : [],
-                ),
-              ),
-              query,
-            ).map((file) => ({
-              key: `document:${file.entryId}`,
-              pick: { kind: "document" as const, documentId: file.entryId },
-              name: file.name,
-              meta: file.parents.at(-1),
-            }))
-          : []),
+        ...matchFileSuggestions(
+          loaded.flatMap(({ scheme, catalog }) =>
+            catalog.files().flatMap((file) =>
+              file.editable
+                ? [
+                    {
+                      entryId: file.documentId,
+                      scheme,
+                      path: file.path,
+                      name: file.name,
+                      kind: "file" as const,
+                      parents: file.path.split("/").filter(Boolean).slice(0, -1),
+                    },
+                  ]
+                : [],
+            ),
+          ),
+          query,
+        ).map((file) => ({
+          key: `document:${file.entryId}`,
+          pick: { kind: "document" as const, documentId: file.entryId },
+          name: file.name,
+          meta: file.parents.at(-1),
+        })),
         ...filterThreadsByTitle(chats, query).map((chat) => ({
           key: `chat:${chat.id}`,
           pick: { kind: "chat" as const, chatId: chat.id },
@@ -324,7 +317,7 @@ function SidePickerLists({
           const first = found[0];
           if (first) choose(first.pick);
         }}
-        label={offersDocuments ? t`Find a document or chat` : t`Find a chat`}
+        label={offersChats ? t`Find a document or chat` : t`Find a document`}
       />
       <PickerResults bound="fill">
         {searching ? (
@@ -377,24 +370,22 @@ function SidePickerLists({
                 {forThis.map(row)}
               </PickerSection>
             ) : null}
-            {offersDocuments ? (
-              <PickerSection
-                label={t`Recent documents`}
-                state={
-                  recentDocuments.length === 0 ? (
-                    <PickerLine>
-                      {recent.status === "loading" ? (
-                        <Trans>Loading…</Trans>
-                      ) : (
-                        <Trans>None yet</Trans>
-                      )}
-                    </PickerLine>
-                  ) : undefined
-                }
-              >
-                {recentDocuments.map(row)}
-              </PickerSection>
-            ) : null}
+            <PickerSection
+              label={t`Recent documents`}
+              state={
+                recentDocuments.length === 0 ? (
+                  <PickerLine>
+                    {recent.status === "loading" ? (
+                      <Trans>Loading…</Trans>
+                    ) : (
+                      <Trans>None yet</Trans>
+                    )}
+                  </PickerLine>
+                ) : undefined
+              }
+            >
+              {recentDocuments.map(row)}
+            </PickerSection>
             {offersChats ? (
               <PickerSection
                 label={t`Recent chats`}

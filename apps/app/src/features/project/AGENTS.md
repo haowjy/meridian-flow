@@ -16,7 +16,6 @@ features.
 
 ## Child guides
 
-- [`chat-index/AGENTS.md`](chat-index/AGENTS.md)
 - [`context/AGENTS.md`](context/AGENTS.md)
 - [`mobile/AGENTS.md`](mobile/AGENTS.md)
 

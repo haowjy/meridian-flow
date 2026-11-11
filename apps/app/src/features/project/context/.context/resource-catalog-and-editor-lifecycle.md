@@ -67,7 +67,7 @@ registry ownership. A create conflict remints the document ID while preserving
 the resource handle, persistence database, Y.Doc, editor ancestry,
 cursor, and undo history.
 
-`contextTabFromResource` is the single optimistic descriptor projection. An unnamed
+`openDocumentFromResource` is the single optimistic descriptor projection. An unnamed
 local resource (`materialization.unnamed`) is `new`; an explicitly filed local
 resource immediately becomes a route-owning `tracked` document even while offline;
 acknowledgement keeps it tracked, and from then on the catalog's `provisionalName`
@@ -84,7 +84,7 @@ use exact availability. Accepted navigation commits browser history in one prepa
 Returning to an empty Editor does not restore a closed document.
 
 When the resource boundary returns an exact initialized local session, it also
-returns verified-local readiness through `ContextTabSessionBoundary` and
+returns verified-local readiness through `OpenDocumentSessionBoundary` and
 `ContextDocumentHost`. `EditorView` may bind that content without waiting for
 first server sync. Server-only sessions retain the first-sync horizon, and local
 readiness never claims remote acknowledgement; adoption and transport continue
@@ -108,7 +108,7 @@ A document that loses its resource handle but keeps its document (a review launc
 re-opens it without one) keeps painting its cached session while the exact
 lookup re-probes; the boundary never drops to a skeleton for that identity flip.
 
-`ContextTabSessionBoundary` opens the ordinary live binding once its local
+`OpenDocumentSessionBoundary` opens the ordinary live binding once its local
 session has been probed (`useLiveDocumentBinding`: open, bind, explicit retry).
 It takes a navigation lookup answer only when the answer was armed for its document;
 local content winning discards that answer. It presents the live session in place of the cached one when that
@@ -185,20 +185,19 @@ ineligible document available.
 A removed document empties its view and nothing else moves. Neither the
 planner nor the coordinator picks a neighbouring document or repairs the address: a trash,
 a lost access or a document that was never there leaves the address as written, and
-the route says "unavailable" there. `useAddressResultAfterRemoval` keeps the address
-lookup's stale "available" answer from presenting the document again (the removal would
-close it at once, in a loop) until a read after the removal and the replica's living
-record say it is back, so a restore returns the document at the same address. Trash's
-restore and a restored Work (Undo of a Work delete) invalidate the address lookups to
-supply that read. This guard is temporary: it exists only for that stale "available"
-answer, and phase 10 removes it together with the answer (`DIVERGENCE/companion-shell.md`,
-Phase 8). Its one exemption is a document shown through its draft: the address's own draft
-row says live lacks it, or a host presents it draft-only. A draft held over a document
-deleted live keeps painting, and admission has nothing to install for it. The draft row is
-the evidence, not a host's hold, so a chapter the writer deleted while its draft was under
-review (main went back, no host holds it) opens as the draft.
+the route says "unavailable" there. The address lookup is cached, and an answer from
+before the removal would present the document again (the removal would close it at once, in
+a loop). So when the coordinator commits a removal it rewrites every cached answer naming the
+document to "unavailable" (`AddressAnswersPort`, wired to the query cache in
+`account-feature-lifetime.ts`), and a document becoming available again, Trash's restore and a
+restored Work (Undo of a Work delete) invalidate the lookups, so a restore returns the document
+at the same address. A document a draft still holds (a host presents it draft-only, or a
+pinned draft is bound to it) is left out of the rewrite: a draft held over a document deleted
+live keeps painting, and admission has nothing to install for it. A chapter the writer
+deleted while its draft was under review opens as the draft from its review address, whose
+answer the server gives afresh.
 
-Every editable document keeps `ContextTabSessionBoundary` as the same React ancestor.
+Every editable document keeps `OpenDocumentSessionBoundary` as the same React ancestor.
 Resource-backed documents resolve through their stable resource handle before and after
 acknowledgement, placement, and remint, so metadata changes do not remount the
 editor. Close releases the content lease; a host leaving the screen does not close

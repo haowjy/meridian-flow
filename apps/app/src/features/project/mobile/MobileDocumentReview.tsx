@@ -18,7 +18,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
 import { useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
@@ -44,7 +44,7 @@ export function MobileDocumentReview({
   children,
 }: {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   /** Set for a draft-only document: its review closes the document instead of returning to live. */
   onCloseDraftOnly?: () => void;
   children: ReactNode;
@@ -110,7 +110,7 @@ function LiveDraftEntry({
   notice,
 }: {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   manuscriptState: ManuscriptState | null;
   notice: DraftNotice | null;
 }) {
@@ -141,7 +141,7 @@ function ReviewTop({
   onOpenList,
 }: {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   header: ReviewHeaderModel;
   manuscriptState: ManuscriptState | null;
   notice: DraftNotice | null;

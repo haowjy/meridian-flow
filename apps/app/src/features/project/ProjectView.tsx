@@ -24,7 +24,7 @@ import {
   readAccountRecents,
   subscribeAccountRecents,
 } from "@/client/recents";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import {
   readRecentRoutes,
   retryWorkingSetHydration,
@@ -71,6 +71,7 @@ import type { ProjectRouteIssue, ProjectRouteMask } from "./routing/ProjectRoute
 import type { LocalDocument } from "./routing/project-local-selection";
 import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
+import { ChatDeleteProvider } from "./shell/sidebar/ChatDeleteProvider";
 import { SideViewProvider, useChatOnScreen } from "./side/SideView";
 import type { MainForSide } from "./side/side-item";
 import { useReviewAddressSync } from "./use-review-address-sync";
@@ -80,7 +81,7 @@ import { addressStateOf, type MainView, MainViewProvider, useMainDocument } from
 import { ManageWorksDialogHost, ManageWorksProvider } from "./work/ManageWorksDialog";
 
 function availabilityWatchRecord(
-  value: Pick<Exclude<ContextTab, { kind: "new" }>, "documentId" | "scheme"> & {
+  value: Pick<Exclude<OpenDocument, { kind: "new" }>, "documentId" | "scheme"> & {
     workId?: string | null;
   },
 ): AvailabilityWatchRecord {
@@ -182,7 +183,7 @@ export function ProjectView(props: ProjectViewProps) {
       lease.watch(
         "presented",
         shown
-          .filter((tab): tab is Exclude<ContextTab, { kind: "new" }> => tab.kind !== "new")
+          .filter((tab): tab is Exclude<OpenDocument, { kind: "new" }> => tab.kind !== "new")
           .map(availabilityWatchRecord),
       );
       const selection = removal.getProjectSnapshot(props.projectId).selection;
@@ -299,37 +300,39 @@ export function ProjectView(props: ProjectViewProps) {
   };
   return (
     <DocumentTrashRestoreProvider key={props.projectId} projectId={props.projectId}>
-      <ManageWorksProvider>
-        <RefusalToasts projectId={props.projectId} />
-        <div className="flex h-full min-h-0 w-full bg-background text-foreground">
-          <DocumentTrashDialog projectId={props.projectId} />
-          {hydrated ? (
-            <>
-              {resolvedProps.contextLive && editorScope.status === "ready" ? (
-                <ProjectContextRemovalController
-                  projectId={props.projectId}
-                  activeContextScheme={props.activeContextScheme}
-                  activeContextPath={props.activeContextPath}
-                  activeContextChat={props.activeContextChat}
-                  editorWorkId={editorScope.workId}
-                  activeContextWork={props.activeContextWork}
-                  localDocumentId={props.activeLocalDocumentId}
-                  reviewDocumentId={props.reviewDocumentId}
-                  route={props.contextRemovalRoute}
-                />
-              ) : null}
-              <ImportProvider key={props.projectId} projectId={props.projectId}>
-                <WindowDropGuard />
-                <HydratedReviewProject
-                  {...resolvedProps}
-                  projectTitle={projectTitle}
-                  titleEdit={{ projectId: props.projectId, onSave: renameProject }}
-                />
-              </ImportProvider>
-            </>
-          ) : null}
-        </div>
-      </ManageWorksProvider>
+      <ChatDeleteProvider key={props.projectId} projectId={props.projectId}>
+        <ManageWorksProvider>
+          <RefusalToasts projectId={props.projectId} />
+          <div className="flex h-full min-h-0 w-full bg-background text-foreground">
+            <DocumentTrashDialog projectId={props.projectId} />
+            {hydrated ? (
+              <>
+                {resolvedProps.contextLive && editorScope.status === "ready" ? (
+                  <ProjectContextRemovalController
+                    projectId={props.projectId}
+                    activeContextScheme={props.activeContextScheme}
+                    activeContextPath={props.activeContextPath}
+                    activeContextChat={props.activeContextChat}
+                    editorWorkId={editorScope.workId}
+                    activeContextWork={props.activeContextWork}
+                    localDocumentId={props.activeLocalDocumentId}
+                    reviewDocumentId={props.reviewDocumentId}
+                    route={props.contextRemovalRoute}
+                  />
+                ) : null}
+                <ImportProvider key={props.projectId} projectId={props.projectId}>
+                  <WindowDropGuard />
+                  <HydratedReviewProject
+                    {...resolvedProps}
+                    projectTitle={projectTitle}
+                    titleEdit={{ projectId: props.projectId, onSave: renameProject }}
+                  />
+                </ImportProvider>
+              </>
+            ) : null}
+          </div>
+        </ManageWorksProvider>
+      </ChatDeleteProvider>
     </DocumentTrashRestoreProvider>
   );
 }
@@ -454,7 +457,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
   const mainForSide: MainForSide = props.chatDisplay
     ? props.chatDisplay.kind === "thread"
       ? { kind: "chat", chatId: props.chatDisplay.threadId }
-      : { kind: "chat-index" }
+      : { kind: "new-chat" }
     : main.item?.kind === "document"
       ? { kind: "document", documentId: main.item.documentId }
       : main.document.requested && (props.routeIssues?.editor === "loading" || !props.contextLive)
@@ -467,7 +470,6 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
         main={mainForSide}
         mainIsLocal={main.document.local || main.document.tab?.kind === "new"}
         besideChatId={props.besideChatId}
-        chatsOnly={usePhone}
       >
         <HydratedReviewControllers
           {...displayedProps}

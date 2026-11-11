@@ -36,15 +36,19 @@ export type DeletedChatPorts = {
   surfaces(): DeletedChatSurface[];
   lock: SubmissionLock;
 };
-const ownDeletes = new Map<string, { epoch: number; pending: boolean }>();
-/** Publish intent before DELETE can race an admission response; rollback only this intent. */
+const ownDeletes = new Map<string, { epoch: number; held: boolean }>();
+/**
+ * The writer's own delete, published before DELETE can race an admission response. While it is
+ * held (its Undo can still put the chat back) no cleanup runs: the composer's words and the
+ * chat's records stay. `release` lets the own-delete cleanup run; `cancel` forgets the delete.
+ */
 export function beginOwnChatDelete(accountId: string, threadId: string) {
   const key = surfaceKey(accountId, threadId);
-  const mark = { epoch: getChatSubmissionEpoch(), pending: true };
+  const mark = { epoch: getChatSubmissionEpoch(), held: true };
   ownDeletes.set(key, mark);
   return {
-    confirmed: () => {
-      mark.pending = false;
+    release: () => {
+      mark.held = false;
     },
     cancel: () => {
       if (ownDeletes.get(key) === mark) ownDeletes.delete(key);
@@ -92,10 +96,10 @@ export async function cleanDeletedChat(
   const ownMark = ownDeletes.get(key);
   const clean = async () => {
     if (!ports.current() || !eligible()) return false;
-    const panes = ports.surfaces();
-    const key = surfaceKey(accountId, threadId);
     const mark = ownDeletes.get(key);
     const ownDelete = mark?.epoch === getChatSubmissionEpoch();
+    if (ownDelete && mark.held) return false;
+    const panes = ports.surfaces();
     const visible =
       reason === "deleted" && !ownDelete ? panes.find((pane) => pane.visible()) : undefined;
     const source = ports.draft(accountId, { kind: "chat", id: threadId });
@@ -138,8 +142,7 @@ export async function cleanDeletedChat(
       ? clean()
       : ports.lock.run(accountId, threadId, new AbortController().signal, clean));
   } finally {
-    if (reason === "own-delete" && !ownMark?.pending && ownDeletes.get(key) === ownMark)
-      ownDeletes.delete(key);
+    if (reason === "own-delete" && ownDeletes.get(key) === ownMark) ownDeletes.delete(key);
   }
 }
 

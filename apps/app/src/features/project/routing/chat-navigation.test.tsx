@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * A sent chat takes main when main is the chat index; sent from the side's composer it is held
+ * A sent chat takes main when main is a new chat's composer; sent from the side's composer it is held
  * beside main. The last chat is this tab's own, and a chat the server no longer has is let go.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
@@ -74,8 +74,8 @@ afterEach(() => {
   act(() => root.unmount());
 });
 
-it("shows a sent chat in main from the index and holds it beside a document", () => {
-  render({ kind: "index" });
+it("shows a sent chat in main from the new-chat composer and holds it beside a document", () => {
+  render({ kind: "new" });
   act(() => navigation.acceptCreatedChat("sent"));
   expect(go).toHaveBeenCalledWith({ kind: "chat", chatId: "sent" });
   expect(readLastChat(ACCOUNT, PROJECT)).toBe("sent");
@@ -106,5 +106,5 @@ it("keeps a first send whose pre-creation 404 is still cached once it is acknowl
   );
   act(() => threadActions.clearPendingCreation({ threadId: "sent" }));
   expect(navigation.display).toEqual({ kind: "thread", threadId: "sent" });
-  expect(go).not.toHaveBeenCalledWith({ kind: "chat-index" });
+  expect(go).not.toHaveBeenCalledWith({ kind: "new-chat" });
 });

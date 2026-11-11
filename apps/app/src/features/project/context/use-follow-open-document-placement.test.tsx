@@ -9,7 +9,7 @@ import "fake-indexeddb/auto";
 
 import { useLayoutEffect } from "react";
 import { expect, it, vi } from "vitest";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import {
   AccountFeatureTestProvider,
   useOptionalPresentedDocuments,
@@ -19,7 +19,7 @@ import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import type { ContextRouteSelection } from "./context-removal-protocol";
 import { useFollowOpenDocumentPlacement } from "./use-follow-open-document-placement";
 
-const tab: ContextTab = {
+const tab: OpenDocument = {
   kind: "tracked",
   documentId: "doc-a",
   scheme: "manuscript",
@@ -31,8 +31,8 @@ const tab: ContextTab = {
 };
 const moved = { ...tab, path: "/new.md", name: "new.md" };
 
-vi.mock("./context-tab-from-file", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./context-tab-from-file")>()),
+vi.mock("./open-document-from-file", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./open-document-from-file")>()),
   projectResourceTab: () => ({ kind: "projected", resourceHandle: "handle-a", tab: moved }),
 }));
 

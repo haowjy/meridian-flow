@@ -19,7 +19,7 @@ import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useObservedResourceProjection } from "./account-feature-context";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
-import { projectResourceTab } from "./context-tab-from-file";
+import { projectResourceTab } from "./open-document-from-file";
 
 const providerQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 function TestAccountProvider(props: React.ComponentProps<typeof AccountFeatureTestProvider>) {

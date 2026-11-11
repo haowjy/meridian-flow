@@ -1,17 +1,17 @@
 /** Pure selection and represented-removal obligation protocol. */
 
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { canonicalDocumentPath } from "../routing/local-document-address";
 import { type ContextRouteRequest, sameContextTarget } from "../routing/project-route";
 import {
   type ContextRemovalIntent,
   type ContextRouteIdentity,
-  contextTabEligibleForRemoval,
   type ExactRouteCleanup,
+  openDocumentEligibleForRemoval,
   type RouteContinuityVerdict,
   routeTargetForTab,
 } from "./context-removal-planner";
-import { contextTabMatchesRoute } from "./context-tab-identity";
+import { openDocumentMatchesRoute } from "./open-document-identity";
 
 export type RouteRemovalProof = {
   locator: ContextRouteRequest;
@@ -319,29 +319,29 @@ export function leaveSelection(selection: ContextRouteSelection): SelectionTrans
 }
 
 function representedTab(
-  tabs: readonly ContextTab[],
+  tabs: readonly OpenDocument[],
   intent: ContextRemovalIntent,
   selection: ContextRouteSelection,
-): ContextTab | null {
+): OpenDocument | null {
   if (selection.status === "none") {
-    return tabs.find((tab) => contextTabEligibleForRemoval(tab, intent)) ?? null;
+    return tabs.find((tab) => openDocumentEligibleForRemoval(tab, intent)) ?? null;
   }
   return (
     tabs.find((tab) => {
-      if (!contextTabEligibleForRemoval(tab, intent)) return false;
+      if (!openDocumentEligibleForRemoval(tab, intent)) return false;
       if (tab.kind === "new") {
         return selection.locator.scheme === "unfiled" && selection.locator.path === "";
       }
-      return contextTabMatchesRoute(tab, selection.locator);
+      return openDocumentMatchesRoute(tab, selection.locator);
     }) ??
-    tabs.find((tab) => contextTabEligibleForRemoval(tab, intent)) ??
+    tabs.find((tab) => openDocumentEligibleForRemoval(tab, intent)) ??
     null
   );
 }
 
 export function reduceRepresentedRemoval(
   selection: ContextRouteSelection,
-  tabs: readonly ContextTab[],
+  tabs: readonly OpenDocument[],
   intent: ContextRemovalIntent,
   exactBoundIdentity = false,
 ): { selection: ContextRouteSelection; planning: RemovalPlanningEffect } {

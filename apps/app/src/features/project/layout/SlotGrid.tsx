@@ -57,9 +57,12 @@ export function SlotGrid({
   const slotsById = useMemo(() => new Map(slots.map((slot) => [slot.id, slot])), [slots]);
 
   return (
+    // Hosts are in key order, not place order (see DesktopProject), so Tab would follow ids.
+    // reading-flow makes it follow the columns. Chromium only; it also keeps a stale order after an
+    // edit inside a host until the grid lays out again. Elsewhere Tab follows key order.
     <div
       ref={gridRef}
-      className={cn("grid min-h-0 min-w-0", className)}
+      className={cn("grid min-h-0 min-w-0 [reading-flow:grid-rows]", className)}
       style={{
         gridTemplateAreas,
         gridTemplateColumns,

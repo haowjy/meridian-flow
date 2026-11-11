@@ -1,6 +1,6 @@
 import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { expect, it } from "vitest";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { planContextAvailabilityBatch } from "./context-availability-effect-planner";
 import type { ContextRouteSelection } from "./context-removal-protocol";
 import type { ProjectDocumentAvailabilityCommand } from "./project-context-availability-coordinator";
@@ -14,7 +14,7 @@ const tab = {
   editable: true,
   filetype: "markdown",
   schemaType: "document",
-} as ContextTab;
+} as OpenDocument;
 const locator = { scheme: "manuscript" as const, path: "/old.md" };
 
 function plan(by: "navigation" | "review") {

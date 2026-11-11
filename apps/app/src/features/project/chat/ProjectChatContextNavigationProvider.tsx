@@ -26,6 +26,7 @@ import {
   type ContextPassageAnchor,
   type PreparedDoor,
 } from "@/features/chat/ChatContextNavigation";
+import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import type { LinkDestination, LinkDocumentRef } from "@/features/links";
 import {
   type ChatLineages,
@@ -35,8 +36,9 @@ import {
   canOpenContextUri as isContextUriRoutable,
 } from "@/lib/context-uri";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import { useReviewingLinkDestination } from "../review-launch";
+import { useOwnerDraftOpener, useReviewingLinkDestination } from "../review-launch";
 import { type ContextRouteRequest, contextRouteRequest } from "../routing/project-route";
+import { useOptionalHoldBeside } from "../side/SideView";
 import { canonicalDoorUri } from "./canonical-door-uri";
 import { usePassageDoors } from "./usePassageDoors";
 
@@ -113,9 +115,16 @@ export function ProjectChatContextNavigationProvider({
 
   // A live answer opens the document the resolver named, by identity: never by address, which
   // could be held by a hidden sibling's review.
+  const holdBeside = useOptionalHoldBeside();
   const openLive = useCallback(
-    (door: Placement, document: LinkDocumentRef) => {
-      if (door.passage) {
+    (door: Placement, document: LinkDocumentRef, gesture: Parameters<LinkDestination>[1]) => {
+      if (gesture === "new-tab" && holdBeside) {
+        holdBeside({
+          kind: "document",
+          documentId: document.documentId,
+          ...(door.workId ? { workId: door.workId } : {}),
+        });
+      } else if (door.passage) {
         // The passage door opens the document itself, once, and lands on the passage.
         passages.land(door.workId, door.passage, { documentId: document.documentId });
       } else {
@@ -125,17 +134,29 @@ export function ProjectChatContextNavigationProvider({
         });
       }
     },
-    [passages, openChatDocument],
+    [passages, openChatDocument, holdBeside],
   );
   // Only a hidden document reaches the review handoff, so its live fallback is never used.
   const openReviewing = useReviewingLinkDestination(reviewOnly);
+  // The chat's own drafts: its Work's, or under No Work its lineage's. A link to a document the
+  // chat drafted opens that draft, the way its draft strip does.
+  const openDrafted = useOwnerDraftOpener(
+    projectId,
+    chatOwnerKey(
+      activeWork && { id: activeWork.id, isNoWork: activeWork.id === noWorkId },
+      rootThreadId,
+    ) || null,
+  );
   // A hidden document is a review: the review handoff opens it in main, on its draft.
   const openFound = useCallback(
     (door: Placement, document: LinkDocumentRef, gesture: Parameters<LinkDestination>[1]) => {
-      if (!document.review) return Promise.resolve(openLive(door, document));
-      return openReviewing(document, gesture);
+      if (document.review) return openReviewing(document, gesture);
+      return (
+        openDrafted(document.documentId, gesture) ??
+        Promise.resolve(openLive(door, document, gesture))
+      );
     },
-    [openLive, openReviewing],
+    [openLive, openReviewing, openDrafted],
   );
   // Only a route-backed door overrides the follower's missing outcome: its route says so in
   // place. A resource door has no route, so it keeps the follower's shared outcome.

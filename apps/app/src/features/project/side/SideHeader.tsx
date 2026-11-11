@@ -8,7 +8,7 @@ import { t } from "@lingui/core/macro";
 import { Maximize2, MessageSquare, Pin } from "lucide-react";
 import type { ReactNode } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { IconButton } from "@/components/ui/icon-button";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
@@ -63,16 +63,15 @@ function SideBand({
   icon,
   actions,
   onOpenInMain,
-  chatsOnly,
   leading,
   trailing,
 }: {
   projectId: string;
-  name: string;
+  /** Null while the side shows nothing. */
+  name: string | null;
   icon: ReactNode;
   actions?: ReactNode;
   onOpenInMain?: () => void;
-  chatsOnly?: boolean;
   /** Before the picker (the phone sheet's close). */
   leading?: ReactNode;
   /** After everything (the phone has no corner toggle to make room for). */
@@ -88,7 +87,7 @@ function SideBand({
         {leading}
         {/* No overflow-hidden: clipping here shears the title's hover pill. */}
         <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1">
-          <SidePicker projectId={projectId} name={name} icon={icon} chatsOnly={chatsOnly} />
+          <SidePicker projectId={projectId} name={name} icon={icon} />
           {reason ? (
             // One clipped line: under 5rem left, the reason wraps past the empty first item (a line
             // tall, or the second line sits on the first) and hides whole instead of leaving "E…".
@@ -137,7 +136,7 @@ export function SideDocumentHeader({
   onOpenInMain,
 }: {
   projectId: string;
-  tab: ContextTab;
+  tab: OpenDocument;
   onOpenInMain: () => void;
 }) {
   const Icon = fileKindIcon(tab.name);
@@ -155,14 +154,12 @@ export function SideChatHeader({
   projectId,
   threadId,
   onOpenInMain,
-  chatsOnly,
   leading,
   trailing,
 }: {
   projectId: string;
   threadId: string | null;
   onOpenInMain?: () => void;
-  chatsOnly?: boolean;
   leading?: ReactNode;
   trailing?: ReactNode;
 }) {
@@ -173,7 +170,6 @@ export function SideChatHeader({
       projectId={projectId}
       name={name}
       icon={<MessageSquare aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
-      chatsOnly={chatsOnly}
       leading={leading}
       trailing={trailing}
       actions={
@@ -195,7 +191,7 @@ export function SideEmptyHeader({ projectId }: { projectId: string }) {
   return (
     <SideBand
       projectId={projectId}
-      name={side.pending ? t`Finding what goes with this…` : t`Choose what sits beside`}
+      name={side.pending ? t`Finding what goes with this…` : null}
       icon={null}
     />
   );

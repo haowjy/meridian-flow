@@ -4,7 +4,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { MessageSquare, Pin } from "lucide-react";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { fileKindIcon } from "../context/context-file-icon";
 import { useSideChatName } from "./SideHeader";
 import { useSideItem } from "./SideView";
@@ -16,7 +16,7 @@ export function ClosedSideButton({
 }: {
   projectId: string;
   /** The side's document, when it shows one. */
-  tab: ContextTab | null;
+  tab: OpenDocument | null;
   onOpen: () => void;
 }) {
   const side = useSideItem();

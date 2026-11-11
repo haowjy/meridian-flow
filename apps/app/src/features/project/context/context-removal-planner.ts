@@ -2,7 +2,7 @@
 
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
-import { type ContextTab, isEditorContextTab } from "@/client/stores";
+import { isEditorOpenDocument, type OpenDocument } from "@/client/stores";
 import {
   buildWorkingSetRoute,
   type ReconcileContextRoutesInput,
@@ -42,10 +42,10 @@ export type ContextRemovalOutcome =
   | { kind: "noop" }
   | {
       kind: "removal";
-      removed: readonly ContextTab[];
+      removed: readonly OpenDocument[];
       workspaceSelectedRemoved: boolean;
       routedDocumentRemoved: boolean;
-      remaining: readonly ContextTab[];
+      remaining: readonly OpenDocument[];
     };
 
 export type ContextRemovalPlan = {
@@ -56,7 +56,7 @@ export type ContextRemovalPlan = {
 
 export type ContextRemovalPlannerInput = {
   activeWorkId: string | null;
-  tabs: readonly ContextTab[];
+  tabs: readonly OpenDocument[];
   selectedTabId: string | null;
   admitted: ContextRouteRequest | null;
   route: {
@@ -75,7 +75,7 @@ export type ExactRouteCleanup = {
 /** A rejected candidate leaves the address as written: the view says the document is gone. */
 export function planCandidateRejection(input: {
   rejected: ContextRouteRequest;
-  tabs: readonly ContextTab[];
+  tabs: readonly OpenDocument[];
   admitted: ContextRouteRequest | null;
   recentRoutes: readonly WorkingSetRoute[];
 }): { admitted: ContextRouteRequest | null; workingSet: ReconcileContextRoutesInput } {
@@ -96,8 +96,8 @@ export function planCandidateRejection(input: {
   };
 }
 
-export function contextTabEligibleForRemoval(
-  tab: ContextTab,
+export function openDocumentEligibleForRemoval(
+  tab: OpenDocument,
   intent: ContextRemovalIntent,
 ): boolean {
   if (!intent.documentIds.includes(tab.documentId)) return false;
@@ -112,14 +112,14 @@ export function contextTabEligibleForRemoval(
   }
 }
 
-export function workingSetRouteForTab(tab: ContextTab) {
+export function workingSetRouteForTab(tab: OpenDocument) {
   // A route names a document the server holds: it answers the whole snapshot with a 400 when
   // one is missing, so a local-only document's route waits for its materialization.
   if (tab.kind === "new" || (tab.kind === "tracked" && tab.localOnly)) return null;
   return buildWorkingSetRoute(tab.documentId, tab.scheme, tab.path, tab);
 }
 
-export function routeTargetForTab(tab: ContextTab): ContextRouteRequest {
+export function routeTargetForTab(tab: OpenDocument): ContextRouteRequest {
   if (tab.kind === "new") return { scheme: "unfiled", path: "", documentId: tab.documentId };
   if (isWorkScopedScheme(tab.scheme) && !tab.rootThreadId && !tab.workId)
     throw new Error("Work-scoped tab has no Work owner");
@@ -128,9 +128,9 @@ export function routeTargetForTab(tab: ContextTab): ContextRouteRequest {
 
 /** The tab a target names: by its document when it carries one, else by locator. */
 export function tabForTarget(
-  tabs: readonly ContextTab[],
+  tabs: readonly OpenDocument[],
   target: ContextRouteRequest,
-): ContextTab | null {
+): OpenDocument | null {
   return (
     tabs.find((tab) =>
       target.documentId !== undefined
@@ -143,7 +143,7 @@ export function tabForTarget(
 /** Query/cache state is deliberately absent: exact commands are the only removal evidence. */
 export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRemovalPlan {
   const requested = new Set(input.intent.documentIds);
-  const removed = input.tabs.filter((tab) => contextTabEligibleForRemoval(tab, input.intent));
+  const removed = input.tabs.filter((tab) => openDocumentEligibleForRemoval(tab, input.intent));
   const removedIds = new Set(removed.map((tab) => tab.documentId));
   const remaining = input.tabs.filter((tab) => !removedIds.has(tab.documentId));
   if (input.activeWorkId === null) {
@@ -167,7 +167,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
       },
     };
   }
-  const visibleRemaining = remaining.filter(isEditorContextTab);
+  const visibleRemaining = remaining.filter(isEditorOpenDocument);
   const survives = (documentId: string) =>
     visibleRemaining.some((tab) => tab.documentId === documentId);
   const workspaceSelectedRemoved =

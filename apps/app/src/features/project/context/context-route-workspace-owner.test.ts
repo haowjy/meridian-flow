@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
 
 const tracked = (
@@ -7,7 +7,7 @@ const tracked = (
   path: string,
   workId: string,
   origin?: "local-resource",
-): Extract<ContextTab, { kind: "tracked" }> => ({
+): Extract<OpenDocument, { kind: "tracked" }> => ({
   kind: "tracked",
   documentId: id,
   scheme: "scratch",

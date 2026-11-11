@@ -1,53 +1,62 @@
 /**
- * Optimistic soft delete: the row leaves every cached chat projection at once
- * and the caller's current-chat/favorite side effects run immediately, ahead
- * of the server's confirmation.
+ * A chat's soft delete and its restore. The delete is optimistic: the row leaves every cached
+ * chat projection at once, ahead of the server's confirmation, and a refusal puts the exact
+ * pre-delete snapshot back.
  */
 import type { QueryClient } from "@tanstack/react-query";
-import { deleteThread } from "@/client/api/threads-api";
-import { getChatSubmissionAccountId, getChatSubmissionEpoch } from "@/client/chat-submissions";
-import { beginOwnChatDelete, cleanDeletedChat } from "@/client/chat-submissions/deleted-chat";
+import { deleteThread, restoreThread } from "@/client/api/threads-api";
 import { removeChatRow, restoreChatRow, snapshotChatRow } from "./chat-projections";
-import { invalidateProjectThreadData, invalidateWorkThreads } from "./project-invalidation";
+import { invalidateProjectThreadData } from "./project-invalidation";
 import { projectQueryKeys } from "./project-query-keys";
+import { threadQueryKeys } from "./thread-query-keys";
 
-export type DeleteProjectChatOutcome = { status: "success" } | { status: "error"; error: Error };
+export type ChatCommandOutcome = { status: "success" } | { status: "error"; error: Error };
 
-/**
- * Remove the chat from every projection and its normalized user-state record
- * before the server confirms. A failure restores the exact pre-delete cache
- * snapshot and returns the error for the caller to surface on the row.
- */
 export async function deleteProjectChat(
   client: QueryClient,
   projectId: string,
   threadId: string,
-): Promise<DeleteProjectChatOutcome> {
-  const accountId = getChatSubmissionAccountId();
-  const epoch = getChatSubmissionEpoch();
-  const ownDelete = accountId ? beginOwnChatDelete(accountId, threadId) : null;
+): Promise<ChatCommandOutcome> {
   const snapshot = snapshotChatRow(client, projectId, threadId);
   const userState = client.getQueryData(projectQueryKeys.threadUserState(projectId, threadId));
   removeChatRow(client, projectId, threadId);
   client.removeQueries({ queryKey: projectQueryKeys.threadUserState(projectId, threadId) });
   try {
     await deleteThread({ data: { threadId } });
-    ownDelete?.confirmed();
-    if (
-      accountId &&
-      getChatSubmissionAccountId() === accountId &&
-      getChatSubmissionEpoch() === epoch
-    )
-      void cleanDeletedChat(accountId, threadId, projectId, "own-delete").catch(reportError);
     void invalidateProjectThreadData(client, projectId);
-    void invalidateWorkThreads(client, projectId);
     return { status: "success" };
   } catch (cause) {
-    ownDelete?.cancel();
     restoreChatRow(client, projectId, threadId, snapshot);
     if (userState !== undefined) {
       client.setQueryData(projectQueryKeys.threadUserState(projectId, threadId), userState);
     }
-    return { status: "error", error: cause instanceof Error ? cause : new Error(String(cause)) };
+    return { status: "error", error: asError(cause) };
   }
 }
+
+/**
+ * Brings a chat back from Trash: a delete's Undo, or Restore over a trashed chat's draft. Resolves
+ * once every list that names the chat has reread it, its drafts included: a chat with no Work
+ * keeps its drafts under its lineage, frozen while it is in Trash.
+ */
+export async function restoreProjectChat(
+  client: QueryClient,
+  projectId: string,
+  threadId: string,
+): Promise<ChatCommandOutcome> {
+  try {
+    await restoreThread(threadId);
+  } catch (cause) {
+    return { status: "error", error: asError(cause) };
+  }
+  await Promise.all([
+    invalidateProjectThreadData(client, projectId),
+    client.invalidateQueries({ queryKey: projectQueryKeys.ownerDraftsOf(projectId) }),
+    // Reset, not invalidate: a kept "deleted" error would read as proof the chat is gone when it
+    // next mounts, and drop its unsent words.
+    client.resetQueries({ queryKey: threadQueryKeys.snapshot(threadId) }),
+  ]);
+  return { status: "success" };
+}
+
+const asError = (cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause)));

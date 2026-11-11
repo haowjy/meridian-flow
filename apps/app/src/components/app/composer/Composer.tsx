@@ -152,7 +152,6 @@ export type ComposerProps = {
   placeholder?: string;
   /** Focus the box when it mounts, at the restored selection. */
   autoFocus?: boolean;
-  variant?: "hero" | "pinned";
   toolbarLeft?: ReactNode;
   submitDisabled?: boolean;
   busy?: boolean;
@@ -217,7 +216,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     stopStatus = "idle",
     placeholder,
     autoFocus = true,
-    variant = "hero",
     toolbarLeft,
     submitDisabled = false,
     busy = false,

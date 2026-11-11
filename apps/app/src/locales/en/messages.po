@@ -718,13 +718,17 @@ msgstr "{steps, plural, one {# step} other {# steps}}"
 msgid "{submitLabel} (enter a name first)"
 msgstr "{submitLabel} (enter a name first)"
 
-#: src/features/project/chat-list/useChatRowCommands.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "{title} added to Favorites"
 msgstr "{title} added to Favorites"
 
-#: src/features/project/chat-list/useChatRowCommands.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "{title} removed from Favorites"
 msgstr "{title} removed from Favorites"
+
+#: src/features/project/shell/sidebar/chat-deletes.ts
+msgid "{title} restored"
+msgstr "{title} restored"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was deleted from the manuscript. Applying brings it back."
@@ -808,8 +812,8 @@ msgstr "<0.1 s"
 
 #. placeholder {0}: target?.title
 #: src/features/project/chat-list/DeleteChatDialog.tsx
-msgid "<0>{0}</0> and its messages will be deleted."
-msgstr "<0>{0}</0> and its messages will be deleted."
+#~ msgid "<0>{0}</0> and its messages will be deleted."
+#~ msgstr "<0>{0}</0> and its messages will be deleted."
 
 #: src/features/chat/DeletedChatCard.tsx
 msgid "<0>{title}</0> was deleted."
@@ -960,7 +964,7 @@ msgstr "Actions"
 msgid "Actions for {0}"
 msgstr "Actions for {0}"
 
-#: src/features/project/chat-list/ProjectChatRow.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Actions for {title}"
 msgstr "Actions for {title}"
 
@@ -993,8 +997,8 @@ msgid "Add {name} to your message"
 msgstr "Add {name} to your message"
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "Add {title} to favorites"
-msgstr "Add {title} to favorites"
+#~ msgid "Add {title} to favorites"
+#~ msgstr "Add {title} to favorites"
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Add a goal for this Work"
@@ -1013,8 +1017,12 @@ msgid "Add row"
 msgstr "Add row"
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "Add to favorites"
-msgstr "Add to favorites"
+#~ msgid "Add to favorites"
+#~ msgstr "Add to favorites"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Add to Favourites"
+msgstr "Add to Favourites"
 
 #: src/features/chat/ChatCards.tsx
 msgid "Add usage"
@@ -1047,7 +1055,6 @@ msgid "Agent"
 msgstr "Agent"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Agent:"
 msgstr "Agent:"
 
@@ -1099,14 +1106,14 @@ msgid "Alignment applies to paragraphs, headings, and tables."
 msgstr "Alignment applies to paragraphs, headings, and tables."
 
 #: src/features/project/chat-index/ChatIndex.tsx
-msgid "All"
-msgstr "All"
+#~ msgid "All"
+#~ msgstr "All"
 
 #: src/features/project/work/WorkChanges.tsx
 #~ msgid "All changes"
 #~ msgstr "All changes"
 
-#: src/features/project/chat-index/ChatIndexButton.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "All chats"
 msgstr "All chats"
 
@@ -1290,8 +1297,8 @@ msgid "Back online (all changes saved)"
 msgstr "Back online (all changes saved)"
 
 #: src/features/project/shell/IndexTabChip.tsx
-msgid "Back to {title}"
-msgstr "Back to {title}"
+#~ msgid "Back to {title}"
+#~ msgstr "Back to {title}"
 
 #: src/features/project/work/ManageWorksDialog.tsx
 msgid "Back to all Work"
@@ -1315,9 +1322,14 @@ msgstr "Back to workspace"
 #~ msgid "Before"
 #~ msgstr "Before"
 
+#: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/side/SidePicker.tsx
 msgid "Beside"
 msgstr "Beside"
+
+#: src/features/project/mobile/MobileProject.tsx
+msgid "Beside your current screen"
+msgstr "Beside your current screen"
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #. placeholder {1}: formatPreset(amountOptions.maxUsd)
@@ -1509,7 +1521,6 @@ msgstr "Can't undo: the folder it would return to is gone."
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/export/ExportProjectDialog.tsx
 #: src/features/links/FollowOutcomeContent.tsx
-#: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/entry-drag/DropChoiceMenu.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/work/WorkMetadata.tsx
@@ -1663,15 +1674,14 @@ msgstr "chart"
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/ChatView.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
-#: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/mobile/MobileTopBar.tsx
 #: src/features/project/shell/sidebar/sidebar-lists.tsx
 msgid "Chat"
 msgstr "Chat"
 
 #: src/features/project/mobile/MobileProject.tsx
-msgid "Chat alongside your current screen"
-msgstr "Chat alongside your current screen"
+#~ msgid "Chat alongside your current screen"
+#~ msgstr "Chat alongside your current screen"
 
 #: src/components/app/composer/placeholders.ts
 msgid "Chat away"
@@ -1681,7 +1691,7 @@ msgstr "Chat away"
 #~ msgid "Chat context"
 #~ msgstr "Chat context"
 
-#: src/features/project/chat-list/useChatRowCommands.tsx
+#: src/features/project/shell/sidebar/chat-deletes.ts
 msgid "Chat deleted"
 msgstr "Chat deleted"
 
@@ -1689,8 +1699,6 @@ msgstr "Chat deleted"
 msgid "Chat updates disconnected"
 msgstr "Chat updates disconnected"
 
-#: src/features/project/chat-index/ChatIndex.tsx
-#: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Chats"
 msgstr "Chats"
@@ -1750,7 +1758,7 @@ msgstr "Choose agent, currently {0}"
 msgid "Choose tabs"
 msgstr "Choose tabs"
 
-#: src/features/project/side/SideHeader.tsx
+#: src/features/project/side/SidePicker.tsx
 msgid "Choose what sits beside"
 msgstr "Choose what sits beside"
 
@@ -1788,6 +1796,7 @@ msgstr "Clear the status"
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
+#: src/features/project/mobile/MobileSideSheetHeader.tsx
 msgid "Close"
 msgstr "Close"
 
@@ -1801,8 +1810,8 @@ msgid "Close artifact preview"
 msgstr "Close artifact preview"
 
 #: src/features/project/mobile/MobileChatSheetHeader.tsx
-msgid "Close chat"
-msgstr "Close chat"
+#~ msgid "Close chat"
+#~ msgstr "Close chat"
 
 #: src/features/project/dock/DockDocumentCommands.tsx
 #~ msgid "Close document"
@@ -2232,7 +2241,7 @@ msgstr "Couldn't delete {0}."
 #~ msgid "Couldn't delete {name}."
 #~ msgstr "Couldn't delete {name}."
 
-#: src/features/project/chat-list/useChatRowCommands.tsx
+#: src/features/project/shell/sidebar/chat-deletes.ts
 msgid "Couldn't delete {title}"
 msgstr "Couldn't delete {title}"
 
@@ -2240,7 +2249,7 @@ msgstr "Couldn't delete {title}"
 msgid "Couldn't delete that Work"
 msgstr "Couldn't delete that Work"
 
-#: src/features/project/chat-list/ProjectChatRow.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Couldn't delete this chat"
 msgstr "Couldn't delete this chat"
 
@@ -2306,7 +2315,7 @@ msgstr "Couldn't load agents."
 msgid "Couldn't load chats"
 msgstr "Couldn't load chats"
 
-#: src/features/project/chat-index/ChatIndex.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Couldn't load chats."
 msgstr "Couldn't load chats."
 
@@ -2459,8 +2468,8 @@ msgid "Couldn't redo"
 msgstr "Couldn't redo"
 
 #: src/features/project/chat-index/ChatIndex.tsx
-msgid "Couldn't refresh chats."
-msgstr "Couldn't refresh chats."
+#~ msgid "Couldn't refresh chats."
+#~ msgstr "Couldn't refresh chats."
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Couldn't refresh recent documents."
@@ -2472,6 +2481,7 @@ msgstr "Couldn't refresh recent documents."
 #~ msgstr "Couldn't remove {0}."
 
 #: src/features/chat/ChatThreadTitle.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Couldn’t rename this chat. Try again."
 msgstr "Couldn’t rename this chat. Try again."
 
@@ -2499,6 +2509,11 @@ msgstr "Couldn't rename. Use Rename in the file list to try again."
 #: src/features/project/context/entry-drag/move-operation.ts
 #~ msgid "Couldn't reorder {0}."
 #~ msgstr "Couldn't reorder {0}."
+
+#. placeholder {0}: notice.title
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Couldn't restore {0}"
+msgstr "Couldn't restore {0}"
 
 #. placeholder {0}: window.label
 #: src/features/project/context/document-delete-undo.tsx
@@ -2535,6 +2550,10 @@ msgstr "Couldn't restore {name}. That folder is no longer available."
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Couldn't restore {name}. Try again."
 msgstr "Couldn't restore {name}. Try again."
+
+#: src/features/project/shell/sidebar/chat-deletes.ts
+msgid "Couldn't restore {title}"
+msgstr "Couldn't restore {title}"
 
 #: src/features/draft-review/TrashedChatNotice.tsx
 msgid "Couldn't restore the chat. Try again."
@@ -2760,8 +2779,8 @@ msgstr "Default alignment"
 #: src/features/editor/surfaces/blocks/block-copy.ts
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
-#: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Delete"
 msgstr "Delete"
 
@@ -2769,13 +2788,13 @@ msgstr "Delete"
 msgid "Delete {name}"
 msgstr "Delete {name}"
 
-#: src/features/project/chat-list/ProjectChatRow.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Delete chat"
 msgstr "Delete chat"
 
 #: src/features/project/chat-list/DeleteChatDialog.tsx
-msgid "Delete chat?"
-msgstr "Delete chat?"
+#~ msgid "Delete chat?"
+#~ msgstr "Delete chat?"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Delete column"
@@ -2789,6 +2808,10 @@ msgstr "Delete row"
 msgid "Delete table"
 msgstr "Delete table"
 
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Delete this chat? Its reply is still running and will stop."
+msgstr "Delete this chat? Its reply is still running and will stop."
+
 #: src/features/project/work/WorkActionsMenu.tsx
 msgid "Delete Work"
 msgstr "Delete Work"
@@ -2799,10 +2822,10 @@ msgstr "Delete Work"
 msgid "Deleted"
 msgstr "Deleted"
 
-#. placeholder {0}: notice.label
-#: src/features/project/context/document-delete-undo.tsx
-#~ msgid "Deleted {0}"
-#~ msgstr "Deleted {0}"
+#. placeholder {0}: notice.title
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Deleted {0}"
+msgstr "Deleted {0}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -2955,6 +2978,7 @@ msgstr "Discarding"
 #: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/SchemaNotices.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
@@ -3255,14 +3279,17 @@ msgstr "Failed upload: {0}"
 msgid "Failures"
 msgstr "Failures"
 
-#: src/features/project/chat-list/ProjectChatRow.tsx
-#: src/features/project/chat-list/useChatRowCommands.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Favorite wasn’t saved"
 msgstr "Favorite wasn’t saved"
 
 #: src/features/project/chat-index/ChatIndex.tsx
-msgid "Favorites"
-msgstr "Favorites"
+#~ msgid "Favorites"
+#~ msgstr "Favorites"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Favourites"
+msgstr "Favourites"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "fence"
@@ -3330,9 +3357,13 @@ msgstr "Files…"
 msgid "Filter subagents"
 msgstr "Filter subagents"
 
-#: src/features/project/side/SidePicker.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Find a chat"
 msgstr "Find a chat"
+
+#: src/features/project/side/SidePicker.tsx
+msgid "Find a document"
+msgstr "Find a document"
 
 #: src/features/project/side/SidePicker.tsx
 msgid "Find a document or chat"
@@ -3755,6 +3786,7 @@ msgid "Just now"
 msgstr "Just now"
 
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Keep"
 msgstr "Keep"
 
@@ -3892,8 +3924,8 @@ msgid "Loading changes…"
 msgstr "Loading changes…"
 
 #: src/features/project/chat-index/ChatIndexLoading.tsx
-msgid "Loading chats"
-msgstr "Loading chats"
+#~ msgid "Loading chats"
+#~ msgstr "Loading chats"
 
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Loading document…"
@@ -3909,8 +3941,12 @@ msgid "Loading image"
 msgstr "Loading image"
 
 #: src/features/project/chat-index/ChatIndex.tsx
-msgid "Loading more chats"
-msgstr "Loading more chats"
+#~ msgid "Loading more chats"
+#~ msgstr "Loading more chats"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Loading more…"
+msgstr "Loading more…"
 
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Loading preview…"
@@ -4074,7 +4110,7 @@ msgstr "More"
 msgid "More chats"
 msgstr "More chats"
 
-#: src/features/project/chat-index/ChatIndex.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "More chats couldn't load."
 msgstr "More chats couldn't load."
 
@@ -4268,7 +4304,6 @@ msgstr "New"
 #: src/features/chat/ChatThreadTitle.tsx
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/chat/ChatScreen.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SideHeader.tsx
@@ -4357,11 +4392,11 @@ msgstr "No changes left"
 msgid "No chats in this Work yet."
 msgstr "No chats in this Work yet."
 
-#: src/features/project/chat-index/ChatIndex.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "No chats match “{search}”."
 msgstr "No chats match “{search}”."
 
-#: src/features/project/chat-index/ChatIndex.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "No chats yet."
 msgstr "No chats yet."
 
@@ -4378,8 +4413,8 @@ msgid "No drafts"
 msgstr "No drafts"
 
 #: src/features/project/chat-index/ChatIndex.tsx
-msgid "No favorite chats yet."
-msgstr "No favorite chats yet."
+#~ msgid "No favorite chats yet."
+#~ msgstr "No favorite chats yet."
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "No files attached in this chat yet."
@@ -4424,8 +4459,8 @@ msgid "No matching files"
 msgstr "No matching files"
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "No messages yet."
-msgstr "No messages yet."
+#~ msgid "No messages yet."
+#~ msgstr "No messages yet."
 
 #: src/features/agents/AgentPicker.tsx
 msgid "No model"
@@ -4578,7 +4613,6 @@ msgstr "Nothing was added. Your files are kept for 7 days so you can try again."
 msgid "Nothing yet"
 msgstr "Nothing yet"
 
-#: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/lib/date-groups.ts
 msgid "now"
 msgstr "now"
@@ -4597,8 +4631,8 @@ msgid "ol"
 msgstr "ol"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Older"
-msgstr "Older"
+#~ msgid "Older"
+#~ msgstr "Older"
 
 #: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
@@ -4653,7 +4687,6 @@ msgstr "Open {0} in {1}"
 
 #: src/features/chat/DocumentName.tsx
 #: src/features/home/ProjectLibrary.tsx
-#: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Open {title}"
 msgstr "Open {title}"
 
@@ -4689,6 +4722,7 @@ msgstr "Open full screen"
 #~ msgid "Open in Editor"
 #~ msgstr "Open in Editor"
 
+#: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/side/SideHeader.tsx
 msgid "Open in main"
 msgstr "Open in main"
@@ -5073,12 +5107,20 @@ msgid "Remove"
 msgstr "Remove"
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "Remove {title} from favorites"
-msgstr "Remove {title} from favorites"
+#~ msgid "Remove {title} from favorites"
+#~ msgstr "Remove {title} from favorites"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Remove {title} from Favourites"
+msgstr "Remove {title} from Favourites"
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "Remove from favorites"
-msgstr "Remove from favorites"
+#~ msgid "Remove from favorites"
+#~ msgstr "Remove from favorites"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Remove from Favourites"
+msgstr "Remove from Favourites"
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
@@ -5099,11 +5141,13 @@ msgstr "Remove reference"
 #: src/features/project/context/EntryRefusalNotice.tsx
 #: src/features/project/mobile/MobileRefusalNotice.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Rename"
 msgstr "Rename"
 
 #: src/features/chat/ChatThreadTitle.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Rename chat"
 msgstr "Rename chat"
 
@@ -5129,6 +5173,7 @@ msgid "Rename Work: {0}"
 msgstr "Rename Work: {0}"
 
 #: src/features/chat/ChatThreadTitle.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Renamed to {confirmed}"
 msgstr "Renamed to {confirmed}"
 
@@ -5249,6 +5294,7 @@ msgstr "Restoring"
 #~ msgid "Restoring {0}"
 #~ msgstr "Restoring {0}"
 
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SidePicker.tsx
 msgid "Results"
 msgstr "Results"
@@ -5268,7 +5314,6 @@ msgstr "Resume my documents on any device"
 #: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
-#: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/ProjectCreationNotice.tsx
@@ -5403,7 +5448,6 @@ msgid "Scroll to latest"
 msgstr "Scroll to latest"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/chat-index/ChatIndex.tsx
 msgid "Search chats"
 msgstr "Search chats"
 
@@ -5547,8 +5591,8 @@ msgid "Show changes"
 msgstr "Show changes"
 
 #: src/features/project/chat-index/ChatIndex.tsx
-msgid "Show chats"
-msgstr "Show chats"
+#~ msgid "Show chats"
+#~ msgstr "Show chats"
 
 #: src/components/app/ToastRegion.tsx
 #~ msgid "Show fewer"
@@ -5559,6 +5603,7 @@ msgstr "Show chats"
 msgid "Show less"
 msgstr "Show less"
 
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Show more"
 msgstr "Show more"
@@ -6101,8 +6146,8 @@ msgid "The AI in a chat deleted this document."
 msgstr "The AI in a chat deleted this document."
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "The AI is waiting for you"
-msgstr "The AI is waiting for you"
+#~ msgid "The AI is waiting for you"
+#~ msgstr "The AI is waiting for you"
 
 #: src/features/chat/chat-card-copy.ts
 msgid "The AI provider turned this request down."
@@ -6832,6 +6877,7 @@ msgstr "Undid change to Work {0}."
 #: src/features/draft-review/CommandNotice.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
 msgstr "Undo"
@@ -7059,8 +7105,8 @@ msgid "What this figure shows"
 msgstr "What this figure shows"
 
 #: src/features/project/chat-index/ChatIndex.tsx
-msgid "What will you write next?"
-msgstr "What will you write next?"
+#~ msgid "What will you write next?"
+#~ msgstr "What will you write next?"
 
 #: src/components/app/composer/placeholders.ts
 msgid "What's next?"
