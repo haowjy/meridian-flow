@@ -835,8 +835,12 @@ msgid "a writer"
 msgstr ""
 
 #: src/features/export/ExportProjectDialog.tsx
-msgid "A ZIP of Markdown files and folders. Includes Manuscript, Knowledge Base and Unfiled."
+msgid "A ZIP of Markdown files and folders. Includes Manuscript, Knowledge and Unfiled."
 msgstr ""
+
+#: src/features/export/ExportProjectDialog.tsx
+#~ msgid "A ZIP of Markdown files and folders. Includes Manuscript, Knowledge Base and Unfiled."
+#~ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
@@ -3372,8 +3376,13 @@ msgstr ""
 
 #: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
-msgid "Knowledge Base"
+msgid "Knowledge"
 msgstr ""
+
+#: src/features/import/destination.ts
+#: src/features/project/context/context-schemes.ts
+#~ msgid "Knowledge Base"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Label"

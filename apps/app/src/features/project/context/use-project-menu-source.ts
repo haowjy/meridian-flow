@@ -45,7 +45,7 @@ export type ProjectMenuSource = {
 };
 
 /**
- * The project browsing tree: Manuscript, Knowledge Base, User, Unfiled and the
+ * The project browsing tree: Manuscript, Knowledge, User, Unfiled and the
  * Scratch on screen as folders under the project's title. The own area (the open
  * document's, an entry being moved, or the folder a mention opens) is always
  * reachable; when it is not one of those (an Uploads file, or another Work's

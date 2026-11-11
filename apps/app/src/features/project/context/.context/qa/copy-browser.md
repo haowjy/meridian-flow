@@ -63,7 +63,7 @@ Move… that stopped working because Copy joined them. This recipe drives the br
     window with a fine pointer is the desktop shell: that is not a phone run.
 11. **A selection nested before the send.** Select a folder (`Part`) and a sibling document
     (`Loose`) in Manuscript, go offline, and drag the selection onto a User folder (`Targets`), then
-    Copy to Targets. A drop onto Knowledge Base is a plain Move, so use User. Both rows are
+    Copy to Targets. A drop onto Knowledge is a plain Move, so use User. Both rows are
     listed in `Targets`. Move `Loose` into `Part` with
     `./mf api POST /api/projects/<id>/context/entries/<LooseId>/move` (`destinationParent` the `Part` folder), then go online. The pending
     `Loose` row leaves `Targets` as the request goes out, and the copy of `Part` holds `Loose` while `Targets` has no `Loose` of its own.

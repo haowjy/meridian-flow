@@ -107,7 +107,7 @@ export function ExportProjectDialog({
           </DialogTitle>
           <DialogDescription>
             <Trans>
-              A ZIP of Markdown files and folders. Includes Manuscript, Knowledge Base and Unfiled.
+              A ZIP of Markdown files and folders. Includes Manuscript, Knowledge and Unfiled.
             </Trans>
           </DialogDescription>
         </DialogHeader>
