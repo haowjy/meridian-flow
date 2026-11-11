@@ -22,7 +22,6 @@ import {
   useShownDocuments,
 } from "./context/account-feature-context";
 import { DocumentHost, MainDocumentStatus } from "./context/DocumentHost";
-import { useDescribeProjectDocument } from "./context/open-project-document";
 import { RecentDocumentsLanding } from "./context/RecentDocumentsLanding";
 import { recentOpening } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
@@ -48,7 +47,13 @@ import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import { ClosedSideButton } from "./side/ClosedSideButton";
 import { SideChatHeader, SideDocumentHeader, SideEmptyHeader } from "./side/SideHeader";
-import { useChatOnScreen, useHostChatId, useShellCommands, useSideItem } from "./side/SideView";
+import {
+  useChatOnScreen,
+  useHostChatId,
+  useShellCommands,
+  useSideItem,
+  useSideRevealed,
+} from "./side/SideView";
 import { useMainItem } from "./views";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
@@ -74,6 +79,14 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const sidebarToggle: PaneHeaderRailToggle = { open: panels["rail-l"].open };
   const sideToggle: PaneHeaderRailToggle = { open: panels.dock.open };
   const sideOpen = panels.dock.open;
+  // A hold made from a link opens the side, so the click has a visible result.
+  const revealed = useSideRevealed();
+  const seenReveal = useRef(revealed);
+  useEffect(() => {
+    if (revealed === seenReveal.current) return;
+    seenReveal.current = revealed;
+    if (!sideOpen) setSlotOpenHere("dock", true);
+  });
 
   const main = useMainItem();
   const chat = useChatNavigation();
@@ -92,8 +105,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // Each mounted document at its host's current descriptor, newest on screen first.
   const shown = useShownDocuments(projectId);
   const side = useSideItem();
-  const sideDocumentId = side.item?.kind === "document" ? side.item.documentId : null;
-  const sideTab = useDescribedDocument(projectId, sideDocumentId, shown);
+  const sideTab = side.item?.kind === "document" ? side.tab : null;
   useRecordSidePick(projectId, side.source === "held" ? sideTab : null);
   // While the side is closed, main's header names what it would show; pressing it opens the side.
   const closedSide = sideOpen ? null : (
@@ -278,7 +290,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     hosts.push({
       key: "side-empty",
       slot: "dock",
-      children: <SideEmpty projectId={projectId} opening={sideDocumentId !== null} />,
+      children: <SideEmpty projectId={projectId} />,
     });
 
   return (
@@ -294,11 +306,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   );
 }
 
-/** The side with nothing to show: its document is still being found, or main has no companion. */
-function SideEmpty({ projectId, opening }: { projectId: string; opening: boolean }) {
+/** The side with nothing to show: what goes with main is still being found, or there is none. */
+function SideEmpty({ projectId }: { projectId: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <SideEmptyHeader projectId={projectId} opening={opening} />
+      <SideEmptyHeader projectId={projectId} />
     </div>
   );
 }
@@ -318,37 +330,6 @@ function useRecordSidePick(projectId: string, picked: ContextTab | null) {
     recorded.current = picked.documentId;
     record(opening);
   }, [picked, projectId, record]);
-}
-
-/** A document's descriptor: a mounted host's, else resolved once by its identity. */
-function useDescribedDocument(
-  projectId: string,
-  documentId: string | null,
-  known: readonly ContextTab[],
-): ContextTab | null {
-  const describe = useDescribeProjectDocument(projectId);
-  const knownTab = documentId ? known.find((tab) => tab.documentId === documentId) : undefined;
-  const [described, setDescribed] = useState<{ documentId: string; tab: ContextTab | null } | null>(
-    null,
-  );
-  const needsLookup = documentId !== null && knownTab === undefined;
-  useEffect(() => {
-    if (!needsLookup || !documentId) return;
-    let live = true;
-    void describe(documentId).then(
-      (tab) => {
-        if (live) setDescribed({ documentId, tab });
-      },
-      () => {
-        if (live) setDescribed({ documentId, tab: null });
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [needsLookup, documentId, describe]);
-  if (knownTab) return knownTab;
-  return described?.documentId === documentId ? described.tab : null;
 }
 
 /** New document: an Untitled document in Unfiled, opened in main with the caret. */

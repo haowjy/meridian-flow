@@ -9,7 +9,6 @@
 import type { EventRecord } from "@meridian/contracts/observability";
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
-import { writeHeldPick } from "@/client/project-shell/store";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
@@ -19,13 +18,13 @@ import { usePhoneShell } from "@/hooks/use-phone-shell";
 import type { ContextUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
 import { contextTabFromDraftGroup } from "./context/context-tab-from-draft";
-import { useProjectDocumentNavigationProjectId } from "./context/open-project-document";
 import {
   type BesideHint,
   type OpenContextRoute,
   useOpenedFromChat,
 } from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
+import { useOptionalHoldBeside } from "./side/SideView";
 
 export type AiDraftLaunchTarget = {
   ownerKey: string;
@@ -181,18 +180,25 @@ export function useAiDraftLauncher() {
  * Work's review (by item identity, as the review launch does), and every
  * other document to the surface's own live opener.
  */
-export function useReviewingLinkDestination(open: LinkDestination): LinkDestination {
+export function useReviewingLinkDestination(
+  open: LinkDestination,
+  /** The Work the link's surface opens documents in; a hold beside keeps it. */
+  workId?: string,
+): LinkDestination {
   const openEditorReview = useOptionalOpenEditorReview();
-  const accountId = useAccountId();
-  const projectId = useProjectDocumentNavigationProjectId();
+  const holdBeside = useOptionalHoldBeside();
   // The phone's side holds chats only: a background open there opens in main.
   const phone = usePhoneShell() === true;
   return useCallback(
     (document, gesture) => {
       const { review } = document;
       // A cmd-click (or middle click) opens the document beside main, where it is held.
-      if (!review && gesture === "new-tab" && projectId && !phone) {
-        writeHeldPick(accountId, projectId, { kind: "document", documentId: document.documentId });
+      if (!review && gesture === "new-tab" && holdBeside && !phone) {
+        holdBeside({
+          kind: "document",
+          documentId: document.documentId,
+          ...(workId ? { workId } : {}),
+        });
         return Promise.resolve();
       }
       if (!review) return open(document, gesture);
@@ -208,6 +214,6 @@ export function useReviewingLinkDestination(open: LinkDestination): LinkDestinat
         console.error("[editor-review] launch failed", error);
       });
     },
-    [open, openEditorReview, accountId, projectId, phone],
+    [open, openEditorReview, holdBeside, workId, phone],
   );
 }

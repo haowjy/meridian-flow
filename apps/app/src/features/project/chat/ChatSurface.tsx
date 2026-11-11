@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { OpenedFromChat } from "../routing/ProjectNavigationContext";
 import type { ContextRouteRequest } from "../routing/project-route";
+import { useNewChatAbout } from "../side/SideView";
 import { ChatScreen } from "./ChatScreen";
 
 export type ChatSurfaceProps = {
@@ -42,6 +43,7 @@ export function ChatSurface({
   onOpenContextTarget,
   header,
 }: ChatSurfaceProps) {
+  const reportAbout = useNewChatAbout().report;
   return (
     <div
       aria-hidden={!visible}
@@ -66,6 +68,7 @@ export function ChatSurface({
             projectId={projectId}
             threadId={threadId}
             about={about}
+            onAboutChange={place === "side" ? reportAbout : undefined}
             activeWork={activeWork}
             availableWorks={availableWorks}
             onOpenContextTarget={onOpenContextTarget}

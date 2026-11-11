@@ -52,8 +52,7 @@ export function MobileProject(props: MobileProjectProps) {
   const side = useSideItem();
   const sheetChat = useHostChatId();
   const sideChat = side.item?.kind === "chat" ? side.item : null;
-  const mainName = main.document.tab?.name ?? null;
-  const sheetName = useSideChatName(props.projectId, sideChat?.chatId ?? sheetChat, mainName);
+  const sheetName = useSideChatName(props.projectId, sideChat?.chatId ?? sheetChat);
   const chatOnScreen = useChatOnScreen();
   const mainChatId = props.chatDisplay?.kind === "thread" ? props.chatDisplay.threadId : null;
 

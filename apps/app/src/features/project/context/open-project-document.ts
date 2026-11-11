@@ -532,10 +532,21 @@ export class ProjectDocumentNavigationAdapter {
 
   /**
    * The descriptor a view paints a document from, resolved like an open but navigating nowhere:
-   * the side's fallback document. Null when the document no longer opens.
+   * the side's document. Null when the document no longer opens in the editor (removed, or an
+   * upload); throws when the lookup failed.
    */
-  async describe(projectId: string, documentId: string): Promise<ContextTab | null> {
-    const identified = await this.identify(projectId, { documentId, isCurrent: () => true });
+  async describe(
+    projectId: string,
+    documentId: string,
+    workId?: string,
+  ): Promise<ContextTab | null> {
+    const identified = await this.identify(projectId, {
+      documentId,
+      workId,
+      isCurrent: () => true,
+    });
+    if (identified.kind === "refused" && identified.reason === "lookup-failed")
+      throw new Error("Couldn't look up the document");
     if (identified.kind !== "identified") return null;
     const { identity, transfer } = identified;
     if (!isEditorScheme(identity.scheme)) return null;
@@ -545,7 +556,7 @@ export class ProjectDocumentNavigationAdapter {
       identity.file,
       identity.rootThreadId
         ? { rootThreadId: identity.rootThreadId }
-        : { workId: identity.workId ?? null },
+        : { workId: identity.workId ?? workId ?? null },
     );
   }
 
@@ -745,11 +756,11 @@ export function canOpenReference(uri: string): boolean {
 /** Resolves a document's descriptor without opening it (`describe`). */
 export function useDescribeProjectDocument(
   projectId: string,
-): (documentId: string) => Promise<ContextTab | null> {
+): (documentId: string, workId?: string) => Promise<ContextTab | null> {
   const owner = useContext(ProjectDocumentNavigationContext);
   return useCallback(
-    async (documentId) =>
-      owner?.projectId === projectId ? owner.adapter.describe(projectId, documentId) : null,
+    async (documentId, workId) =>
+      owner?.projectId === projectId ? owner.adapter.describe(projectId, documentId, workId) : null,
     [owner, projectId],
   );
 }
