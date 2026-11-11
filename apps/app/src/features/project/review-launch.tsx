@@ -12,6 +12,7 @@ import { setDocumentView } from "@/client/project-shell/document-views";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
+import type { LinkFollowDisposition } from "@/core/editor/links";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDestination } from "@/features/links";
@@ -190,7 +191,8 @@ export function useReviewingLinkDestination(
   return useCallback(
     (document, gesture) => {
       const { review } = document;
-      // A cmd-click (or middle click) opens the document beside main, where it is held.
+      // A cmd-click (or middle click) holds the document beside main. A page only a draft has
+      // can't be held there, so it opens in main.
       if (!review && gesture === "new-tab" && holdBeside) {
         holdBeside({
           kind: "document",
@@ -217,19 +219,28 @@ export function useReviewingLinkDestination(
 }
 
 /**
- * Opens a document on its owner's draft when that owner has one: a chat's link to a page it
- * drafted lands on the draft, as its draft strip does. Null when the owner has no draft of it.
+ * A chat's way to a page it drafted, the same from a transcript link and a door: a plain click
+ * opens the owner's draft in main, as its draft strip does, passage or not (the draft opens at
+ * its top); a cmd-click, ctrl-click or middle click holds the page beside main, on that draft.
+ * Null when the owner has no draft of the page: the caller opens Live.
  */
 export function useOwnerDraftOpener(
   projectId: string,
   ownerKey: string | null,
-): (documentId: string) => Promise<void> | null {
+): (documentId: string, gesture: LinkFollowDisposition) => Promise<void> | null {
   const { fileForDocument } = useOwnerDrafts(projectId, ownerKey);
   const openEditorReview = useOptionalOpenEditorReview();
+  const holdBeside = useOptionalHoldBeside();
   return useCallback(
-    (documentId) => {
+    (documentId, gesture) => {
       const drafted = fileForDocument(documentId);
-      if (!drafted?.contextLocation || !ownerKey || !openEditorReview) return null;
+      if (!drafted?.contextLocation || !ownerKey) return null;
+      // A page only the draft has can't be held beside: it opens in main like a plain click.
+      if (gesture === "new-tab" && holdBeside && !drafted.draftOnly) {
+        holdBeside({ kind: "document", documentId }, { ownerKey, itemKey: drafted.draft.itemKey });
+        return Promise.resolve();
+      }
+      if (!openEditorReview) return null;
       return openEditorReview({
         ownerKey,
         documentId,
@@ -239,6 +250,6 @@ export function useOwnerDraftOpener(
         draftOnly: drafted.draftOnly,
       }).catch((error) => console.error("[editor-review] launch failed", error));
     },
-    [fileForDocument, ownerKey, openEditorReview],
+    [fileForDocument, ownerKey, openEditorReview, holdBeside],
   );
 }
