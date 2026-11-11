@@ -1,7 +1,7 @@
 /**
  * DraftReviewBand — a document's review controls, as part of the identity row
- * (`DocumentIdentityBar`) rather than a header of their own: the Draft chip with
- * its menu right after the breadcrumb, then, on the right, the stepper, Show
+ * (`DocumentIdentityBar`) rather than a header of their own: the version chip
+ * (`DocumentVersionMenu`) right after the breadcrumb, then, on the right, the stepper, Show
  * changes, Discard draft and Apply draft (the per-change bar's Discard and
  * Apply act on one change; these name their scope). They sit at the end of the
  * row's first line or wrap to a second one, so entering or leaving review may
@@ -26,13 +26,13 @@ import { Trans } from "@lingui/react/macro";
 import { Eye, EyeOff, List } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ContextTab } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { changeListLabel, DocumentChanges } from "@/features/draft-review/DocumentChanges";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import {
   ReviewFailureNotices,
@@ -47,8 +47,11 @@ import {
 } from "@/features/draft-review/useReviewHeader";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
+import { DocumentVersionMenu } from "./DocumentVersionMenu";
 
 export type DraftReviewBandProps = {
+  projectId: string;
+  tab: ContextTab;
   documentId: string;
   itemKey: string;
   /** Set for a draft-only document: closes its tab instead of returning to live. */
@@ -86,16 +89,19 @@ export function DraftReviewBand({
   const version = (
     <>
       <PaintCapture surface={status} state={status === "loading" ? "pending" : "painted"} />
-      <DraftSwitcher
-        draftOnly={header.draftOnly}
-        disabled={locked}
-        onShowLive={header.showLive}
-        onRename={props.onRename}
-        marks={
-          coarse && listed
-            ? { visible: controller.marksVisible, onChange: controller.setMarksVisible }
-            : undefined
-        }
+      <DocumentVersionMenu
+        projectId={props.projectId}
+        tab={props.tab}
+        review={{
+          draftOnly: header.draftOnly,
+          disabled: locked,
+          onShowLive: header.showLive,
+          onRename: props.onRename,
+          marks:
+            coarse && listed
+              ? { visible: controller.marksVisible, onChange: controller.setMarksVisible }
+              : undefined,
+        }}
       />
     </>
   );

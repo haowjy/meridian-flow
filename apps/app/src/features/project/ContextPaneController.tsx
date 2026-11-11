@@ -3,6 +3,7 @@
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback, useLayoutEffect } from "react";
+import { readDocumentView } from "@/client/project-shell/document-views";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
   type ContextTab,
@@ -17,6 +18,7 @@ import {
   useContextTabsStore,
 } from "@/client/stores";
 import {
+  useAccountId,
   useAccountResourceReplica,
   useContextRemovalCoordinator,
 } from "./context/account-feature-context";
@@ -95,6 +97,7 @@ export function ContextViewerSurfaceController({
   const captureNavigation = useCaptureProjectNavigation();
   const contextRemoval = useContextRemovalCoordinator();
   const resources = useAccountResourceReplica();
+  const accountId = useAccountId();
 
   const { tabs } = useContextTabs(projectId);
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
@@ -274,9 +277,10 @@ export function ContextViewerSurfaceController({
       void onOpenContextTarget(target);
       return;
     }
-    // A pinned review is part of the tab's address: selecting the tab must write it back.
-    if (tab.reviewPin) {
-      void openDocumentInEditor(onOpenContextTarget, tab, { review: tab.reviewPin });
+    // The draft the document shows is part of its address: selecting the tab writes it back.
+    const pin = readDocumentView(accountId, projectId, tab.documentId).pin;
+    if (pin) {
+      void openDocumentInEditor(onOpenContextTarget, tab, { review: pin });
       return;
     }
     void onOpenContextTarget(target, { tab });
@@ -325,6 +329,7 @@ export function ContextViewerSurfaceController({
       sidebarToggle={sidebarToggle}
       dockToggle={dockToggle}
       active={active}
+      routeDisplayed={routeDisplayed}
       onNewDocument={async () => {
         const isCurrent = captureNavigation?.();
         const reservation = await resources.reserveDocument(projectId);

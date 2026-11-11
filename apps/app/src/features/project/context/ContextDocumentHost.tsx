@@ -2,8 +2,8 @@
  * ContextDocumentHost — one editable document in a view: its session, its
  * editor, and the review room the controller asks for.
  *
- * The Editor's warm tab set and the dock's single document both render
- * through this, so they are two views of the same editor and differ only in
+ * The Editor's warm tab set, the dock's single document and the phone render
+ * through this, each inside its own review (`DocumentReviewProvider`), and differ only in
  * what they pass: whether the editor is painted (`shown`), whether the surface
  * is on screen (`active`, which stands down chrome that portals to the body),
  * and whether the document is frozen (`readOnly`). The host fills its
@@ -31,7 +31,7 @@ import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
-import { useRequestedReview } from "../review-launch";
+import { useHostDocumentPaint } from "../DocumentReview";
 import {
   useAccountResourceProjection,
   useContextRemovalCoordinator,
@@ -46,9 +46,6 @@ export type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }
 
 export type ContextDocumentHostProps = {
   projectId: string;
-  container: "editor" | "dock";
-  /** The Editor's own Work (not the shown review's): a launch into it is matched against this. */
-  editorWorkId?: string | null;
   tab: EditableContextTab;
   /** False binds the session but paints no editor: a warm tab evicted from the mounted set. */
   mountEditor?: boolean;
@@ -70,8 +67,6 @@ export type ContextDocumentHostProps = {
 
 export function ContextDocumentHost({
   projectId,
-  container,
-  editorWorkId = null,
   tab,
   mountEditor = true,
   shown = true,
@@ -87,13 +82,17 @@ export function ContextDocumentHost({
   const { snapshot: resourceProjection } = useAccountResourceProjection(projectId);
   const bindingKeys = useRef(new WeakMap<object, string>());
   const availabilityRevision = resourceAvailabilityRevision(resourceProjection, tab.documentId);
-  const requestedReview = useRequestedReview({
-    container,
-    editorWorkId,
-    activeScheme: tab.kind === "tracked" ? tab.scheme : null,
-    documentId: shown ? tab.documentId : null,
-  });
-  const selectedReviewItemKey = shown ? requestedReview : null;
+  // The host's own review: the one it has open, else the draft its view paints. While the paint
+  // is held (the pinned owner's list is loading) the pin already names the item, so the live
+  // text stays covered rather than painting Live first.
+  const paint = useHostDocumentPaint();
+  const inline = controller.inlineReview;
+  const selectedReviewItemKey =
+    inline?.documentId === tab.documentId
+      ? inline.itemKey
+      : paint?.showing === "pending"
+        ? (paint.view.pin?.itemKey ?? null)
+        : (paint?.draft?.itemKey ?? null);
   const reviewRoomName = selectedReviewItemKey
     ? reviewRoomNameForDraft(tab.documentId, selectedReviewItemKey)
     : null;
@@ -105,6 +104,15 @@ export function ContextDocumentHost({
     selectedReviewFile?.draft.itemKey === selectedReviewItemKey &&
     reviewHasNoRoom(selectedReviewFile.draft);
   const reviewItemKey = reviewRoomName || treeOnlyReview ? selectedReviewItemKey : null;
+  // The pinned draft's list could not be read: say so here rather than paint Live under the pin.
+  const queryClient = useQueryClient();
+  const pinnedOwner = paint?.showing === "failed" ? (paint.view.pin?.ownerKey ?? null) : null;
+  const retryDraftList = pinnedOwner
+    ? () =>
+        void queryClient.refetchQueries({
+          queryKey: projectQueryKeys.ownerDrafts(projectId, pinnedOwner),
+        })
+    : null;
   // A draft-only document has no live room until Apply promotes it, and
   // the server refuses one. Review hosts the draft room alone.
   const draftOnly = isDraftOnly(tab);
@@ -113,12 +121,15 @@ export function ContextDocumentHost({
   const editable = presentation.editable && !readOnly;
   const renderEditor = (
     session: DocumentSession | null,
-    failed = false,
+    sessionFailed = false,
     localContentReady = false,
-    retry?: () => void,
-    failureReason: Extract<LiveDocumentBindingState, { kind: "failed" }>["reason"] | null = null,
+    retrySession?: () => void,
+    sessionFailure: Extract<LiveDocumentBindingState, { kind: "failed" }>["reason"] | null = null,
   ): ReactNode => {
     if (!mountEditor) return null;
+    const failed = sessionFailed || retryDraftList !== null;
+    const retry = retryDraftList ?? retrySession;
+    const failureReason = retryDraftList ? null : sessionFailure;
     const hosted = session !== null || draftOnly || Boolean(selectedReviewItemKey);
     const surface = failed ? "failed" : hosted ? "painted" : "pending";
     let bindingKey: string | undefined;
@@ -151,6 +162,8 @@ export function ContextDocumentHost({
                   message={
                     failureReason === "not-visible" ? (
                       <Trans>Access lost (not saving to the server)</Trans>
+                    ) : retryDraftList ? (
+                      <Trans>Couldn't load this draft.</Trans>
                     ) : (
                       <Trans>Couldn't open this document.</Trans>
                     )
@@ -224,7 +237,6 @@ export function ContextDocumentHost({
                 // The intent, not the resolved room: the live editor goes
                 // read-only from the click, while the room is still resolving.
                 reviewItemKey={selectedReviewItemKey}
-                container={container}
               />
             </>
           )}

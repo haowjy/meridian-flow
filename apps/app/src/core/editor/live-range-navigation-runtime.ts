@@ -5,45 +5,35 @@ import type { DocumentSession } from "./document-session";
 import { relativeRangeToEditorPositions } from "./extensions/LiveRangeNavigationExtension";
 import { resolvePassage } from "./passage-resolution";
 
-export type LiveEditorContainer = "editor" | "dock";
+/** The one on-screen editor of a document: a document is mounted in at most one host. */
 export type LiveEditorTarget = {
   editor: Editor;
   session: DocumentSession;
   localContentReady: boolean;
-  container: LiveEditorContainer;
   /** Registration lifetime. Retirement revokes every capability on this target. */
   signal: AbortSignal;
 };
 
 type LiveEditorRegistration = Omit<LiveEditorTarget, "signal">;
 
-const targets = new Map<string, Map<LiveEditorContainer, LiveEditorTarget>>();
+const targets = new Map<string, LiveEditorTarget>();
 const listeners = new Map<string, Set<() => void>>();
-
-function targetKey(documentId: string, container: LiveEditorContainer): string {
-  return `${documentId}:${container}`;
-}
 
 export function registerLiveRangeEditor(
   documentId: string,
   registration: LiveEditorRegistration,
 ): () => void {
-  const documentTargets = targets.get(documentId) ?? new Map();
-  const prior = documentTargets.get(registration.container);
+  const prior = targets.get(documentId);
   const lifetime = new AbortController();
   const target: LiveEditorTarget = { ...registration, signal: lifetime.signal };
   retirements.set(target, lifetime);
   if (prior) retireTarget(prior);
-  documentTargets.set(target.container, target);
-  targets.set(documentId, documentTargets);
-  const key = targetKey(documentId, target.container);
-  for (const listener of listeners.get(key) ?? []) listener();
+  targets.set(documentId, target);
+  for (const listener of listeners.get(documentId) ?? []) listener();
   return () => {
-    const current = targets.get(documentId);
-    if (current?.get(target.container) === target) current.delete(target.container);
+    if (targets.get(documentId) === target) targets.delete(documentId);
     retireTarget(target);
-    if (current?.size === 0) targets.delete(documentId);
-    for (const listener of listeners.get(key) ?? []) listener();
+    for (const listener of listeners.get(documentId) ?? []) listener();
   };
 }
 
@@ -56,16 +46,15 @@ function retireTarget(target: LiveEditorTarget): void {
 
 export async function whenLiveEditor(
   documentId: string,
-  container: LiveEditorContainer,
   signal?: AbortSignal,
 ): Promise<LiveEditorTarget | null> {
-  const current = targets.get(documentId)?.get(container);
+  const current = targets.get(documentId);
   if (current && !current.editor.isDestroyed) return current;
   if (signal?.aborted) return null;
-  const key = targetKey(documentId, container);
+  const key = documentId;
   return new Promise((resolve) => {
     const settle = () => {
-      const target = targets.get(documentId)?.get(container);
+      const target = targets.get(documentId);
       if (!target || target.editor.isDestroyed) return;
       cleanup();
       resolve(target);

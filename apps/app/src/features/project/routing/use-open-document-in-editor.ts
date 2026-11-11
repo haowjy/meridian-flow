@@ -1,10 +1,9 @@
 /** The shared Editor open path for a document locator or an already-resolved view. */
 
-import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback } from "react";
+import type { DraftPin } from "@/client/project-shell/document-views";
 import { type ContextTab, isEditorContextTab } from "@/client/stores";
-import type { ReviewAddress } from "../presented-document";
 import { type OpenContextRoute, useOpenContextRoute } from "./ProjectNavigationContext";
 import { contextRouteRequest } from "./project-route";
 
@@ -15,7 +14,7 @@ type EditorDocument =
 export function openDocumentInEditor(
   open: OpenContextRoute,
   target: EditorDocument,
-  options: { afterCommit?: () => void; review?: ReviewAddress | null } = {},
+  options: { afterCommit?: () => void; review?: DraftPin | null } = {},
 ) {
   const { review, ...routeOptions } = options;
   const tab = "kind" in target && isEditorContextTab(target) ? target : undefined;
@@ -31,11 +30,16 @@ export function openDocumentInEditor(
       replace: false,
       ...routeOptions,
       ...(tab ? { tab } : {}),
-      ...(review
-        ? { itemKey: review.itemKey, reviewOwner: review.ownerKey, changeId: review.changeId }
-        : {}),
+      ...reviewRouteOptions(review),
     },
   );
+}
+
+/** The route options that open a document on its view's draft; none for Live. */
+export function reviewRouteOptions(review: DraftPin | null | undefined) {
+  return review
+    ? { itemKey: review.itemKey, reviewOwner: review.ownerKey, changeId: review.changeId }
+    : {};
 }
 
 export function useOpenDocumentInEditor() {

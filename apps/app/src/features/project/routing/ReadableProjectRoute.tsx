@@ -20,6 +20,7 @@ import {
   getProjectContextAvailability,
   getProjectDocumentAddress,
 } from "@/client/api/projects-api";
+import { type DraftPin, endPin, readDocumentView } from "@/client/project-shell/document-views";
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
@@ -50,7 +51,6 @@ import { ProjectDocumentNavigationProvider } from "../context/open-project-docum
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useRemovalRecord } from "../context/use-removal-record";
 import { ProjectView } from "../ProjectView";
-import type { ReviewAddress } from "../presented-document";
 import { useWorkScopeState } from "../use-work-scope";
 import { ChatNavigationProvider, useProjectChatNavigation } from "./chat-navigation";
 import { applyContextRemovalSearchUpdate } from "./context-removal-route-repair";
@@ -85,11 +85,7 @@ import {
   parseProjectAddress,
   withoutReview,
 } from "./project-address";
-import {
-  resolveLocalDocumentSelection,
-  selectEditorEntryTab,
-  useEditorContainerAddress,
-} from "./project-local-selection";
+import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
 import {
   createProjectNavigation,
   type DisplayedProjectSelection,
@@ -104,6 +100,7 @@ import {
   type ProjectRouteCommands,
   type ProjectSearch,
 } from "./project-route";
+import { reviewRouteOptions } from "./use-open-document-in-editor";
 
 function screen(destination: ProjectDestination): ScreenKey {
   if (destination.kind === "chat" || destination.kind === "chat-index") return "chat";
@@ -542,13 +539,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       ? documentResult.document.documentId
       : undefined;
   addressDocumentIdRef.current = addressDocumentId;
-  const editorContainerAddress = useEditorContainerAddress({
-    active: activeScreen === "context",
-    accountId: user.userId,
-    address,
-    documentId: addressDocumentId ?? null,
-    workId,
-  });
   const documentIssue: ProjectRouteIssue | undefined = !documentDestination
     ? undefined
     : !documentResult
@@ -616,7 +606,9 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   useLayoutEffect(() => {
     if (!reviewGone || !navigation) return;
     const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
-    if (ticket) void navigation.replaceIfCurrent(ticket, withoutReview(address));
+    // `reviewEnded` lets the document say once that the link's draft has ended.
+    if (ticket)
+      void navigation.replaceIfCurrent(ticket, withoutReview(address), { reviewEnded: true });
   }, [reviewGone, navigation, location, address]);
   const removedTitle = documentDestination?.path.split("/").filter(Boolean).at(-1) ?? null;
   const mainIssue = parsed.kind === "invalid" ? "unavailable" : undefined;
@@ -713,7 +705,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     );
   }, [departedLocalTab?.documentId, workId, openContext]);
   const setEditorReviewItemKey = useCallback(
-    (review: ReviewAddress | null) => {
+    (review: DraftPin | null) => {
       const current = latest.current;
       if (!current.navigation) return;
       const ticket = current.navigation.capture();
@@ -761,6 +753,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         const closed = draftCommands.state(itemKey);
         const live = closed.liveUri ? parseContextUri(closed.liveUri) : null;
         contextRemoval.adoptReviewBinding(projectId);
+        // The view owns the pin: the replace below only rewrites the address to follow it.
+        endPin(user.userId, projectId, closingRef);
         void now.navigation.replaceIfCurrent(now.navigation.capture(), {
           ...now.address,
           ...(live
@@ -862,10 +856,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
           { ...routeTargetForTab(tab), documentId: tab.documentId },
           {
             ...options,
-            ...(editorContainerAddress?.documentId === tab.documentId &&
-            editorContainerAddress.workId === workId
-              ? { itemKey: editorContainerAddress.address.itemKey }
-              : {}),
+            ...reviewRouteOptions(readDocumentView(user.userId, projectId, tab.documentId).pin),
           },
         );
     }

@@ -7,10 +7,6 @@
  */
 import type { ReactNode } from "react";
 import { isDraftOnly } from "@/client/stores";
-import {
-  DraftReviewBoundary,
-  usePresentedDraftReview,
-} from "@/features/draft-review/DraftReviewProvider";
 import { DocumentIdentityBar } from "../context/DocumentIdentityBar";
 import { useDocumentFreeze } from "../context/use-document-freeze";
 import { type OpenDocumentTab, useOpenDocumentActions } from "../open-documents";
@@ -28,12 +24,7 @@ export function DockDocumentIdentity({
   document: OpenDocumentTab;
   trailing: ReactNode;
 }) {
-  const review = usePresentedDraftReview();
-  return (
-    <DraftReviewBoundary value={review}>
-      <DockIdentityBody projectId={projectId} document={dockDocument} trailing={trailing} />
-    </DraftReviewBoundary>
-  );
+  return <DockIdentityBody projectId={projectId} document={dockDocument} trailing={trailing} />;
 }
 
 function DockIdentityBody({

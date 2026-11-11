@@ -1,89 +1,109 @@
+/**
+ * Which version of the open document its view shows, as one chip and menu on desktop and phone:
+ * Live, or a draft, with every owner's draft of the document one pick away. It reads the host's
+ * paint (`useDocumentPaint`) and the document's draft hints, and writes the document's view: a
+ * picked draft becomes the view's pin, Live drops it. `DraftSwitcher` draws it.
+ *
+ * In review the host passes the review's own controls (`review`): its lock, the draft-only way
+ * out, and the phone's Apply, Discard and Show changes.
+ */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { type DocumentDraftHint, workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
+import { setDocumentView } from "@/client/project-shell/document-views";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import { useWorks } from "@/client/query/useWorks";
 import type { ContextTab } from "@/client/stores";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { DraftChipFace, draftChipHitClass } from "@/features/draft-review/DraftChip";
-import { tabLocation } from "@/features/project/context/identity-location";
-import { useAiDraftLauncher } from "@/features/project/review-launch";
+import { DraftSwitcher, type DraftSwitcherProps } from "@/features/draft-review/DraftSwitcher";
+import { useAccountId } from "@/features/project/context/account-feature-context";
+import { useHostDocumentPaint } from "@/features/project/DocumentReview";
 import { workDisplayName } from "@/lib/work-name";
-import { hintReviewTarget } from "./draft-hint-review";
 
-/**
- * Which version of the open document is showing, at the end of the toolbar row: Live, with
- * every draft of it (a Work's, or a chat's with no Work) one pick away. Picking a draft opens
- * its review.
- */
-export function DocumentVersionMenu({ projectId, tab }: { projectId: string; tab: ContextTab }) {
+export type DocumentVersionReview = Pick<
+  DraftSwitcherProps,
+  "disabled" | "draftOnly" | "onShowLive" | "onRename" | "marks" | "draftCommands"
+>;
+
+export function DocumentVersionMenu({
+  projectId,
+  tab,
+  touch = false,
+  review,
+}: {
+  projectId: string;
+  tab: ContextTab;
+  touch?: boolean;
+  /** The open review's controls; absent while the document shows Live. */
+  review?: DocumentVersionReview;
+}) {
   const { documentId } = tab;
+  const accountId = useAccountId();
+  const paint = useHostDocumentPaint();
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
   const { works } = useWorks(projectId);
-  const { openAiDraft } = useAiDraftLauncher();
-  const location = tabLocation(tab);
-  if (tab.kind === "new" || !location.path) return null;
-  const contextLocation = { scheme: location.scheme, path: location.path };
+  if (tab.kind === "new") return null;
 
-  const ownerName = (hint: DocumentDraftHint) => {
-    const workId = workIdOfDraftOwnerKey(hint.owner);
+  const shown = review ? (paint?.draft ?? null) : null;
+  const ownerName = (owner: string, label: string | null) => {
+    const workId = workIdOfDraftOwnerKey(owner);
     const work = workId ? works?.find((candidate) => candidate.id === workId) : undefined;
-    return work ? workDisplayName(work) : hint.label;
+    return work ? workDisplayName(work) : label;
   };
+  const listed: Pick<DocumentDraftHint, "owner" | "itemKey" | "label" | "tree">[] = [...hints];
+  // A draft on screen that the hints have not caught up with is still a version of the document.
+  if (shown && !hints.some((hint) => hint.owner === shown.ownerKey))
+    listed.push({
+      owner: shown.ownerKey as DocumentDraftHint["owner"],
+      itemKey: shown.itemKey as DocumentDraftHint["itemKey"],
+      label: null,
+      tree: null,
+    });
+  const scopeOwner = paint?.scopeOwnerKey ?? null;
+  listed.sort((a, b) => Number(b.owner === scopeOwner) - Number(a.owner === scopeOwner));
+
+  const drafts = listed.map((hint) => ({
+    key: `${hint.owner}:${hint.itemKey}`,
+    name: (
+      <WorkIdentity
+        name={ownerName(hint.owner, hint.label)}
+        unavailableLabel={t`Unnamed draft`}
+        className="text-sm font-normal"
+      />
+    ),
+    detail: hint.tree ? (
+      "deleted" in hint.tree ? (
+        <Trans>Deletes this document</Trans>
+      ) : (
+        <Trans>Moves it to {hint.tree.movedTo.path}</Trans>
+      )
+    ) : undefined,
+    current: shown?.ownerKey === hint.owner,
+    scope: hint.owner === scopeOwner,
+    onSelect: () =>
+      setDocumentView(accountId, projectId, documentId, {
+        pin: { ownerKey: hint.owner, itemKey: hint.itemKey },
+      }),
+  }));
+  const shownLabel = listed.find((hint) => hint.owner === shown?.ownerKey)?.label ?? null;
+  const outOfScope =
+    shown && paint?.outOfScope ? (ownerName(shown.ownerKey, shownLabel) ?? t`Unnamed draft`) : null;
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger aria-label={t`Document version`} className={draftChipHitClass(false)}>
-        <DraftChipFace state={hints.length > 0 ? "pending" : "live"} menu>
-          <Trans>Live</Trans>
-        </DraftChipFace>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuItem selected>
-          <Trans>Live</Trans>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>
-          {hints.length > 0 ? <Trans>Drafts</Trans> : <Trans>No drafts</Trans>}
-        </DropdownMenuLabel>
-        {hints.map((hint) => {
-          const target = hintReviewTarget(hint, {
-            documentId,
-            contextLocation,
-            documentName: location.leaf,
-          });
-          return (
-            <DropdownMenuItem
-              key={hint.branchId}
-              onSelect={() => openAiDraft(target)}
-              className="h-auto min-h-8 flex-col items-start gap-0.5"
-            >
-              <WorkIdentity
-                name={ownerName(hint)}
-                unavailableLabel={t`Unnamed draft`}
-                className="text-sm font-normal"
-              />
-              {hint.tree ? (
-                <span className="text-xs text-muted-foreground">
-                  {"deleted" in hint.tree ? (
-                    <Trans>Deletes this document</Trans>
-                  ) : (
-                    <Trans>Moves it to {hint.tree.movedTo.path}</Trans>
-                  )}
-                </span>
-              ) : null}
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <DraftSwitcher
+      showing={review ? "draft" : "live"}
+      drafts={drafts}
+      owner={outOfScope ?? undefined}
+      draftOnly={review?.draftOnly ?? false}
+      disabled={review?.disabled ?? false}
+      onShowLive={
+        review?.onShowLive ??
+        (() => setDocumentView(accountId, projectId, documentId, { version: "live" }))
+      }
+      onRename={review?.onRename}
+      marks={review?.marks}
+      draftCommands={review?.draftCommands}
+      touch={touch}
+    />
   );
 }

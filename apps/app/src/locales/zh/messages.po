@@ -100,6 +100,10 @@ msgstr ""
 msgid "“{name}” doesn't exist yet"
 msgstr ""
 
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "(Work has a draft)"
+msgstr ""
+
 #. placeholder {0}: stats.callCount
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0, plural, one {# call} other {# calls}}"
@@ -224,8 +228,8 @@ msgstr ""
 
 #. placeholder {0}: others.length
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "{0, plural, other {# sets of drafts for this}}"
-msgstr ""
+#~ msgid "{0, plural, other {# sets of drafts for this}}"
+#~ msgstr ""
 
 #. placeholder {0}: others.length
 #: src/features/editor/DocumentDraftHint.tsx
@@ -2288,6 +2292,10 @@ msgstr ""
 msgid "Couldn't load this document."
 msgstr ""
 
+#: src/features/project/context/ContextDocumentHost.tsx
+msgid "Couldn't load this draft."
+msgstr ""
+
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
@@ -2901,7 +2909,6 @@ msgid "Document name and location"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/DocumentVersionMenu.tsx
 msgid "Document version"
 msgstr ""
 
@@ -2943,7 +2950,11 @@ msgstr ""
 msgid "Draft review"
 msgstr ""
 
-#: src/features/editor/DocumentVersionMenu.tsx
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "Draft: {owner}"
+msgstr ""
+
+#: src/features/draft-review/DraftSwitcher.tsx
 msgid "Drafts"
 msgstr ""
 
@@ -2952,13 +2963,13 @@ msgid "Drafts ({waiting})"
 msgstr "草稿（{waiting}）"
 
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "Drafts for this"
-msgstr ""
+#~ msgid "Drafts for this"
+#~ msgstr ""
 
 #. placeholder {0}: only.label
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "Drafts for this ({0})"
-msgstr ""
+#~ msgid "Drafts for this ({0})"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 #~ msgid "Drop image to insert it"
@@ -3716,7 +3727,6 @@ msgid "litrpg"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/DocumentVersionMenu.tsx
 msgid "Live"
 msgstr ""
 
@@ -4217,7 +4227,7 @@ msgstr ""
 #~ msgid "No context files yet."
 #~ msgstr ""
 
-#: src/features/editor/DocumentVersionMenu.tsx
+#: src/features/draft-review/DraftSwitcher.tsx
 msgid "No drafts"
 msgstr ""
 
@@ -4653,6 +4663,10 @@ msgstr ""
 
 #: src/features/import/import-presentation.ts
 msgid "Pick the folder named {name} to continue."
+msgstr ""
+
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "picked Work"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -5100,8 +5114,8 @@ msgid "Returned from the billing portal."
 msgstr ""
 
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "Review"
-msgstr ""
+#~ msgid "Review"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
@@ -6635,7 +6649,6 @@ msgstr "未知"
 msgid "Unknown component: {kindLabel}"
 msgstr ""
 
-#: src/features/editor/DocumentDraftHint.tsx
 #: src/features/editor/DocumentVersionMenu.tsx
 msgid "Unnamed draft"
 msgstr ""

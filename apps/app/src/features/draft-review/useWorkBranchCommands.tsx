@@ -2,6 +2,7 @@
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
+import type { Editor } from "@tiptap/core";
 import {
   createContext,
   type ReactNode,
@@ -18,7 +19,7 @@ import {
   useOwnerDraftsFrozen,
 } from "@/client/query/useOwnerDrafts";
 import { documentBasename } from "@/client/query/work-branch-files";
-import type { EditorHistoryHandle } from "@/core/editor/editor-history";
+import { editorHistory } from "@/core/editor/editor-history";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import type { CapturedApply, CommandOutcome, DiscardNotice } from "./draft-command-owner";
@@ -46,16 +47,19 @@ export function useWorkBranchCommands({
   work,
   ownerKey,
   threadId = null,
-  surface = "dock",
-  editorHistory,
+  reviewEditor,
 }: {
   projectId: string;
   work: Work | null;
   /** Whose drafts the commands act on (`work:<id>` or `lineage:<root>`); "" acts on none. */
   ownerKey: string;
   threadId?: string | null;
-  surface?: "editor" | "dock";
-  editorHistory?: (draft: DraftReviewSelection) => EditorHistoryHandle | null;
+  /**
+   * A surface with an editor: the editor reviewing `draft` in this surface, whose own Undo takes
+   * an Apply or Discard back (null: none is reviewing it, so the command is not sent). Without
+   * it the surface has no editor, and the notice it shows takes a Discard back.
+   */
+  reviewEditor?: (draft: DraftReviewSelection) => Editor | null;
 }) {
   const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
@@ -169,7 +173,7 @@ export function useWorkBranchCommands({
         target,
         bringBack,
         (tree && item?.tree) || undefined,
-        editorHistory?.(draft),
+        editorHistoryOf(reviewEditor?.(draft)),
       );
       if (!captured) return null;
       const present = (outcome: CommandOutcome) => {
@@ -226,6 +230,7 @@ export function useWorkBranchCommands({
       if (resetNotice) endNotice();
       if (locked) return blocked();
       const item = row(draft);
+      const history = reviewEditor ? reviewEditor(draft) : "notice";
       if (item && (item.isNew || frozen) && target.kind === "draft") {
         const removed: DiscardNotice = { kind: "removed", end() {} };
         const outcome = owner.discardOnServer(ref(draft), item, frozen).then((answer) => {
@@ -243,17 +248,17 @@ export function useWorkBranchCommands({
         if (!item?.tree) return blocked();
         // The line goes at once; the refetch after the answer restores it if the server refused.
         dropTreeLine(item);
-        const outcome = owner.discardItem(ref(draft), item, target, surface).then((answer) => {
+        const outcome = owner.discardItem(ref(draft), item, target, history).then((answer) => {
           refresh([draft.documentId]);
           return answer;
         });
         // No Undo: the server's settlement of the move or delete has none (`discardItem`).
-        if (surface === "dock") show({ kind: "discarded", itemKey: draft.itemKey, end() {} });
+        if (history === "notice") show({ kind: "discarded", itemKey: draft.itemKey, end() {} });
         return { sent: true, outcome };
       }
-      const discarded = owner.discard(ref(draft), target, surface, endNotice);
+      const discarded = owner.discard(ref(draft), target, history, endNotice);
       if (!discarded) return blocked();
-      if (surface === "dock")
+      if (history === "notice")
         show({
           ...discarded.notice,
           undo: discarded.notice.undo
@@ -373,19 +378,11 @@ export function useWorkBranchCommands({
         });
       },
     };
-  }, [
-    owner,
-    locked,
-    frozen,
-    projectId,
-    ownerKey,
-    threadId,
-    surface,
-    editorHistory,
-    queryClient,
-    notice,
-  ]);
+  }, [owner, locked, frozen, projectId, ownerKey, threadId, reviewEditor, queryClient, notice]);
 }
+
+const editorHistoryOf = (editor: Editor | null | undefined) =>
+  editor ? editorHistory(editor) : null;
 
 const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);
 export function WorkBranchCommandsBoundary({
