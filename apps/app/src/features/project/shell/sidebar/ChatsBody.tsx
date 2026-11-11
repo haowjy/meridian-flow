@@ -1,13 +1,16 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contracts/protocol";
+import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Layers, Plus, Star } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { runFavoriteCommand, useChatFavorite } from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useRenameThread } from "@/client/query/useRenameThread";
 import { useWorks } from "@/client/query/useWorks";
-import { announce } from "@/client/stores";
+import { announce, announceError } from "@/client/stores";
+import { AskOnce } from "@/components/app/AskOnce";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DropdownMenuItem, useMenuActionDispatch } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
@@ -22,29 +25,21 @@ import { RowIcon } from "../../context/ContextTreeRows";
 import { PaneHeaderActionButton } from "../../context/RailPaneHeader";
 import { SettledSearchField } from "../../SearchField";
 import { TitleEditSlot } from "../TitleEditSlot";
+import { useChatDeleteState } from "./ChatDeleteProvider";
+import type { ChatDeleteNotice, ChatDeleteRefusal, ChatDeletes } from "./chat-deletes";
+import { groupChats, type RowState } from "./chat-groups";
 import { SourceHint, SourcePane } from "./SourcePane";
-import { type ChatRowTarget, useChatRowCommands } from "./use-chat-row-commands";
 
-/** Idle chats shown before "All chats" takes over. */
-const IDLE_SHOWN = 6;
-
-type ChatGroups = {
-  needsYou: ThreadListItem[];
-  running: ThreadListItem[];
-  idle: ThreadListItem[];
-  helpers: Map<string, ThreadListItem[]>;
-  otherWorks: { workId: string; running: number; needsYou: number }[];
-};
-
-type Commands = ReturnType<typeof useChatRowCommands>;
 type Feed = ReturnType<typeof useProjectChatFeed>;
 
 /** What every chat row needs from its list. */
 type RowContext = {
   projectId: string;
   currentThreadId: string | null;
-  favorites: ReadonlySet<string>;
-  commands: Commands;
+  states: ReadonlyMap<string, RowState>;
+  replying: ReadonlySet<string>;
+  deletes: ChatDeletes;
+  refused: ChatDeleteRefusal | null;
   touch: boolean;
   onOpenChat: (threadId: string) => void;
 };
@@ -78,13 +73,15 @@ export function ChatsBody({
   const { works } = useWorks(projectId);
   const [search, setSearch] = useState<string | null>(null);
   const [allOpen, setAllOpen] = useState(false);
-  const commands = useChatRowCommands(projectId);
+  const { deletes, notice, refused } = useChatDeleteState();
   const touch = useCoarsePointer();
+  const root = useRef<HTMLDivElement>(null);
   const favoriteFeed = useProjectChatFeed(projectId, true);
-  const favoriteIds = useMemo(
-    () => new Set(favoriteFeed.items.map((item) => item.id)),
-    [favoriteFeed.items],
-  );
+  // Every favourite loads, so no chat beyond the first page offers "Add to Favourites".
+  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = favoriteFeed;
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
   const groups = useMemo(
     () => groupChats(threads ?? [], scopeWorkId ?? noWorkId, noWorkId, currentThreadId),
     [threads, scopeWorkId, noWorkId, currentThreadId],
@@ -96,15 +93,25 @@ export function ChatsBody({
   const rows: RowContext = {
     projectId,
     currentThreadId,
-    favorites: favoriteIds,
-    commands,
+    states: groups.states,
+    replying: groups.replying,
+    deletes,
+    refused,
     touch,
     onOpenChat,
   };
+  // After Undo, focus goes to the chat's row, or to Find when no list here shows it.
+  const focusChat = (threadId: string) => {
+    const row = root.current?.querySelector<HTMLElement>(
+      `[data-chat-id="${CSS.escape(threadId)}"] [data-list-item]`,
+    );
+    const target = row ?? root.current?.querySelector<HTMLElement>("input");
+    if (target) moveFocus(target, { ring: lastInputWasKeyboard() });
+  };
 
-  const scoped = (thread: ThreadListItem, state: RowState) => (
+  const scoped = (thread: ThreadListItem) => (
     <div key={thread.id}>
-      <ChatRow {...rows} chat={thread} state={state} />
+      <ChatRow {...rows} chat={thread} />
       {groups.helpers.get(thread.id)?.map((helper) => (
         <ChatRow key={helper.id} {...rows} chat={helper} state="running" nested />
       ))}
@@ -112,7 +119,7 @@ export function ChatsBody({
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div ref={root} className="flex min-h-0 flex-1 flex-col">
       <SourcePane
         label={t`Chats`}
         actions={<PaneHeaderActionButton icon={Plus} label={t`New chat`} onClick={onNewChat} />}
@@ -120,7 +127,17 @@ export function ChatsBody({
         <div className="px-2 pt-1 pb-1">
           <SettledSearchField label={t`Find a chat`} value={search} onSettle={setSearch} />
         </div>
-        <DeletedLine commands={commands} />
+        {notice ? (
+          <DeletedLine
+            key={notice.id}
+            notice={notice}
+            takeFocus={() => deletes.takeFocus(notice.id)}
+            onUndo={() =>
+              void deletes.undo().then((restored) => restored && focusChat(notice.threadId))
+            }
+            onDismiss={deletes.dismiss}
+          />
+        ) : null}
         {search ? (
           <Group label={t`Results`}>
             <SearchResults search={search} rows={rows} />
@@ -138,9 +155,9 @@ export function ChatsBody({
             ) : null}
             {/* One list, most urgent first; the mark on a row says its state. */}
             <div className="px-2 pt-1">
-              {groups.needsYou.map((thread) => scoped(thread, "needs-you"))}
-              {groups.running.map((thread) => scoped(thread, "running"))}
-              {groups.idle.map((thread) => scoped(thread, "idle"))}
+              {groups.needsYou.map(scoped)}
+              {groups.running.map(scoped)}
+              {groups.idle.map(scoped)}
             </div>
             {groups.needsYou.length + groups.running.length + groups.idle.length === 0 ? (
               <SourceHint>
@@ -219,7 +236,7 @@ function FeedRows({ feed, rows, empty }: { feed: Feed; rows: RowContext; empty: 
   return (
     <div aria-busy={feed.isFetching || undefined}>
       {feed.items.map((item) => (
-        <ChatRow key={item.id} {...rows} chat={item} state="idle" />
+        <ChatRow key={item.id} {...rows} chat={item} />
       ))}
       {feed.isFetchNextPageError ? (
         <InlineErrorRow
@@ -241,37 +258,56 @@ function FeedRows({ feed, rows, empty }: { feed: Feed; rows: RowContext; empty: 
   );
 }
 
-/** The chat the writer just deleted, with its Undo. */
-function DeletedLine({ commands }: { commands: Commands }) {
-  const { deleted, undoDelete, dismissDeleted } = commands;
+/**
+ * The chat the writer just deleted, with its Undo. Focus moves to Undo when the delete makes it,
+ * not when the list remounts with it already showing.
+ */
+function DeletedLine({
+  notice,
+  takeFocus,
+  onUndo,
+  onDismiss,
+}: {
+  notice: ChatDeleteNotice;
+  /** True once per notice: the delete just made it. */
+  takeFocus: () => boolean;
+  onUndo: () => void;
+  onDismiss: () => void;
+}) {
   const undo = useRef<HTMLButtonElement>(null);
-  // The row whose menu deleted the chat is gone: focus goes to its Undo.
-  const deletedId = deleted?.id;
+  const latest = useRef(takeFocus);
   useEffect(() => {
-    if (deletedId && undo.current) moveFocus(undo.current, { ring: lastInputWasKeyboard() });
-  }, [deletedId]);
-  if (!deleted) return null;
-  if (deleted.restore === "failed")
+    if (latest.current() && undo.current) moveFocus(undo.current, { ring: lastInputWasKeyboard() });
+  }, []);
+  if (notice.status === "failed")
     return (
       <div className="px-2 pb-1">
-        <InlineErrorRow message={t`Couldn't restore ${deleted.title}`} onRetry={undoDelete} />
+        <InlineErrorRow
+          message={t`Couldn't restore ${notice.title}`}
+          onRetry={onUndo}
+          onDismiss={onDismiss}
+        />
       </div>
     );
   return (
-    <div className="flex min-w-0 items-center gap-2 px-3.5 pb-1 text-xs" role="status">
+    <div
+      className="flex min-w-0 items-center gap-2 px-3.5 pb-1 text-xs"
+      role="status"
+      data-chat-delete-notice
+    >
       <span className="min-w-0 flex-1 truncate text-muted-foreground">
-        <Trans>Deleted {deleted.title}</Trans>
+        <Trans>Deleted {notice.title}</Trans>
       </span>
       <button
         ref={undo}
         type="button"
-        className="text-button text-xs"
-        onClick={undoDelete}
-        disabled={deleted.restore === "restoring"}
+        className="text-button text-xs coarse:min-h-11"
+        onClick={onUndo}
+        disabled={notice.status === "restoring"}
       >
         <Trans>Undo</Trans>
       </button>
-      <button type="button" className="text-button text-xs" onClick={dismissDeleted}>
+      <button type="button" className="text-button text-xs coarse:min-h-11" onClick={onDismiss}>
         <Trans>Dismiss</Trans>
       </button>
     </div>
@@ -296,107 +332,128 @@ function Group({
   );
 }
 
-type RowState = "needs-you" | "running" | "idle";
-
 /** A chat as either list names it: the thread list's row or a feed page's. */
-type RowChat = ChatRowTarget & { agentName: string | null };
+type RowChat = { id: string; title: string | null; agentName: string | null };
 
 function ChatRow({
   projectId,
   chat,
-  state,
+  state = "idle",
   currentThreadId,
-  favorites,
-  commands,
+  states,
+  replying,
+  deletes,
+  refused,
   touch,
   nested = false,
   onOpenChat,
-}: RowContext & { chat: RowChat; state: RowState; nested?: boolean }) {
+}: RowContext & { chat: RowChat; state?: RowState; nested?: boolean }) {
+  const client = useQueryClient();
   const title = displayThreadTitle(chat.title);
-  const favorite = favorites.has(chat.id);
+  const favorite = useChatFavorite(projectId, chat.id);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [asking, setAsking] = useState(false);
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
   const rename = useRenameThread(projectId, chat.id, (confirmed) => {
     announce(t`Renamed to ${confirmed}`);
   });
-  const failed = commands.deleteFailure?.id === chat.id;
+  const shownState = states.get(chat.id) ?? state;
+  const onFavorite = (value: boolean) =>
+    void runFavoriteCommand(client, projectId, chat.id, value).then((outcome) => {
+      if (outcome.status !== "success") announceError(t`Favorite wasn’t saved`);
+      else announce(value ? t`${title} added to Favorites` : t`${title} removed from Favorites`);
+    });
+  // The server stops a running reply in the delete, and Undo can't restart it: that delete asks.
+  const onDelete = () => (replying.has(chat.id) ? setAsking(true) : deletes.delete(chat.id, title));
   return (
-    <TitleEditSlot
-      titleKey={`chat:${chat.id}`}
-      label={t`Rename chat`}
-      failure={() => t`Couldn’t rename this chat. Try again.`}
-      rename={rename}
-      maxLength={THREAD_TITLE_MAX_LENGTH}
-      fieldClassName="h-7 px-1.5 text-sm"
-    >
-      {({ start, triggerRef }) => (
-        <ListRow
-          ref={triggerRef}
-          onOpen={() => onOpenChat(chat.id)}
-          current={chat.id === currentThreadId ? "page" : false}
-          depth={nested ? 1 : 0}
-          revealActions={!touch && !menuOpen}
-          leading={
-            chat.agentName ? (
-              <span
-                aria-hidden
-                className={cn(
-                  "grid size-4 shrink-0 place-items-center rounded-sm border border-border-subtle font-medium leading-none",
-                  role.rowSecondary,
-                )}
-                title={chat.agentName}
-              >
-                {chat.agentName.slice(0, 1).toUpperCase()}
-              </span>
-            ) : null
-          }
-          title={title}
-          trailing={state === "idle" ? null : <StateMark state={state} />}
-          actions={
-            <>
-              {favorite ? (
-                <IconButton
-                  size="sm"
-                  aria-pressed
-                  label={t`Remove ${title} from Favourites`}
-                  onClick={() => commands.onFavorite(chat, false)}
-                  className="text-gold hover:text-gold"
+    <div data-chat-id={chat.id}>
+      <TitleEditSlot
+        titleKey={`chat:${chat.id}`}
+        label={t`Rename chat`}
+        failure={() => t`Couldn’t rename this chat. Try again.`}
+        rename={rename}
+        maxLength={THREAD_TITLE_MAX_LENGTH}
+        fieldClassName="h-7 px-1.5 text-sm"
+      >
+        {({ start, triggerRef }) => (
+          <ListRow
+            ref={triggerRef}
+            onOpen={() => onOpenChat(chat.id)}
+            current={chat.id === currentThreadId ? "page" : false}
+            depth={nested ? 1 : 0}
+            revealActions={!touch && !menuOpen}
+            leading={
+              chat.agentName ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "grid size-4 shrink-0 place-items-center rounded-sm border border-border-subtle font-medium leading-none",
+                    role.rowSecondary,
+                  )}
+                  title={chat.agentName}
                 >
-                  <Star aria-hidden className="size-3.5 fill-current" />
-                </IconButton>
-              ) : null}
-              <OverflowMenu
-                open={menuOpen}
-                onOpenChange={setMenuOpen}
-                onCloseAutoFocus={onCloseAutoFocus}
-                label={t`Actions for ${title}`}
-              >
-                <DropdownMenuItem onSelect={() => dispatch(() => start(title))}>
-                  <span>{t`Rename`}</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => commands.onFavorite(chat, !favorite)}>
-                  <span>{favorite ? t`Remove from Favourites` : t`Add to Favourites`}</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  variant="destructive"
-                  onSelect={() => dispatch(() => commands.onDelete(chat))}
+                  {chat.agentName.slice(0, 1).toUpperCase()}
+                </span>
+              ) : null
+            }
+            title={title}
+            trailing={shownState === "idle" ? null : <StateMark state={shownState} />}
+            actions={
+              <>
+                {favorite ? (
+                  <IconButton
+                    size="sm"
+                    aria-pressed
+                    label={t`Remove ${title} from Favourites`}
+                    onClick={() => onFavorite(false)}
+                    className="text-gold hover:text-gold"
+                  >
+                    <Star aria-hidden className="size-3.5 fill-current" />
+                  </IconButton>
+                ) : null}
+                <OverflowMenu
+                  open={menuOpen}
+                  onOpenChange={setMenuOpen}
+                  onCloseAutoFocus={onCloseAutoFocus}
+                  label={t`Actions for ${title}`}
                 >
-                  <span>{t`Delete chat`}</span>
-                </DropdownMenuItem>
-              </OverflowMenu>
-            </>
-          }
-          below={
-            failed ? (
-              <InlineErrorRow
-                message={t`Couldn't delete this chat`}
-                onRetry={commands.retryDelete}
-              />
-            ) : null
-          }
-        />
-      )}
-    </TitleEditSlot>
+                  <DropdownMenuItem onSelect={() => dispatch(() => start(title))}>
+                    <span>{t`Rename`}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onFavorite(!favorite)}>
+                    <span>{favorite ? t`Remove from Favourites` : t`Add to Favourites`}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem variant="destructive" onSelect={() => dispatch(onDelete)}>
+                    <span>{t`Delete chat`}</span>
+                  </DropdownMenuItem>
+                </OverflowMenu>
+              </>
+            }
+            below={
+              asking ? (
+                <AskOnce
+                  className="px-1.5 pb-1"
+                  touch={touch}
+                  sentence={t`Delete this chat? Its reply is still running and will stop.`}
+                  keep={t`Keep`}
+                  confirm={t`Delete`}
+                  onKeep={() => setAsking(false)}
+                  onConfirm={() => {
+                    setAsking(false);
+                    deletes.delete(chat.id, title);
+                  }}
+                />
+              ) : refused?.threadId === chat.id ? (
+                <InlineErrorRow
+                  message={t`Couldn't delete this chat`}
+                  onRetry={() => deletes.delete(chat.id, title)}
+                />
+              ) : null
+            }
+          />
+        )}
+      </TitleEditSlot>
+    </div>
   );
 }
 
@@ -416,52 +473,4 @@ function StateMark({ state }: { state: Exclude<RowState, "idle"> }) {
       className="size-2 shrink-0 rounded-full bg-primary"
     />
   );
-}
-
-function groupChats(
-  threads: readonly ThreadListItem[],
-  scopeWorkId: string | null,
-  noWorkId: string | null,
-  currentThreadId: string | null,
-): ChatGroups {
-  const inScope = (thread: ThreadListItem) =>
-    (thread.workId ?? noWorkId) === scopeWorkId || thread.id === currentThreadId;
-  const helpers = new Map<string, ThreadListItem[]>();
-  for (const thread of threads) {
-    if (thread.kind !== "subagent" || thread.spawnStatus !== "running" || !thread.parentThreadId)
-      continue;
-    const list = helpers.get(thread.parentThreadId) ?? [];
-    list.push(thread);
-    helpers.set(thread.parentThreadId, list);
-  }
-  const recent = threads
-    .filter((thread) => thread.kind === "primary" && thread.status !== "archived")
-    .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
-  const needsYou: ThreadListItem[] = [];
-  const running: ThreadListItem[] = [];
-  const idle: ThreadListItem[] = [];
-  const others = new Map<string, { workId: string; running: number; needsYou: number }>();
-  for (const thread of recent) {
-    const busy = thread.runningTurnId !== null;
-    if (!inScope(thread)) {
-      if (!busy && !thread.actionRequired) continue;
-      const workId = thread.workId ?? noWorkId;
-      if (!workId) continue;
-      const other = others.get(workId) ?? { workId, running: 0, needsYou: 0 };
-      if (thread.actionRequired) other.needsYou += 1;
-      else other.running += 1;
-      others.set(workId, other);
-      continue;
-    }
-    if (thread.actionRequired) needsYou.push(thread);
-    else if (busy) running.push(thread);
-    else idle.push(thread);
-  }
-  return {
-    needsYou,
-    running,
-    idle: idle.slice(0, IDLE_SHOWN),
-    helpers,
-    otherWorks: [...others.values()],
-  };
 }

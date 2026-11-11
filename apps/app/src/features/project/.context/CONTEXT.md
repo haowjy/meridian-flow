@@ -141,14 +141,26 @@ composer). `display` is the chat main shows (`new` or one thread), null when mai
 `lastChatId` is the last chat opened (`readLastChat` in `client/project-shell/store.ts`). A chat
 created from `/chats` takes main; one created from the side's composer is held beside. A link
 followed inside a chat opens the page in main, and the entry records that chat as its beside
-hint; a link to a page that chat drafted opens its draft (`useOwnerDraftOpener` in
-`review-launch.tsx`). No chat sits beside a chat, so a chat in main takes the side's picker down
+hint. A link or door to a page that chat drafted opens its draft (`useOwnerDraftOpener` in
+`review-launch.tsx`), with or without a passage; a cmd-click, ctrl-click or middle click holds the
+page beside main instead, on that draft when the chat has one. No chat sits beside a chat, so a chat in main takes the side's picker down
 to documents.
 
 There is no chat index. The sidebar's Chats list (`shell/sidebar/ChatsBody.tsx`) is how chats are
 found: a find field over the server's chat search, Favourites, the scoped Work's chats, and an
 "All chats" disclosure that pages the whole feed 24 at a time with Show more. Each row renames in
 place, toggles Favourites and deletes with an Undo line in the list.
+
+A chat delete belongs to the project, not the list (`shell/sidebar/chat-deletes.ts`, mounted by
+`ChatDeleteProvider` in `ProjectView`): its notice survives switching the sidebar's list, closing
+the phone's drawer and remounting the sidebar, and ends on the next delete, Dismiss, leaving the
+project, signing out or a reload. The delete takes main to `/chats` and lets go of a held side pick
+at once; the chat's saved composer words and unsent records stay held (`beginOwnChatDelete` in
+`client/chat-submissions/deleted-chat.ts`) until the notice ends without Undo. Undo returns main to
+the chat only if main is still on `/chats`, and the pick only if nothing has been picked since. A
+chat with a reply running asks first: the server stops the run in the delete and Undo can't
+restart it. Undo and a trashed chat's Restore are the one `restoreProjectChat`. Nothing lists
+trashed chats; after a reload a deleted chat is reachable only by its address.
 
 The displayed-chat variant is derived from the URL. Primary-list lookups may supply Work and
 header projections but never decide the body identity or reject a subagent.

@@ -1,6 +1,6 @@
 /** QueryClient-scoped normalized authority for Project-chat favorite state. */
 import type { ProjectChatItem, UpdateThreadUserStateResponse } from "@meridian/contracts/protocol";
-import type { QueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { updateThreadUserState } from "@/client/api/threads-api";
 import { type ChatFeedData, flattenChatFeed, patchChatRow } from "./chat-projections";
 import { projectQueryKeys } from "./project-query-keys";
@@ -100,6 +100,22 @@ export function projectThreadUserState(
     ...item,
     isFavorite: record.favorite?.projectedValue ?? record.base.isFavorite,
   };
+}
+
+/**
+ * One chat's favourite as the writer last set it: a pending command's value until the server
+ * answers, otherwise the last feed page that listed the chat.
+ */
+export function useChatFavorite(projectId: string, threadId: string): boolean {
+  const client = useQueryClient();
+  const { data } = useQuery({
+    queryKey: stateKey(projectId, threadId),
+    queryFn: () => readRecord(client, projectId, threadId),
+    initialData: () => readRecord(client, projectId, threadId),
+    enabled: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  return data.favorite?.projectedValue ?? data.base.isFavorite;
 }
 
 export function getThreadUserStateRecord(

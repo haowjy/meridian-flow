@@ -11,9 +11,7 @@ import { parseDraftOwnerKey } from "@meridian/contracts/branches";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArchiveRestore } from "lucide-react";
 import { useState } from "react";
-import { restoreThread } from "@/client/api/threads-api";
-import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { restoreProjectChat } from "@/client/query/delete-project-chat";
 import { DocumentNotice } from "@/components/app/DocumentNotice";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
@@ -35,19 +33,9 @@ export function TrashedChatNotice({
   const restore = () => {
     if (!rootThreadId || state === "restoring") return;
     setState("restoring");
-    restoreThread(rootThreadId)
-      .then(() =>
-        Promise.all([
-          queryClient.invalidateQueries({
-            queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
-          }),
-          invalidateProjectThreadData(queryClient, projectId),
-        ]),
-      )
-      .then(
-        () => setState("idle"),
-        () => setState("failed"),
-      );
+    void restoreProjectChat(queryClient, projectId, rootThreadId).then((outcome) =>
+      setState(outcome.status === "success" ? "idle" : "failed"),
+    );
   };
   return (
     <div className={cn("min-w-0", className)}>
