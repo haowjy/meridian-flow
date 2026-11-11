@@ -20,10 +20,11 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
 
   return {
     async ensureUser(input: EnsureUserInput): Promise<UserId> {
-      // Every authenticated request lands here. A plain read never waits on a row lock; the
-      // upsert below takes the row `FOR UPDATE` (it rewrites unique `email`), which queues
-      // behind any open write transaction that references the user, and holds a pooled
-      // connection while it waits.
+      // Every authenticated request lands here, and auth never takes a key-exclusive lock on
+      // `users` unless the email changes: naming a unique column in an UPDATE's SET (even to
+      // its current value) locks the row `FOR UPDATE`, which queues behind any open
+      // transaction holding a key-share on it through a foreign key, with a pooled
+      // connection held meanwhile. A plain read and a non-key UPDATE never wait there.
       const [current] = await db
         .select({ id: users.id })
         .from(users)
@@ -57,6 +58,14 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
         }
 
         const now = new Date().toISOString();
+        if (emailOwner) {
+          const [updated] = await tx
+            .update(users)
+            .set({ name: input.name, avatarUrl: input.avatarUrl, updatedAt: now })
+            .where(eq(users.externalId, input.externalId))
+            .returning({ id: users.id });
+          if (updated) return updated.id as UserId;
+        }
         const [row] = await tx
           .insert(users)
           .values({
