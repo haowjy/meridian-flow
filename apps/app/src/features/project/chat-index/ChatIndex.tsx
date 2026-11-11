@@ -102,7 +102,11 @@ export function ChatIndex({ projectId, namedByChrome = false }: ChatIndexProps) 
 
   return (
     // One scroll for the whole page; the list's tools stick once scrolled past.
-    <div ref={scrollOwner} data-chat-index-scroll-owner className="app-scroll main-pane">
+    <div
+      ref={scrollOwner}
+      data-chat-index-scroll-owner
+      className="app-scroll main-pane scroll-pt-14"
+    >
       <div
         className={cn(
           "chat-column @container/project-screen pb-12",

@@ -251,8 +251,8 @@ function QuestionTakeover({
             aria-pressed={picked === option.label}
             onClick={() => choose({ kind: "option", label: option.label })}
             className={cn(
-              "focus-ring flex w-full items-start gap-[var(--chat-space-block)] rounded-lg border border-border-subtle bg-background px-[var(--chat-space-block)] py-[var(--chat-space-inline)] text-left transition-colors hover:border-focus hover:bg-ink-fill",
-              picked === option.label && "border-focus bg-ink-fill",
+              "focus-ring flex w-full items-start gap-[var(--chat-space-block)] rounded-lg border border-border-subtle bg-background px-[var(--chat-space-block)] py-[var(--chat-space-inline)] text-left transition-colors hover:bg-ink-fill",
+              picked === option.label && "border-border bg-ink-fill-strong",
             )}
           >
             <span className="min-w-0 flex-1">
@@ -313,7 +313,7 @@ function QuestionTakeover({
           aria-pressed={entry.choice?.kind === "skipped"}
           className={cn(
             "border border-transparent",
-            entry.choice?.kind === "skipped" && "border-focus bg-ink-fill text-foreground",
+            entry.choice?.kind === "skipped" && "border-border bg-ink-fill-strong text-foreground",
           )}
           onClick={() => choose({ kind: "skipped" })}
         >

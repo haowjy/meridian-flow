@@ -94,7 +94,7 @@ export function ProjectLibrary() {
                         className="group focus-ring block rounded-xl"
                         aria-label={t`Open ${title}`}
                       >
-                        <div className="flex aspect-[4/5] items-center justify-center rounded-xl border border-border bg-card p-4 text-center transition-transform ease-out group-hover:-translate-y-1 motion-reduce:transition-none motion-reduce:transform-none">
+                        <div className="flex aspect-[4/5] items-center justify-center rounded-xl border border-border bg-card p-4 text-center transition-transform ease-out group-hover:-translate-y-1 group-focus-visible:translate-none motion-reduce:transition-none motion-reduce:transform-none">
                           <span
                             aria-hidden
                             className="max-w-full select-none text-balance break-words text-base font-semibold leading-snug"

@@ -641,6 +641,22 @@
   --focus-ring-offset: 2px;
 }
 
+/* A control that fades its own edge with a mask would fade its ring too. Its positioned
+   frame draws the ring over it; the control carries `data-ring-on-frame`. */
+@utility focus-ring-frame {
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    outline: 2px none var(--color-focus);
+    outline-offset: -2px;
+  }
+  :root[data-focus-keys] &:has(> [data-ring-on-frame]:focus-visible)::after {
+    outline-style: solid;
+  }
+}
+
 /* Menu rows: the same ring, also worn by a row frame whose main control has focus. */
 @utility dropdown-focus-ring {
   outline: 2px none var(--color-focus);
