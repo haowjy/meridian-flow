@@ -22,6 +22,7 @@ import { Tooltip as TooltipPrimitive } from "radix-ui";
 import type * as React from "react";
 import { createContext, useContext } from "react";
 
+import { lastInputWasKeyboard } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 
 function TooltipProvider({
@@ -88,9 +89,10 @@ function TooltipTrigger({
       onFocus={(event) => {
         onFocus?.(event);
         preventWhilePopupOpen(event);
-        // Focus opens a label only for someone moving by keyboard, as with the focus
-        // ring. A dialog that focuses its close button on open shows no tooltip.
-        if (!event.currentTarget.matches(":focus-visible")) event.preventDefault();
+        // Focus opens a label only for someone moving by keyboard, by the focus ring's rule:
+        // a dialog focusing its close button, or a menu handing focus back to its button
+        // after a click or Escape, shows none. `:focus-visible` guesses wrong after a menu.
+        if (!lastInputWasKeyboard()) event.preventDefault();
       }}
       {...props}
     />

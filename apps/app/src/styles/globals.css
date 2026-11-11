@@ -421,7 +421,11 @@
 
 /* Radix supplies the collision-aware bound after positioning. The fallback keeps
    the selector bounded before that custom property exists and in short mobile
-   viewports, including safe-area insets. */
+   viewports, including safe-area insets. The floor lets a tall list overflow a cramped
+   side: capped to that side's room it would always fit, and Radix would never flip it to
+   the side with space. The roomier side holds at least half the viewport less the
+   trigger, offset and padding (3rem allows a 44px trigger), so the floor never pushes a
+   list off a short screen; there it shrinks and scrolls. */
 @utility dropdown-surface {
   width: min(
     var(--dropdown-preferred-width, 14rem),
@@ -429,7 +433,7 @@
     calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 1rem)
   ) !important;
   max-height: min(
-    var(--radix-popover-content-available-height, 100svh),
+    max(var(--radix-popover-content-available-height, 100svh), min(16rem, 50svh - 3rem)),
     calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1rem)
   );
 }
