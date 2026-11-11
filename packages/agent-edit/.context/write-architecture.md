@@ -21,15 +21,20 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   Figures move by cut and paste; drag-to-place is wanted and must be built as delete
   plus insert ([#111](https://github.com/haowjy/meridian-flow/issues/111)).
 - A find write rewrites only its matches. It splices the content into the serialized
-  block group, reparses it, and, in a top-level paragraph or heading that is a single
-  run of text, replaces each match's text window whole at its position
-  (`cutTextWindows`, `windowHunks`). Never re-derive such a match's edit by diffing
-  the block: the diff keeps words the content shares with nearby text and anchors the
-  new text to them, and the write is planned on the model's view, so a concurrent
-  delete of those words splits and reorders it. Everything else is still word-diffed
-  on the view and keeps that exposure: a scope `replace` (`in`, whole document), a
-  find whose windows can't be mapped, and any find into a list, a blockquote, or a
-  paragraph with a hard break or an image ([TODO](TODO.md#stale-view-word-diff)).
+  block group, reparses it, and replaces each match's text window whole at its
+  position (`cutTextWindows`, `windowHunks`); a block that isn't a single run of text,
+  or a find whose windows can't be mapped, is word-diffed or block-diffed instead.
+- A block rewritten in place is lowered without the characters the room deleted since
+  the model's view (`removedText`, `withoutRemovedText`). A diff keeps old characters
+  and anchors the new text to them; if the room deleted a kept one, the model's text
+  loses it and lands split (`A disciple.B2 SIDETEXT`). So, before capture, those
+  characters are dropped from the view's block and from the model's new block, and the
+  lowering runs on what is left, whatever its path. A deleted run stays deleted unless
+  the model's inserted text joins it inside a word; a diff-placed insert is first slid
+  along equal text to a word boundary, and a run still joined is restated as the
+  model's text. Resolution (find, hashes, windows) still reads the full view, so the
+  model's references mean what it saw, and the writer's new words, which the view
+  doesn't hold, can't be deleted.
 - Equal serialized content does not preserve Yjs identity, tombstones or authorship,
   so rebuilding an existing replica from Markdown as a merge path loses all three.
 

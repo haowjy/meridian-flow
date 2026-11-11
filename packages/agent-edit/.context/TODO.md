@@ -14,27 +14,6 @@ save-time "only if empty" precondition, which only `saveNow` passes.
 Unify them: have `saveNow` run the reply path's prepare, persist and report inside
 one transaction the host owns, and route inverses through `prepareSave`.
 
-## Stale-view word diff
-
-Some writes are lowered by word-diffing each old block against its new text, on the
-model's view. Words the diff keeps are the old items; if someone deleted them since
-the model's last read, the model's new text loses them and lands split and reordered.
-That reaches:
-
-- a scope `replace` (`in`, or a whole-document write);
-- a find whose match windows can't be mapped onto the blocks: a match inside a link
-  target, content that splits or joins blocks, content that would break the
-  surrounding markup, private-use characters in the block;
-- any find into a block that isn't a single run of text: a list, a blockquote, a
-  paragraph with a hard break or an image.
-
-Smallest case: the view holds `A disciple. DRAFT-B line. SIDETEXT`, the writer
-deletes ` DRAFT-B line.`, and the model replaces the block with
-`A disciple. DRAFT-B2. SIDETEXT`: the room gets `A disciple.B2 SIDETEXT`. The same
-happens to `> A disciple. SIDETEXT` and `- A disciple. SIDETEXT` with a find insert,
-in direct mode too. Removing it needs the write planned against the current room, so
-no kept word is one the room has deleted.
-
 ## Deferred until earned
 
 - Remove the remaining ProseMirror shape coupling from parsed-content types;
