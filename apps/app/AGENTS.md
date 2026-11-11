@@ -16,6 +16,9 @@ client contracts, stores and server-owned runtime behavior.
 - When a shadcn primitive fits, adopt or extend its API in `components/ui/` and
   keep any deviation local. Product-specific density stays at the usage site
   until it recurs.
+- A line the writer clicks in a list is a `ListRow` (`components/ui/list-row.tsx`): it owns
+  height, fills, focus ring and the current look, and its list owns the inset. The file
+  tree's rows are the exception (drag targets, rename in place).
 - A list the writer picks one thing from (a Work, an Agent, a chat) is built from
   `components/ui/picker.tsx`, which owns its rows, keys and ARIA. A menu of actions
   stays a Radix `DropdownMenu`.
