@@ -136,7 +136,7 @@ mount presents in the registry like a desktop one. Both shells find the document
 `route-document-owner.ts`: the bound identity in the live catalog, then the document the
 answered address names (`addressedDocument`, built from the address's draft row when
 live lacks it), before any path occupant. A plain path never settles on a draft-only
-document (`resolveWorkspaceRoute`'s `isDraftOnly`); only its address with `owner` and
+document; only its address with `owner` and
 `item` reaches it.
 The live resource replica says nothing about a draft-only document
 (`projectResourceTab` answers `none`): a deleted document's replica record is

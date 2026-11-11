@@ -14,60 +14,29 @@ export type WorkspaceRouteResolution =
     }
   | { kind: "unowned" };
 
-export function resolveWorkspaceRoute({
-  tabs,
-  selectedDocumentId,
-  locator,
-  boundDocumentId,
-  isDraftOnly,
-}: {
-  tabs: readonly OpenDocument[];
-  selectedDocumentId: string | undefined;
-  locator: ContextRouteRequest | null;
-  /**
-   * The document this locator is bound to. Its tab owns the route wherever the
-   * tab's own path has gone, so a rename that updates the tab before the address
-   * follows never leaves the route unowned for a frame.
-   */
-  boundDocumentId?: string | null;
-  /**
-   * A document live lacks, presented through its draft. A plain path never settles on one: a
-   * draft-created page is reached only by an address that names its draft.
-   */
-  isDraftOnly?: (documentId: string) => boolean;
-}): WorkspaceRouteResolution {
-  if (!locator) return { kind: "unowned" };
-  tabs = tabs.filter(isEditorOpenDocument);
-  // Identity before path (see route-document-owner): a bound document's tab owns the route
-  // wherever the tab's path went, and no other tab may own it by holding the path.
-  const server = boundDocumentId
-    ? tabs.find((tab) => tab.kind !== "new" && tab.documentId === boundDocumentId)
-    : tabs.find(
-        (tab) =>
-          tab.kind !== "new" &&
-          openDocumentMatchesRoute(tab, locator) &&
-          !isDraftOnly?.(tab.documentId),
-      );
-  if (server) {
+/**
+ * Whether main's document owns the route: by its path, or, for the pointer route (`unfiled`, no
+ * path), as the local document the pointer holds.
+ */
+export function resolveWorkspaceRoute(
+  document: OpenDocument,
+  locator: ContextRouteRequest | null,
+): WorkspaceRouteResolution {
+  if (!locator || !isEditorOpenDocument(document)) return { kind: "unowned" };
+  if (document.kind !== "new" && openDocumentMatchesRoute(document, locator))
     return {
       kind: "owner",
-      tab: server,
-      identity: { kind: "server", documentId: server.documentId },
+      tab: document,
+      identity: { kind: "server", documentId: document.documentId },
     };
-  }
-  if (locator.scheme !== "unfiled" || locator.path !== "" || !selectedDocumentId) {
-    return { kind: "unowned" };
-  }
-  const selected = tabs.find((tab) => tab.documentId === selectedDocumentId);
-  if (selected?.kind === "new") {
+  if (locator.scheme !== "unfiled" || locator.path !== "") return { kind: "unowned" };
+  if (document.kind === "new")
     return {
       kind: "owner",
-      tab: selected,
-      identity: { kind: "local", documentId: selected.documentId },
+      tab: document,
+      identity: { kind: "local", documentId: document.documentId },
     };
-  }
-  if (selected?.kind === "tracked" && selected.origin === "local-resource") {
-    return { kind: "materialized-local", tab: selected, target: routeTargetForTab(selected) };
-  }
+  if (document.kind === "tracked" && document.origin === "local-resource")
+    return { kind: "materialized-local", tab: document, target: routeTargetForTab(document) };
   return { kind: "unowned" };
 }

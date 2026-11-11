@@ -18,11 +18,6 @@ import type { CatalogFile } from "@/client/query/context-catalog-projection";
 
 import type { OpenDocument, ServerOpenDocument, TabOwner } from "@/client/stores";
 
-/** Work-scoped tabs retain their row identity, including No Work. */
-export function editorTabWorkId(location: ResourceOwner): string | undefined {
-  return location.workId ?? undefined;
-}
-
 /**
  * What a tab holds of its owner: a Work row id, a lineage or a chat with the handle its URI
  * spells. Null for a chat's upload whose chat has no handle yet: no tab can name it.
