@@ -10,7 +10,7 @@ stable document identity plus its current locator. Obsolete locator-only local
 values and pre-migration server rows are deleted rather than decoded.
 
 Live context removal uses `reconcileContextRoutes`: one snapshot transform removes
-only identities with no surviving tab owner, repairs a same-ID locator in place, optionally promotes the resulting
+only identities no host presents, repairs a same-ID locator in place, optionally promotes the resulting
 active route, and clears all routes only for a genuinely empty workspace. Callers must
 not compose remove/promote operations for one removal transition; the sequential
 driver surface is intentionally absent.
@@ -24,18 +24,16 @@ The reducer uses server revision lineage: unavailable stays local and cannot
 push, absent keeps local, matching pending lineage keeps local, and every other
 row adopts server. The account sync toggle guards the operation.
 
-Server adoption updates recency, never Editor tab membership. The current
-chat lives outside the working set (`../current-chat.ts`). `selectEditorEntryTab` may rank existing tabs using recent routes;
-it never reopens a historical path. An empty browser-local workspace stays empty
-through screen entry and reload. Project-entry validation reconciles only tabs
-already restored from sessionStorage against the resource replica.
+Server adoption updates recency, never what main shows. The current
+chat lives outside the working set (`../current-chat.ts`). Recent routes never reopen a
+historical path. An empty Editor stays empty through entry and reload.
 
 ## Refusals and routes the server does not hold
 
 The server answers a snapshot naming a document it does not hold with a 400. The sweep treats
 any 4xx but 401, 408 and 429 as an answer about the snapshot: no suspect baseline, no timed
 retry, and the pending record stays, so the next report, flush or hydration sends again. A
-snapshot names only documents the replica knows the server holds: a tab whose record is still
+snapshot names only documents the replica knows the server holds: a document whose record is still
 `local` carries `localOnly` and contributes no route, so a pending or refused create costs no
 400 and the device's other routes keep syncing. When the create lands the projection clears the
 flag and the next report adds the route.
@@ -59,7 +57,7 @@ then runs `planSuspectBaselineConfirmation` / `reduceWorkingSetHydration`:
 
 - **local** (absent, or pending base matches row) → baseline confirmed; push proceeds.
 - **server** (row moved past pending's base) → adopt row into the store (data
-  only — no navigation, seeding, or tab changes), discard pending, confirm the
+  only — no navigation or seeding), discard pending, confirm the
   new revision as baseline.
 - **read-degraded** (GET fails) → stay suspect; backoff; retry on `retry-now` or
   the next sweep.

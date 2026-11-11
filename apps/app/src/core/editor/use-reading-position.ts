@@ -1,4 +1,4 @@
-/** Per-mounted-view device memory; warm tabs retain their existing DOM and place. */
+/** Per-mounted-view device memory; a kept document retains their existing DOM and place. */
 import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";

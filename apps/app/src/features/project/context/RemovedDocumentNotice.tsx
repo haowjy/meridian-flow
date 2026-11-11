@@ -1,9 +1,8 @@
 /**
  * What the app says when documents it showed were deleted or discarded by
  * something other than this tab. The sentence owns the copy rules; the notice
- * sits in blank space the closed document left: the tab strip's free end, the
- * landing's top margin, the dock's header beside "Recent", or the phone's
- * notice row.
+ * sits in blank space the closed document left: main's header beside the title, the
+ * landing's top margin, or the phone's notice row.
  */
 import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
@@ -266,8 +265,8 @@ function DismissNotice({
 }
 
 /**
- * The strip placement: a ghost chip in a header's free end (the Editor's tab
- * strip, or the dock's header beside "Recent"), inside a `RemovedNoticeSlot`.
+ * The header placement: a ghost chip in main's header beside the title, inside a
+ * `RemovedNoticeSlot`.
  * The full sentence shows when the slot has room and the short one
  * ("1 document deleted") otherwise; the tooltip and accessible name always
  * carry the full sentence, every name included.

@@ -1,8 +1,8 @@
 /**
  * DocumentIdentityBar — an open document's identity and state: the chips about it
  * (Draft or Live, Choose a home for a document in Unfiled, device-only, a refused
- * move, a review's controls). Main shows it at the tab row's right end with
- * no path (`variant="state"`); the dock shows it as its header, with the path.
+ * move, a review's controls). The state chips portal into the document's state slot; a
+ * review's controls take a line of their own above the toolbar.
  */
 import "./document-identity-row.css";
 import { t } from "@lingui/core/macro";
@@ -14,19 +14,17 @@ import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { ContextTab } from "@/client/stores";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
-import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
+import { DraftReviewBand } from "@/features/editor/DraftReviewBand";
 import { DocumentStatePortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
-import { cn } from "@/lib/utils";
 import { useAiDraftLauncher } from "../review-launch";
 import { useAccountResourceProjection } from "./account-feature-context";
 import { schemeLabel } from "./context-schemes";
-import { DocumentPath } from "./DocumentPath";
 import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
 import { tabLocation } from "./identity-location";
-import { LinkUpdateNote, useRenameOperation } from "./LinkUpdateNote";
+import { useRenameOperation } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import {
   type IdentityCommitOwnership,
@@ -41,17 +39,6 @@ export type DocumentIdentityBarProps = {
   tab: ContextTab;
   /** The document can't be renamed or moved (its Work is archived). */
   readOnly?: boolean;
-  /**
-   * The content of the dock's header row, with the path; or main's state at
-   * the tab row's right end, without it (the tab's tooltip carries the path).
-   */
-  variant: "header" | "state";
-  /** Header only: commands at the row's left edge (the dock's Close and Open in Editor). */
-  leading?: ReactNode;
-  /** Header only: pinned to the first line's right edge, whether or not the controls wrap (the dock's Collapse). */
-  trailing?: ReactNode;
-  /** Header only: a persistent line under the row (the dock's failed Open in Editor). */
-  notice?: ReactNode;
   onCloseDraftOnly?: () => void;
   onCommitted: (
     documentId: string,
@@ -66,10 +53,6 @@ export function DocumentIdentityBar({
   editorWorkId,
   tab,
   readOnly = false,
-  variant,
-  leading,
-  trailing,
-  notice,
   onCommitted,
   onOpenExisting,
   onCloseDraftOnly,
@@ -79,7 +62,7 @@ export function DocumentIdentityBar({
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
-  const { operationId: noteOperationId, remember } = useRenameOperation(projectId, {
+  const { remember } = useRenameOperation(projectId, {
     kind: "file",
     id: tab.documentId,
   });
@@ -214,115 +197,6 @@ export function DocumentIdentityBar({
       </DocumentStatePortal>
     </>
   );
-  const renderRow = (version: ReactNode, controls: ReactNode) => (
-    <div className="min-w-0 flex-1">
-      {/* One line when the path and the review controls fit together; otherwise
-          the controls wrap to a line of their own (flex-wrap, no breakpoint), so
-          the path keeps its room. The trailing command is pinned to the first
-          line. Crumb text is text-sm to match the suggestion-popover rows. */}
-      <div
-        ref={rowRef}
-        data-document-identity-row
-        className={cn(
-          "relative flex flex-wrap items-center gap-x-1 font-mono text-muted-foreground text-sm",
-          "min-h-10 gap-y-0.5 py-1 pl-2",
-          trailing && "pr-12 coarse:pr-14",
-          // The row grows so every control can own a 44px target (document-identity-row.css).
-          "coarse:min-h-11",
-        )}
-      >
-        {/* One unit for wrapping: the commands never part from the path. */}
-        <div className="flex min-w-0 flex-auto items-center gap-1">
-          {leading ? <div className="flex shrink-0 items-center gap-0.5">{leading}</div> : null}
-          <div data-identity-main className="flex min-w-0 flex-auto items-center gap-1">
-            {placementOpen ? (
-              <IdentityPlacementField
-                projectId={projectId}
-                editorWorkId={editorWorkId}
-                tab={tab}
-                location={location}
-                failure={identityFailure}
-                commit={commit}
-                onExit={(reason) => {
-                  // Leaving the field acknowledges any failure receipt — it must
-                  // not reopen the editor it just closed.
-                  setFieldOpen(false);
-                  if (repair) setDismissedRepairId(repair.intentId);
-                  if (reason === "escape") focusEditorProse(tab.documentId);
-                }}
-                onOpenExisting={onOpenExisting}
-              />
-            ) : (
-              <DocumentPath
-                projectId={projectId}
-                tab={tab}
-                location={location}
-                trailing={
-                  <LinkUpdateNote
-                    projectId={projectId}
-                    subject={{ kind: "file", id: tab.documentId }}
-                    operationId={noteOperationId}
-                    className="ml-3 font-sans text-muted-foreground"
-                  />
-                }
-              />
-            )}
-            {version}
-            <ManuscriptStateSlot state={manuscriptState} className="ml-1" />
-            {/* List failures are passive: an icon whose tooltip says where to act. */}
-            {repair && !placementOpen && !repairable ? (
-              <NamespaceFailureMark
-                failure={repair.kind}
-                message={repair.kind === "create" ? undefined : passiveFailure}
-              />
-            ) : null}
-            <IdentityChipSlot
-              projectId={projectId}
-              tab={tab}
-              show={showChip && !placementOpen}
-              onChooseHome={() => {
-                setFieldOpen(true);
-              }}
-            />
-            {reviewItemKey || reviewPending ? null : (
-              <span className="ml-auto flex shrink-0 pl-2">
-                <DocumentVersionMenu projectId={projectId} tab={tab} />
-              </span>
-            )}
-          </div>
-        </div>
-        {/* Before the controls in DOM order: Tab follows the first line, then the second. */}
-        {trailing ? (
-          <div className="absolute top-0 right-2 flex h-10 items-center gap-0.5 coarse:h-11">
-            {trailing}
-          </div>
-        ) : null}
-        {controls}
-      </div>
-      {/* A provisional placement refusal offers repair here, in words on a line of its own so a
-          narrow bar never cuts the sentence. */}
-      {repair && repairable && !placementOpen ? (
-        <button
-          type="button"
-          className="focus-ring flex w-full min-w-0 pb-1 pl-2 text-left"
-          onClick={() => {
-            setDismissedRepairId(null);
-            setFieldOpen(true);
-          }}
-        >
-          <NamespaceFailureMark failure={repair.kind} labelled />
-        </button>
-      ) : null}
-      {notice}
-      {reviewItemKey ? (
-        <DraftReviewFailureNotices
-          documentId={tab.documentId}
-          itemKey={reviewItemKey}
-          onOpenDraft={openDraft}
-        />
-      ) : null}
-    </div>
-  );
   return (
     <DraftReviewBand
       projectId={projectId}
@@ -332,9 +206,7 @@ export function DocumentIdentityBar({
       onOpenDraft={openDraft}
       onCloseDraftOnly={onCloseDraftOnly}
     >
-      {({ version, controls }) =>
-        variant === "state" ? renderState(version, controls) : renderRow(version, controls)
-      }
+      {({ version, controls }) => renderState(version, controls)}
     </DraftReviewBand>
   );
 }

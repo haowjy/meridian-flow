@@ -21,7 +21,7 @@ export function ChooseHomeChip({ onClick }: { onClick: () => void }) {
         <Chip asChild tone="jade" className={`focus-ring ${appear}`}>
           <button
             type="button"
-            // The label hides in a narrow pane (the dock); the button keeps its name.
+            // The label hides in a narrow pane (the side); the button keeps its name.
             aria-label={t`File this document`}
             onClick={onClick}
           >

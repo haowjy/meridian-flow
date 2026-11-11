@@ -145,7 +145,7 @@ identity in anchors or holds.
   plugin's appended transaction makes wrong; Yjs alone would map the current
   selection, and a moved range has just been removed. Redo and a caret keep
   y-tiptap's mapped selection. Destroying the editor is terminal and
-  discards only that mounted navigation history. Dock, Work, tree-only Apply, and title changes never enter it.
+  discards only that mounted navigation history. The side, Work, tree-only Apply, and title changes never enter it.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks

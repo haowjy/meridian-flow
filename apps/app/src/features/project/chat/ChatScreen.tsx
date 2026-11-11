@@ -1,6 +1,6 @@
 /**
  * ChatScreen — renders the resolved thread in whichever pane hosts the chat
- * (center, dock, phone), or the empty New chat when there is none. It never
+ * (main, side, phone), or the empty New chat when there is none. It never
  * owns thread routing itself; it reads `useChatNavigation()` for the commands
  * a chat surface needs (opening the parent of a subagent, focusing a freshly
  * requested New chat composer). A chat whose Work is archived keeps its live

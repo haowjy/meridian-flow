@@ -1,6 +1,6 @@
 # Draft review runtime
 
-Review is a projection of the tab's own text, not a server-vended operation list. The
+Review is a projection of the document's own text, not a server-vended operation list. The
 shared [kernel model](../../../../../../packages/agent-edit/.context/diff-review.md)
 owns diffing, grouping, move pairing and formatting context.
 
@@ -165,7 +165,7 @@ write and restores the row.
 Direct writes never impersonate the binding origin: its delete-only transactions without a
 writer ProseMirror transaction are schema-repair evidence. The draft-only editor plugin
 installs restoration recording when its view mounts, before any writer Undo/Redo; live
-editors never install it. A dock or Work notice owns a separate manager and pool lease.
+editors never install it. A side or Work notice owns a separate manager and pool lease.
 Undo captures its own session acknowledgement barrier before releasing notice ownership,
 because a later item lookup can't prove that retired session's edits landed. The notice
 belongs to its exact session binding, so replacement documents never inherit the manager.

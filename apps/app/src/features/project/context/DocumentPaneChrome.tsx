@@ -1,9 +1,9 @@
 /**
  * DocumentPaneChrome — what sits above an open document's editor: the passage
  * notice, the frozen-document notice (an archived Work, a trashed chat), a failed
- * review command, and the document's properties. The Editor's page and the dock's
+ * review command, and the document's properties. Main's page and the side's
  * document stack the same chrome. The document's identity and state are elsewhere:
- * in main at the end of the toolbar row, in the dock in its header (the Live
+ * in main at the end of the toolbar row, in the side in its header (the Live
  * menu lists other owners' drafts).
  */
 import type { ContextTab } from "@/client/stores";
@@ -22,7 +22,7 @@ export type DocumentPaneChromeProps = {
   /** Set when the document as shown is frozen: by its archived Work, or a trashed chat. */
   freeze: DocumentFreeze | null;
   /**
-   * In main: show a failed review command here (the dock's header shows its
+   * In main: show a failed review command here (the side's header shows its
    * own).
    */
   reviewNotices: boolean;

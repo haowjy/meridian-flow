@@ -150,7 +150,7 @@ export type ChatViewProps = {
   historySettled: boolean;
   /** A notice framed onto the composer's top edge; the composer stays usable under it. */
   composerStrip?: ReactNode;
-  /** False while the chat is mounted but hidden (collapsed dock, Settings). */
+  /** False while the chat is mounted but hidden (collapsed side, Settings). */
   active?: boolean;
 };
 

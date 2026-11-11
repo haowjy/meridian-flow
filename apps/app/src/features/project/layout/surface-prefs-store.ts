@@ -1,7 +1,7 @@
 /**
  * Device-local project chrome preferences.
  *
- * Widths belong to slots (the left rail and the dock), so whatever surface sits in
+ * Widths belong to slots (the left rail and the side), so whatever surface sits in
  * a slot reads one width. Whether the sidebar and the side panel are open is one
  * choice for the device, whatever main shows. Placement is not stored here: it follows the kind
  * of item the address names.
@@ -17,12 +17,12 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export type SlotWidths = Record<PanelSlotId, number>;
-/** Whether the left sidebar and the side panel (the dock until phase 8) are open. */
+/** Whether the left sidebar and the side panel (slot id `dock`) are open. */
 export type PanelPrefs = { sidebarOpen: boolean; sideOpen: boolean };
 
 export const SLOT_WIDTH_BOUNDS: Record<PanelSlotId, { min: number; max: number }> = {
   "rail-l": { min: 220, max: 380 },
-  // Below this the dock header's chat picker and rename input compress into slivers.
+  // Below this the side header's title and Open in main and rename input compress into slivers.
   dock: { min: 280, max: 520 },
 };
 

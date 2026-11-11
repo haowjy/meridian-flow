@@ -4,7 +4,7 @@
  * Hosts compose this frame around viewer bodies and optional viewer-owned
  * footers. Header ownership is explicit: pass a file header when the surrounding
  * chrome does not name the file, as the trash record does. `ContextViewerHost`
- * omits it: the Editor's path, the dock's title chip and the phone's top bar
+ * omits it: main's title chip, the side header and the phone's top bar
  * already name the file.
  */
 import type { ReactNode } from "react";

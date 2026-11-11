@@ -31,11 +31,9 @@ come in through the real intake.
    "Couldn’t delete this file. Try again." in place of the type and time, and the height
    is unchanged. The line clears
    when the menu closes or on the next delete of that row.
-6. "Open" on a row opens the file in the dock beside the chat (Chat screen with the
-   right rail expanded). Reload: the dock tab comes back. This also holds for a chat
-   created with its first attachment. On the Work and Editor screens, where the chat is
-   the dock, rows offer no Open, and the sent message's attachment is not a link: those
-   screens have no viewer.
+6. Rows offer no Open: uploads have no editor address, so no chat door opens one
+   on desktop, and the sent message's attachment is not a link. This also holds for a chat
+   created with its first attachment.
 7. Open a second chat in the same Work: Files shows the same shared Scratch and
    no uploads from the first chat. Fork the first chat: the fork's
    trigger reads "Files" and its menu says "No files attached in this chat yet."
@@ -53,7 +51,7 @@ leave the script running while you drive. The Chat screen's top bar then shows t
 menu fitting 390 px (light and dark); rows offer no Open there. Check the chat sheet header
 host the same way.
 
-`agent-browser upload "input[type=file]"` is unreliable here: with a dock open the page has
-two hidden file inputs (the dock editor's figure input and the composer's), and the first
+`agent-browser upload "input[type=file]"` is unreliable here: with a document open the page has
+two hidden file inputs (the document editor's figure input and the composer's), and the first
 match may attach to another chat's composer draft. Upload with the ref of the composer's
 "Choose File" button, one file per call.
