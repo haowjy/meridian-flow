@@ -49,6 +49,12 @@ export type CreateOp = OpBase & {
   parent: string;
   rank: string;
   blob?: BlobRef;
+  /**
+   * Only on a create written by a trim: the node's place in the order of arrival under its
+   * name, which decides who shows a number when two siblings share one. Every such node
+   * arrived before anything recorded after the trim.
+   */
+  arrival?: number;
 };
 export type MoveOp = OpBase & {
   type: "move";
@@ -96,6 +102,8 @@ export type TreeNode = {
   createdBy: Actor;
   /** The op that last changed where it is or what it is called. */
   lastChangedBy: Actor;
+  /** Order of arrival under its name among all nodes (see `CreateOp.arrival`). */
+  arrival: number;
 };
 
 export type SkipReason =
@@ -110,6 +118,8 @@ export type TreeProjection = {
   skipped: Array<{ op: string; reason: SkipReason }>;
   /** Ops whose node had to be placed at the root because its folder was never created. */
   rescued: string[];
+  /** The delete records still in force, with what each still takes: what a trim carries over. */
+  deletes: Array<{ id: string; node: string; cascade: string[] }>;
 };
 
 export type View = { draft: DraftId | null };
@@ -268,7 +278,7 @@ export function replay(
           createdBy: op.actor,
           lastChangedBy: op.actor,
           createdAt: index,
-          arrivedAt: index,
+          arrivedAt: op.arrival === undefined ? index : op.arrival - 1e12,
         });
         continue;
       }
@@ -425,9 +435,15 @@ export function replay(
       ...(node.blob ? { blob: node.blob } : {}),
       createdBy: node.createdBy,
       lastChangedBy: node.lastChangedBy,
+      arrival: node.arrivedAt,
     });
   }
-  return { nodes: out, skipped, rescued };
+  return {
+    nodes: out,
+    skipped,
+    rescued,
+    deletes: deletes.map((record) => ({ id: record.id, node: record.node, cascade: [...record.cascade] })),
+  };
 }
 
 /** Children in display order: by rank, then id, so equal ranks from concurrent inserts still sort the same everywhere. */

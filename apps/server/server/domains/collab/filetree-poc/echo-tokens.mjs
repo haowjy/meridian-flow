@@ -35,6 +35,7 @@ const cases = {
   "too many changes: re-list": "status: success; write: e7; version: live\n\nconcurrent tree changes: 143 since you last listed, too many to show. `ls` the folders you are working in before using a path from an older listing.",
   "draft mode, node deleted in live": "status: success; write: e7; version: draft (w2)\n\ndeleted in live by user Jimmy: this waits until it is restored",
   "too many, new wording": "status: success; write: e7; version: live\n\nconcurrent tree changes: 143 since you last listed, too many to show. `ls` a folder before relying on an older listing of it.",
+  "into a folder deleted since: made, folder kept": "status: success; write: e7; version: live; kept: manuscript://Arc 3/, deleted by user Jimmy after you last listed it",
   "report: 4 changes by the user": "concurrent tree changes:\nuser Jimmy:\n  renamed: manuscript://Arc 2/Chapter 49 → The Fall\n  moved: manuscript://Notes/Outline → manuscript://Arc 3/\n  deleted: manuscript://Old outline\n  created: manuscript://Arc 3/Chapter 50",
 };
 // a folder re-listing: 30 chapters
