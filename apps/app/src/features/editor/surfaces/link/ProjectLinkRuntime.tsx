@@ -59,7 +59,7 @@ export function useEditorLinkDestination(): LinkDestination {
       }),
     [openDocument, workId],
   );
-  return useReviewingLinkDestination(openLive);
+  return useReviewingLinkDestination(openLive, workId ?? undefined);
 }
 
 /** Runtime over the scope's document index and the holder address supplied by its surface. */

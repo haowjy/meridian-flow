@@ -37,15 +37,10 @@ import { fileKindIcon } from "../context/context-file-icon";
 import { matchFileSuggestions } from "../context/file-suggestions/file-suggestions";
 import { titleChipClass } from "../shell/tab-chip";
 import { useMainItem } from "../views";
-import { useMainForSide, useShellCommands, useSideItem } from "./SideView";
-import { sameItem } from "./side-item";
+import { useMainForSide, useShellCommands, useSideDescriptions, useSideItem } from "./SideView";
+import { fitsBeside, sameItem } from "./side-item";
 
 const RECENT_LIMIT = 6;
-/**
- * A pick can move the side to another host (a document's in place of the chat's), whose header
- * mounts a new trigger: the focus the popover returns has nowhere to go, so the new one takes it.
- */
-let focusNextTrigger = false;
 const FIND_LIMIT = 12;
 const FIND_SCHEMES: readonly ProjectContextTreeScheme[] = ["manuscript", "kb", "user"];
 
@@ -73,12 +68,6 @@ export function SidePicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!focusNextTrigger) return;
-    focusNextTrigger = false;
-    triggerRef.current?.focus();
-  }, []);
   const changeOpen = (next: boolean) => {
     setOpen(next);
     if (!next) setQuery("");
@@ -87,8 +76,8 @@ export function SidePicker({
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
         <button
-          ref={triggerRef}
           type="button"
+          data-side-picker-trigger
           aria-label={t`Choose what sits beside, now ${name}`}
           aria-expanded={open}
           aria-haspopup="dialog"
@@ -144,11 +133,11 @@ function SidePickerLists({
   const main = useMainForSide();
   const mainDocument = useMainItem().document.tab;
   const side = useSideItem();
+  const descriptions = useSideDescriptions();
   const { pickSide, releaseSide } = useShellCommands(projectId);
   const mainDocumentId = main.kind === "document" ? main.documentId : null;
   const mainChatId = main.kind === "chat" ? main.chatId : null;
-  const mainIsChat = main.kind === "chat" || main.kind === "chat-index";
-  const offersChats = !mainIsChat;
+  const offersChats = fitsBeside({ kind: "chat", chatId: null }, main, chatsOnly);
   const offersDocuments = !chatsOnly;
 
   const catalogs = useContextCatalogViews(projectId, FIND_SCHEMES, { enabled: offersDocuments });
@@ -172,21 +161,24 @@ function SidePickerLists({
   };
 
   const shownNow = side.item;
-  const onMain: HeldPick | null = mainDocumentId
-    ? { kind: "document", documentId: mainDocumentId }
-    : mainChatId
-      ? { kind: "chat", chatId: mainChatId }
-      : null;
-  const fits = (pick: HeldPick) =>
-    !sameItem(pick, onMain) && (pick.kind === "document" ? offersDocuments : offersChats);
   const keep = (rows: Row[]) => {
     const seen = new Set<string>();
     return rows.filter((row) => {
-      if (seen.has(row.key) || !fits(row.pick)) return false;
+      if (seen.has(row.key) || !fitsBeside(row.pick, main, chatsOnly)) return false;
       seen.add(row.key);
       return true;
     });
   };
+  // A chat's documents include its uploads and may name a removed one: only those that open
+  // beside are offered.
+  const touched = offersDocuments
+    ? (chatDocuments.documents ?? []).filter((row) => row.kind === "tracked")
+    : [];
+  const touchedIds = touched.map((row) => row.documentId).join(",");
+  const { request } = descriptions;
+  useEffect(() => {
+    if (touchedIds) request(touchedIds.split(",").map((documentId) => ({ documentId })));
+  }, [touchedIds, request]);
 
   const mainName = mainDocument?.name ?? null;
   const forThis: Row[] = keep(
@@ -219,8 +211,11 @@ function SidePickerLists({
           }),
         ]
       : mainChatId
-        ? (chatDocuments.documents ?? [])
-            .filter((row) => row.kind === "tracked")
+        ? touched
+            .filter((row) => {
+              const described = descriptions.read({ documentId: row.documentId });
+              return described.status === "ready" && described.tab !== null;
+            })
             .map((row) => ({
               key: `document:${row.documentId}`,
               pick: { kind: "document" as const, documentId: row.documentId },
@@ -293,9 +288,10 @@ function SidePickerLists({
     : [];
 
   const choose = (pick: HeldPick) => {
-    if (!sameItem(pick, shownNow)) focusNextTrigger = true;
+    const moves = !sameItem(pick, shownNow);
     pickSide(pick);
     onDone();
+    if (moves) focusTriggerAfterPick();
   };
   const row = (item: Row) => (
     <PickerRow
@@ -319,6 +315,10 @@ function SidePickerLists({
         ref={searchRef}
         value={query}
         onChange={onQueryChange}
+        onSubmit={() => {
+          const first = found[0];
+          if (first) choose(first.pick);
+        }}
         label={offersDocuments ? t`Find a document or chat` : t`Find a chat`}
       />
       <PickerResults bound="fill">
@@ -419,6 +419,23 @@ function SidePickerLists({
       </PickerResults>
     </Picker>
   );
+}
+
+/**
+ * A pick can move the side to another host (a document's in place of the chat's), whose header
+ * mounts a new trigger: the focus the popover returns has nowhere to go. Once the pick has
+ * committed, the side's trigger takes it, if nothing else has.
+ */
+function focusTriggerAfterPick() {
+  requestAnimationFrame(() => {
+    if (document.activeElement && document.activeElement !== document.body) return;
+    const triggers = document.querySelectorAll<HTMLElement>("[data-side-picker-trigger]");
+    for (const trigger of triggers) {
+      if (trigger.closest("[inert]")) continue;
+      trigger.focus();
+      return;
+    }
+  });
 }
 
 function ItemIcon({ pick, name }: { pick: HeldPick; name: string }) {

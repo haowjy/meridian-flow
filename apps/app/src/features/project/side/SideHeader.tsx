@@ -19,7 +19,7 @@ import { fileKindIcon } from "../context/context-file-icon";
 import { PanelToggleSpacer } from "../shell/PanelToggleButton";
 import { useMainItem } from "../views";
 import { SidePicker } from "./SidePicker";
-import { useShellCommands, useSideItem } from "./SideView";
+import { useNewChatAbout, useShellCommands, useSideItem } from "./SideView";
 import type { SideReason } from "./side-item";
 
 /** The quiet line after the side's name that says why it is there. */
@@ -42,14 +42,18 @@ export function sideReasonText(reason: SideReason | null, mainName: string | nul
   }
 }
 
-/** The side's chat's name: its title, or for a new chat what it will be about. */
-export function useSideChatName(
-  projectId: string,
-  chatId: string | null,
-  aboutName: string | null,
-): string {
+/**
+ * The side's chat's name: its title, or for a new chat what its composer will attach: main's
+ * document while the composer follows it, else the chip the writer kept.
+ */
+export function useSideChatName(projectId: string, chatId: string | null): string {
   const { threads } = useProjectThreads(projectId);
-  if (chatId === null) return aboutName ? t`New chat about ${aboutName}` : t`New chat`;
+  const about = useNewChatAbout().about;
+  const mainName = useMainItem().document.tab?.name ?? null;
+  if (chatId === null) {
+    const aboutName = about === "follows" ? mainName : (about?.label ?? null);
+    return aboutName ? t`New chat about ${aboutName}` : t`New chat`;
+  }
   return displayThreadTitle(threads?.find((thread) => thread.id === chatId)?.title);
 }
 
@@ -156,8 +160,7 @@ export function SideChatHeader({
   trailing?: ReactNode;
 }) {
   const activity = useThreadActivity({ threadId: threadId ?? "", seed: null });
-  const mainName = useMainItem().document.tab?.name ?? null;
-  const name = useSideChatName(projectId, threadId, mainName);
+  const name = useSideChatName(projectId, threadId);
   return (
     <SideBand
       projectId={projectId}
@@ -180,18 +183,12 @@ export function SideChatHeader({
 }
 
 /** The side with nothing to show: its first companion read is out or failed, or main has no companion. */
-export function SideEmptyHeader({ projectId, opening }: { projectId: string; opening: boolean }) {
+export function SideEmptyHeader({ projectId }: { projectId: string }) {
   const side = useSideItem();
   return (
     <SideBand
       projectId={projectId}
-      name={
-        opening
-          ? t`Opening…`
-          : side.pending
-            ? t`Finding what goes with this…`
-            : t`Choose what sits beside`
-      }
+      name={side.pending ? t`Finding what goes with this…` : t`Choose what sits beside`}
       icon={null}
     />
   );

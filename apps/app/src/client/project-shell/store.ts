@@ -16,23 +16,28 @@ export const DEFAULT_SIDEBAR_LIST: SidebarList = "files";
 
 /**
  * What the writer picked to sit beside main. While set, the side does not follow main. A chat
- * with no id is a new chat's composer.
+ * with no id is a new chat's composer. A document followed from a link keeps the link's Work.
  */
 export type HeldPick =
-  | { kind: "document"; documentId: string }
+  | { kind: "document"; documentId: string; workId?: string }
   | { kind: "chat"; chatId: string | null };
 
+const DOCUMENT = "document:";
+const WORK = "?work=";
 const NEW_CHAT = "chat:";
 
 function encodeHeld(held: HeldPick): string {
   return held.kind === "document"
-    ? `document:${held.documentId}`
+    ? `${DOCUMENT}${held.documentId}${held.workId ? `${WORK}${held.workId}` : ""}`
     : `${NEW_CHAT}${held.chatId ?? ""}`;
 }
 
 function decodeHeld(stored: string | null): HeldPick | null {
-  if (stored?.startsWith("document:") && stored.length > "document:".length)
-    return { kind: "document", documentId: stored.slice("document:".length) };
+  if (stored?.startsWith(DOCUMENT)) {
+    const [documentId, workId] = stored.slice(DOCUMENT.length).split(WORK);
+    if (!documentId) return null;
+    return workId ? { kind: "document", documentId, workId } : { kind: "document", documentId };
+  }
   if (stored?.startsWith(NEW_CHAT))
     return { kind: "chat", chatId: stored.slice(NEW_CHAT.length) || null };
   return null;

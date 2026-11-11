@@ -5,10 +5,20 @@
  *
  * The held pick is stored per browser tab (`client/project-shell/store.ts`) and never written to
  * history: Back moves main, and the beside hint returns with its entry. A hold ends by the held
- * mark, by "Follow" in the picker, by closing the side, when its item becomes main, and when its
- * document is closed, Discarded or removed.
+ * mark, by "Follow" in the picker, by closing the side, when it can no longer sit beside main (its
+ * item becomes main, a chat in main, a document on the phone), when its document no longer opens,
+ * and when its document is closed, Discarded or removed.
  */
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   type HeldPick,
   readHeldPick,
@@ -19,30 +29,38 @@ import {
 import { useDocumentRelated } from "@/client/query/useDocumentRelated";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
+import type { ContextTab } from "@/client/stores";
+import type { NewChatAbout } from "@/features/chat/CreationComposer";
 import {
   useAccountId,
   useOptionalPresentedDocuments,
   useShownDocuments,
 } from "../context/account-feature-context";
+import { useDescribeProjectDocument } from "../context/open-project-document";
 import type { Item } from "../views";
 import {
+  type Candidate,
   type Companion,
+  type Described,
+  type Describing,
   fitsBeside,
   type MainForSide,
   resolveSide,
   type SettledSide,
   type SideReason,
   type SideSource,
-  sameItem,
 } from "./side-item";
 
 export type SideItem = {
   item: Item | null;
+  /** A document item's descriptor. */
+  tab: ContextTab | null;
   source: SideSource | null;
+  /** Why it is there; none while the side keeps an earlier item, whose reason was about another main. */
   reason: SideReason | null;
   /** The companion read has not answered: the side keeps what it showed. */
   pending: boolean;
-  /** The companion read failed: the side keeps what it showed and offers this retry. */
+  /** A read the side waits on failed: the side keeps what it showed and offers this retry. */
   retry: (() => void) | null;
 };
 
@@ -53,6 +71,13 @@ type SideView = {
   chatOnScreen: string | null;
   /** The chat host's thread: the chat on screen, else the one it last showed (kept warm, hidden). */
   hostChatId: string | null;
+  /** What the side's new-chat composer is about, as its draft stands. */
+  newChatAbout: NewChatAbout;
+  reportNewChatAbout: (about: NewChatAbout) => void;
+  /** Bumped by a hold from a link: the desktop opens the side so the hold is seen. */
+  revealed: number;
+  holdBeside: (pick: HeldPick) => void;
+  descriptions: Descriptions;
 };
 
 const SideViewContext = createContext<SideView | null>(null);
@@ -72,31 +97,32 @@ function useCompanion(
   const recent = useRecentDocuments(projectId);
   // The document the writer was on: the last one on screen (a draft-only one included, which
   // recents never list), else the account's most recent.
-  const lastDocumentId = shown[0]?.documentId ?? recent.documents[0]?.documentId ?? null;
-  const lastDocument = (): Companion => ({
-    status: "ready",
-    item: lastDocumentId ? { kind: "document", documentId: lastDocumentId } : null,
-    reason: lastDocumentId ? "last-document" : null,
-  });
+  const lastDocuments: Candidate[] = [shown[0]?.documentId, recent.documents[0]?.documentId]
+    .filter((id): id is string => Boolean(id))
+    .map((id) => ({ item: { kind: "document", documentId: id }, reason: "last-document" }));
   switch (main.kind) {
     case "opening":
       return { status: "pending" };
     case "landing":
       return {
         status: "ready",
-        item: lastChatId ? { kind: "chat", chatId: lastChatId } : null,
-        reason: lastChatId ? "last-chat" : null,
+        candidates: lastChatId
+          ? [{ item: { kind: "chat", chatId: lastChatId }, reason: "last-chat" }]
+          : [],
       };
     case "chat-index":
-      return lastDocument();
+      return { status: "ready", candidates: lastDocuments };
     case "document": {
-      if (mainIsLocal) return { status: "ready", item: null, reason: null };
+      if (mainIsLocal) return { status: "ready", candidates: [] };
       if (related.data) {
         // The newest chat that edited it. A chat that only read it is not "working on" it.
         const edited = related.data.chats.find((chat) => chat.edited);
-        return edited
-          ? { status: "ready", item: { kind: "chat", chatId: edited.chatId }, reason: "edited" }
-          : { status: "ready", item: null, reason: null };
+        return {
+          status: "ready",
+          candidates: edited
+            ? [{ item: { kind: "chat", chatId: edited.chatId }, reason: "edited" }]
+            : [],
+        };
       }
       if (related.isError) return { status: "failed", retry: () => void related.refetch() };
       return { status: "pending" };
@@ -105,16 +131,79 @@ function useCompanion(
       if (chatDocuments.status === "loading") return { status: "pending" };
       if (chatDocuments.status === "error")
         return { status: "failed", retry: () => void chatDocuments.refetch() };
-      const first = chatDocuments.documents?.find((row) => row.kind === "tracked");
-      return first
-        ? {
-            status: "ready",
-            item: { kind: "document", documentId: first.documentId },
-            reason: first.edited ? "chat-edited" : "chat-read",
-          }
-        : lastDocument();
+      // Newest first; one that no longer opens (removed, an upload) gives way to the next.
+      const touched: Candidate[] = (chatDocuments.documents ?? [])
+        .filter((row) => row.kind === "tracked")
+        .map((row) => ({
+          item: { kind: "document", documentId: row.documentId },
+          reason: row.edited ? "chat-edited" : "chat-read",
+        }));
+      return { status: "ready", candidates: [...touched, ...lastDocuments] };
     }
   }
+}
+
+const describeKey = ({ documentId, workId }: Describing) => `${documentId}|${workId ?? ""}`;
+
+type Descriptions = {
+  /** A mounted host's descriptor, else the one resolved by identity; pending until asked for. */
+  read: (document: Describing) => Described;
+  /** Resolves the descriptors not yet known. */
+  request: (documents: readonly Describing[]) => void;
+};
+
+/** Descriptors of documents that may sit beside, resolved once each, for the rule and the picker. */
+function useDescriptions(projectId: string): Descriptions {
+  const describe = useDescribeProjectDocument(projectId);
+  const shown = useShownDocuments(projectId);
+  const [answers, setAnswers] = useState<ReadonlyMap<string, ContextTab | null | "failed">>(
+    () => new Map(),
+  );
+  const asked = useRef(new Set<string>());
+  const store = useCallback((key: string, value: ContextTab | null | "failed" | undefined) => {
+    setAnswers((current) => {
+      const next = new Map(current);
+      if (value === undefined) next.delete(key);
+      else next.set(key, value);
+      return next;
+    });
+  }, []);
+  const request = useCallback(
+    (documents: readonly Describing[]) => {
+      for (const document of documents) {
+        const key = describeKey(document);
+        if (asked.current.has(key)) continue;
+        asked.current.add(key);
+        void describe(document.documentId, document.workId).then(
+          (tab) => store(key, tab),
+          () => store(key, "failed"),
+        );
+      }
+    },
+    [describe, store],
+  );
+  return useMemo(
+    () => ({
+      read: (document) => {
+        const mounted = shown.find((tab) => tab.documentId === document.documentId);
+        if (mounted) return { status: "ready", tab: mounted };
+        const key = describeKey(document);
+        const known = answers.get(key);
+        if (known === undefined) return { status: "pending" };
+        if (known === "failed")
+          return {
+            status: "failed",
+            retry: () => {
+              asked.current.delete(key);
+              store(key, undefined);
+            },
+          };
+        return { status: "ready", tab: known };
+      },
+      request,
+    }),
+    [shown, answers, request, store],
+  );
 }
 
 export function SideViewProvider({
@@ -136,7 +225,21 @@ export function SideViewProvider({
   const held = useHeldPick(accountId, projectId);
   const lastChatId = useLastChat(accountId, projectId);
   const companion = useCompanion(projectId, main, lastChatId, mainIsLocal);
-  const resolution = resolveSide({ main, held, besideChatId, companion, chatsOnly });
+  const descriptions = useDescriptions(projectId);
+  const resolution = resolveSide({
+    main,
+    held,
+    besideChatId,
+    companion,
+    chatsOnly,
+    describe: descriptions.read,
+  });
+  const describing = resolution.kind === "pending" ? resolution.describing : null;
+  const describingKey = describing ? describeKey(describing) : null;
+  useEffect(() => {
+    if (describing) descriptions.request([describing]);
+    // `describing` is read through its key.
+  }, [describingKey, descriptions.request]);
 
   // Storing what the side last settled on, so a pending read keeps it (React's pattern for
   // information from earlier renders).
@@ -154,8 +257,9 @@ export function SideViewProvider({
   const side = useMemo<SideItem>(
     () => ({
       item: settled?.item ?? null,
+      tab: settled?.tab ?? null,
       source: settled?.source ?? null,
-      reason: settled?.reason ?? null,
+      reason: resolution.kind === "settled" ? (settled?.reason ?? null) : null,
       pending: resolution.kind === "pending",
       retry,
     }),
@@ -163,7 +267,7 @@ export function SideViewProvider({
     [sideKey],
   );
 
-  useReleaseHold(accountId, projectId, held, main);
+  useReleaseHold(accountId, projectId, held, resolution.releaseHeld);
 
   const mainChat = main.kind === "chat" ? main.chatId : null;
   const sideChat = side.item?.kind === "chat" ? side.item : null;
@@ -175,9 +279,38 @@ export function SideViewProvider({
   const [hostChatId, setHostChatId] = useState<string | null>(showing ?? lastChatId);
   if (showing !== undefined && showing !== hostChatId) setHostChatId(showing);
 
+  const [newChatAbout, reportNewChatAbout] = useState<NewChatAbout>("follows");
+  const [revealed, setRevealed] = useState(0);
+  const holdBeside = useCallback(
+    (pick: HeldPick) => {
+      writeHeldPick(accountId, projectId, pick);
+      setRevealed((count) => count + 1);
+    },
+    [accountId, projectId],
+  );
+
   const value = useMemo<SideView>(
-    () => ({ side, main, chatOnScreen, hostChatId }),
-    [side, JSON.stringify(main), chatOnScreen, hostChatId],
+    () => ({
+      side,
+      main,
+      chatOnScreen,
+      hostChatId,
+      newChatAbout,
+      reportNewChatAbout,
+      revealed,
+      holdBeside,
+      descriptions,
+    }),
+    [
+      side,
+      JSON.stringify(main),
+      chatOnScreen,
+      hostChatId,
+      newChatAbout,
+      revealed,
+      holdBeside,
+      descriptions,
+    ],
   );
   return <SideViewContext.Provider value={value}>{children}</SideViewContext.Provider>;
 }
@@ -192,28 +325,21 @@ function reaimComposer(kept: SettledSide, main: MainForSide): SettledSide {
 }
 
 /**
- * A hold ends when its item becomes main (rule 3), and when its document is closed, Discarded or
- * removed: the registry forgets it, and the side resolves again. Nothing navigates.
+ * A hold ends when the side's rule says it can no longer sit beside main, and when its document
+ * is closed, Discarded or removed: the registry forgets it, and the side resolves again. Nothing
+ * navigates.
  */
 function useReleaseHold(
   accountId: string,
   projectId: string,
   held: HeldPick | null,
-  main: MainForSide,
+  release: boolean,
 ) {
-  const heldOnMain =
-    held !== null &&
-    sameItem(
-      held,
-      main.kind === "document"
-        ? { kind: "document", documentId: main.documentId }
-        : main.kind === "chat"
-          ? { kind: "chat", chatId: main.chatId }
-          : null,
-    );
+  const heldKey = JSON.stringify(held);
   useEffect(() => {
-    if (heldOnMain) writeHeldPick(accountId, projectId, null);
-  }, [heldOnMain, accountId, projectId]);
+    if (release && JSON.stringify(readHeldPick(accountId, projectId)) === heldKey)
+      writeHeldPick(accountId, projectId, null);
+  }, [release, heldKey, accountId, projectId]);
   const presented = useOptionalPresentedDocuments();
   const heldDocumentId = held?.kind === "document" ? held.documentId : null;
   useEffect(() => {
@@ -262,6 +388,30 @@ export function useOptionalChatOnScreen(): string | null {
 /** The thread the one chat host renders. */
 export function useHostChatId(): string | null {
   return useSideView().hostChatId;
+}
+
+/** What the side's new chat is about, and the composer's report of it. */
+export function useNewChatAbout(): {
+  about: NewChatAbout;
+  report: (about: NewChatAbout) => void;
+} {
+  const { newChatAbout, reportNewChatAbout } = useSideView();
+  return { about: newChatAbout, report: reportNewChatAbout };
+}
+
+/** Holds a document beside from a link, and has the side seen; null outside the project view. */
+export function useOptionalHoldBeside(): ((pick: HeldPick) => void) | null {
+  return useContext(SideViewContext)?.holdBeside ?? null;
+}
+
+/** Counts holds made from a link: the desktop opens the side on each. */
+export function useSideRevealed(): number {
+  return useSideView().revealed;
+}
+
+/** Whether documents open beside, as the side's rule describes them. */
+export function useSideDescriptions(): Descriptions {
+  return useSideView().descriptions;
 }
 
 /** The shell's commands for the side. Neither writes main or history. */

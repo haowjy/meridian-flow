@@ -179,9 +179,15 @@ export type ComposerHandle = {
   insertReference: (reference: DocumentReference, fileKind: "document" | "asset") => void;
   /**
    * Makes the draft this one file's chip alone, without taking focus (a new chat about a page),
-   * when the draft is empty or one chip alone; anything the writer wrote stays.
+   * when the draft is empty or exactly the chip of `replaces` (the one the caller put there last);
+   * anything else is the writer's and stays. The chip is not saved as the writer's draft. Returns
+   * whether the draft is now that chip alone.
    */
-  startWith: (reference: DocumentReference, fileKind: "document" | "asset") => void;
+  startWith: (
+    reference: DocumentReference,
+    fileKind: "document" | "asset",
+    replaces: string | null,
+  ) => boolean;
   /** Attaches files to this chat's Uploads, as the paperclip does: one chip each at the caret. */
   attachFiles: (entries: readonly DroppedEntry[]) => void;
   /** Drops every chip that references the document (a file the writer deleted elsewhere). */
@@ -432,15 +438,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           .insertContent(composerReferenceContent(pickedReferenceAttrs(reference, fileKind)))
           .run();
       },
-      startWith: (reference, fileKind) => {
-        if (!editor || editor.isDestroyed) return;
+      startWith: (reference, fileKind, replaces) => {
+        if (!editor || editor.isDestroyed) return false;
         const doc = editor.state.doc;
         const only = doc.childCount === 1 ? doc.firstChild : null;
-        const chipAlone =
+        const chip =
           only?.type.name === "paragraph" &&
           only.childCount === 1 &&
-          only.firstChild?.type.name === "composerReference";
-        if (!editor.isEmpty && !chipAlone) return;
+          only.firstChild?.type.name === "composerReference"
+            ? (only.firstChild.attrs.reference as ComposerReferenceAttrs)
+            : null;
+        const chipOf = chip?.kind === "document" && !chip.upload ? chip.documentId : null;
+        if (chipOf === reference.documentId) return true;
+        if (!editor.isEmpty && (chipOf === null || chipOf !== replaces)) return false;
+        // Not the writer's draft until they touch it: the next edit saves it with the chip.
+        suppressDraftChangeRef.current = true;
         editor.commands.setContent({
           type: "doc",
           content: [
@@ -450,6 +462,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             },
           ],
         });
+        suppressDraftChangeRef.current = false;
+        return true;
       },
       attachFiles: (entries) => attachFilesRef.current(entries),
       removeReferences: (documentId) => {
