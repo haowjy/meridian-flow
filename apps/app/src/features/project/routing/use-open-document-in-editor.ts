@@ -15,7 +15,7 @@ type EditorDocument =
 export function openDocumentInEditor(
   open: OpenContextRoute,
   target: EditorDocument,
-  options: { afterCommit?: () => void; review?: DraftPin | null } = {},
+  options: { afterCommit?: () => void; review?: DraftPin | null; replace?: boolean } = {},
 ) {
   const { review, ...routeOptions } = options;
   const tab = "kind" in target && isEditorOpenDocument(target) ? target : undefined;
@@ -57,12 +57,13 @@ export function useOpenDocumentInEditor() {
 export function useOpenInMain(
   projectId: string,
   open: OpenContextRoute,
-): (tab: OpenDocument) => void {
+): (tab: OpenDocument, options?: { replace?: boolean }) => void {
   const accountId = useAccountId();
   return useCallback(
-    (tab) =>
+    (tab, options) =>
       void openDocumentInEditor(open, tab, {
         review: readDocumentView(accountId, projectId, tab.documentId).pin,
+        ...options,
       }),
     [open, accountId, projectId],
   );

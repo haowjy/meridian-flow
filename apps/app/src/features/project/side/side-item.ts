@@ -4,7 +4,7 @@
  * ```text
  * side = held pick                         shown with the held mark
  *        ?? this history entry's beside    a link followed from a chat keeps that chat beside
- *        ?? companion(main), once answered shown with its reason
+ *        ?? companion(main), once answered
  *        ?? empty                          beside a document, a new chat about it
  *        never main's own item
  * ```
@@ -20,17 +20,6 @@ import type { HeldPick } from "@/client/project-shell/store";
 import type { OpenDocument } from "@/client/stores";
 import type { Item } from "../views";
 
-/** Why the side shows its item: the header and the picker say so. */
-export type SideReason =
-  | "held"
-  | "opened-from"
-  | "edited"
-  | "chat-edited"
-  | "chat-read"
-  | "last-document"
-  | "last-chat"
-  | "new-chat";
-
 export type SideSource = "held" | "beside" | "companion" | "empty";
 
 export type SettledSide = {
@@ -39,7 +28,6 @@ export type SettledSide = {
   /** A document item's descriptor. */
   document: OpenDocument | null;
   source: SideSource;
-  reason: SideReason | null;
 };
 
 /** What main shows, as the side's rule reads it. */
@@ -53,13 +41,11 @@ export type MainForSide =
   /** The address names a document that is still resolving. */
   | { kind: "opening" };
 
-export type Candidate = { item: Item; reason: SideReason | null };
-
 /** The companion read for main's item, as far as it has answered: its candidates, best first. */
 export type Companion =
   | { status: "pending" }
   | { status: "failed"; retry: () => void }
-  | { status: "ready"; candidates: readonly Candidate[] };
+  | { status: "ready"; candidates: readonly Item[] };
 
 /** A document's descriptor as far as it is known; a null tab no longer opens in the editor. */
 export type Described =
@@ -148,50 +134,38 @@ export function resolveSide(input: {
     return described.document ? { kind: "show", document: described.document } : { kind: "skip" };
   };
   let releaseHeld = false;
-  const settle = (
-    item: Item,
-    tab: OpenDocument | null,
-    source: SideSource,
-    reason: SideReason | null,
-  ): SideResolution => ({
+  const settle = (item: Item, tab: OpenDocument | null, source: SideSource): SideResolution => ({
     kind: "settled",
-    side: { item, document: tab, source, reason },
+    side: { item, document: tab, source },
     releaseHeld,
   });
 
   if (input.held) {
     const item = heldItem(input.held, main);
     const held = step(item, input.held.kind === "document" ? input.held.workId : undefined);
-    if (held.kind === "show") return settle(item, held.document, "held", "held");
+    if (held.kind === "show") return settle(item, held.document, "held");
     if (held.kind === "wait") return { ...held.resolution, releaseHeld };
     releaseHeld = true;
   }
   if (input.besideChatId) {
     const item: Item = { kind: "chat", chatId: input.besideChatId };
-    if (fitsBeside(item, main)) return settle(item, null, "beside", "opened-from");
+    if (fitsBeside(item, main)) return settle(item, null, "beside");
   }
   const { companion } = input;
   if (companion.status === "pending") return { kind: "pending", describing: null, releaseHeld };
   if (companion.status === "failed")
     return { kind: "failed", failed: { read: "companion", retry: companion.retry }, releaseHeld };
   for (const candidate of companion.candidates) {
-    const next = step(candidate.item);
-    if (next.kind === "show")
-      return settle(candidate.item, next.document, "companion", candidate.reason);
+    const next = step(candidate);
+    if (next.kind === "show") return settle(candidate, next.document, "companion");
     if (next.kind === "wait") return { ...next.resolution, releaseHeld };
   }
   if (main.kind === "document")
-    return settle(
-      { kind: "chat", chatId: null, about: main.documentId },
-      null,
-      "empty",
-      "new-chat",
-    );
-  if (main.kind === "landing")
-    return settle({ kind: "chat", chatId: null }, null, "empty", "new-chat");
+    return settle({ kind: "chat", chatId: null, about: main.documentId }, null, "empty");
+  if (main.kind === "landing") return settle({ kind: "chat", chatId: null }, null, "empty");
   return {
     kind: "settled",
-    side: { item: null, document: null, source: "empty", reason: null },
+    side: { item: null, document: null, source: "empty" },
     releaseHeld,
   };
 }

@@ -11,7 +11,7 @@ guards them. Recipe and the last run's results.
 
 1. Open a document, click into the editor, type a word online. `./mf doc read` shows it.
 2. `agent-browser set offline on`, type a second word. `./mf doc read` lacks it.
-3. Leave the document (open two other documents, so it is no longer main, side or kept), wait 10 s (the grace is 3 s).
+3. Close the document's tab (it is then neither main, side nor kept), wait 10 s (the grace is 3 s).
 4. `set offline off` without reopening. Wait 15 s. `./mf doc read` shows the second word.
 5. Exit, removal: repeat 1 to 3, then `./mf doc rm <uri>` before going back online.
    The held session must go (`drainDocument` runs; nothing stays held).

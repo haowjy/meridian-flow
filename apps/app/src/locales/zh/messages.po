@@ -1632,6 +1632,10 @@ msgstr "清除状态"
 msgid "Close"
 msgstr ""
 
+#: src/features/project/shell/MainTabStrip.tsx
+msgid "Close {name}"
+msgstr ""
+
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Close artifact preview"
 msgstr ""
@@ -2745,8 +2749,8 @@ msgid "Edited {count} documents"
 msgstr ""
 
 #: src/features/project/side/SideHeader.tsx
-msgid "Edited {mainName}"
-msgstr ""
+#~ msgid "Edited {mainName}"
+#~ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Edited 1 document"
@@ -2760,7 +2764,6 @@ msgstr ""
 msgid "Edited file"
 msgstr ""
 
-#: src/features/project/side/SideHeader.tsx
 #: src/features/project/side/SidePicker.tsx
 msgid "Edited this"
 msgstr ""
@@ -3406,12 +3409,12 @@ msgid "Large"
 msgstr ""
 
 #: src/features/project/side/SideHeader.tsx
-msgid "Last chat"
-msgstr ""
+#~ msgid "Last chat"
+#~ msgstr ""
 
 #: src/features/project/side/SideHeader.tsx
-msgid "Last document"
-msgstr ""
+#~ msgid "Last document"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Last name"
@@ -3844,7 +3847,7 @@ msgid "New chat about {mainName}"
 msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
-#: src/features/project/shell/MainHeader.tsx
+#: src/features/project/shell/MainTabStrip.tsx
 msgid "New document"
 msgstr ""
 
@@ -4167,12 +4170,16 @@ msgstr ""
 msgid "Open a document from the project tree, or start a new one."
 msgstr ""
 
-#: src/features/project/shell/MainHeader.tsx
+#: src/features/project/shell/MainTabStrip.tsx
 msgid "Open a Work to create an Untitled document"
 msgstr ""
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Open conversation"
+msgstr ""
+
+#: src/features/project/shell/MainTabStrip.tsx
+msgid "Open documents"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
@@ -5742,8 +5749,8 @@ msgid "This chat now uses {0}."
 msgstr ""
 
 #: src/features/project/side/SideHeader.tsx
-msgid "This chat read it"
-msgstr ""
+#~ msgid "This chat read it"
+#~ msgstr ""
 
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
@@ -5755,8 +5762,8 @@ msgid "This chat was deleted."
 msgstr ""
 
 #: src/features/project/side/SideHeader.tsx
-msgid "This chat wrote it"
-msgstr ""
+#~ msgid "This chat wrote it"
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
@@ -6154,6 +6161,7 @@ msgid "workReceipt.unarchived"
 msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx
+#: src/features/project/DesktopProject.tsx
 msgid "Unavailable"
 msgstr ""
 
@@ -6514,8 +6522,8 @@ msgid "You can't copy there."
 msgstr ""
 
 #: src/features/project/side/SideHeader.tsx
-msgid "You followed a link from here"
-msgstr ""
+#~ msgid "You followed a link from here"
+#~ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."

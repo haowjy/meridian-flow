@@ -1,9 +1,9 @@
 /** Shared docked-toolbar and scrolling layout for document editor surfaces. */
-import { type ReactNode, type Ref, type UIEventHandler, useEffect, useRef, useState } from "react";
+import { type ReactNode, type Ref, type UIEventHandler, useRef } from "react";
 
+import { useScrollEdges } from "@/hooks/use-scroll-edges";
 import { cn } from "@/lib/utils";
 import { editorColumnChrome } from "./editor-column";
-import "./editor-toolbar.css";
 
 export type EditorSurfaceFrameProps = {
   /** Notes about this document (schema repair, a fenced session), prose-aligned above the toolbar. */
@@ -82,34 +82,15 @@ export function EditorSurfaceFrame({
 /** Scrolls a toolbar wider than its pane, fading the edge that has buttons behind it. */
 function ToolbarScroller({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [more, setMore] = useState({ start: false, end: false });
-  useEffect(() => {
-    const scroller = ref.current;
-    if (!scroller) return;
-    const read = () => {
-      const start = scroller.scrollLeft > 1;
-      const end = scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 1;
-      setMore((was) => (was.start === start && was.end === end ? was : { start, end }));
-    };
-    read();
-    const resize = new ResizeObserver(read);
-    resize.observe(scroller);
-    for (const child of scroller.children) resize.observe(child);
-    scroller.addEventListener("scroll", read, { passive: true });
-    return () => {
-      resize.disconnect();
-      scroller.removeEventListener("scroll", read);
-    };
-  }, []);
+  const more = useScrollEdges(ref);
   return (
     <div
       ref={ref}
-      data-editor-toolbar-scroller
       data-more-start={more.start || undefined}
       data-more-end={more.end || undefined}
       className={cn(
         editorColumnChrome,
-        "min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        "scroll-fade-x min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
       )}
     >
       {children}

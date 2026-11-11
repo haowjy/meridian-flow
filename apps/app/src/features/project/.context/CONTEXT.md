@@ -22,6 +22,33 @@ in development, its effects are replayed (the app runs under TanStack Start's de
 `StrictMode`), which destroys a live editor while its child effects still hold it (#1351). The
 cost is that DOM (tab) order among documents follows their ids, not main-then-side.
 
+Main holds tabs. `client/project-shell/main-tabs.ts` is the one record of what is open in main: an
+ordered list of documents per project in this browser tab's sessionStorage, so a reload keeps them
+and two windows keep their own. The address still names main's item. Arriving at an address
+(`ProjectView`) opens or selects its tab, a new one to the right of the tab main showed last; the
+address no longer resolving ends the arrival, so a document that comes back at it (restored from
+another window) arrives afresh, and a document main shows always has its tab in the record. Later
+descriptor changes only refresh a tab that is still open. Selecting a tab opens its document on its
+view's draft or Live (`useOpenInMain`); closing main's tab replaces the entry with its right
+neighbour, else its left, else Recently opened. Back and Forward reopen a tab the writer closed, by
+design: the address leads, the tabs follow it. A close, a Discard, a removal or a vanished document
+closes its tab through the coordinator's `tabs` port (`forget`; a draft-only page's own Close
+closes it once main's address has left, so main's page is not drawn without it). `MainTabStrip`
+draws the tabs in main's band with the inset sheet's folder-tab look. What main shows never depends
+on the record: main's document with no tab in it, a chat, or an address that names nothing is the
+active chip after the tabs, so a link to a deleted chapter keeps its URL and shows the removed page
+in a tab of its own. New document (+) follows the document tabs only, never a chat or an
+unavailable address, where it would read as a new one of those. The active chip never shrinks;
+inactive tabs shrink to their icon, then the strip scrolls, with no scrollbar and a faded edge
+where tabs are behind it (`useScrollEdges`, `scroll-fade-x`, as the editor toolbar). The keyboard
+follows the tabs pattern: main's item is the one Tab stop, arrows, Home and End move along the
+strip, Enter opens; each document's page has its own band, so the focus follows to the new one. Every control in the band shares the
+chips' centre line. Stored tabs of documents deleted while the window was closed are not drawn
+once the replica holds the catalog (`useLiveTabs`; the record is left alone, so a document that
+comes back has its tab). Only documents take a tab: a tab is an item with a kind, and `TAB_KINDS`
+is the switch for chats. A tab's Live or Draft view is its document's view, so it is per tab
+already. The phone draws no strip; it records arrivals the same way.
+
 Main shows what the address names, resolved by `resolveMainDocument` / `useMainDocument`
 (`views.ts`), the resolver the phone uses too; `MainViewProvider` / `useMainItem` carry
 `{item, document}`. The side shows one item, never main's. `resolveSide` (`side/side-item.ts`) picks
@@ -32,8 +59,8 @@ newest document it touched, else the last document. A document fits beside only 
 described (`describe` in `context/open-project-document.ts`) and opens in the editor: one that
 doesn't (removed, an upload) is skipped for the next candidate, and the picker offers only what
 opens. `fitsBeside` is the one answer to "can this sit beside", for the rule and the picker. While
-a read or a describe is out, the side keeps what it showed and says no reason, since the kept
-reason was about another main. `side/SideView.tsx` holds this state and the commands
+a read or a describe is out, the side keeps what it showed. The header names the item and says
+no reason for it: the picker's rows say how each relates to main ("Edited this", "Wrote"). `side/SideView.tsx` holds this state and the commands
 (`useShellCommands`); both shells read it, and the phone's sheet shows the same item. The sheet is no history
 entry: Back while it is open dismisses it and leaves main where it is. The held pick
 lives per browser tab (`client/project-shell/store.ts`, seeded from the device) and never enters
@@ -46,7 +73,7 @@ Every document link follows one click rule (`useLinkPlacement` in `review-launch
 gesture from `followDisposition` in `core/editor/links`): a plain click opens in main, and a
 cmd-click, ctrl-click or middle click holds the page beside, with the link's Work, and opens a
 closed side. Editor links, transcript links, chat doors and a reply's "Drafted N documents" rows
-all go through it. Each header renders inside its host
+all go through it. The sidebar tree marks main's document only, never the side's. Each header renders inside its host
 (`shell/MainHeader.tsx`, `side/SideHeader.tsx`); while the side is closed, main's header names it
 (`side/ClosedSideButton.tsx`).
 
@@ -61,7 +88,7 @@ name says that, not main's document.
 
 Which documents are mounted is one list, `PresentedDocuments` (`context/presented-documents.ts`):
 each document host registers its current descriptor there, and `shown` orders them newest on
-screen first. Besides main's and the side's document, the newest one shown that is off screen
+screen first. Besides main's and the side's document, the newest open tab shown that is off screen
 stays mounted as the kept host, hidden so its undo survives a return, so at most three documents
 are mounted (main, side, kept). The kept document is mounted but not presented:
 it reviews nothing, admits nothing, writes neither pin nor address, raises no removed notice and

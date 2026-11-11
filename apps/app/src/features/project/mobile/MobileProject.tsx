@@ -21,7 +21,7 @@ import type { ReviewScopedProjectProps } from "../ProjectView";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
-import { sideReasonText, useSideChatName } from "../side/SideHeader";
+import { useSideChatName } from "../side/SideHeader";
 import { SidePicker } from "../side/SidePicker";
 import { useChatOnScreen, useHostChatId, useShellCommands, useSideItem } from "../side/SideView";
 import { useMainItem } from "../views";
@@ -243,8 +243,6 @@ function PhoneSideTitle({
 }) {
   const side = useSideItem();
   const { releaseSide } = useShellCommands(projectId);
-  const mainName = useMainItem().document.document?.name ?? null;
-  const reason = side.source === "held" ? null : sideReasonText(side.reason, mainName);
   return (
     <>
       <SidePicker
@@ -252,9 +250,6 @@ function PhoneSideTitle({
         name={name}
         icon={<Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
       />
-      {reason ? (
-        <span className="min-w-0 shrink truncate text-xs text-muted-foreground">{reason}</span>
-      ) : null}
       {side.source === "held" ? (
         <IconButton size="sm" label={t`Held here. Follow main again`} onClick={releaseSide}>
           <Pin className="size-4" aria-hidden />

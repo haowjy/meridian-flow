@@ -1,6 +1,5 @@
 /**
- * SideHeader — the band above the side view: the picker naming what it shows, why it is there,
- * the held mark while a pick is in force (pressing it releases the hold), and Open in main. No
+ * SideHeader — the band above the side view: the picker naming what it shows, the held mark while a pick is in force (pressing it releases the hold), and Open in main. No
  * page rises into it. The side's own toggle is the shell's corner button; the spacer holds its
  * place.
  */
@@ -20,27 +19,6 @@ import { PanelToggleSpacer } from "../shell/PanelToggleButton";
 import { useMainItem } from "../views";
 import { SidePicker } from "./SidePicker";
 import { useNewChatAbout, useShellCommands, useSideItem } from "./SideView";
-import type { SideReason } from "./side-item";
-
-/** The quiet line after the side's name that says why it is there. */
-export function sideReasonText(reason: SideReason | null, mainName: string | null): string | null {
-  switch (reason) {
-    case "opened-from":
-      return t`You followed a link from here`;
-    case "edited":
-      return mainName ? t`Edited ${mainName}` : t`Edited this`;
-    case "chat-edited":
-      return t`This chat wrote it`;
-    case "chat-read":
-      return t`This chat read it`;
-    case "last-document":
-      return t`Last document`;
-    case "last-chat":
-      return t`Last chat`;
-    default:
-      return null;
-  }
-}
 
 /**
  * The side's chat's name: its title, or for a new chat what its composer will attach: main's
@@ -79,8 +57,6 @@ function SideBand({
 }) {
   const side = useSideItem();
   const { releaseSide } = useShellCommands(projectId);
-  const mainName = useMainItem().document.document?.name ?? null;
-  const reason = side.source === "held" ? null : sideReasonText(side.reason, mainName);
   return (
     <div className="shrink-0">
       <header className="flex h-10 items-stretch pl-2 coarse:h-11">
@@ -88,16 +64,6 @@ function SideBand({
         {/* No overflow-hidden: clipping here shears the title's hover pill. */}
         <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1">
           <SidePicker projectId={projectId} name={name} icon={icon} />
-          {reason ? (
-            // One clipped line: under 5rem left, the reason wraps past the empty first item (a line
-            // tall, or the second line sits on the first) and hides whole instead of leaving "E…".
-            <div className="flex h-4 min-w-0 flex-1 basis-0 flex-wrap overflow-hidden">
-              <span className="h-4" />
-              <span className="max-w-full min-w-20 truncate text-xs leading-4 text-muted-foreground">
-                {reason}
-              </span>
-            </div>
-          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-0.5 pr-2">
           {side.source === "held" ? (

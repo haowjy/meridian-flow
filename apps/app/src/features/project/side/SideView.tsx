@@ -44,7 +44,6 @@ import { recentOpening } from "../context/recent-opening";
 import { useRecordOpenedDocument } from "../context/use-record-opened-document";
 import type { Item } from "../views";
 import {
-  type Candidate,
   type Companion,
   type Described,
   type Describing,
@@ -53,7 +52,6 @@ import {
   resolveSide,
   type SettledSide,
   type SideFailure,
-  type SideReason,
   type SideSource,
 } from "./side-item";
 
@@ -62,8 +60,6 @@ export type SideItem = {
   /** A document item's descriptor. */
   document: OpenDocument | null;
   source: SideSource | null;
-  /** Why it is there; none while the side keeps an earlier item, whose reason was about another main. */
-  reason: SideReason | null;
   /** The companion read has not answered: the side keeps what it showed. */
   pending: boolean;
   /** A read the side waits on failed: the side keeps what it showed and offers a retry. */
@@ -104,18 +100,16 @@ function useCompanion(
   const recent = useRecentDocuments(projectId);
   // The document the writer was on: the last one on screen (a draft-only one included, which
   // recents never list), else the account's most recent.
-  const lastDocuments: Candidate[] = [shown[0]?.documentId, recent.documents[0]?.documentId]
+  const lastDocuments: Item[] = [shown[0]?.documentId, recent.documents[0]?.documentId]
     .filter((id): id is string => Boolean(id))
-    .map((id) => ({ item: { kind: "document", documentId: id }, reason: "last-document" }));
+    .map((id) => ({ kind: "document", documentId: id }));
   switch (main.kind) {
     case "opening":
       return { status: "pending" };
     case "landing":
       return {
         status: "ready",
-        candidates: lastChatId
-          ? [{ item: { kind: "chat", chatId: lastChatId }, reason: "last-chat" }]
-          : [],
+        candidates: lastChatId ? [{ kind: "chat", chatId: lastChatId }] : [],
       };
     case "new-chat":
       return { status: "ready", candidates: lastDocuments };
@@ -126,9 +120,7 @@ function useCompanion(
         const edited = related.data.chats.find((chat) => chat.edited);
         return {
           status: "ready",
-          candidates: edited
-            ? [{ item: { kind: "chat", chatId: edited.chatId }, reason: "edited" }]
-            : [],
+          candidates: edited ? [{ kind: "chat", chatId: edited.chatId }] : [],
         };
       }
       if (related.isError) return { status: "failed", retry: () => void related.refetch() };
@@ -139,12 +131,9 @@ function useCompanion(
       if (chatDocuments.status === "error")
         return { status: "failed", retry: () => void chatDocuments.refetch() };
       // Newest first; one that no longer opens (removed, an upload) gives way to the next.
-      const touched: Candidate[] = (chatDocuments.documents ?? [])
+      const touched: Item[] = (chatDocuments.documents ?? [])
         .filter((row) => row.kind === "tracked")
-        .map((row) => ({
-          item: { kind: "document", documentId: row.documentId },
-          reason: row.edited ? "chat-edited" : "chat-read",
-        }));
+        .map((row) => ({ kind: "document", documentId: row.documentId }));
       return { status: "ready", candidates: [...touched, ...lastDocuments] };
     }
   }
@@ -306,7 +295,6 @@ export function SideViewProvider({
       item: settled?.item ?? null,
       document: settled?.document ?? null,
       source: settled?.source ?? null,
-      reason: resolution.kind === "settled" ? (settled?.reason ?? null) : null,
       pending: resolution.kind === "pending",
       failed,
     }),
