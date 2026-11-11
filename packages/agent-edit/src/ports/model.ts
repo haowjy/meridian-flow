@@ -111,6 +111,12 @@ export interface AgentEditModel extends DocumentModel {
   applyBlockReplacement(doc: DocHandle, block: BlockRef, replacement: Block): void;
 
   /**
+   * Runs of a flat text block's characters that `current` has deleted. The block's document
+   * is the model's view of `current`'s room, so the two share item identities.
+   */
+  removedUnits(block: BlockRef, current: DocHandle): Span[];
+
+  /**
    * Every top-level block with its display hash and ProseMirror node, built in one walk so
    * `ref`, `id`, `hash` and `node` always describe the same block.
    *

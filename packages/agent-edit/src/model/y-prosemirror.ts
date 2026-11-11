@@ -12,6 +12,7 @@ import type {
   InlineTextReplacement,
   ProjectedBlock,
 } from "../ports/model.js";
+import { findItem, itemsInRange } from "../yjs-mutation.js";
 import {
   blockHashesForDoc,
   blockIdentityForItem,
@@ -20,7 +21,6 @@ import {
   getBlockItemId,
   getTopLevelXmlBlocks,
   isLiveXmlElement,
-  lookupBlockHash,
   uniqueHashesForBlocks,
 } from "./block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
@@ -110,6 +110,10 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
 
     applyBlockReplacement(doc, block, replacement) {
       applyBlockDiff(unwrapDoc(doc), unwrapBlock(block), replacement);
+    },
+
+    removedUnits(block, current) {
+      return removedUnits(unwrapBlock(block), unwrapDoc(current));
     },
 
     projectBlocks(doc) {
@@ -364,6 +368,39 @@ function collectVisibleContentLineage(block: Y.XmlElement): ContentLineage[] {
   };
   visit(block);
   return lineage;
+}
+
+/**
+ * The flat text block's character runs whose items `current` holds deleted, in document
+ * order. A clock `current` keeps no item for was collected, so it counts as deleted too.
+ */
+function removedUnits(block: Y.XmlElement, current: Y.Doc): Span[] {
+  const runs: Span[] = [];
+  let offset = 0;
+  for (const text of block.toArray()) {
+    if (!(text instanceof Y.XmlText)) continue;
+    const textItem = text._item && findItem(current, text._item.id);
+    if (!textItem || textItem.deleted) {
+      runs.push({ from: offset, to: offset + text.length });
+      offset += text.length;
+      continue;
+    }
+    for (let item = text._start; item; item = item.right) {
+      if (item.deleted || !item.countable) continue;
+      const { client, clock } = item.id;
+      let cursor = clock;
+      for (const live of itemsInRange(current, { client, clock, len: item.length })) {
+        if (live.item.deleted) continue;
+        if (live.clock > cursor)
+          runs.push({ from: offset + cursor - clock, to: offset + live.clock - clock });
+        cursor = live.clock + live.len;
+      }
+      if (cursor < clock + item.length)
+        runs.push({ from: offset + cursor - clock, to: offset + item.length });
+      offset += item.length;
+    }
+  }
+  return runs;
 }
 
 function yTextPlainText(text: Y.XmlText): string {
