@@ -5,33 +5,32 @@
  * "Switched to auto-apply" while the next reply will apply it, "Switch to
  * auto-apply queued" while a reply that held the chat first has to finish. A
  * queued `/compact` sits there as a dashed rule, the divider it will become,
- * with the writer's instructions under it verbatim. Stop is right after the
- * words on every pending row from its first frame (disabled while the switch's
- * post is unanswered), and removes the row at once; it cancels the command the
- * way a switch back does. A Stop that failed on the server is a card in the row with Try
- * again where Stop was; a failed enqueue is a card with Retry. Both come from `chatCards`.
+ * with the writer's instructions under it verbatim. The withdraw button (Undo on a
+ * switch, Stop on a compaction) is right after the words on every pending row from its first
+ * frame (disabled while the switch's post is unanswered), and removes the row at once; it
+ * cancels the command the way a switch back does. A withdraw that failed on the server is a
+ * card in the row with Try again where the button was; a failed enqueue is a card with Retry. Both come from `chatCards`.
  * The rows carry no live region: `useThreadControls` and `useSwitchView` announce
  * each change through the global polite announcer, which also reaches a row
  * scrolled out of the virtualized list.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { FoldVertical } from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { AnchoredCards } from "../ChatCards";
 import { CompactionInstructions } from "../compaction/CompactionInstructions";
 import { useFocusWithinRow } from "../compaction/useFocusWithinRow";
-import { controlStatusCopy, controlStopLabel } from "./control-copy";
+import { controlStatusCopy, controlWithdrawLabel, controlWithdrawText } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
 import { WriteModeNotice } from "./WriteModeNotice";
 
 export type QueuedControlRowsProps = {
   controls: readonly QueuedControl[];
-  onStop?: (control: QueuedControl) => void;
+  onWithdraw?: (control: QueuedControl) => void;
 };
 
-export function QueuedControlRows({ controls, onStop }: QueuedControlRowsProps) {
+export function QueuedControlRows({ controls, onWithdraw }: QueuedControlRowsProps) {
   const listRef = useRef<HTMLUListElement>(null);
   const focusWithin = useFocusWithinRow(listRef);
   if (controls.length === 0) return null;
@@ -45,7 +44,7 @@ export function QueuedControlRows({ controls, onStop }: QueuedControlRowsProps) 
       className="flex flex-col gap-[var(--chat-space-inline)] py-[var(--chat-space-block)] outline-none"
     >
       {controls.map((control) => (
-        <QueuedControlRow key={control.id} control={control} onStop={onStop} />
+        <QueuedControlRow key={control.id} control={control} onWithdraw={onWithdraw} />
       ))}
     </ul>
   );
@@ -53,33 +52,33 @@ export function QueuedControlRows({ controls, onStop }: QueuedControlRowsProps) 
 
 function QueuedControlRow({
   control,
-  onStop,
+  onWithdraw,
 }: {
   control: QueuedControl;
-  onStop?: (control: QueuedControl) => void;
+  onWithdraw?: (control: QueuedControl) => void;
 }) {
   const { status } = control;
   const failed = status === "failed";
   const label = controlStatusCopy(control.control, status, control.waiting);
   const actions = (
     <>
-      {/* A failed enqueue is a card (Retry in it); the row's Stop still takes the command out. */}
+      {/* A failed enqueue is a card (Retry in it); the row's withdraw button still takes the command out. */}
       {failed ? <AnchoredCards anchor={{ queuedControl: control.id }} /> : null}
       {status === "withdraw_failed" ? (
-        // The row stays, so the failure is a card here (`chatCards`) with the Stop's retry in its place.
+        // The row stays, so the failure is a card here (`chatCards`) with the withdraw's retry in its place.
         <AnchoredCards anchor={{ queuedControl: control.id }} />
-      ) : onStop && !(failed && control.awaitingServer) ? (
+      ) : onWithdraw && !(failed && control.awaitingServer) ? (
         <Button
           type="button"
           variant="quiet"
           size="meta"
-          // The row has Stop from its first frame so it never changes height. While the
-          // post is in flight the server may hold the switch and hasn't said, so Stop waits.
+          // The row has its withdraw button from its first frame so it never changes height. While
+          // the post is in flight the server may hold the switch and hasn't said, so the button waits.
           disabled={control.awaitingServer}
-          aria-label={controlStopLabel(control.control)}
-          onClick={() => onStop(control)}
+          aria-label={controlWithdrawLabel(control.control)}
+          onClick={() => onWithdraw(control)}
         >
-          <Trans>Stop</Trans>
+          {controlWithdrawText(control.control)}
         </Button>
       ) : null}
     </>

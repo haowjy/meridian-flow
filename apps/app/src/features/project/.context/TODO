@@ -4,3 +4,6 @@
   coordinator replays the move history one repair at a time. Repair straight to the current locator.
 - `context/ContextTreePanel.tsx` and `mobile/MobileContextBrowser.tsx` still thread an `editorWorkId`
   that only Scratch and Uploads used; it feeds no tree query. Drop it.
+- Phone: the chat sheet belongs to the history position it opened over (`MobileProject.tsx`). A chat link
+  that replaces the current entry instead of pushing (a draft of the document already showing) leaves the
+  sheet on top of the review. Not seen: tapping that draft did nothing in review.

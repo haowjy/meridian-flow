@@ -30,7 +30,10 @@ filename parsing.
 The top bar has hamburger, project identity, screen/breadcrumb content, and a
 per-screen trailing action. It has no back button. Chat outside the Chat screen
 opens a local Sheet and leaves the current Work/Editor destination mounted;
-chat navigation on Chat changes the destination instead. The phone shell may
+chat navigation on Chat changes the destination instead. The Sheet belongs to
+the history position it opened over (`__TSR_index`), not the entry's key: a
+document the chat opens shows on top, Back to that position shows the chat
+again, and an address repair that replaces the entry (a rename) keeps it open. The phone shell may
 mount only its active main screen, unlike desktop persistent surfaces.
 
 ## Document registry and review

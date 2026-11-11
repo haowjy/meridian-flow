@@ -695,6 +695,11 @@
       border-color: currentColor;
     }
   }
+  /* A filled button loses its fill: a frame keeps it apart from the quiet one beside it
+     (Apply from Discard). */
+  button:is([data-variant="default"], [data-variant="destructive"]) {
+    border: 2px solid ButtonText;
+  }
   /* A menu's group rule is a 1px fill. */
   [role="separator"]:not([tabindex]) {
     forced-color-adjust: none;

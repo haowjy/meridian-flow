@@ -1,6 +1,7 @@
 /** Renders the mobile project workspace. */
 
 import { t } from "@lingui/core/macro";
+import { useRouterState } from "@tanstack/react-router";
 import { MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ContextTab, useContextTabs } from "@/client/stores";
@@ -47,11 +48,19 @@ type MobileProjectProps = ReviewScopedProjectProps;
 export function MobileProject(props: MobileProjectProps) {
   const { recoveringFirstSend } = useChatNavigation();
   // The sheet is the phone's dock: it opens over Work or Editor only. On the
-  // Chat screen the chat is already the page. A first send recovering after a
-  // reload opens it at mount.
-  const [chatOpen, setChatOpen] = useState(
-    () => props.activeScreen !== "chat" && recoveringFirstSend,
+  // Chat screen the chat is already the page. It belongs to the history position
+  // it opened over, so a destination the chat opens shows on top and Back
+  // returns to the chat. The position, not the entry key: an address repair
+  // (a rename, a stripped param) replaces the entry with a new key in place.
+  // A first send recovering after a reload opens it at mount.
+  const position = useRouterState({ select: (state) => state.location.state.__TSR_index });
+  const [chatOpenOver, setChatOpenOver] = useState(() =>
+    props.activeScreen !== "chat" && recoveringFirstSend ? position : null,
   );
+  // Back past the sheet's position ends it, so a later push to that position starts closed.
+  if (chatOpenOver !== null && position < chatOpenOver) setChatOpenOver(null);
+  const chatOpen = chatOpenOver === position && props.activeScreen !== "chat";
+  const setChatOpen = (open: boolean) => setChatOpenOver(open ? position : null);
   const openChatSheet = () => {
     setChatOpen(true);
   };
@@ -164,7 +173,7 @@ export function MobileProject(props: MobileProjectProps) {
           {renderActiveView(props, workDeletion, creating, () => setCreating(null), localTab)}
         </ProjectRouteBoundary>
       </main>
-      <Sheet open={chatOpen && props.activeScreen !== "chat"} onOpenChange={setChatOpen}>
+      <Sheet open={chatOpen} onOpenChange={setChatOpen}>
         <SheetContent
           side="right"
           showCloseButton={false}

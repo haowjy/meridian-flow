@@ -93,8 +93,8 @@ export function CreationComposer({
     [openDocument, projectId],
   );
   const canOpenReference = useCanOpenChatReference();
-  // The Work's default shows until the writer picks a mode here, and only a
-  // picked mode is sent: a stale default from another tab never overwrites a newer one.
+  // The Work's default shows until the writer picks a mode or another Work here, and
+  // only a picked mode is sent: a stale default from another tab never overwrites a newer one.
   const writeMode = choices?.aiWriteMode ?? work?.defaultAiWriteMode ?? "direct";
   const context =
     agent && work
@@ -178,9 +178,10 @@ export function CreationComposer({
             agent={agent}
             writeMode={writeMode}
             onAgentChange={(next) => creation.updateChoices({ agent: next })}
-            // A mode picked for one Work is not carried to another.
+            // Picking a Work never changes the mode on screen: the mode shown becomes the pick.
+            // A Work's default shows only for the Work the composer opened with.
             onWorkChange={(selected) =>
-              creation.updateChoices({ workId: selected.id, aiWriteMode: undefined })
+              creation.updateChoices({ workId: selected.id, aiWriteMode: writeMode })
             }
             onWriteModeChange={(mode) => creation.updateChoices({ aiWriteMode: mode })}
             onRetryWorks={works.refetch}
