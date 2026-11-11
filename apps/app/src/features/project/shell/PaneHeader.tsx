@@ -46,12 +46,11 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
   const leftToggle = left && !left.open;
   return (
     <div className="@container/pane-header tab-band shrink-0">
-      {/* pl-3.5: a chip's flare must land on the sheet's straight top edge, past its rounded
-          corner, so no chip starts closer to the pane edge than radius + flare. */}
-      <header className="flex flex-wrap items-center gap-x-1 pr-2 pl-3.5">
+      <header className="flex flex-wrap items-center gap-x-1 px-2">
         {leftToggle ? <PanelToggleSpacer /> : null}
         {leading ? (
-          // The same x as the tab strip's first chip in both sidebar states.
+          // The same x as the tab strip's first chip in both sidebar states: the
+          // band's 8px gutter (room for a chip's outer flare), or 8px past the toggle.
           // -mr-1 cancels the gap so the title chip sits flush like a next tab.
           <div className={cn("-mr-1 flex shrink-0 self-stretch", leftToggle && "ml-1")}>
             {leading}
