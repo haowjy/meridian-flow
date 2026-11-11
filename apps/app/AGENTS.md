@@ -16,6 +16,9 @@ client contracts, stores and server-owned runtime behavior.
 - When a shadcn primitive fits, adopt or extend its API in `components/ui/` and
   keep any deviation local. Product-specific density stays at the usage site
   until it recurs.
+- A list the writer picks one thing from (a Work, an Agent, a chat) is built from
+  `components/ui/picker.tsx`, which owns its rows, keys and ARIA. A menu of actions
+  stays a Radix `DropdownMenu`.
 - Icon-only controls use `IconButton`'s tooltip. A tooltip shouldn't overlap the
   content its button acts on, so the action row under a turn opens its tooltips below the row.
 
