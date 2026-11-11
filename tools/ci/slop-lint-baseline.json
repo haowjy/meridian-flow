@@ -575,11 +575,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/components/app/work-composer-controls/WorkPickerPanel.tsx",
-        "line": "// biome-ignore lint/a11y/useSemanticElements: fieldset intrinsic sizing breaks the bounded results scrollport.",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/features/chat/DraftDock.tsx",
         "line": "{/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}",
         "count": 1
