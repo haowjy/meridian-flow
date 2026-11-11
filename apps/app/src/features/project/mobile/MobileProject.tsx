@@ -12,6 +12,7 @@ import { ChatIndex } from "../chat-index/ChatIndex";
 import { DocumentHost, MainDocumentStatus } from "../context/DocumentHost";
 import { RecentDocumentsLanding } from "../context/RecentDocumentsLanding";
 import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice";
+import { useNewDocument } from "../context/use-new-document";
 import type { ReviewScopedProjectProps } from "../ProjectView";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
@@ -208,12 +209,22 @@ function renderActiveView(props: MobileProjectProps) {
 /** The phone's one view on a document address: main's document host, its status, or Recents. */
 function PhoneMain(props: MobileProjectProps) {
   const main = useMainItem();
+  const onNewDocument = useNewDocument(
+    props.projectId,
+    props.contextLive ? props.onOpenContextTarget : null,
+  );
   if (!props.contextLive || props.editorScope.status !== "ready") return null;
   // A masked cold address must not mount a host that repairs it.
   // A warm pending address still owns its retained document presentation.
   if (props.routeIssues?.editor && !props.retainEditorWhileLoading) return null;
   if (!main.document.requested)
-    return <RecentDocumentsLanding projectId={props.projectId} editorWorkId={props.editorWorkId} />;
+    return (
+      <RecentDocumentsLanding
+        projectId={props.projectId}
+        editorWorkId={props.editorWorkId}
+        onNewDocument={onNewDocument}
+      />
+    );
   const tab = main.document.tab;
   if (!tab) return <MainDocumentStatus projectId={props.projectId} main={main.document} />;
   return (

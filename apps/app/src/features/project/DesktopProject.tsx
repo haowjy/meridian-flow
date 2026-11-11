@@ -16,15 +16,12 @@ import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranc
 import { ChatIndexController } from "./ChatIndexController";
 import { ChatPaneController } from "./ChatPaneController";
 import { ChatSurface } from "./chat/ChatSurface";
-import {
-  useAccountId,
-  useAccountResourceReplica,
-  useShownDocuments,
-} from "./context/account-feature-context";
+import { useAccountId, useShownDocuments } from "./context/account-feature-context";
 import { DocumentHost, MainDocumentStatus } from "./context/DocumentHost";
 import { RecentDocumentsLanding } from "./context/RecentDocumentsLanding";
 import { recentOpening } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
+import { useNewDocument } from "./context/use-new-document";
 import { useRecordOpenedDocument } from "./context/use-record-opened-document";
 import {
   NO_HELD_PANELS,
@@ -35,10 +32,6 @@ import {
 } from "./layout";
 import type { ReviewScopedProjectProps } from "./ProjectView";
 import { useChatNavigation } from "./routing/chat-navigation";
-import {
-  type OpenContextRoute,
-  useCaptureProjectNavigation,
-} from "./routing/ProjectNavigationContext";
 import { isProjectRouteMasked, ProjectRouteBoundary } from "./routing/ProjectRouteBoundary";
 import { openDocumentInEditor } from "./routing/use-open-document-in-editor";
 import { LeftSidebar } from "./shell/LeftSidebar";
@@ -337,42 +330,6 @@ function useRecordSidePick(projectId: string, picked: ContextTab | null) {
     recorded.current = picked.documentId;
     record(opening);
   }, [picked, projectId, record]);
-}
-
-/** New document: an Untitled document in Unfiled, opened in main with the caret. */
-function useNewDocument(
-  projectId: string,
-  open: OpenContextRoute | null,
-): (() => void) | undefined {
-  const captureNavigation = useCaptureProjectNavigation();
-  const resources = useAccountResourceReplica();
-  const create = useCallback(async () => {
-    if (!open) return;
-    const isCurrent = captureNavigation?.();
-    const reservation = await resources.reserveDocument(projectId);
-    if (reservation.content.kind !== "opened") throw new Error("Local document is unavailable");
-    try {
-      if (isCurrent?.() === false) return;
-      const documentId = reservation.content.handle.documentId;
-      const result = await open(
-        { scheme: "unfiled", path: "", documentId },
-        {
-          isCurrent,
-          focus: true,
-          tab: {
-            kind: "new",
-            documentId,
-            name: reservation.name,
-            resourceHandle: reservation.key.handle,
-          },
-        },
-      );
-      if (result.kind === "failed") throw result.error;
-    } finally {
-      reservation.content.handle.release();
-    }
-  }, [projectId, resources, open, captureNavigation]);
-  return open ? () => void create().catch((error: unknown) => reportError(error)) : undefined;
 }
 
 /**
