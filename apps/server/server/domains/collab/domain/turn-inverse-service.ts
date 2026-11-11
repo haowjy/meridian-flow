@@ -375,11 +375,13 @@ function prepare(
           part,
           disposition(part) === "discarded"
             ? "discarded"
-            : classified.reasons.includes("inaccessible ancestor")
-              ? "paragraph_removed"
-              : classified.state === "undone"
-                ? "already_undone"
-                : "edited_since",
+            : disposition(part) === "applied"
+              ? "applied"
+              : classified.reasons.includes("inaccessible ancestor")
+                ? "paragraph_removed"
+                : classified.state === "undone"
+                  ? "already_undone"
+                  : "edited_since",
         );
     }
     const emittedEditIds = new Set(
