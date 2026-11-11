@@ -84,14 +84,16 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const mainTab = !mainChat && !masked && props.contextLive ? main.document.tab : null;
 
   const recent = useRecentDocuments(projectId);
+  const shown = useShownTrail(projectId);
+  shown.note(mainTab);
+  // Beside a chat: the last document on screen (a draft-only one included, which recents never
+  // list), else the account's most recent.
   const side = resolveSideItem(
     main.item,
     mainChat !== null,
     chat.currentThreadId,
-    recent.documents[0]?.documentId ?? null,
+    shown.trail()[0]?.documentId ?? recent.documents[0]?.documentId ?? null,
   );
-  const shown = useShownTrail(projectId);
-  shown.note(mainTab);
   const sideDocumentId = side.item?.kind === "document" ? side.item.documentId : null;
   const sideTab = useDescribedDocument(projectId, sideDocumentId, shown.trail());
   shown.note(sideTab);
