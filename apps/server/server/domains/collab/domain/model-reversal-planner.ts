@@ -104,7 +104,8 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     if (destination.kind === "draft" && destination.state === "gone") return closedPartCause(part);
     const state = inspection.states([part])[0];
     if (state.state !== (direction === "undo" ? "active" : "undone")) {
-      if (part.disposition === "discarded") return "discarded";
+      if (part.disposition === "discarded" || part.disposition === "applied")
+        return part.disposition;
       return "changed";
     }
     return null;
