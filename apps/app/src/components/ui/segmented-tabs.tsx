@@ -1,7 +1,6 @@
 /**
  * SegmentedTabs — a contained segmented switch between sibling views of one
- * surface: the sidebar's Write | Chat, the chat index's All | Favorites, the Work
- * page's views.
+ * surface: the sidebar's Write | Chat and the Work page's views.
  *
  * Deliberately not underline tabs: the recessed track gives the control a
  * complete boundary, so it reads as a switch inside chrome or a heading row

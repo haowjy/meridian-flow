@@ -135,16 +135,23 @@ on refusal, returns to the origin tab if the user hasn't moved focus elsewhere.
 ## Navigation and chat
 
 `routing/chat-navigation.tsx` is the single command seam for main: `openChat` always navigates
-main to the chat. The side chooses its own chat only through the held pick (the side's picker, or
-a chat created from the side's composer). `display` is the chat main shows (the index or one thread), null when main holds
-no chat; `lastChatId` is the last chat opened (`readLastChat` in `client/project-shell/store.ts`).
-A chat created from the side's composer is held beside. A link followed inside a chat opens the
-page in main, and the entry records that chat as its beside hint. On the phone, chat
-outside the Chat screen reveals the local Sheet.
+main to the chat, and `openNewChat` to `/chats`, main's new-chat composer. The side chooses its
+own chat only through the held pick (the side's picker, or a chat created from the side's
+composer). `display` is the chat main shows (`new` or one thread), null when main holds no chat;
+`lastChatId` is the last chat opened (`readLastChat` in `client/project-shell/store.ts`). A chat
+created from `/chats` takes main; one created from the side's composer is held beside. A link
+followed inside a chat opens the page in main, and the entry records that chat as its beside
+hint; a link to a page that chat drafted opens its draft (`useOwnerDraftOpener` in
+`review-launch.tsx`). No chat sits beside a chat, so a chat in main takes the side's picker down
+to documents.
 
-The displayed-chat variant is derived from the URL; a chat may stay mounted behind the index
-but isn't the displayed chat. Primary-list lookups may supply Work and header projections but never
-decide the body identity or reject a subagent.
+There is no chat index. The sidebar's Chats list (`shell/sidebar/ChatsBody.tsx`) is how chats are
+found: a find field over the server's chat search, Favourites, the scoped Work's chats, and an
+"All chats" disclosure that pages the whole feed 24 at a time with Show more. Each row renames in
+place, toggles Favourites and deletes with an Undo line in the list.
+
+The displayed-chat variant is derived from the URL. Primary-list lookups may supply Work and
+header projections but never decide the body identity or reject a subagent.
 
 ## Document review state
 
@@ -199,4 +206,3 @@ preload the project route loader, which would repeat owner and shell-data reads.
 - [`resource-lifecycle-architecture.md`](resource-lifecycle-architecture.md)
 - [`../mobile/.context/CONTEXT.md`](../mobile/.context/CONTEXT.md)
 - [`../context/.context/CONTEXT.md`](../context/.context/CONTEXT.md)
-- [`../chat-index/.context/CONTEXT.md`](../chat-index/.context/CONTEXT.md)
