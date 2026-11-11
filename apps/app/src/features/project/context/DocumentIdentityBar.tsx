@@ -329,6 +329,7 @@ export function DocumentIdentityBar({
       itemKey={reviewItemKey ?? ""}
       onOpenDraft={openDraft}
       onCloseDraftOnly={onCloseDraftOnly}
+      onFocusDocument={() => focusEditorProse(tab.documentId)}
     >
       {({ version, controls }) =>
         variant === "state" ? renderState(version, controls) : renderRow(version, controls)

@@ -1,5 +1,7 @@
 /**
- * The editor owns Tab and Shift-Tab, and never hands them back.
+ * The editor owns Tab and Shift-Tab, and never hands them back, except for the
+ * one press after an Escape that found nothing to close: the kernel lets that
+ * one through to the browser so the keyboard can leave the page.
  *
  * Tab makes a tab. That is what a writer expects from every editor they have
  * come from, and it is the one thing the browser's own Tab refuses to be: its

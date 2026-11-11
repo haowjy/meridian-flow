@@ -306,6 +306,7 @@ function ActiveSessionEditorView({
       attributes: {
         class: editorProseClass(showToolbar ? "docked" : "none"),
         "aria-label": ariaLabel ?? t`Collaborative document editor`,
+        "aria-description": t`Tab types a tab. To leave the page, press Escape, then Tab.`,
       },
     }),
     [ariaLabel, showToolbar],
