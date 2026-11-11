@@ -257,21 +257,6 @@ export class AccountResourceReplica {
     content: ResourceContentOpenResult;
   }> {
     this.requireOpen();
-    return this.exclusive(
-      `reservation/${encodeURIComponent(this.accountId)}/${encodeURIComponent(projectId)}`,
-      () => this.reserveDocumentSerial(projectId, folderPath, destination),
-    );
-  }
-
-  private async reserveDocumentSerial(
-    projectId: string,
-    folderPath: string,
-    destination?: ResourceDestination,
-  ): Promise<{
-    key: ResourceKey;
-    name: string;
-    content: ResourceContentOpenResult;
-  }> {
     const key = { handle: crypto.randomUUID() };
     const documentId = crypto.randomUUID();
     // The server numbers an untitled create when its first word sends it (`Untitled N`, by what
