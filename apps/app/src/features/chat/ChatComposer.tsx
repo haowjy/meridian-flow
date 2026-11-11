@@ -18,6 +18,7 @@ import {
 import { useAskTakeover } from "./ask/useAskTakeover";
 import { AnchoredCards } from "./ChatCards";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
+import { useChatPlace } from "./chat-place";
 import { DraftDock } from "./DraftDock";
 import type { ChatStop } from "./useChatStop";
 import { useCommittedEvent } from "./useCommittedEvent";
@@ -31,8 +32,6 @@ type ChatComposerProps = {
   accountId: string;
   chatId: string;
   active: boolean;
-  /** Focus the box when it mounts; the side's chat, which follows main, doesn't. */
-  focusOnOpen: boolean;
   activeWork: Work | null;
   agentName: string;
   running: boolean;
@@ -58,7 +57,6 @@ function ChatComposerComponent({
   accountId,
   chatId,
   active,
-  focusOnOpen,
   activeWork,
   agentName,
   running,
@@ -75,6 +73,7 @@ function ChatComposerComponent({
   onSubmit,
   onStop,
 }: ChatComposerProps) {
+  const place = useChatPlace();
   const draft = useComposerSessionDraft(accountId, { kind: "chat", id: threadId });
   const composer = useRef<ComposerHandle | null>(null);
   const composerRef = useCallback(
@@ -99,7 +98,7 @@ function ChatComposerComponent({
       <Composer
         cards={hasComposerCards ? <AnchoredCards anchor="composer" /> : undefined}
         key={draft.key}
-        autoFocus={focusOnOpen}
+        autoFocus={place === "main"}
         initialDraft={draft.initialDraft}
         onDraftChange={draft.updateDraft}
         onOpenReference={onOpenReference}

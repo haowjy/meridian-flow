@@ -74,7 +74,10 @@ export type Describing = { documentId: string; workId?: string };
 /** The side waits: `describing` is the document whose descriptor it waits on. */
 type Unsettled =
   | { kind: "pending"; describing: Describing | null }
-  | { kind: "failed"; retry: () => void };
+  | { kind: "failed"; failed: SideFailure };
+
+/** A read the side waits on failed: a document's lookup, or the companion read for main's item. */
+export type SideFailure = { read: "document" | "companion"; retry: () => void };
 
 export type SideResolution = ({ kind: "settled"; side: SettledSide } | Unsettled) & {
   /** The hold can no longer sit beside main: it ends. */
@@ -143,7 +146,10 @@ export function resolveSide(input: {
     if (described.status === "pending")
       return { kind: "wait", resolution: { kind: "pending", describing: document } };
     if (described.status === "failed")
-      return { kind: "wait", resolution: { kind: "failed", retry: described.retry } };
+      return {
+        kind: "wait",
+        resolution: { kind: "failed", failed: { read: "document", retry: described.retry } },
+      };
     return described.tab ? { kind: "show", tab: described.tab } : { kind: "skip" };
   };
   let releaseHeld = false;
@@ -167,7 +173,8 @@ export function resolveSide(input: {
   }
   const { companion } = input;
   if (companion.status === "pending") return { kind: "pending", describing: null, releaseHeld };
-  if (companion.status === "failed") return { kind: "failed", retry: companion.retry, releaseHeld };
+  if (companion.status === "failed")
+    return { kind: "failed", failed: { read: "companion", retry: companion.retry }, releaseHeld };
   for (const candidate of companion.candidates) {
     const next = step(candidate.item);
     if (next.kind === "show")

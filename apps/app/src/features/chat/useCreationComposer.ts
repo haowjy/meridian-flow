@@ -7,12 +7,17 @@ import type { CreationAgent, CreationChoices } from "@/features/agents/creation-
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useChatNavigation } from "@/features/project/routing/chat-navigation";
 import { sendProjectChat } from "@/lib/send-project-chat";
+import { useChatPlace } from "./chat-place";
 import { useComposerSessionDraft } from "./useComposerSessionDraft";
 
 export function useCreationComposer(projectId: string) {
   const { acceptCreatedChat } = useChatNavigation();
   const accountId = useAccountId();
-  const draft = useComposerSessionDraft(accountId, { kind: "new-chat", id: projectId });
+  const draftScope = {
+    kind: useChatPlace() === "side" ? "side-new-chat" : "new-chat",
+    id: projectId,
+  } as const;
+  const draft = useComposerSessionDraft(accountId, draftScope);
   const threadActions = useThreadActions();
   const [choices, setChoices] = useState<CreationChoices>({});
   const updateChoices = useCallback(
@@ -48,6 +53,7 @@ export function useCreationComposer(projectId: string) {
           workAiWriteMode: context.workAiWriteMode,
           ...(context.aiWriteMode ? { aiWriteMode: context.aiWriteMode } : {}),
           threadId: draft.chatId,
+          draftScope,
           threadActions,
           selectChat: (threadId) => {
             // Recording the Send already handed off an unchanged draft; one that moved on since

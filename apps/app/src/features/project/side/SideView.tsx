@@ -33,6 +33,7 @@ import type { ContextTab } from "@/client/stores";
 import type { NewChatAbout } from "@/features/chat/CreationComposer";
 import {
   useAccountId,
+  useAccountResourceProjection,
   useOptionalPresentedDocuments,
   useShownDocuments,
 } from "../context/account-feature-context";
@@ -47,6 +48,7 @@ import {
   type MainForSide,
   resolveSide,
   type SettledSide,
+  type SideFailure,
   type SideReason,
   type SideSource,
 } from "./side-item";
@@ -60,8 +62,8 @@ export type SideItem = {
   reason: SideReason | null;
   /** The companion read has not answered: the side keeps what it showed. */
   pending: boolean;
-  /** A read the side waits on failed: the side keeps what it showed and offers this retry. */
-  retry: (() => void) | null;
+  /** A read the side waits on failed: the side keeps what it showed and offers a retry. */
+  failed: SideFailure | null;
 };
 
 type SideView = {
@@ -160,7 +162,18 @@ function useDescriptions(projectId: string): Descriptions {
     () => new Map(),
   );
   const asked = useRef(new Set<string>());
+  // "Cannot open" holds only while the document stays as it was then: a trashed document that
+  // is restored opens again.
+  const { records } = useAccountResourceProjection(projectId);
+  const lifecycleOf = (documentId: string) =>
+    records.find((record) => record.resource.identity.documentId === documentId)?.resource.lifecycle
+      .kind ?? null;
+  const lifecycle = useRef(lifecycleOf);
+  lifecycle.current = lifecycleOf;
+  const refused = useRef(new Map<string, string | null>());
   const store = useCallback((key: string, value: ContextTab | null | "failed" | undefined) => {
+    if (value === null) refused.current.set(key, lifecycle.current(key.split("|")[0] ?? ""));
+    else refused.current.delete(key);
     setAnswers((current) => {
       const next = new Map(current);
       if (value === undefined) next.delete(key);
@@ -174,13 +187,32 @@ function useDescriptions(projectId: string): Descriptions {
     const mounted = new Set(shown.map((tab) => tab.documentId));
     const stale = [...asked.current].filter((key) => mounted.has(key.split("|")[0] ?? ""));
     if (stale.length === 0) return;
-    for (const key of stale) asked.current.delete(key);
+    for (const key of stale) {
+      asked.current.delete(key);
+      refused.current.delete(key);
+    }
     setAnswers((current) => {
       const next = new Map(current);
       for (const key of stale) next.delete(key);
       return next;
     });
   }, [shown]);
+  useEffect(() => {
+    const changed = [...refused.current].filter(
+      ([key, was]) => lifecycleOf(key.split("|")[0] ?? "") !== was,
+    );
+    if (changed.length === 0) return;
+    for (const [key] of changed) {
+      refused.current.delete(key);
+      asked.current.delete(key);
+    }
+    setAnswers((current) => {
+      const next = new Map(current);
+      for (const [key] of changed) next.delete(key);
+      return next;
+    });
+    // Runs when the projection changes; `lifecycleOf` reads it.
+  }, [records]);
   const request = useCallback(
     (documents: readonly Describing[]) => {
       for (const document of documents) {
@@ -266,7 +298,7 @@ export function SideViewProvider({
         ? reaimComposer(kept, main)
         : null;
   const sideKey = JSON.stringify([settled, resolution.kind]);
-  const retry = resolution.kind === "failed" ? resolution.retry : null;
+  const failed = resolution.kind === "failed" ? resolution.failed : null;
   const side = useMemo<SideItem>(
     () => ({
       item: settled?.item ?? null,
@@ -274,9 +306,9 @@ export function SideViewProvider({
       source: settled?.source ?? null,
       reason: resolution.kind === "settled" ? (settled?.reason ?? null) : null,
       pending: resolution.kind === "pending",
-      retry,
+      failed,
     }),
-    // `retry` changes identity each render; the key covers what it retries.
+    // `failed.retry` changes identity each render; the key covers what it retries.
     [sideKey],
   );
 

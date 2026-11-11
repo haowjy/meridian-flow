@@ -10,6 +10,7 @@
  */
 import type { Work } from "@meridian/contracts/protocol";
 import type { ReactNode } from "react";
+import { ChatPlaceContext } from "@/features/chat/chat-place";
 import { cn } from "@/lib/utils";
 import { OpenedFromChat } from "../routing/ProjectNavigationContext";
 import type { ContextRouteRequest } from "../routing/project-route";
@@ -64,17 +65,18 @@ export function ChatSurface({
       >
         {/* Every open made inside this chat keeps it beside what it opens. */}
         <OpenedFromChat chatId={threadId}>
-          <ChatScreen
-            projectId={projectId}
-            threadId={threadId}
-            about={about}
-            onAboutChange={place === "side" ? reportAbout : undefined}
-            activeWork={activeWork}
-            availableWorks={availableWorks}
-            onOpenContextTarget={onOpenContextTarget}
-            visible={visible}
-            focusOnOpen={place === "main"}
-          />
+          <ChatPlaceContext.Provider value={place}>
+            <ChatScreen
+              projectId={projectId}
+              threadId={threadId}
+              about={about}
+              onAboutChange={place === "side" ? reportAbout : undefined}
+              activeWork={activeWork}
+              availableWorks={availableWorks}
+              onOpenContextTarget={onOpenContextTarget}
+              visible={visible}
+            />
+          </ChatPlaceContext.Provider>
         </OpenedFromChat>
       </div>
     </div>

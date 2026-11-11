@@ -181,8 +181,7 @@ export type ComposerHandle = {
   /**
    * Makes the draft this one file's chip alone, without taking focus (a new chat about a page),
    * when the draft is empty or exactly the chip of `replaces` (the one the caller put there last);
-   * anything else is the writer's and stays. The chip is not saved as the writer's draft. Returns
-   * whether the draft is now that chip alone.
+   * anything else is the writer's and stays. Returns whether the draft is now that chip alone.
    */
   startWith: (
     reference: DocumentReference,
@@ -455,8 +454,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         // Not `editor.isEmpty`: it counts a paragraph holding only an upload in flight as empty.
         const empty = only?.type.name === "paragraph" && only.childCount === 0;
         if (!empty && (chipOf === null || chipOf !== replaces)) return false;
-        // Not the writer's draft until they touch it: the next edit saves it with the chip.
-        suppressDraftChangeRef.current = true;
         editor.commands.setContent({
           type: "doc",
           content: [
@@ -466,7 +463,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             },
           ],
         });
-        suppressDraftChangeRef.current = false;
         return true;
       },
       attachFiles: (entries) => attachFilesRef.current(entries),

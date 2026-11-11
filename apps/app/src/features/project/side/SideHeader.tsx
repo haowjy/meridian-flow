@@ -115,9 +115,16 @@ function SideBand({
           {trailing ?? <PanelToggleSpacer />}
         </div>
       </header>
-      {side.retry ? (
+      {side.failed ? (
         <div className="px-2 pb-1">
-          <InlineErrorRow message={t`Couldn't find what goes with this.`} onRetry={side.retry} />
+          <InlineErrorRow
+            message={
+              side.failed.read === "document"
+                ? t`Couldn't look up the document to show here.`
+                : t`Couldn't find what goes with this.`
+            }
+            onRetry={side.failed.retry}
+          />
         </div>
       ) : null}
     </div>
