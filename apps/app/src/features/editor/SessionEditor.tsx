@@ -328,8 +328,9 @@ function ActiveSessionEditorView({
   const afterPaintRelease = useAfterPaintRelease();
   // The paint cover that stands in while this document's surface changes parks focus on its
   // status line. The caret was the writer's, so it goes back to the editor when the cover lifts.
-  // A boundary that hides this tree destroys the editor and re-runs these effects on reveal with
-  // the old one still in state, before the mount builds its replacement.
+  // A boundary that hides this tree destroys the editor; on reveal React reconnects these effects
+  // with the closure it last committed, which holds that dead editor, before the mount builds the
+  // replacement. Clearing or masking the editor in the hook can't reach those closures.
   useEffect(() => {
     if (!editor || editor.isDestroyed || inReview) return;
     const dom = editor.view.dom;

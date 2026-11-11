@@ -190,11 +190,13 @@ lookup's stale "available" answer from presenting the document again (the remova
 close it at once, in a loop) until a read after the removal and the replica's living
 record say it is back, so a restore returns the document at the same address. Trash's
 restore and a restored Work (Undo of a Work delete) invalidate the address lookups to
-supply that read. A document some host still presents is exempt, and so is one the
-address's own draft row shows draft-only (`gated.draftOnly`): a draft held over a
-document deleted live keeps painting, and admission has nothing to install for it. The
-draft row is the evidence, not a host's hold, so a chapter the writer deleted while its
-draft was under review (main went back, no host holds it) opens as the draft.
+supply that read. This guard is temporary: it exists only for that stale "available"
+answer, and phase 10 removes it together with the answer (`DIVERGENCE/companion-shell.md`,
+Phase 8). Its one exemption is a document shown through its draft: the address's own draft
+row says live lacks it, or a host presents it draft-only. A draft held over a document
+deleted live keeps painting, and admission has nothing to install for it. The draft row is
+the evidence, not a host's hold, so a chapter the writer deleted while its draft was under
+review (main went back, no host holds it) opens as the draft.
 
 Every editable document keeps `ContextTabSessionBoundary` as the same React ancestor.
 Resource-backed documents resolve through their stable resource handle before and after
@@ -283,8 +285,8 @@ presents are marked. While the
 mark lives every sighting is silent; "kept" releases it, and a settled
 removal lasts until each host that presented the document saw it vanish or its removal
 landed (`ownRemovalEnded`). A delete the server refuses after the replica admitted it never
-lands, so `RefusalToasts` ends the marks of the refused entry's documents when it toasts the
-refusal. A replica change origin cannot replace the marks: Discard is a server command,
+lands, so `observeRefusedDeletes` (account lifetime, no screen needed) ends the marks of the
+refused entry's documents. A replica change origin cannot replace the marks: Discard is a server command,
 not a replica mutation.
 
 A live room's 4208 has one reaction: `AccountFeatureLifetime` hears it from

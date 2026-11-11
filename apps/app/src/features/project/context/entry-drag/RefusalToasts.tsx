@@ -11,14 +11,12 @@ import {
   useAccountResourceProjection,
   useAccountResourceReplica,
   useOptionalContextRemovalCoordinator,
-  useOptionalRemovedNotices,
 } from "../account-feature-context";
-import { entryFailures, entryToast, failureTitle, ownRemovals, showFailure } from "./entry-failure";
+import { entryFailures, entryToast, failureTitle, showFailure } from "./entry-failure";
 
 export function RefusalToasts({ projectId }: { projectId: string }) {
   const resources = useAccountResourceReplica();
   const removal = useOptionalContextRemovalCoordinator();
-  const notices = useOptionalRemovedNotices();
   const { records, folders, placement, snapshot } = useAccountResourceProjection(projectId);
   /** Intents with no toast to come: refused before this mount, closed or retried. */
   const handled = useRef<Set<string> | null>(null);
@@ -39,12 +37,6 @@ export function RefusalToasts({ projectId }: { projectId: string }) {
       const said = `${failureTitle(failure)}:${intents.join()}`;
       if (shown.current.get(failure.key) === said) continue;
       shown.current.set(failure.key, said);
-      // `deleteDocument` resolved at local admission, so the writer's own-removal mark was
-      // settled as removed; the refusal means no removal lands to end it.
-      if (failure.kind === "delete")
-        void ownRemovals({ resources, projectId }, failure.entry).then((documentIds) =>
-          notices?.ownRemovalEnded(projectId, documentIds),
-        );
       showFailure({ resources, projectId, removal }, failure, () => {
         for (const intent of intents) done.add(intent);
         shown.current.delete(failure.key);
@@ -55,7 +47,7 @@ export function RefusalToasts({ projectId }: { projectId: string }) {
       shown.current.delete(key);
       dismissFailure(key);
     }
-  }, [records, folders, placement, snapshot, projectId, resources, removal, notices]);
+  }, [records, folders, placement, snapshot, projectId, resources, removal]);
 
   useEffect(
     () => () => {
