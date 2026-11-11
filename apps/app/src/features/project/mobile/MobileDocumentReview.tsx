@@ -23,7 +23,6 @@ import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
-import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import {
   type ManuscriptState,
   ManuscriptStateSlot,
@@ -74,7 +73,7 @@ export function MobileDocumentReview({
             onOpenList={() => setListOpen(true)}
           />
         ) : (
-          <LiveDraftEntry documentId={documentId} manuscriptState={manuscriptState} />
+          <ManuscriptStateRow state={manuscriptState} />
         )}
         <DocumentDraftHint projectId={projectId} tab={tab} />
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
@@ -87,33 +86,21 @@ export function MobileDocumentReview({
 }
 
 /**
- * The live document's way into its pending draft: the Draft chip in a row of
- * the review header's own height and inset, so the chip stays where the
- * reviewing one will be. The row also holds what an Apply brought back, so that
- * line takes the review header's place instead of pushing the page. Nothing is
- * drawn for a document with neither.
+ * What an Apply brought back, in a row of the review header's own height and inset, so the
+ * line takes the header's place instead of pushing the page. The version chip is in the
+ * toolbar row, as on a desktop.
  */
-function LiveDraftEntry({
-  documentId,
-  manuscriptState,
-}: {
-  documentId: string;
-  manuscriptState: ManuscriptState | null;
-}) {
-  const { fileForDocument } = useDraftReview();
-  const group = fileForDocument(documentId);
-  if (!group && !manuscriptState) return null;
+function ManuscriptStateRow({ state }: { state: ManuscriptState | null }) {
+  if (!state) return null;
   return (
     <div
-      data-phone-draft-entry
       className="flex min-h-12 shrink-0 items-center border-b border-border-subtle bg-review"
       style={{
         paddingLeft: "calc(0.25rem + env(safe-area-inset-left))",
         paddingRight: "calc(0.25rem + env(safe-area-inset-right))",
       }}
     >
-      {group ? <DraftReviewChip documentId={documentId} touch /> : null}
-      <ManuscriptStateSlot state={manuscriptState} touch />
+      <ManuscriptStateSlot state={state} touch />
     </div>
   );
 }

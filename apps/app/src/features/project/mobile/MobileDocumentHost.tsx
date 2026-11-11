@@ -183,8 +183,9 @@ function PhoneDocument({
   const freeze = useDocumentFreeze(projectId, tab, reviewing ? controller.ownerKey : null);
   return (
     <DocumentStateSlotProvider>
-      {/* Live or Draft at the toolbar row's end, as on a desktop; a review's header shows its own. */}
-      {reviewing ? null : (
+      {/* Live at the toolbar row's end, as on a desktop; a review, painted or on its way, shows
+          its own chip in its header. */}
+      {review?.documentId === tab.documentId ? null : (
         <DocumentStatePortal>
           <DocumentVersionMenu projectId={projectId} tab={tab} />
         </DocumentStatePortal>

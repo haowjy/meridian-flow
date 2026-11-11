@@ -40,6 +40,7 @@ import {
 import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
+import { focusIsFree } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { DocumentStateSlotHost } from "./document-state-slot";
@@ -47,7 +48,7 @@ import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
-import { claimEditorFocus, focusIsFree, focusOnLoad } from "./focus-on-open";
+import { claimEditorFocus, focusOnLoad } from "./focus-on-open";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaNotices } from "./SchemaNotices";
 import { SyncStatus } from "./SyncStatus";
@@ -363,11 +364,18 @@ function ActiveSessionEditorView({
     if (!editor || editor.isDestroyed || !active || !effectiveEditable) return;
     const made = !inReview && claimEditorFocus(focusKey);
     if (!made && container !== "editor") return;
+    let release: (() => void) | null = null;
+    let mounted = true;
     afterPaintRelease(() => {
-      if (!made) focusOnLoad(editor);
+      if (!mounted) return;
+      if (!made) release = focusOnLoad(editor);
       else if (!editor.isDestroyed && focusIsFree())
         editor.commands.focus("start", { scrollIntoView: false });
     });
+    return () => {
+      mounted = false;
+      release?.();
+    };
   }, [afterPaintRelease, active, container, editor, effectiveEditable, focusKey, inReview]);
 
   useEffect(() => {

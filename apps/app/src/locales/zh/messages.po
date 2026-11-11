@@ -391,6 +391,14 @@ msgid "{binary} is a binary file."
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
+msgid "{changes, plural, one {Apply this chat's change to {name}} other {Apply this chat's # changes to {name}}}"
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "{changes, plural, one {Discard this chat's change to {name}} other {Discard this chat's # changes to {name}}}"
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
 msgid "{count, plural, one {# change} other {# changes}}"
 msgstr ""
 
@@ -1201,9 +1209,13 @@ msgstr ""
 msgid "Apply draft"
 msgstr ""
 
-#: src/features/draft-review/ReviewActions.tsx
-msgid "Apply draft of {subject}"
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Apply draft of {name}"
 msgstr ""
+
+#: src/features/draft-review/ReviewActions.tsx
+#~ msgid "Apply draft of {subject}"
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Apply is temporarily unavailable."
@@ -1211,6 +1223,14 @@ msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 msgid "Apply is waiting for confirmation."
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "Apply this chat's changes to {documents} documents"
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "Apply this chat's changes to {name}"
 msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
@@ -2865,8 +2885,20 @@ msgstr ""
 msgid "Discard draft"
 msgstr ""
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Discard draft of {name}"
+msgstr ""
+
 #: src/features/draft-review/ReviewActions.tsx
-msgid "Discard draft of {subject}"
+#~ msgid "Discard draft of {subject}"
+#~ msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "Discard this chat's changes to {documents} documents"
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "Discard this chat's changes to {name}"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx

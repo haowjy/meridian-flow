@@ -1,0 +1,23 @@
+/* A toolbar wider than its pane scrolls sideways with no scrollbar, so the edge with
+   buttons behind it fades: the suggestion menu's mask (`suggestion-menu.css`), turned on
+   its side. `ToolbarScroller` measures which edges have more. */
+[data-editor-toolbar-scroller] {
+  --toolbar-fade: 3rem;
+  --toolbar-fade-start: 0px;
+  --toolbar-fade-end: 0px;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--toolbar-fade-start),
+    #000 calc(100% - var(--toolbar-fade-end)),
+    transparent 100%
+  );
+}
+
+[data-editor-toolbar-scroller][data-more-start] {
+  --toolbar-fade-start: var(--toolbar-fade);
+}
+
+[data-editor-toolbar-scroller][data-more-end] {
+  --toolbar-fade-end: var(--toolbar-fade);
+}

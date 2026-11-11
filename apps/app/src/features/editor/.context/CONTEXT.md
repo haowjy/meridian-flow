@@ -70,9 +70,10 @@ read-only. Projection, commands and history belong to the
 
 `DraftReviewProvider` supplies the presented review. Identity/header chrome and
 change bars read the shared review projection; `EditorView` does not own a second review
-controller. The review controls live in the identity bar's path row (the
-`DraftReviewChip` on a live document with a pending draft, the
-`DraftReviewBand` in review), with no separate header above it. The focused
+controller. The version chip sits at the toolbar row's end (`DocumentVersionMenu`, Live
+with every draft one pick away) on desktop and phone alike, and gives way to the review's
+own chip once a review of the document is entered. On desktop the review's controls live in
+the identity row (`DraftReviewBand`), with no separate header above it. The focused
 change's bar (`surfaces/review`) never covers manuscript text: it sits in the
 right margin beside the change when there is room, else in a block slot after
 the change's last paragraph. Draft room lifecycle, frozen commands and Discard history belong
