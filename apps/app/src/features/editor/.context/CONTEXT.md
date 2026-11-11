@@ -73,7 +73,9 @@ Each document host (main, the side, the phone) has its own review
 review's projection, and `EditorView` does not own a second review controller.
 The version chip (`DocumentVersionMenu`, Live with every draft one pick away) sits at the
 toolbar row's end on desktop and phone alike, and gives way to the review's own chip once a
-review of the document is entered. On desktop the review's controls live in the identity
+review of the document is entered. The chip names what the host paints: once a Discard or
+Apply ends the draft, the review stays open ("No changes left", its Undo) but the chip reads
+Live, as the text does. On desktop the review's controls live in the identity
 bar (`DraftReviewBand`), with no separate header above it. The focused
 change's bar (`surfaces/review`) never covers manuscript text: it sits in the
 right margin beside the change when there is room, else in a block slot after

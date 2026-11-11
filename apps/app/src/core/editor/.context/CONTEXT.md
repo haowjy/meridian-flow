@@ -76,6 +76,12 @@ barrier that drains that open.
   the exact cache when the review owner learns closure through authoritative
   metadata before the socket frame. The pool refuses to reopen that closed id.
 
+Several windows of one browser profile share the authority store. A deleted document's lineage
+is finished by one window (`dispatchTerminalLineage`), which waits for every other window's
+hold on the document; each window therefore drains its own local room on any pending drain,
+including a `terminal-local` one (`DocumentSessionRecovery.reconcile`). Without it the owner
+waits forever, the record stays terminal and a restore cannot revive it until reload.
+
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
 orthogonal. `synced` means the transport handshake completed, not that all

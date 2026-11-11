@@ -98,7 +98,8 @@ export function DocumentVersionMenu({
 
   return (
     <DraftSwitcher
-      showing={review ? "draft" : "live"}
+      // An ended draft's review stays open ("No changes left") while main paints Live.
+      showing={review && paint?.showing !== "live" ? "draft" : "live"}
       drafts={drafts}
       owner={outOfScope ?? undefined}
       draftOnly={review?.draftOnly ?? false}
