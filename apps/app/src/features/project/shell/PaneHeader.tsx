@@ -18,11 +18,11 @@ import { PanelToggleSpacer } from "./PanelToggleButton";
  * place; when it is open the toggle floats over the rail instead.
  *
  * A `notice` (a failed command on the pane's subject, like a rejected rename or
- * Archive) sits beside the title when the pane is wide, and wraps onto its own
- * full-width line under the band when the pane is narrow, so the title keeps
- * its width. It is one element that only moves in the flex flow, so crossing
- * the width neither remounts it (its alert is not announced again) nor drops
- * focus from its Retry.
+ * Archive) sits beside the title when the pane is wide, and floats under the
+ * band when the pane is narrow, so the title keeps its width and the band stays
+ * one row: a taller band would lift the active title tab off the page. It is
+ * one element whose position alone changes, so crossing the width neither
+ * remounts it (its alert is not announced again) nor drops focus from its Retry.
  */
 export type PaneHeaderRailToggle = { open: boolean };
 
@@ -47,7 +47,7 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
   const leftToggle = left && !left.open;
   return (
     <div className="@container/pane-header tab-band shrink-0">
-      <header className="flex flex-wrap items-center gap-x-1 pr-2">
+      <header className="flex items-center gap-x-1 pr-2">
         {leftToggle ? <PanelToggleSpacer /> : null}
         {leading ? (
           // The same x as the tab strip's first chip in both sidebar states: the
@@ -69,7 +69,7 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
           {title}
         </div>
         {notice ? (
-          <div className="order-last min-w-0 basis-full @2xl/pane-header:order-none @2xl/pane-header:flex-initial @2xl/pane-header:basis-auto">
+          <div className="absolute inset-x-2 top-full z-20 mt-1 rounded-md border border-border bg-card shadow-float @2xl/pane-header:static @2xl/pane-header:z-auto @2xl/pane-header:mt-0 @2xl/pane-header:min-w-0 @2xl/pane-header:flex-initial @2xl/pane-header:rounded-none @2xl/pane-header:border-0 @2xl/pane-header:bg-transparent @2xl/pane-header:shadow-none">
             {notice}
           </div>
         ) : null}
