@@ -4670,7 +4670,7 @@ msgstr "刚刚"
 msgid "Numbered list"
 msgstr ""
 
-#: src/components/app/composer/ConnectionLine.tsx
+#: src/client/providers/TransportProvider.tsx
 msgid "Offline"
 msgstr ""
 
@@ -5091,7 +5091,6 @@ msgid "Reconnected"
 msgstr ""
 
 #: src/client/providers/TransportProvider.tsx
-#: src/components/app/composer/ConnectionLine.tsx
 msgid "Reconnecting…"
 msgstr ""
 
@@ -5314,12 +5313,16 @@ msgstr ""
 
 #. placeholder {0}: only.name
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
-msgid "Restored {0} to {destinationName}."
-msgstr ""
+#~ msgid "Restored {0} to {destinationName}."
+#~ msgstr ""
 
 #. placeholder {0}: document.name
 #: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Restored {0}, but couldn't open it. Try again from the file list."
+msgstr ""
+
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
+msgid "Restored {name} to {destinationName}."
 msgstr ""
 
 #. placeholder {0}: documentDisplayName(landing.landedAt)

@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { role } from "@/components/ui/roles";
+import { tabListKeys } from "@/components/ui/tab-keys";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   useWorkBranchCommands,
@@ -208,18 +209,23 @@ export function SourcesBody({
   useEffect(() => {
     void useSidebarTabs.persist.rehydrate();
   }, []);
+  const showTab = useSidebarTabs((state) => state.show);
   const [picked, setPicked] = useState<SourceKey>("manuscript");
-  // Changes stays while it is on show: it is the list the writer opens drafts from, whatever
-  // tree they live in. `picked` is Changes only while it is shown (see below).
+  // The open document's source is on the strip and, unless Changes is on show, the one shown.
+  // Changes stays: it is the list the writer opens drafts from, whatever tree they live in.
+  // `picked` is Changes only while it is shown (see below).
   useEffect(() => {
-    if (activeScheme && isSourceKey(activeScheme))
-      setPicked((current) => (current === "changes" ? current : activeScheme));
-  }, [activeScheme]);
+    if (!activeScheme || !isSourceKey(activeScheme)) return;
+    showTab(activeScheme);
+    setPicked((current) => (current === "changes" ? current : activeScheme));
+  }, [activeScheme, showTab]);
   // A new file or folder asked for elsewhere (the empty Editor) appears in its source.
   const creatingScheme = useOptionalTreeCreation()?.request?.scheme;
   useEffect(() => {
-    if (creatingScheme && isSourceKey(creatingScheme)) setPicked(creatingScheme);
-  }, [creatingScheme]);
+    if (!creatingScheme || !isSourceKey(creatingScheme)) return;
+    showTab(creatingScheme);
+    setPicked(creatingScheme);
+  }, [creatingScheme, showTab]);
   const changes = useChangesScope(projectId, chatThreadId);
   // Under None, Changes is offered only while the chat on screen has drafts, but it stays
   // while it is the pane on show, so emptying it keeps the last command's Undo in view.
@@ -327,11 +333,13 @@ function SourceTabs({
   onSelect: (key: SourceKey) => void;
 }) {
   const toggle = useSidebarTabs((state) => state.toggle);
+  const keys = tabListKeys(shown, source, onSelect);
   return (
     <div className="flex shrink-0 items-center gap-1 px-2 py-1 coarse:gap-0 coarse:px-1">
       <div
         role="tablist"
         aria-label={t`Sources`}
+        onKeyDown={keys.onKeyDown}
         className="-m-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto p-1 coarse:gap-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {shown.map((key) => (
@@ -339,6 +347,7 @@ function SourceTabs({
             key={key}
             source={key}
             active={key === source}
+            tabIndex={keys.tabIndex(key)}
             onSelect={() => onSelect(key)}
           />
         ))}
@@ -391,9 +400,10 @@ function SourceTabs({
 }
 
 /**
- * A tab and the strip's + button: 28px, 44px under a finger. With a mouse the six tabs and +
- * fit a default-width sidebar; under a finger they fit the 320px phone drawer only because
- * the row drops its gaps and half its inset, and a narrower sidebar scrolls the strip.
+ * A tab and the strip's + button: 28px, 44px under a finger. With a mouse every tab and +
+ * fit a default-width sidebar; under a finger six tabs and + fill the 320px phone drawer only
+ * because the row drops its gaps and half its inset. More tabs, or a narrower sidebar, scroll
+ * the strip.
  */
 const TAB_BUTTON =
   "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors [@media(hover:none)_and_(pointer:fine)]:size-9 coarse:size-11";
@@ -402,10 +412,12 @@ const TAB_BUTTON =
 function SourceTab({
   source,
   active,
+  tabIndex,
   onSelect,
 }: {
   source: SourceKey;
   active: boolean;
+  tabIndex: number;
   onSelect: () => void;
 }) {
   const { label, title, badge, icon: Icon, useDrop } = SOURCES[source];
@@ -425,6 +437,8 @@ function SourceTab({
           ref={self}
           type="button"
           role="tab"
+          data-tab-value={source}
+          tabIndex={tabIndex}
           aria-selected={active}
           aria-label={count > 0 ? t`${name}, ${count} to review` : name}
           onClick={onSelect}
