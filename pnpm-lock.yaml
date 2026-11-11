@@ -57,7 +57,7 @@ overrides:
 
 patchedDependencies:
   '@tanstack/history@1.162.3':
-    hash: 5fa3ad9cee56999b0dd84605d67a1f93081a16c7526237d8310fc3c2e92cd03c
+    hash: bf26a6dd5b5c22d4c5840acb40e83f6fb24a5d0c7492cb0b355657d6d260274d
     path: patches/@tanstack__history@1.162.3.patch
   '@tiptap/core@3.27.1':
     hash: 7111fe0589ac5166c85a85be2a71cb2d4d702d28afbf85c17d82903f39e14c67
@@ -8931,7 +8931,7 @@ snapshots:
       tailwindcss: 4.3.1
       vite: 8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)
 
-  '@tanstack/history@1.162.3(patch_hash=5fa3ad9cee56999b0dd84605d67a1f93081a16c7526237d8310fc3c2e92cd03c)': {}
+  '@tanstack/history@1.162.3(patch_hash=bf26a6dd5b5c22d4c5840acb40e83f6fb24a5d0c7492cb0b355657d6d260274d)': {}
 
   '@tanstack/query-core@5.101.1': {}
 
@@ -8953,7 +8953,7 @@ snapshots:
 
   '@tanstack/react-router@1.170.16(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:
-      '@tanstack/history': 1.162.3(patch_hash=5fa3ad9cee56999b0dd84605d67a1f93081a16c7526237d8310fc3c2e92cd03c)
+      '@tanstack/history': 1.162.3(patch_hash=bf26a6dd5b5c22d4c5840acb40e83f6fb24a5d0c7492cb0b355657d6d260274d)
       '@tanstack/react-store': 0.9.3(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@tanstack/router-core': 1.171.13
       isbot: 5.1.44
@@ -9105,7 +9105,7 @@ snapshots:
 
   '@tanstack/router-core@1.171.13':
     dependencies:
-      '@tanstack/history': 1.162.3(patch_hash=5fa3ad9cee56999b0dd84605d67a1f93081a16c7526237d8310fc3c2e92cd03c)
+      '@tanstack/history': 1.162.3(patch_hash=bf26a6dd5b5c22d4c5840acb40e83f6fb24a5d0c7492cb0b355657d6d260274d)
       cookie-es: 3.1.1
       seroval: 1.5.4
       seroval-plugins: 1.5.4(seroval@1.5.4)
@@ -9279,7 +9279,7 @@ snapshots:
 
   '@tanstack/start-server-core@1.169.15(crossws@0.4.6(srvx@0.11.17))':
     dependencies:
-      '@tanstack/history': 1.162.3(patch_hash=5fa3ad9cee56999b0dd84605d67a1f93081a16c7526237d8310fc3c2e92cd03c)
+      '@tanstack/history': 1.162.3(patch_hash=bf26a6dd5b5c22d4c5840acb40e83f6fb24a5d0c7492cb0b355657d6d260274d)
       '@tanstack/router-core': 1.171.13
       '@tanstack/start-client-core': 1.170.12
       '@tanstack/start-storage-context': 1.167.15
