@@ -7,10 +7,14 @@
  * held pick) and leaves its saved words alone: the composer's draft and unsent records stay
  * while the Undo can still bring the chat back, and go when the notice ends without one. Undo
  * puts back each thing the delete took that nothing has replaced since.
+ *
+ * Every restore in the project goes through here, so a restore from anywhere else (the Trash
+ * line over the chat's draft) ends the notice as Undo would, without putting views back.
  */
 import { t } from "@lingui/core/macro";
 import type { QueryClient } from "@tanstack/react-query";
 import { beginOwnChatDelete, cleanDeletedChat } from "@/client/chat-submissions/deleted-chat";
+import { probeChatDestination } from "@/client/chat-submissions/thread-availability";
 import {
   type HeldPick,
   readHeldPick,
@@ -18,7 +22,11 @@ import {
   writeHeldPick,
   writeLastChat,
 } from "@/client/project-shell/store";
-import { deleteProjectChat, restoreProjectChat } from "@/client/query/delete-project-chat";
+import {
+  type ChatCommandOutcome,
+  deleteProjectChat,
+  restoreProjectChat,
+} from "@/client/query/delete-project-chat";
 import { announce, announceError } from "@/client/stores";
 import type { ChatNavigation } from "../../routing/chat-navigation";
 
@@ -140,6 +148,25 @@ export class ChatDeletes {
     return false;
   }
 
+  /**
+   * A restore other than Undo; `threadId` is the chat or the first chat of its lineage. When the
+   * notice's chat is back, the notice ends without its cleanup and without putting views back.
+   */
+  async restore(threadId: string): Promise<ChatCommandOutcome> {
+    const outcome = await restoreProjectChat(this.ports.client, this.ports.projectId, threadId);
+    const held = this.held;
+    if (outcome.status !== "success" || !held || held.notice.status === "restoring") return outcome;
+    if (!(await held.landed)) return outcome;
+    const back =
+      held.notice.threadId === threadId || (await this.probe(held.notice.threadId)) === "present";
+    if (back && this.held === held) {
+      held.mark.cancel();
+      this.held = null;
+      this.publish();
+    }
+    return outcome;
+  }
+
   /** The notice ends without Undo: the chat's saved words go. */
   dismiss = () => this.end();
 
@@ -164,13 +191,24 @@ export class ChatDeletes {
 
   private clean(held: Held) {
     const { accountId, projectId } = this.ports;
-    void held.landed.then((landed) => {
+    void held.landed.then(async (landed) => {
       if (!landed) return;
+      // The notice stands as long as the writer leaves it, and the chat may be back since, from
+      // another tab or device. Only the server saying it is still in Trash drops its words; no
+      // answer keeps them for the next load's sweep.
+      if ((await this.probe(held.notice.threadId)) !== "deleted") {
+        held.mark.cancel();
+        return;
+      }
       held.mark.release();
       void cleanDeletedChat(accountId, held.notice.threadId, projectId, "own-delete").catch(
         reportError,
       );
     });
+  }
+
+  private probe(threadId: string) {
+    return probeChatDestination(this.ports.accountId, threadId);
   }
 
   private takeAway(threadId: string): Taken {

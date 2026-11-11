@@ -3,11 +3,13 @@
 import { t } from "@lingui/core/macro";
 import { type LucideIcon, Maximize2, MessageSquare, Pin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { isThreadAwaitingCreation } from "@/client/chat-submissions";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { ChatSurface } from "../chat/ChatSurface";
+import { useAccountId } from "../context/account-feature-context";
 import { fileKindIcon } from "../context/context-file-icon";
 import { DocumentHost, MainDocumentStatus } from "../context/DocumentHost";
 import { RecentDocumentsLanding } from "../context/RecentDocumentsLanding";
@@ -35,9 +37,12 @@ type MobileProjectProps = ReviewScopedProjectProps;
 export function MobileProject(props: MobileProjectProps) {
   const chat = useChatNavigation();
   const onChat = props.chatDisplay !== null;
-  // The sheet is the phone's side: never open on arrival, except for a first send recovering
-  // after a reload, which needs its chat on screen.
-  const [sheetOpen, setSheetOpen] = useState(() => !onChat && chat.recoveringFirstSend);
+  const accountId = useAccountId();
+  // The sheet is the phone's side: never open on arrival, except for a first send still
+  // recovering when the phone shell mounts, which needs its chat on screen.
+  const [sheetOpen, setSheetOpen] = useState(
+    () => !onChat && isThreadAwaitingCreation(accountId, chat.lastChatId),
+  );
   // Any open goes to main: the sheet closes rather than cover where the writer went. Arriving is
   // not an open, so a recovering first send keeps its sheet.
   const arrivedAt = useRef(props.routeLocationKey);
