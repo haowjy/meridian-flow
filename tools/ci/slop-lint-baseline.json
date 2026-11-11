@@ -328,13 +328,13 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/features/project/context/open-document-session.tsx",
-        "line": "void resources",
+        "path": "apps/app/src/features/project/context/ContextDocumentHost.tsx",
+        "line": "void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);",
         "count": 1
       },
       {
-        "path": "apps/app/src/features/project/context/ContextDocumentHost.tsx",
-        "line": "void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);",
+        "path": "apps/app/src/features/project/context/open-document-session.tsx",
+        "line": "void resources",
         "count": 1
       },
       {
