@@ -12,17 +12,11 @@ import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { topChatOf } from "@/client/query/useTopChat";
 import { useThreadStore } from "@/client/stores";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
-import {
-  dropdownGroupLabelClass,
-  dropdownResultsClass,
-  dropdownRowContainerClass,
-  dropdownRowVariants,
-  dropdownSurfaceVariants,
-} from "@/components/ui/dropdown-presentation";
+import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { handleListKeys } from "@/components/ui/list-keys";
+import { PickerLine, PickerResults, PickerRow, PickerSection } from "@/components/ui/picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { role } from "@/components/ui/roles";
 import { MenuScratchSection } from "@/features/project/chat/ChatScratch";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import {
@@ -183,37 +177,37 @@ function FilesDropdown({
             <ContinuesFrom source={continuesFrom} />
           </p>
         ) : null}
-        <div className={cn(dropdownResultsClass, "max-h-72")}>
+        <PickerResults>
           <MenuScratchSection
             projectId={projectId}
             threadId={threadId}
             onPicked={() => close(false)}
           />
           <UploadsRefuseDrops>
-            <h3 className={dropdownGroupLabelClass}>
-              <Trans>Uploads</Trans>
-            </h3>
-            {rows.length === 0 ? (
-              <p className={cn("px-2", role.emptyLine)}>
-                <Trans>No files attached in this chat yet.</Trans>
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-[var(--chat-space-inline)]">
-                {rows.map((upload) => (
-                  <UploadRow
-                    key={upload.documentId}
-                    upload={upload}
-                    now={now}
-                    canDelete={upload.deletion !== null && !used.has(upload.documentId)}
-                    failed={failed.has(upload.documentId)}
-                    onInsert={() => insert(upload)}
-                    onDelete={() => remove(upload)}
-                  />
-                ))}
-              </ul>
-            )}
+            <PickerSection
+              label={t`Uploads`}
+              state={
+                rows.length === 0 ? (
+                  <PickerLine>
+                    <Trans>No files attached in this chat yet.</Trans>
+                  </PickerLine>
+                ) : null
+              }
+            >
+              {rows.map((upload) => (
+                <UploadRow
+                  key={upload.documentId}
+                  upload={upload}
+                  now={now}
+                  canDelete={upload.deletion !== null && !used.has(upload.documentId)}
+                  failed={failed.has(upload.documentId)}
+                  onInsert={() => insert(upload)}
+                  onDelete={() => remove(upload)}
+                />
+              ))}
+            </PickerSection>
           </UploadsRefuseDrops>
-        </div>
+        </PickerResults>
       </PopoverContent>
     </Popover>
   );
@@ -232,6 +226,7 @@ function UploadRow({
   canDelete: boolean;
   failed: boolean;
   onInsert: () => void;
+  /** Null where this host has no viewer for an upload. */
   onDelete: () => void;
 }) {
   const Icon = iconFor(upload);
@@ -239,51 +234,36 @@ function UploadRow({
   const drag = useReferenceDrag({ ref: { kind: "file", id: upload.documentId }, name });
   const failure = failed ? t`Couldn’t delete this file. Try again.` : null;
   return (
-    <li className="relative flex flex-col">
-      <div
-        className={cn(
-          dropdownRowContainerClass,
-          "flex min-w-0 items-center transition-colors hover:bg-ink-fill",
-        )}
-        data-list-row
-      >
-        <button
-          data-list-item
-          type="button"
-          {...drag}
-          onClick={onInsert}
-          aria-label={t`Add ${name} to your message`}
-          className={cn(
-            dropdownRowVariants({ kind: "descriptive", interactive: false }),
-            "h-auto min-h-10 flex-1 py-1.5",
-          )}
-        >
-          <Icon aria-hidden className="text-muted-foreground" />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate">{upload.name}</span>
-            {failure ? (
-              <span aria-hidden="true" className="truncate text-xs text-destructive">
-                {failure}
-              </span>
-            ) : (
-              <span className="flex min-w-0 justify-between gap-3 text-xs text-muted-foreground">
-                <span className="truncate">{uploadTypeLabel(upload.fileType)}</span>
-                <span className="shrink-0 tabular-nums">{attachedAgo(upload.attachedAt, now)}</span>
-              </span>
-            )}
+    <PickerRow
+      kind="descriptive"
+      onSelect={onInsert}
+      buttonProps={{ ...drag, "aria-label": t`Add ${name} to your message` }}
+      leading={<Icon aria-hidden className="text-muted-foreground" />}
+      title={name}
+      detail={
+        failure ? (
+          <span aria-hidden="true" className="text-destructive">
+            {failure}
           </span>
-        </button>
-        {canDelete ? (
-          <IconButton size="xs" label={t`Delete ${name}`} onClick={onDelete}>
+        ) : (
+          uploadTypeLabel(upload.fileType)
+        )
+      }
+      meta={failure ? null : attachedAgo(upload.attachedAt, now)}
+      actions={
+        canDelete ? (
+          <IconButton size="xs" label={t`Delete ${name}`} onClick={onDelete} className="mr-1">
             <Trash2 className="size-3.5" aria-hidden />
           </IconButton>
-        ) : null}
-      </div>
-      {/* The failure replaces the row's second line; this announces it without adding layout. */}
-      <span role="status" className="sr-only">
-        {failure}
-      </span>
-    </li>
+        ) : null
+      }
+      // The failure replaces the row's second line; this announces it without adding layout.
+      below={
+        <span role="status" className="sr-only">
+          {failure}
+        </span>
+      }
+    />
   );
 }
 

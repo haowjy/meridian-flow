@@ -57,11 +57,3 @@ export const dropdownSurfaceVariants = cva(
     defaultVariants: { measure: "compact" },
   },
 );
-
-export const dropdownSearchClass = "h-8 pl-8 pr-2 text-sm coarse:h-11";
-
-export const dropdownResultsClass = "app-scroll max-h-72";
-
-/** Lets a composite row own selected, hover, and descendant-focus geometry. */
-export const dropdownRowContainerClass =
-  "dropdown-focus-ring rounded-md has-[>:focus-visible]:bg-ink-fill data-[selected=true]:bg-ink-fill-strong";
