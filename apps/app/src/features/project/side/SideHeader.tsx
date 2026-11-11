@@ -86,7 +86,7 @@ function SideBand({
         <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1">
           <SidePicker projectId={projectId} name={name} icon={icon} chatsOnly={chatsOnly} />
           {reason ? (
-            <span className="min-w-0 shrink-[4] truncate text-xs text-muted-foreground">
+            <span className="min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground">
               {reason}
             </span>
           ) : null}
