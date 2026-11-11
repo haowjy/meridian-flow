@@ -25,6 +25,7 @@ import {
   type ContextPassageAnchor,
   type PreparedDoor,
 } from "@/features/chat/ChatContextNavigation";
+import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import type { LinkDestination, LinkDocumentRef } from "@/features/links";
 import {
   type ChatLineages,
@@ -37,7 +38,7 @@ import {
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { BesideChatContext, useOpenChatDocument } from "../context/open-chat-document";
 import { claimOpenIntent, isCurrentOpenIntent } from "../context/open-intent";
-import { useReviewingLinkDestination } from "../review-launch";
+import { useOwnerDraftOpener, useReviewingLinkDestination } from "../review-launch";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { canonicalDoorUri } from "./canonical-door-uri";
 import { usePassageDoors } from "./usePassageDoors";
@@ -70,7 +71,7 @@ export function ProjectChatContextNavigationProvider({
   children,
 }: {
   projectId: string;
-  activeWork: { id: string; handle: string | null } | null;
+  activeWork: { id: string; handle: string | null; isNoWork: boolean } | null;
   availableWorks: readonly { id: string; handle: string | null }[];
   /** The displayed chat's lineage: where its bare `scratch://` points while it is on No Work. */
   rootThreadId: string | null;
@@ -140,12 +141,21 @@ export function ProjectChatContextNavigationProvider({
   );
   // Only a hidden document reaches the review handoff, so its live fallback is never used.
   const openReviewing = useReviewingLinkDestination(reviewOnly);
+  // The chat's own drafts: its Work's, or under No Work its lineage's. A link to a document the
+  // chat drafted opens that draft, the way its draft strip does.
+  const ownerKey = chatOwnerKey(activeWork, rootThreadId) || null;
+  const openDrafted = useOwnerDraftOpener(projectId, ownerKey);
   // A hidden document is a review. Beside the chat it opens in the dock, as everything
   // beside the chat does; elsewhere the review handoff opens it in the Editor.
   const openFound = useCallback(
     (door: Placement, document: LinkDocumentRef, gesture: Parameters<LinkDestination>[1]) => {
       const { review } = document;
-      if (!review) return Promise.resolve(openLive(door, document));
+      if (!review) {
+        // A passage lands in Live text. A superseded door opens nothing, as `openLive` decides.
+        const stale = door.claim !== null && !isCurrentOpenIntent(door.claim);
+        const drafted = stale || door.passage ? null : openDrafted(document.documentId, gesture);
+        return drafted ?? Promise.resolve(openLive(door, document));
+      }
       if (door.claim !== null && !isCurrentOpenIntent(door.claim)) return Promise.resolve();
       if (besideChat && door.claim !== null) {
         const tab = contextTabFromDraftGroup({
@@ -162,7 +172,7 @@ export function ProjectChatContextNavigationProvider({
       }
       return openReviewing(document, gesture);
     },
-    [besideChat, openLive, openReviewing],
+    [besideChat, openLive, openReviewing, openDrafted],
   );
   // Only a route-backed door overrides the follower's missing outcome: its route says so in
   // place. A resource door has no route, so it keeps the follower's shared outcome.

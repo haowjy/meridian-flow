@@ -16,6 +16,7 @@ import {
   useCanOpenChatReference,
   useOpenChatDocument,
 } from "@/features/project/context/open-chat-document";
+import { useWorkScope } from "@/features/project/use-work-scope";
 import { DeletedChatCard } from "./DeletedChatCard";
 import { useCreationComposer } from "./useCreationComposer";
 
@@ -58,6 +59,7 @@ export function CreationComposer({
     creation.updateChoices({ workId: newChatWorkId });
   }, [creation.updateChoices, newChatFocusRequestId, newChatWorkId]);
   const works = useWorks(projectId);
+  const workScope = useWorkScope(projectId);
   const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;
   const defaultAgent = agents.agents?.find(
@@ -65,15 +67,15 @@ export function CreationComposer({
   );
   const agent = choices?.agent ?? defaultAgent ?? null;
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
-  const initialWork = works.works?.find((work) => !isWorkArchived(work)) ?? null;
-  const workId = choices?.workId ?? initialWork?.id ?? works.noWork?.id ?? null;
-  const selected = workId
-    ? workFromSnapshot(
-        works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null,
-        workId,
-      )
-    : null;
-  // An archived Work refuses new chats, so it is never the new chat's Work.
+  const snapshot = works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null;
+  // Until the writer picks one here, a new chat starts in the Work the sidebar shows, None
+  // included. An archived Work refuses new chats, so the sidebar's archived scope starts None.
+  const scoped = workScope.workId ? workFromSnapshot(snapshot, workScope.workId) : null;
+  const defaultWorkId =
+    scoped?.isNoWork === false && isWorkArchived(scoped) ? works.noWork?.id : scoped?.id;
+  const workId = choices?.workId ?? defaultWorkId ?? null;
+  const selected = workId ? workFromSnapshot(snapshot, workId) : null;
+  // A Work the writer picked here can still be archived from outside: no Work then.
   const work = selected && (selected.isNoWork || !isWorkArchived(selected)) ? selected : null;
   const references = useReferenceBrowserCatalog(
     projectId,
