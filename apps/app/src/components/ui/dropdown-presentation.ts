@@ -7,13 +7,9 @@ import { cn } from "@/lib/utils";
 // Hover and keyboard highlight are 5% ink; the current value is 10% and keeps it under the
 // pointer, so the row the keyboard is on and the current value stay distinguishable.
 const dropdownRow = cva(
-  "flex w-full min-w-0 items-center justify-start gap-2 rounded-md px-2 text-left text-sm font-normal outline-hidden select-none active:scale-100 has-[>svg]:px-2 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 disabled:pointer-events-none disabled:opacity-50",
+  "flex w-full min-w-0 items-center justify-start gap-2 rounded-md px-2 text-left text-sm font-normal outline-hidden select-none active:scale-100 has-[>svg]:px-2 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 disabled:pointer-events-none disabled:opacity-50 h-8 py-1.5 coarse:h-11",
   {
     variants: {
-      kind: {
-        navigation: "h-8 py-1.5 coarse:h-11",
-        descriptive: "h-10 py-0.5 coarse:h-11",
-      },
       interactive: {
         true: "dropdown-focus-ring transition-colors hover:bg-ink-fill focus-visible:bg-ink-fill data-[highlighted]:bg-ink-fill",
         false: null,
@@ -23,7 +19,7 @@ const dropdownRow = cva(
         false: null,
       },
     },
-    defaultVariants: { kind: "navigation", interactive: true, selected: false },
+    defaultVariants: { interactive: true, selected: false },
   },
 );
 
