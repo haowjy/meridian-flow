@@ -33,7 +33,7 @@ intents rebase, and no two records ever fold.
 `resource-records.ts` defines durable descriptors and ordered project-qualified
 namespace intentions. Submitted attempt payloads and outcomes are immutable.
 Metadata mutations use revision CAS, and a successful storage result means the
-outer transaction committed. Metadata never owns Editor tabs, Y.Doc instances or
+outer transaction committed. Metadata never owns document hosts, Y.Doc instances or
 backend admission. Exact persistence names and catalog-defined file classification
 survive identity and location changes; descriptors alone cannot authorize upload
 or prove content initialization.
@@ -70,8 +70,8 @@ guarantee.
 
 `resourceContextAuthority` is the single durable URI authority rule: `@w<n>` for a
 Work, `@c<n>` for a lineage or a chat's uploads, none for project schemes. Catalog
-projection, receipt matching and identity placement all use it. Tab ownership does
-not: app tabs carry the location's Work row id, No Work's included, or a chat's
+projection, receipt matching and identity placement all use it. Host ownership does
+not: app documents carry the location's Work row id, No Work's included, or a chat's
 lineage. `sameOwner` compares the Work or lineage id and its handle. Move and delete
 requests name the entry by id and carry no owner; receipt matching compares the
 command (entry id and kind, and what the writer chose), so a receipt settles only
