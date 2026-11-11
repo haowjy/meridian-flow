@@ -98,12 +98,13 @@ export class DocumentSessionRecovery {
         await this.dispatchTerminalLineage(receipt, closing);
       }
     }
-    const rooms = (await this.store.listPendingDrains()).filter(
-      (room) => room.persistence?.phase !== "terminal-local",
-    );
-    for (const room of rooms) {
+    const pending = await this.store.listPendingDrains();
+    // The window that owns a terminal lineage waits in `dispatchTerminalLineage` for every other
+    // window's hold on the document, so a window that does not own it lets go of its own here.
+    for (const room of pending) {
       if (room.pendingDrain) await this.host.drainLocal(room.documentId, room.pendingDrain);
     }
+    const rooms = pending.filter((room) => room.persistence?.phase !== "terminal-local");
     for (const room of rooms) {
       if (!room.pendingDrain) continue;
       await this.host.operationFor(closing, room.documentId, async () => {
