@@ -38,6 +38,7 @@ import { referenceDropOptions } from "@/features/project/context/entry-drag/refe
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
 import { ComposerSkillAtom } from "./ComposerSkillAtom";
+import { ConnectionLine } from "./ConnectionLine";
 import {
   type ComposerAvailableSkill,
   type ComposerChatCommand,
@@ -672,6 +673,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         />
         {editor ? <AtReferenceMenu editor={editor} /> : null}
         {editor ? <ComposerCommandMenu editor={editor} /> : null}
+        <ConnectionLine />
         <div className="mt-[var(--chat-space-inline)] flex items-center gap-[var(--chat-space-inline)]">
           <div className="min-w-0 flex-1">{toolbarLeft}</div>
           {resolvedUploadPort ? (

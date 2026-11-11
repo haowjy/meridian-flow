@@ -5,8 +5,9 @@ for feature-level contracts first.
 
 ## Document identity bar
 
-`DocumentIdentityBar.tsx` is the one identity surface: a mono
-path (`Unfiled › Untitled 4`) and its chips, on every document — tracked,
+`DocumentIdentityBar.tsx` is the one identity surface: a path (`Unfiled › Untitled 4`)
+in the UI face, like every other title (it was mono until 2026-11; in the dock that
+made the document's title the one mono title on screen), and its chips, on every document — tracked,
 provisional, viewer. The Editor draws it as a band at the top of the active
 tab's canvas; a document beside the chat draws it in the dock header
 (`variant="header"`, `../dock/DockDocumentIdentity.tsx`), which replaces the

@@ -463,7 +463,12 @@ function ActiveSessionEditorView({
   );
 }
 
-export function PendingEditorShell({ className, showToolbar = true }: EditorSurfaceOptions) {
+export function PendingEditorShell({
+  className,
+  showToolbar = true,
+  active = true,
+  held = false,
+}: EditorSurfaceOptions) {
   usePaintPending();
   return (
     <section
@@ -473,7 +478,7 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
           document opens, greyed and saying so, rather than popping in. */}
       <EditorCanvas
         editor={null}
-        active
+        active={active && !held}
         toolbar={showToolbar ? <DocumentToolbar editor={null} /> : undefined}
       />
     </section>

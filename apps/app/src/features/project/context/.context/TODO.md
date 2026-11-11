@@ -14,3 +14,5 @@
 - Uploads in the chat's dock document: the dock shows Scratch notes; a chat-launched Uploads viewer with intake controls is still deferred (#625, #631).
 
 - Review the inherited session-authority exception that terminalizes adopted local-origin lineage from availability; it is explicitly out of scope for PR #754.
+
+- Router scroll restoration (`scrollRestoration: true` in `src/router.tsx`) tracks every element that scrolls by its DOM path and writes its old offset back after each navigation, shell scrollers included (file tree, sidebar). `ContextTabBar` re-reveals its active tab after the router renders; the other shell scrollers are not checked yet. If one misbehaves, decide whether shell chrome should be outside restoration altogether rather than fixing each.
