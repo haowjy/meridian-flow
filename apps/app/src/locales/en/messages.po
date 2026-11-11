@@ -1925,8 +1925,8 @@ msgid "Confirming your purchase…"
 msgstr "Confirming your purchase…"
 
 #: src/components/app/ConnectionBanner.tsx
-msgid "Connection lost. Retrying…"
-msgstr "Connection lost. Retrying…"
+#~ msgid "Connection lost. Retrying…"
+#~ msgstr "Connection lost. Retrying…"
 
 #. placeholder {0}: state.attempt
 #: src/components/app/ConnectionBanner.tsx
@@ -4441,6 +4441,10 @@ msgstr "now"
 msgid "Numbered list"
 msgstr "Numbered list"
 
+#: src/components/app/composer/ConnectionLine.tsx
+msgid "Offline"
+msgstr "Offline"
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ol"
 msgstr "ol"
@@ -4822,15 +4826,16 @@ msgstr "Recently opened"
 msgid "Recommended"
 msgstr "Recommended"
 
-#: src/components/app/ConnectionBanner.tsx
+#: src/components/app/composer/ConnectionLine.tsx
 msgid "Reconnect now"
 msgstr "Reconnect now"
 
-#: src/components/app/ConnectionBanner.tsx
+#: src/client/providers/TransportProvider.tsx
 msgid "Reconnected"
 msgstr "Reconnected"
 
-#: src/components/app/ConnectionBanner.tsx
+#: src/client/providers/TransportProvider.tsx
+#: src/components/app/composer/ConnectionLine.tsx
 msgid "Reconnecting…"
 msgstr "Reconnecting…"
 
