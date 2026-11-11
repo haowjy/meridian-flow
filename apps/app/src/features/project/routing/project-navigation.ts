@@ -47,7 +47,8 @@ export type ProjectLeaveGuard = {
 
 /** Whether the entry already holds exactly this address. */
 function sameEntryAddress(entry: ProjectHistoryEntry, address: ProjectAddress): boolean {
-  return entry.href === projectAddressHref(address);
+  // An Untitled page shares Recently opened's href; its history pointer is what names it.
+  return entry.href === projectAddressHref(address) && entry.state.meridianProjectSelection == null;
 }
 
 export function createProjectNavigation(
