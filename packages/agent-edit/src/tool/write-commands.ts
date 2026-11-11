@@ -357,7 +357,7 @@ export function createWriteCommands(deps: {
           documentBlocksDetail(resolved.error.details),
         );
       }
-      if (resolved.edits.length === 0) return formatUnchangedSuccess(resolved.skipped);
+      if (resolved.edits.length === 0) return formatUnchangedSuccess();
       overwrite = resolved;
     }
     // Copies and bound nodes carry what they name; written content into an empty document is
@@ -378,7 +378,7 @@ export function createWriteCommands(deps: {
       docId: address.documentId,
       filePath: address.filePath,
       plan: overwrite ? { edits: overwrite.edits, ir: overwrite.ir } : { blocks: written.blocks },
-      ...(overwrite?.skipped ? { skipped: overwrite.skipped } : {}),
+      ...(overwrite?.metChanges ? { metChanges: overwrite.metChanges } : {}),
       creation: {
         createdDocument: context.createdDocument === true,
         ...(overwriting ? {} : { refuseUnlessEmpty: alreadyExists }),
@@ -479,7 +479,7 @@ export function createWriteCommands(deps: {
             );
           }
           validateResolvedIr(resolved.ir, address.documentId, appliedPlanDoc);
-          if (resolved.edits.length === 0) return formatUnchangedSuccess(resolved.skipped);
+          if (resolved.edits.length === 0) return formatUnchangedSuccess();
           return finishPreparedEdit({
             command,
             session,
@@ -492,7 +492,7 @@ export function createWriteCommands(deps: {
             docId: address.documentId,
             filePath: address.filePath,
             plan: { edits: resolved.edits, ir: resolved.ir },
-            ...(resolved.skipped ? { skipped: resolved.skipped } : {}),
+            ...(resolved.metChanges ? { metChanges: resolved.metChanges } : {}),
             ...(from && copiedNodes ? { copy: { from: from.path, edges: true } } : {}),
           });
         }),
@@ -517,7 +517,7 @@ export function createWriteCommands(deps: {
     creation?: { createdDocument: boolean; refuseUnlessEmpty?: InternalWriteResult };
     copy?: { from: string; edges: boolean };
     /** Changes the plan did not make because the room deleted text they change or sit in. */
-    skipped?: number;
+    metChanges?: number;
   }
 
   /** One acceptance boundary for every edit; report failures cannot enter its restoration path. */
@@ -618,7 +618,7 @@ export function createWriteCommands(deps: {
         preOwnSnapshot,
         semanticEditIr,
         copied,
-        ...(edit.skipped ? { skipped: edit.skipped } : {}),
+        ...(edit.metChanges ? { metChanges: edit.metChanges } : {}),
         interactionContext,
         ...(context.frontiers?.reply ? { reply: context.frontiers.reply } : {}),
       });
@@ -690,7 +690,7 @@ export function createWriteCommands(deps: {
             touchedBlocks,
             deletedBlocks,
             copied,
-            ...(edit.skipped ? { skipped: edit.skipped } : {}),
+            ...(edit.metChanges ? { metChanges: edit.metChanges } : {}),
           },
           planned,
           snapshotProjected(echoProjected, links.codec),

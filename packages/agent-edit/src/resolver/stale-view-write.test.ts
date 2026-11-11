@@ -1,14 +1,16 @@
 /**
  * Guards the invariant "Text converges" (`.context/invariants.md`): a write planned on a
- * stale view of a plain paragraph lands whole after someone deleted text it shares words
- * with, and the writer's delete stands. The server plans a reply's write on the model's view and merges the update
+ * stale view lands after someone deleted text it shares words with, and the writer's delete
+ * stands: no deleted letter comes back. The server plans a reply's write on the model's view and merges the update
  * into the current room, which is what this test does with two Yjs docs. A delete the room
  * already holds when the write plans is decided against (`current`); one that arrives after
  * relies on find windows. Every row runs with the model's client id below and above the
  * writer's, since Yjs orders concurrent inserts at one place by client id.
  *
- * Pins implementation decisions: a model change to text the writer has since deleted is
- * skipped, in a quote and a list item as in a paragraph (`write-architecture.md`).
+ * Pins implementation decisions: a model change to text the writer has since deleted is made
+ * as it is, in a quote and a list item as in a paragraph, trimmed to the letters the old word
+ * lacks, so odd merges such as `A disciple.3 SIDETEXT` are accepted (owner's decision, "trust
+ * the LLM to figure out the weird merge"; `write-architecture.md`).
  */
 
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -96,12 +98,12 @@ it.each([
     `WRITER ${WHOLE}`,
   ],
   [
-    "nothing of a change to text the writer deleted",
+    "only the new letters of a change to text the writer deleted",
     TEXT,
     { command: "replace", find: "DRAFT-B line.", content: "DRAFT-B3 line." },
     deleteLine,
     "before",
-    "A disciple. SIDETEXT",
+    "A disciple.3 SIDETEXT",
   ],
   [
     "a find insert after a word the writer deleted",
@@ -109,10 +111,10 @@ it.each([
     { command: "insert", find: "slowly", content: ", steadily" },
     deleteText(" slowly"),
     "before",
-    "the moving train",
+    "the, steadily moving train",
   ],
   [
-    "nothing of a find's polish of a sentence the writer cut",
+    "only the new text of a find's polish of a sentence the writer cut",
     KEEP,
     {
       command: "replace",
@@ -121,7 +123,7 @@ it.each([
     },
     deleteText("Cut sentence there. "),
     "before",
-    "Keep this. Keep end.",
+    "Keep this. , polishedKeep end.",
   ],
   [
     "one character of a Chinese clause the writer cut a phrase from",

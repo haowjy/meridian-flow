@@ -9,8 +9,8 @@ import type { TextWindow } from "./find.js";
 
 export interface LoweredBlock {
   ops: EditOp[];
-  /** Operations not made because their target is gone in the room. */
-  skipped: number;
+  /** Operations that met text or a node the room deleted since the model's read; made anyway. */
+  metChanges: number;
 }
 
 /** A model change: base units [from, to) become the model's units [at, end). */
@@ -49,15 +49,16 @@ interface Walk {
   /** A find's windows as units, by the path of the textblock that holds them. */
   windows: Map<string, [TextWindow[], TextWindow[]]> | null;
   ops: EditOp[];
-  skipped: number;
+  metChanges: number;
 }
 
 /**
  * Lower a block rewrite planned on the model's view into the smallest operations on the
- * units and attributes the model saw, decided against what the room deleted since: an
- * operation whose target is gone is not made and is counted; a delete deletes whatever is
- * left; no deleted unit is put back. Every textblock at any depth is lowered by the same
- * decision. `placed` is a find's windows in the two blocks' text. Null for a shape this
+ * units and attributes the model saw. Every operation is made and Yjs merges it; the room's
+ * deletions only shape the operations (a delete names what is left, a replace is trimmed to
+ * the letters the old word lacks, so no deleted letter is put back) and count the ones that
+ * met a deletion, for the write's report. Every textblock at any depth is lowered by the
+ * same code. `placed` is a find's windows in the two blocks' text. Null for a shape this
  * lowering does not keep (a node added, removed or retyped, an inline atom put inside a run
  * of text), which the caller rewrites as a whole block.
  */
@@ -77,7 +78,7 @@ export function lowerBlock(
     top: before,
     windows: placed?.[0] && placed[1] ? unitWindows(before, after, placed[0], placed[1]) : null,
     ops: [],
-    skipped: 0,
+    metChanges: 0,
   };
   try {
     lowerNode(walk, before, after, []);
@@ -85,7 +86,7 @@ export function lowerBlock(
     if (cause instanceof Unsupported) return null;
     throw cause;
   }
-  return { ops: walk.ops, skipped: walk.skipped };
+  return { ops: walk.ops, metChanges: walk.metChanges };
 }
 
 function sameShape(before: Block, after: Block): boolean {
@@ -100,25 +101,20 @@ function sameShape(before: Block, after: Block): boolean {
 function lowerNode(walk: Walk, before: Block, after: Block, path: readonly number[]): void {
   if (before.eq(after)) return;
   const ops: EditOp[] = [];
-  let skipped = 0;
+  let metChanges = 0;
   const attrs = changedAttrs(before, after, () => shownNode(walk, path));
   if (Object.keys(attrs).length > 0) ops.push({ kind: "attrs", path, attrs });
   if (before.isTextblock) {
     const text = lowerTextblock(walk, before, after, path);
     ops.push(...text.ops);
-    skipped += text.skipped;
-  }
-  // A node the room removed has no target for any change: it counts once.
-  if (
-    (ops.length > 0 || skipped > 0) &&
-    walk.current &&
-    walk.model.roomNodeRemoved(walk.block, path, walk.current)
-  ) {
-    walk.skipped += 1;
-    return;
+    metChanges += text.metChanges;
   }
   walk.ops.push(...ops);
-  walk.skipped += skipped;
+  // Changes to a node the room removed count once, whatever their number.
+  walk.metChanges +=
+    ops.length > 0 && walk.current && walk.model.roomNodeRemoved(walk.block, path, walk.current)
+      ? 1
+      : metChanges;
   if (before.isTextblock) return;
   for (let index = 0; index < before.childCount; index += 1)
     lowerNode(walk, before.child(index), after.child(index), [...path, index]);
@@ -167,11 +163,11 @@ function lowerTextblock(
   before: Block,
   after: Block,
   path: readonly number[],
-): { ops: EditOp[]; skipped: number } {
+): { ops: EditOp[]; metChanges: number } {
   const removed = walk.current ? walk.model.roomTextblock(walk.block, path, walk.current) : [];
   const text = lowerText(before, after, removed, walk.windows?.get(path.join("/")));
   const ops: EditOp[] = [];
-  let skipped = text.skipped;
+  let metChanges = text.metChanges;
   if (text.splices.length + text.formats.length > 0)
     ops.push({ kind: "text", path, splices: text.splices, formats: text.formats });
   // An atom the model kept is one the room may have changed: only the model's attributes go.
@@ -181,10 +177,10 @@ function lowerTextblock(
     if (!was || !now) continue;
     const attrs = changedAttrs(was, now, () => shownAtom(walk, path, ordinal));
     if (Object.keys(attrs).length === 0) continue;
-    if (removed.some((span) => unit >= span.from && unit < span.to)) skipped += 1;
-    else ops.push({ kind: "attrs", path, attrs, unit });
+    ops.push({ kind: "attrs", path, attrs, unit });
+    if (removed.some((span) => unit >= span.from && unit < span.to)) metChanges += 1;
   }
-  return { ops, skipped };
+  return { ops, metChanges };
 }
 
 interface LoweredText {
@@ -192,7 +188,7 @@ interface LoweredText {
   formats: FormatRange[];
   /** Inline atoms the model kept, by unit in the view and in the model's text. */
   kept: Array<{ unit: number; modelUnit: number; ordinal: number }>;
-  skipped: number;
+  metChanges: number;
 }
 
 /**
@@ -323,6 +319,45 @@ function lowerText(
   }
   hunks = hunks.filter((hunk) => hunk.from < hunk.to || hunk.at < hunk.end);
 
+  // Which changes meet a deletion, decided on the model's own hunks, before any trim.
+  const meets = new Set<Hunk>();
+  for (const hunk of hunks) {
+    if (hunk.anchored) {
+      if (!alive(hunk.from - 1)) meets.add(hunk);
+    } else if (hunk.from === hunk.to) {
+      if (!(alive(hunk.from - 1) || alive(hunk.to))) meets.add(hunk);
+    }
+    // A delete of deleted text meets nothing: it deletes what is left.
+    else if (hunk.at !== hunk.end && deadIn(hunk.from, hunk.to) > 0) meets.add(hunk);
+  }
+
+  // A replace over deleted units keeps the letters its old and new text share at the edges
+  // and changes only what lies between, as the editor's binding does: otherwise a replace of
+  // a half-deleted word would bring the deleted half back.
+  for (const hunk of hunks) {
+    if (hunk.from === hunk.to || hunk.at === hunk.end || deadIn(hunk.from, hunk.to) === 0) continue;
+    const letter = (text: string, unit: number) => !isAtom(text, unit);
+    while (
+      hunk.from < hunk.to &&
+      hunk.at < hunk.end &&
+      a[hunk.from] === b[hunk.at] &&
+      letter(a, hunk.from)
+    ) {
+      hunk.from += 1;
+      hunk.at += 1;
+    }
+    while (
+      hunk.from < hunk.to &&
+      hunk.at < hunk.end &&
+      a[hunk.to - 1] === b[hunk.end - 1] &&
+      letter(a, hunk.to - 1)
+    ) {
+      hunk.to -= 1;
+      hunk.end -= 1;
+    }
+  }
+  hunks = hunks.filter((hunk) => hunk.from < hunk.to || hunk.at < hunk.end);
+
   // An inline atom is a child of the textblock, not a character of a run of text, so a
   // change that puts one in goes between runs: an insert slides over equal text to the
   // nearest edge; any other is a shape this lowering does not keep.
@@ -365,24 +400,17 @@ function lowerText(
     if (!slid) throw new Unsupported();
   }
 
-  let skipped = 0;
-  let skipRunEnd = -1;
+  let metChanges = 0;
+  let metRunEnd = -1;
   const splices: TextSplice[] = [];
   for (const hunk of hunks) {
-    let lands: boolean;
-    if (hunk.anchored) lands = alive(hunk.from - 1);
-    else if (hunk.from === hunk.to) lands = alive(hunk.from - 1) || alive(hunk.to);
-    // A replace of deleted text is not made; a delete deletes whatever is left.
-    else lands = hunk.at === hunk.end || deadIn(hunk.from, hunk.to) === 0;
-    if (!lands) {
-      // Skipped changes with nothing but deleted text between them count once.
-      const sameRun = skipRunEnd >= 0 && deadIn(skipRunEnd, hunk.from) === hunk.from - skipRunEnd;
-      if (!sameRun) skipped += 1;
-      skipRunEnd = hunk.to;
-      continue;
-    }
-    skipRunEnd = -1;
-    if (deadIn(hunk.from, hunk.to) === 0) {
+    if (meets.has(hunk)) {
+      // Changes with nothing but deleted text between them count once.
+      const sameRun = metRunEnd >= 0 && deadIn(metRunEnd, hunk.from) === hunk.from - metRunEnd;
+      if (!sameRun) metChanges += 1;
+      metRunEnd = hunk.to;
+    } else metRunEnd = -1;
+    if (hunk.at !== hunk.end || deadIn(hunk.from, hunk.to) === 0) {
       splices.push({ from: hunk.from, to: hunk.to, content: after.content.cut(hunk.at, hunk.end) });
       continue;
     }
@@ -396,12 +424,11 @@ function lowerText(
   }
 
   const { formats, kept } = keptUnits(before, after, hunks);
-  const landed = formats.filter(
-    (format) => deadIn(format.from, format.to) < format.to - format.from,
-  );
-  // A range with no surviving unit has nothing to show its mark on: counted, not written.
-  skipped += formats.length - landed.length;
-  return { splices, formats: landed, kept, skipped };
+  // A range with no surviving unit has nothing to show its mark on; it is still written.
+  metChanges += formats.filter(
+    (format) => deadIn(format.from, format.to) === format.to - format.from,
+  ).length;
+  return { splices, formats, kept, metChanges };
 }
 
 /**

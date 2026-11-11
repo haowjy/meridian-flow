@@ -37,13 +37,16 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   when it holds no deleted unit, otherwise from a token diff in which a Chinese or
   Japanese character is one token, a run of other letters is one (so a spaceless Thai
   phrase is one), an atom is one (compared by type; a changed attribute is an attribute
-  set), and formatting is not part of a token. The rule: an operation whose target is
-  gone is not made and is counted (`skipped` in the result); a changed node the room
-  removed, or one under a removed node, counts once per changed node (an
-  item holding two changed nodes counts 2). A replace lands only if every unit it
-  replaces survives; an insert lands unless it sits in deleted text; a delete deletes
-  whatever is left; a format range lands if one of its units survives; an attribute set
-  lands if the node does; no deleted unit is put back. An attribute the codec does not
+  set), and formatting is not part of a token. Every operation is made and Yjs merges
+  it, as for two people; the owner chose to trust the model to fix an odd merge
+  (`He sighedcried.`, `A disciple.3 SIDETEXT`). The deletions only shape an operation: a
+  delete names the units that are left, and a replace over deleted units is trimmed to the
+  letters its old text lacks (as the editor's binding diffs), so no deleted letter is put
+  back. The write's result reports the changes that met a deletion (`metChanges`,
+  worded in `tool/result-text.ts`): a replace of deleted text, an insert beside it, a
+  format over it, an attribute set on it, and a changed node the room removed or one under
+  a removed node, which counts once per changed node (an item holding two changed nodes
+  counts 2). The report changes no operation. An attribute the codec does not
   write (`uploadToken`) is never set: the model's node is compared with what the codec
   shows of the node it saw (a round trip of the top-level block), so a model edit to a
   paragraph leaves an image whose upload is in flight alone.
@@ -57,19 +60,18 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   (the minimal-ops design, section 6).
 - What that guarantees, for a block it keeps, and no more:
   - The write's update neither deletes nor re-inserts any unit the room deleted.
-  - The model's new text lands only in place of units that all survive, after a find
-    match whose last unit survives, or as a diff-placed insert with a surviving unit, or
-    the textblock's end, on at least one side.
-  - A change not made is counted in the result and never marked.
+  - The model's new text lands where the model put it, even beside or in place of deleted
+    text, so pieces such as `the, steadily moving train` appear; a change that met a
+    deletion is counted in the result, never marked.
   - Words the writer deleted can still appear as the model's text: the model's new text
     may contain them, and when the model moved text past a deletion, the half of the
     move that lands can carry them (`First. Second. Third.`, `Second. ` deleted, written
-    as `Second. First. Third.`, gives `Second. Third.`, one skipped).
-- How it is applied: the room's deletions stay in the view and the landed changes lower
-  as exact splices. Never drop the deletions from the view and re-diff: the lowering's
+    as `Second. First. Third.`, gives `Second. Third.`, one change met).
+- How it is applied: the room's deletions stay in the view and the changes lower as
+  exact splices. Never drop the deletions from the view and re-diff: the lowering's
   character diff would then place the model's text at the dropped run's edge, where Yjs
   orders it against what the writer typed there by client id (`He  loudlygroaned.`).
-- What the rule does not cover:
+- What the lowering does not cover:
   - A block the lowering does not keep (above): a model change there that meets text the
     writer deleted since its read can bring that text back, and an insert beside a
     deleted line can land split, by client id
@@ -77,7 +79,7 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   - A write that removes a block and adds another (merging or splitting top-level
     paragraphs, a paragraph turned into a heading): the writer's typing in the removed
     block goes, and text deleted from it can come back in the added one.
-  - The rule sees only what the writer deleted, never what they added. A model delete
+  - The report sees only what the writer deleted, never what they added. A model delete
     can take letters the editor kept from an old sentence inside a pasted one, and
     typing that deleted nothing merges as plain concurrent edits.
   - A delete that lands after the call read its room

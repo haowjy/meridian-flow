@@ -80,8 +80,8 @@ export type ResolveWriteResult =
       ok: true;
       edits: ResolvedEdit[];
       ir: SemanticEditIRV1;
-      /** Changes not made because the room deleted text they change or sit in. */
-      skipped?: number;
+      /** Changes that met text or nodes the room deleted since the model's read; they were made anyway. */
+      metChanges?: number;
     }
   | {
       ok: false;
@@ -163,7 +163,7 @@ export function planWrite(
         ok: true,
         edits: resolved.edits,
         ir: semanticIrForResolvedEdits(concreteCtx, normalized, resolved),
-        ...(resolved.skipped > 0 ? { skipped: resolved.skipped } : {}),
+        ...(resolved.metChanges > 0 ? { metChanges: resolved.metChanges } : {}),
       };
     },
   };
@@ -215,7 +215,7 @@ function assignPlannedWrite(
   links: WriteLinks,
 ): ResolveWriteResultWithoutIr {
   const edits: ResolvedEdit[] = [];
-  let skipped = 0;
+  let metChanges = 0;
   let keptBlocks = false;
   for (const step of steps) {
     switch (step.kind) {
@@ -237,19 +237,19 @@ function assignPlannedWrite(
           step.kind === "spliced" ? step.windows : null,
         );
         edits.push(...lowered.edits);
-        skipped += lowered.skipped;
+        metChanges += lowered.metChanges;
         keptBlocks ||= lowered.keptBlocks === true;
         break;
       }
     }
   }
-  return { ok: true, edits, skipped, ...(keptBlocks ? { keptBlocks: true } : {}) };
+  return { ok: true, edits, metChanges, ...(keptBlocks ? { keptBlocks: true } : {}) };
 }
 
 interface LoweredScope {
   edits: ResolvedEdit[];
-  /** Changes not made because the room deleted text they change or sit in. */
-  skipped: number;
+  /** Changes that met text or nodes the room deleted since the model's read; they were made anyway. */
+  metChanges: number;
   /** Some of the scope's blocks were already equal to their replacement and kept. */
   keptBlocks?: true;
 }
@@ -623,7 +623,7 @@ function replaceScope(
   windows: CutWindows | null = null,
 ): LoweredScope {
   const edits: ResolvedEdit[] = [];
-  let skipped = 0;
+  let metChanges = 0;
   const oldBlocks = scope.blocks;
   const oldNodes = scopeNodes(ctx, scope);
   let anchor: BlockRef | undefined =
@@ -687,7 +687,7 @@ function replaceScope(
         anchor = oldBlocks[step.old];
         insertionRun = {};
         if (lowered) {
-          skipped += lowered.skipped;
+          metChanges += lowered.metChanges;
           if (lowered.ops.length === 0) keptBlocks = true;
           else
             edits.push({
@@ -720,7 +720,7 @@ function replaceScope(
   }
   flushStructural();
 
-  return { edits, skipped, ...(keptBlocks ? { keptBlocks: true } : {}) };
+  return { edits, metChanges, ...(keptBlocks ? { keptBlocks: true } : {}) };
 }
 
 /** A block keeps its element only as the same node type. */

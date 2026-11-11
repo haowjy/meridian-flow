@@ -28,30 +28,30 @@ of a run (a work item of its own, after
 
 ## Deletes that land after a write read its room
 
-A block rewrite that `lowerBlock` keeps is decided against what its room copy has deleted, but only what the copy holds when the call reads it. A
-delete that lands later still meets a lowering that kept those units. For a draft
-write the window runs from the call's room read to the step's save: the rest of the
-model step, its generation and later tool calls included, seconds to minutes. For a
-direct save it is the time to the save. Find writes are
-placed by their windows and survive it; other rewrites can split. The rule is a pure
-function of the two blocks and the deleted units, so the fix is to run it again at
+A block rewrite that `lowerBlock` keeps is shaped (the trim, the delete's units) and
+reported against what its room copy has deleted, but only what the copy holds when the
+call reads it. A delete that lands later still meets a lowering that kept those units.
+For a draft write the window runs from the call's room read to the step's save: the rest
+of the model step, its generation and later tool calls included, seconds to minutes. For
+a direct save it is the time to the save. Find writes are placed by their windows and
+survive it; other rewrites can split, and the report misses the meeting. The lowering is
+a pure function of the two blocks and the deleted units, so the fix is to run it again at
 save time against the room the update merges into.
 
 ## Blocks a write removes and adds
 
 A write that removes a block and adds another (merging or splitting top-level
-paragraphs, a paragraph turned into a heading) is not decided against room deletions:
+paragraphs, a paragraph turned into a heading) is not shaped or reported against room deletions:
 the writer's typing in the removed block goes, and text deleted from it can come back
 in the added one. Covering it means deciding the replaced scope as one sequence, block
 edges included, in `replaceScope`'s alignment.
 
 ## Changes the room added
 
-The rule sees what the writer deleted, never what they added. A pasted sentence can
-keep letters of the old one, which a model delete then takes (`MinKeep end.`), and a
-landing change cannot tell a plain delete from typed-over text, which is why a change
-that covers any deleted unit is skipped. Both need the port to also report where the
-room holds text the view lacks.
+The lowering and its report see what the writer deleted, never what they added. A pasted
+sentence can keep letters of the old one, which a model delete then takes (`MinKeep
+end.`), and a change cannot tell a plain delete from typed-over text. Both need the port
+to also report where the room holds text the view lacks.
 
 ## Deferred until earned
 
