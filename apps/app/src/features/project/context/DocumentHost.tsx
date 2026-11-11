@@ -491,7 +491,7 @@ function PhoneEditor({
           its way, shows its own chip in its header. */}
       {review?.documentId === document.documentId ? null : (
         <DocumentStatePortal>
-          <DocumentVersionMenu projectId={projectId} document={document} />
+          <DocumentVersionMenu projectId={projectId} document={document} touch />
         </DocumentStatePortal>
       )}
       {freeze ? (

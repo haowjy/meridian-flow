@@ -1,4 +1,4 @@
-import { type RefObject, useEffect } from "react";
+import { type RefObject, useEffect, useRef } from "react";
 
 /**
  * Focus the app moves on the writer's behalf, such as following a Work to the
@@ -126,25 +126,39 @@ export function holdFocus(target: () => HTMLElement | null, onTaken?: () => void
 
 /**
  * Keeps the focus in `container` when a command there removes the control that held it (a
- * Discard gives way to its notice, an Undo to the changes again): the first enabled button
- * takes it. A press outside, or focus moved elsewhere, lets go.
+ * Discard gives way to its notice, an Undo to the changes again): `next(container)` takes it,
+ * or the first enabled button. A press outside, or focus moved elsewhere, lets go.
  */
-export function useFocusSuccession(container: RefObject<HTMLElement | null>, mounted = true) {
+export function useFocusSuccession(
+  container: RefObject<HTMLElement | null>,
+  mounted = true,
+  next?: (container: HTMLElement) => HTMLElement | null,
+) {
+  const pick = useRef(next);
+  pick.current = next;
   useEffect(() => {
     const element = container.current;
     if (!mounted || !element) return;
     let within = element.contains(document.activeElement);
+    const succeed = () => {
+      if (!within || !focusIsFree()) return;
+      const to =
+        pick.current?.(element) ?? element.querySelector<HTMLElement>("button:not(:disabled)");
+      if (to) moveFocus(to, { ring: lastInputWasKeyboard() });
+    };
     const focused = (event: FocusEvent) => {
+      // A paint cover takes the focus while the pane swaps and hands it to the frame when it
+      // lifts: not the writer moving it, and the moment the successor can take it.
+      if (event.target instanceof Element && heldByPaint(event.target)) {
+        queueMicrotask(succeed);
+        return;
+      }
       within = event.target instanceof Node && element.contains(event.target);
     };
     const pressed = (event: PointerEvent) => {
       if (!(event.target instanceof Node && element.contains(event.target))) within = false;
     };
-    const observer = new MutationObserver(() => {
-      if (!within || !focusIsFree()) return;
-      const next = element.querySelector<HTMLElement>("button:not(:disabled)");
-      if (next) moveFocus(next, { ring: lastInputWasKeyboard() });
-    });
+    const observer = new MutationObserver(succeed);
     document.addEventListener("focusin", focused, true);
     document.addEventListener("pointerdown", pressed, true);
     observer.observe(element, { childList: true, subtree: true });

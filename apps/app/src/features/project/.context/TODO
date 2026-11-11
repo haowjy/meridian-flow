@@ -8,3 +8,8 @@
   needs the side's describe (`open-project-document.ts`) to accept the `uploads` scheme with its
   chat, and a decision on what "Open in main" and Recently opened mean for a file with no editor
   address.
+- At 390 px with a mouse, a panel opened by hand leaves main at its 360 px minimum, so the grid is
+  624 or 720 px wide and the panel runs off-screen (`useNarrowWindowHold` in `DesktopProject.tsx`).
+  Below a panel plus main's minimum, the panel should overlay main and close on a pick.
+- Manage Works opened from the phone drawer returns no focus on close: its opener was in the
+  drawer, which closed. Fall back to "Open navigation" when the dialog's opener is gone.

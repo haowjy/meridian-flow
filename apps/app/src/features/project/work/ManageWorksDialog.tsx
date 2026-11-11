@@ -170,7 +170,8 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
             </Trans>
           </DialogDescription>
         </DialogHeader>
-        <div ref={body} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        {/* The bleed is the room the Work list's rows reach into (-mx-2), so it never scrolls sideways. */}
+        <div ref={body} className="-mx-2 flex min-h-0 flex-1 flex-col overflow-y-auto px-2">
           {view.kind === "list" ? (
             <WorkCollection
               projectId={projectId}

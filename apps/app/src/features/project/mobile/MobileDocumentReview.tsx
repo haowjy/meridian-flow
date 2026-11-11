@@ -15,11 +15,11 @@
  * entering and leaving review never remounts it.
  */
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { OpenDocument } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
-import { useDocumentNotice } from "@/features/draft-review/CommandNotice";
+import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { DraftNotice } from "@/features/draft-review/draft-notices";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
@@ -29,6 +29,7 @@ import {
   ManuscriptStateSlot,
   useManuscriptState,
 } from "@/features/editor/ManuscriptStateNotice";
+import { useFocusSuccession } from "@/lib/focus-follow";
 import { useAiDraftLauncher } from "../review-launch";
 import { MobileChangeBar } from "./MobileChangeBar";
 import { MobileChangeSheet } from "./MobileChangeSheet";
@@ -61,6 +62,8 @@ export function MobileDocumentReview({
   const [listOpen, setListOpen] = useState(false);
   const manuscriptState = useManuscriptState(projectId, document);
   const notice = useDocumentNotice(projectId, documentId);
+  const topFocus = useRef<HTMLDivElement>(null);
+  useFocusSuccession(topFocus);
   useEffect(() => {
     if (!itemKey) setListOpen(false);
   }, [itemKey]);
@@ -68,18 +71,21 @@ export function MobileDocumentReview({
   return (
     <MobileKeyboardAware>
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {itemKey ? (
-          <ReviewTop
-            projectId={projectId}
-            document={document}
-            header={header}
-            manuscriptState={manuscriptState}
-            notice={notice}
-            onOpenList={() => setListOpen(true)}
-          />
-        ) : (
-          <ManuscriptStateRow state={manuscriptState} notice={notice} />
-        )}
+        {/* Holds the focus while a Discard's notice takes the review row's controls, and back. */}
+        <div ref={topFocus} className="contents">
+          {itemKey ? (
+            <ReviewTop
+              projectId={projectId}
+              document={document}
+              header={header}
+              manuscriptState={manuscriptState}
+              notice={notice}
+              onOpenList={() => setListOpen(true)}
+            />
+          ) : (
+            <ManuscriptStateRow state={manuscriptState} notice={notice} />
+          )}
+        </div>
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         {itemKey ? (
           <ReviewBottom header={header} listOpen={listOpen} onListOpenChange={setListOpen} />
@@ -110,7 +116,11 @@ function ManuscriptStateRow({
         paddingRight: "calc(0.25rem + env(safe-area-inset-right))",
       }}
     >
-      <ManuscriptStateSlot state={state} notice={notice} touch />
+      {notice ? (
+        <DraftNoticeLine notice={notice} className="flex-1" />
+      ) : (
+        <ManuscriptStateSlot state={state} touch />
+      )}
     </div>
   );
 }

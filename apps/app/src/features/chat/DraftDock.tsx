@@ -9,6 +9,7 @@ import {
   ApplyAllQuestion,
   CommandNotice,
   type CommandQuestion,
+  noticeAction,
 } from "@/features/draft-review/CommandNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
@@ -39,7 +40,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   }, [troubledFileCount]);
 
   const root = useRef<HTMLDivElement>(null);
-  useFocusSuccession(root, dock.mounted);
+  useFocusSuccession(root, dock.mounted, noticeAction);
 
   if (!dock.mounted) return null;
 
@@ -106,11 +107,12 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       <div
         onClick={askingApply ? undefined : () => setExpanded((value) => !value)}
         className={cn(
-          "flex min-h-7 items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-caption @max-[20rem]/dock:text-xs text-foreground",
+          "flex min-h-7 flex-wrap items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-caption @max-[20rem]/dock:text-xs text-foreground",
           multi && "cursor-pointer transition-colors hover:bg-ink-fill",
         )}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1">
+        {/* Sized by its content, so a question too wide to sit beside it wraps to a line of its own. */}
+        <div className="flex min-w-0 flex-auto items-center gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1">
           {
             <button
               type="button"

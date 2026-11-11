@@ -1,7 +1,12 @@
-/** Phone review chrome: version, stepper and list control in one row. Completion replaces stepping in that same row; whole commands live in the version menu. */
+/**
+ * Phone review chrome: version, stepper and list control in one row. Completion replaces stepping
+ * in that same row; whole commands live in the version menu. A Discard's notice takes a row of
+ * its own under it, where its verb and Undo always fit.
+ */
 import { t } from "@lingui/core/macro";
 import { List } from "lucide-react";
 import type { OpenDocument } from "@/client/stores";
+import { DraftNoticeLine } from "@/features/draft-review/CommandNotice";
 import { changeListLabel } from "@/features/draft-review/DocumentChanges";
 import type { DraftNotice } from "@/features/draft-review/draft-notices";
 import { DiscardQuestion } from "@/features/draft-review/ReviewActions";
@@ -77,7 +82,7 @@ export function MobileReviewHeader({
             onConfirm={header.confirmDiscard}
           />
         ) : (
-          <ManuscriptStateSlot state={manuscriptState} notice={notice} touch />
+          <ManuscriptStateSlot state={manuscriptState} touch />
         )}
         <ReviewStateInline
           touch
@@ -108,6 +113,9 @@ export function MobileReviewHeader({
           <List className="size-5" aria-hidden />
         </button>
       </div>
+      {notice ? (
+        <DraftNoticeLine notice={notice} className="border-t border-border-subtle" />
+      ) : null}
       <ReviewFailureNotices
         itemKey={view.itemKey ?? ""}
         commandError={header.commandError}
