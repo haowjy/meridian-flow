@@ -1,6 +1,6 @@
 /** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place; a command's question asks in the footer below the files. A file's refused command shows once, in its status line. */
 
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -97,8 +97,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     >
       {confirming || askingApply ? null : dock.showCommands ? (
         <ReviewActions
-          scope="all"
-          density="short"
+          scope={multi ? "all" : "change"}
+          labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
+          density="full"
           disabled={!dock.canCommand}
           onDiscard={() => (multi ? setConfirmingDiscard(true) : dock.discard())}
           onApply={dock.canApply ? startApply : undefined}
@@ -183,6 +184,32 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       <DraftImagePreview target={dock.imagePreview} onClose={dock.closeImagePreview} />
     </div>
   );
+}
+
+/** The strip acts on this chat's changes, not the whole draft, and its names say so. */
+function stripLabels(documents: number, name: string, changes: number | null) {
+  if (documents > 1) {
+    return {
+      apply: t`Apply this chat's changes to ${documents} documents`,
+      discard: t`Discard this chat's changes to ${documents} documents`,
+    };
+  }
+  if (changes === null) {
+    return {
+      apply: t`Apply this chat's changes to ${name}`,
+      discard: t`Discard this chat's changes to ${name}`,
+    };
+  }
+  return {
+    apply: plural(changes, {
+      one: `Apply this chat's change to ${name}`,
+      other: `Apply this chat's # changes to ${name}`,
+    }),
+    discard: plural(changes, {
+      one: `Discard this chat's change to ${name}`,
+      other: `Discard this chat's # changes to ${name}`,
+    }),
+  };
 }
 
 function ChangeCount({ count }: { count: number }) {

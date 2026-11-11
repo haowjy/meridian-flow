@@ -17,7 +17,6 @@ import {
 } from "@/components/app/work-composer-controls";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
 import type { CreationAgent } from "@/features/agents/creation-agent";
-import { workOwnerKey } from "@/features/draft-review/draft-owner-key";
 
 export function NewThreadComposerToolbar({
   projectId,
@@ -62,52 +61,11 @@ export function NewThreadComposerToolbar({
     onWorkChange,
     onRetryWorks,
   });
-  if (!work) {
-    return (
-      <ComposerToolbar
-        ariaLabel={t`Composer controls`}
-        model={createComposerToolbarModel([agent, workControl])}
-      />
-    );
-  }
-  return (
-    <AvailableNewThreadControls
-      projectId={projectId}
-      work={work}
-      writeMode={writeMode}
-      agent={agent}
-      workControl={workControl}
-      onWriteModeChange={onWriteModeChange}
-    />
-  );
-}
-
-function AvailableNewThreadControls({
-  projectId,
-  work,
-  writeMode,
-  agent,
-  workControl,
-  onWriteModeChange,
-}: {
-  projectId: string;
-  work: Work;
-  writeMode: AiWriteMode;
-  agent: ComposerToolbarControl;
-  workControl: ComposerToolbarControl;
-  onWriteModeChange(mode: AiWriteMode): void;
-}) {
-  const mode = useWriteModeToolbarControl({
-    projectId,
-    // A new chat in No Work has no lineage yet, so nothing is waiting.
-    ownerKey: work.isNoWork ? "" : workOwnerKey(work),
-    value: writeMode,
-    onChoose: onWriteModeChange,
-  });
+  const mode = useWriteModeToolbarControl({ value: writeMode, onChoose: onWriteModeChange });
   return (
     <ComposerToolbar
       ariaLabel={t`Composer controls`}
-      model={createComposerToolbarModel([agent, mode, workControl])}
+      model={createComposerToolbarModel(work ? [agent, mode, workControl] : [agent, workControl])}
     />
   );
 }

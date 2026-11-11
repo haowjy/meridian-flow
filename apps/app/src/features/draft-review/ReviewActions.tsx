@@ -6,7 +6,10 @@
  * A change's or a document's ✓ in a list row is jade ink, not a fill: the group's own Apply
  * is the one filled button, and a column of filled squares would drown it.
  *
- * `density` picks the form: the scope's name, the bare verb, or ×/✓. Leave it unset where
+ * `density` picks the form: the scope's name or ×/✓. "Apply draft" acts on the whole draft
+ * and only the review header says it; the bare verb acts on what is named beside it (a
+ * change, or the changes a row counts), and `labels` then names that scope in full for a
+ * screen reader. Leave `density` unset where
  * a container measures its own fit and sets `data-density` on `[data-review-actions]`
  * itself (the identity row's ladder); React then never resets that attribute.
  */
@@ -18,7 +21,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 
 export type ReviewScope = "change" | "document" | "all";
-export type ReviewDensity = "full" | "short" | "icon";
+export type ReviewDensity = "full" | "icon";
 
 export function reviewActionLabel(action: "apply" | "discard", scope: ReviewScope): string {
   if (action === "apply") {
@@ -27,15 +30,10 @@ export function reviewActionLabel(action: "apply" | "discard", scope: ReviewScop
   return scope === "change" ? t`Discard` : scope === "document" ? t`Discard draft` : t`Discard all`;
 }
 
-/** A document's command named with the document, for a list where every row has the pair. */
-function documentLabel(action: "apply" | "discard", subject: string): string {
-  return action === "apply" ? t`Apply draft of ${subject}` : t`Discard draft of ${subject}`;
-}
-
 export type ReviewActionsProps = {
   scope: ReviewScope;
-  /** With `scope="document"`: the document's name, added to the accessible names. */
-  subject?: string;
+  /** Accessible names, where the visible words don't say what the buttons act on. */
+  labels?: { apply: string; discard: string };
   density?: ReviewDensity;
   onDiscard: MouseEventHandler<HTMLButtonElement>;
   /** Absent withdraws Apply; Discard still applies. */
@@ -51,7 +49,7 @@ export type ReviewActionsProps = {
 
 export function ReviewActions({
   scope,
-  subject,
+  labels,
   density,
   onDiscard,
   onApply,
@@ -74,8 +72,7 @@ export function ReviewActions({
       <ReviewActionButton
         density={density}
         name={reviewActionLabel("discard", scope)}
-        label={subject && scope === "document" ? documentLabel("discard", subject) : undefined}
-        short={reviewActionLabel("discard", "change")}
+        label={labels?.discard}
         icon={<X aria-hidden />}
         variant="quiet"
         touch={touch}
@@ -86,8 +83,7 @@ export function ReviewActions({
         <ReviewActionButton
           density={density}
           name={reviewActionLabel("apply", scope)}
-          label={subject && scope === "document" ? documentLabel("apply", subject) : undefined}
-          short={reviewActionLabel("apply", "change")}
+          label={labels?.apply}
           icon={applying ? <Loader2 aria-hidden className="animate-spin" /> : <Check aria-hidden />}
           busy={applying}
           variant={scope !== "all" && density === "icon" ? "row" : "default"}
@@ -109,7 +105,6 @@ function ReviewActionButton({
   density,
   name,
   label,
-  short,
   icon,
   busy = false,
   variant,
@@ -121,7 +116,6 @@ function ReviewActionButton({
   name: string;
   /** The accessible name when it says more than `name`. */
   label?: string;
-  short: string;
   icon: ReactNode;
   /** Shows the icon in every form. */
   busy?: boolean;
@@ -133,8 +127,6 @@ function ReviewActionButton({
   const fullRef = useRef<HTMLSpanElement>(null);
   const [tooltip, setTooltip] = useState(false);
   const renders = (form: ReviewDensity) => density === undefined || density === form;
-  // A change's short form is its full name, so it shows the full form instead.
-  const shortForm = short === name ? null : short;
   return (
     <Tooltip
       open={tooltip}
@@ -162,19 +154,10 @@ function ReviewActionButton({
               {icon}
             </span>
           ) : null}
-          {renders("full") || (renders("short") && !shortForm) ? (
-            <span
-              ref={fullRef}
-              className={cn(
-                "group-data-[density=icon]/review:hidden",
-                shortForm && "group-data-[density=short]/review:hidden",
-              )}
-            >
+          {renders("full") ? (
+            <span ref={fullRef} className="group-data-[density=icon]/review:hidden">
               {name}
             </span>
-          ) : null}
-          {shortForm && renders("short") ? (
-            <span className="hidden group-data-[density=short]/review:inline">{shortForm}</span>
           ) : null}
         </Button>
       </TooltipTrigger>
