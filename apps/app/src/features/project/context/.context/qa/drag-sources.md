@@ -31,7 +31,7 @@ tree's own drag is [Row selection and drag](../../../../../../../../docs/qa/row-
    Notes…"; release opens Move to Notes / Copy to Notes / Cancel. Main, the URL and the
    rail stay as they were. Cancel: Prologue is still under Act 1 and nothing is under Notes.
 2. **Crumb.** Drag the `Act 2` crumb (not the area crumb, which navigates) to `Lore` in the
-   Knowledge Base: the menu asks. The crumb's dropdown does not open.
+   Knowledge: the menu asks. The crumb's dropdown does not open.
 3. **Recent row.** Recently opened (main's header door): drag Prologue to User › Templates, choose Copy. The copy is
    there, the source stays, the URL doesn't change.
 4. **Composer chip.** `@Prolo` in the composer, Enter. Drag the chip to a tree folder: it asks and the

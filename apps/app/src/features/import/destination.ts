@@ -1,4 +1,4 @@
-/** Where an import lands: an area root or a folder inside Manuscript, Knowledge Base or Unfiled. */
+/** Where an import lands: an area root or a folder inside Manuscript, Knowledge or Unfiled. */
 import { t } from "@lingui/core/macro";
 import { IMPORT_SCHEMES, type ImportScheme } from "@meridian/contracts";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -20,11 +20,7 @@ export type ImportDestination = {
 };
 
 export function areaLabel(scheme: ImportScheme): string {
-  return scheme === "manuscript"
-    ? t`Manuscript`
-    : scheme === "unfiled"
-      ? t`Unfiled`
-      : t`Knowledge Base`;
+  return scheme === "manuscript" ? t`Manuscript` : scheme === "unfiled" ? t`Unfiled` : t`Knowledge`;
 }
 
 /** Where an import lands when started on, or dropped onto, a folder (null: the area's root). */

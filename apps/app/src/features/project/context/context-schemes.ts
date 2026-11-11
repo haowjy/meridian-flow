@@ -40,7 +40,7 @@ export function schemeLabel(scheme: ProjectContextTreeScheme): string {
     case "manuscript":
       return t`Manuscript`;
     case "kb":
-      return t`Knowledge Base`;
+      return t`Knowledge`;
     case "user":
       return t`Your files`;
     case "unfiled":
