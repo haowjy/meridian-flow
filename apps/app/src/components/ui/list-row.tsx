@@ -34,14 +34,17 @@ export function ListRow({
 }: {
   /** `list` rows are 28px, `menu` rows 32px; a `detail` adds the second line. 44px on touch. */
   density?: "list" | "menu";
-  /** Makes the control a link: a plain click calls `onOpen`, a modified click stays the browser's. */
+  /**
+   * Makes the control a link: a plain click calls `onOpen`, a modified click stays the
+   * browser's. Ignored while `disabled`.
+   */
   href?: string;
   onOpen: () => void;
   /** The value in effect, or with `"page"` the place the writer is on. */
   current?: boolean | "page";
   /** Disables the main control; the actions beside it stay live. */
   disabled?: boolean;
-  /** Indent steps for a row nested under another. */
+  /** Indent steps for a row nested under another, the file tree's step. */
   depth?: number;
   /** The main control, when it is a button. */
   ref?: Ref<HTMLButtonElement>;
@@ -99,25 +102,26 @@ export function ListRow({
       {trailing}
     </>
   );
-  const control = href ? (
-    <a
-      {...shared}
-      href={href}
-      aria-disabled={disabled || undefined}
-      onClick={(event: MouseEvent<HTMLAnchorElement>) => {
-        if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
-          return;
-        event.preventDefault();
-        onOpen();
-      }}
-    >
-      {content}
-    </a>
-  ) : (
-    <button {...shared} ref={ref} type="button" disabled={disabled} onClick={onOpen}>
-      {content}
-    </button>
-  );
+  // A disabled row is a button: a link cannot be disabled.
+  const control =
+    href && !disabled ? (
+      <a
+        {...shared}
+        href={href}
+        onClick={(event: MouseEvent<HTMLAnchorElement>) => {
+          if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+            return;
+          event.preventDefault();
+          onOpen();
+        }}
+      >
+        {content}
+      </a>
+    ) : (
+      <button {...shared} ref={ref} type="button" disabled={disabled} onClick={onOpen}>
+        {content}
+      </button>
+    );
   return (
     <>
       <div
