@@ -60,7 +60,7 @@ import {
 export type SideItem = {
   item: Item | null;
   /** A document item's descriptor. */
-  tab: OpenDocument | null;
+  document: OpenDocument | null;
   source: SideSource | null;
   /** Why it is there; none while the side keeps an earlier item, whose reason was about another main. */
   reason: SideReason | null;
@@ -236,7 +236,7 @@ function useDescriptions(projectId: string): Descriptions {
     () => ({
       read: (document) => {
         const mounted = shown.find((tab) => tab.documentId === document.documentId);
-        if (mounted) return { status: "ready", tab: mounted };
+        if (mounted) return { status: "ready", document: mounted };
         const key = describeKey(document);
         const known = answers.get(key);
         if (known === undefined) return { status: "pending" };
@@ -248,7 +248,7 @@ function useDescriptions(projectId: string): Descriptions {
               store(key, undefined);
             },
           };
-        return { status: "ready", tab: known };
+        return { status: "ready", document: known };
       },
       request,
     }),
@@ -304,7 +304,7 @@ export function SideViewProvider({
   const side = useMemo<SideItem>(
     () => ({
       item: settled?.item ?? null,
-      tab: settled?.tab ?? null,
+      document: settled?.document ?? null,
       source: settled?.source ?? null,
       reason: resolution.kind === "settled" ? (settled?.reason ?? null) : null,
       pending: resolution.kind === "pending",
@@ -315,7 +315,7 @@ export function SideViewProvider({
   );
 
   useReleaseHold(accountId, projectId, held, resolution.releaseHeld);
-  useRecordSidePick(projectId, side.source === "held" ? side.tab : null);
+  useRecordSidePick(projectId, side.source === "held" ? side.document : null);
 
   const mainChat = main.kind === "chat" ? main.chatId : null;
   const sideChat = side.item?.kind === "chat" ? side.item : null;

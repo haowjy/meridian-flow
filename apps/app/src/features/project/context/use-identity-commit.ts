@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { type ProjectContextTreeScheme, storedFilename } from "@meridian/contracts/protocol";
 import { useWorks } from "@/client/query/useWorks";
-import { type OpenDocument, replaceOwner, type TabOwner } from "@/client/stores";
+import { type OpenDocument, type OpenDocumentOwner, replaceOwner } from "@/client/stores";
 import type { OpenContextOptions } from "../routing/ProjectNavigationContext";
 import { type ContextRouteRequest, contextRouteRequest } from "../routing/project-route";
 import { useAccountResourceReplica } from "./account-feature-context";
@@ -28,13 +28,13 @@ export type IdentityCommitted = {
   /** Tree-style path with a leading slash. */
   path: string;
   name: string;
-} & TabOwner;
+} & OpenDocumentOwner;
 
 export type IdentityCommitOwnership = {
   /** True only for the latest operation started by this identity surface. */
   isLatest: boolean;
   /** The mounted representation captured before the namespace command. */
-  tab: OpenDocument;
+  document: OpenDocument;
 };
 
 export function identityCommitMayNavigate(
@@ -98,12 +98,12 @@ export function deriveIdentityCommitPlan(
 
 export function useIdentityCommit({
   projectId,
-  tab,
+  document,
   editorWorkId,
   onCommitted,
 }: {
   projectId: string;
-  tab: OpenDocument;
+  document: OpenDocument;
   editorWorkId: string | null;
   onCommitted: (
     documentId: string,
@@ -114,13 +114,13 @@ export function useIdentityCommit({
   const resources = useAccountResourceReplica();
   const { works, noWork } = useWorks(projectId);
   return async (target) => {
-    const plan = deriveIdentityCommitPlan(tab, target, editorWorkId);
+    const plan = deriveIdentityCommitPlan(document, target, editorWorkId);
     if (plan.kind === "no-op") return { status: "committed" };
 
     try {
-      const key = tab.resourceHandle
-        ? { handle: tab.resourceHandle }
-        : await resources.keyForDocument(projectId, tab.documentId);
+      const key = document.resourceHandle
+        ? { handle: document.resourceHandle }
+        : await resources.keyForDocument(projectId, document.documentId);
       if (!key) throw new Error("Document resource is unavailable");
       const destination = plan.desired.destination;
       const authority = destinationOwner(destination, works, noWork);
@@ -129,10 +129,10 @@ export function useIdentityCommit({
         destination.parent ??
         (!destination.folderPath.split("/").filter(Boolean).length
           ? { kind: "root" as const, scheme: destination.scheme, owner: authority }
-          : tab.kind !== "new" &&
-              destination.scheme === tab.scheme &&
-              destination.folderPath === tabLocation(tab).parentPath
-            ? await resources.parentForEntry(projectId, tab.documentId)
+          : document.kind !== "new" &&
+              destination.scheme === document.scheme &&
+              destination.folderPath === tabLocation(document).parentPath
+            ? await resources.parentForEntry(projectId, document.documentId)
             : await resources.findParentAtLocation(projectId, {
                 scheme: destination.scheme,
                 path: destination.folderPath,
@@ -146,14 +146,14 @@ export function useIdentityCommit({
         : await resources.setLocation(projectId, key, optimisticDestination);
       const folder = destination.folderPath.split("/").filter(Boolean).join("/");
       onCommitted(
-        tab.documentId,
+        document.documentId,
         {
           scheme: destination.scheme,
           path: `/${[folder, plan.desired.name].filter(Boolean).join("/")}`,
           name: plan.desired.name,
           ...replaceOwner(destination),
         },
-        { ...ownership, tab },
+        { ...ownership, document },
       );
       return {
         status: "committed",

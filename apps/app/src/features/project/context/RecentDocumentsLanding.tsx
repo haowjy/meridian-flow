@@ -228,7 +228,7 @@ export async function openRecent(
     },
     {
       ...(replace ? { replace } : {}),
-      tab: {
+      document: {
         kind: "new",
         documentId: item.documentId,
         name: item.name,

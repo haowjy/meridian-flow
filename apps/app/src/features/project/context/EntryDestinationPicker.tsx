@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, type RefObject, useMemo, useRef, useState } from "react";
 import { useWorks } from "@/client/query/useWorks";
-import type { TabOwner } from "@/client/stores";
+import type { OpenDocumentOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { Button } from "@/components/ui/button";
 import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
@@ -50,7 +50,7 @@ type EntryDestinationPickerProps = {
   projectId: string;
   action: "move" | "copy";
   /** The area the rows sit in, which the menu opens at; absent opens at the project's root. */
-  from?: { scheme: ProjectContextTreeScheme; owner: TabOwner };
+  from?: { scheme: ProjectContextTreeScheme; owner: OpenDocumentOwner };
   entry: PickedEntry;
   open: boolean;
   repairMove?: ResourceDestination;

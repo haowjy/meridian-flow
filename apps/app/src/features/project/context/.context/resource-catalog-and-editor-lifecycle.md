@@ -139,7 +139,7 @@ live lacks it), before any path occupant. A plain path never settles on a draft-
 document; only its address with `owner` and
 `item` reaches it.
 The live resource replica says nothing about a draft-only document
-(`projectResourceTab` answers `none`): a deleted document's replica record is
+(`projectResourceDocument` answers `none`): a deleted document's replica record is
 terminal, often from an earlier session's cache, and treating it as the document's
 removal hid the editor behind a skeleton that never resolved.
 Once live has the document (Apply, or a restore), settlement promotes the presentation

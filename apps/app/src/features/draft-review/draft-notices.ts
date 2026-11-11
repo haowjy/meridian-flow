@@ -7,7 +7,7 @@ import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 
 export type NoticeSurface =
   | { kind: "changes" }
-  | { kind: "dock"; threadId: string | null }
+  | { kind: "strip"; threadId: string | null }
   /** A document's review band: the notice shows in that document's identity row. */
   | { kind: "band"; documentId: string };
 

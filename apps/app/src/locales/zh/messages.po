@@ -4194,7 +4194,7 @@ msgstr ""
 msgid "Open this document in a project to upload figures."
 msgstr ""
 
-#. placeholder {0}: tab.name
+#. placeholder {0}: document.name
 #: src/features/project/context/DocumentHost.tsx
 msgid "Opening {0}"
 msgstr ""

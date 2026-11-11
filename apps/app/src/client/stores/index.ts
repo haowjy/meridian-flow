@@ -5,13 +5,13 @@
  */
 
 export {
+  documentContextOwner,
   isEditorOpenDocument,
   isEditorScheme,
   type OpenDocument,
+  type OpenDocumentOwner,
   replaceOwner,
   type ServerOpenDocument,
-  type TabOwner,
-  tabContextOwner,
 } from "./open-document";
 export type { ProjectStoreActions, ProjectStoreState } from "./project-store";
 export {

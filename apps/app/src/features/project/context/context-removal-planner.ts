@@ -127,7 +127,7 @@ export function routeTargetForTab(tab: OpenDocument): ContextRouteRequest {
 }
 
 /** The tab a target names: by its document when it carries one, else by locator. */
-export function tabForTarget(
+export function documentForTarget(
   tabs: readonly OpenDocument[],
   target: ContextRouteRequest,
 ): OpenDocument | null {
@@ -188,7 +188,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   const admitted = input.admitted;
   // The bound document's own tab: another tab may cache the same locator.
   const admittedTab = admitted
-    ? tabForTarget(
+    ? documentForTarget(
         input.tabs,
         boundSelection && sameContextTarget(boundSelection.locator, admitted)
           ? { ...admitted, documentId: boundSelection.identity.documentId }

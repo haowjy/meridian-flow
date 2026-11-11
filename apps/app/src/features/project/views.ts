@@ -168,7 +168,7 @@ export type MainDocument = Readonly<{
   workId?: string | null;
   /** A chat's Scratch route names its lineage here, in place of a Work. */
   rootThreadId?: string | null;
-  tab: OpenDocument | null;
+  document: OpenDocument | null;
   /** The history entry's pointer names an untitled document: the replica holds it, not a path. */
   local: boolean;
   /** Live lacks the document: the descriptor is built from the address's draft row. */
@@ -216,7 +216,7 @@ export function resolveMainDocument(input: {
     return {
       ...base,
       requested: true,
-      tab: input.local,
+      document: input.local,
       local: true,
       draftOnly: false,
       catalogResolved: true,
@@ -229,7 +229,7 @@ export function resolveMainDocument(input: {
     return {
       ...base,
       requested: false,
-      tab: null,
+      document: null,
       local: false,
       draftOnly: false,
       catalogResolved: false,
@@ -255,12 +255,12 @@ export function resolveMainDocument(input: {
     owner.kind === "live"
       ? openDocumentFromFile(input.scheme, owner.file, contextOwner(input.workId, rootThreadId))
       : owner.kind === "draft-only" || owner.kind === "addressed"
-        ? owner.tab
+        ? owner.document
         : null;
   return {
     ...base,
     requested: true,
-    tab: resolved?.kind === "new" ? null : resolved,
+    document: resolved?.kind === "new" ? null : resolved,
     local: false,
     draftOnly: owner.kind === "draft-only",
     catalogResolved: input.catalog !== null,

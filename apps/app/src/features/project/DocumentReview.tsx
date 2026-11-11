@@ -189,16 +189,16 @@ export function DocumentReviewBoundary({
 /** A document host's own review, for a host whose chrome and body share one subtree. */
 export function DocumentReviewProvider({
   projectId,
-  tab,
+  document,
   showing,
   children,
 }: {
   projectId: string;
-  tab: OpenDocument | null;
+  document: OpenDocument | null;
   /** Whether the host is on screen; one that is not reviews nothing. */
   showing: boolean;
   children: ReactNode;
 }) {
-  const review = useDocumentReview(projectId, tab, showing);
+  const review = useDocumentReview(projectId, document, showing);
   return <DocumentReviewBoundary review={review}>{children}</DocumentReviewBoundary>;
 }
