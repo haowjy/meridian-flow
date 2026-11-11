@@ -154,7 +154,7 @@ export function useSwitchView(input: {
           if (outcome === "withdrawn") announce(controlWithdrawnCopy(row.control));
           // The divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(row.control));
-          // Stop restores the Work default.
+          // Withdrawing restores the Work default.
           void invalidateWriteModeReads(queryClient, latest.current.projectId);
           revalidate();
         } catch (error) {

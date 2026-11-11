@@ -50,7 +50,7 @@ export function useComposerWorkToolbarControl({
         binding={trigger}
         ariaLabel={t`Change work for this chat, currently ${name}`}
       >
-        <WorkIdentity name={name} unavailableLabel={t`Unavailable`} />
+        <WorkIdentity work={work} unavailableLabel={t`Unavailable`} />
       </ComposerCurrentValueTrigger>
     ),
     panel: {

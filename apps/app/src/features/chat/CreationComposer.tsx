@@ -88,8 +88,8 @@ export function CreationComposer({
     }),
     [openDocument, projectId],
   );
-  // The Work's default shows until the writer picks a mode here, and only a
-  // picked mode is sent: a stale default from another tab never overwrites a newer one.
+  // The Work's default shows until the writer picks a mode or another Work here, and
+  // only a picked mode is sent: a stale default from another tab never overwrites a newer one.
   const writeMode = choices?.aiWriteMode ?? work?.defaultAiWriteMode ?? "direct";
   const context =
     agent && work

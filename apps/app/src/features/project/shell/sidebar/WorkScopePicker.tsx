@@ -1,4 +1,4 @@
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
@@ -65,7 +65,7 @@ export function WorkScopePicker({
         >
           {scoped || noWorkScoped ? (
             <WorkIdentity
-              name={scoped ? scoped.name : t`None`}
+              work={scoped ?? noWork}
               unavailableLabel={t`None`}
               className={cn("flex-1", role.row)}
             />
@@ -77,7 +77,9 @@ export function WorkScopePicker({
           {pending > 0 ? (
             <Chip kind="count" tone="jade">
               <span aria-hidden>{pending}</span>
-              <span className="sr-only">{t`${pending} documents to review`}</span>
+              <span className="sr-only">
+                {plural(pending, { one: "# document to review", other: "# documents to review" })}
+              </span>
             </Chip>
           ) : null}
           <ChevronsUpDown

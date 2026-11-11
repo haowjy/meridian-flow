@@ -1,15 +1,16 @@
 import { Layers } from "lucide-react";
 import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
+import { type WorkNaming, workDisplayName } from "@/lib/work-name";
 
-/** How a Work reads wherever one is named: the Work glyph, then its name. */
+/** How a Work reads wherever one is named: the Work glyph, then its name as the writer reads it. */
 export function WorkIdentity({
-  name,
+  work,
   unavailableLabel,
   className,
   ...props
 }: Omit<ComponentProps<"span">, "children"> & {
-  name: string | null | undefined;
+  work: WorkNaming | null | undefined;
   unavailableLabel: string;
 }) {
   return (
@@ -21,7 +22,9 @@ export function WorkIdentity({
       {...props}
     >
       <Layers aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 truncate">{name || unavailableLabel}</span>
+      <span className="min-w-0 truncate">
+        {(work && workDisplayName(work)) || unavailableLabel}
+      </span>
     </span>
   );
 }

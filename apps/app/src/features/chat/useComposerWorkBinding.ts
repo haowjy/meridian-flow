@@ -75,7 +75,11 @@ export function useComposerWorkBinding({
         target,
         observedProjection: "none",
       };
-      dispatch({ type: "change.started", request, message: t`Changing work to ${target.name}` });
+      dispatch({
+        type: "change.started",
+        request,
+        message: t`Changing work to ${workDisplayName(target)}`,
+      });
       try {
         const outcome = await mutation.mutateAsync({
           workId,
@@ -87,7 +91,7 @@ export function useComposerWorkBinding({
             type: "change.superseded",
             requestId: request.id,
             work: outcome.currentWork,
-            message: t`This chat's Work changed to ${outcome.currentWork.name}`,
+            message: t`This chat's Work changed to ${workDisplayName(outcome.currentWork)}`,
           });
           return "close" as const;
         }

@@ -47,9 +47,12 @@ export function DocumentVersionMenu({
   if (document.kind === "new") return null;
 
   const shown = review ? (paint?.draft ?? null) : null;
-  const ownerName = (owner: string, label: string | null) => {
+  const ownerWork = (owner: string) => {
     const workId = workIdOfDraftOwnerKey(owner);
-    const work = workId ? works?.find((candidate) => candidate.id === workId) : undefined;
+    return workId ? works?.find((candidate) => candidate.id === workId) : undefined;
+  };
+  const ownerName = (owner: string, label: string | null) => {
+    const work = ownerWork(owner);
     return work ? workDisplayName(work) : label;
   };
   const listed: Pick<DocumentDraftHint, "owner" | "itemKey" | "label" | "tree">[] = [...hints];
@@ -68,8 +71,8 @@ export function DocumentVersionMenu({
     key: `${hint.owner}:${hint.itemKey}`,
     name: (
       <WorkIdentity
-        name={ownerName(hint.owner, hint.label)}
-        unavailableLabel={t`Unnamed draft`}
+        work={ownerWork(hint.owner)}
+        unavailableLabel={hint.label || t`Unnamed draft`}
         className="text-sm font-normal"
       />
     ),

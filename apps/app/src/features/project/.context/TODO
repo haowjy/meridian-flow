@@ -13,3 +13,5 @@
   Below a panel plus main's minimum, the panel should overlay main and close on a pick.
 - Manage Works opened from the phone drawer returns no focus on close: its opener was in the
   drawer, which closed. Fall back to "Open navigation" when the dialog's opener is gone.
+- Phone: the side sheet closes when the history position changes (`MobileProject.tsx`), so an open
+  that replaces the entry instead of pushing leaves the sheet over main.

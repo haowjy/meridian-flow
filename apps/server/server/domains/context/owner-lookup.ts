@@ -128,7 +128,7 @@ export function findWorkNamed<T extends { name: string; state?: WorkOwnerState }
 }
 
 function chatTitle(title: string | null): string {
-  return `"${(title ?? "").replace(/\s+/g, " ").trim() || "New chat"}"`;
+  return `"${(title ?? "").replace(/\s+/g, " ").trim() || "Untitled chat"}"`;
 }
 
 export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {

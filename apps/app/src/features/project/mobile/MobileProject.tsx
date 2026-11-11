@@ -1,7 +1,7 @@
 /** Renders the mobile project workspace. */
 
 import { t } from "@lingui/core/macro";
-import { useBlocker } from "@tanstack/react-router";
+import { useBlocker, useRouterState } from "@tanstack/react-router";
 import { type LucideIcon, Maximize2, MessageSquare, Pin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { isThreadAwaitingCreation } from "@/client/chat-submissions";
@@ -46,13 +46,15 @@ export function MobileProject(props: MobileProjectProps) {
     () => !onChat && isThreadAwaitingCreation(accountId, chat.lastChatId),
   );
   // Any open goes to main: the sheet closes rather than cover where the writer went. Arriving is
-  // not an open, so a recovering first send keeps its sheet.
-  const arrivedAt = useRef(props.routeLocationKey);
+  // not an open, so a recovering first send keeps its sheet. The history position, not the
+  // entry's key: an address repair (a rename, a stripped param) replaces the entry in place.
+  const position = useRouterState({ select: (state) => state.location.state.__TSR_index });
+  const arrivedAt = useRef(position);
   useEffect(() => {
-    if (arrivedAt.current === props.routeLocationKey) return;
-    arrivedAt.current = props.routeLocationKey;
+    if (arrivedAt.current === position) return;
+    arrivedAt.current = position;
     setSheetOpen(false);
-  }, [props.routeLocationKey]);
+  }, [position]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const main = useMainItem();
   const crumbs = contextBreadcrumbSegments(
