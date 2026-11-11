@@ -152,13 +152,6 @@ function notes(result: AgentEditResultV1): string[] {
       `${listed(surviving)} still ${surviving.length === 1 ? "has" : "have"} changes to it; applying them brings it back.`,
     );
   if (result.unchanged) lines.push(UNCHANGED_NOTE);
-  if (result.metChanges) {
-    lines.push(
-      result.metChanges === 1
-        ? "1 change met text or a block the writer deleted since your last read. It was made anyway, so the result may be merged oddly: read the document again and fix it."
-        : `${result.metChanges} changes met text or blocks the writer deleted since your last read. They were made anyway, so the result may be merged oddly: read the document again and fix it.`,
-    );
-  }
   if (result.awarenessDegraded) {
     lines.push("the write landed, but concurrent changes could not be reported.");
   }

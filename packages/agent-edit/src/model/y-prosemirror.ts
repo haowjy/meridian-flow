@@ -12,7 +12,6 @@ import type {
   EditOpsResult,
   ProjectedBlock,
 } from "../ports/model.js";
-import { findItem, itemsInRange } from "../yjs-mutation.js";
 import {
   blockHashesForDoc,
   blockIdentityForItem,
@@ -114,14 +113,6 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
 
     applyBlockReplacement(doc, block, replacement) {
       applyBlockDiff(unwrapDoc(doc), unwrapBlock(block), replacement);
-    },
-
-    roomTextblock(block, path, current) {
-      return roomTextblock(nodeAt(unwrapBlock(block), path), unwrapDoc(current));
-    },
-
-    roomNodeRemoved(block, path, current) {
-      return deletedInRoom(nodeAt(unwrapBlock(block), path)._item, unwrapDoc(current));
     },
 
     projectBlocks(doc) {
@@ -336,7 +327,7 @@ function opProblem(node: Y.XmlElement, op: EditOp): string | undefined {
   return undefined;
 }
 
-/** Units are addressed across the textblock's children, as `roomTextblock` reads them. */
+/** Units are addressed across the textblock's children, as `slotsOf` lays them out. */
 function applyTextOp(leaf: Y.XmlElement, op: Extract<EditOp, { kind: "text" }>): void {
   if (leaf.length === 0) leaf.insert(0, [new Y.XmlText()]);
   // Formats don't move offsets, so they go first.
@@ -515,54 +506,6 @@ function nodeAt(block: Y.XmlElement, path: readonly number[]): Y.XmlElement {
   const node = findNode(block, path);
   if (!node) throw new Error(`Path ${path.join("/")} does not address an element`);
   return node;
-}
-
-/** Whether `current` holds the item deleted, or an item above it; one it keeps none for counts too. */
-function deletedInRoom(item: Y.Item | null, current: Y.Doc): boolean {
-  for (let at = item; at; at = (at.parent as Y.AbstractType<unknown>)._item) {
-    const live = findItem(current, at.id);
-    if (!live || live.deleted) return true;
-  }
-  return false;
-}
-
-/**
- * The textblock's units that `current` has deleted, in order. A unit is a text character or
- * an inline atom. A clock `current` keeps no item for was collected, so it counts as deleted.
- */
-function roomTextblock(leaf: Y.XmlElement, current: Y.Doc): Span[] {
-  const runs: Span[] = [];
-  const remove = (from: number, to: number) => {
-    const last = runs.at(-1);
-    if (last && last.to === from) last.to = to;
-    else runs.push({ from, to });
-  };
-  let offset = 0;
-  for (const child of leaf.toArray()) {
-    if (!(child instanceof Y.XmlText)) {
-      if (deletedInRoom(child._item, current)) remove(offset, offset + 1);
-      offset += 1;
-      continue;
-    }
-    if (deletedInRoom(child._item, current)) {
-      if (child.length > 0) remove(offset, offset + child.length);
-      offset += child.length;
-      continue;
-    }
-    for (let item = child._start; item; item = item.right) {
-      if (item.deleted || !item.countable) continue;
-      const { client, clock } = item.id;
-      let cursor = clock;
-      for (const live of itemsInRange(current, { client, clock, len: item.length })) {
-        if (live.item.deleted) continue;
-        if (live.clock > cursor) remove(offset + cursor - clock, offset + live.clock - clock);
-        cursor = live.clock + live.len;
-      }
-      if (cursor < clock + item.length) remove(offset + cursor - clock, offset + item.length);
-      offset += item.length;
-    }
-  }
-  return runs;
 }
 
 function yTextPlainText(text: Y.XmlText): string {

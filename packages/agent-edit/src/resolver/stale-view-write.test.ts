@@ -1,16 +1,16 @@
 /**
  * Guards the invariant "Text converges" (`.context/invariants.md`): a write planned on a
  * stale view lands after someone deleted text it shares words with, and the writer's delete
- * stands: no deleted letter comes back. The server plans a reply's write on the model's view and merges the update
- * into the current room, which is what this test does with two Yjs docs. A delete the room
- * already holds when the write plans is decided against (`current`); one that arrives after
- * relies on find windows. Every row runs with the model's client id below and above the
- * writer's, since Yjs orders concurrent inserts at one place by client id.
+ * stands: no deleted letter comes back. The server plans a reply's write on the model's view
+ * and merges the update into the current room, which is what this test does with two Yjs
+ * docs. Every row runs with the model's client id below and above the writer's, since Yjs
+ * orders concurrent inserts at one place by client id.
  *
- * Pins implementation decisions: a model change to text the writer has since deleted is made
- * as it is, in a quote and a list item as in a paragraph, trimmed to the letters the old word
- * lacks, so odd merges such as `A disciple.3 SIDETEXT` are accepted (owner's decision, "trust
- * the LLM to figure out the weird merge"; `write-architecture.md`).
+ * Pins implementation decisions: the write never reads the room. A replace keeps the letters
+ * its old and new text share at the edges and changes the middle, as the editor's binding
+ * does, so a model change to text the writer has since deleted is made as it is and odd
+ * merges such as `A disciple.3 SIDETEXT` are accepted (owner's decision: trust the model to
+ * notice a mangled merge in the echo; `write-architecture.md`).
  */
 
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -58,15 +58,13 @@ const KEEP = "Keep this. Cut sentence there. Keep end.";
 const SIGHED = "He sighed, and then he wept.";
 
 it.each([
-  ["a find insert, deleted after planning", TEXT, findInsert, deleteLine, "after", WHOLE],
-  ["a find replace, deleted after planning", TEXT, findReplace, deleteLine, "after", WHOLE],
-  ["a find insert", TEXT, findInsert, deleteLine, "before", WHOLE],
+  ["a find insert", TEXT, findInsert, deleteLine, WHOLE],
+  ["a find replace", TEXT, findReplace, deleteLine, WHOLE],
   [
     "a find insert whose match ends inside the deleted run",
     TEXT,
     { command: "insert", find: "A disciple. ", content: "DRAFT-B2." },
     deleteText("DRAFT-B line. "),
-    "before",
     "A disciple. DRAFT-B2.SIDETEXT",
   ],
   [
@@ -74,16 +72,14 @@ it.each([
     "师父说：走吧。DRAFT-B行。旁白",
     { command: "insert", find: "走吧。", content: "DRAFT-B2。" },
     deleteText("DRAFT-B行。"),
-    "before",
     "师父说：走吧。DRAFT-B2。旁白",
   ],
   [
-    "a rewrite that inserts",
+    "a rewrite that inserts, placed by the word diff where the writer cut the line",
     TEXT,
     rewrite(`A disciple. DRAFT-B2.${LINE} SIDETEXT`),
     deleteLine,
-    "before",
-    WHOLE,
+    "A disciple.B2. DRAFT- SIDETEXT",
   ],
   [
     "a find insert beside the writer's new words",
@@ -94,7 +90,6 @@ it.each([
       const block = model.getBlocks(room)[0];
       model.applyTextEdit(room, block, { from: 0, to: 0 }, "WRITER ");
     },
-    "before",
     `WRITER ${WHOLE}`,
   ],
   [
@@ -102,7 +97,6 @@ it.each([
     TEXT,
     { command: "replace", find: "DRAFT-B line.", content: "DRAFT-B3 line." },
     deleteLine,
-    "before",
     "A disciple.3 SIDETEXT",
   ],
   [
@@ -110,7 +104,6 @@ it.each([
     "the slowly moving train",
     { command: "insert", find: "slowly", content: ", steadily" },
     deleteText(" slowly"),
-    "before",
     "the, steadily moving train",
   ],
   [
@@ -122,7 +115,6 @@ it.each([
       content: "Keep this. Cut sentence there, polished. Keep end.",
     },
     deleteText("Cut sentence there. "),
-    "before",
     "Keep this. , polishedKeep end.",
   ],
   [
@@ -130,7 +122,6 @@ it.each([
     "他慢慢地走了出去，天黑了。",
     rewrite("他慢慢地跑了出去，天黑了。"),
     deleteText("慢慢地"),
-    "before",
     "他跑了出去，天黑了。",
   ],
   [
@@ -138,7 +129,6 @@ it.each([
     "Keep this. Cut it. Keep end.",
     rewrite("Keep **this. Cut it. Keep** end."),
     deleteText("Cut it. "),
-    "before",
     "Keep **this. Keep** end.",
   ],
   [
@@ -146,7 +136,6 @@ it.each([
     SIGHED,
     { command: "replace", find: "sighed", content: "groaned" },
     retype(", and then he wept", " loudly"),
-    "before",
     "He groaned loudly.",
   ],
   [
@@ -154,7 +143,6 @@ it.each([
     SIGHED,
     rewrite("He **sighed**, and then he wept."),
     retype(", and then he wept", " loudly"),
-    "before",
     "He **sighed** loudly.",
   ],
   [
@@ -162,7 +150,6 @@ it.each([
     `> ${SIGHED}`,
     { command: "replace", find: "sighed", content: "wept" },
     retype(", and then he wept", " loudly"),
-    "before",
     "> He wept loudly.",
   ],
   [
@@ -170,10 +157,9 @@ it.each([
     `- ${SIGHED}`,
     { command: "replace", find: "sighed", content: "wept" },
     retype(", and then he wept", " loudly"),
-    "before",
     "- He wept loudly.",
   ],
-] as const)("lands %s", (_, markdown, write, writer, deleted, expected) => {
+] as const)("lands %s", (_, markdown, write, writer, expected) => {
   for (const modelClient of [2, 4]) {
     const room = new Y.Doc({ gc: false });
     room.clientID = 1;
@@ -187,14 +173,13 @@ it.each([
     const seen = Y.encodeStateVector(view);
     room.clientID = 3;
 
-    if (deleted === "before") writer(room);
+    writer(room);
     const resolved = resolveWrite(
       {
         doc: view,
         model,
         codec,
         links: "preassigned",
-        ...(deleted === "before" ? { current: room } : {}),
       },
       {
         documentAddress: { documentId: "123e4567-e89b-12d3-a456-426614174000", filePath: "c.md" },
@@ -203,7 +188,6 @@ it.each([
     );
     if (!resolved.ok) throw new Error(resolved.error.message);
     applyEdits(view, model, resolved.edits, { type: "agent", actorTurnId: "turn-1" });
-    if (deleted === "after") writer(room);
     Y.applyUpdate(room, Y.encodeStateAsUpdate(view, seen));
 
     const blocks = model.projectBlocks(room).map((block) => block.node);

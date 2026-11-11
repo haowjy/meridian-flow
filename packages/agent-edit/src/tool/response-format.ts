@@ -28,8 +28,6 @@ export interface ApplySuccessResponseInput {
   documentEmpty?: boolean;
   /** A copy reports this instead of echoing what it wrote; its edges are `hash|prefix` lines. */
   copied?: { summary: CopySummary; edges: readonly string[] };
-  /** Changes that met text or nodes the room deleted since the model's read; they were made anyway. */
-  metChanges?: number;
 }
 
 /**
@@ -68,7 +66,6 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
       ...(blocks.length > 0 ? { blocks } : {}),
       ...(input.awarenessDegraded ? { awarenessDegraded: true } : {}),
       ...(input.documentEmpty ? { documentEmpty: true } : {}),
-      ...(input.metChanges ? { metChanges: input.metChanges } : {}),
     },
     ...(input.writeId ? { writeId: input.writeId } : {}),
     ...(input.settlementId ? { settlementId: input.settlementId } : {}),

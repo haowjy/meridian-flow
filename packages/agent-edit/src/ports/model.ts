@@ -143,16 +143,6 @@ export interface AgentEditModel extends DocumentModel {
   applyBlockReplacement(doc: DocHandle, block: BlockRef, replacement: Block): void;
 
   /**
-   * Runs of units of the textblock at `path` under `block` that `current` has deleted, in
-   * order; all of them when the textblock or a node above it is deleted. The block's
-   * document is the model's view of `current`'s room, so the two share item identities.
-   */
-  roomTextblock(block: BlockRef, path: readonly number[], current: DocHandle): Span[];
-
-  /** Whether `current` has deleted the node at `path` under `block`, or a node above it. */
-  roomNodeRemoved(block: BlockRef, path: readonly number[], current: DocHandle): boolean;
-
-  /**
    * Every top-level block with its display hash and ProseMirror node, built in one walk so
    * `ref`, `id`, `hash` and `node` always describe the same block.
    *

@@ -65,11 +65,6 @@ export interface ResolveWriteContext {
   links: WriteLinks;
   /** Exact revision whose live block handles and source ranges the resolver inspects. */
   inputRevision?: string;
-  /**
-   * The current room when `doc` is the model's view of it. A block rewritten in
-   * place is then decided against what the room deleted since the view (`lower-block.ts`).
-   */
-  current?: DocHandle;
 }
 
 /** Ref assignment for a write, or `"preassigned"` for nodes whose refs are already assigned. */
@@ -80,8 +75,6 @@ export type ResolveWriteResult =
       ok: true;
       edits: ResolvedEdit[];
       ir: SemanticEditIRV1;
-      /** Changes that met text or nodes the room deleted since the model's read; they were made anyway. */
-      metChanges?: number;
     }
   | {
       ok: false;
@@ -163,7 +156,6 @@ export function planWrite(
         ok: true,
         edits: resolved.edits,
         ir: semanticIrForResolvedEdits(concreteCtx, normalized, resolved),
-        ...(resolved.metChanges > 0 ? { metChanges: resolved.metChanges } : {}),
       };
     },
   };
@@ -215,7 +207,6 @@ function assignPlannedWrite(
   links: WriteLinks,
 ): ResolveWriteResultWithoutIr {
   const edits: ResolvedEdit[] = [];
-  let metChanges = 0;
   let keptBlocks = false;
   for (const step of steps) {
     switch (step.kind) {
@@ -237,19 +228,16 @@ function assignPlannedWrite(
           step.kind === "spliced" ? step.windows : null,
         );
         edits.push(...lowered.edits);
-        metChanges += lowered.metChanges;
         keptBlocks ||= lowered.keptBlocks === true;
         break;
       }
     }
   }
-  return { ok: true, edits, metChanges, ...(keptBlocks ? { keptBlocks: true } : {}) };
+  return { ok: true, edits, ...(keptBlocks ? { keptBlocks: true } : {}) };
 }
 
 interface LoweredScope {
   edits: ResolvedEdit[];
-  /** Changes that met text or nodes the room deleted since the model's read; they were made anyway. */
-  metChanges: number;
   /** Some of the scope's blocks were already equal to their replacement and kept. */
   keptBlocks?: true;
 }
@@ -623,7 +611,6 @@ function replaceScope(
   windows: CutWindows | null = null,
 ): LoweredScope {
   const edits: ResolvedEdit[] = [];
-  let metChanges = 0;
   const oldBlocks = scope.blocks;
   const oldNodes = scopeNodes(ctx, scope);
   let anchor: BlockRef | undefined =
@@ -678,8 +665,7 @@ function replaceScope(
         const before = oldNodes[step.old];
         const after = newBlocks[step.next];
         const lowered = lowerBlock(
-          ctx,
-          oldBlocks[step.old],
+          ctx.codec,
           before,
           after,
           windows && [windows.old[step.old], windows.new[step.next]],
@@ -687,8 +673,7 @@ function replaceScope(
         anchor = oldBlocks[step.old];
         insertionRun = {};
         if (lowered) {
-          metChanges += lowered.metChanges;
-          if (lowered.ops.length === 0) keptBlocks = true;
+          if (lowered.length === 0) keptBlocks = true;
           else
             edits.push({
               documentId: params.documentAddress.documentId,
@@ -696,7 +681,7 @@ function replaceScope(
               block: oldBlocks[step.old],
               structuralBoundary: step.structuralBoundary,
               kind: "ops",
-              ops: lowered.ops,
+              ops: lowered,
             });
           break;
         }
@@ -720,7 +705,7 @@ function replaceScope(
   }
   flushStructural();
 
-  return { edits, metChanges, ...(keptBlocks ? { keptBlocks: true } : {}) };
+  return { edits, ...(keptBlocks ? { keptBlocks: true } : {}) };
 }
 
 /** A block keeps its element only as the same node type. */

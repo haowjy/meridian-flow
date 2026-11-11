@@ -1,17 +1,9 @@
-import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
-import { Fragment, type Mark } from "prosemirror-model";
+import type { Mark } from "prosemirror-model";
 import type { AgentEditCodec } from "../codec-adapter.js";
-import type { Block, Span } from "../codec-types.js";
-import type { BlockRef, DocHandle } from "../handles.js";
-import type { AgentEditModel, EditOp, FormatRange, TextSplice } from "../ports/model.js";
+import type { Block } from "../codec-types.js";
+import type { EditOp, FormatRange, TextSplice } from "../ports/model.js";
 import { wordHunks } from "../word-hunks.js";
 import type { TextWindow } from "./find.js";
-
-export interface LoweredBlock {
-  ops: EditOp[];
-  /** Operations that met text or a node the room deleted since the model's read; made anyway. */
-  metChanges: number;
-}
 
 /** A model change: base units [from, to) become the model's units [at, end). */
 interface Hunk {
@@ -23,25 +15,11 @@ interface Hunk {
   end: number;
 }
 
-const UNSPACED = "\\p{sc=Han}\\p{sc=Hiragana}\\p{sc=Katakana}";
-/**
- * The rule's one text test: a character of Chinese or Japanese script with its marks; a run
- * of any other letters, digits and marks (a word, or a spaceless Thai phrase); a run of
- * whitespace; any other single character.
- */
-const TOKEN = new RegExp(
-  `[${UNSPACED}]\\p{M}*|(?:(?![${UNSPACED}])[\\p{L}\\p{N}\\p{M}_])+|\\s+|[^]`,
-  "gu",
-);
-
 /** The pair has a shape the lowering cannot keep: a node was added, removed or retyped. */
 class Unsupported extends Error {}
 
 interface Walk {
   codec: AgentEditCodec;
-  model: AgentEditModel;
-  current: DocHandle | undefined;
-  block: BlockRef;
   /** The top-level block as the model saw it. */
   top: Block;
   /** What the codec shows of `top`: the attributes the model could have seen. */
@@ -49,36 +27,29 @@ interface Walk {
   /** A find's windows as units, by the path of the textblock that holds them. */
   windows: Map<string, [TextWindow[], TextWindow[]]> | null;
   ops: EditOp[];
-  metChanges: number;
 }
 
 /**
  * Lower a block rewrite planned on the model's view into the smallest operations on the
- * units and attributes the model saw. Every operation is made and Yjs merges it; the room's
- * deletions only shape the operations (a delete names what is left, a replace is trimmed to
- * the letters the old word lacks, so no deleted letter is put back) and count the ones that
- * met a deletion, for the write's report. Every textblock at any depth is lowered by the
- * same code. `placed` is a find's windows in the two blocks' text. Null for a shape this
+ * units and attributes the model saw, as the editor does for a keystroke: a replaced stretch
+ * keeps the letters its old and new text share at the edges and changes only the middle.
+ * Every textblock at any depth is lowered by the same code, and the room is never read.
+ * `placed` is a find's windows in the two blocks' text. Null for a shape this
  * lowering does not keep (a node added, removed or retyped, an inline atom put inside a run
  * of text), which the caller rewrites as a whole block.
  */
 export function lowerBlock(
-  ctx: { model: AgentEditModel; codec: AgentEditCodec; current?: DocHandle },
-  block: BlockRef,
+  codec: AgentEditCodec,
   before: Block,
   after: Block,
   placed: [TextWindow[] | undefined, TextWindow[] | undefined] | null,
-): LoweredBlock | null {
+): EditOp[] | null {
   if (!sameShape(before, after)) return null;
   const walk: Walk = {
-    codec: ctx.codec,
-    model: ctx.model,
-    current: ctx.current,
-    block,
+    codec,
     top: before,
     windows: placed?.[0] && placed[1] ? unitWindows(before, after, placed[0], placed[1]) : null,
     ops: [],
-    metChanges: 0,
   };
   try {
     lowerNode(walk, before, after, []);
@@ -86,7 +57,7 @@ export function lowerBlock(
     if (cause instanceof Unsupported) return null;
     throw cause;
   }
-  return { ops: walk.ops, metChanges: walk.metChanges };
+  return walk.ops;
 }
 
 function sameShape(before: Block, after: Block): boolean {
@@ -100,22 +71,12 @@ function sameShape(before: Block, after: Block): boolean {
 
 function lowerNode(walk: Walk, before: Block, after: Block, path: readonly number[]): void {
   if (before.eq(after)) return;
-  const ops: EditOp[] = [];
-  let metChanges = 0;
   const attrs = changedAttrs(before, after, () => shownNode(walk, path));
-  if (Object.keys(attrs).length > 0) ops.push({ kind: "attrs", path, attrs });
+  if (Object.keys(attrs).length > 0) walk.ops.push({ kind: "attrs", path, attrs });
   if (before.isTextblock) {
-    const text = lowerTextblock(walk, before, after, path);
-    ops.push(...text.ops);
-    metChanges += text.metChanges;
+    lowerTextblock(walk, before, after, path);
+    return;
   }
-  walk.ops.push(...ops);
-  // Changes to a node the room removed count once, whatever their number.
-  walk.metChanges +=
-    ops.length > 0 && walk.current && walk.model.roomNodeRemoved(walk.block, path, walk.current)
-      ? 1
-      : metChanges;
-  if (before.isTextblock) return;
   for (let index = 0; index < before.childCount; index += 1)
     lowerNode(walk, before.child(index), after.child(index), [...path, index]);
 }
@@ -158,29 +119,18 @@ function shownAtom(walk: Walk, path: readonly number[], ordinal: number): Block 
   return atom;
 }
 
-function lowerTextblock(
-  walk: Walk,
-  before: Block,
-  after: Block,
-  path: readonly number[],
-): { ops: EditOp[]; metChanges: number } {
-  const removed = walk.current ? walk.model.roomTextblock(walk.block, path, walk.current) : [];
-  const text = lowerText(before, after, removed, walk.windows?.get(path.join("/")));
-  const ops: EditOp[] = [];
-  let metChanges = text.metChanges;
+function lowerTextblock(walk: Walk, before: Block, after: Block, path: readonly number[]): void {
+  const text = lowerText(before, after, walk.windows?.get(path.join("/")));
   if (text.splices.length + text.formats.length > 0)
-    ops.push({ kind: "text", path, splices: text.splices, formats: text.formats });
+    walk.ops.push({ kind: "text", path, splices: text.splices, formats: text.formats });
   // An atom the model kept is one the room may have changed: only the model's attributes go.
   for (const { unit, modelUnit, ordinal } of text.kept) {
     const was = before.nodeAt(unit);
     const now = after.nodeAt(modelUnit);
     if (!was || !now) continue;
     const attrs = changedAttrs(was, now, () => shownAtom(walk, path, ordinal));
-    if (Object.keys(attrs).length === 0) continue;
-    ops.push({ kind: "attrs", path, attrs, unit });
-    if (removed.some((span) => unit >= span.from && unit < span.to)) metChanges += 1;
+    if (Object.keys(attrs).length > 0) walk.ops.push({ kind: "attrs", path, attrs, unit });
   }
-  return { ops, metChanges };
 }
 
 interface LoweredText {
@@ -188,7 +138,6 @@ interface LoweredText {
   formats: FormatRange[];
   /** Inline atoms the model kept, by unit in the view and in the model's text. */
   kept: Array<{ unit: number; modelUnit: number; ordinal: number }>;
-  metChanges: number;
 }
 
 /**
@@ -225,62 +174,12 @@ function unitStrings(before: Block, after: Block) {
 function lowerText(
   before: Block,
   after: Block,
-  removed: readonly Span[],
   placed: [TextWindow[], TextWindow[]] | undefined,
 ): LoweredText {
   const { a, b, isAtom } = unitStrings(before, after);
   const size = a.length;
-  const dead = new Uint8Array(size);
-  for (const span of removed) dead.fill(1, span.from, span.to);
-  const deadBefore = new Uint32Array(size + 1);
-  for (let at = 0; at < size; at += 1) deadBefore[at + 1] = deadBefore[at] + dead[at];
-  const deadIn = (from: number, to: number) => deadBefore[to] - deadBefore[from];
-  // The textblock's own edges survive: a removed node was dealt with by the caller.
-  const alive = (unit: number) => unit < 0 || unit >= size || dead[unit] === 0;
 
-  /** The model's changes inside base [bLo, bHi) and model [tLo, tHi), by token diff. */
-  const diffed = (bLo: number, bHi: number, tLo: number, tHi: number): Hunk[] => {
-    const ta = a.slice(bLo, bHi).match(TOKEN) ?? [];
-    const tb = b.slice(tLo, tHi).match(TOKEN) ?? [];
-    const aAt = offsets(ta);
-    const bAt = offsets(tb);
-    const raw = tokenHunks(ta, tb);
-    return raw.map(([aFrom, aTo, bFrom, bTo], index) => {
-      let moved = 0;
-      if (aFrom === aTo) {
-        // An insert has no old text, so the diff's place for it is one of several that give
-        // the same model text (`A B|X B|C` or `A|B X|B C`). Take the one with the most
-        // surviving neighbours, nearest first.
-        const lo = raw[index - 1]?.[1] ?? 0;
-        const hi = raw[index + 1]?.[0] ?? ta.length;
-        const score = (p: number) => Number(alive(bLo + aAt[p] - 1)) + Number(alive(bLo + aAt[p]));
-        let best = score(aFrom);
-        for (let s = 1; s <= bTo - bFrom && best < 2; s += 1) {
-          for (const shift of [-s, s]) {
-            const p = aFrom + shift;
-            if (p < lo || p > hi) continue;
-            const same =
-              shift < 0
-                ? ta.slice(p, aFrom).every((t, i) => t === tb[bTo + shift + i])
-                : ta.slice(aFrom, p).every((t, i) => t === tb[bFrom + i]);
-            if (same && score(p) > best) {
-              moved = aAt[p] - aAt[aFrom];
-              best = score(p);
-            }
-          }
-        }
-      }
-      return {
-        from: bLo + aAt[aFrom] + moved,
-        to: bLo + aAt[aTo] + moved,
-        at: tLo + bAt[bFrom] + moved,
-        end: tLo + bAt[bTo] + moved,
-      };
-    });
-  };
-
-  // A find's window is one change, placed by the model; only a window that holds deleted
-  // units is split into the changes inside it.
+  // A find's window is one change, placed by the model; otherwise the word diff places them.
   let hunks: Hunk[] = [];
   const olds = placed?.[0];
   const news = placed?.[1];
@@ -293,19 +192,15 @@ function lowerText(
         before.content.cut(old.from, old.to).eq(after.content.cut(next.from, next.to))
       )
         continue;
-      if (deadIn(old.from, old.to) > 0) hunks.push(...diffed(old.from, old.to, next.from, next.to));
-      else
-        hunks.push({
-          from: old.from,
-          to: old.to,
-          at: next.from,
-          end: next.to,
-          ...(old.from === old.to ? { anchored: true as const } : {}),
-        });
+      hunks.push({
+        from: old.from,
+        to: old.to,
+        at: next.from,
+        end: next.to,
+        ...(old.from === old.to ? { anchored: true as const } : {}),
+      });
     }
-  } else if (removed.length > 0) hunks = diffed(0, size, 0, b.length);
-  else {
-    // No deletion to decide against: the coarser word diff.
+  } else {
     let shift = 0;
     for (const hunk of wordHunks(a, b)) {
       hunks.push({
@@ -317,26 +212,17 @@ function lowerText(
       shift += hunk.text.length - (hunk.to - hunk.from);
     }
   }
-  hunks = hunks.filter((hunk) => hunk.from < hunk.to || hunk.at < hunk.end);
 
-  // Which changes meet a deletion, decided on the model's own hunks, before any trim.
-  const meets = new Set<Hunk>();
+  // A replace keeps the characters its old and new text share at the edges and changes only
+  // what lies between: the rule y-prosemirror applies to a keystroke (lib0's simpleDiff,
+  // which also never splits a surrogate pair). The kept edges are not written, so a
+  // letter the writer deleted from them is not put back. An atom is no character.
+  const letter = (text: string, unit: number) => !isAtom(text, unit);
+  const high = (unit: number) => /[\ud800-\udbff]/.test(a[unit]);
+  const low = (unit: number) => /[\udc00-\udfff]/.test(a[unit]);
   for (const hunk of hunks) {
-    if (hunk.anchored) {
-      if (!alive(hunk.from - 1)) meets.add(hunk);
-    } else if (hunk.from === hunk.to) {
-      if (!(alive(hunk.from - 1) || alive(hunk.to))) meets.add(hunk);
-    }
-    // A delete of deleted text meets nothing: it deletes what is left.
-    else if (hunk.at !== hunk.end && deadIn(hunk.from, hunk.to) > 0) meets.add(hunk);
-  }
-
-  // A replace over deleted units keeps the letters its old and new text share at the edges
-  // and changes only what lies between, as the editor's binding does: otherwise a replace of
-  // a half-deleted word would bring the deleted half back.
-  for (const hunk of hunks) {
-    if (hunk.from === hunk.to || hunk.at === hunk.end || deadIn(hunk.from, hunk.to) === 0) continue;
-    const letter = (text: string, unit: number) => !isAtom(text, unit);
+    if (hunk.from === hunk.to || hunk.at === hunk.end) continue;
+    const start = hunk.from;
     while (
       hunk.from < hunk.to &&
       hunk.at < hunk.end &&
@@ -346,6 +232,11 @@ function lowerText(
       hunk.from += 1;
       hunk.at += 1;
     }
+    if (hunk.from > start && high(hunk.from - 1)) {
+      hunk.from -= 1;
+      hunk.at -= 1;
+    }
+    const stop = hunk.to;
     while (
       hunk.from < hunk.to &&
       hunk.at < hunk.end &&
@@ -354,6 +245,10 @@ function lowerText(
     ) {
       hunk.to -= 1;
       hunk.end -= 1;
+    }
+    if (hunk.to < stop && low(hunk.to)) {
+      hunk.to += 1;
+      hunk.end += 1;
     }
   }
   hunks = hunks.filter((hunk) => hunk.from < hunk.to || hunk.at < hunk.end);
@@ -400,35 +295,13 @@ function lowerText(
     if (!slid) throw new Unsupported();
   }
 
-  let metChanges = 0;
-  let metRunEnd = -1;
-  const splices: TextSplice[] = [];
-  for (const hunk of hunks) {
-    if (meets.has(hunk)) {
-      // Changes with nothing but deleted text between them count once.
-      const sameRun = metRunEnd >= 0 && deadIn(metRunEnd, hunk.from) === hunk.from - metRunEnd;
-      if (!sameRun) metChanges += 1;
-      metRunEnd = hunk.to;
-    } else metRunEnd = -1;
-    if (hunk.at !== hunk.end || deadIn(hunk.from, hunk.to) === 0) {
-      splices.push({ from: hunk.from, to: hunk.to, content: after.content.cut(hunk.at, hunk.end) });
-      continue;
-    }
-    // A delete over deleted units deletes only the units left.
-    for (let at = hunk.from; at < hunk.to; at += 1) {
-      if (dead[at]) continue;
-      const last = splices.at(-1);
-      if (last && last.to === at && last.from >= hunk.from) last.to += 1;
-      else splices.push({ from: at, to: at + 1, content: Fragment.empty });
-    }
-  }
-
+  const splices: TextSplice[] = hunks.map((hunk) => ({
+    from: hunk.from,
+    to: hunk.to,
+    content: after.content.cut(hunk.at, hunk.end),
+  }));
   const { formats, kept } = keptUnits(before, after, hunks);
-  // A range with no surviving unit has nothing to show its mark on; it is still written.
-  metChanges += formats.filter(
-    (format) => deadIn(format.from, format.to) === format.to - format.from,
-  ).length;
-  return { splices, formats, kept, metChanges };
+  return { splices, formats, kept };
 }
 
 /**
@@ -597,57 +470,4 @@ function windowsDescribe(
     newCursor = next.to;
   }
   return a.slice(oldCursor) === b.slice(newCursor);
-}
-
-/** Token-index hunks of a -> b: [aFrom, aTo, bFrom, bTo]. */
-function tokenHunks(
-  a: readonly string[],
-  b: readonly string[],
-): [number, number, number, number][] {
-  const codes = new Map<string, string>();
-  const encode = (list: readonly string[]) =>
-    list
-      .map((key) => {
-        let code = codes.get(key);
-        if (code === undefined) {
-          // One UTF-16 unit per distinct token, skipping the surrogate range.
-          const index = codes.size + 1;
-          const value = index < 0xd800 ? index : index + 0x800;
-          if (value > 0xffff) throw new RangeError("Too many distinct tokens");
-          code = String.fromCharCode(value);
-          codes.set(key, code);
-        }
-        return code;
-      })
-      .join("");
-  const hunks: [number, number, number, number][] = [];
-  let ai = 0;
-  let bi = 0;
-  let current: [number, number, number, number] | undefined;
-  for (const [op, chunk] of makeDiff(encode(a), encode(b))) {
-    if (op === DIFF_EQUAL) {
-      if (current) hunks.push(current);
-      current = undefined;
-      ai += chunk.length;
-      bi += chunk.length;
-      continue;
-    }
-    current ??= [ai, ai, bi, bi];
-    if (op === DIFF_DELETE) {
-      ai += chunk.length;
-      current[1] = ai;
-    }
-    if (op === DIFF_INSERT) {
-      bi += chunk.length;
-      current[3] = bi;
-    }
-  }
-  if (current) hunks.push(current);
-  return hunks;
-}
-
-function offsets(list: readonly string[]): number[] {
-  const at = [0];
-  for (const token of list) at.push((at.at(-1) as number) + token.length);
-  return at;
 }
