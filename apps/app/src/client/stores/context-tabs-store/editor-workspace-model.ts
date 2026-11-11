@@ -1,5 +1,4 @@
 /** Editor view identity and membership, independent of React and persistence. */
-import { draftOwnerKey } from "@meridian/contracts/branches";
 import type {
   ContextOwner,
   DocumentFileType,
@@ -64,12 +63,6 @@ export function tabContextOwner(owner: TabOwner): ContextOwner {
     : { workId: owner.workId ?? null };
 }
 
-/** One owner's draft-only presentation of a document: the draft item it shows and its tab-generation fence. */
-export type ReviewEntry = { itemKey: string; tabInstanceToken: string };
-
-/** Owner key (`work:<id>` or `lineage:<root>`) to that owner's entry; one entry per owner whose branch creates the document. */
-export type ReviewEntries = Record<string, ReviewEntry>;
-
 export type ContextTab =
   | ({
       tabInstanceId?: string;
@@ -78,11 +71,6 @@ export type ContextTab =
       scheme: ProjectContextTreeScheme;
       path: string;
       name: string;
-      /**
-       * Per-Work draft-only entries of a hidden draft-created document; the Editor workspace never persists them, the dock keeps its one.
-       * A tab with entries IS draft-only (`isDraftOnly`); dropping the last entry closes it.
-       */
-      reviews?: ReviewEntries;
       editable: true;
       filetype: Filetype;
       schemaType: YjsTrackedSchemaType;
@@ -159,17 +147,6 @@ export function isEditorScheme(scheme: ProjectContextTreeScheme): boolean {
   return scheme !== "uploads";
 }
 
-/** An open tab, or a recent route to one: what the review-entry readers accept. */
-export type EditorTabCandidate =
-  | Pick<Extract<ContextTab, { kind: "new" }>, "kind">
-  | {
-      kind?: "tracked" | "viewer";
-      scheme: ProjectContextTreeScheme;
-      workId?: string | null;
-      rootThreadId?: string | null;
-      reviews?: ReviewEntries;
-    };
-
 /**
  * Workspace admission: the persisted workspace keeps every Work's scratch tabs, whatever the
  * Work scope: a Scratch document's owner is its identity, not the scope's.
@@ -178,85 +155,11 @@ export function isEditorContextTab(tab: ContextTab): boolean {
   return tab.kind === "new" || isEditorScheme(tab.scheme);
 }
 
-/** Only tracked tabs and strip candidates carry entries; every other tab has none. */
-export function reviewEntriesOf(tab: ContextTab | EditorTabCandidate): ReviewEntries {
-  return (tab as { reviews?: ReviewEntries }).reviews ?? {};
-}
-
-/**
- * Whether the Editor of `workId` may settle a plain path on this draft-only tab: its own Work's
- * entry, or a chat lineage's (a lineage belongs to no Work). Another Work's draft is reached only
- * by an address that names its owner and item.
- */
-export function editorHasReview(tab: EditorTabCandidate, workId: string | null): boolean {
-  if (workId && reviewEntryOf(tab, draftOwnerKey({ kind: "work", workId }))) return true;
-  return Object.keys(reviewEntriesOf(tab)).some((key) => key.startsWith("lineage:"));
-}
-
-/** The owner a draft-only tab is reviewed under: the Work's entry, else a lineage's, else any. */
-export function reviewOwnerOfTab(
-  tab: ContextTab | EditorTabCandidate,
-  workId: string | null | undefined,
-): string | undefined {
-  const workKey = workId ? draftOwnerKey({ kind: "work", workId }) : undefined;
-  if (workKey && reviewEntryOf(tab, workKey)) return workKey;
-  const keys = Object.keys(reviewEntriesOf(tab));
-  return keys.find((key) => key.startsWith("lineage:")) ?? keys[0];
-}
-
-/** A hidden draft-created document: the tab carries at least one owner's entry. */
-export function isDraftOnly(tab: ContextTab | EditorTabCandidate): boolean {
-  return Object.keys(reviewEntriesOf(tab)).length > 0;
-}
-
-/** The entry `ownerKey` has on this tab, if its branch creates the document. */
-export function reviewEntryOf(
-  tab: ContextTab | EditorTabCandidate,
-  ownerKey: string,
-): ReviewEntry | undefined {
-  return reviewEntriesOf(tab)[ownerKey];
-}
-
-/** The owner keys whose branches create this document (its draft-only entries). */
-export function reviewOwners(tab: ContextTab | EditorTabCandidate): string[] {
-  return Object.keys(reviewEntriesOf(tab));
-}
-
-/**
- * The tab after `ownerKey` loses its entry: the one place that decides what a
- * Discard or a writer's close leaves behind. null means no owner presents it any more.
- */
-export function withoutReviewEntry(tab: ContextTab, ownerKey: string): ContextTab | null {
-  const { [ownerKey]: _dropped, ...reviews } = reviewEntriesOf(tab);
-  return tab.kind === "tracked" && Object.keys(reviews).length > 0 ? { ...tab, reviews } : null;
-}
-
-/** A review item's semantic address (the item key names its document), separate from its mounted instance fence. */
-export type ReviewItemTabIdentity = {
-  reviewOwner: string;
-  reviewItemKey: string;
-};
-
-export function matchesReviewItem(tab: ContextTab, identity: ReviewItemTabIdentity): boolean {
-  return (
-    tab.kind !== "new" &&
-    reviewEntryOf(tab, identity.reviewOwner)?.itemKey === identity.reviewItemKey
-  );
-}
-
 /** Capture the mounted tab before asynchronous navigation or metadata work. */
 export function matchesTabInstance(tab: ContextTab, addressed: ContextTab): boolean {
   return (
     Boolean(addressed.tabInstanceId) &&
     tab.tabInstanceId === addressed.tabInstanceId &&
-    tab.documentId === addressed.documentId &&
-    (addressed.kind === "new" ||
-      !isDraftOnly(addressed) ||
-      (tab.kind !== "new" &&
-        Object.entries(reviewEntriesOf(addressed)).some(
-          ([ownerKey, entry]) =>
-            reviewEntryOf(tab, ownerKey)?.itemKey === entry.itemKey &&
-            reviewEntryOf(tab, ownerKey)?.tabInstanceToken === entry.tabInstanceToken,
-        )))
+    tab.documentId === addressed.documentId
   );
 }

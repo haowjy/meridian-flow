@@ -26,7 +26,7 @@ import {
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useWorks } from "@/client/query/useWorks";
-import { type ContextTab, isDraftOnly } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
@@ -164,7 +164,6 @@ export function useDocumentReview(
             path: tab.kind === "new" ? null : tab.path,
             review: paint.draft,
             draftView: paint.view.version === "draft",
-            draftOnly: isDraftOnly(tab),
           }
         : null,
     [tab, paint.draft, paint.view.version],

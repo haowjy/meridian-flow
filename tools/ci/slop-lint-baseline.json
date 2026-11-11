@@ -299,11 +299,6 @@
       },
       {
         "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
-        "line": "void fetchCurrentDraftMetadata(queryClient, draft)",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
         "line": "void resources",
         "count": 1
       },
@@ -667,16 +662,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/client/stores/context-tabs-store/context-tabs-store.ts",
-        "line": "* Coordinator-only: live deleted a document whose drafts survive (D79), so its tab stays,",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/client/stores/context-tabs-store/editor-workspace-state.ts",
-        "line": "/** Live deleted the document; the Works whose drafts still have it keep the tab as draft-only (D79). */",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/core/editor/links/wikilink-paste.ts",
         "line": "* Pasted `[[Name]]` becomes a standard link (D15). Writers bring notes over",
         "count": 1
@@ -712,11 +697,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
-        "line": "// not undo the hold that just made the tab draft-only (D79).",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/features/draft-review/tree-line.ts",
         "line": "* is renaming this to ch12-old.\"). Live doesn't show either until Apply (D26). Works are named,",
         "count": 1
@@ -734,11 +714,6 @@
       {
         "path": "apps/app/src/features/editor/ManuscriptStateNotice.tsx",
         "line": "* of those, it says what a Work's pending move or delete will do to the document (D26), which",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/project/context/context-removal-coordinator.ts",
-        "line": "* presented draft-only in that Work (D79); every other tab closes as before. Returns the",
         "count": 1
       },
       {

@@ -3,6 +3,7 @@
 import "fake-indexeddb/auto";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setDocumentView } from "@/client/project-shell/document-views";
 import { useContextTabsStore } from "@/client/stores";
 import { createEditorDocumentCommand } from "./editor-document-command";
 import { parseProjectAddress } from "./project-address";
@@ -19,6 +20,7 @@ function setup(
   lookup: () => Promise<{ kind: "failed" }>,
   path = `/p/${projectId}/chats`,
   addressDocumentId?: string,
+  draftOnly: readonly string[] = [],
 ) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const navigation = createProjectNavigation(
@@ -54,6 +56,7 @@ function setup(
       addressDocumentId,
     }),
     lookup,
+    isDraftOnly: (documentId) => draftOnly.includes(documentId),
     admitDraftReview: () => undefined,
     enterRoute: () => undefined,
   });
@@ -84,23 +87,29 @@ describe("review launch navigation", () => {
       editable: true,
       filetype: "markdown" as const,
       schemaType: "document" as const,
-      reviews: {
-        [`work:${workId}`]: { itemKey: "branch-hidden:doc-hidden", tabInstanceToken: "token" },
-      },
     } as never;
     useContextTabsStore.getState().openTab(projectId, hidden);
     const { open, history } = setup(
       vi.fn(async () => ({ kind: "failed" as const })),
       `/p/${projectId}/editor/manuscript/Scene.md?owner=work:${workId}&item=branch-hidden:doc-hidden`,
       "doc-hidden",
+      ["doc-hidden"],
     );
-    const live = { ...(hidden as object), documentId: "doc-live", reviews: undefined } as never;
+    const live = { ...(hidden as object), documentId: "doc-live" } as never;
     await open({ scheme: "manuscript", path: "/Scene.md", documentId: "doc-live" }, { tab: live });
     expect(history.location.href).not.toContain("item=");
   });
 
   it("re-selecting a draft-only tab keeps its review identity (item=), since no live document exists", async () => {
-    const { open, history } = setup(vi.fn(async () => ({ kind: "failed" as const })));
+    const { open, history } = setup(
+      vi.fn(async () => ({ kind: "failed" as const })),
+      undefined,
+      undefined,
+      ["doc-1"],
+    );
+    setDocumentView("writer", projectId, "doc-1", {
+      pin: { ownerKey: `work:${workId}`, itemKey: "branch-1:doc-1" },
+    });
     const tab = {
       kind: "tracked" as const,
       documentId: "doc-1",
@@ -110,7 +119,6 @@ describe("review launch navigation", () => {
       editable: true,
       filetype: "markdown" as const,
       schemaType: "document" as const,
-      reviews: { [`work:${workId}`]: { itemKey: "branch-1:doc-1", tabInstanceToken: "token" } },
       tabInstanceId: "tab-1",
     } as never;
     const result = await open(

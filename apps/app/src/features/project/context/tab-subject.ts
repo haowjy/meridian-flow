@@ -1,6 +1,6 @@
 /** What dragging a tab, or the leaf crumb of its path, names. */
 import type { CopyContextEntryView } from "@meridian/contracts/protocol";
-import { type ContextTab, isDraftOnly } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import type { ReferenceSubject } from "./entry-drag/reference-source";
 
 /**
@@ -11,8 +11,9 @@ import type { ReferenceSubject } from "./entry-drag/reference-source";
 export function tabSubject(
   tab: ContextTab,
   review: { reviewing: boolean; view: CopyContextEntryView | null },
+  draftOnly: boolean,
 ): ReferenceSubject | null {
-  if (tab.kind === "new" || isDraftOnly(tab)) return null;
+  if (tab.kind === "new" || draftOnly) return null;
   if (review.reviewing && !review.view) return null;
   return {
     ref: { kind: "file", id: tab.documentId },

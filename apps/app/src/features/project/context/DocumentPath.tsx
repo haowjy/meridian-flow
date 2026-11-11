@@ -14,7 +14,7 @@ import { t } from "@lingui/core/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useCallback, useMemo } from "react";
 import { useProject } from "@/client/query/useProjectList";
-import { type ContextTab, isDraftOnly, tabContextOwner } from "@/client/stores";
+import { type ContextTab, tabContextOwner } from "@/client/stores";
 import { DrillInMenuBody, DrillInMenuRoot, type DrillNode } from "@/components/app/DrillInMenu";
 import { DropdownMenuContent } from "@/components/ui/dropdown-menu";
 import { role } from "@/components/ui/roles";
@@ -28,6 +28,7 @@ import { folderChain } from "./entry-drag/move-plan";
 import { type ReferenceSubject, useReferenceDrag } from "./entry-drag/reference-source";
 import type { TabLocation } from "./identity-location";
 import { tabSubject } from "./tab-subject";
+import { useIsDraftOnly } from "./use-is-draft-only";
 import { useOwnAreaHeading, useProjectMenuSource } from "./use-project-menu-source";
 
 export function DocumentPath({
@@ -118,10 +119,11 @@ function useCrumbSubjects(browse: Browse, location: TabLocation) {
   const projection = useAccountResourceProjection(browse.projectId);
   const { tab } = browse;
   const review = useReviewCopy(tab.documentId);
-  if (tab.kind === "new" || isDraftOnly(tab)) return NO_SUBJECTS;
+  const draftOnly = useIsDraftOnly(browse.projectId)(tab.documentId);
+  if (tab.kind === "new" || draftOnly) return NO_SUBJECTS;
   const ref = { kind: "file", id: tab.documentId } as const;
   const chain = folderChain(projection, ref);
-  const tabNames = tabSubject(tab, review);
+  const tabNames = tabSubject(tab, review, false);
   return {
     // The filename names the document the tab shows: the draft while the tab is under review.
     leaf: tabNames && { ...tabNames, name: location.leaf },
@@ -160,10 +162,10 @@ function Crumb({
   children: ReactNode;
 }) {
   const drag = useReferenceDrag(subject);
+  const draftOnly = useIsDraftOnly(browse.projectId)(browse.tab.documentId);
   const classes = cn("flex items-center gap-1 rounded-sm px-0.5", className);
   // Neither local-new nor draft-only documents belong to a browsable catalog yet.
-  if (browse.tab.kind === "new" || isDraftOnly(browse.tab))
-    return <span className={classes}>{children}</span>;
+  if (browse.tab.kind === "new" || draftOnly) return <span className={classes}>{children}</span>;
   const button = (
     <button
       type="button"

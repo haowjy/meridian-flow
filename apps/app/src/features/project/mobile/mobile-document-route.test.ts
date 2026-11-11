@@ -30,7 +30,6 @@ describe("phone draft-only review route", () => {
     editable: true,
     filetype: "markdown",
     schemaType: "document",
-    reviews: { "work:work-a": { itemKey: "draft-a", tabInstanceToken: "token" } },
   } as const;
   const emptyCatalog = { findPath: () => null, findDocument: () => null } as never;
   const route = (
@@ -41,18 +40,16 @@ describe("phone draft-only review route", () => {
       scheme: "manuscript",
       path: "/new-chapter.md",
       workId: null,
-      scope: "work-a",
-      workspaceTabs: [draftTab],
+      addressed: { tab: draftTab, draftOnly: true },
       catalog: emptyCatalog,
       isError: false,
       isFetching: false,
       ...overrides,
     });
 
-  it("is never a live tab, and a plain path settles only on its own Work's draft", () => {
-    expect(route().tab).toMatchObject({ documentId: "document-draft" });
-    expect(route({ scope: "work-b" }).tab).toBeNull();
-    expect(route({ workspaceTabs: [{ ...draftTab, reviews: undefined }] }).tab).toBeNull();
+  it("is reached only by the address that names its draft, never by a plain path", () => {
+    expect(route()).toMatchObject({ tab: { documentId: "document-draft" }, draftOnly: true });
+    expect(route({ addressed: null }).tab).toBeNull();
   });
 
   it("keeps a bound draft-only document when another document now holds its old path", () => {
@@ -66,13 +63,13 @@ describe("phone draft-only review route", () => {
     const resolved = route({
       path: "/old.md",
       boundDocumentId: "document-draft",
-      workspaceTabs: [moved],
+      addressed: { tab: moved, draftOnly: true },
       catalog,
     });
     expect(resolved.tab).toMatchObject({ documentId: "document-draft" });
     // A bound document no source resolves is pending, never the occupant.
     expect(
-      route({ path: "/old.md", boundDocumentId: "document-draft", workspaceTabs: [], catalog }).tab,
+      route({ path: "/old.md", boundDocumentId: "document-draft", addressed: null, catalog }).tab,
     ).toBeNull();
   });
 });

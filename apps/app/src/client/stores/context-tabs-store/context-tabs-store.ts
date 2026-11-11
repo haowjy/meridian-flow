@@ -5,11 +5,9 @@ import { useShallow } from "zustand/react/shallow";
 import { browserRecord } from "@/client/storage/browser-record";
 import {
   type ContextTab,
-  isDraftOnly,
   isEditorContextTab,
   matchesTabInstance,
   type ProjectTabsSlice,
-  type ReviewEntries,
   selectedDocumentIdOf,
   selectedTabOf,
   type TabOwner,
@@ -25,24 +23,17 @@ import {
 
 /** A tracked tab's changed metadata; an owner in it replaces the old one whole. */
 export type TrackedTabPatch = Partial<
-  Omit<Extract<ContextTab, { kind: "tracked" }>, keyof TabOwner | "tabInstanceId" | "reviews">
+  Omit<Extract<ContextTab, { kind: "tracked" }>, keyof TabOwner | "tabInstanceId">
 > &
   TabOwner;
 
 export {
   type ContextTab,
-  editorHasReview,
-  isDraftOnly,
   isEditorContextTab,
   isEditorScheme,
-  matchesReviewItem,
   matchesTabInstance,
   type ProjectTabsSlice,
-  type ReviewEntries,
   replaceOwner,
-  reviewEntryOf,
-  reviewOwnerOfTab,
-  reviewOwners,
   type ServerContextTab,
   selectedDocumentIdOf,
   selectedTabOf,
@@ -50,7 +41,6 @@ export {
   type TabOwner,
   tabContextOwner,
   tabKey,
-  withoutReviewEntry,
 } from "./editor-workspace-model";
 
 type ContextTabsState = {
@@ -95,12 +85,7 @@ type ContextTabsActions = {
     prior: ProjectTabsSlice,
     next: ProjectTabsSlice,
   ) => Promise<void>;
-  settleDraft: (projectId: string, tab: ContextTab) => Promise<DraftWorkspaceSettlementReceipt>;
-  dropReviewEntry: (projectId: string, ownerKey: string, tabInstanceId: string) => void;
-  keepForDrafts: (projectId: string, documentId: string, reviews: ReviewEntries) => void;
 };
-
-export type DraftWorkspaceSettlementReceipt = { kind: "settled" } | { kind: "not-settled" };
 
 // Stable shared reference for the empty slice. Returning a fresh object literal
 // here defeats `useShallow` in `useContextTabs`: a new `tabs: []` identity every
@@ -212,7 +197,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           await dispatch(() => ({
             kind: "reconcile-bootstrap",
             projectId,
-            changes: changes.filter(({ prior }) => !isDraftOnly(prior)),
+            changes,
           }));
         },
 
@@ -247,22 +232,6 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                 priorDocumentId === nextDocumentId ? null : { priorDocumentId, nextDocumentId },
             };
           }),
-
-        dropReviewEntry: (projectId, ownerKey, tabInstanceId) => {
-          dispatchResult(() => ({ kind: "drop-review", projectId, ownerKey, tabInstanceId }));
-        },
-
-        keepForDrafts: (projectId, documentId, reviews) => {
-          dispatchResult(() => ({ kind: "keep-for-drafts", projectId, documentId, reviews }));
-        },
-
-        settleDraft: async (projectId, tab) => {
-          if (tab.kind === "new") return { kind: "not-settled" };
-          const result = dispatchResult(() => ({ kind: "settle-draft", projectId, tab }));
-          return result?.kind === "committed" || result?.kind === "already-committed"
-            ? { kind: "settled" }
-            : { kind: "not-settled" };
-        },
       };
     },
     { name: "context-tabs-store", enabled: import.meta.env.DEV },
@@ -291,48 +260,18 @@ export function commitContextAvailability(
 /** Coordinator-only exact represented removal. */
 export function commitPlannedContextRemoval(
   projectId: string,
-  input: {
-    documentIds: readonly string[];
-    /** A Work's Discard drops only its entry; the tab survives while another Work reviews it. */
-    dropReviewOf?: string;
-  },
+  input: { documentIds: readonly string[] },
 ): ContextTab[] {
   const documentIds = new Set(input.documentIds);
-  const before = sliceFor(useContextTabsStore.getState(), projectId);
-  const removed = before.tabs.filter((tab) => documentIds.has(tab.documentId));
-  if (input.dropReviewOf) {
-    for (const tab of removed)
-      if (tab.tabInstanceId)
-        useContextTabsStore
-          .getState()
-          .dropReviewEntry(projectId, input.dropReviewOf, tab.tabInstanceId);
-  }
   const slice = sliceFor(useContextTabsStore.getState(), projectId);
-  const tabs = input.dropReviewOf
-    ? slice.tabs
-    : slice.tabs.filter((tab) => !documentIds.has(tab.documentId));
+  const removed = slice.tabs.filter((tab) => documentIds.has(tab.documentId));
+  const tabs = slice.tabs.filter((tab) => !documentIds.has(tab.documentId));
   // A removed tab's selection is not handed to a neighbour: nothing is selected.
   const selectedTabKey = tabs.some((tab) => tabKey(tab) === slice.selectedTabKey)
     ? slice.selectedTabKey
     : null;
   void useContextTabsStore.getState().applyAvailability(projectId, slice, { tabs, selectedTabKey });
   return removed;
-}
-
-/**
- * Coordinator-only: live deleted a document whose drafts survive (D79), so its tab stays,
- * presented draft-only in the Works whose drafts still have it.
- */
-export function commitDraftHold(projectId: string, documentId: string, reviews: ReviewEntries) {
-  useContextTabsStore.getState().keepForDrafts(projectId, documentId, reviews);
-}
-
-/** Coordinator-only exact draft settlement: the draft-only tab becomes the ordinary tab in place. */
-export function commitDraftApplyMetadata(
-  projectId: string,
-  tab: Extract<ContextTab, { kind: "tracked" }>,
-): Promise<DraftWorkspaceSettlementReceipt> {
-  return useContextTabsStore.getState().settleDraft(projectId, tab);
 }
 
 /** The selected tab's document id; a re-render only when the selection moves. */

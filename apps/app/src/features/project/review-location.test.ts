@@ -4,16 +4,9 @@ import { expect, it } from "vitest";
 import { contextTabFromDraftGroup } from "./context/context-tab-from-draft";
 
 it.each(CONTEXT_URI_SCHEMES)("keeps a %s review's scheme on its draft-only tab", (scheme) => {
-  const target = {
-    ownerKey: "work:work",
-    documentId: "hero",
-    itemKey: "draft",
-    contextLocation: { scheme, path: "/characters/Hero" },
-    draftOnly: true,
-  };
+  const target = { documentId: "hero", contextLocation: { scheme, path: "/characters/Hero" } };
   expect(contextTabFromDraftGroup(target)).toMatchObject({
     scheme,
     path: "/characters/Hero",
-    reviews: { "work:work": { itemKey: "draft", tabInstanceToken: expect.any(String) } },
   });
 });

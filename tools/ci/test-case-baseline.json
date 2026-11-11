@@ -80,6 +80,7 @@
     "apps/app/src/features/chat/useComposerSessionDraft.test.ts": 5,
     "apps/app/src/features/chat/useReplyRetry.test.tsx": 8,
     "apps/app/src/features/draft-review/apply-click-queue.test.ts": 4,
+    "apps/app/src/features/draft-review/draft-only-presentations.test.tsx": 3,
     "apps/app/src/features/draft-review/useReviewRefresh.test.tsx": 2,
     "apps/app/src/features/editor/EditorView.lifetime.test.tsx": 2,
     "apps/app/src/features/editor/surfaces/table/table-cell-hold.test.ts": 3,
@@ -124,6 +125,7 @@
     "apps/app/src/features/project/context/tree-expansion.test.tsx": 5,
     "apps/app/src/features/project/context/use-follow-open-document-placement.test.tsx": 3,
     "apps/app/src/features/project/context/use-identity-commit.test.tsx": 5,
+    "apps/app/src/features/project/document-review-hosts.test.tsx": 1,
     "apps/app/src/features/project/layout/surface-prefs-store.test.ts": 2,
     "apps/app/src/features/project/mobile/mobile-document-route.test.ts": 2,
     "apps/app/src/features/project/review-location.test.ts": 7,
@@ -471,7 +473,6 @@
     "tools/mf/src/commands/thread/result.test.ts": 1,
     "tools/mf/src/commands/thread/tail.test.ts": 5,
     "tools/mf/src/commands/thread/thread.test.ts": 26,
-    "tools/mf/src/main.test.ts": 3,
-    "apps/app/src/features/project/document-review-hosts.test.tsx": 1
+    "tools/mf/src/main.test.ts": 3
   }
 }

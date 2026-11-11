@@ -30,9 +30,7 @@ import { projectWorkBranchFiles } from "@/client/query/work-branch-files";
 import {
   type ContextTab,
   getContextTabs,
-  isDraftOnly,
   isEditorScheme,
-  matchesReviewItem,
   selectedDocumentIdOf,
   useContextTabs,
   useContextTabsStore,
@@ -41,8 +39,10 @@ import { readRecentRoutes, type WorkingSetHydrationPlan } from "@/client/working
 import { parseContextUri } from "@/lib/context-uri";
 import { originalBrowserSearch } from "@/router-search";
 import {
+  useAccountResourceProjection,
   useContextRemovalCoordinator,
   useDraftCommandOwner,
+  useOptionalDraftOnlyPresentations,
   useProjectContextAvailabilityCoordinator,
 } from "../context/account-feature-context";
 import { routeTargetForTab } from "../context/context-removal-planner";
@@ -72,6 +72,7 @@ import {
 } from "./local-document-address";
 import {
   type AddressAdmission,
+  addressedDocument,
   ProjectAddressDocument,
   useAddressResultAfterRemoval,
 } from "./ProjectAddressDocument";
@@ -85,7 +86,11 @@ import {
   parseProjectAddress,
   withoutReview,
 } from "./project-address";
-import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
+import {
+  localDocumentsOf,
+  resolveLocalDocumentSelection,
+  selectEditorEntryTab,
+} from "./project-local-selection";
 import {
   createProjectNavigation,
   type DisplayedProjectSelection,
@@ -141,7 +146,17 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   const editorScope = useWorkScopeState(projectId);
   const workId = editorScope.workId;
   const { tabs: workspaceTabs } = useContextTabs(projectId);
-  const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
+  const draftOnlyDocuments = useOptionalDraftOnlyPresentations();
+  const resources = useAccountResourceProjection(projectId);
+  const localDocumentOf = useMemo(
+    () =>
+      resources.snapshot
+        ? localDocumentsOf({ records: resources.records, placement: resources.placement })
+        : null,
+    [resources.snapshot, resources.records, resources.placement],
+  );
+  // A history entry's pointer names an untitled document by its handle, and the replica says
+  // which document that is, whether or not a tab still holds it.
   const localDocument = resolveLocalDocumentSelection({
     pointer:
       destination.kind === "editor" || destination.kind === "document"
@@ -151,21 +166,24 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         : undefined,
     accountId: user.userId,
     projectId,
-    workId,
-    hydrated: workspaceHydrated,
-    tabs: workspaceTabs,
+    documentOf: localDocumentOf,
   });
   const localDocumentId = localDocument.kind === "resolved" ? localDocument.documentId : undefined;
   const localResourceHandle =
-    localDocument.kind === "resolved" ? localDocument.owner.tab.resourceHandle : undefined;
+    localDocument.kind === "resolved" ? localDocument.document.resourceHandle : undefined;
   const localPointer =
     localDocumentId && localResourceHandle
       ? { accountId: user.userId, projectId, resourceHandle: localResourceHandle }
       : undefined;
+  const localDocumentTab = localDocument.kind === "resolved" ? localDocument.document : null;
+  // The tab mirrors what the history entry names: reinstalled if it was closed.
   useLayoutEffect(() => {
-    if (localDocumentId && workId)
-      void useContextTabsStore.getState().selectTab(projectId, localDocumentId);
-  }, [projectId, workId, localDocumentId]);
+    if (!localDocumentTab) return;
+    const store = useContextTabsStore.getState();
+    if (getContextTabs(projectId).tabs.some((tab) => tab.documentId === localDocumentId))
+      void store.selectTab(projectId, localDocumentId ?? null);
+    else store.openTab(projectId, localDocumentTab, undefined, { select: true });
+  }, [projectId, localDocumentId]);
   const shown = useRef<DisplayedProjectSelection>({});
   shown.current = { local: localPointer };
   useBlocker({
@@ -429,12 +447,13 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
             (result) => result.resolutions[0] ?? { kind: "failed" as const },
             () => ({ kind: "failed" as const }),
           ),
-        admitDraftReview: (installed, reviewOwner) =>
-          contextRemoval.admitDraftReview(projectId, installed, reviewOwner),
+        isDraftOnly: (documentId) =>
+          draftOnlyDocuments?.isDraftOnly(projectId, documentId) ?? false,
+        admitDraftReview: (installed) => contextRemoval.admitDraftReview(projectId, installed),
         enterRoute: (locator, documentId, by) =>
           contextRemoval.enterRoute(projectId, locator, documentId, by),
       }),
-    [contextRemoval, projectId, user.userId],
+    [contextRemoval, draftOnlyDocuments, projectId, user.userId],
   );
   const remoteAnswer = reviewBoundAddressResult(addressBinding, documentLookup.data);
   const holdsBound =
@@ -505,7 +524,9 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       isError: addressCatalogError,
     },
     editorDrafts,
-    (documentId) => workspaceTabs.some((tab) => !isDraftOnly(tab) && tab.documentId === documentId),
+    (documentId) =>
+      workspaceTabs.some((tab) => tab.documentId === documentId) &&
+      !draftOnlyDocuments?.isDraftOnly(projectId, documentId),
     reconciledDocumentAddress.view,
   );
   const documentResult = gated.result;
@@ -534,6 +555,15 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   }, [contextRemoval, projectId, routeBinding?.revision, routeBinding?.documentId]);
   const draftOnly = gated.outcome === "ready" ? gated.draftOnly : undefined;
   const reviewItemKey = address.itemKey ?? draftOnly?.draft.itemKey;
+  const addressedNow = addressedDocument(
+    address,
+    admissibleResult,
+    reconciledDocumentAddress.localFile,
+    draftOnly,
+  );
+  // Rebuilt from JSON snapshots each render: only its serialized meaning is a change.
+  const addressedKey = JSON.stringify(addressedNow);
+  const addressed = useMemo(() => addressedNow, [addressedKey]);
   const addressDocumentId =
     documentResult && documentResult.kind !== "unavailable"
       ? documentResult.document.documentId
@@ -632,14 +662,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
           (reviewItemKey
             ? // Review installs the tab; until it has, the address is still being repaired.
               address.itemKey === reviewItemKey &&
-              workspaceTabs.some(
-                (tab) =>
-                  (address.itemKey && !isDraftOnly(tab) && tab.documentId === addressDocumentId) ||
-                  matchesReviewItem(tab, {
-                    reviewOwner: reviewOwner ?? "",
-                    reviewItemKey,
-                  }),
-              )
+              workspaceTabs.some((tab) => tab.documentId === addressDocumentId)
               ? undefined
               : "loading"
             : documentDestination
@@ -817,10 +840,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   // A resource pointer holds identity, not an Untitled address. Once placement
   // exists, publish its real locator so the removal host does not repair it
   // back into this same pointer-bearing destination on every render.
-  const localTarget =
-    localDocument.kind === "resolved" && localDocument.owner.kind === "materialized-local"
-      ? localDocument.owner.target
-      : null;
+  const localTarget = localDocument.kind === "resolved" ? localDocument.target : null;
   const search: ProjectSearch = {
     screen: activeScreen,
     work: locatorOwner.workId,
@@ -929,6 +949,8 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
                 }),
             }}
             activeLocalDocumentId={editorDocument.localDocumentId}
+            activeLocalDocument={localDocumentTab ?? undefined}
+            addressedDocument={addressed ?? undefined}
             activeContextScheme={editorDocument.activeContextScheme}
             activeContextWork={locatorOwner.workId ?? null}
             activeContextPath={editorDocument.activeContextPath}

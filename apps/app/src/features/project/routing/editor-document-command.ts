@@ -1,14 +1,9 @@
 import { type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts/branches";
-import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import { readDocumentView } from "@/client/project-shell/document-views";
 import {
   type ContextTab,
   getContextTabs,
-  isDraftOnly,
   isEditorContextTab,
-  matchesReviewItem,
-  matchesTabInstance,
-  reviewEntryOf,
-  reviewOwnerOfTab,
   selectedDocumentIdOf,
   useContextTabsStore,
 } from "@/client/stores";
@@ -23,7 +18,6 @@ import {
 } from "./local-document-address";
 import type { OpenContextRoute } from "./ProjectNavigationContext";
 import { type ProjectAddress, type ProjectDestination, scratchOwnerKey } from "./project-address";
-import { resolveLocalDocumentSelection } from "./project-local-selection";
 import type { createProjectNavigation } from "./project-navigation";
 import { type ContextRouteRequest, contextRouteRequest } from "./project-route";
 
@@ -40,6 +34,7 @@ export function createEditorDocumentCommand({
   accountId,
   read,
   lookup,
+  isDraftOnly,
   admitDraftReview,
   enterRoute,
 }: {
@@ -47,7 +42,9 @@ export function createEditorDocumentCommand({
   accountId: string;
   read: () => EditorCommandSnapshot;
   lookup: Parameters<typeof resolveLaunchLocator>[0]["lookup"];
-  admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>, ownerKey: string) => void;
+  /** Some host presents this document draft-only (`DraftOnlyPresentations`). */
+  isDraftOnly: (documentId: string) => boolean;
+  admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>) => void;
   /** Binds the route about to be shown to the document the navigation named. */
   enterRoute: (locator: ContextRouteRequest, documentId: string, by: RouteBindingProof) => void;
 }): OpenContextRoute {
@@ -75,7 +72,9 @@ export function createEditorDocumentCommand({
           tabs: getContextTabs(projectId).tabs,
           addressed: current.address.destination,
           addressNamesIt: sameDocument,
-          draftOnly: options.tab !== undefined && isDraftOnly(options.tab),
+          draftOnly:
+            options.draftOnly === true ||
+            (options.tab !== undefined && isDraftOnly(options.tab.documentId)),
           catalog: current.documentCatalog,
           selected: !!options.itemKey && scope !== null,
           lookup,
@@ -86,21 +85,22 @@ export function createEditorDocumentCommand({
       // Re-opening the document the address names (a rename or move following
       // its own placement, a review re-launch) keeps the review the address
       // carries; any other document starts without one.
-      // A draft-only tab has no live document: its own review identity is the only
-      // destination that resolves, so every re-select or restore of it carries that.
-      // A request naming an open draft-only tab without carrying it (a repair's fallback) gets
-      // that tab's review the same way a click on it does.
-      const addressedTab =
-        options?.tab ?? openDraftOnlyTabFor(getContextTabs(projectId).tabs, requested);
+      // A draft-only document has no live version: its draft is the only destination that
+      // resolves, so every re-select or restore of it (a repair's fallback, a tab click) carries
+      // the draft its view pins.
+      const draftOnlyPin = draftOnlyDocumentPin(
+        options?.tab ? [options.tab] : getContextTabs(projectId).tabs,
+        requested,
+        isDraftOnly,
+        (documentId) => readDocumentView(accountId, projectId, documentId).pin,
+      );
       const reviewOwner =
         options?.reviewOwner ??
-        (addressedTab ? reviewOwnerOfTab(addressedTab, scope) : undefined) ??
+        draftOnlyPin?.ownerKey ??
         (sameDocument ? (addressReviewOwner(current.address, scope) ?? undefined) : undefined);
       const itemKey =
         options?.itemKey ??
-        (addressedTab && reviewOwner
-          ? reviewEntryOf(addressedTab, reviewOwner)?.itemKey
-          : undefined) ??
+        draftOnlyPin?.itemKey ??
         (sameDocument ? current.address.itemKey : undefined);
       const next = prepareEditorDestination(
         { projectId, accountId, address: current.address, scope },
@@ -121,11 +121,7 @@ export function createEditorDocumentCommand({
         if (preparedTab) {
           const installed = useContextTabsStore.getState().openTab(projectId, preparedTab);
           if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
-          if (installed.tab.kind === "tracked" && scope)
-            admitDraftReview(
-              installed.tab,
-              reviewOwner ?? draftOwnerKey({ kind: "work", workId: scope }),
-            );
+          if (installed.tab.kind === "tracked" && itemKey) admitDraftReview(installed.tab);
           selected = installed.tab;
           installedTab = installed.tab;
           if (options?.focus && installed.tab.tabInstanceId)
@@ -220,20 +216,9 @@ export function prepareEditorDestination(
     target.documentId ??
     (target.path === "" && scope ? (selectedDocumentIdOf(workspace) ?? undefined) : undefined);
   const eligible = workspace.tabs.filter(isEditorContextTab);
-  const addressedDraft =
-    itemKey && documentId && scope
-      ? eligible.find((tab) =>
-          matchesReviewItem(tab, {
-            reviewOwner: reviewOwner ?? draftOwnerKey({ kind: "work", workId: scope }),
-            reviewItemKey: itemKey,
-          }),
-        )
-      : undefined;
-  const tab =
-    addressedDraft ??
-    (documentId
-      ? eligible.find((tab) => tab.documentId === documentId)
-      : eligible.find((tab) => contextTabMatchesRoute(tab, target)));
+  const tab = documentId
+    ? eligible.find((tab) => tab.documentId === documentId)
+    : eligible.find((tab) => contextTabMatchesRoute(tab, target));
   const selected = preparedTab ?? tab;
   // A locally created document keeps its stable selection even when its
   // readable address is reused or its background placement is rejected.
@@ -241,9 +226,6 @@ export function prepareEditorDestination(
     target.path === "" ||
     (selected?.kind === "tracked" && selected.origin === "local-resource")
   ) {
-    const tabs = preparedTab
-      ? [...workspace.tabs.filter((tab) => !matchesTabInstance(tab, preparedTab)), preparedTab]
-      : workspace.tabs;
     if (
       !selected?.resourceHandle ||
       (selected.kind !== "new" &&
@@ -256,18 +238,6 @@ export function prepareEditorDestination(
       projectId,
       resourceHandle: selected.resourceHandle,
     };
-    // Pointer identity is ready now; Editor Work membership waits for resolution.
-    const resolved = scope
-      ? resolveLocalDocumentSelection({
-          pointer,
-          accountId: accountId,
-          projectId,
-          workId: scope,
-          hydrated: true,
-          tabs,
-        })
-      : null;
-    if (resolved && resolved.kind !== "resolved") throw new Error("Local document is unavailable");
     state = { meridianProjectSelection: pointer };
   }
   const destination: ProjectDestination = target.path
@@ -298,18 +268,23 @@ export function prepareEditorDestination(
     state,
   };
 }
-function openDraftOnlyTabFor(
+/** The draft a request's draft-only document is open on, if the request names one. */
+function draftOnlyDocumentPin(
   tabs: readonly ContextTab[],
   request: ContextRouteRequest,
-): ContextTab | undefined {
-  return tabs
+  isDraftOnly: (documentId: string) => boolean,
+  pinOf: (documentId: string) => ReturnType<typeof readDocumentView>["pin"],
+) {
+  const tab = tabs
     .filter(isEditorContextTab)
     .find(
       (tab) =>
-        isDraftOnly(tab) &&
+        tab.kind !== "new" &&
         (request.documentId === undefined || tab.documentId === request.documentId) &&
-        contextTabMatchesRoute(tab, request),
+        contextTabMatchesRoute(tab, request) &&
+        isDraftOnly(tab.documentId),
     );
+  return tab ? pinOf(tab.documentId) : undefined;
 }
 
 /** A prepared tab states the locator the route will use, not the one it was built from. */

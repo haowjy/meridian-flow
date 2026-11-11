@@ -8,17 +8,11 @@ import {
 import { isRecord } from "@/client/storage/browser-record";
 import {
   type ContextTab,
-  isDraftOnly,
   isEditorContextTab,
-  matchesTabInstance,
   type ProjectTabsSlice,
-  type ReviewEntries,
-  reviewEntriesOf,
-  reviewEntryOf,
   selectedDocumentIdOf,
   selectingDocument,
   tabKey,
-  withoutReviewEntry,
 } from "./editor-workspace-model";
 
 export const EDITOR_WORKSPACE_STORAGE_KEY = "meridian:editor-workspace:v2";
@@ -57,25 +51,6 @@ export type EditorWorkspaceCommand =
       removals: readonly ContextTab[];
       selection: { priorDocumentId: string | null; nextDocumentId: string | null } | null;
       updates: readonly { prior: ContextTab; next: ContextTab }[];
-    }
-  | {
-      kind: "settle-draft";
-      projectId: string;
-      tab: ContextTab;
-    }
-  | {
-      /** Discard in one owner: drops that owner's entry; the tab closes only when no owner reviews it. */
-      kind: "drop-review";
-      projectId: string;
-      ownerKey: string;
-      tabInstanceId: string;
-    }
-  | {
-      /** Live deleted the document; the Works whose drafts still have it keep the tab as draft-only (D79). */
-      kind: "keep-for-drafts";
-      projectId: string;
-      documentId: string;
-      reviews: ReviewEntries;
     };
 
 export type EditorWorkspaceCommandResult =
@@ -127,7 +102,6 @@ export function parseContextTab(value: unknown): ContextTab | null {
     (isWorkScopedScheme(tab.scheme) && !tab.workId && !tab.rootThreadId)
   )
     return null;
-  if (!validReviews(tab)) return null;
   if (tab.kind === "tracked" && tab.editable === true) {
     const classification = classifyFiletype(typeof tab.filetype === "string" ? tab.filetype : null);
     if (
@@ -151,20 +125,6 @@ export function parseContextTab(value: unknown): ContextTab | null {
   )
     return value as ContextTab;
   return null;
-}
-
-const isString = (value: unknown): value is string => typeof value === "string";
-
-/** A draft-only tab's entries as this build writes them; anything else means the record is not ours. */
-function validReviews(tab: Record<string, unknown>): boolean {
-  const { reviews } = tab;
-  if (reviews !== undefined) {
-    if (tab.kind !== "tracked" || !isRecord(reviews)) return false;
-    for (const entry of Object.values(reviews))
-      if (!isRecord(entry) || !isString(entry.itemKey) || !isString(entry.tabInstanceToken))
-        return false;
-  }
-  return true;
 }
 
 function withoutResourceOwnership(tab: ContextTab): ContextTab {
@@ -222,10 +182,7 @@ export function parseEditorWorkspace(
 }
 
 export function durableContextTab(tab: ContextTab): ContextTab {
-  const tabInstanceId = tab.tabInstanceId ?? crypto.randomUUID();
-  if (tab.kind !== "tracked") return { ...tab, tabInstanceId };
-  const { reviews: _reviews, ...persisted } = tab;
-  return { ...persisted, tabInstanceId };
+  return { ...tab, tabInstanceId: tab.tabInstanceId ?? crypto.randomUUID() };
 }
 
 /** A tab is its document; the scheme, path and owner it carries are a refreshed display cache. */
@@ -320,7 +277,7 @@ export function reduceEditorWorkspace(
       const live = index >= 0 ? tabs[index] : undefined;
       if (!live || consumedMembers.has(live.tabInstanceId as string)) continue;
       consumedMembers.add(live.tabInstanceId as string);
-      if (!change.next || isDraftOnly(change.next)) {
+      if (!change.next) {
         tabs.splice(index, 1);
         if (selectedTabKey === tabKey(live)) selectedTabKey = null;
         continue;
@@ -373,51 +330,6 @@ export function reduceEditorWorkspace(
       return outcome("already-committed", current);
     return replaceProject(current, command.projectId, next);
   }
-  if (command.kind === "settle-draft") {
-    // The draft's document is live now: the same tab drops its review metadata in place.
-    const workspace = current.projects[command.projectId] ?? EMPTY_PROJECT;
-    const index = workspace.tabs.findIndex((tab) => matchesTabInstance(tab, command.tab));
-    const prior = workspace.tabs[index];
-    if (!prior) return outcome("stale", current);
-    if (prior.kind === "new" || !isDraftOnly(prior)) return outcome("already-committed", current);
-    return replaceProject(current, command.projectId, {
-      ...workspace,
-      tabs: workspace.tabs.map((tab, candidateIndex) =>
-        candidateIndex === index ? durableContextTab(prior) : tab,
-      ),
-    });
-  }
-  if (command.kind === "keep-for-drafts") {
-    const workspace = current.projects[command.projectId];
-    const index =
-      workspace?.tabs.findIndex(
-        (tab) => tab.kind === "tracked" && tab.documentId === command.documentId,
-      ) ?? -1;
-    const tab = workspace?.tabs[index];
-    if (!workspace || !tab || tab.kind !== "tracked") return outcome("not-referenced", current);
-    if (isDraftOnly(tab)) return outcome("already-committed", current);
-    return replaceProject(current, command.projectId, {
-      ...workspace,
-      tabs: workspace.tabs.map((candidate, candidateIndex) =>
-        candidateIndex === index ? { ...tab, reviews: command.reviews } : candidate,
-      ),
-    });
-  }
-  if (command.kind === "drop-review") {
-    const workspace = current.projects[command.projectId];
-    const tab = workspace?.tabs.find(
-      (candidate) => candidate.tabInstanceId === command.tabInstanceId,
-    );
-    if (!workspace || !tab || !reviewEntryOf(tab, command.ownerKey))
-      return outcome("stale", current);
-    const after = withoutReviewEntry(tab, command.ownerKey);
-    return replaceProject(current, command.projectId, {
-      tabs: workspace.tabs.flatMap((candidate) =>
-        candidate !== tab ? [candidate] : after ? [after] : [],
-      ),
-      selectedTabKey: after ? workspace.selectedTabKey : selectionAfterRemoval(workspace, [tab]),
-    });
-  }
   if (command.kind === "reconcile-resource") {
     const workspace = current.projects[command.projectId];
     if (!workspace) return outcome("not-referenced", current);
@@ -457,24 +369,12 @@ export function reduceEditorWorkspace(
   }
   if (command.kind === "open") {
     const workspace = current.projects[command.projectId] ?? EMPTY_PROJECT;
-    // A draft-only tab keeps its review metadata while it is the document's one tab.
-    const incoming = isDraftOnly(command.tab)
-      ? ({
-          ...command.tab,
-          tabInstanceId: command.tab.tabInstanceId ?? crypto.randomUUID(),
-        } as ContextTab)
-      : durableContextTab(command.tab);
+    const tab = durableContextTab(command.tab);
     const index = workspace.tabs.findIndex(
       (candidate) =>
-        candidate.tabInstanceId === incoming.tabInstanceId ||
-        candidate.documentId === incoming.documentId,
+        candidate.tabInstanceId === tab.tabInstanceId || candidate.documentId === tab.documentId,
     );
     const existing = index >= 0 ? workspace.tabs[index] : undefined;
-    // A review launch never turns an ordinary tab back into a draft-only one.
-    const tab =
-      isDraftOnly(incoming) && existing && !isDraftOnly(existing)
-        ? durableContextTab(incoming)
-        : incoming;
     // The opened tab states its owner: a stale tab for the document must not
     // keep a Work or lineage the opened tab no longer names.
     const existingWithoutResourceOwnership = existing
@@ -485,15 +385,6 @@ export function reduceEditorWorkspace(
           ...existingWithoutResourceOwnership,
           ...tab,
           tabInstanceId: existing.tabInstanceId,
-          // Each Work keeps the entry it first opened; another Work's draft adds its own.
-          ...(existing.kind !== "new" && isDraftOnly(existing)
-            ? {
-                reviews: {
-                  ...reviewEntriesOf(tab),
-                  ...reviewEntriesOf(existing),
-                },
-              }
-            : {}),
         } as ContextTab)
       : tab;
     const tabs =

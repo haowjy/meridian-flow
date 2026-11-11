@@ -19,7 +19,6 @@ import { lookupProjectContextAvailability } from "@/client/query/project-context
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import {
   type ContextTab,
-  isDraftOnly,
   reconcileEditorWorkspaceBootstrap,
   useContextTabsStore,
 } from "@/client/stores";
@@ -112,11 +111,7 @@ export async function validateEditorWorkspaceTabs({
   isLiveScope: EditorTabValidationGuard;
 }): Promise<void> {
   const { projectId } = scope;
-  // A draft-only tab is a hidden document: the catalog has no row for it, so the replica cannot
-  // vouch for it. The draft lists decide (`DraftOnlySettlement` checks each Work its entries name).
-  const restored = (useContextTabsStore.getState().byProject[projectId]?.tabs ?? []).filter(
-    (tab) => !isDraftOnly(tab),
-  );
+  const restored = useContextTabsStore.getState().byProject[projectId]?.tabs ?? [];
   const needsProjection = restored.some(
     (tab) => tab.kind === "new" || (tab.kind === "tracked" && tab.origin === "local-resource"),
   );
@@ -143,7 +138,7 @@ export async function validateEditorWorkspaceTabs({
           if (!projection) throw new Error("Resource projection is unavailable");
           const record = resourceRecordForTab(projection.records, tab);
           return {
-            tab: record ? contextTabFromResource(projectId, record, projection.placement) : null,
+            tab: record ? contextTabFromResource(record, projection.placement) : null,
             removedRoute: null,
           };
         }
@@ -156,9 +151,7 @@ export async function validateEditorWorkspaceTabs({
         }
         if (!projection) throw new Error("Resource projection is unavailable");
         const record = resourceRecordForTab(projection.records, tab);
-        const projected = record
-          ? contextTabFromResource(projectId, record, projection.placement)
-          : null;
+        const projected = record ? contextTabFromResource(record, projection.placement) : null;
         return {
           tab: projected,
           removedRoute: projected ? null : workingSetRouteForTab(tab),
