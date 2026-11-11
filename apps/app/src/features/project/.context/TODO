@@ -10,3 +10,6 @@
   address.
 - Between 960 and 983 px, a side opened by hand runs about 24 px past the window: the sidebar,
   main's minimum width and the dock don't fit. The narrow hold only keeps it closed until opened.
+- With a document held beside, the kept host never appears: opening Chapter 1 from Chapter 5 and
+  returning remounts Chapter 5's editor, so its undo is gone. With a chat beside the kept host
+  works. `keptTab` in `DesktopProject.tsx` reads `shown`; find why the previous main isn't in it.
