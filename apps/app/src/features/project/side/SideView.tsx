@@ -4,11 +4,11 @@
  * its sheet.
  *
  * The held pick is stored per browser tab (`client/project-shell/store.ts`) and never written to
- * history: Back moves main, and the beside hint returns with its entry. A hold ends by the held
- * mark, by "Follow" in the picker, by closing the side, when it can no longer sit beside main (its
- * item becomes main, or a chat in main for a held chat), when its document no longer opens, and when
- * its document is closed, Discarded or removed. A narrow window folding the side is not the writer
- * closing it: the hold stays.
+ * history: Back moves main, and the beside hint returns with its entry. Only the writer's own acts
+ * release a hold: the held mark, For this, the close button, the held item becoming main, and its
+ * document being closed, Discarded or removed. A fold from a narrow window is not one: the hold
+ * survives it. A held chat gives way to a chat in main, and a held document that no longer opens
+ * is dropped.
  */
 import {
   createContext,

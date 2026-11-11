@@ -34,12 +34,13 @@ doesn't (removed, an upload) is skipped for the next candidate, and the picker o
 opens. `fitsBeside` is the one answer to "can this sit beside", for the rule and the picker. While
 a read or a describe is out, the side keeps what it showed and says no reason, since the kept
 reason was about another main. `side/SideView.tsx` holds this state and the commands
-(`useShellCommands`); both shells read it, and the phone's sheet takes chats only. The held pick
+(`useShellCommands`); both shells read it, and the phone's sheet shows the same item. The held pick
 lives per browser tab (`client/project-shell/store.ts`, seeded from the device) and never enters
-history, so Back moves main and leaves the hold alone. A hold ends by the held mark, by Follow in
-the picker, by closing the side, when it can no longer sit beside main (its item becomes main, a
-chat opens in main, or the phone shell meets a held document), when its document no longer opens,
-and when its document is closed, Discarded or removed: a hold the writer can't see never waits.
+history, so Back moves main and leaves the hold alone. Only the writer's own acts release a hold:
+the held mark, For this, the close button, the held item becoming main, and its document being
+closed, Discarded or removed. A fold from a narrow window is not one: the hold survives it and is
+back when the window widens. A held chat also gives way when the writer opens a chat in main (no
+chat sits beside a chat), and a held document that no longer opens is dropped.
 Ctrl/cmd-click or middle-click on a document link holds it beside with the link's Work and opens
 a closed side (`useOptionalHoldBeside`). Each header renders inside its host
 (`shell/MainHeader.tsx`, `side/SideHeader.tsx`); while the side is closed, main's header names it
