@@ -12,7 +12,7 @@ import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { RemovedDocumentChip, RemovedNoticeSlot } from "../context/RemovedDocumentNotice";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
-import { MainTabStrip } from "./MainTabStrip";
+import { MainTabMenu, MainTabStrip } from "./MainTabStrip";
 import { PaneHeader, type PaneHeaderRailToggle } from "./PaneHeader";
 import { tabChipClass } from "./tab-chip";
 
@@ -71,6 +71,13 @@ export function MainHeader({
           <RemovedNoticeSlot>
             <RemovedDocumentChip projectId={projectId} />
           </RemovedNoticeSlot>
+          <MainTabMenu
+            projectId={projectId}
+            open={open}
+            mainKey={mainKey}
+            mainDocument={mainDocument}
+            onShowRecents={onShowRecents}
+          />
         </div>
       }
       actions={

@@ -989,6 +989,10 @@ msgstr "Alignment applies to paragraphs, headings, and tables."
 msgid "All chats"
 msgstr "All chats"
 
+#: src/features/project/shell/MainTabStrip.tsx
+msgid "All open documents"
+msgstr "All open documents"
+
 #: src/features/project/shell/ProjectMenu.tsx
 msgid "All projects"
 msgstr "All projects"
@@ -1635,6 +1639,10 @@ msgstr "Close"
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "Close {name}"
 msgstr "Close {name}"
+
+#: src/features/project/shell/MainTabStrip.tsx
+msgid "Close all"
+msgstr "Close all"
 
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Close artifact preview"

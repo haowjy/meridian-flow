@@ -153,6 +153,10 @@ export function closeMainTab(
   return next;
 }
 
+export function closeAllMainTabs(accountId: string, projectId: string): void {
+  if (readMainTabs(accountId, projectId).tabs.length > 0) write(accountId, projectId, EMPTY);
+}
+
 /** These documents are gone (deleted, a draft that created them Discarded): their tabs close. */
 export function dropMainTabDocuments(
   accountId: string,

@@ -47,7 +47,10 @@ since each document has its own band). A chat in main keeps its own width. Past 
 scrolls, with no scrollbar and a faded edge
 where tabs are behind it (`useScrollEdges`, `scroll-fade-x`, as the editor toolbar). The keyboard
 follows the tabs pattern: main's item is the one Tab stop, arrows, Home and End move along the
-strip, Enter opens; each document's page has its own band, so the focus follows to the new one. Every control in the band shares the
+strip, Enter opens; each document's page has its own band, so the focus follows to the new one.
+The band's far right holds the tab list (`MainTabMenu`, while any document tab is open): Close all,
+then every tab, the open one filled. Close all sends main to Recently opened unless main shows a
+chat, which stays. Every control in the band shares the
 chips' centre line. Stored tabs of documents deleted while the window was closed are not drawn
 once the replica holds the catalog (`useLiveTabs`; the record is left alone, so a document that
 comes back has its tab). Only documents take a tab: a tab is an item with a kind, and `TAB_KINDS`
