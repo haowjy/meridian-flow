@@ -6,13 +6,17 @@
  * A change's or a document's ✓ in a list row is jade ink, not a fill: the group's own Apply
  * is the one filled button, and a column of filled squares would drown it.
  *
+ * A Discard with no Undo asks once (`discardAsks`): its question takes the pair's place until
+ * the writer keeps the draft or confirms. An undoable Discard never asks.
+ *
  * `density` picks the form: the scope's name, the bare verb, or ×/✓. Leave it unset where
  * a container measures its own fit and sets `data-density` on `[data-review-actions]`
  * itself (the identity row's ladder); React then never resets that attribute.
  */
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import { Check, Loader2, X } from "lucide-react";
-import { type MouseEventHandler, type ReactNode, useRef, useState } from "react";
+import { type MouseEventHandler, type ReactNode, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -27,6 +31,57 @@ export function reviewActionLabel(action: "apply" | "discard", scope: ReviewScop
   return scope === "change" ? t`Discard` : scope === "document" ? t`Discard draft` : t`Discard all`;
 }
 
+/**
+ * A Discard's one question, in the place of the controls that asked it: the Discard carries no
+ * Undo. Focus moves to it, so a row that reveals its actions on focus keeps it shown.
+ */
+export function DiscardQuestion({
+  scope,
+  onKeep,
+  onConfirm,
+  touch = false,
+  className,
+}: {
+  scope: ReviewScope;
+  onKeep(): void;
+  onConfirm(): void;
+  touch?: boolean;
+  className?: string;
+}) {
+  const confirm = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    confirm.current?.focus();
+  }, []);
+  const button = cn("text-button", touch ? "min-h-11" : "coarse:min-h-11");
+  return (
+    <span
+      data-discard-question={scope}
+      className={cn(
+        "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-caption text-muted-foreground",
+        className,
+      )}
+    >
+      <span className="min-w-0">{discardQuestion(scope)}</span>
+      <span className="flex shrink-0 items-center gap-2">
+        <button type="button" className={button} onClick={onKeep}>
+          <Trans>Keep</Trans>
+        </button>
+        <button ref={confirm} type="button" className={button} onClick={onConfirm}>
+          <Trans>Discard</Trans>
+        </button>
+      </span>
+    </span>
+  );
+}
+
+function discardQuestion(scope: ReviewScope): string {
+  return scope === "change"
+    ? t`Discard this change? This can't be undone.`
+    : scope === "document"
+      ? t`Discard this draft? This can't be undone.`
+      : t`Discard these drafts? This can't be undone.`;
+}
+
 /** A document's command named with the document, for a list where every row has the pair. */
 function documentLabel(action: "apply" | "discard", subject: string): string {
   return action === "apply" ? t`Apply draft of ${subject}` : t`Discard draft of ${subject}`;
@@ -37,7 +92,9 @@ export type ReviewActionsProps = {
   /** With `scope="document"`: the document's name, added to the accessible names. */
   subject?: string;
   density?: ReviewDensity;
-  onDiscard: MouseEventHandler<HTMLButtonElement>;
+  onDiscard: () => void;
+  /** The Discard carries no Undo, so it asks first. */
+  discardAsks?: boolean;
   /** Absent withdraws Apply; Discard still applies. */
   onApply?: MouseEventHandler<HTMLButtonElement>;
   disabled?: boolean;
@@ -54,6 +111,7 @@ export function ReviewActions({
   subject,
   density,
   onDiscard,
+  discardAsks = false,
   onApply,
   disabled = false,
   applyDisabled = false,
@@ -61,6 +119,19 @@ export function ReviewActions({
   touch = false,
   className,
 }: ReviewActionsProps) {
+  const [asking, setAsking] = useState(false);
+  if (asking && discardAsks && !disabled)
+    return (
+      <DiscardQuestion
+        scope={scope}
+        className={className}
+        onKeep={() => setAsking(false)}
+        onConfirm={() => {
+          setAsking(false);
+          onDiscard();
+        }}
+      />
+    );
   return (
     <span
       data-review-actions
@@ -80,7 +151,11 @@ export function ReviewActions({
         variant="quiet"
         touch={touch}
         disabled={disabled}
-        onClick={onDiscard}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (discardAsks) setAsking(true);
+          else onDiscard();
+        }}
       />
       {onApply ? (
         <ReviewActionButton

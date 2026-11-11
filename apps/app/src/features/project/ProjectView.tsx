@@ -500,6 +500,7 @@ function HydratedReviewControllers({
     work: chatWork,
     ownerKey: chatOwnerKey(chatWork, chatThread?.rootThreadId ?? null),
     threadId: chatThreadId,
+    surface: "dock",
   });
   const accountId = useAccountId();
   const draftOnly = useOptionalDraftOnlyPresentations();

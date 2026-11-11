@@ -93,6 +93,7 @@ export function ReviewChangeBar({
           <ReviewActions
             scope="change"
             touch={touch}
+            discardAsks={Boolean(change.tree)}
             onDiscard={onDiscard}
             onApply={canApply ? onApply : undefined}
           />
