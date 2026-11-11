@@ -100,14 +100,21 @@ export function ChatsBody({
     touch,
     onOpenChat,
   };
-  // After Undo, focus goes to the chat's row, or to Find when no list here shows it.
-  const focusChat = (threadId: string) => {
+  // After Undo, focus goes to the chat's row, or to Find when no list here shows it. The row
+  // mounts only once the restored lists have loaded (a favourite past the first page loads
+  // later), so focus waits for that render rather than look before it.
+  const [focusAfterUndo, setFocusAfterUndo] = useState<string | null>(null);
+  const listsSettled = threads !== null && !favoriteFeed.isFetching && !favoriteFeed.hasNextPage;
+  useEffect(() => {
+    if (!focusAfterUndo) return;
     const row = root.current?.querySelector<HTMLElement>(
-      `[data-chat-id="${CSS.escape(threadId)}"] [data-list-item]`,
+      `[data-chat-id="${CSS.escape(focusAfterUndo)}"] [data-list-item]`,
     );
+    if (!row && !listsSettled) return;
+    setFocusAfterUndo(null);
     const target = row ?? root.current?.querySelector<HTMLElement>("input");
     if (target) moveFocus(target, { ring: lastInputWasKeyboard() });
-  };
+  });
 
   const scoped = (thread: ThreadListItem) => (
     <div key={thread.id}>
@@ -133,7 +140,9 @@ export function ChatsBody({
             notice={notice}
             takeFocus={() => deletes.takeFocus(notice.id)}
             onUndo={() =>
-              void deletes.undo().then((restored) => restored && focusChat(notice.threadId))
+              void deletes.undo().then((restored) => {
+                if (restored) setFocusAfterUndo(notice.threadId);
+              })
             }
             onDismiss={deletes.dismiss}
           />
