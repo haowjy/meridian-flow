@@ -81,9 +81,9 @@ async function endUseReconciled(
 }
 
 /**
- * Closes the branch's drafts (both kinds) on these documents, or on all of them, and
- * marks each closed text draft's pending edit parts discarded (§4.3), so model `write
- * undo` refuses `cant_undo_discarded` and the receipt card names the skip.
+ * Closes the branch's drafts (both kinds) on these documents, or on all of them. Closing
+ * keeps each draft's bytes and apply record: the receipt and model `write undo` read them
+ * to tell applied parts (`cant_undo_applied`) from discarded ones (`cant_undo_discarded`).
  */
 async function closeBranchDrafts(
   db: Database,

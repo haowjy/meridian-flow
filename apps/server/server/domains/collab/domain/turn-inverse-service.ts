@@ -329,15 +329,9 @@ function prepare(
         simulation.liveRemoved(),
         inverseParts,
       );
-      if (planned.cause) {
-        // A draft closed after some parts were applied: those parts are in the manuscript.
-        for (const part of parts)
-          skip(
-            part,
-            planned.cause === "discarded" && disposition(part) === "applied"
-              ? "applied"
-              : planned.cause,
-          );
+      if ("causes" in planned) {
+        for (const [i, part] of parts.entries())
+          skip(part, planned.causes[i] as TurnInverseSkipCause);
         continue;
       }
       for (const { part, direction: partDirection } of planned.selection) {
