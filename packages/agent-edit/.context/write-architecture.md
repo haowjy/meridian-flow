@@ -38,10 +38,16 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   its old and new text share at the start and the end stay, and only the middle is
   written, never splitting a surrogate pair. The trim is per change, not per textblock, so
   the text between two changes is left alone. Every operation is made and Yjs merges it,
-  as for two people. Text the writer deleted since the model's read is no input: the kept
-  edges are not written, so no deleted letter is put back, but the model's new text lands
-  where it put it, and the owner chose to trust the model to notice an odd merge in the
-  write's echo (`He sighedcried.`, `A disciple.3 SIDETEXT`). An attribute the codec does
+  as for two people. The lowering never reads the room, so text the writer deleted since
+  the model's read is no input to it: the kept edges are not written, so no deleted letter
+  is put back, but the model's new text lands where it put it, and the owner chose to
+  trust the model to notice an odd merge in the write's echo and its listing of concurrent
+  edits (`He sighedcried.`, `A disciple.3 SIDETEXT`). A model letter can be lost the same
+  way: `Gamma` over a deleted `Beta` lands `Gamm`, because the deleted `a` is a shared edge
+  letter. Only the apply step meets the room (`applyOps`' `room`): a splice deletes the
+  items the room still holds, as an editor's delete cannot reach what is gone, and puts
+  its text after the units it replaced. The update, the write's record and turn Undo
+  therefore never claim the writer's deletion. An attribute the codec does
   not write (`uploadToken`) is never set: the model's node is compared with what the codec
   shows of the node it saw (a round trip of the top-level block), so a model edit to a
   paragraph leaves an image whose upload is in flight alone.
@@ -56,6 +62,8 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
 - What that guarantees, for a block it keeps, and no more:
   - A replace never writes a character at the start or end of its old text that its new
     text repeats, so a letter the writer deleted there is not re-inserted.
+  - The update deletes no item the room had already deleted, so the write's record holds
+    only what the model changed and Undo restores the writer's exact text.
   - The model's new text lands where the model put it, even beside or in place of deleted
     text, so pieces such as `the, steadily moving train` appear. Nothing marks or reports
     them; the echo shows the merged text.

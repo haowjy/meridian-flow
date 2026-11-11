@@ -136,8 +136,17 @@ export interface AgentEditModel extends DocumentModel {
    * Apply operations to one top-level block, addressed on its state before any of them.
    * Every path and offset is checked before anything changes; a write that does not fit
    * the block fails and leaves it as it was.
+   *
+   * `room` is the document `doc` is a view of, when it is another. A splice deletes only
+   * the units `room` still holds and puts its text after the ones it replaced, so the
+   * update deletes nothing the room had already deleted.
    */
-  applyOps(doc: DocHandle, block: BlockRef, ops: readonly EditOp[]): EditOpsResult;
+  applyOps(
+    doc: DocHandle,
+    block: BlockRef,
+    ops: readonly EditOp[],
+    room?: DocHandle,
+  ): EditOpsResult;
 
   /** Replace one same-type block's complete content while preserving its CRDT parent identity. */
   applyBlockReplacement(doc: DocHandle, block: BlockRef, replacement: Block): void;

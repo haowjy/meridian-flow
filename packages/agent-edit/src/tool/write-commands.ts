@@ -555,6 +555,7 @@ export function createWriteCommands(deps: {
             origin,
             beforeSegment,
             certifySegment(planDoc, plan.ir, beforeVector),
+            planDoc === room.doc ? undefined : toDocHandle(room.doc),
           );
         beforeSegment?.();
         let insertedBlocks: string[] = [];
