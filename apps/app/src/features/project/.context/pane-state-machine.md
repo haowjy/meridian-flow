@@ -14,8 +14,9 @@ this page as each PR lands.
 
 - **main**: an item, or its kind's empty page (the editor with no document; the new-chat composer,
   which is also the project's home).
-- **side**: an item of either kind, or nothing. Two chats are never on screen at once: beside a chat
-  the side holds a document or nothing. Two documents side by side are allowed.
+- **side**: an item of the **other** kind from main, or its empty state. Beside a document the side
+  holds a chat (empty: a new chat's composer); beside a chat it holds a document (empty: the
+  document list). Main's kind is never in the side: no two chats, no two documents on screen.
 - **current document**, **current chat**: the last item of each kind main showed.
 - **mode** (Write | Chat) is not stored: it is the kind of main's item. Main keeps tabs per kind;
   the switch shows the current mode's tabs.
@@ -25,12 +26,12 @@ this page as each PR lands.
 `openMain(X)`:
 
 1. Same kind as main: X replaces main. The side is untouched.
-2. Other kind: the side takes what main showed, then main shows X.
+2. Other kind: the panes swap kinds. The side takes what main showed (an empty editor page leaves
+   the side empty), then main shows X.
 3. X becomes the current item of its kind.
-4. If the side now shows main's item, the side falls back to its previous item, else nothing.
 
-`openSide(X)`: the side shows X. The side's picker doesn't offer main's item, and beside a chat it
-offers documents only.
+`openSide(X)`: X is the other kind from main; the side shows it. The side's picker offers only the
+other kind.
 
 ```mermaid
 flowchart TD
@@ -43,21 +44,18 @@ flowchart TD
   where -->|Inside the side| inSide{Same kind as the side?}
   inSide -->|yes| os
   inSide -->|no| om
-  where -->|Side picker| os
+  where -->|Side picker, other kind only| os
   om --> kind{Same kind as main?}
   kind -->|yes| rep[main := X; side stays]
   kind -->|no| swap[side := main; main := X]
   rep --> setcur[current of X's kind := X]
   swap --> setcur
-  setcur --> dup{side shows main's item?}
-  dup -->|yes| yield[side := its previous item, else nothing]
-  dup -->|no| done([done])
-  yield --> done
+  setcur --> done([done])
   os --> sideset[side := X] --> done
 ```
 
 In one line: **the same kind opens in place, the other kind opens in the other pane, and the left
-sidebar always opens in main.**
+sidebar always opens in main.** Main and the side always hold different kinds.
 
 ## Events
 
@@ -65,31 +63,27 @@ sidebar always opens in main.**
 |---|---|
 | Pick in the left sidebar | `openMain(X)` |
 | Pick inside main | same kind as main: `openMain(X)`; other kind: `openSide(X)` |
-| Pick inside the side | same kind as the side: `openSide(X)`; other kind: `openMain(X)` |
-| Pick in the side's picker | `openSide(X)` |
-| Write or Chat switch to kind k | `openMain(current of k ?? empty page of k)` |
+| Pick inside the side | same kind as the side: `openSide(X)`; other kind (main's): `openMain(X)`, side stays |
+| Pick in the side's picker | `openSide(X)`; it lists only the other kind |
+| Write or Chat switch to kind k | `openMain(current of k ?? empty page of k)`: the panes swap kinds |
 | Close main's tab | main shows the next tab of its kind, else its empty page; the side stays |
-| Delete or remove the side's item | the side falls back to its previous item, else nothing |
+| Delete or remove the side's item | the side shows its empty state |
 
 Home is the new-chat composer: it suggests what to continue and documents to open beside it, and a
 suggested document is the other kind, so it opens in the side.
 
-## Mode and side kinds
+## Modes
 
-Each state is (main's mode, the side's kind). Same-kind moves inside a state are left out. There is no
-"Chat · side chat" state.
+Two states, one per mode; the side always holds the other kind. Moves within a state (main replaced
+by its own kind, the side replaced by its own kind) are left out.
 
 ```mermaid
 stateDiagram-v2
   direction LR
-  state "Write · side chat" as WC
-  state "Write · side document" as WD
-  state "Chat · side document" as CD
-  WC --> CD: open a chat in main (side takes main's document)
-  CD --> WC: open a document in main (side takes main's chat)
-  WD --> CD: open a chat in main
-  WC --> WD: side picks a document
-  WD --> WC: side picks a chat
+  state "Write · side chat" as W
+  state "Chat · side document" as C
+  W --> C: open a chat in main (side takes main's document)
+  C --> W: open a document in main (side takes main's chat)
 ```
 
 ## Example
@@ -101,3 +95,4 @@ stateDiagram-v2
 | Open chat2 from the left sidebar | chat2 | ch2 |
 | Press Write | ch2 | chat2 |
 | Chapter link inside the side's chat2 | ch5 | chat2 |
+| Chat link inside main's ch5 | ch5 | chat3 |
