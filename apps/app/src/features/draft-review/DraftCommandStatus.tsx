@@ -3,6 +3,7 @@
  * when no review groups remain. With nothing to report, it occupies no line.
  */
 
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -10,14 +11,23 @@ import { useDraftCommandOwner } from "@/features/project/context/account-feature
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import { useDraftCommandState } from "./draft-changes";
 import { ReviewMessageText } from "./ReviewMessageText";
-export function DraftCommandStatus({
-  itemKey,
-  item,
-}: {
-  itemKey: string;
-  /** The listed row supplies its live deletion state. */
-  item?: ThreadDraftListItem;
-}) {
+/**
+ * Beside a drafted document's name when the manuscript no longer has it: Apply brings it back.
+ * Nothing when it's still there.
+ */
+export function DeletedFromManuscriptTag({ item }: { item: ThreadDraftListItem | undefined }) {
+  if (!isDeletedFromManuscript(item)) return null;
+  return (
+    <span
+      title={t`Deleted from the manuscript. Apply brings it back.`}
+      className="shrink-0 text-xs font-normal text-muted-foreground"
+    >
+      <Trans>Deleted</Trans>
+    </span>
+  );
+}
+
+export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
   const owner = useDraftCommandOwner();
   const state = useDraftCommandState(itemKey);
   const content = state.stalled ? (
@@ -48,8 +58,6 @@ export function DraftCommandStatus({
         className="min-w-0 flex-1 p-0"
       />
     )
-  ) : isDeletedFromManuscript(item) ? (
-    <Trans>Deleted from the manuscript</Trans>
   ) : null;
   if (!content) return null;
   return (
