@@ -62,9 +62,7 @@ export function ListSectionHeader({
               look,
             )}
           >
-            <span className="flex w-3 shrink-0 justify-center">
-              <DisclosureMark open={fold.open} />
-            </span>
+            <DisclosureMark open={fold.open} />
             {name}
             {fold.open ? null : foldedMark}
           </button>

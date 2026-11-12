@@ -32,9 +32,8 @@ import { SourcePane } from "./SourcePane";
 type Feed = ReturnType<typeof useProjectChatFeed>;
 const chatSelector = (id: string) => `[data-chat-id="${CSS.escape(id)}"]`;
 
-/** What every chat row needs from its list. */
-/** Other chats shown at first, and added by each Show more. */
-const OTHERS_PAGE = 20;
+/** Unpinned chats a list shows at first, and adds with each Show more. */
+const PAGE = 20;
 
 /** What every chat row shares; stable across renders, so a row re-renders only for its own chat. */
 type RowContext = {
@@ -123,7 +122,6 @@ export function ChatsBody({
       nested={nested}
     />
   );
-  const [othersShown, setOthersShown] = useState(OTHERS_PAGE);
   // After Undo, Pin or Unpin, focus goes to the chat's row in its list, or to Find when no list
   // here shows it. The row mounts only once the lists have loaded (a restored pin past the first
   // page loads later), and a pinned or unpinned row only once it has moved, so focus waits for
@@ -167,12 +165,10 @@ export function ChatsBody({
       {groups.helpers.get(thread.id)?.map((helper) => row(helper, true))}
     </div>
   );
-  const others = [...groups.othersPinned, ...groups.others];
-  const shownOthers = others.slice(0, othersShown);
-  // The open chat shows wherever it sits in Other chats, past the page or under the folded heading.
-  const openOther = others.find((chat) => chat.id === currentThreadId) ?? null;
-  const openPastPage = openOther !== null && !shownOthers.includes(openOther);
-  const pinnedShown = shownOthers.filter((chat) => pinnedIds.has(chat.id));
+  const othersCount = groups.othersPinned.length + groups.others.length;
+  // While Other chats is folded, the open chat in it shows under its heading.
+  const openOther =
+    [...groups.othersPinned, ...groups.others].find((chat) => chat.id === currentThreadId) ?? null;
 
   return (
     <div ref={root} className="flex min-h-0 flex-1 flex-col">
@@ -213,17 +209,20 @@ export function ChatsBody({
         ) : (
           <>
             <div className="px-2 pt-1">
-              {groups.pinned.length > 0 ? (
-                <div data-pinned-list>{groups.pinned.map(withHelpers)}</div>
-              ) : null}
-              {groups.scoped.map(withHelpers)}
+              <PagedChats
+                key={scopeWorkId ?? noWorkId}
+                pinned={groups.pinned}
+                chats={groups.scoped}
+                openId={currentThreadId}
+                render={withHelpers}
+              />
               {scopeEmpty ? (
                 <ListLine>
                   <Trans>No chats here yet.</Trans>
                 </ListLine>
               ) : null}
             </div>
-            {others.length > 0 ? (
+            {othersCount > 0 ? (
               <ListSection
                 label={t`Other chats`}
                 fold={othersFold}
@@ -231,21 +230,13 @@ export function ChatsBody({
                   groups.othersState === "idle" ? null : <StateMark state={groups.othersState} />
                 }
               >
-                {pinnedShown.length > 0 ? (
-                  <div data-pinned-list>{pinnedShown.map(withHelpers)}</div>
-                ) : null}
-                {shownOthers.slice(pinnedShown.length).map(withHelpers)}
-                {openPastPage ? withHelpers(openOther) : null}
-                {others.length > othersShown ? (
-                  <ListRow
-                    onOpen={() => setOthersShown((shown) => shown + OTHERS_PAGE)}
-                    title={
-                      <span className={role.secondary}>
-                        <Trans>Show more</Trans>
-                      </span>
-                    }
-                  />
-                ) : null}
+                <PagedChats
+                  key={scopeWorkId ?? noWorkId}
+                  pinned={groups.othersPinned}
+                  chats={groups.others}
+                  openId={currentThreadId}
+                  render={withHelpers}
+                />
               </ListSection>
             ) : null}
             {openOther && !othersFold.open ? (
@@ -256,6 +247,63 @@ export function ChatsBody({
       </SourcePane>
       {footer}
     </div>
+  );
+}
+
+/**
+ * A list's pinned chats, then its other chats a page at a time with Show more; the open chat
+ * shows even past the page. Show more moves focus to the first chat it adds.
+ */
+function PagedChats({
+  pinned,
+  chats,
+  openId,
+  render,
+}: {
+  pinned: readonly ThreadListItem[];
+  chats: readonly ThreadListItem[];
+  openId: string | null;
+  render: (chat: ThreadListItem) => ReactNode;
+}) {
+  const [shown, setShown] = useState(PAGE);
+  const list = useRef<HTMLDivElement>(null);
+  const focusFrom = useRef<number | null>(null);
+  useEffect(() => {
+    const from = focusFrom.current;
+    if (from === null) return;
+    focusFrom.current = null;
+    const added = list.current?.querySelectorAll<HTMLElement>(":scope > [data-paged-chat]")[from];
+    const control = added?.querySelector<HTMLElement>("[data-list-item]");
+    if (control) moveFocus(control, { ring: lastInputWasKeyboard() });
+  }, [shown]);
+  const page = chats.slice(0, shown);
+  const open = chats.find((chat) => chat.id === openId);
+  const openPastPage = open !== undefined && !page.includes(open);
+  return (
+    <>
+      {pinned.length > 0 ? <div data-pinned-list>{pinned.map(render)}</div> : null}
+      <div ref={list}>
+        {page.map((chat) => (
+          <div key={chat.id} data-paged-chat>
+            {render(chat)}
+          </div>
+        ))}
+        {openPastPage ? render(open) : null}
+      </div>
+      {chats.length > shown ? (
+        <ListRow
+          onOpen={() => {
+            focusFrom.current = shown;
+            setShown(shown + PAGE);
+          }}
+          title={
+            <span className={role.secondary}>
+              <Trans>Show more</Trans>
+            </span>
+          }
+        />
+      ) : null}
+    </>
   );
 }
 
