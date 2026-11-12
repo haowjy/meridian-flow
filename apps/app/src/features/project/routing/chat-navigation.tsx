@@ -3,6 +3,9 @@
  *
  * Main shows a new chat's composer (`/chats`) or one chat the address names. What chat sits beside a document is the side's resolution (`side/side-item.ts`), not
  * this. Every way of opening a chat navigates main to it.
+ *
+ * Placement follows `features/project/.context/pane-state-machine.md`: change that page's rules and
+ * diagrams with any change here.
  */
 import {
   createContext,

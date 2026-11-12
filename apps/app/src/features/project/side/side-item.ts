@@ -16,6 +16,9 @@
  * the editor: one that no longer opens (removed, an upload) falls through to the next candidate.
  * While a describe is unanswered the side keeps what it shows; it never paints a fallback and then
  * swaps.
+ *
+ * Placement follows `features/project/.context/pane-state-machine.md`: change that page's rules and
+ * diagrams with any change here.
  */
 import type { OpenDocument } from "@/client/stores";
 import type { Item } from "../views";

@@ -135,6 +135,7 @@ function useOptionalOpenEditorReview(): EditorReviewCommand | null {
  * From a chat beside, or anywhere else (a document never sits beside a document), it opens in
  * main. Null opens in main.
  */
+// Where a link opens is a pane-state-machine rule (`.context/pane-state-machine.md`): change both together.
 function useHoldBeside(): ShowBeside | null {
   const chatInMain = useOptionalChatPlace() === "main";
   const hold = useOptionalShowBeside();

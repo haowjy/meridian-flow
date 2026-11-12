@@ -8,7 +8,9 @@ features.
   and sessions survive: moving an item between main and the side changes its slot, not its host.
   Phone is a sibling shell and may mount only its active destination.
 - Main shows what the address names (`resolveMainDocument`, shared with the phone). The side shows
-  one item, never main's. Every door opens in main.
+  one item, never main's. Where an item opens and what each pane shows after it follow
+  [`.context/pane-state-machine.md`](.context/pane-state-machine.md): read it before changing pane
+  placement, and change its rules and diagrams in the same commit.
 - Project navigation never captures or repairs editor pixel scroll; the mounted reading-position
   hook owns it.
 - Navigation and Work management never rebind a chat.

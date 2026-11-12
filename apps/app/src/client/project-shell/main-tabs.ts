@@ -6,6 +6,9 @@
  *
  * Only documents take a tab today. A tab is an item with a kind, so letting chats take one too
  * is `TAB_KINDS` alone; the strip draws whatever is here.
+ *
+ * Placement follows `apps/app/src/features/project/.context/pane-state-machine.md`: change that page's rules and
+ * diagrams with any change here.
  */
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useSyncExternalStore } from "react";
