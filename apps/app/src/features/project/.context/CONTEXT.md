@@ -73,9 +73,10 @@ or the new-chat composer, the current document if it opens, else main's open tab
 showed last, then from the right) that open, else nothing (the side's empty state). Recents are
 not a source: a document the writer closed must not come back. While main's document is opening,
 the side keeps what it showed. Nothing derives the side from activity (the chat that last edited
-a document, the documents a chat touched): the writer's own state decides. A new-chat composer on
-screen in either pane is `currentChat = null`: main at `/chats` writes it, as the side's New chat
-does (the bare address opens a new chat in main, so it writes null too). A swap (the side picker, a link held beside, the
+a document, the documents a chat touched): the writer's own state decides. The writer's New chat, in
+either pane, is `currentChat = null` (`openNewChat`, or the side picker's New chat). Arriving at
+`/chats` is not: the bare address, a reload and Back land there too, and must not forget the chat
+beside. A swap (the side picker, a link held beside, the
 side composer's send) writes the current chat or document and lasts until main changes mode,
 which falls out of the rule. `fitsBeside` is "the item's kind differs from main's mode", for the
 rule and the picker, which offers only the other kind; its "For this" rows (a document's chats, a

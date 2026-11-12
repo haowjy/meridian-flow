@@ -95,6 +95,9 @@ export function useProjectChatNavigation({
       openChat,
       openNewChat: async (options?: { replace?: boolean; focus?: boolean }) => {
         if (options?.focus !== false) setNewChatRequest(nextFocusRequestId.current++);
+        // The writer's New chat is the current chat, as the side's is. Arriving at the composer
+        // (the bare address, a reload, Back) is not: it must not forget the chat beside.
+        remember(null);
         if (latest.current.mainKind === "new") return;
         await go({ kind: "new-chat" }, { replace: options?.replace ?? false });
       },
@@ -116,12 +119,9 @@ export function useProjectChatNavigation({
     return { remember, commands };
   }, []);
 
-  // The current chat is the last chat on screen: a new-chat composer in main is null, as the
-  // side's New chat is.
   useEffect(() => {
     if (urlChatId) remember(urlChatId);
-    else if (mainKind === "new") remember(null);
-  }, [urlChatId, mainKind, remember]);
+  }, [urlChatId, remember]);
   useMissingChatFallback(accountId, surfaceThreadId, () => {
     remember(null);
     // Replace, never push: Back must not land on the missing chat again.
