@@ -1,6 +1,6 @@
 /** QueryClient-scoped normalized authority for Project-chat favorite state. */
 import type { ProjectChatItem, UpdateThreadUserStateResponse } from "@meridian/contracts/protocol";
-import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useSyncExternalStore } from "react";
 import { updateThreadUserState } from "@/client/api/threads-api";
 import { type ChatFeedData, flattenChatFeed, patchChatRow } from "./chat-projections";
@@ -104,56 +104,42 @@ export function projectThreadUserState(
 }
 
 /**
- * One chat's favourite as the writer last set it: a pending command's value until the server
- * answers, otherwise the last feed page that listed the chat.
+ * The chats pinned as the writer last set them: the server's pinned feed (which drops an unpinned
+ * row itself), plus chats pinned since that feed was fetched, so a pin shows before the refetch
+ * and doesn't drop out between the server's answer and the refetch. A record no newer than the
+ * feed is the feed's to judge: it may be a pin removed in another tab.
  */
-export function useChatFavorite(projectId: string, threadId: string): boolean {
-  const client = useQueryClient();
-  const { data } = useQuery({
-    queryKey: stateKey(projectId, threadId),
-    queryFn: () => readRecord(client, projectId, threadId),
-    initialData: () => readRecord(client, projectId, threadId),
-    enabled: false,
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-  return data.favorite?.projectedValue ?? data.base.isFavorite;
-}
-
-/**
- * The chats pinned as the writer last set them: the server's pinned feed, with each chat's own
- * state over it (a pending command's value, else the server's last answer), so a pin shows
- * before the feed refetches and doesn't drop out between the answer and the refetch.
- */
-export function usePinnedChatIds(projectId: string, confirmed: readonly string[]): Set<string> {
+export function usePinnedChatIds(
+  projectId: string,
+  confirmed: readonly string[],
+  confirmedAt: number,
+): Set<string> {
   const client = useQueryClient();
   const cache = client.getQueryCache();
-  const pending = useSyncExternalStore(
+  const added = useSyncExternalStore(
     (listener) =>
       cache.subscribe((event) => {
         const key = event.query.queryKey;
         if (key[1] === projectId && key[2] === "thread-user-state") listener();
       }),
     () => {
-      const changes: string[] = [];
+      const ids: string[] = [];
       for (const query of cache.findAll({
         queryKey: ["projects", projectId, "thread-user-state"],
       })) {
         const record = query.state.data as ThreadUserStateRecord | undefined;
-        if (!record) continue;
-        const value = record.favorite?.projectedValue ?? record.base.isFavorite;
-        changes.push(`${value ? "+" : "-"}${query.queryKey[3]}`);
+        if (!record || query.state.dataUpdatedAt <= confirmedAt) continue;
+        if (record.favorite?.projectedValue ?? record.base.isFavorite) {
+          ids.push(String(query.queryKey[3]));
+        }
       }
-      return changes.sort().join(" ");
+      return ids.sort().join(" ");
     },
   );
-  return useMemo(() => {
-    const ids = new Set(confirmed);
-    for (const change of pending ? pending.split(" ") : []) {
-      if (change[0] === "+") ids.add(change.slice(1));
-      else ids.delete(change.slice(1));
-    }
-    return ids;
-  }, [confirmed, pending]);
+  return useMemo(
+    () => new Set([...confirmed, ...(added ? added.split(" ") : [])]),
+    [confirmed, added],
+  );
 }
 
 export function getThreadUserStateRecord(

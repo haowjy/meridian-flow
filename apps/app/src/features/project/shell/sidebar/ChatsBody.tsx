@@ -4,11 +4,7 @@ import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contract
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Layers, Plus, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import {
-  runFavoriteCommand,
-  useChatFavorite,
-  usePinnedChatIds,
-} from "@/client/query/thread-user-state-commands";
+import { runFavoriteCommand, usePinnedChatIds } from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useRenameThread } from "@/client/query/useRenameThread";
@@ -36,6 +32,7 @@ import { groupChats, type RowState } from "./chat-groups";
 import { SourceHint, SourcePane } from "./SourcePane";
 
 type Feed = ReturnType<typeof useProjectChatFeed>;
+const chatSelector = (id: string) => `[data-chat-id="${CSS.escape(id)}"]`;
 
 /** What every chat row needs from its list. */
 type RowContext = {
@@ -43,6 +40,7 @@ type RowContext = {
   currentThreadId: string | null;
   states: ReadonlyMap<string, RowState>;
   replying: ReadonlySet<string>;
+  pinnedIds: ReadonlySet<string>;
   deletes: ChatDeletes;
   refused: ChatDeleteRefusal | null;
   touch: boolean;
@@ -89,7 +87,7 @@ export function ChatsBody({
     () => favoriteFeed.items.map((item) => item.id),
     [favoriteFeed.items],
   );
-  const pinnedIds = usePinnedChatIds(projectId, confirmedPins);
+  const pinnedIds = usePinnedChatIds(projectId, confirmedPins, favoriteFeed.dataUpdatedAt);
   // Pinned is open unless folded; its fold is kept like a tree folder's.
   const expansion = useTreeExpansion(projectId, "chats", null);
   const pinnedOpen = !expansion.isExpanded("pinned-folded");
@@ -111,23 +109,40 @@ export function ChatsBody({
     currentThreadId,
     states: groups.states,
     replying: groups.replying,
+    pinnedIds,
     deletes,
     refused,
     touch,
     onOpenChat,
-    onMoved: (id, pinned) => setFocusRow({ id, pinned }),
+    onMoved: (id, pinned) => {
+      const active = document.activeElement;
+      if (active === document.body || active?.closest(chatSelector(id))) {
+        setFocusRow({ id, pinned });
+      }
+    },
   };
   // After Undo, Pin or Unpin, focus goes to the chat's row in its list, or to Find when no list
   // here shows it. The row mounts only once the lists have loaded (a restored pin past the first
   // page loads later), and a pinned or unpinned row only once it has moved, so focus waits for
-  // that render rather than land on the row about to unmount.
+  // that render rather than land on the row about to unmount. Focus the writer puts elsewhere
+  // meanwhile ends the wait.
   const [focusRow, setFocusRow] = useState<{ id: string; pinned?: boolean } | null>(null);
   const listsSettled = threads !== null && !favoriteFeed.isFetching && !favoriteFeed.hasNextPage;
   useEffect(() => {
     if (!focusRow) return;
+    const drop = (event: FocusEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest(chatSelector(focusRow.id))) {
+        setFocusRow(null);
+      }
+    };
+    document.addEventListener("focusin", drop);
+    return () => document.removeEventListener("focusin", drop);
+  }, [focusRow]);
+  useEffect(() => {
+    if (!focusRow) return;
     const rows = [
       ...(root.current?.querySelectorAll<HTMLElement>(
-        `[data-chat-id="${CSS.escape(focusRow.id)}"] [data-list-item]`,
+        `${chatSelector(focusRow.id)} [data-list-item]`,
       ) ?? []),
     ];
     const row = rows.find(
@@ -416,6 +431,7 @@ function ChatRow({
   currentThreadId,
   states,
   replying,
+  pinnedIds,
   deletes,
   refused,
   touch,
@@ -425,7 +441,7 @@ function ChatRow({
 }: RowContext & { chat: RowChat; state?: RowState; nested?: boolean }) {
   const client = useQueryClient();
   const title = displayThreadTitle(chat.title);
-  const pinned = useChatFavorite(projectId, chat.id);
+  const pinned = pinnedIds.has(chat.id);
   const [menuOpen, setMenuOpen] = useState(false);
   const [asking, setAsking] = useState(false);
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
@@ -495,9 +511,7 @@ function ChatRow({
                   keep={t`Keep`}
                   confirm={t`Delete`}
                   returnFocus={() =>
-                    document.querySelector<HTMLElement>(
-                      `[data-chat-id="${CSS.escape(chat.id)}"] [data-list-item]`,
-                    )
+                    document.querySelector<HTMLElement>(`${chatSelector(chat.id)} [data-list-item]`)
                   }
                   onKeep={() => setAsking(false)}
                   onConfirm={() => {
