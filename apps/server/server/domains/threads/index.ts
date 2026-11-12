@@ -2,7 +2,6 @@
 
 export type { DrizzleDatabase } from "../../shared/drizzle-transaction.js";
 export { createDrizzleAskRepository } from "./adapters/drizzle/ask-repository.js";
-export { createDrizzleDocumentRelatedReader } from "./adapters/drizzle/document-related-reader.js";
 export { createDrizzleEventJournalReader } from "./adapters/drizzle/event-reader.js";
 export { createDrizzleEventJournalWriter } from "./adapters/drizzle/event-writer.js";
 export { createDrizzleTopPrimaryChatResolver } from "./adapters/drizzle/top-primary-chat.js";

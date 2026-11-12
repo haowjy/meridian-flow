@@ -470,9 +470,8 @@ KB. Its membership means not yet filed; a name does not change membership.
 ## Negative space
 
 External connectors (google_drive, dropbox, notion) are schema-only. There is
-no `results://` scheme. Neither Recent list lives here: chat Recent reads
-`turn_document_touches` in `threads`, and the project's recently opened list is
-`domains/recent-documents`.
+no `results://` scheme. The project's recently opened list doesn't live here:
+it is `domains/recent-documents`.
 
 ## Downlinks
 

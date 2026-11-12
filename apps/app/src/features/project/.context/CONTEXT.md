@@ -52,8 +52,9 @@ The band's far right holds the tab list (`MainTabMenu`, while any document tab i
 then every tab, the open one filled. Close all sends main to Recently opened (an unavailable address
 included) unless main shows a chat, which stays. Every control in the band shares the
 chips' centre line. Stored tabs of documents deleted while the window was closed are not drawn
-once the replica holds the catalog (`useLiveTabs`; the record is left alone, so a document that
-comes back has its tab). Only documents take a tab: a tab is an item with a kind, and `TAB_KINDS`
+once the replica holds the catalog, and a tab shows its document's current name and place
+(`useLiveTabs` in `client/project-shell/live-tabs.ts`, read by the strip, the tab list and the
+side's document list; the record is left alone, so a document that comes back has its tab). Only documents take a tab: a tab is an item with a kind, and `TAB_KINDS`
 is the switch for chats. A tab's Live or Draft view is its document's view, so it is per tab
 already. The phone draws no strip; it records arrivals the same way.
 
@@ -82,8 +83,14 @@ either pane, is `currentChat = null` (`openNewChat`, or the side picker's New ch
 beside. A swap (the side picker, a link held beside, the
 side composer's send) writes the current chat or document and lasts until main changes mode,
 which falls out of the rule. `fitsBeside` is "the item's kind differs from main's mode", for the
-rule and the picker, which offers only the other kind; its "For this" rows (a document's chats, a
-chat's documents by activity) are an offer, not a source of the side. A document fits beside only
+rule. The picker (`side/SidePicker.tsx`) offers only the other kind. Beside a document: New chat,
+then the scoped Work's chats (pinned first) and Other chats, grouped by `useChatGroups` as the
+sidebar's Chats list is; archived chats are left out, search included. Beside a chat:
+`DocumentChoices`, one list also drawn inline in the side's empty pane: the documents open in
+main's tabs, Recently opened, then the file explorer (`SideExplorer`: the project's areas through
+`useProjectMenuSource`, stepping into folders with `DrillInMenu`'s drill model). Only documents
+that open in the editor are offered (`canSitBeside`); the explorer shows others disabled. Recents
+and the tabs are choices on offer, never a source of the side. A document fits beside only
 once it is described (`describe` in `context/open-project-document.ts`) and opens in the editor:
 one that doesn't (removed, an upload) is skipped for the next candidate. While a describe is out,
 the side keeps what it showed. The current document is cleared when its tab goes
@@ -105,8 +112,8 @@ and the sheet closes, as every phone open does.
 A page only a draft holds (created by it, or deleted live) is described from the draft its
 view pins (`useDescriptions` in `side/SideView.tsx`), the way main's address describes it, since
 the live catalog has no entry for it. The sidebar tree marks main's document only, never the side's. Each header renders inside its host
-(`shell/MainHeader.tsx`, `side/SideHeader.tsx`); while the side is closed, main's header names it
-(`side/ClosedSideButton.tsx`).
+(`shell/MainHeader.tsx`, `side/SideHeader.tsx`); while the side is closed, the panel toggle is
+the only way back to it.
 
 The side's new-chat composer (`useAttachAbout` in `features/chat/CreationComposer.tsx`) attaches
 main's document only to an empty draft or over the chip it put there itself, which it remembers

@@ -1,7 +1,6 @@
 /** Barrel: re-exports the threads domain port types — the event-journal ports and the thread/turn/block/model-response repository ports. */
 
 export type { AskRepository, CreateAskInput, StoredAsk } from "./ask-repository.js";
-export type { DocumentRelatedReader } from "./document-related.js";
 export type {
   EventJournalReader,
   EventJournalWriter,
@@ -36,14 +35,11 @@ export type {
   ThreadRepository,
   ThreadRunStateReader,
   ThreadStatusReader,
-  ThreadTouchedDocument,
   ThreadUserStateRepository,
   ThreadWorksRepository,
   TranscriptItemRow,
   TranscriptKey,
   TranscriptSpan,
-  TurnDocumentTouch,
-  TurnDocumentTouchRepository,
   TurnRepository,
   UpdateTurnStatusInput,
   WorkThreadSummary,

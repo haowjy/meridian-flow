@@ -11,7 +11,6 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { FileQuestion, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMainTabs } from "@/client/project-shell/main-tabs";
@@ -46,9 +45,15 @@ import { UntabbedChip, useMainTabCommands } from "./shell/MainTabStrip";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import { pageSheetClass } from "./shell/tab-chip";
-import { ClosedSideButton } from "./side/ClosedSideButton";
+import { DocumentChoices } from "./side/DocumentChoices";
 import { SideChatHeader, SideDocumentHeader, SideEmptyHeader } from "./side/SideHeader";
-import { useChatOnScreen, useHostChatId, useSideItem, useSideRevealed } from "./side/SideView";
+import {
+  useChatOnScreen,
+  useHostChatId,
+  useShellCommands,
+  useSideItem,
+  useSideRevealed,
+} from "./side/SideView";
 import { useMainItem } from "./views";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
@@ -100,14 +105,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const shown = useShownDocuments(projectId);
   const side = useSideItem();
   const sideTab = side.item?.kind === "document" ? side.document : null;
-  // While the side is closed, main's header names what it would show; pressing it opens the side.
-  const closedSide = sideOpen ? null : (
-    <ClosedSideButton
-      projectId={projectId}
-      document={sideTab}
-      onOpen={() => setSlotOpenHere("side", true)}
-    />
-  );
   // The newest open tab shown that is off screen stays mounted, hidden: closing a tab lets its
   // editor go. A document moving
   // between main and the side passes through here while main's address loads, so it never
@@ -157,7 +154,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               onNewDocument={onNewDocument}
               sidebarToggle={sidebarToggle}
               sideToggle={sideToggle}
-              closedSide={closedSide}
             />
           ) : place === "side" ? (
             <SideDocumentHeader
@@ -203,7 +199,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                   onShowRecents={onShowRecents}
                   sidebarToggle={sidebarToggle}
                   contextToggle={sideToggle}
-                  closedSide={closedSide}
                 />
               ) : (
                 <SideChatHeader
@@ -283,7 +278,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
             onNewDocument={onNewDocument}
             sidebarToggle={sidebarToggle}
             sideToggle={sideToggle}
-            closedSide={closedSide}
           />
           <div className="page-sheet relative flex min-h-0 flex-1 flex-col">
             <ProjectRouteBoundary {...mask}>
@@ -327,14 +321,19 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
 /** The side with nothing to show: a document is still being found, or none is open. */
 function SideEmpty({ projectId }: { projectId: string }) {
   const { pending, failed } = useSideItem();
+  const { swapSide } = useShellCommands(projectId);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SideEmptyHeader projectId={projectId} />
       <div className={cn(pageSheetClass(true), "flex min-h-0 flex-1")}>
         {pending || failed ? null : (
-          <p className="m-auto max-w-56 px-4 text-center text-xs text-muted-foreground">
-            <Trans>A document you open shows here beside the chat.</Trans>
-          </p>
+          // The dropdown's inset, so the list reads the same in both places.
+          <div className="flex min-h-0 min-w-0 flex-1 p-1.5">
+            <DocumentChoices
+              projectId={projectId}
+              choose={(documentId) => swapSide({ kind: "document", documentId })}
+            />
+          </div>
         )}
       </div>
     </div>

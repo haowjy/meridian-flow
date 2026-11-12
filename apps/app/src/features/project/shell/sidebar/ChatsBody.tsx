@@ -4,9 +4,8 @@ import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contract
 import { useQueryClient } from "@tanstack/react-query";
 import { Pin, Plus } from "lucide-react";
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { runFavoriteCommand, usePinnedChatIds } from "@/client/query/thread-user-state-commands";
+import { runFavoriteCommand } from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
-import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useRenameThread } from "@/client/query/useRenameThread";
 import { announce, announceError } from "@/client/stores";
 import { ActionNotice } from "@/components/app/ActionNotice";
@@ -26,8 +25,9 @@ import { useSectionFold } from "../../context/use-tree-expansion";
 import { TitleEditSlot } from "../TitleEditSlot";
 import { useChatDeleteState } from "./ChatDeleteProvider";
 import type { ChatDeleteNotice, ChatDeleteRefusal, ChatDeletes } from "./chat-deletes";
-import { groupChats, type RowState } from "./chat-groups";
+import type { RowState } from "./chat-groups";
 import { SourcePane } from "./SourcePane";
+import { useChatGroups } from "./use-chat-groups";
 
 type Feed = ReturnType<typeof useProjectChatFeed>;
 const chatSelector = (id: string) => `[data-chat-id="${CSS.escape(id)}"]`;
@@ -71,27 +71,17 @@ export function ChatsBody({
   onNewChat: () => void;
   footer?: ReactNode;
 }) {
-  const { threads } = useProjectThreads(projectId);
+  const {
+    threads,
+    groups,
+    pinnedIds,
+    settled: listsSettled,
+  } = useChatGroups(projectId, scopeWorkId, noWorkId);
   const [search, setSearch] = useState<string | null>(null);
   const { deletes, notice, refused } = useChatDeleteState();
   const touch = useCoarsePointer();
   const root = useRef<HTMLDivElement>(null);
-  const favoriteFeed = useProjectChatFeed(projectId, true);
-  const confirmedPins = useMemo(
-    () => favoriteFeed.items.map((item) => item.id),
-    [favoriteFeed.items],
-  );
-  const pinnedIds = usePinnedChatIds(projectId, confirmedPins, favoriteFeed.dataUpdatedAt);
   const othersFold = useSectionFold(projectId, "chats", "others", false);
-  // Every pin loads, so no chat beyond the first page offers "Pin".
-  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = favoriteFeed;
-  useEffect(() => {
-    if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();
-  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
-  const groups = useMemo(
-    () => groupChats(threads ?? [], scopeWorkId ?? noWorkId, noWorkId, pinnedIds),
-    [threads, scopeWorkId, noWorkId, pinnedIds],
-  );
   const openChat = useRef(onOpenChat);
   openChat.current = onOpenChat;
   const ctx = useMemo<RowContext>(
@@ -128,7 +118,6 @@ export function ChatsBody({
   // that render rather than land on the row about to unmount. Focus the writer puts elsewhere
   // meanwhile ends the wait.
   const [focusRow, setFocusRow] = useState<{ id: string; pinned?: boolean } | null>(null);
-  const listsSettled = threads !== null && !favoriteFeed.isFetching && !favoriteFeed.hasNextPage;
   useEffect(() => {
     if (!focusRow) return;
     const drop = (event: FocusEvent) => {

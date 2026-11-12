@@ -28,7 +28,6 @@ export function MainHeader({
   onNewDocument,
   sidebarToggle,
   sideToggle,
-  closedSide,
   actions,
 }: {
   projectId: string;
@@ -48,8 +47,6 @@ export function MainHeader({
   onNewDocument?: () => void;
   sidebarToggle: PaneHeaderRailToggle;
   sideToggle: PaneHeaderRailToggle;
-  /** While the side is closed: the control naming what it would show. */
-  closedSide?: ReactNode;
   /** Main's item's own controls, before the side's. */
   actions?: ReactNode;
 }) {
@@ -84,13 +81,7 @@ export function MainHeader({
           />
         </div>
       }
-      actions={
-        <>
-          {actions}
-          {/* Last, beside the toggle that opens it. */}
-          {closedSide}
-        </>
-      }
+      actions={actions}
     />
   );
 }

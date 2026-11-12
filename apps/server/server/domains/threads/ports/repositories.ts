@@ -613,28 +613,6 @@ export class ThreadMembershipUnavailableError extends Error {
   }
 }
 
-export interface TurnDocumentTouch {
-  id: string;
-  turnId: TurnId;
-  documentId: string;
-  threadId: ThreadId;
-  touchedAt: string;
-}
-
-/** A document a chat or one of its subagents touched or wrote to; `edited` when one of them wrote text to it. */
-export type ThreadTouchedDocument = Pick<
-  TurnDocumentTouch,
-  "documentId" | "threadId" | "touchedAt"
-> & {
-  edited: boolean;
-};
-
-export interface TurnDocumentTouchRepository {
-  recordTouch(turnId: TurnId, documentId: string): Promise<TurnDocumentTouch>;
-  /** The thread's own touches and its subagents', one row per document, newest first. */
-  listByThread(threadId: ThreadId, limit?: number): Promise<ThreadTouchedDocument[]>;
-}
-
 export type ThreadRepositories = {
   asks: AskRepository;
   threads: ThreadRepository;
@@ -649,7 +627,6 @@ export type ThreadRepositories = {
   /** One repeatable-read snapshot for authorization-sensitive multi-repository reads. */
   readSnapshot<T>(operation: () => Promise<T>): Promise<T>;
   threadDocuments: ThreadDocumentRepository;
-  documentTouches: TurnDocumentTouchRepository;
   promptBakes: PromptBakeRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   /**

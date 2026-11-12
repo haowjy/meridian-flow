@@ -31,7 +31,6 @@ import { createDrizzleThreadDocumentRepository } from "./thread-document-reposit
 import { createDrizzleThreadRepository } from "./thread-repository.js";
 import { createDrizzleThreadUserStateRepository } from "./thread-user-state-repository.js";
 import { createDrizzleThreadWorksRepository } from "./thread-works-repository.js";
-import { createDrizzleTurnDocumentTouchRepository } from "./turn-document-touch-repository.js";
 import { createDrizzleTurnRepository, lockThreadForTurnTransition } from "./turn-repository.js";
 
 export { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb, type DrizzleTransaction };
@@ -58,7 +57,6 @@ function composeDrizzleRepositories(
       return runInRootDrizzleReadSnapshot(db, operation);
     },
     threadDocuments: createDrizzleThreadDocumentRepository(db),
-    documentTouches: createDrizzleTurnDocumentTouchRepository(db),
     transaction(operation) {
       return runInDrizzleTransaction(db, operation);
     },

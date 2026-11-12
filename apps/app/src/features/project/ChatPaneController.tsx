@@ -5,7 +5,6 @@
  * The persistent `ChatSurface` owns the live conversation instance; this renders only its chrome.
  */
 
-import type { ReactNode } from "react";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
@@ -21,8 +20,6 @@ export type ChatPaneControllerProps = {
   onShowRecents: (options: { replace: boolean }) => Promise<void>;
   sidebarToggle: PaneHeaderRailToggle;
   contextToggle: PaneHeaderRailToggle;
-  /** While the side is closed: the control naming what it would show. */
-  closedSide?: ReactNode;
 };
 
 export function ChatPaneController({
@@ -32,7 +29,6 @@ export function ChatPaneController({
   onShowRecents,
   sidebarToggle,
   contextToggle,
-  closedSide,
 }: ChatPaneControllerProps) {
   const activity = useThreadActivity({
     threadId: threadId ?? "",
@@ -50,7 +46,6 @@ export function ChatPaneController({
       onShowRecents={onShowRecents}
       sidebarToggle={sidebarToggle}
       sideToggle={contextToggle}
-      closedSide={closedSide}
       actions={
         threadId ? (
           <>
