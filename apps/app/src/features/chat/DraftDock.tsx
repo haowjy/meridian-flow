@@ -104,12 +104,13 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 
   // The whole first line folds and unfolds the changes, except its commands. The changes'
   // own rows open the draft.
+  // The extra pixel above and below matches the edits receipt over it, whose border adds one.
   const summary = (trouble: ReactNode = null) => (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the FoldToggle inside is the keyboard toggle; the row's click is a mouse convenience.
     // biome-ignore lint/a11y/noStaticElementInteractions: same: a mouse convenience over the FoldToggle.
     <div
       onClick={askingApply ? undefined : () => setExpanded((value) => !value)}
-      className="flex min-h-10 cursor-pointer flex-wrap items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 py-1.5 pr-2 pl-[var(--chat-card-pad-x)] text-xs text-foreground @max-[25rem]/dock:gap-x-1 @max-[25rem]/dock:pl-1"
+      className="flex cursor-pointer flex-wrap items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 py-[calc(0.25rem+1px)] pr-2 pl-[var(--chat-card-pad-x)] text-xs text-foreground @max-[25rem]/dock:gap-x-1 @max-[25rem]/dock:pl-1"
     >
       {/* Sized by its content, so a question too wide to sit beside it wraps to a line of its own. */}
       <FoldToggle
@@ -118,7 +119,8 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           event.stopPropagation();
           setExpanded((value) => !value);
         }}
-        className="min-w-[12ch] flex-auto gap-1.5 text-foreground hover:text-foreground"
+        inline
+        className="min-w-[12ch] flex-auto text-foreground hover:text-foreground coarse:min-h-11"
       >
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
         <span className="min-w-0 truncate">
