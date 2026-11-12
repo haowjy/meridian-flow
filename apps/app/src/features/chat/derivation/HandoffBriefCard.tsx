@@ -150,12 +150,12 @@ export function HandoffBriefCard({
           ) : null}
           <AnchoredCards anchor={{ turn: turn.id }} />
           {view.state === "stopped" && !view.superseded ? (
-            <p className="text-caption text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               <Trans>This chat continues without a brief.</Trans>
             </p>
           ) : null}
           {canRetry && onRetry && destinationBusy ? (
-            <p id={retryWaitId} className="text-caption text-muted-foreground">
+            <p id={retryWaitId} className="text-xs text-muted-foreground">
               <Trans>You can retry when this chat is free.</Trans>
             </p>
           ) : null}

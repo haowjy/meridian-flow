@@ -117,7 +117,7 @@ export function ExportProjectDialog({
               <span className="block text-sm font-medium">
                 <Trans>Include Scratch</Trans>
               </span>
-              <span className="block text-caption text-muted-foreground">
+              <span className="block text-xs text-muted-foreground">
                 <Trans>Notes the AI kept, grouped by Work.</Trans>
               </span>
             </span>
@@ -133,7 +133,7 @@ export function ExportProjectDialog({
               <span className="block text-sm font-medium">
                 <Trans>Include Uploads</Trans>
               </span>
-              <span className="block text-caption text-muted-foreground">
+              <span className="block text-xs text-muted-foreground">
                 <Trans>Files attached in chat, grouped by Work.</Trans>
               </span>
             </span>
@@ -141,7 +141,7 @@ export function ExportProjectDialog({
           </label>
           <div role="status" aria-live="polite" className="space-y-3 text-sm text-muted-foreground">
             {loading ? (
-              <p className="text-caption">
+              <p className="text-xs">
                 <Trans>Checking links…</Trans>
               </p>
             ) : null}

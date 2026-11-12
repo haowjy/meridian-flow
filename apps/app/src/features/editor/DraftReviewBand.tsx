@@ -316,7 +316,7 @@ export function DraftReviewFailureNotices({
   const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey, view });
   if (!commandError && failedElsewhere.length === 0) return null;
   return (
-    <div className="shrink-0 text-caption" data-draft-review-notices>
+    <div className="shrink-0 text-xs" data-draft-review-notices>
       <ReviewFailureNotices
         itemKey={itemKey}
         commandError={commandError}

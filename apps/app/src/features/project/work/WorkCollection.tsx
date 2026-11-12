@@ -1,15 +1,15 @@
 /** The Manage Works list: Work creation and lifecycle in Active, Archived, and Deleted tabs. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { Plus, X } from "lucide-react";
+import { Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { useRestoringWorkIds, useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import { useWorkMutations } from "@/client/query/work-command-store";
+import { ActionNotice } from "@/components/app/ActionNotice";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
 import { ListLine } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
@@ -25,6 +25,7 @@ import {
   WORK_ROW_OPERATIONS,
   WorkCommandFailureRow,
   type WorkRowFailure,
+  workFailureLine,
 } from "./WorkCommandFailureRow";
 import { WorkRow } from "./WorkRow";
 import {
@@ -109,15 +110,18 @@ export function WorkCollection({
             }
           />
         );
-      case "undo":
+      case "undo": {
+        const { name } = work;
         return (
-          <DeletedWorkRow
-            name={work.name}
-            failure={failure}
-            onUndo={() => deletion.undo(work.id)}
+          <ActionNotice
+            sentence={(name) => t`Deleted ${name}`}
+            name={name}
+            action={{ label: <Trans>Undo</Trans>, onClick: () => deletion.undo(work.id) }}
             onDismiss={() => deletion.dismiss(work.id)}
+            failure={failure ? workFailureLine(failure, { name }) : null}
           />
         );
+      }
       case "idle":
         return (
           <>
@@ -238,45 +242,6 @@ function StartWork({ onNew }: { onNew: () => void }) {
         <NewWorkButton onNew={onNew} variant="outline" />
       </div>
     </div>
-  );
-}
-
-function DeletedWorkRow({
-  name,
-  failure,
-  onUndo,
-  onDismiss,
-}: {
-  name: string;
-  /** The writer's last Undo, rejected. */
-  failure: WorkRowFailure | undefined;
-  onUndo: () => void;
-  onDismiss: () => void;
-}) {
-  const row = (
-    <div
-      role="status"
-      className="flex min-h-12 min-w-0 items-center gap-3 px-2 py-1.5 text-sm text-muted-foreground"
-    >
-      <span className="min-w-0 truncate">
-        <Trans>Deleted {name}</Trans>
-      </span>
-      <button type="button" className="text-button shrink-0 text-sm" onClick={onUndo}>
-        <Trans>Undo</Trans>
-      </button>
-      <IconButton size="sm" className="ml-auto shrink-0" label={t`Dismiss`} onClick={onDismiss}>
-        <X aria-hidden className="size-4" />
-      </IconButton>
-    </div>
-  );
-  if (!failure) return row;
-  return (
-    <>
-      {row}
-      <div className="px-2">
-        <WorkCommandFailureRow failure={failure} />
-      </div>
-    </>
   );
 }
 

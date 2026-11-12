@@ -26,7 +26,7 @@ export function InheritedSourceHeader({
   return (
     <div
       data-inherited-source={ownerThreadId}
-      className="flex min-w-0 items-center gap-[var(--chat-space-block)] pb-[var(--chat-space-block)] text-caption text-muted-foreground"
+      className="flex min-w-0 items-center gap-[var(--chat-space-block)] pb-[var(--chat-space-block)] text-xs text-muted-foreground"
     >
       <GitFork aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="flex min-w-0 items-baseline gap-1">
@@ -45,7 +45,7 @@ export function ForkPointRule() {
   return (
     <div
       data-fork-point
-      className="flex min-w-0 items-center gap-[var(--chat-space-block)] pt-[var(--chat-space-turn)] text-caption text-muted-foreground"
+      className="flex min-w-0 items-center gap-[var(--chat-space-block)] pt-[var(--chat-space-turn)] text-xs text-muted-foreground"
     >
       <span className="shrink-0">
         <Trans>This fork continues here</Trans>

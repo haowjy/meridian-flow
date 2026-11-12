@@ -2,9 +2,9 @@
 
 import { plural, t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
-import { ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { DisclosureMark } from "@/components/ui/marks";
 import {
   ApplyAllQuestion,
   CommandNotice,
@@ -107,7 +107,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       <div
         onClick={askingApply ? undefined : () => setExpanded((value) => !value)}
         className={cn(
-          "flex min-h-7 flex-wrap items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-caption @max-[20rem]/dock:text-xs text-foreground",
+          "flex min-h-7 flex-wrap items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-xs text-foreground",
           multi && "cursor-pointer transition-colors hover:bg-ink-fill",
         )}
       >
@@ -122,12 +122,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 event.stopPropagation();
                 setExpanded((value) => !value);
               }}
-              className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground coarse:min-h-11 coarse:min-w-11"
+              className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm coarse:min-h-11 coarse:min-w-11"
             >
-              <ChevronRight
-                className={cn("size-3 transition-transform", expanded && "rotate-90")}
-                aria-hidden
-              />
+              <DisclosureMark open={expanded} />
             </button>
           }
           <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
@@ -237,7 +234,7 @@ function DockFileLine({
       {summary ? (
         summary(trouble)
       ) : expanded && !wholeDocument ? (
-        <div className="flex min-h-7 items-center gap-1 px-2 text-caption text-foreground">
+        <div className="flex min-h-7 items-center gap-1 px-2 text-xs text-foreground">
           <DockFileName file={file} onReview={() => dock.review(file)} />
           {trouble}
         </div>

@@ -85,7 +85,7 @@ export function ReviewChangeRow({
               onFocus();
             }}
             className={cn(
-              "focus-ring flex min-w-0 items-center rounded-sm text-left text-caption",
+              "focus-ring flex min-w-0 items-center rounded-sm text-left text-xs",
               firstLine,
               touch && "text-sm",
             )}

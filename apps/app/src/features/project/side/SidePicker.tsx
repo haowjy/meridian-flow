@@ -9,7 +9,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { ChevronsUpDown, MessageSquare, Pin, Plus, Undo2 } from "lucide-react";
+import { MessageSquare, Pin, Plus, Undo2 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { HeldPick } from "@/client/project-shell/store";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
@@ -22,6 +22,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
 import { ListLine, ListRow } from "@/components/ui/list-row";
+import { ChooserMark } from "@/components/ui/marks";
 import { Picker, PickerResults, PickerSearch, PickerSection } from "@/components/ui/picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { filterThreadsByTitle } from "@/features/chat/thread-switcher";
@@ -82,7 +83,7 @@ export function SidePicker({
           <span className="min-w-0 truncate text-xs font-medium">
             {name ?? t`Choose what sits beside`}
           </span>
-          <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+          <ChooserMark />
         </button>
       </PopoverTrigger>
       <PopoverContent

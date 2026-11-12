@@ -143,6 +143,9 @@ Core shell expectations:
   one slot and one glyph size; pickers keep their 16 px glyphs in `leading`. The line that stands in for the rows (loading, empty, no matches) is
   `ListLine`, placed where the rows go, so its text starts where theirs would. A search
   that finds nothing says "No {things} match “{query}”." in the list's own noun.
+- Anything that folds wears `DisclosureMark` (a chevron pointing right, turning down when
+  open); a control that opens a choice of values wears `ChooserMark`. One glyph and size
+  each, from `components/ui/marks`.
 - Editing text in place never moves or resizes it. Use `components/ui/inline-edit`
   (`InlineEditInput`, `InlineEditTextarea`): the field inherits the text's
   typography, has no padding or border, sizes to its text, and paints its edge
@@ -161,6 +164,9 @@ Core shell expectations:
   never red and never a trash icon; those mean Delete. One name per scope: Apply and
   Discard for a change, Apply draft and Discard draft for a document, Apply all and
   Discard all for everything.
+- What a command did, with its Undo, is a line where it happened: `ActionNotice`
+  ("Deleted Chapter 3 · Undo · ×"), quiet `text-xs`, staying until the next action or
+  Dismiss. An Undo that failed takes its place as `InlineErrorRow`.
 - An error is a line: `InlineErrorRow`, a red icon with body-ink text and at most one
   text action. A floating editor message is `EditorNoticePill`; a standing note above a
   document is `DocumentNotice`. None of them push content down when they appear.

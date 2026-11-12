@@ -1,6 +1,6 @@
 /** Shared anatomy for subagent identity, state, detail, disclosure, and navigation. */
-import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
+import { DisclosureMark } from "@/components/ui/marks";
 import { cn } from "@/lib/utils";
 import { OpenSubagentChatButton } from "../OpenSubagentChatButton";
 import { Elapsed, formatSubagentElapsed, resolveSubagentName } from "./display";
@@ -75,25 +75,6 @@ export function matchesSubagentIdentity(run: SubagentRun, filter: string): boole
     .includes(filter.toLocaleLowerCase());
 }
 
-export function DisclosureChevron({
-  expanded,
-  className,
-}: {
-  expanded: boolean;
-  className?: string;
-}) {
-  return (
-    <ChevronDown
-      className={cn(
-        "size-4 shrink-0 text-muted-foreground transition-transform",
-        expanded && "rotate-180",
-        className,
-      )}
-      aria-hidden
-    />
-  );
-}
-
 export function SubagentToolLine({
   run,
   fallback,
@@ -166,7 +147,7 @@ export function SubagentRow({
             className={cn("focus-ring flex min-w-0 items-center rounded-sm text-left", gap, fill)}
           >
             {identity}
-            {<DisclosureChevron expanded={Boolean(expanded)} />}
+            <DisclosureMark open={Boolean(expanded)} />
           </button>
         ) : onActivate ? (
           <button

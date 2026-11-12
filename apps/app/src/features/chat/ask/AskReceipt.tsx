@@ -6,9 +6,10 @@
 import { plural, t } from "@lingui/core/macro";
 import type { QuestionAskPayload, ResolvedQuestionAnswer } from "@meridian/contracts/threads";
 import type { AskReceipt as AskReceiptFacts } from "@meridian/thread-client";
-import { ChevronRight, MessageCircleQuestion, ShieldCheck } from "lucide-react";
+import { MessageCircleQuestion, ShieldCheck } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { useAskReceipt } from "@/client/stores";
+import { DisclosureMark } from "@/components/ui/marks";
 import { cn } from "@/lib/utils";
 import { permissionRequestText } from "./permission-request";
 
@@ -107,13 +108,7 @@ function QuestionsReceipt({
             </Answer>
             <Sending pending={pending} />
           </span>
-          <ChevronRight
-            className={cn(
-              "mt-1 size-3 shrink-0 text-muted-foreground transition-transform",
-              open && "rotate-90",
-            )}
-            aria-hidden
-          />
+          <DisclosureMark open={open} className="mt-1" />
         </button>
         <ol
           id={panelId}

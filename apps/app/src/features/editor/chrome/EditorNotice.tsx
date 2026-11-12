@@ -32,7 +32,7 @@ export function EditorNoticePill({
       role="status"
       data-editor-notice={notice.tone}
       className={cn(
-        "pointer-events-none animate-in whitespace-nowrap rounded-full border px-3 py-1 text-caption shadow-float fade-in-0",
+        "pointer-events-none animate-in whitespace-nowrap rounded-full border px-3 py-1 text-xs shadow-float fade-in-0",
         notice.tone === "failed"
           ? "border-destructive-border bg-destructive-tint text-destructive"
           : "border-border bg-card text-muted-foreground",

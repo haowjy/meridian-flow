@@ -11,7 +11,7 @@ import { isChipList, isEmptyValue } from "./property-shapes";
 
 export function YamlBlock({ text }: { text: string }) {
   return (
-    <pre className="max-w-full overflow-x-auto whitespace-pre rounded-md bg-ink-fill px-2 py-1 font-mono text-caption text-foreground">
+    <pre className="max-w-full overflow-x-auto whitespace-pre rounded-md bg-ink-fill px-2 py-1 font-mono text-xs text-foreground">
       {text}
     </pre>
   );

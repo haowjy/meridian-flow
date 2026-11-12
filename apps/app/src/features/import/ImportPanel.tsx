@@ -114,14 +114,14 @@ function ImportCard({
     <li className="px-3 py-2.5">
       <div className="break-words text-sm font-medium text-foreground">{title}</div>
       {presentation.detail ? (
-        <div className="mt-0.5 text-caption text-muted-foreground">{presentation.detail}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">{presentation.detail}</div>
       ) : null}
       {progress === undefined ? null : progress === "indeterminate" ? (
         <Progress indeterminate label={title} className="mt-2 h-1" />
       ) : (
         <Progress value={progress} label={title} className="mt-2 h-1" />
       )}
-      <div className="mt-2 space-y-2 text-caption text-muted-foreground empty:hidden">
+      <div className="mt-2 space-y-2 text-xs text-muted-foreground empty:hidden">
         {presentation.note ? <p>{presentation.note}</p> : null}
         {presentation.fallback ? <p>{presentation.fallback}</p> : null}
         {local.stopLost ? (
