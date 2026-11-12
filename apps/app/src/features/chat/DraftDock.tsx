@@ -2,9 +2,9 @@
 
 import { plural, t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
-import { ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { DisclosureMark } from "@/components/ui/marks";
 import {
   ApplyAllQuestion,
   CommandNotice,
@@ -124,10 +124,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               }}
               className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground coarse:min-h-11 coarse:min-w-11"
             >
-              <ChevronRight
-                className={cn("size-3 transition-transform", expanded && "rotate-90")}
-                aria-hidden
-              />
+              <DisclosureMark open={expanded} />
             </button>
           }
           <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />

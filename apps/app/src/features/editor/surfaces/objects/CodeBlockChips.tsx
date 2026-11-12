@@ -26,12 +26,12 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { ChevronsUpDown, Copy, Ellipsis } from "lucide-react";
+import { Copy, Ellipsis } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { ChooserMark } from "@/components/ui/marks";
 import { editorChromeAttributes } from "@/core/editor/chrome";
 import {
   EditorMenu,
@@ -107,7 +107,7 @@ export function CodeBlockChips({
         trigger={
           <Button type="button" size="xs" variant="ghost" className="meridian-code-chip-language">
             {fenceLanguageLabel(fenceLanguage(target))}
-            <ChevronsUpDown aria-hidden />
+            <ChooserMark />
           </Button>
         }
       >

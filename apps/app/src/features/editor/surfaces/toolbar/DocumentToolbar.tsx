@@ -21,7 +21,6 @@ import {
   AlignLeft,
   AlignRight,
   Bold,
-  ChevronsUpDown,
   Code,
   Heading1,
   ImageUp,
@@ -32,8 +31,8 @@ import {
   Undo2,
 } from "lucide-react";
 import { type ComponentProps, memo, type ReactNode, useCallback, useState } from "react";
-
 import { Button } from "@/components/ui/button";
+import { ChooserMark } from "@/components/ui/marks";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { openLinkForm } from "@/core/editor/links";
 import { EditorMenu, EditorMenuRadioGroup, EditorMenuRadioItem } from "@/features/editor/chrome";
@@ -312,7 +311,7 @@ function AlignmentTrigger({
         )}
       >
         <Icon className="size-3.5" aria-hidden />
-        <ChevronsUpDown className="size-2.5" aria-hidden />
+        <ChooserMark />
       </Button>
     </ToolbarControlTooltip>
   );

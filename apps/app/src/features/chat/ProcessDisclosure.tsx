@@ -13,8 +13,8 @@
  * column, so the gutter is already structurally connected; a competing
  * blockquote border around the fold body would just clutter it.
  */
-import { ChevronRight } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
+import { DisclosureMark } from "@/components/ui/marks";
 import { cn } from "@/lib/utils";
 
 type ProcessDisclosureProps = {
@@ -47,10 +47,7 @@ export function ProcessDisclosure({ label, toolCallIds, children }: ProcessDiscl
         data-tool-call-ids={toolCallIds?.length ? toolCallIds.join(" ") : undefined}
         className="disclosure-trigger justify-start"
       >
-        <ChevronRight
-          className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")}
-          aria-hidden
-        />
+        <DisclosureMark open={open} />
         {/* The digest is short in English and not necessarily in translation;
             truncate is the backstop that keeps the fold header one line. */}
         <span className="min-w-0 truncate text-left font-medium">{label}</span>

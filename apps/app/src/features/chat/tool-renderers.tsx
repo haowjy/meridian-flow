@@ -9,9 +9,10 @@ import {
   toolCommand,
   toolInputObject,
 } from "@meridian/thread-client";
-import { ChevronRight, FileText, Folder } from "lucide-react";
+import { FileText, Folder } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Chip } from "@/components/ui/chip";
+import { DisclosureMark } from "@/components/ui/marks";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
@@ -158,10 +159,7 @@ function GrepHit({ row }: { row: GrepHitRow }) {
             className="focus-ring focus-ring-outside mt-[var(--chat-space-inline)] inline-flex items-center gap-[var(--chat-space-inline)] rounded-sm text-xs text-muted-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text focus-visible:text-jade-text focus-visible:decoration-jade-text"
           >
             {moreMatchesLabel(rest.length)}
-            <ChevronRight
-              aria-hidden
-              className={cn("size-2.5 transition-transform", open && "rotate-90")}
-            />
+            <DisclosureMark open={open} />
           </button>
           {open ? (
             // Indented against a rule so the extra passages read as belonging

@@ -2,7 +2,6 @@ import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
-import { ChevronsUpDown } from "lucide-react";
 import { useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
@@ -19,9 +18,9 @@ import {
   DropdownMenuTrigger,
   useMenuActionDispatch,
 } from "@/components/ui/dropdown-menu";
+import { ChooserMark } from "@/components/ui/marks";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
-import { sidebarIcon } from "../../context/context-row-geometry";
 
 /**
  * The Work scope under the project name: which Work's drafts the documents show
@@ -82,10 +81,7 @@ export function WorkScopePicker({
               </span>
             </Chip>
           ) : null}
-          <ChevronsUpDown
-            className={cn(sidebarIcon.row, "shrink-0 group-hover:text-foreground", role.secondary)}
-            aria-hidden
-          />
+          <ChooserMark />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent

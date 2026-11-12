@@ -3,7 +3,7 @@
  * Customize via `cn()` + tokens at call sites; the focus treatment
  * (`focus-ring`, keyboard-only) is project-owned.
  */
-import { ChevronDownIcon, ChevronsUpDownIcon, ChevronUpIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { Select as SelectPrimitive } from "radix-ui";
 import type * as React from "react";
 
@@ -14,6 +14,7 @@ import {
   dropdownPanelClass,
   dropdownRowVariants,
 } from "./dropdown-presentation";
+import { ChooserMark } from "./marks";
 
 function Select({ ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
   return <SelectPrimitive.Root data-slot="select" {...props} />;
@@ -48,7 +49,7 @@ function SelectTrigger({
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronsUpDownIcon className="size-4 opacity-50" />
+        <ChooserMark />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );
