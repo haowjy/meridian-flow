@@ -135,10 +135,10 @@ is not on screen for removals or availability. A close, a Discard and a removal 
 document through the removal coordinator, so nothing picks it again and its host unmounts (taking
 its draft-only presentation with it). Nothing here is persisted.
 
-Slot wrappers paint their material, and document shells stay transparent, except that a document's
-page is paper (`paper` in `styles/globals.css`: the `paper` and `paper-ink` tokens re-pointed as the
-page and its ink, on main's and the side's page and the phone's), and main's active document tab
-takes the same surface; a chat's page stays plain.
+Slot wrappers paint their material, and document shells stay transparent. Every page is paper:
+`page-sheet` applies `paper` (`styles/globals.css`: the `paper` and `paper-ink` tokens re-pointed as
+the page and its ink), documents and chats alike, the phone's page uses `paper` directly, and an
+active tab chip takes the same surface.
 
 The Write | Chat switch (`shell/MainModeSwitch.tsx`) is main's mode, read from main's item (a chat
 or the new-chat composer is Chat, anything else Write) and never stored. Pressing it swaps the

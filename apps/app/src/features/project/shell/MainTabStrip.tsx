@@ -403,7 +403,7 @@ function DocumentTabChip({
   return (
     <TabChipFrame
       active={active}
-      surface={reviewing ? "review" : "paper"}
+      surface={reviewing ? "review" : "page"}
       divider={divider}
       tabProps={{
         ...drag,
@@ -701,8 +701,8 @@ function TabChipFrame({
   className,
 }: {
   active: boolean;
-  /** What the active chip joins below it: a plain page, a document's paper, or the review strip. */
-  surface?: "page" | "paper" | "review";
+  /** What the active chip joins below it: the page, or the review strip. */
+  surface?: "page" | "review";
   divider: boolean;
   children: ReactNode;
   tabProps?: HTMLAttributes<HTMLDivElement>;
@@ -718,7 +718,6 @@ function TabChipFrame({
         "group scroll-mx-6 gap-1.5",
         tabChipClass(active),
         // The active chip takes the surface under it, so tab and page (or review strip) read as one.
-        active && surface === "paper" && "[--tab-chip-surface:var(--color-paper)]",
         active && surface === "review" && "[--tab-chip-surface:var(--color-review)]",
         className,
       )}

@@ -63,7 +63,7 @@ export function ChatSurface({
         <div
           className={cn(
             "main-pane flex min-h-0 flex-1 flex-col overflow-hidden",
-            presentation === "desktop" && pageSheetClass(place === "side"),
+            presentation === "desktop" ? pageSheetClass(place === "side") : "paper",
           )}
         >
           <ChatScreen

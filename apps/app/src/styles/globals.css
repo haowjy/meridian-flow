@@ -749,14 +749,14 @@
  */
 @utility page-sheet {
   /* `page-edge`, not `border-subtle`: a `tab-chip-active` outline ends on this top edge. */
-  @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-md border border-b-0 border-page-edge bg-background;
+  @apply paper flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-md border border-b-0 border-page-edge;
 }
 
 /*
- * Paper — a document's page. It re-points the page and its ink inside it, so everything drawn
- * on the page (toolbar, word count, prose) sits on the paper in the paper's ink with no surface
- * of its own. A chat's page stays plain `page-sheet`. A document's active tab takes the same
- * surface (`--tab-chip-surface`), so tab and page stay one piece.
+ * Paper — every page's surface, a document's or a chat's (`page-sheet` applies it; the phone's
+ * page uses it directly). It re-points the page and its ink inside it, so everything drawn on the
+ * page sits on the paper in the paper's ink with no surface of its own. An active tab chip takes
+ * the same surface by default, so tab and page stay one piece.
  */
 @utility paper {
   --color-background: var(--color-paper);
@@ -859,7 +859,7 @@
   padding-bottom: --spacing(1);
   border-top-left-radius: var(--tab-radius);
   border-top-right-radius: var(--tab-radius);
-  background-color: var(--tab-chip-surface, var(--color-background));
+  background-color: var(--tab-chip-surface, var(--color-paper));
   /* Both pseudos reach one flare past each side. The paths inside the images draw a 6px
      radius, which is --tab-radius: change them together. Their nested viewports anchor each
      corner to its own corner of the chip, so the outline fits any chip size undistorted. */
@@ -874,7 +874,7 @@
   }
   /* The flares' fill, under the outline. */
   &::before {
-    background-color: var(--tab-chip-surface, var(--color-background));
+    background-color: var(--tab-chip-surface, var(--color-paper));
     mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22%3E%3Csvg y=%22100%25%22 overflow=%22visible%22%3E%3Cpath d=%22M.5,-1.5A6 6 0 0 0 6.5,-7.5V0H.5Z%22/%3E%3Csvg x=%22100%25%22 overflow=%22visible%22%3E%3Cpath d=%22M-.5,-1.5A6 6 0 0 1 -6.5,-7.5V0H-.5Z%22/%3E%3C/svg%3E%3C/svg%3E%3C/svg%3E");
   }
   &::after {
