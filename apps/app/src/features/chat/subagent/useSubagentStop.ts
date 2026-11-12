@@ -1,5 +1,5 @@
 /**
- * useSubagentStop — a running child's Stop, pressed from the parent's running-subagents strip.
+ * useSubagentStop — a running child's Stop, pressed from its card in the parent's transcript.
  * It is the child chat's own Stop: the child's hand-back operation (`useHandBack` on the child's id
  * and composer draft), pressed over the child's newest record, so the child reads Stopped and its
  * queued messages come back to its message box exactly as if the writer had pressed Stop there.

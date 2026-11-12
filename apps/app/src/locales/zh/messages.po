@@ -240,8 +240,8 @@ msgstr "{0} 是文本，已作为文档添加到 assets，链接会指向它。"
 
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
-msgid "{0} running"
-msgstr "{0} 运行中"
+#~ msgid "{0} running"
+#~ msgstr "{0} 运行中"
 
 #. placeholder {0}: formatFixed(stats.ttftMs / 1000, i18n.locale)
 #: src/features/chat/AssistantTurnActions.tsx
@@ -261,8 +261,8 @@ msgstr "{0} 已停止"
 
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
-msgid "{0} subagents"
-msgstr "{0} 个子代理"
+#~ msgid "{0} subagents"
+#~ msgstr "{0} 个子代理"
 
 #. placeholder {0}: names.length
 #: src/features/chat/subagent/DeliveryEventRows.tsx
@@ -3427,7 +3427,6 @@ msgstr ""
 msgid "Its paragraph was removed"
 msgstr ""
 
-#: src/features/chat/SubagentHeader.tsx
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Jump to in chat"
 msgstr "跳转到聊天中的位置"
@@ -4052,6 +4051,10 @@ msgstr ""
 #: src/features/project/chat/ChatScratch.tsx
 msgid "No scratch notes yet."
 msgstr ""
+
+#: src/features/chat/SubagentHeader.tsx
+msgid "No subagents match “{search}”."
+msgstr "没有匹配“{search}”的子代理。"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work yet."
@@ -5053,7 +5056,7 @@ msgstr ""
 msgid "Show changes"
 msgstr ""
 
-#: src/features/chat/derivation/HandoffBriefCard.tsx
+#: src/features/chat/ClippedExpand.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Show less"
 msgstr ""
@@ -5082,6 +5085,10 @@ msgstr ""
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Show the whole brief"
 msgstr ""
+
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Show the whole report"
+msgstr "显示完整报告"
 
 #: src/features/project/work/WorkDetail.tsx
 msgid "Show this Work"
@@ -5215,7 +5222,7 @@ msgstr ""
 msgid "Stop"
 msgstr "停止"
 
-#: src/features/chat/RunningSubagentsStrip.tsx
+#: src/features/chat/subagent/SubagentStop.tsx
 msgid "Stop \"{name}\""
 msgstr "停止“{name}”"
 
@@ -5257,7 +5264,7 @@ msgstr "已取消"
 msgid "Stopping"
 msgstr ""
 
-#: src/features/chat/RunningSubagentsStrip.tsx
+#: src/features/chat/subagent/SubagentStop.tsx
 msgid "Stopping \"{name}\""
 msgstr "正在停止“{name}”"
 
@@ -5277,6 +5284,10 @@ msgstr ""
 #: src/features/project/chat/SubagentPathRow.tsx
 msgid "Subagent chat path"
 msgstr "子代理对话路径"
+
+#: src/features/chat/SubagentHeader.tsx
+msgid "Subagents"
+msgstr "子代理"
 
 #. placeholder {0}: nodes.length
 #: src/features/chat/SubagentHeader.tsx
@@ -6165,7 +6176,7 @@ msgid "Trash"
 msgstr ""
 
 #: src/features/chat/ChatCards.tsx
-#: src/features/chat/RunningSubagentsStrip.tsx
+#: src/features/chat/subagent/SubagentStop.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"

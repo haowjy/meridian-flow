@@ -11,7 +11,10 @@
  */
 import { t } from "@lingui/core/macro";
 import { THREAD_TITLE_MAX_LENGTH } from "@meridian/contracts/protocol";
+import { skipToken, useQuery } from "@tanstack/react-query";
 
+import { threadQueryKeys } from "@/client/query/thread-query-keys";
+import type { DeserializedThreadSnapshot } from "@/client/query/thread-snapshot-query";
 import { useRenameThread } from "@/client/query/useRenameThread";
 import { announce } from "@/client/stores";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
@@ -19,6 +22,7 @@ import { TitleEditSlot } from "@/features/project/shell/TitleEditSlot";
 import { titleChipClass } from "@/features/project/shell/tab-chip";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
+import { subagentMarkName } from "./subagent/display";
 import { ThreadSwitcherPopover } from "./ThreadSwitcherPopover";
 
 type ChatThreadTitleProps = {
@@ -52,7 +56,17 @@ function ExistingThreadTitle({
   failureClassName,
 }: ChatThreadTitleProps & { threadId: string }) {
   const { threadById } = useProjectThreadGroups(projectId);
-  const title = displayThreadTitle(threadById.get(threadId)?.title);
+  // A subagent's chat isn't in the project's chat list; the open chat's snapshot names it.
+  const opened = useQuery({
+    queryKey: threadQueryKeys.snapshot(threadId),
+    queryFn: skipToken,
+    select: (snapshot: DeserializedThreadSnapshot) => snapshot.thread,
+  }).data;
+  const title = displayThreadTitle(
+    threadById.get(threadId)?.title ??
+      opened?.title ??
+      (opened?.kind === "subagent" ? subagentMarkName(opened.agentName) : null),
+  );
   const rename = useRenameThread(projectId, threadId, (confirmed) => {
     announce(t`Renamed to ${confirmed}`);
   });

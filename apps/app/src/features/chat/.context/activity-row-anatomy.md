@@ -68,19 +68,23 @@ its path hasn't settled.
 - Open state is local to the row. Process folds live and settled alike, so
   settlement is not a remount and the state needs no hoisting.
 
-## Subagent strip
+## Subagent cards
 
-The server sends only the viewed thread's direct children, and the strip consumes
-that list unfiltered. A subagent's path row reads its direct parent's activity for
-its own run times, not the root's.
+Each run is one card in the transcript, at the turn that started it, from launch to
+finish: running it shows the live tool and elapsed time, finished it folds to the
+report. A completion whose launch card is in the loaded transcript draws nothing of its
+own (`buildTranscriptModel` drops it by execution); a run with no card there (a later
+run of the same child, or a card outside the loaded history) keeps its quiet row. The
+band's Subagents popover is the one list of every child, running ones first, and its
+rows jump to the card.
 
-The composer's Stop ends only this chat's reply, so each running child's row
-carries its own Stop: `useSubagentStop` presses the child's hand-back operation.
-The parent holds no live copy of the child's record, so each press first reads the
-child's snapshot into the store; `stopRequest` needs that record's execution and
-watermark. A failed Stop is a `handBackCards` card under that row.
+The composer's Stop ends only this chat's reply, so a running background card carries
+its own Stop beside Open: `SubagentStop` presses the child's hand-back operation
+through `useSubagentStop`. The parent holds no live copy of the child's record, so each
+press first reads the child's snapshot into the store; `stopRequest` needs that
+record's execution and watermark. A failed Stop is a `handBackCards` card under that
+card's row. `ChatView` provides the stop scope; a card rendered without one has no
+Stop.
 
-Each child's row keeps one keyed position in the strip's list, however many
-children there are, and a collapsed list hides rows without unmounting them. The
-snapshot read is local to the row, so a remount mid-read would drop the press with
-"Stopping" already announced. A hidden row that owes a card shows anyway.
+The server sends only the viewed thread's direct children. A subagent's path row reads
+its direct parent's activity for its own run times, not the root's.

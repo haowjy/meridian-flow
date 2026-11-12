@@ -8,10 +8,7 @@ import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { useShared } from "../useShared";
 import { buildSubagentRuns, indexSubagentRuns, type SubagentRunKey } from "./run-model";
 
-const SubagentActivityContext = createContext({
-  nodes: [] as ThreadActivityNode[],
-  runs: indexSubagentRuns([]),
-});
+const SubagentActivityContext = createContext({ runs: indexSubagentRuns([]) });
 
 export function SubagentActivityProvider({
   nodes,
@@ -29,10 +26,7 @@ export function SubagentActivityProvider({
   };
   const shared = useShared(next, sameProviderInput);
   const indexed = useMemo(
-    () => ({
-      nodes: shared.nodes,
-      runs: indexSubagentRuns(buildSubagentRuns(shared.nodes, shared.turns)),
-    }),
+    () => ({ runs: indexSubagentRuns(buildSubagentRuns(shared.nodes, shared.turns)) }),
     [shared],
   );
   return (
@@ -71,10 +65,4 @@ export function useSubagentRun(key: SubagentRunKey) {
   if ("threadId" in key) return runs.byThreadId.get(key.threadId);
   if ("ref" in key) return runs.byRef.get(key.ref);
   return runs.byExecution.get(key.execution);
-}
-
-/** The provider receives the viewed thread's direct-child activity from the server. */
-export function useSubagentRuns() {
-  const { nodes, runs } = useContext(SubagentActivityContext);
-  return nodes.map((node) => runs.byThreadId.get(node.threadId)).filter((run) => run != null);
 }
