@@ -74,9 +74,9 @@ function PropertiesRow({ projectId, documentId }: { projectId: string; documentI
             if (event.key === "ArrowLeft") setOpen(false);
             if (event.key === "ArrowRight") setOpen(true);
           }}
-          className="-ml-1 w-full px-1 font-medium text-xs"
+          className="-ml-1 w-full px-1 text-xs"
         >
-          <span className="shrink-0">
+          <span className="shrink-0 font-medium">
             <Trans>Properties</Trans>
           </span>
           {open ? null : <CollapsedSummary properties={properties} failed={query.isError} />}

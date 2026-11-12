@@ -36,7 +36,8 @@ export function FoldToggle({
       onClick={onToggle}
       className={cn(
         "focus-ring flex min-w-0 items-center gap-1 rounded-md text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground motion-reduce:transition-none",
-        inline ? "inline-flex" : "min-h-7 coarse:min-h-11",
+        // Inline, the label runs to the box edge: an inset ring would cross it.
+        inline ? "focus-ring-outside inline-flex" : "min-h-7 coarse:min-h-11",
         multiline && "items-start",
         className,
       )}

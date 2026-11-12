@@ -113,7 +113,7 @@ function QuestionsReceipt({
         <ol
           id={panelId}
           hidden={!open}
-          className="mt-[var(--chat-space-inline)] flex flex-col gap-[var(--chat-space-inline)]"
+          className="mt-[var(--chat-space-inline)] flex flex-col gap-[var(--chat-space-inline)] pl-4"
         >
           {questions.map((item, index) => (
             // Questions are fixed for the ask's life; their order is their identity.

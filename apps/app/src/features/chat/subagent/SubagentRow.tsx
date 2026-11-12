@@ -7,6 +7,9 @@ import { Elapsed, formatSubagentElapsed, resolveSubagentName } from "./display";
 import type { SubagentRun } from "./run-model";
 import { SubagentMark } from "./SubagentMark";
 
+/** Lines under a subagent row start at its name: past the fold's chevron slot, the mark and the gap. */
+export const subagentBodyIndent = "pl-[calc(2.5rem+var(--chat-space-inline))]";
+
 export function SubagentIdentity({
   run,
   size = "row",
@@ -93,7 +96,7 @@ export function SubagentToolLine({
 }
 
 /**
- * Row owns the identity/control layout; detail content is indented by mark + gap.
+ * Row owns the identity/control layout; detail content is indented to the name.
  * Bare rows pack controls against the text. A card's border binds its controls
  * to the row, so a card row spans its width and ends in them.
  */
@@ -135,6 +138,10 @@ export function SubagentRow({
   const gap = "gap-[var(--chat-space-inline)]";
   const fill = size === "card" && "flex-1";
   const identity = identityOverride ?? <SubagentIdentity run={run} size={size} />;
+  const line = <span className={cn("flex min-w-0 items-center", gap, fill)}>{identity}</span>;
+  // Every row keeps the fold's chevron slot, so the mark holds its x whether the row folds or
+  // not, and a card that finishes and becomes foldable doesn't shift.
+  const lead = <span aria-hidden className="w-3 shrink-0" />;
   return (
     <div className={cn("min-w-0", className)}>
       <div className="flex min-w-0 items-center gap-1">
@@ -146,19 +153,23 @@ export function SubagentRow({
             inline
             className={cn(fill)}
           >
-            {identity}
+            {line}
           </FoldToggle>
         ) : onActivate ? (
           <button
             type="button"
             title={activateLabel}
             onClick={onActivate}
-            className={cn("focus-ring flex min-w-0 items-center rounded-sm text-left", gap, fill)}
+            className={cn("focus-ring flex min-w-0 items-center gap-1 rounded-sm text-left", fill)}
           >
-            {identity}
+            {lead}
+            {line}
           </button>
         ) : (
-          <div className={cn("flex min-w-0 items-center", gap, fill)}>{identity}</div>
+          <div className={cn("flex min-w-0 items-center gap-1", fill)}>
+            {lead}
+            {line}
+          </div>
         )}
         {trailing}
         {door ? (
@@ -170,14 +181,10 @@ export function SubagentRow({
         ) : null}
       </div>
       {detail ? (
-        <div className="mt-[var(--chat-space-inline)] pl-[calc(1.5rem+var(--chat-space-inline))]">
-          {detail}
-        </div>
+        <div className={cn("mt-[var(--chat-space-inline)]", subagentBodyIndent)}>{detail}</div>
       ) : null}
       {expanded && children ? (
-        <div className="mt-[var(--chat-space-inline)] pl-[calc(1.5rem+var(--chat-space-inline))]">
-          {children}
-        </div>
+        <div className={cn("mt-[var(--chat-space-inline)]", subagentBodyIndent)}>{children}</div>
       ) : null}
     </div>
   );

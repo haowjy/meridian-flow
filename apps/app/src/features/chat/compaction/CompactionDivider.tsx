@@ -103,9 +103,10 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
             aria-label={t`${full}, summary`}
             // Stop's replacement: focus lands here when a finished run removes it.
             data-focus-landing
-            // Negative margin: the hover wash grows outward, so the icon keeps
-            // the edge every other divider state and the instructions align to.
-            className="focus-ring -mx-1 flex min-w-0 items-center gap-[var(--chat-space-block)] rounded-md px-1 py-1 text-muted-foreground transition-colors hover:bg-ink-fill hover:text-foreground aria-expanded:text-foreground"
+            // Not a FoldToggle: a leading chevron would move the icon off the edge every
+            // other divider state holds, and shift it when compaction finishes. It folds
+            // like one otherwise: no hover fill, hover darkens the words.
+            className="focus-ring focus-ring-outside flex min-w-0 items-center gap-[var(--chat-space-block)] rounded-md py-1 text-muted-foreground transition-colors hover:text-foreground aria-expanded:text-foreground motion-reduce:transition-none"
           >
             <DividerMark state={view.state} />
             <DividerLabel label={label} className="text-inherit" />
