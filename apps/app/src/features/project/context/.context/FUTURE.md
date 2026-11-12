@@ -52,11 +52,14 @@ here is a known defect.
   rename cannot change type (for example `data.json` to `data.md`), instead of
   generic retry copy. Verify the message stays on the attempted rename and
   the existing document remains unchanged.
-- Sidebar rows are `role="button"` and report a multi-row selection with
+- Sidebar rows are buttons (`ListRow`) and report a multi-row selection with
   `aria-pressed`. The ARIA tree pattern (`role="tree"`/`treeitem`,
   `aria-selected`, arrow-key navigation) would describe the selection natively;
   it changes every tree surface (Files, Scratch, Changes), so it is its own
   change.
+- After a rename commits in the tree, focus lands on the page: the rename field replaces the row
+  and nothing puts focus back on the renamed row. Return it to the row's control
+  (`[data-list-item]`) once the renamed entry is on screen.
 
 ## Row-edge drops
 

@@ -147,6 +147,10 @@ Core shell expectations:
   one slot and one glyph size; pickers keep their 16 px glyphs in `leading`. The line that stands in for the rows (loading, empty, no matches) is
   `ListLine`, placed where the rows go, so its text starts where theirs would. A search
   that finds nothing says "No {things} match “{query}”." in the list's own noun.
+  A row's actions are its `menu`: the right-click menu and a ⋯ named "Actions for {title}",
+  small enough that rows with and without one are the same height. Selected rows that touch
+  join into one block (`data-selection-run`). A name edited in place sits in `ListRowField`,
+  where the title was, so the words don't move.
 - Anything that folds wears `DisclosureMark` (a chevron pointing right, turning down when
   open); a control that opens a choice of values wears `ChooserMark`. One glyph and size
   each, from `components/ui/marks`.

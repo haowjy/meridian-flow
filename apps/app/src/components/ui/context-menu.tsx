@@ -1,4 +1,6 @@
 /** Context activation with the shared menu presentation and keyboard equivalent. */
+
+import { ChevronRight } from "lucide-react";
 import { ContextMenu as Primitive } from "radix-ui";
 import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
@@ -6,11 +8,13 @@ import {
   dropdownGroupLabelClass,
   dropdownMenuContentClass,
   dropdownMenuItemClass,
+  dropdownMenuSeparatorClass,
   dropdownPageClass,
   dropdownRowVariants,
 } from "./dropdown-presentation";
 
 export const ContextMenu = Primitive.Root;
+export const ContextMenuSub = Primitive.Sub;
 
 export function ContextMenuTrigger({
   onKeyDown,
@@ -56,7 +60,7 @@ export function ContextMenuContent({
         className={cn(
           dropdownPageClass,
           dropdownMenuContentClass,
-          "[--radix-menu-content-available-height:var(--radix-context-menu-content-available-height)]",
+          "origin-(--radix-context-menu-content-transform-origin) [--radix-menu-content-available-height:var(--radix-context-menu-content-available-height)]",
           className,
         )}
       />
@@ -75,4 +79,42 @@ export function ContextMenuItem({ className, ...props }: ComponentProps<typeof P
 
 export function ContextMenuLabel({ className, ...props }: ComponentProps<typeof Primitive.Label>) {
   return <Primitive.Label {...props} className={cn(dropdownGroupLabelClass, className)} />;
+}
+
+export function ContextMenuSeparator(props: ComponentProps<typeof Primitive.Separator>) {
+  return <Primitive.Separator {...props} className={dropdownMenuSeparatorClass} />;
+}
+
+export function ContextMenuSubTrigger({
+  children,
+  ...props
+}: ComponentProps<typeof Primitive.SubTrigger>) {
+  return (
+    <Primitive.SubTrigger
+      {...props}
+      className={cn(
+        dropdownRowVariants(),
+        dropdownMenuItemClass,
+        "data-[state=open]:bg-ink-fill-strong",
+      )}
+    >
+      {children}
+      <ChevronRight aria-hidden className="ml-auto size-3.5" />
+    </Primitive.SubTrigger>
+  );
+}
+
+export function ContextMenuSubContent(props: ComponentProps<typeof Primitive.SubContent>) {
+  return (
+    <Primitive.Portal>
+      <Primitive.SubContent
+        {...props}
+        className={cn(
+          dropdownPageClass,
+          dropdownMenuContentClass,
+          "origin-(--radix-context-menu-content-transform-origin)",
+        )}
+      />
+    </Primitive.Portal>
+  );
 }

@@ -33,7 +33,6 @@ import { useOptionalImports } from "@/features/import/ImportProvider";
 import { cn } from "@/lib/utils";
 import { ScratchSource, useChatScratch } from "../../chat/ChatScratch";
 import { type CatalogState, ContextTreePanel } from "../../context/ContextTreePanel";
-import { sidebarIcon } from "../../context/context-row-geometry";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../../context/context-schemes";
 import type { MoveArea } from "../../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../../context/entry-drag/use-entry-list";
@@ -386,7 +385,7 @@ function SourceTabs({
                   toggle(key);
                 }}
               >
-                <Icon className={sidebarIcon.tab} aria-hidden />
+                <Icon className="size-4" aria-hidden />
                 {SOURCES[key].label()}
               </DropdownMenuCheckboxItem>
             );
@@ -451,7 +450,7 @@ function SourceTab({
                 : cn(role.secondary, role.hover, "hover:text-foreground"),
           )}
         >
-          <Icon className={sidebarIcon.tab} aria-hidden />
+          <Icon className="size-4" aria-hidden />
           {count > 0 ? (
             <Chip kind="badge" aria-hidden className="-top-1 -right-1 absolute">
               {count}

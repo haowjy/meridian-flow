@@ -33,12 +33,7 @@ import { RecencyGroupedList } from "../RecencyGroupedList";
 import { relativeTime } from "../relative-time";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { projectAddressHref } from "../routing/project-address";
-import {
-  ContextEntryMenu,
-  type EntryAction,
-  EntryKebabButton,
-  useEntryMenu,
-} from "./ContextEntryActions";
+import { type EntryAction, useEntryMenu } from "./ContextEntryActions";
 import { fileKindIcon } from "./context-file-icon";
 import { documentPlace } from "./context-schemes";
 import { EntryDestinationPicker } from "./EntryDestinationPicker";
@@ -214,28 +209,20 @@ function RecentDocumentRow({
     if (action === "delete") onDelete(selection ?? [entry]);
     else if (action === "move") setMoving(selection ?? [entry]);
   });
+  // A link can't be pressed; `ListRow` names a selected link instead.
   const { "aria-pressed": _pressed, ...selectionProps } = row.rowProps;
   const listRow = (
     <ListRow
       href={href ?? undefined}
       onOpen={() => (href ? void router.navigate({ href }) : onOpen(item))}
       selected={row.selected}
-      controlProps={{
-        ...selectionProps,
-        // Ctrl/Cmd- and Shift-click select here, as in the sidebar, before the link sees them.
-        onClickCapture: (event) => {
-          if (!row.select(event)) return;
-          event.preventDefault();
-          event.stopPropagation();
-        },
-      }}
-      wrapControl={(control) => <ContextEntryMenu menu={menu}>{control}</ContextEntryMenu>}
+      controlProps={selectionProps}
+      menu={menu}
       icon={fileKindIcon(item.name)}
       title={item.name}
       detail={address ? documentPlace(address.scheme, address.path) : null}
       // The age is for the eye; the row's name is the document and where it lives.
       meta={<span aria-hidden>{relativeTime(item.openedAt, now)}</span>}
-      actions={<EntryKebabButton menu={menu} className="opacity-100" />}
       revealActions
     />
   );

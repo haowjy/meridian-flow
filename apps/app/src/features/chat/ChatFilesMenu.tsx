@@ -33,9 +33,6 @@ import { SourceChatLink, useSourceThread } from "./derivation/SourceChatLink";
 
 const NO_TURNS: never[] = [];
 
-/** The Scratch tree's rows and the uploads' rows, walked as one list. */
-const FILES_MENU_STOPS = '[role="button"][tabindex="0"], [data-list-item]';
-
 export function ChatFilesMenu({
   projectId,
   threadId,
@@ -160,13 +157,13 @@ function FilesDropdown({
         )}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
-          contentRef.current?.querySelector<HTMLElement>(FILES_MENU_STOPS)?.focus();
+          contentRef.current?.querySelector<HTMLElement>("[data-list-item]")?.focus();
         }}
         onCloseAutoFocus={(event) => {
           if (focusHandoff.current) event.preventDefault();
           focusHandoff.current = false;
         }}
-        onKeyDown={(event) => handleListKeys(event, FILES_MENU_STOPS)}
+        onKeyDown={handleListKeys}
       >
         {continuesFrom ? (
           <p

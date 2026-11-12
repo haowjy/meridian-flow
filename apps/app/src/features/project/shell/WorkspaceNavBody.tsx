@@ -11,7 +11,6 @@ import type { ReactNode } from "react";
 import { role } from "@/components/ui/roles";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
-import { sidebarIcon } from "../context/context-row-geometry";
 import { ListSwitch } from "./sidebar/ListSwitch";
 
 export function WorkspaceNavBody({
@@ -47,7 +46,7 @@ export function WorkspaceNavBody({
             role.hover,
           )}
         >
-          <ArrowLeft className={cn(sidebarIcon.action, "shrink-0")} aria-hidden />
+          <ArrowLeft className="size-4 shrink-0" aria-hidden />
           <Trans>View projects</Trans>
         </Link>
       </div>

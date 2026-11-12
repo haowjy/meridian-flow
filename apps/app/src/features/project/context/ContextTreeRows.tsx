@@ -4,21 +4,13 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Folder, FolderOpen, LoaderCircle, type LucideIcon } from "lucide-react";
-import {
-  createContext,
-  type HTMLAttributes,
-  type KeyboardEvent,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-} from "react";
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef } from "react";
 import type {
   CatalogContextView,
   CatalogFile as ContextFile,
   CatalogNode as ContextNode,
 } from "@/client/query/context-catalog-projection";
+import { contentInset, ICON_SLOT_PX, ListRow, ListRowField } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import { useRevealImport } from "@/features/import/ImportProvider";
 import {
@@ -28,18 +20,9 @@ import {
   rowId,
   siblingsOf,
 } from "@/features/import/tree-rows";
-import { cn } from "@/lib/utils";
-import { ContextEntryMenu, EntryKebabButton, type EntryMenu } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
-import {
-  contextTreeFileRowClassName,
-  contextTreeRowClassName,
-  contextTreeRowGrowClassName,
-  contextTreeSelectedRowClassName,
-  sidebarIcon,
-} from "./context-row-geometry";
 import { EntryDestinationPicker } from "./EntryDestinationPicker";
 import { EntryNameField } from "./EntryNameField";
 import { EntryRefusalNotice } from "./EntryRefusalNotice";
@@ -110,7 +93,8 @@ export function TreeGroup({ depth, children }: { depth: number; children: ReactN
       <span
         aria-hidden
         className="pointer-events-none absolute -inset-y-1 z-10 border-l border-border-subtle only:hidden"
-        style={{ left: rowPaddingLeft(depth) }}
+        // Under the parent row's icon.
+        style={{ left: contentInset(depth - 1) + 8 }}
       />
     </div>
   );
@@ -175,31 +159,6 @@ export function TreeChildren({
 
 type DropFolder = NonNullable<TreeDropTarget["folder"]>;
 
-/** The `mx-2` every row sits inside its region with. */
-const ROW_INSET_PX = 8;
-
-/** Top-level rows start 6px in, so their icons line up with the 28px tab buttons' icons above. */
-export function rowPaddingLeft(depth: number): number {
-  return 6 + depth * 16;
-}
-
-function activateOnKey(handler: (event: KeyboardEvent) => void) {
-  return (event: KeyboardEvent) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      handler(event);
-    }
-  };
-}
-
-export function RowIcon({ icon: Icon }: { icon: LucideIcon }) {
-  return (
-    <span className={cn("flex h-7 w-4 shrink-0 items-center justify-center", role.secondary)}>
-      <Icon aria-hidden className={sidebarIcon.row} />
-    </span>
-  );
-}
-
 // Edge bands, as a share of the row's height. A file's centre only re-files it
 // into its own folder, so its edges get more room than a folder's, whose centre
 // moves rows into it.
@@ -253,10 +212,6 @@ function DirRow({
     active: false,
     draggable: !dir.navigationOnly,
   });
-  const toggle = () => {
-    if (env.creation?.creating) env.creation.done();
-    env.toggleEntry(dir.entryId);
-  };
   if (interaction.renaming) {
     return (
       <RenameRow options={interaction.rename} depth={depth} icon={isOpen ? FolderOpen : Folder} />
@@ -264,40 +219,44 @@ function DirRow({
   }
 
   return (
-    <DropRegion state={drop.dropState}>
+    <DropRegion state={drop.dropState} flush>
       {/* The region spans the subtree, so "after" lands below everything shown inside. */}
-      <InsertionLine edge={drop.edge} inset={ROW_INSET_PX + rowPaddingLeft(depth)} />
+      <InsertionLine edge={drop.edge} inset={contentInset(depth)} />
       <EntryDestinationPicker {...interaction.picker}>
-        <ContextEntryMenu menu={interaction.menu}>
-          {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. slop-lint: allow suppression the reason is stated in this comment */}
-          <div
-            role="button"
-            tabIndex={0}
-            aria-expanded={isOpen}
-            aria-label={t`Toggle folder ${dir.name}`}
-            onClick={row.activate(toggle)}
-            onKeyDown={activateOnKey(row.activate(toggle))}
-            {...row.rowProps}
-            {...drop.dropProps}
-            className={cn(
-              "group focus-ring mx-2 flex items-center rounded-md pr-1 text-foreground",
-              role.row,
-              row.selected ? contextTreeSelectedRowClassName : role.hover,
-              contextTreeRowGrowClassName,
-            )}
-            style={{ paddingLeft: rowPaddingLeft(depth) }}
-          >
-            {/* The open or closed folder is the twistie: rows need no chevron column. */}
-            <RowIcon icon={isOpen ? FolderOpen : Folder} />
-            <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
-              <span className="truncate">{dir.name}</span>
-              <LinkUpdateNote
-                projectId={env.projectId}
-                subject={{ kind: "folder", id: dir.entryId }}
-                operationId={interaction.operationId}
-                layout="stacked"
+        <ListRow
+          depth={depth}
+          // The open or closed folder is the twistie: rows need no chevron column.
+          icon={isOpen ? FolderOpen : Folder}
+          title={dir.name}
+          onOpen={() => {
+            if (env.creation?.creating) env.creation.done();
+            env.toggleEntry(dir.entryId);
+          }}
+          selected={row.selected}
+          controlProps={{ ...row.rowProps, "aria-expanded": isOpen }}
+          frameProps={drop.dropProps}
+          menu={interaction.menu}
+          revealActions
+          detail={
+            <LinkUpdateNote
+              projectId={env.projectId}
+              subject={{ kind: "folder", id: dir.entryId }}
+              operationId={interaction.operationId}
+              layout="stacked"
+            />
+          }
+          trailing={
+            dir.namespaceFailure && !env.refusalNotice ? (
+              <NamespaceFailureMark
+                failure={dir.namespaceFailure}
+                move={Boolean(dir.namespaceRepairMove)}
+                folder
               />
-              {dir.namespaceFailure && env.refusalNotice ? (
+            ) : null
+          }
+          below={
+            dir.namespaceFailure && env.refusalNotice ? (
+              <RowNotice depth={depth}>
                 <EntryRefusalNotice
                   failure={dir.namespaceFailure}
                   move={Boolean(dir.namespaceRepairMove)}
@@ -305,18 +264,10 @@ function DirRow({
                   actions={interaction.actions}
                   onAction={interaction.onAction}
                 />
-              ) : null}
-            </span>
-            {dir.namespaceFailure && !env.refusalNotice ? (
-              <NamespaceFailureMark
-                failure={dir.namespaceFailure}
-                move={Boolean(dir.namespaceRepairMove)}
-                folder
-              />
-            ) : null}
-            <EntryKebabButton menu={interaction.menu} />
-          </div>
-        </ContextEntryMenu>
+              </RowNotice>
+            ) : null
+          }
+        />
       </EntryDestinationPicker>
       {isOpen ? (
         <TreeGroup depth={depth + 1}>
@@ -340,30 +291,21 @@ function PendingTreeRow({ row, depth }: { row: PendingRow; depth: number }) {
     element.current?.scrollIntoView({ block: "nearest" });
   }, []);
   return (
-    <button
-      type="button"
+    <ListRow
       ref={element}
-      data-import-root={row.id}
-      onClick={() => reveal?.(row.importId)}
-      className={cn(
-        "focus-ring mx-2 flex w-[calc(100%-1rem)] items-center rounded-md pr-2 text-left",
-        role.row,
-        role.secondary,
-        role.hover,
-        contextTreeRowGrowClassName,
-      )}
-      style={{ paddingLeft: rowPaddingLeft(depth) }}
-    >
-      <RowIcon icon={Folder} />
-      <span className="ml-0.5 min-w-0 flex-1 truncate">{row.name}</span>
-      <LoaderCircle
-        aria-hidden
-        className={cn(sidebarIcon.row, "shrink-0 animate-spin motion-reduce:animate-none")}
-      />
-      <span className="sr-only">
-        <Trans>Import in progress. Show activity</Trans>
-      </span>
-    </button>
+      depth={depth}
+      icon={Folder}
+      title={<span className={role.secondary}>{row.name}</span>}
+      onOpen={() => reveal?.(row.importId)}
+      trailing={
+        <>
+          <LoaderCircle aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
+          <span className="sr-only">
+            <Trans>Import in progress. Show activity</Trans>
+          </span>
+        </>
+      }
+    />
   );
 }
 
@@ -395,7 +337,6 @@ function FileRow({
     onRequestDelete: env.onRequestDelete,
     siblings,
   });
-  const select = () => env.onSelectFile(env.scheme, file);
   const active = env.scheme === env.activeScheme && file.path === env.activePath;
   const row = useEntryRow(interaction.entry, { active });
   if (interaction.renaming) {
@@ -404,33 +345,25 @@ function FileRow({
 
   return (
     <EntryDestinationPicker {...interaction.picker}>
-      <DocumentRow
-        row={row}
-        menu={interaction.menu}
-        active={active}
+      <InsertionLine edge={drop.edge} inset={contentInset(depth)} />
+      <ListRow
         depth={depth}
         icon={fileKindIcon(file)}
-        name={file.name}
-        onOpen={select}
-        controlProps={drop.dropProps}
-        overlay={<InsertionLine edge={drop.edge} inset={rowPaddingLeft(depth)} />}
+        title={file.name}
+        onOpen={() => env.onSelectFile(env.scheme, file)}
+        current={active && "page"}
+        selected={row.selected}
+        controlProps={row.rowProps}
+        frameProps={drop.dropProps}
+        menu={interaction.menu}
+        revealActions
         detail={
-          <>
-            <LinkUpdateNote
-              projectId={env.projectId}
-              subject={{ kind: "file", id: file.documentId }}
-              operationId={interaction.operationId}
-              layout="stacked"
-            />
-            {file.namespaceFailure && env.refusalNotice ? (
-              <EntryRefusalNotice
-                failure={file.namespaceFailure}
-                move={Boolean(file.namespaceRepairMove)}
-                actions={interaction.actions}
-                onAction={interaction.onAction}
-              />
-            ) : null}
-          </>
+          <LinkUpdateNote
+            projectId={env.projectId}
+            subject={{ kind: "file", id: file.documentId }}
+            operationId={interaction.operationId}
+            layout="stacked"
+          />
         }
         trailing={
           file.namespaceFailure && !env.refusalNotice ? (
@@ -440,82 +373,26 @@ function FileRow({
             />
           ) : null
         }
+        below={
+          file.namespaceFailure && env.refusalNotice ? (
+            <RowNotice depth={depth}>
+              <EntryRefusalNotice
+                failure={file.namespaceFailure}
+                move={Boolean(file.namespaceRepairMove)}
+                actions={interaction.actions}
+                onAction={interaction.onAction}
+              />
+            </RowNotice>
+          ) : null
+        }
       />
     </EntryDestinationPicker>
   );
 }
 
-/**
- * A document's row in every sidebar list, the trees' files and Trash alike: it opens on a click,
- * joins its list's selection on a Ctrl/Cmd- or Shift-click, and its right-click and ⋯ open the
- * same menu. Lists differ only in what they put beside and under the name.
- */
-export function DocumentRow({
-  row,
-  menu,
-  active,
-  depth,
-  icon,
-  name,
-  meta,
-  detail,
-  trailing,
-  onOpen,
-  controlProps,
-  overlay,
-}: {
-  row: ReturnType<typeof useEntryRow>;
-  menu: EntryMenu;
-  /** What main shows. */
-  active: boolean;
-  depth: number;
-  icon: LucideIcon;
-  name: string;
-  /** Quiet, at the right of the name. */
-  meta?: ReactNode;
-  /** Under the name. */
-  detail?: ReactNode;
-  /** Before the ⋯. */
-  trailing?: ReactNode;
-  onOpen: () => void;
-  controlProps?: HTMLAttributes<HTMLElement>;
-  /** Drawn over the row (a drop's insertion line). */
-  overlay?: ReactNode;
-}) {
-  return (
-    <ContextEntryMenu menu={menu}>
-      {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
-      <div
-        role="button"
-        tabIndex={0}
-        aria-current={active ? "page" : undefined}
-        onClick={row.activate(onOpen)}
-        onKeyDown={activateOnKey(row.activate(onOpen))}
-        {...row.rowProps}
-        {...controlProps}
-        className={cn("focus-ring relative", contextTreeFileRowClassName(active, row.selected))}
-        style={{ paddingLeft: rowPaddingLeft(depth) }}
-      >
-        {overlay}
-        <RowIcon icon={icon} />
-        <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
-          {meta ? (
-            <span className="flex min-w-0 items-baseline gap-2">
-              <span className="min-w-0 flex-1 truncate">{name}</span>
-              <span className={cn("shrink-0 font-normal tabular-nums", role.rowSecondary)}>
-                {meta}
-              </span>
-            </span>
-          ) : (
-            <span className="truncate">{name}</span>
-          )}
-          {detail}
-        </span>
-        {trailing}
-        <EntryKebabButton menu={menu} />
-      </div>
-    </ContextEntryMenu>
-  );
+/** Under a row, on its title's edge: a refusal said in words, with its repair. */
+function RowNotice({ depth, children }: { depth: number; children: ReactNode }) {
+  return <div style={{ paddingLeft: contentInset(depth) + ICON_SLOT_PX }}>{children}</div>;
 }
 
 function RenameRow({
@@ -525,21 +402,13 @@ function RenameRow({
 }: {
   options: Parameters<typeof useRenameEntryForm>[0];
   depth: number;
-  icon: typeof Folder;
+  icon: LucideIcon;
 }) {
   const form = useRenameEntryForm(options);
   return (
-    <div
-      className={cn(
-        "mx-2 flex items-center pr-1 text-foreground",
-        role.row,
-        contextTreeRowClassName,
-      )}
-      style={{ paddingLeft: rowPaddingLeft(depth) }}
-    >
-      <RowIcon icon={icon} />
-      <EntryNameField form={form} label={t`Rename`} className="ml-0.5" />
-    </div>
+    <ListRowField depth={depth} icon={icon}>
+      <EntryNameField form={form} label={t`Rename`} />
+    </ListRowField>
   );
 }
 
@@ -567,21 +436,8 @@ function CreateRow({
     onCreated: kind === "file" ? creation.createdFile : undefined,
   });
   return (
-    <div
-      className={cn(
-        "mx-2 flex items-center pr-1 text-foreground",
-        role.row,
-        contextTreeRowClassName,
-      )}
-      style={{ paddingLeft: rowPaddingLeft(depth) }}
-    >
-      <RowIcon icon={form.icon} />
-      <EntryNameField
-        form={form}
-        label={form.placeholder}
-        placeholder={form.placeholder}
-        className="ml-0.5"
-      />
-    </div>
+    <ListRowField depth={depth} icon={form.icon}>
+      <EntryNameField form={form} label={form.placeholder} placeholder={form.placeholder} />
+    </ListRowField>
   );
 }

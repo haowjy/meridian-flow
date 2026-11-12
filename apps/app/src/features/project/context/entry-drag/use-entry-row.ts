@@ -18,11 +18,9 @@ export function useEntryRow(
   },
 ) {
   const { selection, selected, rowProps } = useEntrySelectionRow(entry, active);
-  /** A selection gesture (Ctrl/Cmd or Shift) selects; true when it did, so the click must not open. */
-  const select = (event: MouseEvent | KeyboardEvent): boolean =>
-    selection?.click(entry, event) ?? false;
   return {
     selected,
+    /** Spread on the row's control. */
     rowProps: {
       ...rowProps,
       draggable: Boolean(selection?.draggable && draggable),
@@ -30,13 +28,21 @@ export function useEntryRow(
         event.stopPropagation();
         startEntryDrag(event, selection ? selection.dragged(entry) : [entry], source);
       },
-    },
-    select,
-    /** A selection gesture (Ctrl/Cmd or Shift) selects instead of opening or toggling. */
-    activate:
-      (open: () => void) =>
-      (event: MouseEvent | KeyboardEvent): void => {
-        if (!select(event)) open();
+      // A selection gesture (Ctrl/Cmd or Shift) selects instead of opening or toggling, before
+      // the row's own click (or a link's navigation) sees it.
+      onClickCapture: (event: MouseEvent) => {
+        if (!selection?.click(entry, event)) return;
+        event.preventDefault();
+        event.stopPropagation();
       },
+      // Enter with a modifier sends no click (Chromium clicks only on a plain Enter's keypress;
+      // macOS sends none for Cmd+Enter), so the keyboard's selection gesture is read here.
+      onKeyDown: (event: KeyboardEvent) => {
+        if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey || event.shiftKey)) return;
+        if (!selection?.click(entry, event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+      },
+    },
   };
 }
