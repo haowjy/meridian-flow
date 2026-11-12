@@ -174,11 +174,7 @@ export function DraftSwitcher({
               {draftCommands.applying ? <Loader2 className="animate-spin" aria-hidden /> : null}
               <Trans>Apply draft</Trans>
             </DropdownMenuItem>
-            <DropdownMenuItem
-              variant="destructive"
-              disabled={disabled}
-              onSelect={draftCommands.onDiscard}
-            >
+            <DropdownMenuItem disabled={disabled} onSelect={draftCommands.onDiscard}>
               <Trans>Discard draft</Trans>
             </DropdownMenuItem>
           </>
