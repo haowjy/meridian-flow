@@ -84,7 +84,7 @@ type SideView = {
   /** What the side's new-chat composer is about, as its draft stands. */
   newChatAbout: NewChatAbout;
   reportNewChatAbout: (about: NewChatAbout) => void;
-  /** Bumped by a hold from a link: the shell opens the side so the hold is seen. */
+  /** Bumped by a hold from a link: the desktop opens the side so the hold is seen. */
   revealed: number;
   /** With `draft`, the held document shows that draft. */
   holdBeside: (pick: HeldPick, draft?: DraftPin) => void;
@@ -482,17 +482,12 @@ export function useNewChatAbout(): {
   return { about: newChatAbout, report: reportNewChatAbout };
 }
 
-export type HoldBeside = SideView["holdBeside"];
-
-/** Holds a document beside and has the side seen, and whether main shows a chat; null outside the project view. */
-export function useOptionalSideHold(): { hold: HoldBeside; mainIsChat: boolean } | null {
-  const view = useContext(SideViewContext);
-  const hold = view?.holdBeside;
-  const mainIsChat = view?.main.kind === "chat";
-  return useMemo(() => (hold ? { hold, mainIsChat } : null), [hold, mainIsChat]);
+/** Holds a document beside from a link, and has the side seen; null outside the project view. */
+export function useOptionalHoldBeside(): SideView["holdBeside"] | null {
+  return useContext(SideViewContext)?.holdBeside ?? null;
 }
 
-/** Counts holds made from a link: the shell opens the side on each. */
+/** Counts holds made from a link: the desktop opens the side on each. */
 export function useSideRevealed(): number {
   return useSideView().revealed;
 }

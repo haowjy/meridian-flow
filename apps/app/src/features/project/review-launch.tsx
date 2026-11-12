@@ -13,6 +13,7 @@ import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import type { LinkFollowDisposition } from "@/core/editor/links";
+import { useChatPlace } from "@/features/chat/chat-place";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDocumentRef } from "@/features/links";
@@ -26,7 +27,9 @@ import {
   useOpenedFromChat,
 } from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
-import { type HoldBeside, useOptionalSideHold } from "./side/SideView";
+import { useOptionalHoldBeside } from "./side/SideView";
+
+type HoldBeside = NonNullable<ReturnType<typeof useOptionalHoldBeside>>;
 
 export type AiDraftLaunchTarget = {
   ownerKey: string;
@@ -149,9 +152,8 @@ function useOptionalOpenEditorReview(): EditorReviewCommand | null {
  */
 function useHoldFor(): (gesture: LinkFollowDisposition) => HoldBeside | null {
   const fromChat = useOpenedFromChat() !== null;
-  const side = useOptionalSideHold();
-  const hold = side?.hold ?? null;
-  const chatInMain = side?.mainIsChat ?? false;
+  const chatInMain = useChatPlace() === "main";
+  const hold = useOptionalHoldBeside();
   return useCallback(
     (gesture) => {
       if (fromChat) return chatInMain ? hold : null;

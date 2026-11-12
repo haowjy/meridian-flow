@@ -1,8 +1,5 @@
 # FUTURE — nice-to-have follow-ups (chat)
 
-- Ctrl/Cmd-click and middle click on a transcript link have no background-tab
-  follow as they do in the Editor. Revisit with #625's destinations.
-
 - `chatLinkScope` treats `useWorks` status `disabled` as pending. In a project
   whose creation failed, a link click stays on "checking" until Cancel.
   Distinguish pending creation from failed creation.

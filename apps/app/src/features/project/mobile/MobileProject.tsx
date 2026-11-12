@@ -26,13 +26,7 @@ import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
 import { useSideChatName } from "../side/SideHeader";
 import { SidePicker } from "../side/SidePicker";
-import {
-  useChatOnScreen,
-  useHostChatId,
-  useShellCommands,
-  useSideItem,
-  useSideRevealed,
-} from "../side/SideView";
+import { useChatOnScreen, useHostChatId, useShellCommands, useSideItem } from "../side/SideView";
 import { useMainItem } from "../views";
 import { ChatBreadcrumb } from "./ChatBreadcrumb";
 import { pathLeafName } from "./context-location";
@@ -64,14 +58,6 @@ export function MobileProject(props: MobileProjectProps) {
     arrivedAt.current = position;
     setSheetOpen(false);
   }, [position]);
-  // A hold made from a link (a chat in main opens its pages beside) opens the sheet to show it.
-  const revealed = useSideRevealed();
-  const seenReveal = useRef(revealed);
-  useEffect(() => {
-    if (revealed === seenReveal.current) return;
-    seenReveal.current = revealed;
-    setSheetOpen(true);
-  }, [revealed]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const main = useMainItem();
   const trashedId = useTrashNavigation().shown;
