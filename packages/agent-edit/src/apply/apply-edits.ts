@@ -48,7 +48,6 @@ export function applyEdits(
   origin: ApplyTransactionOrigin,
   beforeSegment?: () => void,
   certifySegment?: (segment: readonly ResolvedEdit[]) => void,
-  room?: DocHandle,
 ): ApplyResult {
   const editList = Array.isArray(edits) ? [...edits] : [edits];
   if (editList.length === 0) {
@@ -84,7 +83,7 @@ export function applyEdits(
         doc,
         () => {
           for (const plan of plans) {
-            failure = executePlan(doc, model, plan, accumulator, room);
+            failure = executePlan(doc, model, plan, accumulator);
             if (failure) break;
           }
           if (!failure) certifySegment?.(segment);
@@ -213,11 +212,10 @@ function executePlan(
   model: AgentEditModel,
   plan: PlannedEdit,
   accumulator: ApplyAccumulator,
-  room: DocHandle | undefined,
 ): ApplyFailure | undefined {
   switch (plan.kind) {
     case "ops": {
-      const applied = model.applyOps(doc, plan.edit.block, plan.edit.ops, room);
+      const applied = model.applyOps(doc, plan.edit.block, plan.edit.ops);
       if (!applied.ok) return applyError(applied.code, applied.message);
       accumulator.touchedHashes.add(plan.blockId);
       break;

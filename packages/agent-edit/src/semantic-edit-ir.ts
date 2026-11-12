@@ -30,6 +30,7 @@ export type SemanticEditIRV1 = {
         edits: Array<{ edit: ResolvedEdit; outputRuns: SemanticOutputRun[] }>;
       }
     | { kind: "fullScopeFreshReplacement"; payload: string };
+  /** What the plan deletes in the model's view, for validation. The write's record is the journal's. */
   deleted: LineageRange[];
 };
 

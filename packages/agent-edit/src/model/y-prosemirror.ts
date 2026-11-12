@@ -12,7 +12,6 @@ import type {
   EditOpsResult,
   ProjectedBlock,
 } from "../ports/model.js";
-import { findItem, itemsInRange } from "../yjs-mutation.js";
 import {
   blockHashesForDoc,
   blockIdentityForItem,
@@ -108,8 +107,8 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       deleteBlock(unwrapDoc(doc), unwrapBlock(block));
     },
 
-    applyOps(_doc, block, ops, room) {
-      return applyOps(unwrapBlock(block), ops, room && unwrapDoc(room));
+    applyOps(_doc, block, ops) {
+      return applyOps(unwrapBlock(block), ops);
     },
 
     applyBlockReplacement(doc, block, replacement) {
@@ -246,7 +245,7 @@ function writePmBlock(doc: Y.Doc, block: Y.XmlElement, replacement: PMNode): voi
  * Every path and offset is checked before anything changes, so an operation means the
  * block as planned whatever ran before it, and a write that does not fit leaves it alone.
  */
-function applyOps(block: Y.XmlElement, ops: readonly EditOp[], room?: Y.Doc): EditOpsResult {
+function applyOps(block: Y.XmlElement, ops: readonly EditOp[]): EditOpsResult {
   const targets: Y.XmlElement[] = [];
   for (const op of ops) {
     const node = findNode(block, op.path);
@@ -259,7 +258,7 @@ function applyOps(block: Y.XmlElement, ops: readonly EditOp[], room?: Y.Doc): Ed
   for (const [index, op] of ops.entries()) {
     const target = targets[index];
     if (op.kind === "text") {
-      applyTextOp(target, op, room);
+      applyTextOp(target, op);
       continue;
     }
     for (const [key, value] of Object.entries(op.attrs)) {
@@ -328,17 +327,8 @@ function opProblem(node: Y.XmlElement, op: EditOp): string | undefined {
   return undefined;
 }
 
-/**
- * Units are addressed across the textblock's children, as `slotsOf` lays them out. A splice
- * deletes only the items `room` still holds, as an editor's delete cannot reach what is
- * already gone, so the update never claims a deletion the writer made; its text goes after
- * the units it replaced.
- */
-function applyTextOp(
-  leaf: Y.XmlElement,
-  op: Extract<EditOp, { kind: "text" }>,
-  room?: Y.Doc,
-): void {
+/** Units are addressed across the textblock's children, as `slotsOf` lays them out. */
+function applyTextOp(leaf: Y.XmlElement, op: Extract<EditOp, { kind: "text" }>): void {
   if (leaf.length === 0) leaf.insert(0, [new Y.XmlText()]);
   // Formats don't move offsets, so they go first.
   for (const { from, to, mark, attrs } of op.formats)
@@ -356,49 +346,15 @@ function applyTextOp(
       const hi = Math.min(to, start + length);
       if (lo >= hi) continue;
       if (child instanceof Y.XmlText) {
-        for (const [a, b] of heldRanges(child, lo - start, hi - start, room).reverse()) {
-          child.delete(a, b - a);
-          deleted += b - a;
-        }
-      } else if (!room || heldIn(room, child._item)) {
+        child.delete(lo - start, hi - lo);
+        deleted += hi - lo;
+      } else {
         leaf.delete(index, 1);
         deleted += 1;
       }
     }
     insertContent(leaf, to - deleted, content);
   }
-}
-
-/** Whether `room` holds the item, undeleted. A clock it keeps no item for was collected. */
-function heldIn(room: Y.Doc, item: Y.Item | null): boolean {
-  return item === null || findItem(room, item.id)?.deleted === false;
-}
-
-/** The ranges of the run's units [from, to) that `room` still holds, in order; all without a room. */
-function heldRanges(
-  text: Y.XmlText,
-  from: number,
-  to: number,
-  room?: Y.Doc,
-): Array<[number, number]> {
-  if (!room) return [[from, to]];
-  const held: Array<[number, number]> = [];
-  let at = 0;
-  for (let item = text._start; item && at < to; item = item.right) {
-    if (item.deleted || !item.countable) continue;
-    const { client, clock } = item.id;
-    for (const piece of itemsInRange(room, { client, clock, len: item.length })) {
-      if (piece.item.deleted) continue;
-      const a = Math.max(from, at + piece.clock - clock);
-      const b = Math.min(to, at + piece.clock - clock + piece.len);
-      if (a >= b) continue;
-      const last = held.at(-1);
-      if (last && last[1] === a) last[1] = b;
-      else held.push([a, b]);
-    }
-    at += item.length;
-  }
-  return held;
 }
 
 /** Put inline `content` at unit `at`: into the run of text it touches, else as new children. */

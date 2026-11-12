@@ -42,10 +42,12 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   model's new text repeats comes back inside it (`sighed softly` over a deleted `sighed`
   lands `He sighed softly,`). A trim of the shared edges would keep the deleted word out,
   but loses model letters (`Gamma` over a deleted `Beta` lands `Gamm`); it was tried and
-  removed. Only the apply step meets the room (`applyOps`' `room`): a splice deletes the
-  items the room still holds, as an editor's delete cannot reach what is gone, and puts
-  its text after the units it replaced. The update, the write's record and turn Undo
-  therefore never claim the writer's deletion. An attribute the codec does
+  removed. The apply step never reads the room either: the update deletes what the model's
+  view held, including units the writer has since deleted, and Yjs merges it. The write's
+  record is made at save, where the journal takes `heldDeletes` of the room before the
+  update applies and `captureEditParts` drops those items from the part's `deleted`
+  (a stale read, or a writer's delete that landed between the call and the save). The record
+  and turn Undo therefore never claim the writer's deletion. An attribute the codec does
   not write (`uploadToken`) is never set: the model's node is compared with what the codec
   shows of the node it saw (a round trip of the top-level block), so a model edit to a
   paragraph leaves an image whose upload is in flight alone.
@@ -58,10 +60,8 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   merging them would re-insert the writer's text as the model's, so they stay
   (the minimal-ops design, section 6).
 - What that guarantees, for a block it keeps, and no more:
-  - A replace never writes a character at the start or end of its old text that its new
-    text repeats, so a letter the writer deleted there is not re-inserted.
-  - The update deletes no item the room had already deleted, so the write's record holds
-    only what the model changed and Undo restores the writer's exact text.
+  - The write's record holds only what the model changed in the room it merged into, so
+    Undo restores the writer's exact text.
   - The model's new text lands where the model put it, even beside or in place of deleted
     text, so pieces such as `the, steadily moving train` appear. Nothing marks or reports
     them; the echo shows the merged text.

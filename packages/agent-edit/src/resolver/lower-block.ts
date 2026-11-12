@@ -31,8 +31,7 @@ interface Walk {
 
 /**
  * Lower a block rewrite planned on the model's view into the smallest operations on the
- * units and attributes the model saw: a replaced stretch keeps the letters its old and new
- * text share at the edges and changes only the middle.
+ * units and attributes the model saw. A replaced stretch is written whole, never trimmed.
  * Every textblock at any depth is lowered by the same code, and the room is never read.
  * `placed` is a find's windows in the two blocks' text. Null for a shape this
  * lowering does not keep (a node added, removed or retyped, an inline atom put inside a run
