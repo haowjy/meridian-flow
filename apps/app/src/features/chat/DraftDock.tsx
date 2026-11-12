@@ -122,7 +122,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 event.stopPropagation();
                 setExpanded((value) => !value);
               }}
-              className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground coarse:min-h-11 coarse:min-w-11"
+              className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm coarse:min-h-11 coarse:min-w-11"
             >
               <DisclosureMark open={expanded} />
             </button>
