@@ -809,6 +809,229 @@ describe("Undo of an Apply by the simple rule: only while nothing has been admit
   });
 });
 
+type TrashItem = { name: string; inside: TrashItem[] };
+
+/**
+ * Trash as a tree, for one view: what the tree must give the Trash screen. An entry is the
+ * node of a delete still in force that still takes something. Inside it are the nodes in
+ * Trash under it, as a tree; a folder inside that stands again (something in it was restored)
+ * is shown as the container of what is still in Trash under it.
+ */
+function trashTree(projection: TreeProjection): TrashItem[] {
+  const kids = new Map<string, string[]>();
+  for (const node of projection.nodes.values())
+    if (node.parent !== null) kids.set(node.parent, [...(kids.get(node.parent) ?? []), node.id]);
+  const holdsTrash = (id: string): boolean =>
+    projection.nodes.get(id)?.trashed === true || (kids.get(id) ?? []).some(holdsTrash);
+  const item = (id: string): TrashItem => ({
+    name: projection.nodes.get(id)?.name as string,
+    inside: (kids.get(id) ?? [])
+      .filter(holdsTrash)
+      .map(item)
+      .sort((a, b) => (a.name < b.name ? -1 : 1)),
+  });
+  const tops = new Set(projection.deletes.map((record) => record.node).filter(holdsTrash));
+  const isInside = (id: string) => {
+    let at = projection.nodes.get(id)?.parent ?? null;
+    while (at !== null) {
+      if (tops.has(at)) return true;
+      at = projection.nodes.get(at)?.parent ?? null;
+    }
+    return false;
+  };
+  return [...tops]
+    .filter((id) => !isInside(id))
+    .map(item)
+    .sort((a, b) => (a.name < b.name ? -1 : 1));
+}
+const leaf = (name: string): TrashItem => ({ name, inside: [] });
+
+describe("Trash is a tree: a deleted folder is one entry that can be opened; a folder that something needs stands again", () => {
+  function deletedArc() {
+    const t = start();
+    const arc = t.folder("Arc 2");
+    const part = t.folder("Part 1", arc);
+    const chapters = ["Chapter 41", "Chapter 42", "Chapter 49"].map((name) => t.chapter(name, arc));
+    const inner = t.chapter("Interlude", part);
+    const loose = t.chapter("Loose");
+    t.w.delete(LIVE, WRITER, arc);
+    t.w.delete(LIVE, WRITER, loose);
+    return { ...t, arc, part, chapters, inner, loose };
+  }
+
+  it("a deleted folder is one entry holding its documents and its subfolder; a document deleted alone is its own entry", () => {
+    const t = deletedArc();
+    expect(trashTree(t.w.view(LIVE))).toEqual([
+      {
+        name: "Arc 2",
+        inside: [leaf("Chapter 41"), leaf("Chapter 42"), leaf("Chapter 49"), { name: "Part 1", inside: [leaf("Interlude")] }],
+      },
+      leaf("Loose"),
+    ]);
+    expect(t.names(ROOT)).toEqual([]);
+  });
+
+  it("restoring one document from inside brings the folder back holding only it; the rest stays under the folder's entry", () => {
+    const t = deletedArc();
+    t.w.restore(LIVE, WRITER, t.chapters[0] as string);
+    expect(t.names(ROOT)).toEqual(["Arc 2"]);
+    expect(t.names(t.arc)).toEqual(["Chapter 41"]);
+    expect(trashTree(t.w.view(LIVE))).toEqual([
+      { name: "Arc 2", inside: [leaf("Chapter 42"), leaf("Chapter 49"), { name: "Part 1", inside: [leaf("Interlude")] }] },
+      leaf("Loose"),
+    ]);
+    // A document two folders down brings both folders back; the entry keeps the rest.
+    t.w.restore(LIVE, WRITER, t.inner);
+    expect(t.names(t.arc)).toEqual(["Part 1", "Chapter 41"]);
+    expect(t.names(t.part)).toEqual(["Interlude"]);
+    expect(trashTree(t.w.view(LIVE))).toEqual([
+      { name: "Arc 2", inside: [leaf("Chapter 42"), leaf("Chapter 49")] },
+      leaf("Loose"),
+    ]);
+    t.valid();
+  });
+
+  it("restoring the folder's entry brings back everything still in it, and the entry is gone", () => {
+    const t = deletedArc();
+    t.w.restore(LIVE, WRITER, t.chapters[0] as string);
+    t.w.restore(LIVE, WRITER, t.arc);
+    expect(t.names(t.arc)).toEqual(["Part 1", "Chapter 41", "Chapter 42", "Chapter 49"]);
+    expect(t.names(t.part)).toEqual(["Interlude"]);
+    expect(trashTree(t.w.view(LIVE))).toEqual([leaf("Loose")]);
+  });
+
+  it("restoring a subfolder from inside brings it and what is in it, under its folder", () => {
+    const t = deletedArc();
+    t.w.restore(LIVE, WRITER, t.part);
+    expect(t.names(t.arc)).toEqual(["Part 1"]);
+    expect(t.names(t.part)).toEqual(["Interlude"]);
+    expect(trashTree(t.w.view(LIVE))[0]).toEqual({
+      name: "Arc 2",
+      inside: [leaf("Chapter 41"), leaf("Chapter 42"), leaf("Chapter 49")],
+    });
+  });
+
+  it("a folder deleted earlier, inside a folder deleted later, is nested in Trash and keeps its own delete", () => {
+    const t = start();
+    const arc = t.folder("Arc 2");
+    const part = t.folder("Part 1", arc);
+    t.chapter("Interlude", part);
+    t.chapter("Chapter 41", arc);
+    t.w.delete(LIVE, WRITER, part);
+    t.w.delete(LIVE, CHAT, arc);
+    expect(trashTree(t.w.view(LIVE))).toEqual([
+      { name: "Arc 2", inside: [leaf("Chapter 41"), { name: "Part 1", inside: [leaf("Interlude")] }] },
+    ]);
+    // Restoring the outer folder brings back what its delete took. Part 1 was deleted on its
+    // own, before, and stays in Trash, now an entry inside the standing folder.
+    t.w.restore(LIVE, WRITER, arc);
+    expect(t.names(arc)).toEqual(["Chapter 41"]);
+    expect(trashTree(t.w.view(LIVE))).toEqual([{ name: "Part 1", inside: [leaf("Interlude")] }]);
+  });
+
+  it("an empty deleted folder is an entry and can be restored; a draft that puts something in it brings it back", () => {
+    const t = start();
+    const empty = t.folder("Empty");
+    t.w.delete(LIVE, WRITER, empty);
+    expect(trashTree(t.w.view(LIVE))).toEqual([leaf("Empty")]);
+    t.chapter("New", empty, D, CHAT);
+    expect(t.names(ROOT, D)).toEqual(["Empty"]);
+    expect(trashTree(t.w.view(D))).toEqual([]);
+    t.w.apply("work-1", WRITER);
+    expect(t.names(empty)).toEqual(["New"]);
+    const again = start();
+    const e2 = again.folder("Empty");
+    again.w.delete(LIVE, WRITER, e2);
+    again.w.restore(LIVE, WRITER, e2);
+    expect(again.names(ROOT)).toEqual(["Empty"]);
+  });
+
+  it("Trash is per view: a Work that drafted a delete sees the entry; live does not", () => {
+    const t = start();
+    const arc = t.folder("Arc 2");
+    t.chapter("Chapter 41", arc);
+    t.w.delete(D, CHAT, arc);
+    expect(trashTree(t.w.view(LIVE))).toEqual([]);
+    expect(trashTree(t.w.view(D))).toEqual([{ name: "Arc 2", inside: [leaf("Chapter 41")] }]);
+  });
+
+  it("a folder brought back by a restore from inside goes again when the last thing in it leaves, and its entry still holds the rest", () => {
+    const t = deletedArc();
+    const ch = t.chapters[0] as string;
+    t.w.restore(LIVE, WRITER, ch);
+    const elsewhere = t.folder("Arc 3");
+    t.w.move(LIVE, WRITER, ch, elsewhere);
+    expect(t.names(ROOT)).toEqual(["Arc 3"]);
+    expect(trashTree(t.w.view(LIVE))[0]?.inside.map((item) => item.name)).toEqual(["Chapter 42", "Chapter 49", "Part 1"]);
+  });
+});
+
+describe("Undo of an Apply by the simple rule: only while nothing has been admitted since", () => {
+  const applied = () => {
+    const t = reorganisedOnce();
+    const other = t.chapter("Elsewhere");
+    const copies = t.w.apply("work-1", WRITER);
+    return { ...t, other, copies, mark: Y.encodeStateVector(t.doc) };
+  };
+
+  it("at once: live and the draft read as before, and it can be applied again", () => {
+    const t = reorganisedOnce();
+    const [live, draft] = [fingerprint(t.w.view(LIVE)), fingerprint(t.w.view(D))];
+    const copies = t.w.apply("work-1", WRITER);
+    expect(t.w.undoApplyIfLast(copies, Y.encodeStateVector(t.doc), WRITER)).toBe("undone");
+    expect(fingerprint(t.w.view(LIVE))).toBe(live);
+    expect(fingerprint(t.w.view(D))).toBe(draft);
+    t.w.apply("work-1", WRITER);
+    expect(fingerprint(t.w.view(LIVE))).toBe(draft);
+  });
+
+  it("gone after a live change anywhere, however unrelated", () => {
+    const t = applied();
+    t.w.rename(LIVE, WRITER, t.other, "Still elsewhere");
+    expect(t.w.undoApplyIfLast(t.copies, t.mark)).toBe("gone");
+  });
+
+  it("gone after any Work drafts anything", () => {
+    const t = applied();
+    t.w.rename({ draft: "work-2" }, CHAT2, t.other, "Drafted elsewhere");
+    expect(t.w.undoApplyIfLast(t.copies, t.mark)).toBe("gone");
+  });
+
+  it("gone after a Discard or another Apply", () => {
+    const t = applied();
+    t.w.rename({ draft: "work-2" }, CHAT2, t.other, "x");
+    const mark = Y.encodeStateVector(t.doc);
+    t.w.discard("work-2");
+    expect(t.w.undoApplyIfLast(t.copies, mark)).toBe("gone");
+  });
+
+  it("gone after a record from a client that was offline, though it lands earlier in the list", () => {
+    const t = reorganisedOnce();
+    const other = t.chapter("Elsewhere");
+    const offline = new Y.Doc({ gc: false });
+    Y.applyUpdate(offline, Y.encodeStateAsUpdate(t.doc));
+    offline.clientID = 1; // sorts before the server's records made at the same point
+    new TreeWriter(offline).rename(LIVE, "user:other", other, "Renamed offline");
+    const copies = t.w.apply("work-1", WRITER);
+    const mark = Y.encodeStateVector(t.doc);
+    Y.applyUpdate(t.doc, Y.encodeStateAsUpdate(offline, Y.encodeStateVector(t.doc)));
+    const ids = opsOf(t.doc).toArray().map((op) => op.id);
+    expect(ids.indexOf(copies[0]?.id as string)).toBeGreaterThan(
+      ids.findIndex((id) => opsOf(offline).toArray().at(-1)?.id === id),
+    );
+    expect(t.w.undoApplyIfLast(copies, mark)).toBe("gone");
+  });
+
+  it("gone after text was written in a chapter the Apply created", () => {
+    const t = start();
+    const ch = t.chapter("Chapter 50", ROOT, D, CHAT);
+    const copies = t.w.apply("work-1", WRITER);
+    const mark = Y.encodeStateVector(t.doc);
+    expect(t.w.undoApplyIfLast(copies, mark, WRITER, new Set([ch]))).toBe("gone");
+    expect(t.w.undoApplyIfLast(copies, mark, WRITER)).toBe("undone");
+  });
+});
+
 /** Trash as a writer sees it: documents only, grouped by the delete that took them. */
 function trashGroups(projection: TreeProjection): Array<{ folder: string | null; documents: string[] }> {
   const groups = new Map<string, { folder: string | null; documents: string[] }>();
