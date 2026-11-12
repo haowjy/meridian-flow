@@ -25,17 +25,27 @@ export type Connection = {
   drafts: ReadonlySet<string>;
   /** Top-level nodes (sources) this account may write. */
   writableSources: ReadonlySet<string>;
+  /** Where a new document goes when it cannot go where it was made: the account's Unfiled. */
+  home: string;
+  /** Ids already used by a row anywhere in the database, beyond this list. */
+  takenElsewhere?: (id: string) => boolean;
 };
 
 export type Admission =
   | { ok: false; reason: string }
-  | { ok: true; records: TreeOp[]; refused: Array<{ id: string; reason: string }> };
+  | {
+      ok: true;
+      records: TreeOp[];
+      refused: Array<{ id: string; reason: string }>;
+      /** Creates kept, live, in the account's own folder instead of where they were made. */
+      rehomed: Array<{ id: string; reason: string }>;
+    };
 
 const SERVER_CLIENT_IDS = 1000;
 const MAX_RECORDS = 2000;
 const MAX_NAME = 255;
 const UUIDISH = /^[0-9a-zA-Z_-]{1,64}$/;
-const RANK = /^[0-9A-Za-z]{1,64}$/;
+const RANK = /^[0-9A-Za-z]{1,1024}$/;
 const BASE = ["id", "node", "actor", "draft", "type"];
 const FIELDS: Record<string, string[]> = {
   create: [...BASE, "kind", "name", "parent", "rank", "undoes"],
@@ -105,8 +115,11 @@ export function checkUpdate(doc: Y.Doc, update: Uint8Array, connection: Connecti
     if (!(struct instanceof Y.Item)) return { ok: false, reason: "not an item" };
     const { client, clock } = struct.id;
     if (client < SERVER_CLIENT_IDS) return { ok: false, reason: "a reserved client id" };
-    // Nothing the server already has, and no gap: the update must be applicable now.
     const expected = next.get(client) ?? state.get(client) ?? 0;
+    // Items the server already holds are skipped, as Yjs skips them: two tabs of one browser
+    // each forward the same update.
+    if (clock + struct.length <= expected) continue;
+    // Otherwise no gap and no overlap: the update must be applicable now.
     if (clock !== expected) return { ok: false, reason: "not the next clock" };
     next.set(client, clock + struct.length);
     if (struct.parentSub !== null) return { ok: false, reason: "a map entry" };
@@ -138,39 +151,64 @@ export function checkUpdate(doc: Y.Doc, update: Uint8Array, connection: Connecti
   }
   if (new Set(records.map((op) => op.id)).size !== records.length)
     return { ok: false, reason: "a record id twice" };
+  // A record is judged against the list it joins. An id already there would let a client
+  // cancel, rewrite or redefine someone's record or node, wherever Yjs places the new item.
+  const held = ops.toArray();
+  const ids = new Set(held.map((op) => op.id));
+  const made = new Set(held.flatMap((op) => (op.type === "create" ? [op.node] : [])));
+  const fresh = new Set<string>();
+  for (const op of records) {
+    if (ids.has(op.id)) return { ok: false, reason: "a record id already in the list" };
+    if (op.type !== "create") continue;
+    if (made.has(op.node) || fresh.has(op.node) || connection.takenElsewhere?.(op.node))
+      return { ok: false, reason: "a node id already in use" };
+    fresh.add(op.node);
+  }
 
-  // What this account may not do now. These are admitted and marked, not refused.
+  // What this account may not do now. These are admitted and marked, not refused whole. A
+  // create is never left without a place: it is kept, live, in the account's own folder, so a
+  // document made offline keeps its text.
   const refused: Array<{ id: string; reason: string }> = [];
+  const rehomed: Array<{ id: string; reason: string }> = [];
   const live = materialize(doc, LIVE);
-  const created = new Map<string, string>();
+  const created = new Map<string, { parent: string; kind: string }>();
+  const kindOf = (id: string) => live.nodes.get(id)?.kind ?? created.get(id)?.kind;
+  const parentOf = (id: string) =>
+    live.nodes.has(id) ? live.nodes.get(id)?.parent : created.get(id)?.parent;
   const source = (id: string): string | null => {
-    let at: string | undefined = id;
-    for (let guard = 0; at !== undefined && guard < 10_000; guard += 1) {
-      const node: TreeNode | undefined = live.nodes.get(at);
-      const parent: string | null | undefined = node ? node.parent : created.get(at);
+    let at: string | null | undefined = id;
+    for (let guard = 0; at != null && guard < 10_000; guard += 1) {
+      const parent = parentOf(at);
       if (parent === ROOT) return at;
-      at = parent ?? undefined;
+      at = parent;
     }
     return null;
   };
+  const isSource = (id: string) => parentOf(id) === ROOT;
   const writable = (id: string) => {
     const top = source(id);
-    return top === null || connection.writableSources.has(top);
+    return top !== null && connection.writableSources.has(top);
   };
+  const known = (id: string) => live.nodes.has(id) || created.has(id);
   for (const op of records) {
     let reason: string | null = null;
+    const into = op.type === "create" || op.type === "move" ? op.parent : null;
     if (op.draft !== null && !connection.drafts.has(op.draft)) reason = "not your Work";
-    else if (!writable(op.node)) reason = "a source you cannot change";
-    else if ((op.type === "create" || op.type === "move") && op.parent !== ROOT && !writable(op.parent))
+    else if (op.type !== "create" && known(op.node) && isSource(op.node)) reason = "a source";
+    else if (op.type !== "create" && known(op.node) && !writable(op.node))
       reason = "a source you cannot change";
-    else if ((op.type === "create" || op.type === "move") && op.parent === ROOT && op.type === "create")
-      reason = "a source cannot be made";
-    else if (op.type === "delete" && op.cascade.some((member) => !writable(member)))
+    else if (into === ROOT) reason = "a source cannot be made";
+    else if (into !== null && (!known(into) || kindOf(into) !== "folder")) reason = "not a folder";
+    else if (into !== null && !writable(into)) reason = "a source you cannot change";
+    else if (op.type === "delete" && op.cascade.some((member) => known(member) && !writable(member)))
       reason = "a source you cannot change";
-    if (reason) refused.push({ id: op.id, reason });
-    else if (op.type === "create") created.set(op.node, op.parent);
+    if (reason && op.type === "create") {
+      rehomed.push({ id: op.id, reason });
+      created.set(op.node, { parent: connection.home, kind: op.kind });
+    } else if (reason) refused.push({ id: op.id, reason });
+    else if (op.type === "create") created.set(op.node, { parent: op.parent, kind: op.kind });
   }
-  return { ok: true, records, refused };
+  return { ok: true, records, refused, rehomed };
 }
 
 /** Admits a checked update: applies it and appends the server's verdicts. */
@@ -185,6 +223,12 @@ export function admit(doc: Y.Doc, update: Uint8Array, connection: Connection): A
       byReason.set(reason, [...(byReason.get(reason) ?? []), id]);
     for (const [reason, targets] of byReason)
       doc.getArray("settle").push([{ id: server.nextId("st"), actor: "system", targets, to: "refused", reason }]);
+    const homed = new Map<string, string[]>();
+    for (const { id, reason } of verdict.rehomed) homed.set(reason, [...(homed.get(reason) ?? []), id]);
+    for (const [reason, targets] of homed)
+      doc.getArray("settle").push([
+        { id: server.nextId("st"), actor: "system", targets, to: "rehomed", reason, home: connection.home },
+      ]);
   });
   return verdict;
 }

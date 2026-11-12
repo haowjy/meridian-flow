@@ -17,7 +17,7 @@ import { docFromSnapshot } from "./yjs-store.js";
 
 const SOURCE = "manuscript";
 const ME = "user:me";
-const connection: Connection = { user: ME, drafts: new Set(["my-work"]), writableSources: new Set([SOURCE]) };
+const connection: Connection = { user: ME, drafts: new Set(["my-work"]), writableSources: new Set([SOURCE]), home: SOURCE };
 class Refused extends Error {}
 
 type Row = { id: string; kind: string; parent: string | null; name: string; rank: string; deleted: boolean };
@@ -81,9 +81,24 @@ async function admitUpdate(world: PocWorld, update: Uint8Array, who: Connection 
     const head = docFromSnapshot({ checkpoint: snapshot.checkpoint, updates: snapshot.updates.slice(0, -1) });
     const before = rowsOf(head);
     if (who) {
-      const verdict = checkUpdate(head, update, who);
+      // A new node's id must be unused by any row in the database, in any project.
+      const made = Y.decodeUpdate(update).structs.flatMap((item) =>
+        item instanceof Y.Item && item.content instanceof Y.ContentAny
+          ? (item.content.getContent() as TreeOp[]).flatMap((op) => (op?.type === "create" ? [op.node] : []))
+          : [],
+      );
+      const uuids = made.filter((id) => /^[0-9a-f-]{36}$/.test(id));
+      const taken = new Set<string>();
+      if (uuids.length > 0) {
+        const rows = (await currentDrizzleDb(world.db).execute(
+          sql`SELECT id::text AS id FROM documents WHERE id::text = ANY(${`{${uuids.join(",")}}`}::text[]) UNION ALL SELECT id::text FROM folders WHERE id::text = ANY(${`{${uuids.join(",")}}`}::text[])`,
+        )) as unknown as Array<{ id: string }>;
+        for (const row of rows) taken.add(row.id);
+      }
+      const verdict = checkUpdate(head, update, { ...who, takenElsewhere: (id) => taken.has(id) });
       if (!verdict.ok) throw new Refused(verdict.reason);
       refused = verdict.refused;
+      if (verdict.rehomed.length > 0) throw new Error("the proof's database run does not rehome");
     }
     Y.applyUpdate(head, update);
     if (refused.length > 0) {
@@ -172,6 +187,8 @@ const chapters = nodes.filter((n) => n.kind === "document").map((n) => n.id);
     ["a record as the system", (copy) => copy.getArray("ops").push([{ id: uuid(), actor: "system", draft: null, type: "rename", node: chapters[3], name: "Forged", fromName: "x" }])],
     ["a record as an agent", (copy) => copy.getArray("ops").push([{ id: uuid(), actor: "agent:c1/t1", draft: null, type: "delete", node: arc, cascade: chapters }])],
     ["an applied copy", (copy) => copy.getArray("ops").push([{ id: uuid(), actor: ME, draft: null, type: "rename", node: chapters[3], name: "x", fromName: "y", appliedFrom: "z", appliedBy: ME }])],
+    ["a create naming a row that exists outside this list", (copy) => copy.getArray("ops").push([{ id: uuid(), actor: ME, draft: null, type: "create", node: world.treeDocId, kind: "document", name: "Taken over", parent: arc, rank: "a1" }])],
+    ["a record reusing an admitted record's id", (copy) => copy.getArray("ops").push([{ id: (copy.getArray("ops").get(2) as TreeOp).id, actor: ME, draft: "not-mine", type: "rename", node: chapters[3], name: "x", fromName: "y" }])],
     ["a file", (copy) => copy.getArray("ops").push([{ id: uuid(), actor: ME, draft: null, type: "create", node: uuid(), kind: "file", name: "x.png", parent: arc, rank: "a1", blob: { storageKey: "other/account/key", mime: "image/png", size: 1 } }])],
   ];
   const outcomes: string[] = [];
@@ -186,7 +203,7 @@ const chapters = nodes.filter((n) => n.kind === "document").map((n) => n.id);
     }
   }
   lines.push(`hostile: ${outcomes.join("; ")}`);
-  lines.push(`after six hostile updates: journal rows ${before} before, ${await journalRows(world)} after; rows equal the replay: ${await rowsEqualReplay(world)}`);
+  lines.push(`after eight hostile updates: journal rows ${before} before, ${await journalRows(world)} after; rows equal the replay: ${await rowsEqualReplay(world)}`);
 }
 
 // 3. Two clients, both offline from the same point, admitted at once on two connections.

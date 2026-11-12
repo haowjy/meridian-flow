@@ -8,7 +8,8 @@ const ME = "user:me";
 const connection: Connection = {
   user: ME,
   drafts: new Set(["my-work"]),
-  writableSources: new Set(["manuscript", "kb"]),
+  writableSources: new Set(["manuscript", "kb", "unfiled"]),
+  home: "unfiled",
 };
 
 /** The server's list: two sources the account may write, one it may not, some nodes. */
@@ -16,7 +17,7 @@ function server() {
   const doc = new Y.Doc({ gc: false });
   doc.clientID = 7;
   const w = new TreeWriter(doc);
-  for (const source of ["manuscript", "kb", "skills"])
+  for (const source of ["manuscript", "kb", "skills", "unfiled"])
     w.author(LIVE, "system", { type: "create", node: source, kind: "folder", name: source, parent: ROOT, rank: "a0" });
   const arc = w.create(LIVE, "system", { kind: "folder", name: "Arc", parent: "manuscript", node: "arc" }).node;
   w.create(LIVE, "system", { kind: "document", name: "Ch1", parent: arc, node: "ch1" });
@@ -162,7 +163,7 @@ describe("an update the server admits", () => {
     const doc = server();
     const offline = client(doc, push(record({ name: "From offline" })), 5001);
     const online = client(doc, push(record({ type: "create", node: "ch2", name: "Ch2" })));
-    expect(admit(doc, online.update, connection)).toEqual({ ok: true, refused: [], records: expect.anything() });
+    expect(admit(doc, online.update, connection)).toMatchObject({ ok: true, refused: [], rehomed: [] });
     expect(admit(doc, offline.update, connection)).toMatchObject({ ok: true, refused: [] });
     const live = materialize(doc, LIVE);
     expect(live.nodes.get("ch1")?.displayName).toBe("From offline");
@@ -195,32 +196,134 @@ describe("an update the server admits", () => {
       "read-only",
       "into-read-only",
       "takes-read-only",
-      "new-source",
     ]);
+    // A create is never left without a place: a would-be source is a folder in Unfiled.
+    expect(verdict.ok && verdict.rehomed.map((r) => r.id)).toEqual(["new-source"]);
     const live = materialize(doc, LIVE);
     expect(live.nodes.get("ch1")).toMatchObject({ displayName: "Chapter One", parent: "arc", trashed: false });
     expect(live.nodes.get("guide")?.displayName).toBe("Guide");
-    expect(live.nodes.has("mine")).toBe(false);
+    expect(live.nodes.get("mine")).toMatchObject({ parent: "unfiled", kind: "folder" });
     expect(materialize(doc, { draft: "someone-elses-work" }).nodes.get("ch1")?.displayName).toBe("Chapter One");
-    // Only the allowed record changed anything.
-    expect(fingerprint(live)).toBe(before.replace("d:Ch1#ch1", "d:Chapter One#ch1"));
+    // Only the allowed record and the kept folder changed anything.
+    expect(fingerprint(live).replace(/\n[^\n]*#mine@[^\n]*/, "")).toBe(
+      before.replace("d:Ch1#ch1", "d:Chapter One#ch1"),
+    );
     // The client takes the server's verdicts and shows what the server shows, with the reason.
     Y.applyUpdate(copy, Y.encodeStateAsUpdate(doc, Y.encodeStateVector(copy)));
     expect(fingerprint(materialize(copy, LIVE))).toBe(fingerprint(live));
     const reasons = copy.getArray<{ to: string; reason?: string; targets: string[] }>("settle").toArray();
-    expect(reasons.every((r) => r.to === "refused" && r.reason)).toBe(true);
+    expect(reasons.every((r) => (r.to === "refused" || r.to === "rehomed") && r.reason)).toBe(true);
     expect(reasons.flatMap((r) => r.targets).sort()).toEqual(["into-read-only", "new-source", "not-my-work", "read-only", "takes-read-only"]);
   });
 
-  it("a record sent again under a new client id, after a client rebuilt its copy, counts once", () => {
+  it("an update that two tabs of one browser both forward is admitted once, and the second copy changes nothing", () => {
     const doc = server();
-    const move = record({ id: "once", type: "move" });
-    expect(admit(doc, client(doc, push(move)).update, connection)).toMatchObject({ ok: true });
-    const length = materialize(doc, LIVE).nodes.size;
-    admit(doc, client(doc, push(record({ name: "Later" }))).update, connection);
-    expect(admit(doc, client(doc, push({ ...move }), 5002).update, connection)).toMatchObject({ ok: true });
+    const { update } = client(doc, push(record({ id: "twice", name: "Once" })));
+    expect(admit(doc, update, connection)).toMatchObject({ ok: true });
+    const stored = Y.encodeStateAsUpdate(doc);
+    expect(admit(doc, update, connection)).toMatchObject({ ok: true, records: [] });
+    expect(Y.encodeStateAsUpdate(doc)).toEqual(stored);
+  });
+
+  it("a rank as long as 400 moves to one spot make it is still a rank", () => {
+    const doc = server();
+    const { update } = client(doc, push(record({ type: "move", rank: `a${"V".repeat(400)}` })));
+    expect(admit(doc, update, connection)).toMatchObject({ ok: true, refused: [] });
+  });
+
+  it("a new document made where the account can no longer write is kept, live, in its own folder, with what is inside it", () => {
+    const doc = server();
+    const { copy, update } = client(
+      doc,
+      push(
+        record({ id: "folder", type: "create", node: "new-folder", kind: "folder", name: "Drafted arc", draft: "a-closed-work" }),
+        record({ id: "chapter", type: "create", node: "new-chapter", name: "Chapter 50", parent: "new-folder", draft: "a-closed-work" }),
+        record({ id: "named", node: "new-chapter", name: "The Fall", fromName: "Chapter 50", draft: "a-closed-work" }),
+        record({ id: "elsewhere", type: "create", node: "in-skills", name: "Note", parent: "skills" }),
+      ),
+    );
+    const verdict = admit(doc, update, connection);
+    expect(verdict.ok && verdict.rehomed.map((r) => r.id)).toEqual(["folder", "chapter", "elsewhere"]);
+    expect(verdict.ok && verdict.refused.map((r) => r.id)).toEqual(["named"]);
     const live = materialize(doc, LIVE);
-    expect(live.nodes.size).toBe(length);
-    expect(live.nodes.get("ch1")).toMatchObject({ parent: "manuscript", displayName: "Later" });
+    expect(live.nodes.get("new-folder")).toMatchObject({ parent: "unfiled", displayName: "Drafted arc" });
+    // The chapter was made inside the new folder, which the account can still reach there.
+    expect(live.nodes.get("new-chapter")).toMatchObject({ displayName: "Chapter 50", trashed: false });
+    expect(["unfiled", "new-folder"]).toContain(live.nodes.get("new-chapter")?.parent);
+    expect(live.nodes.get("in-skills")).toMatchObject({ parent: "unfiled" });
+    Y.applyUpdate(copy, Y.encodeStateAsUpdate(doc, Y.encodeStateVector(copy)));
+    expect(fingerprint(materialize(copy, LIVE))).toBe(fingerprint(live));
+  });
+});
+
+describe("a record is judged against the list it joins", () => {
+  /** Alice's records, admitted; then a hostile client that has seen them. */
+  function withAlice() {
+    const doc = server();
+    const alice: Connection = { ...connection, user: "user:alice" };
+    const aliceRecord = (over: Record<string, unknown>) => ({ ...record(over), actor: "user:alice" });
+    const del = aliceRecord({ id: "alice-delete", type: "delete", node: "ch1", cascade: [] });
+    const ren = aliceRecord({ id: "alice-rename", node: "arc", name: "Arc One", fromName: "Arc" });
+    expect(admit(doc, client(doc, push(del, ren), 5100).update, alice)).toMatchObject({ ok: true });
+    return doc;
+  }
+  const state = (doc: Y.Doc) => fingerprint(materialize(doc, LIVE));
+
+  it("a record reusing the id of someone's delete, aimed at a Work that is not theirs, cannot cancel it", () => {
+    const doc = withAlice();
+    const before = state(doc);
+    const { update } = client(doc, push(record({ id: "alice-delete", draft: "someone-elses-work" })));
+    expect(admit(doc, update, connection)).toEqual({ ok: false, reason: "a record id already in the list" });
+    expect(state(doc)).toBe(before);
+    expect(materialize(doc, LIVE).nodes.get("ch1")?.trashed).toBe(true);
+  });
+
+  it("a record reusing an id, placed before the original in the list, cannot replace it", () => {
+    const doc = withAlice();
+    const before = state(doc);
+    // A copy from before Alice's records, so the forged item sorts ahead of hers.
+    const early = new Y.Doc({ gc: false });
+    early.clientID = 1001;
+    Y.applyUpdate(early, Y.encodeStateAsUpdate(server()));
+    const mark = Y.encodeStateVector(early);
+    early.getArray("ops").push([record({ id: "alice-rename", node: "guide", name: "Mine now", fromName: "Guide" })]);
+    Y.applyUpdate(early, Y.encodeStateAsUpdate(doc));
+    const verdict = admit(doc, Y.encodeStateAsUpdate(early, mark), connection);
+    expect(verdict.ok).toBe(false);
+    expect(state(doc)).toBe(before);
+  });
+
+  it("a create naming a node that exists cannot redefine it, in the list or in any other project's rows", () => {
+    const doc = withAlice();
+    const before = state(doc);
+    const again = client(doc, push(record({ type: "create", node: "ch1", kind: "folder", name: "Hijacked" })));
+    expect(admit(doc, again.update, connection)).toEqual({ ok: false, reason: "a node id already in use" });
+    const foreign = client(doc, push(record({ type: "create", node: "another-projects-document", name: "Taken" })));
+    expect(
+      admit(doc, foreign.update, { ...connection, takenElsewhere: (id) => id === "another-projects-document" }),
+    ).toEqual({ ok: false, reason: "a node id already in use" });
+    expect(state(doc)).toBe(before);
+  });
+
+  it("a source cannot be moved, renamed or deleted, a folder cannot be made a source, and a document is not a place", () => {
+    const doc = withAlice();
+    const before = state(doc);
+    const { update } = client(
+      doc,
+      push(
+        record({ id: "delete-source", type: "delete", node: "manuscript", cascade: [] }),
+        record({ id: "rename-source", node: "kb", name: "mine", fromName: "kb" }),
+        record({ id: "to-root", type: "move", node: "arc", parent: ROOT }),
+        record({ id: "into-document", type: "move", node: "arc", parent: "guide" }),
+        record({ id: "under-document", type: "create", node: "odd", name: "Odd", parent: "ch1" }),
+      ),
+    );
+    const verdict = admit(doc, update, connection);
+    expect(verdict.ok && verdict.refused.map((r) => r.id)).toEqual(["delete-source", "rename-source", "to-root", "into-document"]);
+    expect(verdict.ok && verdict.rehomed.map((r) => r.id)).toEqual(["under-document"]);
+    const live = materialize(doc, LIVE);
+    expect(live.nodes.get("odd")?.parent).toBe("unfiled");
+    expect(state(doc).replace(/\n[^\n]*#odd@[^\n]*/, "")).toBe(before);
+    expect(live.rescued).toEqual([]);
   });
 });

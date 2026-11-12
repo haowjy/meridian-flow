@@ -929,6 +929,22 @@ describe("Trash is a tree: a deleted folder is one entry that can be opened; a f
     expect(trashTree(t.w.view(LIVE))).toEqual([{ name: "Part 1", inside: [leaf("Interlude")] }]);
   });
 
+  it("a folder deleted twice has two entries, and restoring one leaves the other's delete standing", () => {
+    const t = start();
+    const arc = t.folder("Arc");
+    const ch41 = t.chapter("Chapter 41", arc);
+    t.chapter("Chapter 42", arc);
+    const first = t.w.delete(LIVE, CHAT, arc);
+    t.w.restore(LIVE, WRITER, ch41); // Arc stands again for it
+    const ch50 = t.chapter("Chapter 50", arc);
+    t.w.delete(LIVE, CHAT2, arc); // someone else deletes Arc, with 41 and 50
+    expect(t.w.restoreEntry(LIVE, WRITER, first.id)).toMatchObject({ type: "restore", undoes: first.id });
+    // The first entry's chapter is back; what the second delete took is still in Trash.
+    expect(t.names(arc)).toEqual(["Chapter 42"]);
+    expect([t.at(ch41)?.trashed, t.at(ch50)?.trashed]).toEqual([true, true]);
+    t.valid();
+  });
+
   it("an empty deleted folder is an entry and can be restored; a draft that puts something in it brings it back", () => {
     const t = start();
     const empty = t.folder("Empty");

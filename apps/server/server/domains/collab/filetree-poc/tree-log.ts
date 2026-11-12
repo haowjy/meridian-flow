@@ -78,7 +78,14 @@ export type TreeOpInput =
   | Omit<RestoreOp, keyof OpBase>;
 
 /** `undone` is set on a live copy whose Apply was taken back: the replay leaves it out. */
-export type Settlement = "applied" | "discarded" | "undone" | "superseded" | "refused";
+export type Settlement =
+  | "applied"
+  | "discarded"
+  | "undone"
+  | "superseded"
+  | "refused"
+  /** A create the server would not allow where it was made, kept live in `home` instead. */
+  | "rehomed";
 
 export type TreeNode = {
   id: string;
@@ -142,6 +149,8 @@ export type SettleRecord = {
   to: Settlement | "pending";
   /** On a refusal at admission: why, for the client to show on the thing the writer did. */
   reason?: string;
+  /** On `rehomed`: the folder the created node is kept in. */
+  home?: string;
 };
 
 export function settleLogOf(doc: Y.Doc): Y.Array<SettleRecord> {
@@ -167,10 +176,24 @@ export function viewOps(doc: Y.Doc, view: View): TreeOp[] {
     .toArray()
     .filter((op) => (seen.has(op.id) ? false : (seen.add(op.id), true)));
   const settled = settlementsOf(doc);
+  const homes = new Map<string, string>();
+  for (const record of settleLogOf(doc).toArray())
+    if (record.to === "rehomed" && record.home)
+      for (const target of record.targets) homes.set(target, record.home);
+  // A rehomed create is a live create in its new folder, where it stood in the list.
+  const placed = all.map((op) =>
+    op.type === "create" && settled.get(op.id) === "rehomed"
+      ? ({ ...op, draft: null, parent: homes.get(op.id) ?? op.parent } as TreeOp)
+      : op,
+  );
   const out = (op: TreeOp) => settled.get(op.id) === "undone" || settled.get(op.id) === "refused";
-  const live = all.filter((op) => op.draft === null && !out(op));
+  const isLive = (op: TreeOp) => op.draft === null && !out(op);
+  const live = placed.filter(isLive);
   if (view.draft === null) return live;
-  return [...live, ...all.filter((op) => op.draft === view.draft && !settled.has(op.id))];
+  return [
+    ...live,
+    ...placed.filter((op) => op.draft === view.draft && !settled.has(op.id)),
+  ];
 }
 
 /** `pendingText`: documents this Work holds a pending text draft of, which the list cannot see. */
@@ -604,6 +627,19 @@ export class TreeWriter {
 
   restore(view: View, actor: Actor, node: string): RestoreOp {
     return this.author(view, actor, { type: "restore", node }) as RestoreOp;
+  }
+
+  /**
+   * Restores one Trash entry: the delete named, and no other delete of the same folder. A
+   * folder deleted, brought back for one chapter and deleted again by someone else has two
+   * entries, and restoring one must not undo the other.
+   */
+  restoreEntry(view: View, actor: Actor, deleteId: string): RestoreOp | "unknown" {
+    const entry = viewOps(this.doc, view).find(
+      (op) => op.type === "delete" && (op.id === deleteId || op.appliedFrom === deleteId),
+    );
+    if (!entry) return "unknown";
+    return this.author(view, actor, { type: "restore", node: entry.node }, { undoes: entry.id }) as RestoreOp;
   }
 
   /**
