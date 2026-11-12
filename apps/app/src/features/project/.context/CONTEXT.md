@@ -35,13 +35,10 @@ design: the address leads, the tabs follow it. A close, a Discard, a removal or 
 closes its tab through the coordinator's `tabs` port (`forget`; a draft-only page's own Close
 closes it once main's address has left, so main's page is not drawn without it). `MainTabStrip`
 draws the tabs in main's band with the inset sheet's folder-tab look. What main shows never depends
-on the record: main's document with no tab in it, or an address that names nothing, is the active
-chip after the tabs, so a link to a deleted chapter keeps its URL and shows the removed page in a
-tab of its own. A chat in main takes main: the band holds the chat's chip alone, with no document
-tabs, New document (+) or tab list (`showsChat`); the record is untouched, so the tabs are back as
-soon as a document is in main, and the documents leave main's band for the side's dropdown. New
-document (+) follows the document tabs only, never an unavailable address, where it would read as
-a new one of those. Document tabs follow Chrome: one
+on the record: main's document with no tab in it, a chat, or an address that names nothing is the
+active chip after the tabs, so a link to a deleted chapter keeps its URL and shows the removed page
+in a tab of its own. New document (+) follows the document tabs only, never a chat or an
+unavailable address, where it would read as a new one of those. Document tabs follow Chrome: one
 width for all (240px, shrinking together to the start of their name, with no icon; the open tab keeps room
 for its ×), the ×
 in the same place on each, and while the writer closes tabs with the pointer the widths hold until
@@ -51,13 +48,14 @@ scrolls, with no scrollbar and a faded edge
 where tabs are behind it (`useScrollEdges`, `scroll-fade-x`, as the editor toolbar). The keyboard
 follows the tabs pattern: main's item is the one Tab stop, arrows, Home and End move along the
 strip, Enter opens; each document's page has its own band, so the focus follows to the new one.
-The band's far right holds the tab list (`MainTabMenu`, while a document is in main and any tab is
-open): Close all, then every tab, the open one filled. Close all sends main to Recently opened (an
-unavailable address included) unless main is already there. Every control in the band shares the
+The band's far right holds the tab list (`MainTabMenu`, while any document tab is open): Close all,
+then every tab, the open one filled. Close all sends main to Recently opened (an unavailable address
+included) unless main shows a chat, which stays. Every control in the band shares the
 chips' centre line. Stored tabs of documents deleted while the window was closed are not drawn
-once the replica holds the catalog (`useLiveTabs`; the record is left alone, so a document that
-comes back has its tab). Only documents take a tab: a tab is an item with a kind, and `TAB_KINDS`
-is the switch for chats (a chat in main is drawn alone instead). A tab's Live or Draft view is its document's view, so it is per tab
+once the replica holds the catalog, and a tab shows its document's current name and place
+(`useLiveTabs` in `client/project-shell/live-tabs.ts`, read by the strip, the tab list and the
+side's document list; the record is left alone, so a document that comes back has its tab). Only documents take a tab: a tab is an item with a kind, and `TAB_KINDS`
+is the switch for chats. A tab's Live or Draft view is its document's view, so it is per tab
 already. The phone draws no strip; it records arrivals the same way.
 
 Main shows what the address names, resolved by `resolveMainDocument` / `useMainDocument`
@@ -84,10 +82,12 @@ side composer's send) writes the current chat or document and lasts until main c
 which falls out of the rule. `fitsBeside` is "the item's kind differs from main's mode", for the
 rule. The picker (`side/SidePicker.tsx`) offers only the other kind. Beside a document: New chat,
 then the scoped Work's chats (pinned first) and Other chats, grouped by `useChatGroups` as the
-sidebar's Chats list is. Beside a chat: `DocumentChoices`, one list also drawn inline in the side's
-empty pane: the documents open in main's tabs, Recently opened, then the file explorer
-(`SideExplorer`: the project's areas through `useProjectMenuSource`, stepping into folders).
-Recents and the tabs are choices on offer, never a source of the side. A document fits beside only
+sidebar's Chats list is; archived chats are left out, search included. Beside a chat:
+`DocumentChoices`, one list also drawn inline in the side's empty pane: the documents open in
+main's tabs, Recently opened, then the file explorer (`SideExplorer`: the project's areas through
+`useProjectMenuSource`, stepping into folders with `DrillInMenu`'s drill model). Only documents
+that open in the editor are offered (`canSitBeside`); the explorer shows others disabled. Recents
+and the tabs are choices on offer, never a source of the side. A document fits beside only
 once it is described (`describe` in `context/open-project-document.ts`) and opens in the editor:
 one that doesn't (removed, an upload) is skipped for the next candidate. While a describe is out,
 the side keeps what it showed. The current document is cleared when its tab goes

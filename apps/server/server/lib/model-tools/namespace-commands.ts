@@ -33,7 +33,6 @@ import { removedPathError } from "./removed-path.js";
 import {
   canonicalPath,
   isToolError,
-  recordTouchInBackground,
   type ToolCall,
   type ToolWiringDeps,
   type WriteToolErrorOutput,
@@ -358,7 +357,6 @@ export async function runNamespaceCommand(
     return fileAccessDeniedError(input.command, firstRefusal(result.refusal), source.uri);
   if (isToolError(result.value)) return result.value;
   const { handle, uri } = result.value;
-  recordTouchInBackground(deps, source.documentId, ctx);
   // A drafted delete leaves live and every Work's drafts alone: nothing outlives anything.
   const survivingWorks =
     input.command === "delete" && !drafted

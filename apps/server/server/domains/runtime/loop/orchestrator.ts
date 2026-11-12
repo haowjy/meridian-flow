@@ -90,7 +90,6 @@ import type {
   ModelResponseRepository,
   ThreadRepositories,
   ThreadRepository,
-  TurnDocumentTouchRepository,
   TurnRepository,
 } from "../../threads/index.js";
 import {
@@ -286,8 +285,6 @@ export interface OrchestratorDeps {
   imageAssets: ImageAssetPort;
   /** Shown-link evidence: tool results, reference reads and settled receipts record here. */
   shownLinks: Pick<ShownLinkStore, "record">;
-  /** Reference reads' touches, recorded on the turn the commit persists. */
-  documentTouches: Pick<TurnDocumentTouchRepository, "recordTouch">;
   /** What each tool result, settled receipt and reference read showed of a document, per room. */
   observationFrontiers: ObservationFrontiers;
   responseWrites: {

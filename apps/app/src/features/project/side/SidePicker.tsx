@@ -3,8 +3,8 @@
  *
  * It offers one kind, the one main is not. Beside a document, chats as the sidebar lists them:
  * New chat, the scoped Work's chats (pinned first), then Other chats. Beside a chat, documents:
- * those open in main's tabs, then the file explorer over the project's areas. Search filters that
- * kind. A choice writes the project's current chat or document, which lasts until main changes mode.
+ * those open in main's tabs, Recently opened, then the file explorer over the project's areas.
+ * Search filters that kind. A choice writes the project's current chat or document, which lasts until main changes mode.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -143,7 +143,10 @@ function ChatChoices({
   const search = query.trim();
   const found = search
     ? filterThreadsByTitle(
-        (threads ?? []).filter((thread) => thread.kind !== "subagent" && !thread.deletedAt),
+        (threads ?? []).filter(
+          (thread) =>
+            thread.kind !== "subagent" && !thread.deletedAt && thread.status !== "archived",
+        ),
         query,
       ).slice(0, FIND_LIMIT)
     : [];

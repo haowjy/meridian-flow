@@ -60,10 +60,6 @@ export function apiProjectRecentDocumentsPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/recent-documents`;
 }
 
-export function apiProjectDocumentRelatedPath(projectId: string, documentId: string): string {
-  return `${apiProjectPath(projectId)}/documents/${documentId}/related`;
-}
-
 export function apiProjectDocumentAddressPath(
   projectId: string,
   scheme: ProjectContextTreeScheme,
@@ -317,15 +313,6 @@ export function apiThreadControlsPath(threadId: string): string {
 
 export function apiThreadControlWithdrawPath(threadId: string, controlId: string): string {
   return `${API_THREADS_PATH}/${threadId}/controls/${encodeURIComponent(controlId)}/withdraw`;
-}
-
-export function apiThreadRecentDocumentsPath(threadId: string, opts?: { limit?: number }): string {
-  const search = new URLSearchParams();
-  if (opts?.limit != null) {
-    search.set("limit", String(opts.limit));
-  }
-  const query = search.toString();
-  return `${API_THREADS_PATH}/${threadId}/recent-documents${query ? `?${query}` : ""}`;
 }
 
 export function apiAccountRecentDocumentsPath(): string {

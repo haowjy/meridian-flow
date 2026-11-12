@@ -5,8 +5,10 @@
  * the tree from the actions. An action with choices opens them the same way,
  * in place of the tree.
  *
- * Document paths and placement menus supply a tree and actions. This component
- * owns only drill state; picking an entry and running an action belong to the caller.
+ * Document paths and placement menus supply a tree and actions. `useDrill` owns the drill
+ * state (trail, back, here-marking, disabled leaves, focus after a drill) for any surface that
+ * browses a tree in place; `DrillInMenuBody` draws it as Radix menu rows. Picking an entry and
+ * running an action belong to the caller.
  */
 import { t } from "@lingui/core/macro";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
@@ -16,6 +18,7 @@ import {
   Fragment,
   type ReactElement,
   type ReactNode,
+  type RefObject,
   useCallback,
   useId,
   useRef,
@@ -131,6 +134,75 @@ export function DrillInMenu({ children, open, onOpenChange, ...body }: DrillInMe
   );
 }
 
+export type DrillEntry = {
+  node: DrillNode;
+  /** On the way to where the writer is, or the folder just left. */
+  here: boolean;
+  disabled: boolean;
+};
+
+export type Drill = {
+  /** Put on the element holding the rows, so a drill can move focus onto the new level. */
+  scopeRef: RefObject<HTMLDivElement | null>;
+  trail: readonly DrillNode[];
+  /** The folder on screen; null at the top level. */
+  folder: DrillNode | null;
+  entries: readonly DrillEntry[];
+  /** Replaces the trail and focuses the new level's first row. */
+  drillTo: (next: readonly DrillNode[]) => void;
+  enter: (node: DrillNode) => void;
+  back: () => void;
+  focusFirstRow: () => void;
+};
+
+/**
+ * The drill-in model: the trail, the level it shows, and focus. Drilling unmounts the row that
+ * held focus, so every drill moves it to the new level's first row (the back row inside a folder).
+ */
+export function useDrill({
+  tree,
+  hereIds,
+  openAt,
+  isDisabled,
+  foldersOnly,
+  rowSelector = '[role="menuitem"]',
+}: Pick<DrillInMenuProps, "tree" | "hereIds" | "openAt" | "isDisabled" | "foldersOnly"> & {
+  /** The focusable rows inside `scopeRef`. */
+  rowSelector?: string;
+}): Drill {
+  const [trail, setTrail] = useState<readonly DrillNode[]>(openAt);
+  const [exitedId, setExitedId] = useState<string | null>(null);
+  const scopeRef = useRef<HTMLDivElement>(null);
+  const focusFirstRow = useCallback(() => {
+    requestAnimationFrame(() => scopeRef.current?.querySelector<HTMLElement>(rowSelector)?.focus());
+  }, [rowSelector]);
+  const drillTo = (next: readonly DrillNode[]) => {
+    setExitedId(next.length < trail.length ? (trail.at(-1)?.id ?? null) : null);
+    setTrail(next);
+    focusFirstRow();
+  };
+  const folder = trail.at(-1) ?? null;
+  const children = tree.children(folder?.id ?? null);
+  const entries = (foldersOnly ? children.filter((node) => node.folder) : children).map((node) => ({
+    node,
+    here:
+      node.id === exitedId ||
+      hereIds.includes(node.id) ||
+      (node.documentId !== undefined && hereIds.includes(node.documentId)),
+    disabled: isDisabled?.(node) ?? false,
+  }));
+  return {
+    scopeRef,
+    trail,
+    folder,
+    entries,
+    drillTo,
+    enter: (node) => drillTo([...trail, node]),
+    back: () => drillTo(trail.slice(0, -1)),
+    focusFirstRow,
+  };
+}
+
 /** Mounted with the acquired source, so its first frame already has the correct trail. */
 export function DrillInMenuBody({
   tree,
@@ -144,25 +216,10 @@ export function DrillInMenuBody({
   onCloseAutoFocus,
   onEscapeKeyDown,
 }: Omit<DrillInMenuProps, "children" | "open" | "onOpenChange">) {
-  const [trail, setTrail] = useState<readonly DrillNode[]>(openAt);
-  const [exitedId, setExitedId] = useState<string | null>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const focusFirstRow = useCallback(() => {
-    requestAnimationFrame(() =>
-      contentRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus(),
-    );
-  }, []);
-  const drill = (next: readonly DrillNode[]) => {
-    setExitedId(next.length < trail.length ? (trail.at(-1)?.id ?? null) : null);
-    setTrail(next);
-    focusFirstRow();
-  };
-  const isHere = (id: string) => id === exitedId || hereIds.includes(id);
+  const drill = useDrill({ tree, hereIds, openAt, isDisabled, foldersOnly });
+  const { trail, folder, entries, focusFirstRow } = drill;
   const [choosingKey, setChoosingKey] = useState<string | null>(null);
 
-  const folder = trail.at(-1) ?? null;
-  const children = tree.children(folder?.id ?? null);
-  const entries = foldersOnly ? children.filter((node) => node.folder) : children;
   const currentActions = actions?.(trail) ?? [];
   const choosing = currentActions.find((action) => action.key === choosingKey && action.choices);
   const noteId = useId();
@@ -200,7 +257,7 @@ export function DrillInMenuBody({
   if (choosing?.choices) {
     return (
       <DropdownMenuContent
-        ref={contentRef}
+        ref={drill.scopeRef}
         align="start"
         className={MENU_CLASS}
         onKeyDown={(event) => {
@@ -230,13 +287,13 @@ export function DrillInMenuBody({
 
   return (
     <DropdownMenuContent
-      ref={contentRef}
+      ref={drill.scopeRef}
       align="start"
       className={MENU_CLASS}
       onKeyDown={(event) => {
         if (event.key === "ArrowLeft" && trail.length > 0) {
           event.preventDefault();
-          drill(trail.slice(0, -1));
+          drill.back();
         }
       }}
       onCloseAutoFocus={onCloseAutoFocus}
@@ -246,7 +303,7 @@ export function DrillInMenuBody({
         <DropdownMenuItem
           onSelect={(event) => {
             event.preventDefault();
-            drill(trail.slice(0, -1));
+            drill.back();
           }}
           aria-label={t`Back from ${folder.title ?? folder.name}`}
         >
@@ -255,15 +312,15 @@ export function DrillInMenuBody({
         </DropdownMenuItem>
       ) : null}
       <div className="min-h-0 overflow-y-auto">
-        {entries.map((node) => (
+        {entries.map(({ node, here, disabled }) => (
           <DropdownMenuItem
             key={node.id}
-            disabled={isDisabled?.(node)}
-            selected={isHere(node.id)}
+            disabled={disabled}
+            selected={here}
             onSelect={(event) => {
               if (node.folder) {
                 event.preventDefault();
-                drill([...trail, node]);
+                drill.enter(node);
               } else onPick(node);
             }}
           >

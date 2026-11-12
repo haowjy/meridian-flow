@@ -30,7 +30,6 @@ import {
   isToolError,
   type ResolvedDocumentAddress,
   type ResolvedModelContextPort,
-  recordTouchInBackground,
   resolveToolCall,
   type ToolWiringDeps,
   type WriteToolErrorOutput,
@@ -215,7 +214,6 @@ export async function copyBinary(
   if (!copied.ok) {
     return writeToolError(input.command, contextErrorMessage(copied.error));
   }
-  if (copied.value.documentId) recordTouchInBackground(deps, copied.value.documentId, ctx);
   // The port's placement decided where the copy landed; only the Work's handle is ours to add.
   const destination = copied.value.placement;
   const branchOwner = context.resolution.primaryBranchOwner;

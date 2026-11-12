@@ -53,8 +53,6 @@ import type {
   ThreadRepository,
   ThreadWorksRepository,
   TranscriptItemRow,
-  TurnDocumentTouch,
-  TurnDocumentTouchRepository,
   TurnRepository,
   UpdateSpawnLifecycleInput,
   UpdateTurnStatusInput,
@@ -219,7 +217,6 @@ export function createInMemoryRepositories(
   const modelResponses = transactionOwner.map<string, ModelResponse>();
   const promptBakes = transactionOwner.map<PromptBakeId, PromptBake>();
   const threadDocuments = transactionOwner.map<string, ThreadDocument>();
-  const documentTouches = transactionOwner.map<string, TurnDocumentTouch>();
   const threadWorks = transactionOwner.map<
     string,
     { threadId: ThreadId; workId: WorkId; isPrimary: boolean }
@@ -1357,56 +1354,6 @@ export function createInMemoryRepositories(
     },
   };
 
-  const documentTouchRepo: TurnDocumentTouchRepository = {
-    async recordTouch(turnId, documentId) {
-      const turn = turns.get(turnId);
-      if (!turn) throw new Error(`Turn not found: ${turnId}`);
-      const key = `${turnId}:${documentId}`;
-      const row: TurnDocumentTouch = {
-        id: documentTouches.get(key)?.id ?? crypto.randomUUID(),
-        turnId,
-        documentId,
-        threadId: turn.threadId,
-        touchedAt: toIsoString(new Date()),
-      };
-      documentTouches.set(key, row);
-      return { ...row };
-    },
-    async listByThread(threadId, limit) {
-      const family = new Set<ThreadId>([threadId]);
-      for (let grew = true; grew; ) {
-        grew = false;
-        for (const thread of threads.values()) {
-          if (
-            thread.kind !== "primary" &&
-            thread.parentThreadId &&
-            family.has(thread.parentThreadId as ThreadId) &&
-            !family.has(thread.id as ThreadId)
-          ) {
-            family.add(thread.id as ThreadId);
-            grew = true;
-          }
-        }
-      }
-      const latestByDocument = new Map<string, TurnDocumentTouch>();
-      for (const row of documentTouches.values()) {
-        if (!family.has(row.threadId)) continue;
-        const existing = latestByDocument.get(row.documentId);
-        if (!existing || row.touchedAt >= existing.touchedAt) {
-          latestByDocument.set(row.documentId, row);
-        }
-      }
-      const rows = [...latestByDocument.values()].sort((a, b) =>
-        b.touchedAt.localeCompare(a.touchedAt),
-      );
-      return (typeof limit === "number" ? rows.slice(0, limit) : rows).map((row) => ({
-        ...row,
-        threadId,
-        edited: false,
-      }));
-    },
-  };
-
   const {
     chatFeed,
     threadUserState,
@@ -1635,7 +1582,6 @@ export function createInMemoryRepositories(
     transactionOwner,
     readSnapshot: (operation) => transactionOwner.run(operation),
     threadDocuments: threadDocumentRepo,
-    documentTouches: documentTouchRepo,
     transaction: (operation) => transactionOwner.run(operation),
     async runTurnStartTransition(threadId, expectedActiveLeafTurnId, operation) {
       return this.transaction(async () => {

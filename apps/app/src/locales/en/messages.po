@@ -2084,6 +2084,10 @@ msgstr "Couldn't load agents."
 msgid "Couldn't load chats."
 msgstr "Couldn't load chats."
 
+#: src/features/project/side/DocumentChoices.tsx
+msgid "Couldn't load documents."
+msgstr "Couldn't load documents."
+
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "Couldn't load files."
 msgstr "Couldn't load files."
@@ -2093,6 +2097,7 @@ msgid "Couldn't load properties."
 msgstr "Couldn't load properties."
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
+#: src/features/project/side/DocumentChoices.tsx
 msgid "Couldn't load recent documents."
 msgstr "Couldn't load recent documents."
 
@@ -2189,6 +2194,7 @@ msgid "Couldn't open this draft. Try again."
 msgstr "Couldn't open this draft. Try again."
 
 #: src/features/project/context/FolderMenu.tsx
+#: src/features/project/side/SideExplorer.tsx
 msgid "Couldn't open this folder."
 msgstr "Couldn't open this folder."
 
@@ -3632,6 +3638,8 @@ msgstr "Loading Works…"
 #: src/features/project/chat/ChatScratch.tsx
 #: src/features/project/context/FolderMenu.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/side/DocumentChoices.tsx
+#: src/features/project/side/SideExplorer.tsx
 #: src/features/project/side/SidePicker.tsx
 msgid "Loading…"
 msgstr "Loading…"

@@ -2,12 +2,10 @@
  * MainTabStrip — main's open items as folder tabs in main's band (`client/project-shell/main-tabs`).
  * The tab main shows is the active chip, joined to the page below it. Main's item when the record
  * holds no tab for it (an address that names nothing, a document back within one history entry) is
- * drawn after the tabs as the active chip, so what main shows never depends on the record. A chat
- * in main takes main: its chip stands alone, and the record's tabs come back with a document.
+ * drawn after the tabs as the active chip, so what main shows never depends on the record.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import { useRouter } from "@tanstack/react-router";
 import { ChevronDown, type LucideIcon, Plus, X } from "lucide-react";
 import {
@@ -18,18 +16,17 @@ import {
   type RefObject,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useSyncExternalStore,
   type WheelEvent,
 } from "react";
+import { useLiveTabs } from "@/client/project-shell/live-tabs";
 import {
   closeAllMainTabs,
   closeMainTab,
   type MainTab,
   mainTabKey,
   readMainTabs,
-  useMainTabs,
 } from "@/client/project-shell/main-tabs";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { OpenDocument } from "@/client/stores";
@@ -45,9 +42,8 @@ import { draftCopyView } from "@/features/draft-review/copy-view";
 import { useScrollEdges } from "@/hooks/use-scroll-edges";
 import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
-import { useAccountId, useAccountResourceProjection } from "../context/account-feature-context";
+import { useAccountId } from "../context/account-feature-context";
 import { useReferenceDrag } from "../context/entry-drag/reference-source";
-import { projectResourceDocument } from "../context/open-document-from-file";
 import { tabSubject } from "../context/tab-subject";
 import { useIsDraftOnly } from "../context/use-is-draft-only";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
@@ -104,7 +100,6 @@ export function MainTabStrip({
   open,
   mainKey,
   mainDocument,
-  showsChat,
   current,
   onShowRecents,
   onNewDocument,
@@ -114,17 +109,13 @@ export function MainTabStrip({
   mainKey: string | null;
   /** The document main shows, drawn as the active chip after the tabs when the record lacks it. */
   mainDocument?: OpenDocument;
-  /** Main shows a chat: the strip draws it alone, without the document tabs. */
-  showsChat: boolean;
   /** Main's item when it is not a document, drawn as the active chip after the tabs. */
   current?: ReactNode;
   onShowRecents: (options: { replace: boolean }) => Promise<void>;
   /** Absent while no Work is ready to hold an Untitled document. */
   onNewDocument?: () => void;
 }) {
-  const drawn = useDrawnTabs(projectId, mainKey, mainDocument);
-  const tabs = showsChat ? NO_TABS : drawn.tabs;
-  const { unrecorded } = drawn;
+  const { tabs, unrecorded } = useDrawnTabs(projectId, mainKey, mainDocument);
   const commands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
   const stripRef = useRef<HTMLDivElement>(null);
   const more = useScrollEdges(stripRef);
@@ -225,7 +216,7 @@ export function MainTabMenu({
   open: OpenContextRoute;
   mainKey: string | null;
   mainDocument?: OpenDocument;
-  /** Close all leaves main where it is: the landing is the goal. */
+  /** Close all leaves main's item where it is: a chat is not a tab, and the landing is the goal. */
   keepMain: boolean;
   onShowRecents: (options: { replace: boolean }) => Promise<void>;
 }) {
@@ -273,7 +264,6 @@ export function MainTabMenu({
         {documents.map((document) => (
           <TabMenuItem
             key={document.documentId}
-            projectId={projectId}
             document={document}
             active={mainTabKey({ kind: "document", document }) === mainKey}
             onSelect={(picked) => {
@@ -288,17 +278,14 @@ export function MainTabMenu({
 }
 
 function TabMenuItem({
-  projectId,
-  document: opened,
+  document,
   active,
   onSelect,
 }: {
-  projectId: string;
   document: OpenDocument;
   active: boolean;
   onSelect: (document: OpenDocument) => void;
 }) {
-  const document = useLiveTabDocument(projectId, opened);
   return (
     <DropdownMenuItem
       selected={active}
@@ -312,69 +299,17 @@ function TabMenuItem({
 
 /** The document tabs the strip draws: the live record, then main's document when it lacks it. */
 function useDrawnTabs(projectId: string, mainKey: string | null, mainDocument?: OpenDocument) {
-  const accountId = useAccountId();
-  const tabs = useLiveTabs(projectId, useMainTabs(accountId, projectId).tabs);
+  const { tabs, project } = useLiveTabs(projectId);
   const unrecorded =
     mainDocument && mainKey && !tabs.some((tab) => mainTabKey(tab) === mainKey)
-      ? mainDocument
+      ? project(mainDocument)
       : undefined;
   return { tabs, unrecorded };
 }
 
-const NO_TABS: readonly MainTab[] = [];
-
-const PROJECT_SCOPED_SCHEMES: ReadonlySet<string> = new Set(PROJECT_SCOPED_CONTEXT_URI_SCHEMES);
-
-/**
- * The tabs whose documents are not deleted. A record read from sessionStorage can name a document
- * deleted while the window was closed: once the replica holds the project's catalog, a Project's
- * document it neither places nor knows as removed is gone. Drawing skips such a tab and leaves the
- * record alone, so a document the replica later shows live again has its tab back.
- */
-export function useLiveTabs(projectId: string, tabs: readonly MainTab[]): readonly MainTab[] {
-  const { records, placement } = useAccountResourceProjection(projectId);
-  const isDraftOnly = useIsDraftOnly(projectId);
-  return useMemo(
-    () =>
-      tabs.filter(({ document }) => {
-        const { kind } = projectResourceDocument(
-          document,
-          records,
-          placement,
-          isDraftOnly(document.documentId),
-        );
-        if (kind === "terminal" || kind === "removed") return false;
-        return (
-          kind !== "none" ||
-          records.length === 0 ||
-          document.kind === "new" ||
-          !PROJECT_SCOPED_SCHEMES.has(document.scheme) ||
-          isDraftOnly(document.documentId)
-        );
-      }),
-    [tabs, records, placement, isDraftOnly],
-  );
-}
-
-/**
- * A tab's document at its current descriptor: the replica's placement follows a rename or a move
- * made anywhere, as an off-main host does (`DocumentHost`).
- */
-function useLiveTabDocument(projectId: string, document: OpenDocument): OpenDocument {
-  const { records, placement } = useAccountResourceProjection(projectId);
-  const isDraftOnly = useIsDraftOnly(projectId);
-  const projected = projectResourceDocument(
-    document,
-    records,
-    placement,
-    isDraftOnly(document.documentId),
-  );
-  return projected.kind === "projected" ? projected.document : document;
-}
-
 function DocumentTabChip({
   projectId,
-  document: opened,
+  document,
   active,
   divider,
   onSelect,
@@ -387,7 +322,6 @@ function DocumentTabChip({
   onSelect: (document: OpenDocument) => void;
   onClose: () => void;
 }) {
-  const document = useLiveTabDocument(projectId, opened);
   // The active tab names what main paints: its draft while main reviews one.
   const paint = useDocumentPaint(projectId, active ? document : null);
   const drafts = useOwnerDrafts(projectId, paint.draft?.ownerKey ?? null);
@@ -614,7 +548,7 @@ function moveAlongStrip(event: KeyboardEvent<HTMLDivElement>) {
       "[data-main-current] > button, [role=tab]",
     ),
   ];
-  const at = stops.findIndex((stop) => stop === document.activeElement);
+  const at = stops.indexOf(document.activeElement as HTMLElement);
   if (at < 0) return;
   const to =
     event.key === "ArrowRight"
