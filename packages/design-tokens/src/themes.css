@@ -4,19 +4,19 @@
  * The app sets the attribute on the root pre-paint (`apps/app/src/lib/ui-theme.ts`);
  * apps/www sets it on the night regions of the landing page.
  *
- * Dark keeps the light ladder's order (chrome < page < raised) in one warm family, with
- * cream ink. A theme re-points surfaces, inks and accents only: state fills and borders
+ * Dark keeps the light ladder's order (chrome < page < raised) in the same warm grey, with
+ * light grey ink. A theme re-points surfaces, inks and accents only: state fills and borders
  * are overlays of `foreground`, so they lighten here on their own.
  */
 :root[data-ui-theme="dark"],
 [data-ui-theme="dark"] {
-  --color-background: oklch(0.285 0.012 84);
-  --color-card: oklch(0.325 0.012 84);
-  --color-chrome: oklch(0.245 0.012 84);
-  --color-review: oklch(0.235 0.016 150);
+  --color-background: oklch(0.235 0.006 60);
+  --color-card: oklch(0.275 0.006 60);
+  --color-chrome: oklch(0.195 0.006 60);
+  --color-review: oklch(0.215 0.008 60);
 
-  --color-foreground: oklch(0.9 0.012 90);
-  --color-muted-foreground: oklch(0.78 0.012 88);
+  --color-foreground: oklch(0.93 0.006 60);
+  --color-muted-foreground: oklch(0.75 0.006 60);
   /* Derived tokens resolve where they are declared: a nested night region must restate
      them, or it inherits the light root's values. */
   --color-ink-fill: color-mix(in oklab, var(--color-foreground) 5%, transparent);
@@ -24,30 +24,30 @@
   --color-border: color-mix(in oklab, var(--color-foreground) 15%, transparent);
   --color-border-subtle: color-mix(in oklab, var(--color-foreground) 9%, transparent);
   --color-page-edge: color-mix(in oklab, var(--color-foreground) 9%, var(--color-background));
-  --color-focus: oklch(0.75 0.08 176);
+  --color-focus: oklch(0.74 0.12 165);
 
   /* Jade brightens on dark ground; text on a jade fill stays dark ink. */
   --color-brand-jade: oklch(0.68 0.09 175);
-  --color-primary: var(--color-brand-jade);
-  --color-primary-foreground: oklch(0.2 0.02 175);
-  --color-jade-text: oklch(0.8 0.08 176);
+  --color-primary: oklch(0.72 0.12 165);
+  --color-primary-foreground: oklch(0.18 0.02 165);
+  --color-jade-text: oklch(0.8 0.11 165);
 
-  --color-destructive: oklch(0.72 0.16 17);
+  --color-destructive: oklch(0.76 0.13 22);
   --color-destructive-tint: oklch(0.3 0.06 22);
-  --color-destructive-border: oklch(0.44 0.1 20);
-  --color-warning-ink: oklch(0.86 0.09 70);
-  --color-warning-tint: oklch(0.3 0.045 80);
-  --color-gold: oklch(0.729 0.115 84);
-  --color-cinnabar: oklch(0.64 0.16 29);
+  --color-destructive-border: oklch(0.45 0.1 20);
+  --color-warning-ink: oklch(0.85 0.1 70);
+  --color-warning-tint: oklch(0.3 0.04 75);
+  --color-gold: oklch(0.78 0.13 84);
+  --color-cinnabar: oklch(0.68 0.16 30);
 
   /* The light syntax inks are illegible here: same hues, lifted for >= 4.5:1. */
   --color-syntax-keyword: oklch(0.72 0.1 175);
   --color-syntax-string: oklch(0.76 0.1 55);
-  --color-syntax-comment: oklch(0.58 0.012 100);
+  --color-syntax-comment: oklch(0.6 0.006 60);
   --color-syntax-number: oklch(0.73 0.12 32);
   --color-syntax-function: oklch(0.76 0.1 80);
   --color-syntax-attr: oklch(0.72 0.08 155);
   --color-syntax-builtin: oklch(0.72 0.09 195);
-  --color-syntax-punctuation: oklch(0.68 0.008 100);
+  --color-syntax-punctuation: oklch(0.68 0.006 60);
 
 }

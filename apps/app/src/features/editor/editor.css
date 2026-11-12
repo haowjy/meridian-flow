@@ -22,9 +22,7 @@
  */
 .meridian-editor-shell {
   --editor-cursor-label-offset: 0.25rem;
-  /* Sit above the body paper-grain overlay so the manuscript reads pristine. */
   position: relative;
-  z-index: 2;
 }
 
 /* The pane is the size container so a picture's height cap answers to the pane

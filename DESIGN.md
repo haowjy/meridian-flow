@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: Earthen Value Ladder
-summary: Meridian Flow writing project UI — one paper-grey chrome, near-white warm paper, black ink, ink-overlay states, jade actions, and scarce cinnabar seals.
+summary: Meridian Flow writing project UI — one warm-grey chrome, a white page, near-black ink, ink-overlay states, jade actions, and scarce cinnabar seals.
 tokens:
   canonicalPackage: "@meridian/design-tokens"
   canonicalCss: "ink-jade.css"
@@ -20,32 +20,35 @@ Agent-facing visual identity for `@meridian/app`. Token values live in `@meridia
 
 ## Overview
 
-The writer workspace uses one warm, near-neutral value ladder so the manuscript
-remains the visual center. One paper-grey chrome is the sidebar, the
-document band and the dock, and near-white warm paper is the brightest field. One black ink
+The writer workspace is black, white and one warm grey, so the manuscript
+remains the visual center. One warm-grey chrome is the sidebar, the
+document band and the dock, and the white page is the brightest field. One near-black ink
 keeps reading consistent across those surfaces. Jade appears only where the
 writer acts; cinnabar is a scarce seal.
 
 - **Audience:** fiction writers managing long-running serials, chapters, continuity notes, and agent-assisted revision threads.
-- **Mood:** paper grey panels around near-white warm paper.
+- **Mood:** warm-grey panels around a white page.
 - **Density:** comfortable reading/drafting rhythm in the main column; compact but legible metadata in rails and rows.
 - **Scope:** authenticated app shell, project views, chat/thread surfaces, context/document surfaces, and marketing-adjacent pages that share the brand language.
 
 The shell has at most two region tones: chrome for both side panels (the sidebar and the
 dock) and the tab band, and page for the main view. The two sit close together, so the
 page is a sheet set into the chrome with a hairline on its top and sides; no line runs
-the height of the window between a side panel and the centre. The raised step serves cards, menus
-and the composer, and a jade-grey review ground sits under draft chrome only while a
-draft is under review.
+the height of the window between a side panel and the centre. Cards, menus and the composer are
+white like the page and separate by border and shadow, and a review ground one step
+below chrome sits under draft chrome only while a draft is under review.
 
 ## Color roles
 
 Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 
-- `chrome` — paper grey `oklch(0.963 0.0055 85)`: the sidebar, the tab band and the dock.
-- `background` — warm near-white paper `oklch(0.988 0.0045 90)`, the page.
-- `card` — the raised step `oklch(0.996 0.003 90)`: cards, menus, popovers, the composer, bubbles.
-- `review` — chrome with a little jade, under draft chrome and the reviewing tab.
+- `chrome` — warm grey `oklch(0.962 0.006 60)`: the sidebar, the tab band and the dock.
+- `background` — white, the page.
+- `card` — white: cards, menus, popovers, the composer, bubbles; border and shadow lift them.
+- `review` — one step below chrome `oklch(0.938 0.008 60)`, under draft chrome and the reviewing tab.
+
+Every neutral (surfaces and both inks) is hue 60 at chroma 0.006 or less. Hues toward
+yellow-green (85–140) read olive at that chroma; keep neutrals off them.
 - `foreground` / `muted-foreground` — the two inks. A hint differs by size, never by a paler ink.
 - `ink-fill` / `ink-fill-strong` — foreground at 5% and 10%: hover and wells, then current, selected, open and pressed. Filled controls take them through the `interactive` layer.
 - `border` / `border-subtle` — foreground at 15% and 9%, for hairlines. They are translucent: two that overlap darken.
@@ -54,8 +57,11 @@ Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 - `primary` / `jade-text` — jade fills and icons, and jade text; never a wall or routine selection.
 - `cinnabar` — the brand seal. `gold` — favourites only.
 
-Contrast is part of the palette contract: `muted-foreground` holds AA in a current
-row (10%) on the darkest surface in both themes.
+Contrast is part of the palette contract: every text ink (`foreground`,
+`muted-foreground`, `jade-text`, `destructive`, `warning-ink`) holds 4.5:1 on every
+surface, plain and under both overlays, in both themes; the tightest is `muted-foreground`
+in a current row on `review`, about 4.7:1. Accents stay inside sRGB at their lightness, or
+the browser clips them to a duller hue.
 See the [design language foundations](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/design-language-foundations.md)
 for rationale, measurements, and rejected directions rather than duplicating
 them here.
