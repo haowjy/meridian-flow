@@ -1,4 +1,5 @@
-import { Search } from "lucide-react";
+import { t } from "@lingui/core/macro";
+import { Search, X } from "lucide-react";
 import { type Ref, useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -50,8 +51,23 @@ export function SearchField({
               }
             : undefined
         }
-        className="h-8 pr-2 pl-8 coarse:h-11"
+        // The browser's own clear button takes the platform's accent; this one takes ours.
+        className="h-8 pr-7 pl-8 coarse:h-11 coarse:pr-11 [&::-webkit-search-cancel-button]:appearance-none"
       />
+      {value && !disabled ? (
+        <button
+          type="button"
+          aria-label={t`Clear search`}
+          title={t`Clear search`}
+          onClick={(event) => {
+            onChange("");
+            event.currentTarget.parentElement?.querySelector("input")?.focus();
+          }}
+          className="focus-ring absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground coarse:size-11 coarse:right-0"
+        >
+          <X aria-hidden className="size-3.5" />
+        </button>
+      ) : null}
     </div>
   );
 }

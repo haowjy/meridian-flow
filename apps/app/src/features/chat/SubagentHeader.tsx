@@ -3,9 +3,10 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadActivityNode } from "@meridian/contracts/threads";
 import { Network } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SearchField } from "@/components/ui/search-field";
 import { cn } from "@/lib/utils";
 import { requestConversationReveal } from "./conversation-reveal";
 import { subagentStatus } from "./subagent/display";
@@ -20,7 +21,6 @@ export function SubagentHeader({
   nodes: ThreadActivityNode[];
 }) {
   const [filter, setFilter] = useState("");
-  const filterId = useId();
   const [open, setOpen] = useState(false);
   const ordered = useMemo(
     () =>
@@ -68,15 +68,11 @@ export function SubagentHeader({
         align="end"
         className="max-h-[min(70vh,30rem)] w-[min(22rem,calc(100vw-1.5rem))] overflow-y-auto p-1.5"
       >
-        <label className="sr-only" htmlFor={filterId}>
-          <Trans>Filter subagents</Trans>
-        </label>
-        <input
-          id={filterId}
+        <SearchField
+          label={t`Filter subagents`}
           value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-          placeholder={t`Filter subagents`}
-          className="focus-ring mb-2 w-full rounded-sm border border-border bg-background px-2 py-1.5 text-sm"
+          onChange={setFilter}
+          className="mb-2"
         />
         {active.length ? (
           <>
