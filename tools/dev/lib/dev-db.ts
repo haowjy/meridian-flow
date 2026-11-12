@@ -113,6 +113,22 @@ export async function readAppliedMigrations(
 }
 
 /** List local worktree-shaped databases for the registered dev DB base names. */
+/** Databases something is connected to right now: a running stack, a psql, a test. */
+export async function listConnectedDatabasesForUrl(databaseUrl: string): Promise<Set<string>> {
+  assertLocalDevPostgresEndpoint(databaseUrl, "list connected databases");
+  const { adminConnString } = parseTargetDatabase(databaseUrl);
+  const adminSql = postgres(adminConnString, { max: 1 });
+  try {
+    const rows = await adminSql<{ datname: string }[]>`
+      SELECT DISTINCT datname
+      FROM pg_stat_activity
+      WHERE datname IS NOT NULL AND pid <> pg_backend_pid()`;
+    return new Set(rows.map((row) => row.datname));
+  } finally {
+    await adminSql.end();
+  }
+}
+
 export async function listWorktreeDatabasesForUrl(
   databaseUrl: string,
   baseDbNames: readonly string[],

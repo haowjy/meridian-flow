@@ -5,6 +5,7 @@ import { createInterface } from "node:readline/promises";
 import {
   dropDatabaseForUrl,
   isReservedDatabase,
+  listConnectedDatabasesForUrl,
   listWorktreeDatabasesForUrl,
   parseTargetDatabase,
 } from "./lib/dev-db";
@@ -70,7 +71,10 @@ async function main(): Promise<void> {
   }
 
   const found = await listWorktreeDatabasesForUrl(databaseUrl, mainDbNames);
-  const live = resolveLiveWorktreeDatabaseNames(repoRoot, mainDbNames);
+  // A worktree's name follows its branch, so a stack started before a branch switch holds a
+  // database no worktree name claims: a connection is what says it's in use.
+  const connected = await listConnectedDatabasesForUrl(databaseUrl);
+  const live = new Set([...resolveLiveWorktreeDatabaseNames(repoRoot, mainDbNames), ...connected]);
   const { activeManaged, manual, orphaned } = classifyTestDatabaseCleanup(found, live, mainDbNames);
   const reserved = orphaned.filter((dbName) => isReservedDatabase(dbName, mainDbNames));
   const droppable = orphaned.filter((dbName) => !isReservedDatabase(dbName, mainDbNames));
