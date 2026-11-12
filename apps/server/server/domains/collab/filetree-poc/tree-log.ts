@@ -190,8 +190,14 @@ type Working = {
 export function replay(
   ops: readonly TreeOp[],
   /** The Work whose view this is (null for live), and the documents it holds pending text of. */
-  of: { draft?: DraftId | null; pendingText?: ReadonlySet<string> } = {},
+  of: {
+    draft?: DraftId | null;
+    pendingText?: ReadonlySet<string>;
+    /** Filled with the time spent going through the records and then deriving the tree. */
+    timing?: { records: number; derive: number };
+  } = {},
 ): TreeProjection {
+  const started = of.timing ? performance.now() : 0;
   const pendingText = of.pendingText ?? new Set<string>();
   // A delete is the viewed Work's own while it is pending and after it was applied.
   const ownDelete = (op: TreeOp) =>
@@ -364,6 +370,7 @@ export function replay(
     }
   }
 
+  const derivedFrom = of.timing ? performance.now() : 0;
   const deleted = new Set<string>();
   for (const { node, cascade } of deletes) {
     deleted.add(node);
@@ -437,6 +444,10 @@ export function replay(
       lastChangedBy: node.lastChangedBy,
       arrival: node.arrivedAt,
     });
+  }
+  if (of.timing) {
+    of.timing.records = derivedFrom - started;
+    of.timing.derive = performance.now() - derivedFrom;
   }
   return {
     nodes: out,
@@ -747,6 +758,14 @@ export class TreeWriter {
       if (op.type === "delete" && op.cascade.some((member) => actedOn.has(member)))
         return "superseded";
     }
+    // Taking it back must not change what any later record does: none may start to be
+    // skipped (a later move into something the Apply moved can become a loop) or lose its folder.
+    const liveNow = viewOps(this.doc, LIVE);
+    const now = replay(liveNow);
+    const without = replay(liveNow.filter((op) => !ids.has(op.id)));
+    const skippedNow = new Set(now.skipped.map((skip) => skip.op));
+    if (without.skipped.some((skip) => !skippedNow.has(skip.op))) return "superseded";
+    if (without.rescued.some((id) => !now.rescued.includes(id))) return "superseded";
     this.doc.transact(() => {
       this.settle(by, copies.map((copy) => copy.id), "undone");
       this.settle(by, copies.flatMap((copy) => (copy.appliedFrom ? [copy.appliedFrom] : [])), "pending");

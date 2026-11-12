@@ -701,6 +701,22 @@ describe("found in the second review", () => {
   });
 });
 
+describe("found while measuring cost", () => {
+  it("Undo of an Apply that moved a folder out of another, after that other was moved into it: refused", () => {
+    const t = start();
+    const y = t.folder("Y");
+    const z = t.folder("Z", y); // live: Y/Z
+    const w = t.folder("W", z);
+    t.w.move(D, CHAT, z, ROOT);
+    const copies = t.w.apply("work-1", WRITER);
+    t.w.move(LIVE, WRITER, y, w); // Y into Z/W: fine now, a loop if Z went back inside Y
+    expect(t.w.undoApply(copies)).toBe("superseded");
+    expect(t.at(y)?.parent).toBe(w);
+    expect(t.w.view(LIVE).skipped).toEqual([]);
+    t.valid();
+  });
+});
+
 function reorganisedOnce() {
   const t = start();
   const ch = t.chapter("Chapter 1");
