@@ -809,6 +809,92 @@ describe("Undo of an Apply by the simple rule: only while nothing has been admit
   });
 });
 
+/** Trash as a writer sees it: documents only, grouped by the delete that took them. */
+function trashGroups(projection: TreeProjection): Array<{ folder: string | null; documents: string[] }> {
+  const groups = new Map<string, { folder: string | null; documents: string[] }>();
+  for (const node of projection.nodes.values()) {
+    if (!node.trashed || node.kind === "folder") continue;
+    const own = projection.deletes.find((record) => record.node === node.id);
+    const taken = projection.deletes.find((record) => record.cascade.includes(node.id));
+    const record = own ?? taken;
+    if (!record) continue;
+    const group = groups.get(record.id) ?? { folder: own ? null : record.node, documents: [] };
+    group.documents.push(node.displayName);
+    groups.set(record.id, group);
+  }
+  return [...groups.values()].map((group) => ({ ...group, documents: group.documents.sort() }));
+}
+
+describe("only documents are in Trash; a folder that something needs stands again", () => {
+  function deletedArc() {
+    const t = start();
+    const arc = t.folder("Arc 2");
+    const part = t.folder("Part 1", arc);
+    const chapters = ["Chapter 41", "Chapter 42", "Chapter 49"].map((name) => t.chapter(name, arc));
+    const inner = t.chapter("Interlude", part);
+    const loose = t.chapter("Loose");
+    t.w.delete(LIVE, WRITER, arc);
+    t.w.delete(LIVE, WRITER, loose);
+    return { ...t, arc, part, chapters, inner, loose };
+  }
+
+  it("a deleted folder is one group of its documents, not an entry; its subfolder is not listed", () => {
+    const t = deletedArc();
+    expect(trashGroups(t.w.view(LIVE))).toEqual([
+      { folder: t.arc, documents: ["Chapter 41", "Chapter 42", "Chapter 49", "Interlude"] },
+      { folder: null, documents: ["Loose"] },
+    ]);
+    expect(t.names(ROOT)).toEqual([]);
+  });
+
+  it("restoring two chapters brings the folder back holding them; the rest stay in its group", () => {
+    const t = deletedArc();
+    t.w.restore(LIVE, WRITER, t.chapters[0] as string);
+    t.w.restore(LIVE, WRITER, t.chapters[2] as string);
+    expect(t.names(ROOT)).toEqual(["Arc 2"]);
+    expect(t.names(t.arc)).toEqual(["Chapter 41", "Chapter 49"]);
+    expect(trashGroups(t.w.view(LIVE))).toEqual([
+      { folder: t.arc, documents: ["Chapter 42", "Interlude"] },
+      { folder: null, documents: ["Loose"] },
+    ]);
+    // A chapter two folders down brings both folders back.
+    t.w.restore(LIVE, WRITER, t.inner);
+    expect(t.names(t.arc)).toEqual(["Part 1", "Chapter 41", "Chapter 49"]);
+    expect(t.names(t.part)).toEqual(["Interlude"]);
+    t.valid();
+  });
+
+  it("restoring the group brings back every document its delete took", () => {
+    const t = deletedArc();
+    t.w.restore(LIVE, WRITER, t.arc);
+    expect(t.names(t.arc)).toEqual(["Part 1", "Chapter 41", "Chapter 42", "Chapter 49"]);
+    expect(trashGroups(t.w.view(LIVE))).toEqual([{ folder: null, documents: ["Loose"] }]);
+  });
+
+  it("an empty folder that is deleted is in no list; a draft that puts something in it brings it back", () => {
+    const t = start();
+    const empty = t.folder("Empty");
+    t.w.delete(LIVE, WRITER, empty);
+    expect(trashGroups(t.w.view(LIVE))).toEqual([]);
+    expect(t.names(ROOT)).toEqual([]);
+    t.chapter("New", empty, D, CHAT);
+    expect(t.names(ROOT, D)).toEqual(["Empty"]);
+    t.w.apply("work-1", WRITER);
+    expect(t.names(ROOT)).toEqual(["Empty"]);
+    expect(t.names(empty)).toEqual(["New"]);
+  });
+
+  it("a folder brought back this way goes again when the last thing in it leaves", () => {
+    const t = deletedArc();
+    const ch = t.chapters[0] as string;
+    t.w.restore(LIVE, WRITER, ch);
+    expect(t.names(ROOT)).toEqual(["Arc 2"]);
+    const elsewhere = t.folder("Arc 3");
+    t.w.move(LIVE, WRITER, ch, elsewhere);
+    expect(t.names(ROOT)).toEqual(["Arc 3"]);
+  });
+});
+
 function reorganisedOnce() {
   const t = start();
   const ch = t.chapter("Chapter 1");
