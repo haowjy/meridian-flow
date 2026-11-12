@@ -167,10 +167,11 @@ function useDescriptions(projectId: string): Descriptions {
     async (documentId: string, workId?: string) => {
       const pin = readDocumentView(accountId, projectId, documentId).pin;
       if (pin) {
-        const drafts = await queryClient.fetchQuery(
-          ownerDraftsQueryOptions(projectId, pin.ownerKey),
-        );
-        const row = drafts.items.find(
+        // slop-lint: allow swallowed-error a draft list that won't load leaves the live lookup to answer
+        const drafts = await queryClient
+          .fetchQuery(ownerDraftsQueryOptions(projectId, pin.ownerKey))
+          .catch(() => null);
+        const row = drafts?.items.find(
           (item) => item.itemKey === pin.itemKey && item.documentId === documentId,
         );
         if (row && (row.isNew || row.deletedLive)) return openDocumentFromDraftGroup(row);
