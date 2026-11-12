@@ -105,6 +105,7 @@ function runSeed(seed: number): {
   let widened = 0;
   let leftPending = 0;
   let laterUndone = 0;
+  let laterTried = 0;
 
   const deliver = (from: Replica, to: Replica) => {
     const fromIndex = replicas.indexOf(from);
@@ -275,6 +276,7 @@ function runSeed(seed: number): {
           if (earlier.length > 0) {
             const made = new Set(earlier.flatMap((op) => (op.type === "create" ? [op.node] : [])));
             const before = VIEWS.map((each) => materialize(writer.doc, each));
+            laterTried += 1;
             if (writer.undoApply(earlier) === "superseded") refused += 1;
             else {
               // Taking an Apply back removes nothing but what that Apply itself created, in

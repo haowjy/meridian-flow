@@ -743,6 +743,72 @@ describe("found in the third review", () => {
   });
 });
 
+describe("Undo of an Apply by the simple rule: only while nothing has been admitted since", () => {
+  const applied = () => {
+    const t = reorganisedOnce();
+    const other = t.chapter("Elsewhere");
+    const copies = t.w.apply("work-1", WRITER);
+    return { ...t, other, copies, mark: Y.encodeStateVector(t.doc) };
+  };
+
+  it("at once: live and the draft read as before, and it can be applied again", () => {
+    const t = reorganisedOnce();
+    const [live, draft] = [fingerprint(t.w.view(LIVE)), fingerprint(t.w.view(D))];
+    const copies = t.w.apply("work-1", WRITER);
+    expect(t.w.undoApplyIfLast(copies, Y.encodeStateVector(t.doc), WRITER)).toBe("undone");
+    expect(fingerprint(t.w.view(LIVE))).toBe(live);
+    expect(fingerprint(t.w.view(D))).toBe(draft);
+    t.w.apply("work-1", WRITER);
+    expect(fingerprint(t.w.view(LIVE))).toBe(draft);
+  });
+
+  it("gone after a live change anywhere, however unrelated", () => {
+    const t = applied();
+    t.w.rename(LIVE, WRITER, t.other, "Still elsewhere");
+    expect(t.w.undoApplyIfLast(t.copies, t.mark)).toBe("gone");
+  });
+
+  it("gone after any Work drafts anything", () => {
+    const t = applied();
+    t.w.rename({ draft: "work-2" }, CHAT2, t.other, "Drafted elsewhere");
+    expect(t.w.undoApplyIfLast(t.copies, t.mark)).toBe("gone");
+  });
+
+  it("gone after a Discard or another Apply", () => {
+    const t = applied();
+    t.w.rename({ draft: "work-2" }, CHAT2, t.other, "x");
+    const mark = Y.encodeStateVector(t.doc);
+    t.w.discard("work-2");
+    expect(t.w.undoApplyIfLast(t.copies, mark)).toBe("gone");
+  });
+
+  it("gone after a record from a client that was offline, though it lands earlier in the list", () => {
+    const t = reorganisedOnce();
+    const other = t.chapter("Elsewhere");
+    const offline = new Y.Doc({ gc: false });
+    Y.applyUpdate(offline, Y.encodeStateAsUpdate(t.doc));
+    offline.clientID = 1; // sorts before the server's records made at the same point
+    new TreeWriter(offline).rename(LIVE, "user:other", other, "Renamed offline");
+    const copies = t.w.apply("work-1", WRITER);
+    const mark = Y.encodeStateVector(t.doc);
+    Y.applyUpdate(t.doc, Y.encodeStateAsUpdate(offline, Y.encodeStateVector(t.doc)));
+    const ids = opsOf(t.doc).toArray().map((op) => op.id);
+    expect(ids.indexOf(copies[0]?.id as string)).toBeGreaterThan(
+      ids.findIndex((id) => opsOf(offline).toArray().at(-1)?.id === id),
+    );
+    expect(t.w.undoApplyIfLast(copies, mark)).toBe("gone");
+  });
+
+  it("gone after text was written in a chapter the Apply created", () => {
+    const t = start();
+    const ch = t.chapter("Chapter 50", ROOT, D, CHAT);
+    const copies = t.w.apply("work-1", WRITER);
+    const mark = Y.encodeStateVector(t.doc);
+    expect(t.w.undoApplyIfLast(copies, mark, WRITER, new Set([ch]))).toBe("gone");
+    expect(t.w.undoApplyIfLast(copies, mark, WRITER)).toBe("undone");
+  });
+});
+
 function reorganisedOnce() {
   const t = start();
   const ch = t.chapter("Chapter 1");

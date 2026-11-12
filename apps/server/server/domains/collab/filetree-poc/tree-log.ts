@@ -15,7 +15,7 @@
  * draft's view just before it.
  */
 import { generateKeyBetween } from "fractional-indexing";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 
 export const ROOT = "root";
 
@@ -78,7 +78,7 @@ export type TreeOpInput =
   | Omit<RestoreOp, keyof OpBase>;
 
 /** `undone` is set on a live copy whose Apply was taken back: the replay leaves it out. */
-export type Settlement = "applied" | "discarded" | "undone" | "superseded";
+export type Settlement = "applied" | "discarded" | "undone" | "superseded" | "refused";
 
 export type TreeNode = {
   id: string;
@@ -140,6 +140,8 @@ export type SettleRecord = {
   actor: Actor;
   targets: string[];
   to: Settlement | "pending";
+  /** On a refusal at admission: why, for the client to show on the thing the writer did. */
+  reason?: string;
 };
 
 export function settleLogOf(doc: Y.Doc): Y.Array<SettleRecord> {
@@ -157,9 +159,16 @@ export function settlementsOf(doc: Y.Doc): Map<string, Settlement> {
 
 /** The ops a view replays, in replay order: live ops, then the draft's unsettled ops. */
 export function viewOps(doc: Y.Doc, view: View): TreeOp[] {
-  const all = opsOf(doc).toArray();
+  // A record id counts once: a client that sends a record again after rebuilding its copy
+  // (a refusal, a trim) adds nothing. A record the server refused at admission is left out
+  // of every view.
+  const seen = new Set<string>();
+  const all = opsOf(doc)
+    .toArray()
+    .filter((op) => (seen.has(op.id) ? false : (seen.add(op.id), true)));
   const settled = settlementsOf(doc);
-  const live = all.filter((op) => op.draft === null && settled.get(op.id) !== "undone");
+  const out = (op: TreeOp) => settled.get(op.id) === "undone" || settled.get(op.id) === "refused";
+  const live = all.filter((op) => op.draft === null && !out(op));
   if (view.draft === null) return live;
   return [...live, ...all.filter((op) => op.draft === view.draft && !settled.has(op.id))];
 }
@@ -721,8 +730,33 @@ export class TreeWriter {
   }
 
   /**
-   * Takes an Apply back: its live copies leave the replay and the drafted records are pending
-   * again, so live and the draft both read as they did before it. A node the Apply created goes
+   * Takes an Apply back, by the simple rule: allowed only while nothing has been admitted to
+   * the list since the Apply, by anyone, anywhere. `mark` is the list's state vector taken
+   * right after the Apply (on the server: the journal's head). A record that lands earlier in
+   * the list but was admitted later moves the state vector too, so it counts. Text is not in
+   * the list: `writtenSince` holds documents the Apply created that have text written since.
+   * Its live copies leave the replay and its drafted records are pending again.
+   */
+  undoApplyIfLast(
+    copies: readonly TreeOp[],
+    mark: Uint8Array,
+    by: Actor = "user:w",
+    writtenSince: ReadonlySet<string> = new Set(),
+  ): "undone" | "gone" {
+    const now = Y.encodeStateVector(this.doc);
+    if (now.length !== mark.length || now.some((byte, at) => byte !== mark[at])) return "gone";
+    if (copies.some((copy) => copy.type === "create" && writtenSince.has(copy.node))) return "gone";
+    this.doc.transact(() => {
+      this.settle(by, copies.map((copy) => copy.id), "undone");
+      this.settle(by, copies.flatMap((copy) => (copy.appliedFrom ? [copy.appliedFrom] : [])), "pending");
+    }, this.origin);
+    return "undone";
+  }
+
+  /**
+   * The later option, not what v1 builds: takes an Apply back even after other changes, as
+   * long as nothing stands on what it did. Its live copies leave the replay and the drafted
+   * records are pending again, so live and the draft both read as they did before it. A node the Apply created goes
    * back to existing only in the draft, so the Undo is refused once anything stands on what the
    * Apply did: a later live record on a node it acted on, or into a folder it created; any
    * Work's pending record on a node it created; text written since in a document it created
