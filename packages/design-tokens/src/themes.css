@@ -15,8 +15,8 @@
   --color-card: oklch(0.275 0.006 60);
   --color-chrome: oklch(0.195 0.006 60);
   --color-review: oklch(0.215 0.008 60);
-  --color-paper: oklch(0.25 0.007 75);
-  --color-paper-ink: oklch(0.91 0.01 80);
+  --color-paper: oklch(0.25 0.004 75);
+  --color-paper-ink: oklch(0.91 0.006 80);
 
   --color-foreground: oklch(0.93 0.006 60);
   --color-muted-foreground: oklch(0.75 0.006 60);

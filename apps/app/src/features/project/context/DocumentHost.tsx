@@ -262,10 +262,7 @@ function DesktopDocumentFrame({
       <PaintScope active={onScreen}>
         <PaintHold
           status={t`Opening ${document.name}`}
-          className={cn(
-            pageSheetClass(place === "side"),
-            "paper relative flex min-h-0 flex-1 flex-col",
-          )}
+          className={cn(pageSheetClass(place === "side"), "relative flex min-h-0 flex-1 flex-col")}
         >
           <PaintCapture surface={document.documentId} />
           <DocumentStateSlotProvider>
