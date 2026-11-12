@@ -4660,8 +4660,8 @@ msgstr "Reset size"
 
 #. placeholder {0}: schemeLabel(id)
 #: src/features/project/shell/DockedRailSection.tsx
-msgid "Resize {0}"
-msgstr "Resize {0}"
+#~ msgid "Resize {0}"
+#~ msgstr "Resize {0}"
 
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize side panel"
