@@ -18,9 +18,9 @@ client contracts, stores and server-owned runtime behavior.
 - A new line the writer clicks in a list is a `ListRow` (`components/ui/list-row.tsx`): it
   owns height, fills, focus ring, the current look and the leading `icon` slot, and its list
   owns the inset. The line that stands in for the rows (loading, empty, no matches) is
-  `ListLine` beside it, inside the same inset. The file tree's rows are the exception (drag
-  targets, rename in place). Not yet moved onto it: `DocumentRow` (`ContextTreeRows.tsx`: the
-  trees' files and Trash) and `WorkspaceNavBody`'s rows.
+  `ListLine` beside it, inside the same inset. The file trees, Trash and Recent rows are
+  `ListRow`s too (drop handlers through `frameProps`, actions through `menu`, rename in place
+  through `ListRowField`). Not yet moved onto it: `WorkspaceNavBody`'s rows.
 - A new list the writer picks one thing from (a Work, an Agent, a chat) is built from
   `components/ui/picker.tsx`, which owns its keys and ARIA; its rows are
   `<li><ListRow density="menu" /></li>`. A menu of actions

@@ -886,12 +886,16 @@ msgid "Account: {label}"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
-msgid "Actions"
-msgstr ""
+#~ msgid "Actions"
+#~ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/project/work/WorkActionsMenu.tsx
 msgid "Actions for {0}"
+msgstr ""
+
+#: src/components/ui/list-row.tsx
+msgid "Actions for {name}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -6102,8 +6106,8 @@ msgstr "今天"
 
 #. placeholder {0}: dir.name
 #: src/features/project/context/ContextTreeRows.tsx
-msgid "Toggle folder {0}"
-msgstr ""
+#~ msgid "Toggle folder {0}"
+#~ msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Tokens after"

@@ -93,7 +93,7 @@ ContextTreePanel (desktop sidebar and the phone's drawer)
 
 Document trash is a server snapshot separate from the live catalog projection.
 The tree doesn't read it: Trash is a sidebar source (`shell/sidebar/TrashSource.tsx`)
-listing it newest first, with the trees' `DocumentRow`. A deleted document has its own address,
+listing it newest first on `ListRow`s that select and drag like the trees'. A deleted document has its own address,
 `/p/<id>/trash/<documentId>`, and opens like any document: the sidebar shows Trash with its
 row current, and main shows `TrashedDocument`, the text read-only under a notice with Restore.
 It takes no tab; the strip shows it as an untabbed chip, as it does an address that names nothing. Main follows the document out of Trash, whichever

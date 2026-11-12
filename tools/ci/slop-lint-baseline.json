@@ -605,11 +605,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/features/project/context/ContextTreeRows.tsx",
-        "line": "{/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/features/project/work/WorkMetadata.tsx",
         "line": "{/* biome-ignore lint/a11y/noStaticElementInteractions: a pointer shortcut; the Show more button below is the keyboard path. */}",
         "count": 1

@@ -62,20 +62,14 @@ name once. A canonical name is never fed back into extension inheritance.
 
 ## Dual-trigger caveat
 
-Desktop right-click context and visible ellipsis overflow map one ordered action
-specification through thin renderers for Radix `ContextMenu.Item` and
-`DropdownMenu.Item`. They remain separate trigger primitives. The visible path
-uses the neutral `OverflowMenu` and canonical trigger shared with Project chat
-rows and Composer; context-specific `EntryAction` types do not cross that UI
-boundary. The raw ContextMenu renderer consumes the canonical declarations from
-`components/ui/dropdown-presentation.ts` directly for surface, row, separator,
-destructive, density, focus, and animation paint. Do not copy those recipes or
-introduce a shallow ContextMenu wrapper family merely to adapt Radix. The
-visible target is 32 px for fine pointers and 44 px for coarse/no-hover input,
-and it remains visible while its portaled menu is open. Mobile uses the same
-context adapter with a 44 px target. Labels, icons, grouping, destructive
-metadata, order, presentation, and dispatch actions therefore cannot drift.
-The ellipsis stops propagation so it doesn't trigger the row's click handler.
+A row's right-click menu and its ⋯ are one `RowMenu` (`components/ui/row-menu.tsx`): plain data
+(groups of items, an Import… submenu, the `empty` line) that `ListRow`'s `menu` renders through
+both Radix primitives, `ContextMenu` on the whole row and `DropdownMenu` on the ⋯. `useEntryMenu`
+turns the row's `EntryAction`s into a `RowMenu`; context types don't cross into `components/ui`.
+The ⋯ is a dense `IconButton` (24 px box, 44 px hit area under a coarse pointer), so rows with and
+without one stay the same height, and it is named "Actions for {name}". It stays visible while its
+menu is open. Labels, icons, grouping, destructive metadata, order and dispatch can't drift between
+the two triggers.
 `EntryAction` is one ordered list: New file, New folder, Import…, separator, Rename, Move…,
 Copy to…, Delete, Restore (creation first; Restore is a Trash row's only action), identical in
 both triggers. Each row declares which of them it supports. `useEntryMenu` builds a row's menu for
@@ -495,7 +489,7 @@ journal entry: a reload shows the server). A refused item goes back to Trash wit
 notice offers Undo, which deletes the restored documents through the normal delete path. Trash's own
 list never takes a trash drag (the rows are already deleted).
 
-Trash rows are the trees' `DocumentRow` and select like tree rows, through the Files list's
+Trash rows are `ListRow`s with the trees' menu and select like tree rows, through the Files list's
 selection. Right-click and ⋯ share the tree's menu: Restore on one row,
 Restore N on a selection. `restore(entries)` on `DocumentTrashRestoreProvider` sends one request
 for all of them; each entry shows its own outcome on its row (a blocked one keeps "Couldn't restore

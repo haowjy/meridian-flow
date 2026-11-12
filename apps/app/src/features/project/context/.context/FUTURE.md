@@ -52,7 +52,7 @@ here is a known defect.
   rename cannot change type (for example `data.json` to `data.md`), instead of
   generic retry copy. Verify the message stays on the attempted rename and
   the existing document remains unchanged.
-- Sidebar rows are `role="button"` and report a multi-row selection with
+- Sidebar rows are buttons (`ListRow`) and report a multi-row selection with
   `aria-pressed`. The ARIA tree pattern (`role="tree"`/`treeitem`,
   `aria-selected`, arrow-key navigation) would describe the selection natively;
   it changes every tree surface (Files, Scratch, Changes), so it is its own

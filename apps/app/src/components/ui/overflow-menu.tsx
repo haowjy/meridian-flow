@@ -45,7 +45,8 @@ export const OverflowMenuTrigger = React.forwardRef<HTMLButtonElement, OverflowM
         onClick?.(event);
       }}
       onKeyDown={(event) => {
-        event.stopPropagation();
+        // Left and Right still reach the list's keys (`handleListKeys`), back to the row.
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") event.stopPropagation();
         onKeyDown?.(event);
       }}
     >
