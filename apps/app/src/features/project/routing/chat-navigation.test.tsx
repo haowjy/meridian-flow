@@ -10,7 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { readHeldPick, readLastChat } from "@/client/project-shell/store";
+import { readLastChat, readSidePick } from "@/client/project-shell/store";
 import { threadSnapshotQueryOptions } from "@/client/query/thread-snapshot-query";
 import { ThreadStoreProvider, useThreadActions } from "@/client/stores";
 import { type ChatNavigation, useProjectChatNavigation } from "./chat-navigation";
@@ -88,7 +88,7 @@ it("shows a sent chat in main from the new-chat composer and holds it beside a d
   render(null);
   act(() => navigation.acceptCreatedChat("docked"));
   expect(go).not.toHaveBeenCalled();
-  expect(readHeldPick(ACCOUNT, PROJECT)).toEqual({ kind: "chat", chatId: "docked" });
+  expect(readSidePick(ACCOUNT, PROJECT)).toEqual({ kind: "chat", chatId: "docked" });
 });
 
 it("keeps a first send whose pre-creation 404 is still cached once it is acknowledged", () => {

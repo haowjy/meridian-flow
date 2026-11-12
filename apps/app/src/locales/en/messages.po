@@ -3060,12 +3060,12 @@ msgid "Folders can't be attached"
 msgstr "Folders can't be attached"
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Follow {mainName}"
-msgstr "Follow {mainName}"
+#~ msgid "Follow {mainName}"
+#~ msgstr "Follow {mainName}"
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Follow this chat"
-msgstr "Follow this chat"
+#~ msgid "Follow this chat"
+#~ msgstr "Follow this chat"
 
 #: src/features/project/side/SidePicker.tsx
 msgid "For {mainName}"
@@ -3171,13 +3171,13 @@ msgstr "Heading 3"
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/side/ClosedSideButton.tsx
 #: src/features/project/side/SidePicker.tsx
-msgid "Held"
-msgstr "Held"
+#~ msgid "Held"
+#~ msgstr "Held"
 
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/side/SideHeader.tsx
-msgid "Held here. Follow main again"
-msgstr "Held here. Follow main again"
+#~ msgid "Held here. Follow main again"
+#~ msgstr "Held here. Follow main again"
 
 #: src/features/import/reason-copy.ts
 msgid "Hidden file."

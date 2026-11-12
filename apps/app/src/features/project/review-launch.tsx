@@ -27,9 +27,9 @@ import {
   useOpenedFromChat,
 } from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
-import { useOptionalHoldBeside } from "./side/SideView";
+import { useOptionalShowBeside } from "./side/SideView";
 
-type HoldBeside = NonNullable<ReturnType<typeof useOptionalHoldBeside>>;
+type ShowBeside = NonNullable<ReturnType<typeof useOptionalShowBeside>>;
 
 export type AiDraftLaunchTarget = {
   ownerKey: string;
@@ -150,10 +150,10 @@ function useOptionalOpenEditorReview(): EditorReviewCommand | null {
  * only the writer's own choice (the sidebar, Open in main) replaces a page in main. Anywhere else,
  * main, and a cmd-click, ctrl-click or middle click holds the page beside. Null opens in main.
  */
-function useHoldFor(): (gesture: LinkFollowDisposition) => HoldBeside | null {
+function useHoldFor(): (gesture: LinkFollowDisposition) => ShowBeside | null {
   const fromChat = useOpenedFromChat() !== null;
   const chatInMain = useChatPlace() === "main";
-  const hold = useOptionalHoldBeside();
+  const hold = useOptionalShowBeside();
   return useCallback(
     (gesture) => {
       if (fromChat) return chatInMain ? hold : null;

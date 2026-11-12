@@ -2,7 +2,7 @@
 
 import { t } from "@lingui/core/macro";
 import { useBlocker, useRouterState } from "@tanstack/react-router";
-import { type LucideIcon, Maximize2, MessageSquare, Pin } from "lucide-react";
+import { Maximize2, MessageSquare } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { isThreadAwaitingCreation } from "@/client/chat-submissions";
 import { useTrashedDocument } from "@/client/query/useDocumentTrash";
@@ -26,7 +26,7 @@ import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
 import { useSideChatName } from "../side/SideHeader";
 import { SidePicker } from "../side/SidePicker";
-import { useChatOnScreen, useHostChatId, useShellCommands, useSideItem } from "../side/SideView";
+import { useChatOnScreen, useHostChatId, useSideItem } from "../side/SideView";
 import { useMainItem } from "../views";
 import { ChatBreadcrumb } from "./ChatBreadcrumb";
 import { pathLeafName } from "./context-location";
@@ -69,7 +69,7 @@ export function MobileProject(props: MobileProjectProps) {
         main.document.local ? main.document.document?.name : undefined,
       );
   const removedNotice = useRemovedDocumentPhoneNotice(props.projectId);
-  // The sheet shows the side's item: a document or a chat, with the desktop's held pick and picker.
+  // The sheet shows the side's item: a document or a chat, with the desktop's picker.
   const side = useSideItem();
   const sheetChat = useHostChatId();
   const sideChat = side.item?.kind === "chat" ? side.item : null;
@@ -93,7 +93,11 @@ export function MobileProject(props: MobileProjectProps) {
     enableBeforeUnload: false,
   });
   const sheetTitle = sheetName ? (
-    <PhoneSideTitle projectId={props.projectId} name={sheetName} icon={SheetIcon} />
+    <SidePicker
+      projectId={props.projectId}
+      name={sheetName}
+      icon={<SheetIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+    />
   ) : null;
 
   return (
@@ -115,7 +119,7 @@ export function MobileProject(props: MobileProjectProps) {
         notice={onChat ? undefined : removedNotice}
         chatAction={
           sheetName ? (
-            // Names what the sheet will show: main's companion, or the held pick.
+            // Names what the sheet will show: main's companion, or the writer's pick.
             <button
               type="button"
               aria-label={t`Show ${sheetName}`}
@@ -124,9 +128,6 @@ export function MobileProject(props: MobileProjectProps) {
             >
               <SheetIcon className="size-5 shrink-0" aria-hidden />
               <span className="min-w-0 truncate text-xs">{sheetName}</span>
-              {side.source === "held" ? (
-                <Pin className="size-3 shrink-0" aria-label={t`Held`} />
-              ) : null}
             </button>
           ) : undefined
         }
@@ -236,34 +237,6 @@ function OpenInMainButton({ onOpen }: { onOpen: () => void }) {
         <Maximize2 aria-hidden />
       </IconButton>
     </div>
-  );
-}
-
-/** The sheet's name is its picker, with why it is there and the held mark. */
-function PhoneSideTitle({
-  projectId,
-  name,
-  icon: Icon,
-}: {
-  projectId: string;
-  name: string;
-  icon: LucideIcon;
-}) {
-  const side = useSideItem();
-  const { releaseSide } = useShellCommands(projectId);
-  return (
-    <>
-      <SidePicker
-        projectId={projectId}
-        name={name}
-        icon={<Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
-      />
-      {side.source === "held" ? (
-        <IconButton size="sm" label={t`Held here. Follow main again`} onClick={releaseSide}>
-          <Pin aria-hidden />
-        </IconButton>
-      ) : null}
-    </>
   );
 }
 

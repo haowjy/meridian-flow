@@ -1,10 +1,10 @@
 /**
- * SideHeader — the band above the side view: the picker naming what it shows, the held mark while a pick is in force (pressing it releases the hold), and Open in main. The
- * side's page sits below it, inset from main's. The side's own toggle is the shell's corner button; the spacer holds its
- * place.
+ * SideHeader — the band above the side view: the picker naming what it shows, and Open in main. The
+ * side's page sits below it, inset from main's. The side's own toggle is the shell's corner button;
+ * the spacer holds its place.
  */
 import { t } from "@lingui/core/macro";
-import { Maximize2, MessageSquare, Pin } from "lucide-react";
+import { Maximize2, MessageSquare } from "lucide-react";
 import type { ReactNode } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import type { OpenDocument } from "@/client/stores";
@@ -19,7 +19,7 @@ import { PaneHeader } from "../shell/PaneHeader";
 import { PanelToggleSpacer } from "../shell/PanelToggleButton";
 import { useMainItem } from "../views";
 import { SidePicker } from "./SidePicker";
-import { useNewChatAbout, useShellCommands, useSideItem } from "./SideView";
+import { useNewChatAbout, useSideItem } from "./SideView";
 
 /**
  * The side's chat's name: its title, or for a new chat what its composer will attach: main's
@@ -51,7 +51,6 @@ function SideBand({
   onOpenInMain?: () => void;
 }) {
   const side = useSideItem();
-  const { releaseSide } = useShellCommands(projectId);
   return (
     <>
       <PaneHeader
@@ -60,11 +59,6 @@ function SideBand({
           // The corner toggle always floats over this band, open or closed: its spacer is the
           // side's own, not PaneHeader's closed-rail one.
           <div className="flex items-center gap-0.5">
-            {side.source === "held" ? (
-              <IconButton size="sm" label={t`Held here. Follow main again`} onClick={releaseSide}>
-                <Pin aria-hidden />
-              </IconButton>
-            ) : null}
             {actions}
             {onOpenInMain ? (
               <IconButton size="sm" label={t`Open in main`} onClick={onOpenInMain}>

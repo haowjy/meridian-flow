@@ -4,14 +4,14 @@
  * Its lists (plan §4.4): for main's item (a document's chats, its previous chapter, the pages it
  * mentions; a chat's documents), recent documents, recent chats with New chat, and one merged
  * Find list while searching. Each section loads on its own. Main's own item never appears, and
- * no chat is offered beside a chat. A pick holds the side; "Follow" releases it.
+ * no chat is offered beside a chat. A pick swaps what the side shows until main moves.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { MessageSquare, Pin, Plus, Undo2 } from "lucide-react";
+import { MessageSquare, Plus } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import type { HeldPick } from "@/client/project-shell/store";
+import type { SidePick } from "@/client/project-shell/store";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useDocumentRelated } from "@/client/query/useDocumentRelated";
@@ -41,7 +41,7 @@ const FIND_SCHEMES: readonly ProjectContextTreeScheme[] = ["manuscript", "kb", "
 
 type Row = {
   key: string;
-  pick: HeldPick;
+  pick: SidePick;
   name: string;
   meta?: string;
 };
@@ -132,7 +132,7 @@ function SidePickerLists({
   const mainDocument = useMainItem().document.document;
   const side = useSideItem();
   const descriptions = useSideDescriptions();
-  const { pickSide, releaseSide } = useShellCommands(projectId);
+  const { pickSide } = useShellCommands(projectId);
   const mainDocumentId = main.kind === "document" ? main.documentId : null;
   const mainChatId = main.kind === "chat" ? main.chatId : null;
   const offersChats = fitsBeside({ kind: "chat", chatId: null }, main);
@@ -281,7 +281,7 @@ function SidePickerLists({
       ]).slice(0, FIND_LIMIT)
     : [];
 
-  const choose = (pick: HeldPick) => {
+  const choose = (pick: SidePick) => {
     const moves = !sameItem(pick, shownNow);
     pickSide(pick);
     onDone();
@@ -296,11 +296,6 @@ function SidePickerLists({
         leading={<ItemIcon pick={item.pick} name={item.name} />}
         title={item.name}
         meta={item.meta}
-        trailing={
-          side.source === "held" && sameItem(item.pick, shownNow) ? (
-            <Pin className="size-3.5 shrink-0 text-muted-foreground" aria-label={t`Held`} />
-          ) : null
-        }
       />
     </li>
   );
@@ -350,28 +345,13 @@ function SidePickerLists({
                       message={t`Couldn't load what goes with this.`}
                       onRetry={forThisState.failed}
                     />
-                  ) : forThis.length === 0 && side.source !== "held" ? (
+                  ) : forThis.length === 0 ? (
                     <ListLine density="menu" iconSlot>
                       <Trans>Nothing yet</Trans>
                     </ListLine>
                   ) : undefined
                 }
               >
-                {side.source === "held" ? (
-                  <li>
-                    <ListRow
-                      density="menu"
-                      onOpen={() => {
-                        releaseSide();
-                        onDone();
-                      }}
-                      leading={
-                        <Undo2 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                      }
-                      title={mainName ? t`Follow ${mainName}` : t`Follow this chat`}
-                    />
-                  </li>
-                ) : null}
                 {forThis.map(row)}
               </PickerSection>
             ) : null}
@@ -445,7 +425,7 @@ function focusTriggerAfterPick(from: HTMLElement | null) {
   requestAnimationFrame(check);
 }
 
-function ItemIcon({ pick, name }: { pick: HeldPick; name: string }) {
+function ItemIcon({ pick, name }: { pick: SidePick; name: string }) {
   const Icon = pick.kind === "chat" ? MessageSquare : fileKindIcon(name);
   return <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />;
 }

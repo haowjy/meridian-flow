@@ -1,7 +1,7 @@
 /**
  * The project's stored shell state, per (account, project) in this browser tab and seeded once from
  * the device by `tab-first-remembered-id`, so two browser tabs on one project do not fight over it.
- * It holds the Work scope, the sidebar list, the side's held pick and the last chat opened in main.
+ * It holds the Work scope, the sidebar list, the side's pick and the last chat opened in main.
  */
 import { useMemo, useSyncExternalStore } from "react";
 import { readRememberedId, writeRememberedId } from "../tab-first-remembered-id";
@@ -15,10 +15,10 @@ export type SidebarList = "files" | "chats";
 export const DEFAULT_SIDEBAR_LIST: SidebarList = "files";
 
 /**
- * What the writer picked to sit beside main. While set, the side does not follow main. A chat
- * with no id is a new chat's composer. A document followed from a link keeps the link's Work.
+ * What the writer swapped into the side, until main moves. A chat with no id is a new chat's
+ * composer. A document followed from a link keeps the link's Work.
  */
-export type HeldPick =
+export type SidePick =
   | { kind: "document"; documentId: string; workId?: string }
   | { kind: "chat"; chatId: string | null };
 
@@ -26,13 +26,13 @@ const DOCUMENT = "document:";
 const WORK = "?work=";
 const NEW_CHAT = "chat:";
 
-function encodeHeld(held: HeldPick): string {
-  return held.kind === "document"
-    ? `${DOCUMENT}${held.documentId}${held.workId ? `${WORK}${held.workId}` : ""}`
-    : `${NEW_CHAT}${held.chatId ?? ""}`;
+function encodePick(pick: SidePick): string {
+  return pick.kind === "document"
+    ? `${DOCUMENT}${pick.documentId}${pick.workId ? `${WORK}${pick.workId}` : ""}`
+    : `${NEW_CHAT}${pick.chatId ?? ""}`;
 }
 
-function decodeHeld(stored: string | null): HeldPick | null {
+function decodePick(stored: string | null): SidePick | null {
   if (stored?.startsWith(DOCUMENT)) {
     const [documentId, workId] = stored.slice(DOCUMENT.length).split(WORK);
     if (!documentId) return null;
@@ -71,15 +71,14 @@ export function writeSidebarList(accountId: string, projectId: string, list: Sid
   notify(accountId, projectId);
 }
 
-export function readHeldPick(accountId: string, projectId: string): HeldPick | null {
-  return decodeHeld(readRememberedId("held", accountId, projectId));
+export function readSidePick(accountId: string, projectId: string): SidePick | null {
+  return decodePick(readRememberedId("side-pick", accountId, projectId));
 }
 
-/** Set by a pick in the side's picker; null releases it. */
-export function writeHeldPick(accountId: string, projectId: string, held: HeldPick | null): void {
-  const next = held ? encodeHeld(held) : null;
-  if (readRememberedId("held", accountId, projectId) === next) return;
-  writeRememberedId("held", accountId, projectId, next);
+export function writeSidePick(accountId: string, projectId: string, pick: SidePick | null): void {
+  const next = pick ? encodePick(pick) : null;
+  if (readRememberedId("side-pick", accountId, projectId) === next) return;
+  writeRememberedId("side-pick", accountId, projectId, next);
   notify(accountId, projectId);
 }
 
@@ -122,14 +121,14 @@ export function useSidebarList(accountId: string, projectId: string): SidebarLis
   );
 }
 
-/** The held pick, re-read when this tab's pick changes. Decoded from one stored string, so stable. */
-export function useHeldPick(accountId: string, projectId: string): HeldPick | null {
+/** The side's pick, re-read when this tab's pick changes. Decoded from one stored string, so stable. */
+export function useSidePick(accountId: string, projectId: string): SidePick | null {
   const stored = useSyncExternalStore(
     (listener) => subscribe(accountId, projectId, listener),
-    () => readRememberedId("held", accountId, projectId),
+    () => readRememberedId("side-pick", accountId, projectId),
     () => null,
   );
-  return useMemo(() => decodeHeld(stored), [stored]);
+  return useMemo(() => decodePick(stored), [stored]);
 }
 
 /** The last chat opened in main, re-read when it changes. */

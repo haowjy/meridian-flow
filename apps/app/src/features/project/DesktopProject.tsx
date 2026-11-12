@@ -45,13 +45,7 @@ import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import { ClosedSideButton } from "./side/ClosedSideButton";
 import { SideChatHeader, SideDocumentHeader, SideEmptyHeader } from "./side/SideHeader";
-import {
-  useChatOnScreen,
-  useHostChatId,
-  useShellCommands,
-  useSideItem,
-  useSideRevealed,
-} from "./side/SideView";
+import { useChatOnScreen, useHostChatId, useSideItem, useSideRevealed } from "./side/SideView";
 import { useMainItem } from "./views";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
@@ -67,17 +61,14 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const { setSlotOpen, setSlotWidth } = useProjectSurfacePrefsActions();
   // The single writer-driven open/close entry for a panel. Opening a panel also releases the
   // narrow-window hold on it, so the control can never write a pref that changes nothing.
-  const { releaseSide } = useShellCommands(projectId);
   const setSlotOpenHere = (slot: PanelSlotId, open: boolean) => {
     if (open) narrowHold.openByHand(slot);
-    // Closing the side lets go of a held pick: it reopens following main.
-    else if (slot === "side") releaseSide();
     setSlotOpen(slot, open);
   };
   const sidebarToggle: PaneHeaderRailToggle = { open: panels["rail-l"].open };
   const sideToggle: PaneHeaderRailToggle = { open: panels.side.open };
   const sideOpen = panels.side.open;
-  // A hold made from a link opens the side, so the click has a visible result.
+  // A pick made from a link opens the side, so the click has a visible result.
   const revealed = useSideRevealed();
   const seenReveal = useRef(revealed);
   useEffect(() => {
@@ -136,7 +127,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const tabCommands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
 
   // Each document has its own host, so the draft that takes the focus when its controls show is
-  // held here.
+  // kept here.
   const [focusReview, setFocusReview] = useState<string | null>(null);
   const documentHost = (tab: OpenDocument, place: "main" | "side" | "kept"): SlotGridHost => ({
     key: `document:${tab.documentId}`,

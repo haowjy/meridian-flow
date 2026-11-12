@@ -15,11 +15,11 @@ import {
 } from "react";
 import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import {
-  readHeldPick,
   readLastChat,
+  readSidePick,
   useLastChat,
-  writeHeldPick,
   writeLastChat,
+  writeSidePick,
 } from "@/client/project-shell/store";
 import { useThreadSnapshotCache } from "@/client/query/thread-snapshot-query";
 import { useIsThreadPendingCreation } from "@/client/stores";
@@ -42,7 +42,7 @@ export type ChatNavigation = {
   openNewChat: (options?: { replace?: boolean; focus?: boolean }) => Promise<void>;
   /**
    * A just-sent new chat becomes the last chat. Sent from main's composer it becomes main's chat;
-   * sent from the side's composer it is held there, beside main.
+   * sent from the side's composer it stays there, beside main.
    */
   acceptCreatedChat: (threadId: string) => void;
   /** A deleted chat stops being the last chat, and the side lets go of it. */
@@ -109,14 +109,14 @@ export function useProjectChatNavigation({
         const { accountId, projectId, mainKind } = latest.current;
         if (mainKind === "new") void go({ kind: "chat", chatId: threadId }, { replace: false });
         // Only the side's composer sends while main is not a new chat: the chat stays beside.
-        else writeHeldPick(accountId, projectId, { kind: "chat", chatId: threadId });
+        else writeSidePick(accountId, projectId, { kind: "chat", chatId: threadId });
       },
       forgetChat: (threadId: string) => {
         const { accountId, projectId } = latest.current;
         if (readLastChat(accountId, projectId) === threadId) remember(null);
-        const held = readHeldPick(accountId, projectId);
-        if (held?.kind === "chat" && held.chatId === threadId)
-          writeHeldPick(accountId, projectId, null);
+        const pick = readSidePick(accountId, projectId);
+        if (pick?.kind === "chat" && pick.chatId === threadId)
+          writeSidePick(accountId, projectId, null);
       },
       consumeNewChatFocusRequest: (id: number) => {
         setNewChatRequest((current) => (current === id ? null : current));

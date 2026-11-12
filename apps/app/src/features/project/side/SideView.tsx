@@ -1,14 +1,11 @@
 /**
  * The side's state for one project view: what it shows (`useSideItem`), which chat is on screen,
- * and the held pick's commands (`useShellCommands`). Both shells read it: the phone's side is
- * its sheet.
+ * and the pick's command (`useShellCommands`). Both shells read it: the phone's side is its sheet.
  *
- * The held pick is stored per browser tab (`client/project-shell/store.ts`) and never written to
- * history: Back moves main, and the beside hint returns with its entry. Only the writer's own acts
- * release a hold: the held mark, For this, the close button, the held item becoming main, and its
- * document being closed, Discarded or removed. A fold from a narrow window is not one: the hold
- * survives it. A held chat gives way to a chat in main, and a held document that no longer opens
- * is dropped.
+ * A pick swaps what the side shows until main moves; then the side shows what goes with the new
+ * main. It is stored per browser tab (`client/project-shell/store.ts`), never in history. It also
+ * ends when it becomes main, when its document is closed, Discarded or removed, when a chat opens
+ * in main beside a picked chat, and when its document no longer opens.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -28,11 +25,11 @@ import {
   setDocumentView,
 } from "@/client/project-shell/document-views";
 import {
-  type HeldPick,
-  readHeldPick,
-  useHeldPick,
+  readSidePick,
+  type SidePick,
   useLastChat,
-  writeHeldPick,
+  useSidePick,
+  writeSidePick,
 } from "@/client/project-shell/store";
 import { useDocumentRelated } from "@/client/query/useDocumentRelated";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
@@ -84,10 +81,10 @@ type SideView = {
   /** What the side's new-chat composer is about, as its draft stands. */
   newChatAbout: NewChatAbout;
   reportNewChatAbout: (about: NewChatAbout) => void;
-  /** Bumped by a hold from a link: the desktop opens the side so the hold is seen. */
+  /** Bumped by a pick from a link: the desktop opens the side so the pick is seen. */
   revealed: number;
-  /** With `draft`, the held document shows that draft. */
-  holdBeside: (pick: HeldPick, draft?: DraftPin) => void;
+  /** With `draft`, the picked document shows that draft. */
+  showBeside: (pick: SidePick, draft?: DraftPin) => void;
   descriptions: Descriptions;
 };
 
@@ -288,13 +285,13 @@ export function SideViewProvider({
   children: ReactNode;
 }) {
   const accountId = useAccountId();
-  const held = useHeldPick(accountId, projectId);
+  const pick = useSidePick(accountId, projectId);
   const lastChatId = useLastChat(accountId, projectId);
   const companion = useCompanion(projectId, main, lastChatId, mainIsLocal);
   const descriptions = useDescriptions(projectId);
   const resolution = resolveSide({
     main,
-    held,
+    pick,
     besideChatId,
     companion,
     describe: descriptions.read,
@@ -331,8 +328,8 @@ export function SideViewProvider({
     [sideKey],
   );
 
-  useReleaseHold(accountId, projectId, held, resolution.releaseHeld);
-  useRecordSidePick(projectId, side.source === "held" ? side.document : null);
+  useReleasePick(accountId, projectId, main, pick, resolution.releasePick);
+  useRecordSidePick(projectId, side.source === "picked" ? side.document : null);
 
   const mainChat = main.kind === "chat" ? main.chatId : null;
   const sideChat = side.item?.kind === "chat" ? side.item : null;
@@ -346,11 +343,11 @@ export function SideViewProvider({
 
   const [newChatAbout, reportNewChatAbout] = useState<NewChatAbout>("follows");
   const [revealed, setRevealed] = useState(0);
-  const holdBeside = useCallback(
-    (pick: HeldPick, draft?: DraftPin) => {
+  const showBeside = useCallback(
+    (pick: SidePick, draft?: DraftPin) => {
       if (draft && pick.kind === "document")
         setDocumentView(accountId, projectId, pick.documentId, { pin: draft });
-      writeHeldPick(accountId, projectId, pick);
+      writeSidePick(accountId, projectId, pick);
       setRevealed((count) => count + 1);
     },
     [accountId, projectId],
@@ -365,7 +362,7 @@ export function SideViewProvider({
       newChatAbout,
       reportNewChatAbout,
       revealed,
-      holdBeside,
+      showBeside,
       descriptions,
     }),
     [
@@ -375,7 +372,7 @@ export function SideViewProvider({
       hostChatId,
       newChatAbout,
       revealed,
-      holdBeside,
+      showBeside,
       descriptions,
     ],
   );
@@ -409,38 +406,48 @@ function reaimComposer(kept: SettledSide, main: MainForSide): SettledSide {
 }
 
 /**
- * A hold ends when the side's rule says it can no longer sit beside main, and when its document
- * is closed, Discarded or removed: the registry forgets it, and the side resolves again. Nothing
- * navigates.
+ * A pick ends when main moves, when the side's rule says it can no longer sit beside main, and
+ * when its document is closed, Discarded or removed: the registry forgets it, and the side
+ * resolves again. Nothing navigates.
  */
-function useReleaseHold(
+function useReleasePick(
   accountId: string,
   projectId: string,
-  held: HeldPick | null,
+  main: MainForSide,
+  pick: SidePick | null,
   release: boolean,
 ) {
-  const heldKey = JSON.stringify(held);
+  const pickKey = JSON.stringify(pick);
   useEffect(() => {
-    if (release && JSON.stringify(readHeldPick(accountId, projectId)) === heldKey)
-      writeHeldPick(accountId, projectId, null);
-  }, [release, heldKey, accountId, projectId]);
+    if (release && JSON.stringify(readSidePick(accountId, projectId)) === pickKey)
+      writeSidePick(accountId, projectId, null);
+  }, [release, pickKey, accountId, projectId]);
+  // Main while it resolves is not a move: the pick survives a reload.
+  const mainKey = main.kind === "opening" ? null : JSON.stringify(main);
+  const lastMain = useRef(mainKey);
+  useEffect(() => {
+    if (mainKey === null || mainKey === lastMain.current) return;
+    const moved = lastMain.current !== null;
+    lastMain.current = mainKey;
+    if (moved) writeSidePick(accountId, projectId, null);
+  }, [mainKey, accountId, projectId]);
   const presented = useOptionalPresentedDocuments();
-  const heldDocumentId = held?.kind === "document" ? held.documentId : null;
+  const pickedDocumentId = pick?.kind === "document" ? pick.documentId : null;
   useEffect(() => {
-    if (!presented || !heldDocumentId) return;
+    if (!presented || !pickedDocumentId) return;
     const check = () => {
       const mounted = presented
         .documents(projectId)
-        .some((tab) => tab.documentId === heldDocumentId);
+        .some((tab) => tab.documentId === pickedDocumentId);
       const forgotten =
-        mounted && !presented.shown(projectId).some((tab) => tab.documentId === heldDocumentId);
-      const current = readHeldPick(accountId, projectId);
-      if (forgotten && current?.kind === "document" && current.documentId === heldDocumentId)
-        writeHeldPick(accountId, projectId, null);
+        mounted && !presented.shown(projectId).some((tab) => tab.documentId === pickedDocumentId);
+      const current = readSidePick(accountId, projectId);
+      if (forgotten && current?.kind === "document" && current.documentId === pickedDocumentId)
+        writeSidePick(accountId, projectId, null);
     };
     check();
     return presented.subscribe(check);
-  }, [presented, heldDocumentId, accountId, projectId]);
+  }, [presented, pickedDocumentId, accountId, projectId]);
 }
 
 function useSideView(): SideView {
@@ -483,12 +490,12 @@ export function useNewChatAbout(): {
   return { about: newChatAbout, report: reportNewChatAbout };
 }
 
-/** Holds a document beside from a link, and has the side seen; null outside the project view. */
-export function useOptionalHoldBeside(): SideView["holdBeside"] | null {
-  return useContext(SideViewContext)?.holdBeside ?? null;
+/** Picks a document beside from a link, and has the side seen; null outside the project view. */
+export function useOptionalShowBeside(): SideView["showBeside"] | null {
+  return useContext(SideViewContext)?.showBeside ?? null;
 }
 
-/** Counts holds made from a link: the desktop opens the side on each. */
+/** Counts picks made from a link: the desktop opens the side on each. */
 export function useSideRevealed(): number {
   return useSideView().revealed;
 }
@@ -498,19 +505,14 @@ export function useSideDescriptions(): Descriptions {
   return useSideView().descriptions;
 }
 
-/** The shell's commands for the side. Neither writes main or history. */
+/** The shell's command for the side. It writes neither main nor history. */
 export function useShellCommands(projectId: string): {
-  /** Sets the held pick: the side shows it until released. */
-  pickSide(item: HeldPick): void;
-  /** Back to following main. */
-  releaseSide(): void;
+  /** Swaps what the side shows, until main moves. */
+  pickSide(item: SidePick): void;
 } {
   const accountId = useAccountId();
   return useMemo(
-    () => ({
-      pickSide: (item) => writeHeldPick(accountId, projectId, item),
-      releaseSide: () => writeHeldPick(accountId, projectId, null),
-    }),
+    () => ({ pickSide: (item) => writeSidePick(accountId, projectId, item) }),
     [accountId, projectId],
   );
 }

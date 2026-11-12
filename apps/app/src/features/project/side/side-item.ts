@@ -2,7 +2,7 @@
  * What the side shows beside main (plan §4.1):
  *
  * ```text
- * side = held pick                         shown with the held mark
+ * side = the writer's pick                 until main moves
  *        ?? this history entry's beside    a link followed from a chat keeps that chat beside
  *        ?? companion(main), once answered
  *        ?? empty                          beside a document, a new chat about it
@@ -12,15 +12,15 @@
  * The companion of a document is the newest chat that edited it (the `related` read); of a chat,
  * the newest document it touched that still opens, else the document the writer was on. A document
  * fits beside only once it is described and opens in the editor: one that no longer opens (removed,
- * an upload) is skipped, and a hold on one ends. While the companion read or a describe is
+ * an upload) is skipped, and a pick of one ends. While the companion read or a describe is
  * unanswered the side keeps what it shows; it never paints a fallback and then swaps. No chat sits
- * beside a chat. A hold that can no longer sit beside main ends.
+ * beside a chat. A pick that can no longer sit beside main ends.
  */
-import type { HeldPick } from "@/client/project-shell/store";
+import type { SidePick } from "@/client/project-shell/store";
 import type { OpenDocument } from "@/client/stores";
 import type { Item } from "../views";
 
-export type SideSource = "held" | "beside" | "companion" | "empty";
+export type SideSource = "picked" | "beside" | "companion" | "empty";
 
 export type SettledSide = {
   /** Null: nothing to show (a chat beside which no document was ever opened). */
@@ -53,7 +53,7 @@ export type Described =
   | { status: "failed"; retry: () => void }
   | { status: "ready"; document: OpenDocument | null };
 
-/** A document to describe: a link's held document keeps the link's Work. */
+/** A document to describe: a document picked from a link keeps the link's Work. */
 export type Describing = { documentId: string; workId?: string };
 
 /** The side waits: `describing` is the document whose descriptor it waits on. */
@@ -65,8 +65,8 @@ type Unsettled =
 export type SideFailure = { read: "document" | "companion"; retry: () => void };
 
 export type SideResolution = ({ kind: "settled"; side: SettledSide } | Unsettled) & {
-  /** The hold can no longer sit beside main: it ends. */
-  releaseHeld: boolean;
+  /** The pick can no longer sit beside main: it ends. */
+  releasePick: boolean;
 };
 
 export function sameItem(a: Item | null, b: Item | null): boolean {
@@ -86,12 +86,12 @@ export function mainItem(main: MainForSide): Item | null {
 
 const mainIsChat = (main: MainForSide) => main.kind === "chat" || main.kind === "new-chat";
 
-/** The held pick as the side shows it: a new chat's composer is about main's document. */
-function heldItem(held: HeldPick, main: MainForSide): Item {
-  if (held.kind === "document") return { kind: "document", documentId: held.documentId };
-  return held.chatId === null && main.kind === "document"
+/** The pick as the side shows it: a new chat's composer is about main's document. */
+function pickedItem(pick: SidePick, main: MainForSide): Item {
+  if (pick.kind === "document") return { kind: "document", documentId: pick.documentId };
+  return pick.chatId === null && main.kind === "document"
     ? { kind: "chat", chatId: null, about: main.documentId }
-    : held;
+    : pick;
 }
 
 /**
@@ -109,14 +109,14 @@ type Step =
 
 export function resolveSide(input: {
   main: MainForSide;
-  held: HeldPick | null;
+  pick: SidePick | null;
   /** The chat this history entry was opened from. */
   besideChatId: string | null;
   companion: Companion;
   describe: (document: Describing) => Described;
 }): SideResolution {
   const { main } = input;
-  if (main.kind === "opening") return { kind: "pending", describing: null, releaseHeld: false };
+  if (main.kind === "opening") return { kind: "pending", describing: null, releasePick: false };
   const step = (item: Item, workId?: string): Step => {
     if (!fitsBeside(item, main)) return { kind: "skip" };
     if (item.kind === "chat") return { kind: "show", document: null };
@@ -133,32 +133,32 @@ export function resolveSide(input: {
       };
     return described.document ? { kind: "show", document: described.document } : { kind: "skip" };
   };
-  let releaseHeld = false;
+  let releasePick = false;
   const settle = (item: Item, tab: OpenDocument | null, source: SideSource): SideResolution => ({
     kind: "settled",
     side: { item, document: tab, source },
-    releaseHeld,
+    releasePick,
   });
 
-  if (input.held) {
-    const item = heldItem(input.held, main);
-    const held = step(item, input.held.kind === "document" ? input.held.workId : undefined);
-    if (held.kind === "show") return settle(item, held.document, "held");
-    if (held.kind === "wait") return { ...held.resolution, releaseHeld };
-    releaseHeld = true;
+  if (input.pick) {
+    const item = pickedItem(input.pick, main);
+    const picked = step(item, input.pick.kind === "document" ? input.pick.workId : undefined);
+    if (picked.kind === "show") return settle(item, picked.document, "picked");
+    if (picked.kind === "wait") return { ...picked.resolution, releasePick };
+    releasePick = true;
   }
   if (input.besideChatId) {
     const item: Item = { kind: "chat", chatId: input.besideChatId };
     if (fitsBeside(item, main)) return settle(item, null, "beside");
   }
   const { companion } = input;
-  if (companion.status === "pending") return { kind: "pending", describing: null, releaseHeld };
+  if (companion.status === "pending") return { kind: "pending", describing: null, releasePick };
   if (companion.status === "failed")
-    return { kind: "failed", failed: { read: "companion", retry: companion.retry }, releaseHeld };
+    return { kind: "failed", failed: { read: "companion", retry: companion.retry }, releasePick };
   for (const candidate of companion.candidates) {
     const next = step(candidate);
     if (next.kind === "show") return settle(candidate, next.document, "companion");
-    if (next.kind === "wait") return { ...next.resolution, releaseHeld };
+    if (next.kind === "wait") return { ...next.resolution, releasePick };
   }
   if (main.kind === "document")
     return settle({ kind: "chat", chatId: null, about: main.documentId }, null, "empty");
@@ -166,6 +166,6 @@ export function resolveSide(input: {
   return {
     kind: "settled",
     side: { item: null, document: null, source: "empty" },
-    releaseHeld,
+    releasePick,
   };
 }
