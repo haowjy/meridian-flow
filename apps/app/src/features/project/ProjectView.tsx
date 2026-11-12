@@ -31,6 +31,7 @@ import {
   type WorkingSetHydrationPlan,
 } from "@/client/working-set";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
+import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import { DraftOnlySettlement } from "@/features/draft-review/DraftOnlySettlement";
 import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import {
@@ -64,14 +65,14 @@ import { type MainReviewAddress, MainReviewAddressContext } from "./DocumentRevi
 import { useProjectSurfacePrefsStore } from "./layout";
 import { MobileProject } from "./mobile/MobileProject";
 import { ReviewLaunchProvider } from "./review-launch";
-import { type ChatDisplay, useChatNavigation } from "./routing/chat-navigation";
+import type { ChatDisplay } from "./routing/chat-navigation";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import type { ProjectRouteIssue, ProjectRouteMask } from "./routing/ProjectRouteBoundary";
 import type { LocalDocument } from "./routing/project-local-selection";
 import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { ChatDeleteProvider } from "./shell/sidebar/ChatDeleteProvider";
-import { SideViewProvider, useChatOnScreen } from "./side/SideView";
+import { SideViewProvider, useChatOnScreen, usePlaceChat } from "./side/SideView";
 import type { MainForSide } from "./side/side-item";
 import { useMainArrival } from "./use-main-arrival";
 import { useReviewAddressSync } from "./use-review-address-sync";
@@ -360,19 +361,13 @@ export type ReviewScopedProjectProps = ResolvedProjectViewProps &
   };
 
 function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentityProps) {
-  const { openChat } = useChatNavigation();
   return (
-    <ChatThreadNavigationProvider onOpenThread={openChat}>
-      <ReviewLaunchProvider
-        projectId={props.projectId}
-        openContextRoute={props.onOpenContextTarget}
-      >
-        <HydratedReviewScopes {...props} />
-        <ManageWorksDialogHost projectId={props.projectId} />
-        {/* Every row drop in the view (rail, Work Files) labels the pointer here. */}
-        <DragHint />
-      </ReviewLaunchProvider>
-    </ChatThreadNavigationProvider>
+    <ReviewLaunchProvider projectId={props.projectId} openContextRoute={props.onOpenContextTarget}>
+      <HydratedReviewScopes {...props} />
+      <ManageWorksDialogHost projectId={props.projectId} />
+      {/* Every row drop in the view (rail, Work Files) labels the pointer here. */}
+      <DragHint />
+    </ReviewLaunchProvider>
   );
 }
 
@@ -496,6 +491,9 @@ function HydratedReviewControllers({
 }) {
   // Under None the draft scope is the chat on screen: beside a document, the side's chat.
   const chatThreadId = useChatOnScreen();
+  // Every chat door and reveal opens through the one placement command.
+  const openThread = usePlaceChat();
+  useConversationRevealRouting(openThread);
   const { threads: projectThreads } = useProjectThreads(props.projectId);
   const { works, noWork } = useWorks(props.projectId);
   const chatThread = projectThreads?.find((thread) => thread.id === chatThreadId);
@@ -563,9 +561,11 @@ function HydratedReviewControllers({
   });
   const scopedProps = { ...props, chatWork, chatCommands };
   return (
-    <MainReviewAddressContext.Provider value={main ? mainAddress : null}>
-      <DraftOnlySettlement projectId={props.projectId} />
-      {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
-    </MainReviewAddressContext.Provider>
+    <ChatThreadNavigationProvider onOpenThread={openThread}>
+      <MainReviewAddressContext.Provider value={main ? mainAddress : null}>
+        <DraftOnlySettlement projectId={props.projectId} />
+        {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
+      </MainReviewAddressContext.Provider>
+    </ChatThreadNavigationProvider>
   );
 }

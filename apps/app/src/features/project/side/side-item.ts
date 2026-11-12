@@ -18,6 +18,7 @@
  * diagrams with any change here.
  */
 import type { OpenDocument } from "@/client/stores";
+import type { PanePlace } from "../pane-place";
 import type { Item } from "../views";
 
 export type SettledSide = {
@@ -81,6 +82,22 @@ function mainMode(main: MainForSide): Item["kind"] | null {
 export function fitsBeside(item: Item, main: MainForSide): boolean {
   const mode = mainMode(main);
   return mode === null || item.kind !== mode;
+}
+
+/**
+ * Where an item opens, from a pane: the same kind as the pane's own item opens there, the other
+ * kind in the other pane, and the left sidebar always opens in main. Main and the side hold
+ * different kinds, so from main or from the side this is "main's kind opens in main".
+ */
+export function placeIn(
+  kind: Item["kind"],
+  main: MainForSide,
+  from: PanePlace | "sidebar",
+): PanePlace {
+  if (from === "sidebar") return "main";
+  const mainKind = mainMode(main) ?? "document";
+  const fromKind = from === "main" ? mainKind : mainKind === "chat" ? "document" : "chat";
+  return kind === fromKind ? from : from === "main" ? "side" : "main";
 }
 
 export function resolveSide(input: {

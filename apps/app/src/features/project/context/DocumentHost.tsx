@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { DocumentReviewProvider } from "../DocumentReview";
 import { MobileDocumentReview } from "../mobile/MobileDocumentReview";
 import { MobileRefusalNotice } from "../mobile/MobileRefusalNotice";
+import { PanePlaceContext } from "../pane-place";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { contextRouteRequest } from "../routing/project-route";
 import { pageSheetClass } from "../shell/tab-chip";
@@ -89,29 +90,31 @@ export function DocumentHost(props: DocumentHostProps) {
   const onScreen = place !== "kept" && props.visible;
   useMountDocument(projectId, tab, place);
   return (
-    <DocumentReviewProvider projectId={projectId} document={tab} showing={onScreen}>
-      {place === "main" && props.main ? (
-        <MainDocumentBinding projectId={projectId} document={tab} main={props.main} />
-      ) : null}
-      {props.presentation === "phone" ? (
-        place === "main" ? (
-          <PhoneDocumentFrame
-            projectId={projectId}
-            document={tab}
-            local={props.main?.local === true}
-          />
-        ) : (
-          <div className="flex h-full min-h-0 flex-col">
-            {props.header}
-            <div className="min-h-0 flex-1">
-              <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
+    <PanePlaceContext.Provider value={place === "side" ? "side" : "main"}>
+      <DocumentReviewProvider projectId={projectId} document={tab} showing={onScreen}>
+        {place === "main" && props.main ? (
+          <MainDocumentBinding projectId={projectId} document={tab} main={props.main} />
+        ) : null}
+        {props.presentation === "phone" ? (
+          place === "main" ? (
+            <PhoneDocumentFrame
+              projectId={projectId}
+              document={tab}
+              local={props.main?.local === true}
+            />
+          ) : (
+            <div className="flex h-full min-h-0 flex-col">
+              {props.header}
+              <div className="min-h-0 flex-1">
+                <PhoneDocumentFrame projectId={projectId} document={tab} local={false} />
+              </div>
             </div>
-          </div>
-        )
-      ) : (
-        <DesktopDocumentFrame {...props} document={tab} onScreen={onScreen} />
-      )}
-    </DocumentReviewProvider>
+          )
+        ) : (
+          <DesktopDocumentFrame {...props} document={tab} onScreen={onScreen} />
+        )}
+      </DocumentReviewProvider>
+    </PanePlaceContext.Provider>
   );
 }
 

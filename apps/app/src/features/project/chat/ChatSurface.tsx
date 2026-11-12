@@ -10,8 +10,8 @@
  */
 import type { Work } from "@meridian/contracts/protocol";
 import type { ReactNode } from "react";
-import { ChatPlaceContext } from "@/features/chat/chat-place";
 import { cn } from "@/lib/utils";
+import { PanePlaceContext } from "../pane-place";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { pageSheetClass } from "../shell/tab-chip";
 import { useNewChatAbout } from "../side/SideView";
@@ -48,24 +48,24 @@ export function ChatSurface({
 }: ChatSurfaceProps) {
   const reportAbout = useNewChatAbout().report;
   return (
-    <div
-      aria-hidden={!visible}
-      // Hidden but still mounted for persistence: `inert` keeps the live-but-invisible
-      // composer and messages out of the tab order and pointer flow.
-      inert={!visible}
-      className={cn(
-        "flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
-        !visible && "pointer-events-none opacity-0",
-      )}
-    >
-      {header}
+    <PanePlaceContext.Provider value={place}>
       <div
+        aria-hidden={!visible}
+        // Hidden but still mounted for persistence: `inert` keeps the live-but-invisible
+        // composer and messages out of the tab order and pointer flow.
+        inert={!visible}
         className={cn(
-          "main-pane flex min-h-0 flex-1 flex-col overflow-hidden",
-          presentation === "desktop" && pageSheetClass(place === "side"),
+          "flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
+          !visible && "pointer-events-none opacity-0",
         )}
       >
-        <ChatPlaceContext.Provider value={place}>
+        {header}
+        <div
+          className={cn(
+            "main-pane flex min-h-0 flex-1 flex-col overflow-hidden",
+            presentation === "desktop" && pageSheetClass(place === "side"),
+          )}
+        >
           <ChatScreen
             projectId={projectId}
             threadId={threadId}
@@ -76,8 +76,8 @@ export function ChatSurface({
             onOpenContextTarget={onOpenContextTarget}
             visible={visible}
           />
-        </ChatPlaceContext.Provider>
+        </div>
       </div>
-    </div>
+    </PanePlaceContext.Provider>
   );
 }

@@ -21,7 +21,7 @@ import { collaborationColorFor } from "@/core/editor/collaboration-colors";
 import { peerMarkRect } from "@/core/editor/extensions/PeerMarkerExtension";
 import type { PeerMarkPress } from "@/core/editor/extensions/peer-mark-press";
 import type { SessionMarker } from "@/core/editor/session-marker-store";
-import { requestConversationReveal } from "@/features/chat/conversation-reveal";
+import { useRequestConversationReveal } from "@/features/chat/conversation-reveal";
 import { formatRelativeTime } from "@/lib/date-groups";
 import { EditorPopover } from "../../chrome";
 
@@ -40,6 +40,7 @@ export function PeerMarkPopover({
   /** Where focus goes on close, when nothing took this popover's place. */
   returnFocus?: () => void;
 }) {
+  const requestConversationReveal = useRequestConversationReveal();
   const marker = target?.marker ?? null;
   const agentAuthor = marker?.author.kind === "agent" ? marker.author : null;
   const changeId = target?.changeId ?? null;

@@ -12,11 +12,11 @@ import {
 } from "@/components/app/composer";
 import type { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { canOpenReference } from "@/features/project/context/open-project-document";
+import { usePanePlace } from "@/features/project/pane-place";
 import { useOpenPlacedDocument } from "@/features/project/review-launch";
 import { useAskTakeover } from "./ask/useAskTakeover";
 import { AnchoredCards } from "./ChatCards";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
-import { useChatPlace } from "./chat-place";
 import { DraftDock } from "./DraftDock";
 import type { ChatStop } from "./useChatStop";
 import { useCommittedEvent } from "./useCommittedEvent";
@@ -71,7 +71,7 @@ function ChatComposerComponent({
   onSubmit,
   onStop,
 }: ChatComposerProps) {
-  const place = useChatPlace();
+  const place = usePanePlace();
   const draft = useComposerSessionDraft(accountId, { kind: "chat", id: threadId });
   const composer = useRef<ComposerHandle | null>(null);
   const composerRef = useCallback(

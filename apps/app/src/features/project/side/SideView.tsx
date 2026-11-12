@@ -24,7 +24,6 @@ import {
   setDocumentView,
 } from "@/client/project-shell/document-views";
 import {
-  type ShownDocument,
   useLastShownChat,
   useLastShownDocument,
   writeLastShownChat,
@@ -42,12 +41,15 @@ import { openDocumentFromDraftGroup } from "../context/open-document-from-draft"
 import { useDescribeProjectDocument } from "../context/open-project-document";
 import { recentOpening } from "../context/recent-opening";
 import { useRecordOpenedDocument } from "../context/use-record-opened-document";
+import { type PanePlace, useOptionalPanePlace } from "../pane-place";
+import { useChatNavigation } from "../routing/chat-navigation";
 import type { Item } from "../views";
 import {
   type Described,
   type Describing,
   fitsBeside,
   type MainForSide,
+  placeIn,
   resolveSide,
   type SettledSide,
   type SideFailure,
@@ -73,10 +75,9 @@ type SideView = {
   /** What the side's new-chat composer is about, as its draft stands. */
   newChatAbout: NewChatAbout;
   reportNewChatAbout: (about: NewChatAbout) => void;
-  /** Bumped by a document held beside from a link: the desktop opens the side so it is seen. */
+  /** Bumped by an item placed in the side: the desktop opens the side, the phone its sheet, so it is seen. */
   revealed: number;
-  /** With `draft`, the document shows that draft. */
-  showBeside: (document: ShownDocument, draft?: DraftPin) => void;
+  place: Place;
   descriptions: Descriptions;
 };
 
@@ -273,11 +274,21 @@ export function SideViewProvider({
 
   const [newChatAbout, reportNewChatAbout] = useState<NewChatAbout>("follows");
   const [revealed, setRevealed] = useState(0);
-  const showBeside = useCallback(
-    (document: ShownDocument, draft?: DraftPin) => {
-      if (draft) setDocumentView(accountId, projectId, document.documentId, { pin: draft });
-      writeLastShownDocument(accountId, projectId, document);
+  const mainRef = useRef(main);
+  mainRef.current = main;
+  const place = useCallback<Place>(
+    (item, from, draft) => {
+      const pane = placeIn(item.kind, mainRef.current, from);
+      if (pane === "main") return pane;
+      if (item.kind === "document") {
+        if (draft) setDocumentView(accountId, projectId, item.documentId, { pin: draft });
+        writeLastShownDocument(accountId, projectId, {
+          documentId: item.documentId,
+          ...(item.workId ? { workId: item.workId } : {}),
+        });
+      } else writeLastShownChat(accountId, projectId, item.chatId);
       setRevealed((count) => count + 1);
+      return pane;
     },
     [accountId, projectId],
   );
@@ -291,7 +302,7 @@ export function SideViewProvider({
       newChatAbout,
       reportNewChatAbout,
       revealed,
-      showBeside,
+      place,
       descriptions,
     }),
     [
@@ -301,7 +312,7 @@ export function SideViewProvider({
       hostChatId,
       newChatAbout,
       revealed,
-      showBeside,
+      place,
       descriptions,
     ],
   );
@@ -374,12 +385,48 @@ export function useNewChatAbout(): {
   return { about: newChatAbout, report: reportNewChatAbout };
 }
 
-/** Holds a document beside from a link, and has the side seen; null outside the project view. */
-export function useOptionalShowBeside(): SideView["showBeside"] | null {
-  return useContext(SideViewContext)?.showBeside ?? null;
+/** What `place` opens: a link's target, with the Work a document link names. */
+export type PlacedItem =
+  | { kind: "document"; documentId: string; workId?: string }
+  | { kind: "chat"; chatId: string };
+
+/**
+ * The one placement command: where `item` opens, from a pane or the left sidebar (`placeIn`). It
+ * returns the pane. For the side it has already written the slot (and the draft the document shows)
+ * and had the side seen; for main the caller opens the item, since only it knows how (a live page, a
+ * draft, a chat).
+ */
+export type Place = (
+  item: PlacedItem,
+  from: PanePlace | "sidebar",
+  /** With a document, the draft it shows. */
+  draft?: DraftPin,
+) => PanePlace;
+
+/** `place` from the pane this surface is drawn in; null outside the project view. */
+export function useOptionalPlaceHere(): ((item: PlacedItem, draft?: DraftPin) => PanePlace) | null {
+  const place = useContext(SideViewContext)?.place;
+  const from = useOptionalPanePlace() ?? "sidebar";
+  return useMemo(() => (place ? (item, draft) => place(item, from, draft) : null), [place, from]);
 }
 
-/** Counts documents held beside from a link: the desktop opens the side on each. */
+/**
+ * Opens a chat from a pane (a link, a door, a reveal): in the side or in main. The one entrance for
+ * `ChatThreadNavigation` and the conversation reveal.
+ */
+export function usePlaceChat(): (threadId: string, from: PanePlace | undefined) => void {
+  const place = useSideView().place;
+  const { openChat } = useChatNavigation();
+  return useCallback(
+    (threadId, from) => {
+      if (place({ kind: "chat", chatId: threadId }, from ?? "sidebar") === "main")
+        void openChat(threadId);
+    },
+    [place, openChat],
+  );
+}
+
+/** Counts items placed in the side: the desktop opens the side on each. */
 export function useSideRevealed(): number {
   return useSideView().revealed;
 }

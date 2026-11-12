@@ -23,7 +23,6 @@ import {
 } from "@/client/project-shell/store";
 import { useThreadSnapshotCache } from "@/client/query/thread-snapshot-query";
 import { useIsThreadPendingCreation } from "@/client/stores";
-import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import type { ProjectDestination } from "./project-address";
 import type { NavigationSettlement } from "./project-navigation";
 import type { NavigationOptions } from "./project-route";
@@ -127,8 +126,6 @@ export function useProjectChatNavigation({
     // Replace, never push: Back must not land on the missing chat again.
     if (latest.current.urlChatId) void go({ kind: "new-chat" }, { replace: true });
   });
-  // Revealing a conversation is opening it: main goes there. One place, shared by every shell.
-  useConversationRevealRouting(commands.openChat);
 
   const newChatFocusRequestId = newChatRequest;
   const displayKey = JSON.stringify(display);

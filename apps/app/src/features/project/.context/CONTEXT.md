@@ -93,15 +93,20 @@ keeps what it showed. The header names the item and says no reason for it. `side
 holds this state and the pick command (`useShellCommands`); both shells read it, and the phone's
 sheet shows the same item. The sheet is no history entry: Back while it is open dismisses it and
 leaves main where it is. Back and Forward move main only; the side follows the slots.
-Every document link follows one placement rule (`useHoldBeside` in `review-launch.tsx`). From a
-chat in main (`ChatPlaceContext`), a page is held beside: it becomes the current document and a
-closed side opens. From a chat beside, and from anywhere else, it opens in main: a document never
-sits beside a document. The click's modifier (cmd, ctrl, middle) places nothing and the link
-follower treats every follow alike (a newer follow aborts the last): main's opener has no
-new-tab mode. So from a chat only the sidebar and Open in main replace main. Editor links,
-transcript links, chat doors, the draft dock's rows and a reply's "Drafted N documents" rows all
-go through it. The phone's main chat is outside `ChatPlaceContext`, so its links open in main,
-and the sheet closes, as every phone open does.
+Every link, door and reveal of an item follows one placement command, `place(item, from)`
+(`side/SideView.tsx`, `placeIn` in `side/side-item.ts`): the same kind as the pane it was followed
+in opens in that pane, the other kind in the other pane, and the left sidebar always opens in main.
+Each host provides its pane (`PanePlaceContext`, `pane-place.ts`: the document host, the chat
+surface, the phone's sheet and main chat), which is `from`; with no host it is the sidebar. For the
+side, `place` writes the slot (and the draft the document shows) and has the side seen: the desktop
+opens it, the phone opens the sheet; for main the caller opens the item, since only it knows how.
+Documents come through `useLinkPlacement` (`review-launch.tsx`: editor links, transcript links,
+chat doors, the draft dock's rows and a reply's "Drafted N documents" rows). Chats come through
+`usePlaceChat`, behind `ChatThreadNavigation` (spawn doors, the subagent button) and the
+conversation reveal (`useRequestConversationReveal` carries `from`: a peer mark's or change's chat
+in a document, a subagent link in a chat). So a subagent link inside the side's chat replaces the
+side. The click's modifier (cmd, ctrl, middle) places nothing and the link follower treats every
+follow alike (a newer follow aborts the last): main's opener has no new-tab mode.
 A page only a draft holds (created by it, or deleted live) is described from the draft its
 view pins (`useDescriptions` in `side/SideView.tsx`), the way main's address describes it, since
 the live catalog has no entry for it. The sidebar tree marks main's document only, never the side's. Each header renders inside its host

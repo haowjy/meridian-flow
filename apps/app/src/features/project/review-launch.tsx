@@ -2,8 +2,7 @@
  * The one review-launch path. Every launcher (the composer strip, a change card, a link to a draft,
  * the Work page, the version menu, the phone) calls `openAiDraft`: it sets the document's view to
  * that draft, with the clicked change as the pin's change, and opens the document in the pane
- * `useHoldBeside` picks. In main, the route command opens it and writes the address; beside, the
- * hold shows it. That pane's host then paints the draft and focuses the change. Latest launch wins.
+ * `place` picks. In main, the route command opens it and writes the address; beside, `place` shows it. That pane's host then paints the draft and focuses the change. Latest launch wins.
  */
 
 import type { EventRecord } from "@meridian/contracts/observability";
@@ -12,7 +11,6 @@ import { setDocumentView } from "@/client/project-shell/document-views";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import { useOptionalChatPlace } from "@/features/chat/chat-place";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDocumentRef } from "@/features/links";
@@ -22,9 +20,7 @@ import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
 import { type OpenDocumentOutcome, useOpenProjectDocument } from "./context/open-project-document";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
-import { useOptionalShowBeside } from "./side/SideView";
-
-type ShowBeside = NonNullable<ReturnType<typeof useOptionalShowBeside>>;
+import { useOptionalPlaceHere } from "./side/SideView";
 
 export type AiDraftLaunchTarget = {
   ownerKey: string;
@@ -130,37 +126,21 @@ function useOptionalOpenEditorReview(): EditorReviewCommand | null {
   return useContext(EditorReviewCommandContext);
 }
 
-/**
- * Where an open goes. From a chat in main, a page is held beside; the chat stays where it is.
- * From a chat beside, or anywhere else (a document never sits beside a document), it opens in
- * main. Null opens in main.
- */
-// Where a link opens is a pane-state-machine rule (`.context/pane-state-machine.md`): change both together.
-function useHoldBeside(): ShowBeside | null {
-  const chatInMain = useOptionalChatPlace() === "main";
-  const hold = useOptionalShowBeside();
-  return chatInMain ? hold : null;
-}
-
 const committed = (documentId: string): OpenDocumentOutcome => ({ kind: "committed", documentId });
 
-/** Opens a document on a draft, in the pane `useHoldBeside` picks. */
+/** Opens a document on a draft, in the pane `place` picks. */
 function useOpenDraft(): (target: AiDraftLaunchTarget) => Promise<OpenDocumentOutcome> {
   const openEditorReview = useOptionalOpenEditorReview();
-  const hold = useHoldBeside();
+  const place = useOptionalPlaceHere();
   return useCallback(
     (target) => {
-      if (hold) {
-        hold(
-          { documentId: target.documentId },
-          {
-            ownerKey: target.ownerKey,
-            itemKey: target.itemKey,
-            ...(target.focus ? { changeId: target.focus.id } : {}),
-          },
-        );
+      const draft = {
+        ownerKey: target.ownerKey,
+        itemKey: target.itemKey,
+        ...(target.focus ? { changeId: target.focus.id } : {}),
+      };
+      if (place?.({ kind: "document", documentId: target.documentId }, draft) === "side")
         return Promise.resolve(committed(target.documentId));
-      }
       if (!openEditorReview)
         throw new Error("Opening a draft requires the project review handoff owner");
       return openEditorReview(target).then(
@@ -171,7 +151,7 @@ function useOpenDraft(): (target: AiDraftLaunchTarget) => Promise<OpenDocumentOu
         },
       );
     },
-    [hold, openEditorReview],
+    [place, openEditorReview],
   );
 }
 
@@ -213,16 +193,16 @@ export type LinkPlacement = (
 
 /**
  * What a followed link opens: the one rule for links in a chat or a page, a chat's doors and its
- * "Drafted N documents" rows. The pane is `useHoldBeside`'s.
+ * "Drafted N documents" rows. The pane is `place`'s.
  * - A page only a draft holds (`document.review`) opens on that draft.
  * - A page `ownerKey` drafted opens on that draft, as the draft strip does.
- * - Any other page opens live, held beside in the link's Work, or through `live` in main. A page
+ * - Any other page opens live, placed beside in the link's Work, or through `live` in main. A page
  *   in the trash opens in main.
  */
 export function useLinkPlacement(projectId: string | null, ownerKey: string | null): LinkPlacement {
   const { fileForDocument } = useOwnerDrafts(projectId, ownerKey);
   const openDraft = useOpenDraft();
-  const hold = useHoldBeside();
+  const place = useOptionalPlaceHere();
   return useCallback(
     (document, live, workId) => {
       if (document.review)
@@ -242,17 +222,21 @@ export function useLinkPlacement(projectId: string | null, ownerKey: string | nu
           documentName: drafted.documentName ?? undefined,
           draftOnly: drafted.draftOnly,
         });
-      if (!hold) return live(document);
-      hold({ documentId: document.documentId, ...(workId ? { workId } : {}) });
+      const placed = {
+        kind: "document",
+        documentId: document.documentId,
+        ...(workId ? { workId } : {}),
+      } as const;
+      if (place?.(placed) !== "side") return live(document);
       return Promise.resolve(committed(document.documentId));
     },
-    [fileForDocument, ownerKey, openDraft, hold],
+    [fileForDocument, ownerKey, openDraft, place],
   );
 }
 
 /**
  * Opens a document by id where `useLinkPlacement` puts it: a chip or a mention in a chat's
- * message or composer. Beside from a chat in main, main otherwise.
+ * message or composer.
  */
 export function useOpenPlacedDocument(
   projectId: string | undefined,
