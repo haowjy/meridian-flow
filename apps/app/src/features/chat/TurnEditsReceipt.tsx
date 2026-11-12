@@ -197,12 +197,13 @@ export function TurnEditsReceipt({
       data-turn-receipt
     >
       {/* The WHOLE header row is the expand/collapse target, around the Undo chip, which
-            fences its own click. No hover fill, as on every fold. */}
+            fences its own click. No hover fill, as on every fold. A strip row with the box's
+            border, whether Undo or "Can't undo" shows. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the inner button is the keyboard-accessible toggle; the row onClick is a mouse convenience. slop-lint: allow suppression the reason is stated in this comment */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. slop-lint: allow suppression the reason is stated in this comment */}
       <div
         onClick={() => setExpanded((value) => !value)}
-        className="flex cursor-pointer items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] py-1"
+        className="flex min-h-[calc(var(--strip-row)-2px)] cursor-pointer items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] py-1"
       >
         <FoldToggle
           open={expanded}

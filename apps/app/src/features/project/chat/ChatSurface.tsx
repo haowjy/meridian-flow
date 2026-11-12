@@ -14,6 +14,7 @@ import { ChatPlaceContext } from "@/features/chat/chat-place";
 import { cn } from "@/lib/utils";
 import { OpenedFromChat } from "../routing/ProjectNavigationContext";
 import type { ContextRouteRequest } from "../routing/project-route";
+import { pageSheetClass } from "../shell/tab-chip";
 import { useNewChatAbout } from "../side/SideView";
 import { ChatScreen } from "./ChatScreen";
 
@@ -24,8 +25,9 @@ export type ChatSurfaceProps = {
   about?: string | null;
   activeWork: Work | null;
   availableWorks: readonly Work[];
-  /** Main's chat sits on the page; the side's on the chrome. */
   place: "main" | "side";
+  /** On the desktop the chat sits on a page, the side's inset from main's; the phone's sheet is its page. */
+  presentation: "desktop" | "phone";
   /** When false the surface is hidden (the side closed, or main on the index) WITHOUT unmounting. */
   visible: boolean;
   onOpenContextTarget?: (target: ContextRouteRequest) => void;
@@ -40,6 +42,7 @@ export function ChatSurface({
   activeWork,
   availableWorks,
   place,
+  presentation,
   visible,
   onOpenContextTarget,
   header,
@@ -60,7 +63,7 @@ export function ChatSurface({
       <div
         className={cn(
           "main-pane flex min-h-0 flex-1 flex-col overflow-hidden",
-          place === "main" && "page-sheet",
+          presentation === "desktop" && pageSheetClass(place === "side"),
         )}
       >
         {/* Every open made inside this chat keeps it beside what it opens. */}

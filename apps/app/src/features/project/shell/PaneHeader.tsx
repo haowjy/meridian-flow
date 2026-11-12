@@ -5,10 +5,10 @@ import { cn } from "@/lib/utils";
 import { PanelToggleSpacer } from "./PanelToggleButton";
 
 /**
- * PaneHeader — the thin (h-10 / 40px) chrome band at the top of a destination's
- * main pane: a far-left expand control for the left sidebar, a centered
- * title/breadcrumb, and far-right actions + an expand control for the right
- * rail. It paints NOTHING of its own — the center slot's chrome shows through
+ * PaneHeader — the chrome band at the top of a pane, main's or the side's: a
+ * far-left expand control for the left sidebar, the title, and far-right
+ * actions + an expand control for the right rail. Its height is the band's
+ * (`tab-band`), never its content's, so the two panes' pages start level. It paints NOTHING of its own — the center slot's chrome shows through
  * (same grammar as main's header), and the pane's `page-sheet` body
  * rises out of it below. No bottom border: the sheet draws its own edge, and
  * the band overlaps it so an active chip covers that edge (`tab-band`).
@@ -47,7 +47,7 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
   const leftToggle = left && !left.open;
   return (
     <div className="@container/pane-header tab-band shrink-0">
-      <header className="flex items-center gap-x-1 pr-2">
+      <header className="flex h-full items-center gap-x-1 pr-2">
         {leftToggle ? <PanelToggleSpacer /> : null}
         {leading ? (
           // The same x as main's header's first chip in both sidebar states: the
@@ -62,7 +62,7 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
         {/* Relative: a refused title rename floats under the band from here. */}
         <div
           className={cn(
-            "relative flex h-10 min-w-0 flex-1 items-center",
+            "relative flex min-w-0 flex-1 items-center self-stretch",
             notice && "@2xl/pane-header:flex-initial",
           )}
         >
@@ -74,7 +74,8 @@ export function PaneHeader({ title, left, right, actions, leading, notice }: Pan
           </div>
         ) : null}
 
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+        {/* Band-tall too, so an inactive chip among the actions has its full-height pill. */}
+        <div className="ml-auto flex shrink-0 items-center gap-1 self-stretch">
           {actions}
           {right && !right.open ? <PanelToggleSpacer /> : null}
         </div>

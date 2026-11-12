@@ -21,8 +21,8 @@ Agent-facing visual identity for `@meridian/app`. Token values live in `@meridia
 ## Overview
 
 The writer workspace is black, white and one warm grey, so the manuscript
-remains the visual center. One warm-grey chrome is the sidebar, the
-document band and the dock, and the white page is the brightest field. One near-black ink
+remains the visual center. One warm-grey chrome is the sidebar and the
+bands over the pages, and the white page is the brightest field. One near-black ink
 keeps reading consistent across those surfaces. Jade appears only where the
 writer acts; cinnabar is a scarce seal.
 
@@ -31,9 +31,9 @@ writer acts; cinnabar is a scarce seal.
 - **Density:** comfortable reading/drafting rhythm in the main column; compact but legible metadata in rails and rows.
 - **Scope:** authenticated app shell, project views, chat/thread surfaces, context/document surfaces, and marketing-adjacent pages that share the brand language.
 
-The shell has at most two region tones: chrome for both side panels (the sidebar and the
-dock) and the tab band, and page for the main view. The two sit close together, so the
-page is a sheet set into the chrome with a hairline on its top and sides; no line runs
+The shell has at most two region tones: chrome for the sidebar, the tab band and the
+side's header, and page for the main view and the side's document or chat. The two sit close
+together, so each page is a sheet set into the chrome with a hairline on its top and sides; no line runs
 the height of the window between a side panel and the centre. Cards, menus and the composer are
 white like the page and separate by border and shadow, and a review ground one step
 below chrome sits under draft chrome only while a draft is under review.
@@ -42,7 +42,7 @@ below chrome sits under draft chrome only while a draft is under review.
 
 Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 
-- `chrome` — warm grey `oklch(0.962 0.006 60)`: the sidebar, the tab band and the dock.
+- `chrome` — warm grey `oklch(0.962 0.006 60)`: the sidebar, main's tab band and the side's band.
 - `background` — white, the page.
 - `card` — white: cards, menus, popovers, the composer, bubbles; border and shadow lift them.
 - `review` — one step below chrome `oklch(0.938 0.008 60)`, under draft chrome and the reviewing tab.
@@ -68,7 +68,8 @@ them here.
 
 ## Shell shape and atmosphere
 
-- The sidebar, the document band and the dock are one chrome. The dock shows one document or its native occupant on that chrome, never tabs or a view switch. Only the main view's sheet (`page-sheet`) paints page; the editor takes its host's surface.
+- The sidebar and the two bands are one chrome. The side shows one document or chat on its own `page-sheet` below its band, inset 8px from main's (owner, 2026-11-12: the draft ground must sit on a page, not on chrome), never tabs or a view switch. Only a `page-sheet` paints page; the editor takes its host's surface.
+- Both bands are one `tab-band` of one height (`--band-height`, 44px under a finger), whatever they hold, so main's page and the side's start level.
 - The page rises from chrome with the same top radius as its active document tab. The centered chat header's title chip is the same tab-chip grammar — the chat page continuing up into the band. The page is a sheet with a `page-edge` hairline on its top and sides and rounded top corners; the active tab is a folder tab whose outline is one shape, flaring outward into the sheet's edge. No structural shadow.
 - Dark mode re-points surfaces, inks and accents only (`themes.css`); state fills and borders follow the foreground.
 - Headings, group labels, rows, hints, empty lines and fills come from `role` (`apps/app/src/components/ui/roles.ts`).
@@ -173,7 +174,8 @@ Core shell expectations:
   in quiet ink, then Apply as the filled jade button, as words or as ×/✓. Discard is
   never red and never a trash icon; those mean Delete. One name per scope: Apply and
   Discard for a change, Apply draft and Discard draft for a document, Apply all and
-  Discard all for everything.
+  Discard all for everything. A document's pair shows the bare verb, since the Draft chip
+  beside it names the scope; the full name is its tooltip and accessible name.
 - What a command did, with its Undo, is a line where it happened: `ActionNotice`
   ("Deleted Chapter 3 · Undo · ×"), quiet `text-xs`, staying until the next action or
   Dismiss. An Undo that failed takes its place as `InlineErrorRow`.

@@ -38,7 +38,6 @@ import { referenceDropOptions } from "@/features/project/context/entry-drag/refe
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { focusIsFree } from "@/lib/focus-follow";
-import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { DocumentStateSlotHost } from "./document-state-slot";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
@@ -59,7 +58,6 @@ import { WordCount } from "./WordCount";
 import "./editor.css";
 
 export type EditorSurfaceOptions = {
-  className?: string;
   editable?: boolean;
   showToolbar?: boolean;
   active?: boolean;
@@ -154,7 +152,6 @@ function ActiveSessionEditorView({
   evidenceDegraded,
 }: ActiveSessionEditorViewProps) {
   const {
-    className,
     editable = true,
     showToolbar = true,
     active: hostActive = true,
@@ -418,9 +415,7 @@ function ActiveSessionEditorView({
       workId={scope.workId}
       rootThreadId={scope.rootThreadId}
     >
-      <section
-        className={cn("meridian-editor-shell relative flex h-full min-h-0 flex-col", className)}
-      >
+      <section className="meridian-editor-shell relative flex h-full min-h-0 flex-col">
         {/* One status pill: the word count, and sync only when there is something
           to act on (offline / closed), see SyncStatus. Hidden while both are empty. */}
         <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex items-center gap-3 rounded-full border border-border-subtle bg-card px-2.5 py-1 text-xs text-muted-foreground shadow-float empty:hidden">
@@ -474,16 +469,13 @@ function ActiveSessionEditorView({
 }
 
 export function PendingEditorShell({
-  className,
   showToolbar = true,
   active = true,
   held = false,
 }: EditorSurfaceOptions) {
   usePaintPending();
   return (
-    <section
-      className={cn("meridian-editor-shell relative flex h-full min-h-0 flex-col", className)}
-    >
+    <section className="meridian-editor-shell relative flex h-full min-h-0 flex-col">
       {/* The toolbar is persistent chrome: it holds its place while the
           document opens, greyed and saying so, rather than popping in. */}
       <EditorCanvas

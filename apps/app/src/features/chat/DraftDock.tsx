@@ -104,13 +104,12 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 
   // The whole first line folds and unfolds the changes, except its commands. The changes'
   // own rows open the draft.
-  // The extra pixel above and below matches the edits receipt over it, whose border adds one.
   const summary = (trouble: ReactNode = null) => (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the FoldToggle inside is the keyboard toggle; the row's click is a mouse convenience. slop-lint: allow suppression the reason is stated in this comment
     // biome-ignore lint/a11y/noStaticElementInteractions: same: a mouse convenience over the FoldToggle. slop-lint: allow suppression the reason is stated in this comment
     <div
       onClick={askingApply ? undefined : () => setExpanded((value) => !value)}
-      className="flex cursor-pointer flex-wrap items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 py-[calc(0.25rem+1px)] pr-2 pl-[var(--chat-card-pad-x)] text-xs text-foreground @max-[25rem]/dock:gap-x-1 @max-[25rem]/dock:pl-1"
+      className="flex cursor-pointer flex-wrap items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 min-h-(--strip-row) py-1 pr-2 pl-[var(--chat-card-pad-x)] text-xs text-foreground @max-[25rem]/dock:gap-x-1 @max-[25rem]/dock:pl-1"
     >
       {/* Sized by its content, so a question too wide to sit beside it wraps to a line of its own. */}
       <FoldToggle

@@ -55,8 +55,6 @@ export type ContextDocumentHostProps = {
    */
   readOnly?: boolean;
   presentation?: DocumentPresentation;
-  /** Overrides the editor shell's own styling, e.g. to take the side's material. */
-  editorClassName?: string;
   onCloseDraftOnly?: () => void;
   /** Main's document: a page load puts the caret in it (`focusOnLoad`). */
   loadFocus?: boolean;
@@ -68,7 +66,6 @@ export function ContextDocumentHost({
   active,
   readOnly = false,
   presentation = DESKTOP_DOCUMENT_PRESENTATION,
-  editorClassName,
   onCloseDraftOnly,
   loadFocus = false,
 }: ContextDocumentHostProps) {
@@ -205,7 +202,6 @@ export function ContextDocumentHost({
                     if (closing instanceof Promise) closing.catch(reportError);
                   })
                 }
-                className={editorClassName}
                 projectId={projectId}
                 documentId={document.documentId}
                 focusKey={document.documentId}

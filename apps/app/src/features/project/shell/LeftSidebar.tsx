@@ -78,7 +78,7 @@ export function LeftSidebar({
       aria-label={t`Workspace navigation`}
       className="relative flex h-full min-h-0 w-full flex-col gap-2 pb-1 text-foreground"
     >
-      <div className="flex h-10 shrink-0 items-center gap-1 px-2">
+      <div className="flex h-(--band-height) shrink-0 items-center gap-1 px-2">
         <PanelToggleSpacer />
         <InlineProjectTitle
           editRef={titleEditor}

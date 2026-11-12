@@ -19,13 +19,17 @@ slot below the toolbar belongs to draft chrome alone, and identity chrome must
 never occupy it again (structural separation, 2026-07-17).
 
 A review's controls take a line of their own above the toolbar (the review line), one rule for
-main and the side: only a line too narrow for them collapses labels to icons, hides the stepper
-count, then collapses Apply to its icon (`fitReviewLine`, `document-identity-row.css`). A
-Discard's notice takes that line when the Discard ends the review, and shares it, wrapping,
-when it does not; it never sits in the toolbar row, which a narrow pane can't widen. In the
-notice only the document's name shortens: the verb and Undo always show. The phone's review
-header gives the notice a row of its own under its first row. Coarse pointers give each
-control a 44px box. Renaming and
+main and the side. The owner tried them on the toolbar's row (2026-11-12) and went back: the
+formatting controls must stay whole, and a lone notice must not take their room. The line sits on
+the document's page, as the side has its own page, and is a strip row (`--strip-row`, the chat's
+draft dock and edits receipt). Show changes is the eye alone; Discard and Apply show the bare
+verb, since the Draft chip names the draft. A line too narrow for the controls gives up in steps
+(`fitReviewLine`, `document-identity-row.css`): the stepper's short count and tighter gaps, then
+no step count, then Discard and Apply as icons, then (a finger only) the list and stepper. A
+Discard's notice takes that line when the Discard ends the review, and shares it, wrapping, when
+it does not; it never sits in the toolbar row, which a narrow pane can't widen. In the notice only
+the document's name shortens: the verb and Undo always show. The phone's review header gives the
+notice a row of its own under its first row. Coarse pointers give each control a 44px box. Renaming and
 moving a homed document belong to the lists (Files, Scratch section, phone
 browser); see the KB's path-navigates-lists-edit page.
 

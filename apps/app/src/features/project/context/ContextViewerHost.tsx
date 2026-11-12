@@ -15,7 +15,6 @@ import { documentDownloadUrl } from "@/client/api/figures-api";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
 import type { OpenDocument } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
-import { cn } from "@/lib/utils";
 import { previewKind } from "./preview-kind";
 import { BinaryFallbackViewer } from "./viewers/BinaryFallbackViewer";
 import { ImageViewer, imageViewerFooter } from "./viewers/ImageViewer";
@@ -26,15 +25,13 @@ import { TextViewer } from "./viewers/TextViewer";
 export type ContextViewerHostProps = {
   projectId: string;
   document: Extract<OpenDocument, { kind: "viewer" }>;
-  /** The surface's material; the side paints its own and passes `bg-transparent`. */
-  className?: string;
 };
 
-export function ContextViewerHost({ projectId, document, className }: ContextViewerHostProps) {
+export function ContextViewerHost({ projectId, document }: ContextViewerHostProps) {
   const read = useProjectContextRead(projectId, document.documentId);
   if (read.status === "loading") {
     return (
-      <ReadOnlyViewerFrame className={className}>
+      <ReadOnlyViewerFrame>
         <div className="relative h-full" aria-busy>
           <DelayedContentSkeleton key={document.documentId} className="absolute inset-0" />
         </div>
@@ -43,7 +40,7 @@ export function ContextViewerHost({ projectId, document, className }: ContextVie
   }
   if (read.status === "error") {
     return (
-      <ViewerError className={className}>
+      <ViewerError>
         <AlertCircle className="size-4" aria-hidden />
         <Trans>Couldn't load this file.</Trans>
       </ViewerError>
@@ -67,7 +64,7 @@ export function ContextViewerHost({ projectId, document, className }: ContextVie
     case "text":
     case "markdown":
       return (
-        <ReadOnlyViewerFrame className={className}>
+        <ReadOnlyViewerFrame>
           <TextViewer
             source={
               read.data.kind === "tracked" ? { content: read.data.content } : { url: read.data.url }
@@ -81,7 +78,6 @@ export function ContextViewerHost({ projectId, document, className }: ContextVie
     case "image":
       return binary ? (
         <ReadOnlyViewerFrame
-          className={className}
           footer={imageViewerFooter({
             url: documentDownloadUrl(document.documentId),
             name: document.name,
@@ -103,7 +99,7 @@ export function ContextViewerHost({ projectId, document, className }: ContextVie
       ) : null;
     case "pdf":
       return binary ? (
-        <ReadOnlyViewerFrame className={className}>
+        <ReadOnlyViewerFrame>
           <PdfViewer
             url={binary.url}
             downloadUrl={documentDownloadUrl(document.documentId)}
@@ -114,7 +110,7 @@ export function ContextViewerHost({ projectId, document, className }: ContextVie
       ) : null;
     case "binary":
       return binary ? (
-        <ReadOnlyViewerFrame className={className}>
+        <ReadOnlyViewerFrame>
           <BinaryFallbackViewer
             url={documentDownloadUrl(document.documentId)}
             mimeType={binary.mimeType}
@@ -126,14 +122,9 @@ export function ContextViewerHost({ projectId, document, className }: ContextVie
   }
 }
 
-function ViewerError({ children, className }: { children: React.ReactNode; className?: string }) {
+function ViewerError({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      className={cn(
-        "grid h-full place-items-center bg-background px-6 text-center text-sm text-destructive",
-        className,
-      )}
-    >
+    <div className="grid h-full place-items-center bg-background px-6 text-center text-sm text-destructive">
       <div className="flex items-center gap-2">{children}</div>
     </div>
   );
