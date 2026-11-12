@@ -19,7 +19,7 @@ import type { LinkDocumentRef } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
 import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
-import type { OpenDocumentOutcome } from "./context/open-project-document";
+import { type OpenDocumentOutcome, useOpenProjectDocument } from "./context/open-project-document";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
 import { useOptionalShowBeside } from "./side/SideView";
@@ -246,5 +246,21 @@ export function useLinkPlacement(projectId: string | null, ownerKey: string | nu
       return Promise.resolve(committed(document.documentId));
     },
     [fileForDocument, ownerKey, openDraft, hold],
+  );
+}
+
+/**
+ * Opens a document by id where `useLinkPlacement` puts it: a chip or a mention in a chat's
+ * message or composer. Beside from a chat in main, main otherwise.
+ */
+export function useOpenPlacedDocument(
+  projectId: string | undefined,
+): (documentId: string) => Promise<OpenDocumentOutcome> {
+  const openDocument = useOpenProjectDocument(projectId);
+  const place = useLinkPlacement(projectId ?? null, null);
+  return useCallback(
+    (documentId) =>
+      place({ documentId }, (found) => openDocument({ documentId: found.documentId })),
+    [place, openDocument],
   );
 }

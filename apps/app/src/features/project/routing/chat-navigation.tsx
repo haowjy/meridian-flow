@@ -96,10 +96,11 @@ export function useProjectChatNavigation({
       openNewChat: async (options?: { replace?: boolean; focus?: boolean }) => {
         if (options?.focus !== false) setNewChatRequest(nextFocusRequestId.current++);
         // The writer's New chat is the current chat, as the side's is. Arriving at the composer
-        // (the bare address, a reload, Back) is not: it must not forget the chat beside.
+        // (the bare address, a reload, Back) is not: it must not forget the chat beside. It is
+        // forgotten once main has arrived, so the side does not flash empty before the move.
+        if (latest.current.mainKind !== "new")
+          await go({ kind: "new-chat" }, { replace: options?.replace ?? false });
         remember(null);
-        if (latest.current.mainKind === "new") return;
-        await go({ kind: "new-chat" }, { replace: options?.replace ?? false });
       },
       acceptCreatedChat: (threadId: string) => {
         // Only the side's composer sends while main is not a new chat: the chat stays beside as

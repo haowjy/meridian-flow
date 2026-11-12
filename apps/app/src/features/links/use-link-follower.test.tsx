@@ -142,7 +142,7 @@ afterEach(() => {
 });
 
 describe("useLinkFollower", () => {
-  it("lets the latest current follow win", async () => {
+  it("lets the latest follow win", async () => {
     render({ scope, index: catalog("a") });
     act(() => follower.follow(address("First")));
     act(() => follower.follow(address("Second")));
