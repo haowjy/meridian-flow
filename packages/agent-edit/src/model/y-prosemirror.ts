@@ -1,5 +1,5 @@
 import type { ParsedContent } from "@meridian/markup";
-import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
+import type { Fragment, Mark, Node as PMNode, Schema } from "prosemirror-model";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
 import type { Span } from "../codec-types.js";
@@ -8,11 +8,10 @@ import { toRef, unwrapBlock, unwrapDoc } from "../handles.js";
 import type {
   AgentEditModel,
   ContentLineage,
-  InlineReplacementResult,
-  InlineTextReplacement,
+  EditOp,
+  EditOpsResult,
   ProjectedBlock,
 } from "../ports/model.js";
-import { findItem, itemsInRange } from "../yjs-mutation.js";
 import {
   blockHashesForDoc,
   blockIdentityForItem,
@@ -80,6 +79,10 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       return collectVisibleContentLineage(unwrapBlock(block));
     },
 
+    textblockLineage(block, path, from, to) {
+      return textblockLineage(nodeAt(unwrapBlock(block), path), from, to);
+    },
+
     transact(doc, fn, origin) {
       unwrapDoc(doc).transact(fn, origin);
     },
@@ -104,16 +107,12 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       deleteBlock(unwrapDoc(doc), unwrapBlock(block));
     },
 
-    applyInlineReplacements(doc, block, replacements) {
-      return applyInlineReplacements(unwrapDoc(doc), unwrapBlock(block), replacements, schema);
+    applyOps(_doc, block, ops) {
+      return applyOps(unwrapBlock(block), ops);
     },
 
     applyBlockReplacement(doc, block, replacement) {
       applyBlockDiff(unwrapDoc(doc), unwrapBlock(block), replacement);
-    },
-
-    removedUnits(block, current) {
-      return removedUnits(unwrapBlock(block), unwrapDoc(current));
     },
 
     projectBlocks(doc) {
@@ -242,64 +241,170 @@ function writePmBlock(doc: Y.Doc, block: Y.XmlElement, replacement: PMNode): voi
   updateYFragment(doc, block as unknown as Y.XmlFragment, replacement, createBindingMetadata());
 }
 
-export function applyInlineReplacements(
-  doc: Y.Doc,
-  block: Y.XmlElement | BlockRef,
-  replacements: readonly InlineTextReplacement[],
-  schema: Schema,
-): InlineReplacementResult {
-  const element = unwrapBlock(toRef(block));
-  const current = projectBlocks(doc, schema).find(
-    (block) => unwrapBlock(block.ref) === element,
-  )?.node;
-  if (!current) throw new Error("Y.XmlElement is not a top-level block in this document");
-  const blockType = element.nodeName;
-  if (current.type.name !== blockType) return blockTypeMismatch(blockType, current.type.name);
-  if (!canReplaceInline(current) || !hasFlatInlineContent(current)) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: `Text edits require flat inline content in ${current.type.name} blocks`,
-    };
+/**
+ * Every path and offset is checked before anything changes, so an operation means the
+ * block as planned whatever ran before it, and a write that does not fit leaves it alone.
+ */
+function applyOps(block: Y.XmlElement, ops: readonly EditOp[]): EditOpsResult {
+  const targets: Y.XmlElement[] = [];
+  for (const op of ops) {
+    const node = findNode(block, op.path);
+    const problem = node ? opProblem(node, op) : "its path does not address an element";
+    if (!node || problem) return invalidOp(`Cannot apply a ${op.kind} operation: ${problem}`);
+    targets.push(
+      op.kind === "attrs" && op.unit !== undefined ? (atomAt(node, op.unit) ?? node) : node,
+    );
   }
-
-  if (element.length === 0 && current.content.size === 0) element.insert(0, [new Y.XmlText()]);
-  const text = element.get(0);
-  if (!(text instanceof Y.XmlText) || element.length !== 1) {
-    return { ok: false, code: "invalid_write", message: "Text edits require one flat Y.XmlText" };
-  }
-  for (const replacement of [...replacements].reverse()) {
-    const { from, to } = replacement.span;
-    if (to > from) text.delete(from, to - from);
-    let offset = from;
-    replacement.content.forEach((node) => {
-      if (!node.isText) throw new Error("Exact text replacement requires text nodes");
-      const attributes = Object.fromEntries(node.marks.map((mark) => [mark.type.name, mark.attrs]));
-      text.insert(offset, node.text ?? "", attributes);
-      offset += node.text?.length ?? 0;
-    });
+  for (const [index, op] of ops.entries()) {
+    const target = targets[index];
+    if (op.kind === "text") {
+      applyTextOp(target, op);
+      continue;
+    }
+    for (const [key, value] of Object.entries(op.attrs)) {
+      if (value === null || value === undefined) target.removeAttribute(key);
+      else target.setAttribute(key, value as string);
+    }
   }
   return { ok: true };
 }
 
-function canReplaceInline(block: PMNode): boolean {
-  return block.isTextblock && block.type.name !== "code_block";
+function invalidOp(message: string): EditOpsResult {
+  return { ok: false, code: "invalid_write", message };
 }
 
-function hasFlatInlineContent(block: PMNode): boolean {
-  return block.content.size === block.textContent.length;
+/** A textblock's child laid out in units: a run of text, or one inline atom. */
+interface Slot {
+  child: Y.XmlText | Y.XmlElement;
+  /** Index among the textblock's live children. */
+  index: number;
+  start: number;
+  length: number;
 }
 
-function blockTypeMismatch(
-  actual: string,
-  expected: string,
-): { ok: false; code: "not_found"; message: string; details: Record<string, unknown> } {
-  return {
-    ok: false,
-    code: "not_found",
-    message: `Block type changed from ${actual} to ${expected}; re-read before writing`,
-    details: { actual, expected },
+function slotsOf(leaf: Y.XmlElement): Slot[] {
+  const slots: Slot[] = [];
+  let start = 0;
+  for (const [index, child] of leaf.toArray().entries()) {
+    if (!(child instanceof Y.XmlText || child instanceof Y.XmlElement)) continue;
+    const length = child instanceof Y.XmlText ? child.length : 1;
+    slots.push({ child, index, start, length });
+    start += length;
+  }
+  return slots;
+}
+
+function atomAt(leaf: Y.XmlElement, unit: number): Y.XmlElement | undefined {
+  const slot = slotsOf(leaf).find((candidate) => candidate.start === unit);
+  return slot?.child instanceof Y.XmlElement ? slot.child : undefined;
+}
+
+/** Why `op` cannot be applied to `node`, if it cannot. */
+function opProblem(node: Y.XmlElement, op: EditOp): string | undefined {
+  if (op.kind === "attrs")
+    return op.unit === undefined || atomAt(node, op.unit) ? undefined : "no atom at its unit";
+  const slots = slotsOf(node);
+  const size = slots.reduce((sum, slot) => sum + slot.length, 0);
+  const slotAt = (unit: number) =>
+    slots.find((slot) => unit >= slot.start && unit < slot.start + slot.length);
+  let cursor = 0;
+  for (const { from, to, content } of op.splices) {
+    if (from < cursor || to < from || to > size) return `invalid splice ${from}..${to} of ${size}`;
+    let atoms = false;
+    content.forEach((child) => {
+      atoms ||= !child.isText;
+    });
+    // Replacing [from, to) leaves a run of text whole around the insertion point; an atom
+    // cannot go into one, since a run of text cannot be cut in two.
+    const inside = from > 0 && to < size ? slotAt(from - 1) : undefined;
+    if (atoms && inside && inside === slotAt(to) && inside.child instanceof Y.XmlText)
+      return "an inline atom cannot go inside a run of text";
+    cursor = to;
+  }
+  for (const { from, to } of op.formats)
+    if (from < 0 || to <= from || to > size)
+      return `invalid format range ${from}..${to} of ${size}`;
+  return undefined;
+}
+
+/** Units are addressed across the textblock's children, as `slotsOf` lays them out. */
+function applyTextOp(leaf: Y.XmlElement, op: Extract<EditOp, { kind: "text" }>): void {
+  if (leaf.length === 0) leaf.insert(0, [new Y.XmlText()]);
+  // Formats don't move offsets, so they go first.
+  for (const { from, to, mark, attrs } of op.formats)
+    for (const { child, start, length } of slotsOf(leaf)) {
+      const lo = Math.max(from, start);
+      const hi = Math.min(to, start + length);
+      if (child instanceof Y.XmlText && lo < hi)
+        child.format(lo - start, hi - lo, { [mark]: attrs });
+    }
+  // Right to left, so earlier offsets stay where they were planned.
+  for (const { from, to, content } of [...op.splices].reverse()) {
+    let deleted = 0;
+    for (const { child, index, start, length } of slotsOf(leaf).reverse()) {
+      const lo = Math.max(from, start);
+      const hi = Math.min(to, start + length);
+      if (lo >= hi) continue;
+      if (child instanceof Y.XmlText) {
+        child.delete(lo - start, hi - lo);
+        deleted += hi - lo;
+      } else {
+        leaf.delete(index, 1);
+        deleted += 1;
+      }
+    }
+    insertContent(leaf, to - deleted, content);
+  }
+}
+
+/** Put inline `content` at unit `at`: into the run of text it touches, else as new children. */
+function insertContent(leaf: Y.XmlElement, at: number, content: Fragment): void {
+  if (content.size === 0) return;
+  const texts: PMNode[][] = [[]];
+  const atoms: PMNode[] = [];
+  content.forEach((node) => {
+    if (node.isText) texts[texts.length - 1].push(node);
+    else {
+      atoms.push(node);
+      texts.push([]);
+    }
+  });
+  const slots = slotsOf(leaf);
+  const runs = slots.filter(
+    (slot): slot is Slot & { child: Y.XmlText } => slot.child instanceof Y.XmlText,
+  );
+  const insertInto = (run: Y.XmlText, offset: number, nodes: readonly PMNode[]) => {
+    let position = offset;
+    for (const node of nodes) {
+      run.insert(position, node.text ?? "", marksToAttributes(node.marks) ?? {});
+      position += node.text?.length ?? 0;
+    }
   };
+  // The first run that reaches the offset, so an insert at a boundary joins the earlier run.
+  if (atoms.length === 0) {
+    const run = runs.find((slot) => slot.start <= at && at <= slot.start + slot.length);
+    if (run) insertInto(run.child, at - run.start, texts[0]);
+    else
+      leaf.insert(slots.filter((slot) => slot.start + slot.length <= at).length, [
+        textNodesToYText(texts[0]),
+      ]);
+    return;
+  }
+  const previous = runs.find((slot) => slot.length > 0 && slot.start + slot.length === at);
+  const next = runs.find((slot) => slot.length > 0 && slot.start === at);
+  const children: Array<Y.XmlText | Y.XmlElement> = [];
+  const meta = createBindingMetadata();
+  for (const [index, nodes] of texts.entries()) {
+    if (index > 0) children.push(pmNodeToYElement(atoms[index - 1], meta));
+    if (nodes.length === 0) continue;
+    if (index === 0 && previous) insertInto(previous.child, previous.length, nodes);
+    else if (index === texts.length - 1 && next) insertInto(next.child, 0, nodes);
+    else children.push(textNodesToYText(nodes));
+  }
+  leaf.insert(
+    slots.filter((slot) => slot !== next && slot.start + slot.length <= at).length,
+    children,
+  );
 }
 
 export function insertBlocks(
@@ -370,37 +475,42 @@ function collectVisibleContentLineage(block: Y.XmlElement): ContentLineage[] {
   return lineage;
 }
 
-/**
- * The flat text block's character runs whose items `current` holds deleted, in document
- * order. A clock `current` keeps no item for was collected, so it counts as deleted too.
- */
-function removedUnits(block: Y.XmlElement, current: Y.Doc): Span[] {
-  const runs: Span[] = [];
-  let offset = 0;
-  for (const text of block.toArray()) {
-    if (!(text instanceof Y.XmlText)) continue;
-    const textItem = text._item && findItem(current, text._item.id);
-    if (!textItem || textItem.deleted) {
-      runs.push({ from: offset, to: offset + text.length });
-      offset += text.length;
-      continue;
-    }
-    for (let item = text._start; item; item = item.right) {
-      if (item.deleted || !item.countable) continue;
-      const { client, clock } = item.id;
-      let cursor = clock;
-      for (const live of itemsInRange(current, { client, clock, len: item.length })) {
-        if (live.item.deleted) continue;
-        if (live.clock > cursor)
-          runs.push({ from: offset + cursor - clock, to: offset + live.clock - clock });
-        cursor = live.clock + live.len;
-      }
-      if (cursor < clock + item.length)
-        runs.push({ from: offset + cursor - clock, to: offset + item.length });
-      offset += item.length;
+function textblockLineage(leaf: Y.XmlElement, from: number, to: number): ContentLineage[] {
+  const lineage: ContentLineage[] = [];
+  for (const { child, start, length } of slotsOf(leaf)) {
+    if (!(child instanceof Y.XmlText)) continue;
+    const lo = Math.max(from, start);
+    const hi = Math.min(to, start + length);
+    if (lo >= hi) continue;
+    // Units of a run are its live items' characters, in order.
+    let at = start;
+    for (let item = child._start; item; item = item.right) {
+      if (item.deleted || !(item.content instanceof Y.ContentString)) continue;
+      const a = Math.max(lo, at);
+      const b = Math.min(hi, at + item.length);
+      if (a < b)
+        lineage.push({ clientID: item.id.client, clock: item.id.clock + a - at, length: b - a });
+      at += item.length;
     }
   }
-  return runs;
+  return lineage;
+}
+
+/** The element at `path` under `block`, or undefined when the path leaves the elements. */
+function findNode(block: Y.XmlElement, path: readonly number[]): Y.XmlElement | undefined {
+  let node = block;
+  for (const index of path) {
+    const child = node.get(index);
+    if (!(child instanceof Y.XmlElement)) return undefined;
+    node = child;
+  }
+  return node;
+}
+
+function nodeAt(block: Y.XmlElement, path: readonly number[]): Y.XmlElement {
+  const node = findNode(block, path);
+  if (!node) throw new Error(`Path ${path.join("/")} does not address an element`);
+  return node;
 }
 
 function yTextPlainText(text: Y.XmlText): string {

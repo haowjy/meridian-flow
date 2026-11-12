@@ -403,19 +403,19 @@ describe("write tool dispatch", () => {
   });
 
   it("restores the pre-write runtime snapshot after an apply failure", async () => {
-    let inlineApplications = 0;
+    let opApplications = 0;
     const rejectingModel = {
       ...model,
-      applyInlineReplacements(...args: Parameters<typeof model.applyInlineReplacements>) {
-        inlineApplications += 1;
-        if (inlineApplications === 2) {
+      applyOps(...args: Parameters<typeof model.applyOps>) {
+        opApplications += 1;
+        if (opApplications === 2) {
           return {
             ok: false as const,
             code: "invalid_write" as const,
             message: "forced second-block rejection",
           };
         }
-        return model.applyInlineReplacements(...args);
+        return model.applyOps(...args);
       },
     };
     const ctx = harness({ "chapter.md": "cat one\n\ncat two" }, { model: rejectingModel });

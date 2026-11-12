@@ -1,7 +1,7 @@
 // Validated semantic intent at the resolver-to-ProseMirror certification seam.
 
 import type { DocumentRevision } from "@meridian/contracts";
-import type { ResolvedEdit } from "./apply/types.js";
+import { opsOutput, type ResolvedEdit } from "./apply/types.js";
 import type { LineageRange } from "./lineage/range-set.js";
 import { lineageRangesContain, normalizeLineageRanges } from "./lineage/range-set.js";
 
@@ -30,6 +30,7 @@ export type SemanticEditIRV1 = {
         edits: Array<{ edit: ResolvedEdit; outputRuns: SemanticOutputRun[] }>;
       }
     | { kind: "fullScopeFreshReplacement"; payload: string };
+  /** What the plan deletes in the model's view, for validation. The write's record is the journal's. */
   deleted: LineageRange[];
 };
 
@@ -132,8 +133,8 @@ function editOutput(edit: ResolvedEdit): string {
   switch (edit.kind) {
     case "insert":
       return edit.newText;
-    case "textRanges":
-      return edit.output;
+    case "ops":
+      return opsOutput(edit.ops);
     case "block":
       return edit.replacement.textContent;
     case "delete":

@@ -19,7 +19,7 @@ observation per action, and exits nonzero on failure.
 ## Required observations
 
 - Revert an AI insertion removed by writer typing: `nothing_to_revert`,
-  discarded explanation, and no text reinserted.
+  edited-since explanation (an open draft keeps no mark telling typing over from discarding, #1361), and no text reinserted.
 - Revert a deletion-only AI write before Discard: `success`, with deleted words
   restored.
 - Undo an applied AI write: `success`, reported as reverted in its originating
@@ -27,8 +27,8 @@ observation per action, and exits nonzero on failure.
 - Discard all across five drafts: every draft closes with cause `discarded`,
   immutable parts and journal statuses stay unchanged, and historical Apply
   evidence remains `applied` after close.
-- Revert on a closed draft: `nothing_to_revert`, discarded copy, unchanged live
-  text, and no new immutable edit part.
+- Revert on a closed draft of an applied write: `cant_undo_applied`, the user-applied
+  copy, unchanged live text, and no new immutable edit part.
 
 The runner creates review fragments, immutable AI receipts, and Apply records
 through production adapters. Receipts retain immutable origins; current text

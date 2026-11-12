@@ -1181,7 +1181,7 @@ async function captureLiveEdits(
         string,
         {
           mutation: NonNullable<(typeof entries)[number]["mutation"]>;
-          receipts: import("./drizzle-document-edits.js").ReceiptWrite["receipts"];
+          receipts: ReturnType<typeof captureReceiptRows>;
         }
       >();
     try {

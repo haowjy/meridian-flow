@@ -157,8 +157,6 @@ export interface AgentEditModelPayload {
   documentEmpty?: boolean;
   /** The document already matched the write, so nothing was recorded and no write id exists. */
   unchanged?: boolean;
-  /** Changes not made because the text they change was deleted after the model's last read. */
-  skipped?: number;
 }
 
 interface AgentEditResultBase extends AgentEditModelPayload {
