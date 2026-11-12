@@ -17,9 +17,15 @@ this page as each PR lands.
 - **side**: an item of the **other** kind from main, or its empty state. Beside a document the side
   holds a chat (empty: a new chat's composer); beside a chat it holds a document (empty: the
   document list). Main's kind is never in the side: no two chats, no two documents on screen.
-- **current document**, **current chat**: the last item of each kind main showed.
-- **mode** (Write | Chat) is not stored: it is the kind of main's item. Main keeps tabs per kind;
-  the switch shows the current mode's tabs.
+- **slots**: one per kind, the last item of that kind on screen in either pane, or none. Main's
+  arrival writes its kind's slot (none on its empty page: the editor with no document, the new-chat
+  composer); a pick or link into the side writes the other. **The side shows the slot of the kind
+  main is not.** That is the whole of "the side takes what main left": a change of kind needs no
+  swap step, because the slot of the kind main left already holds main's last item.
+- **current document**, **current chat**: the last item of each kind main showed, which is each
+  lane's selected tab. A slot is not a current item: the side's pick fills a slot, not a lane.
+- **mode** (Write | Chat) is not stored: it is the kind of main's item. Main keeps tabs per kind
+  (two lanes); the band draws the mode's lane.
 
 ## Opening an item
 

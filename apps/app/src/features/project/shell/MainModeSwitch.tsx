@@ -41,7 +41,7 @@ export function MainModeSwitch({
   /** Moves main; false when the navigation did not land (refused, superseded, failed). */
   const go = async (next: MainMode): Promise<boolean> => {
     if (next === "chat") {
-      const chatId = chat.currentChatId;
+      const chatId = chat.lastShownChatId;
       await (chatId ? chat.openChat(chatId) : chat.openNewChat());
       return true;
     }

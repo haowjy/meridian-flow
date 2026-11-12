@@ -2,11 +2,9 @@
  * The side's state for one project view: what it shows (`useSideItem`), which chat is on screen,
  * and the swap command (`useShellCommands`). Both shells read it: the phone's side is its sheet.
  *
- * The side shows the project's current item of the kind main is not (`resolveSide`). A swap writes
- * the current chat or document, stored per browser tab (`client/project-shell/store.ts`), never in
- * history; it lasts until main changes mode. The current document is cleared when its tab closes
- * (closed, Discarded or removed: `client/project-shell/main-tabs.ts`); one that no longer opens is
- * skipped.
+ * The side shows the slot of the kind main is not (`resolveSide`, `side-item.ts`). A pick or a link
+ * into the side writes its kind's slot, stored per browser tab (`client/project-shell/store.ts`),
+ * never in history; main's arrival writes the other (`useMainArrival`).
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -25,13 +23,12 @@ import {
   readDocumentView,
   setDocumentView,
 } from "@/client/project-shell/document-views";
-import { mainTabKey, useMainTabs } from "@/client/project-shell/main-tabs";
 import {
-  type CurrentDocument,
-  useCurrentChat,
-  useCurrentDocument,
-  writeCurrentChat,
-  writeCurrentDocument,
+  type ShownDocument,
+  useLastShownChat,
+  useLastShownDocument,
+  writeLastShownChat,
+  writeLastShownDocument,
 } from "@/client/project-shell/store";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import type { OpenDocument } from "@/client/stores";
@@ -79,7 +76,7 @@ type SideView = {
   /** Bumped by a document held beside from a link: the desktop opens the side so it is seen. */
   revealed: number;
   /** With `draft`, the document shows that draft. */
-  showBeside: (document: CurrentDocument, draft?: DraftPin) => void;
+  showBeside: (document: ShownDocument, draft?: DraftPin) => void;
   descriptions: Descriptions;
 };
 
@@ -222,27 +219,13 @@ export function SideViewProvider({
   children: ReactNode;
 }) {
   const accountId = useAccountId();
-  const currentChatId = useCurrentChat(accountId, projectId);
-  const currentDocument = useCurrentDocument(accountId, projectId);
-  const { tabs, selected } = useMainTabs(accountId, projectId);
-  // Beside a chat: the current document, else main's open tabs (the one main showed last, then
-  // from the right), else nothing. Not recents or the mounted documents: a document the writer
-  // closed must not come back, and a closed tab's host stays mounted, hidden, for its undo.
-  const documents = useMemo(() => {
-    const seen = new Set<string>();
-    const open = [...tabs]
-      .reverse()
-      .sort((a, b) => +(mainTabKey(b) === selected) - +(mainTabKey(a) === selected));
-    return [
-      ...(currentDocument ? [currentDocument] : []),
-      ...open.map((tab) => ({ documentId: tab.document.documentId })),
-    ].filter(({ documentId }) => !seen.has(documentId) && seen.add(documentId));
-  }, [currentDocument, tabs, selected]);
+  const lastShownChatId = useLastShownChat(accountId, projectId);
+  const documentSlot = useLastShownDocument(accountId, projectId);
   const descriptions = useDescriptions(projectId);
   const resolution = resolveSide({
     main,
-    currentChat: currentChatId,
-    documents,
+    chatSlot: lastShownChatId,
+    documentSlot,
     describe: descriptions.read,
   });
   const describing = resolution.kind === "pending" ? resolution.describing : null;
@@ -285,15 +268,15 @@ export function SideViewProvider({
   // screen, so a stream and the transcript stay warm behind the document the side shows.
   const showing: string | null | undefined =
     mainChat ?? (main.kind === "new-chat" ? null : sideChat ? sideChat.chatId : undefined);
-  const [hostChatId, setHostChatId] = useState<string | null>(showing ?? currentChatId);
+  const [hostChatId, setHostChatId] = useState<string | null>(showing ?? lastShownChatId);
   if (showing !== undefined && showing !== hostChatId) setHostChatId(showing);
 
   const [newChatAbout, reportNewChatAbout] = useState<NewChatAbout>("follows");
   const [revealed, setRevealed] = useState(0);
   const showBeside = useCallback(
-    (document: CurrentDocument, draft?: DraftPin) => {
+    (document: ShownDocument, draft?: DraftPin) => {
       if (draft) setDocumentView(accountId, projectId, document.documentId, { pin: draft });
-      writeCurrentDocument(accountId, projectId, document);
+      writeLastShownDocument(accountId, projectId, document);
       setRevealed((count) => count + 1);
     },
     [accountId, projectId],
@@ -416,8 +399,8 @@ export function useShellCommands(projectId: string): {
     () => ({
       swapSide: (item) =>
         item.kind === "chat"
-          ? writeCurrentChat(accountId, projectId, item.chatId)
-          : writeCurrentDocument(accountId, projectId, { documentId: item.documentId }),
+          ? writeLastShownChat(accountId, projectId, item.chatId)
+          : writeLastShownDocument(accountId, projectId, { documentId: item.documentId }),
     }),
     [accountId, projectId],
   );

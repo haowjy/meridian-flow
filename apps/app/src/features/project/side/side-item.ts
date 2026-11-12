@@ -1,21 +1,18 @@
 /**
- * What the side shows beside main. The project keeps a current chat and a current document (the
- * last of each on screen, in either pane); main shows what its address names, and the side shows
- * the current item of the other kind:
+ * What the side shows beside main: the slot of the kind main is not. The project keeps one slot per
+ * kind, the last chat and the last document on screen in either pane (`client/project-shell/store.ts`);
+ * `useMainArrival` writes main's, a pick or link into the side writes the other.
  *
  * ```text
- * main document / landing   side = current chat ?? a new chat (about main's document)
- * main chat / new chat      side = current document, else main's open tabs (the one main
- *                                  showed last, then from the right), else nothing
+ * main document / landing   side = chat slot ?? a new chat (about main's document)
+ * main chat / new chat      side = document slot, else nothing (the side's empty state)
  * main opening              side keeps what it showed
  * ```
  *
- * A swap (the picker, a link held beside, the side composer's send) writes the current chat or
- * document, and lasts until main changes mode. Nothing derives the side from what a chat edited
- * or what a document was touched by. A document fits beside only once it is described and opens in
- * the editor: one that no longer opens (removed, an upload) falls through to the next candidate.
- * While a describe is unanswered the side keeps what it shows; it never paints a fallback and then
- * swaps.
+ * Nothing derives the side from what a chat edited or what a document was touched by. A document
+ * fits beside only once it is described and opens in the editor: one that no longer opens
+ * (removed, an upload) leaves the side empty. While a describe is unanswered the side keeps what
+ * it shows; it never paints a fallback and then swaps.
  *
  * Placement follows `features/project/.context/pane-state-machine.md`: change that page's rules and
  * diagrams with any change here.
@@ -88,9 +85,8 @@ export function fitsBeside(item: Item, main: MainForSide): boolean {
 
 export function resolveSide(input: {
   main: MainForSide;
-  currentChat: string | null;
-  /** Documents to try beside a chat, best first: the current document, then main's open tabs. */
-  documents: readonly Describing[];
+  chatSlot: string | null;
+  documentSlot: Describing | null;
   describe: (document: Describing) => Described;
 }): SideResolution {
   const { main } = input;
@@ -100,7 +96,7 @@ export function resolveSide(input: {
     side: { item, document },
   });
   if (mainMode(main) === "document") {
-    if (input.currentChat) return settled({ kind: "chat", chatId: input.currentChat }, null);
+    if (input.chatSlot) return settled({ kind: "chat", chatId: input.chatSlot }, null);
     return settled(
       main.kind === "document"
         ? { kind: "chat", chatId: null, about: main.documentId }
@@ -108,13 +104,12 @@ export function resolveSide(input: {
       null,
     );
   }
-  for (const document of input.documents) {
-    const described = input.describe(document);
-    if (described.status === "pending") return { kind: "pending", describing: document };
-    if (described.status === "failed")
-      return { kind: "failed", failed: { retry: described.retry } };
-    if (described.document)
-      return settled({ kind: "document", documentId: document.documentId }, described.document);
-  }
-  return settled(null, null);
+  const document = input.documentSlot;
+  if (!document) return settled(null, null);
+  const described = input.describe(document);
+  if (described.status === "pending") return { kind: "pending", describing: document };
+  if (described.status === "failed") return { kind: "failed", failed: { retry: described.retry } };
+  return described.document
+    ? settled({ kind: "document", documentId: document.documentId }, described.document)
+    : settled(null, null);
 }

@@ -46,7 +46,7 @@ export function MobileProject(props: MobileProjectProps) {
   // The sheet is the phone's side: never open on arrival, except for a first send still
   // recovering when the phone shell mounts, which needs its chat on screen.
   const [sheetOpen, setSheetOpen] = useState(
-    () => !onChat && isThreadAwaitingCreation(accountId, chat.currentChatId),
+    () => !onChat && isThreadAwaitingCreation(accountId, chat.lastShownChatId),
   );
   // Any open goes to main: the sheet closes rather than cover where the writer went. Arriving is
   // not an open, so a recovering first send keeps its sheet. The history position, not the
