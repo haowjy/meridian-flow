@@ -204,5 +204,12 @@ describe("a record applied to the last state, against a replay from the start", 
     same(engine, materialize(doc, view, pendingText), "pending text");
     expect(engine.node(ch)).toMatchObject({ trashed: false, keptByPending: true });
     expect([...changed].sort()).toEqual([ch, f].sort());
+    // The Work's text draft is applied or discarded: the chapter and its folder go to Trash.
+    engine.setPendingText(new Set());
+    expect([...engine.refresh()].sort()).toEqual([ch, f].sort());
+    same(engine, materialize(doc, view), "pending text gone");
+    engine.setPendingText(pendingText);
+    engine.refresh();
+    same(engine, materialize(doc, view, pendingText), "pending text back");
   });
 });

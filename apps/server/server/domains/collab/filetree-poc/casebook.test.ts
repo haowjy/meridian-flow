@@ -717,6 +717,32 @@ describe("found while measuring cost", () => {
   });
 });
 
+describe("found in the third review", () => {
+  it("Undo of an Apply that would turn another Work's pending move into a loop: refused", () => {
+    const t = start();
+    const y = t.folder("Y");
+    const z = t.folder("Z", y);
+    const w = t.folder("W", z);
+    t.w.move(D, CHAT, z, ROOT);
+    const copies = t.w.apply("work-1", WRITER);
+    const other: View = { draft: "work-2" };
+    t.w.move(other, CHAT2, y, w);
+    expect(t.w.undoApply(copies)).toBe("superseded");
+    expect(t.w.view(other).skipped).toEqual([]);
+  });
+
+  it("Undo of an Apply that would put a number on a document the writer made since: refused", () => {
+    const t = start();
+    const arc = t.folder("Arc");
+    const notes = t.chapter("Notes", arc);
+    t.w.move(D, CHAT, notes, ROOT);
+    const copies = t.w.apply("work-1", WRITER);
+    const made = t.chapter("Notes", arc);
+    expect(t.w.undoApply(copies)).toBe("superseded");
+    expect(t.at(made)?.displayName).toBe("Notes");
+  });
+});
+
 function reorganisedOnce() {
   const t = start();
   const ch = t.chapter("Chapter 1");

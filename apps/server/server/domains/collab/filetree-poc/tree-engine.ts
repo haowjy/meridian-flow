@@ -75,7 +75,7 @@ export class TreeEngine {
   pops = 0;
 
   constructor(
-    private readonly of: { draft?: DraftId | null; pendingText?: ReadonlySet<string> } = {},
+    private of: { draft?: DraftId | null; pendingText?: ReadonlySet<string> } = {},
   ) {
     this.nodes.set(ROOT, {
       id: ROOT,
@@ -89,6 +89,13 @@ export class TreeEngine {
       arrivedAt: -1,
     });
     this.derived.set(ROOT, { deleted: false, keptByPending: false, kept: false, shown: "" });
+  }
+
+  /** The documents the Work holds pending text of changed; text is not in the list. */
+  setPendingText(next: ReadonlySet<string>): void {
+    const was = this.of.pendingText ?? new Set<string>();
+    for (const id of [...was, ...next]) if (was.has(id) !== next.has(id)) this.dirty.add(id);
+    this.of = { ...this.of, pendingText: next };
   }
 
   get length(): number {

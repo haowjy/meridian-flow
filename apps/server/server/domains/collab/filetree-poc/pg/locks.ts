@@ -86,10 +86,27 @@ async function admitShort(world: PocWorld, name: string, think: number) {
   }
 }
 
-async function run(mode: "held" | "short") {
+/**
+ * always: make the record with nothing held, against whatever head was read; then one
+ * transaction that appends it (the journal takes its lock, as for text), brings the list to
+ * the head under that lock, replays and writes rows. Never refused and never started again:
+ * a record names nodes by id and means the same wherever it lands. The lock is held for a
+ * replay and the row writes, whatever the change took to work out.
+ */
+async function admitAlways(world: PocWorld, name: string, think: number) {
+  const work = await workOut(world, name, think);
+  await runInDrizzleTransaction(world.db, async () => {
+    await world.journal.append(world.treeDocId, work.update, { origin: "system" });
+    const merged = docFromSnapshot(await world.journal.read(world.treeDocId));
+    await syncProjection(world.db, merged, world.treeDocId, world.sourceId);
+  });
+  return 0;
+}
+
+async function run(mode: "held" | "short" | "always") {
   const db = openDb();
   const world = await createWorld(db);
-  const admit = mode === "held" ? admitHeld : admitShort;
+  const admit = mode === "held" ? admitHeld : mode === "short" ? admitShort : admitAlways;
   for (let i = 0; i < 5; i += 1) await admit(world, `seed${i}`, 0);
   const small: number[] = [];
   const slow: number[] = [];
@@ -125,5 +142,5 @@ async function run(mode: "held" | "short") {
   return line;
 }
 
-const lines = [await run("held"), await run("short")];
+const lines = [await run("held"), await run("short"), await run("always")];
 for (const line of lines) process.stdout.write(`${line}\n`);

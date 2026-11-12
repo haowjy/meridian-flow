@@ -758,14 +758,39 @@ export class TreeWriter {
       if (op.type === "delete" && op.cascade.some((member) => actedOn.has(member)))
         return "superseded";
     }
-    // Taking it back must not change what any later record does: none may start to be
-    // skipped (a later move into something the Apply moved can become a loop) or lose its folder.
-    const liveNow = viewOps(this.doc, LIVE);
-    const now = replay(liveNow);
-    const without = replay(liveNow.filter((op) => !ids.has(op.id)));
-    const skippedNow = new Set(now.skipped.map((skip) => skip.op));
-    if (without.skipped.some((skip) => !skippedNow.has(skip.op))) return "superseded";
-    if (without.rescued.some((id) => !now.rescued.includes(id))) return "superseded";
+    // Taking it back must not change what any later record does, in live or in any Work's
+    // view: none may start to be skipped (a later move into something the Apply moved can
+    // become a loop) or lose its folder, and in live no node a later record acts on may change
+    // place, name shown or Trash.
+    const records = opsOf(this.doc).toArray();
+    const drafts = [...new Set(records.flatMap((op) => (op.draft ? [op.draft] : [])))];
+    const later = new Set(all.slice(last + 1).flatMap((op) => (ids.has(op.id) ? [] : [op.node])));
+    const after = new Set(all.slice(last + 1).map((op) => op.id));
+    for (const draft of [null, ...drafts]) {
+      const ops = viewOps(this.doc, { draft });
+      const now = replay(ops, { draft });
+      const without = replay(
+        ops.filter((op) => !ids.has(op.id)),
+        { draft },
+      );
+      // Only records made after the Apply count: one made before it goes back to doing what
+      // it did before.
+      const skippedNow = new Set(now.skipped.map((skip) => skip.op));
+      if (without.skipped.some((skip) => !skippedNow.has(skip.op) && after.has(skip.op)))
+        return "superseded";
+      if (without.rescued.some((id) => !now.rescued.includes(id) && after.has(id)))
+        return "superseded";
+      // A Work's view sits on live, so its nodes may show differently once live changes back,
+      // as they did when the Apply landed; only its records' taking effect is held fixed.
+      if (draft !== null) continue;
+      for (const node of later) {
+        if (actedOn.has(node)) continue;
+        const [a, b] = [now.nodes.get(node), without.nodes.get(node)];
+        if (!a || !b) continue;
+        if (a.parent !== b.parent || a.displayName !== b.displayName || a.trashed !== b.trashed)
+          return "superseded";
+      }
+    }
     this.doc.transact(() => {
       this.settle(by, copies.map((copy) => copy.id), "undone");
       this.settle(by, copies.flatMap((copy) => (copy.appliedFrom ? [copy.appliedFrom] : [])), "pending");
