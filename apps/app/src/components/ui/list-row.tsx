@@ -14,7 +14,8 @@ export function contentInset(depth: number, density: Density = "list"): number {
 }
 
 /** The leading icon's slot (`w-4`) and the gap after it. */
-const ICON_SLOT_PX = 16 + 8;
+/** The leading icon slot and its gap: where a row with an icon starts its title. */
+export const ICON_SLOT_PX = 16 + 8;
 
 type ControlProps = Omit<
   HTMLAttributes<HTMLElement>,

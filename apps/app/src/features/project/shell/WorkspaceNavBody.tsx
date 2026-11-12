@@ -46,7 +46,7 @@ export function WorkspaceNavBody({
             role.hover,
           )}
         >
-          <ArrowLeft className={"size-4 shrink-0"} aria-hidden />
+          <ArrowLeft className="size-4 shrink-0" aria-hidden />
           <Trans>View projects</Trans>
         </Link>
       </div>

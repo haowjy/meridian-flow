@@ -1,5 +1,5 @@
 /** What a list row needs to be selectable and draggable. */
-import type { DragEvent, MouseEvent } from "react";
+import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { startEntryDrag } from "./drag-session";
 import type { DragEntry, DragSource } from "./entry";
 import { useEntrySelectionRow } from "./selection";
@@ -31,6 +31,14 @@ export function useEntryRow(
       // A selection gesture (Ctrl/Cmd or Shift) selects instead of opening or toggling, before
       // the row's own click (or a link's navigation) sees it.
       onClickCapture: (event: MouseEvent) => {
+        if (!selection?.click(entry, event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+      },
+      // Enter with a modifier sends no click (Chromium clicks only on a plain Enter's keypress;
+      // macOS sends none for Cmd+Enter), so the keyboard's selection gesture is read here.
+      onKeyDown: (event: KeyboardEvent) => {
+        if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey || event.shiftKey)) return;
         if (!selection?.click(entry, event)) return;
         event.preventDefault();
         event.stopPropagation();

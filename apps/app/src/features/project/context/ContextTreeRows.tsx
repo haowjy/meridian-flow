@@ -10,7 +10,7 @@ import type {
   CatalogFile as ContextFile,
   CatalogNode as ContextNode,
 } from "@/client/query/context-catalog-projection";
-import { contentInset, ListRow, ListRowField } from "@/components/ui/list-row";
+import { contentInset, ICON_SLOT_PX, ListRow, ListRowField } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import { useRevealImport } from "@/features/import/ImportProvider";
 import {
@@ -392,7 +392,7 @@ function FileRow({
 
 /** Under a row, on its title's edge: a refusal said in words, with its repair. */
 function RowNotice({ depth, children }: { depth: number; children: ReactNode }) {
-  return <div style={{ paddingLeft: contentInset(depth) + 24 }}>{children}</div>;
+  return <div style={{ paddingLeft: contentInset(depth) + ICON_SLOT_PX }}>{children}</div>;
 }
 
 function RenameRow({

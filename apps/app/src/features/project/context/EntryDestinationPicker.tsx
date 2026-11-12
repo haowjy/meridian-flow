@@ -291,9 +291,7 @@ function OpenPicker({
       onCloseAutoFocus={(event) => {
         event.preventDefault();
         if (movedSeveral.current && selection) return selection.focus();
-        rowRef.current
-          ?.querySelector<HTMLElement>('button[data-slot="icon-button"], [role="button"]')
-          ?.focus();
+        rowRef.current?.querySelector<HTMLElement>("[data-list-item]")?.focus();
       }}
       status={error ?? refusal}
       foldersOnly
