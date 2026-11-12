@@ -256,8 +256,8 @@ otherwise, A's documents are live documents.
   (seed with `./mf`: a draft-mode chat's reply edits the document, then delete
   it from the tree). There is no confirmation dialog. The live row leaves at
   once, with no toast and no Work explanation. The chat's draft dock row and the Work page's Changes to
-  review row keep the file with "Deleted from the manuscript" on its status
-  line; an open draft document stays open. A draft dock with
+  review row keep the file with a quiet "Deleted" tag beside its name (its tooltip:
+  "Deleted from the manuscript. Apply brings it back."); an open draft document stays open. A draft dock with
   several files, or Work Files' "Apply all", asks first: "Applying
   brings back <title>, which was deleted from the manuscript." with Cancel and
   Apply, in the footer below the rows (as Discard all's question does): no row

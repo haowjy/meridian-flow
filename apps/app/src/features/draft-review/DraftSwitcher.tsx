@@ -139,7 +139,7 @@ export function DraftSwitcher({
           <DraftItem key={draft.key} draft={draft} />
         ))}
         {scoped.length > 0 && others.length > 0 ? <DropdownMenuSeparator /> : null}
-        {others.length > 0 ? <OtherDrafts drafts={others} /> : null}
+        {others.length > 0 ? <OtherDrafts drafts={others} folded={scoped.length > 0} /> : null}
         {draftCommands || marks ? <DropdownMenuSeparator /> : null}
         {draftCommands ? (
           <>
@@ -182,11 +182,11 @@ export function DraftSwitcher({
 }
 
 /**
- * The other owners' drafts, folded unless one is on screen. The menu remounts it on each open,
- * so it folds again. Its toggle is a menu item, so arrows reach it, and picking it keeps the menu open.
+ * The other owners' drafts, folded behind the scope's own unless one of them is on screen. The
+ * menu remounts it on each open, so it folds again. Its toggle is a menu item, so arrows reach it, and picking it keeps the menu open.
  */
-function OtherDrafts({ drafts }: { drafts: readonly DraftVersion[] }) {
-  const [open, setOpen] = useState(() => drafts.some((draft) => draft.current));
+function OtherDrafts({ drafts, folded }: { drafts: readonly DraftVersion[]; folded: boolean }) {
+  const [open, setOpen] = useState(() => !folded || drafts.some((draft) => draft.current));
   return (
     <>
       <DropdownMenuItem

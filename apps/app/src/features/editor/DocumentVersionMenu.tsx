@@ -65,7 +65,6 @@ export function DocumentVersionMenu({
       tree: null,
     });
   const scopeOwner = paint?.scopeOwnerKey ?? null;
-  listed.sort((a, b) => Number(b.owner === scopeOwner) - Number(a.owner === scopeOwner));
 
   const drafts = listed.map((hint) => ({
     key: `${hint.owner}:${hint.itemKey}`,

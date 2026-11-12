@@ -120,10 +120,10 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           setExpanded((value) => !value);
         }}
         inline
-        className="min-w-[12ch] flex-auto text-foreground hover:text-foreground coarse:min-h-11"
+        className="min-w-[12ch] flex-auto coarse:min-h-11"
       >
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
-        <span className="min-w-0 truncate">
+        <span className="min-w-0 truncate text-foreground">
           {multi ? <Trans>{dock.files.length} documents</Trans> : only ? fileLabel(only) : null}
         </span>
         {only && !multi ? <DeletedFromManuscriptTag item={only.row.draft} /> : null}
@@ -239,7 +239,7 @@ function DockFileLine({
       {!summary && wholeDocument ? trouble : null}
       {/* A file with no header row keeps its status line under its one row, which it describes. */}
       {wholeDocument && !summary ? null : status}
-      {expanded && file.status !== "error" && !(summary && wholeDocument) ? (
+      {expanded && file.status !== "error" ? (
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows
             documentName={file.name}
