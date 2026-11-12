@@ -72,11 +72,10 @@ its path hasn't settled.
 
 Each run is one card in the transcript, at the turn that started it, from launch to
 finish: running it shows the live tool and elapsed time, finished it folds to the
-report. A completion whose launch card is in the loaded transcript draws nothing of its
-own (`buildTranscriptModel` drops it by execution); a run with no card there (a later
-run of the same child, or a card outside the loaded history) keeps its quiet row. The
-band's Subagents popover is the one list of every child, running ones first, and its
-rows jump to the card.
+report. Its completion also keeps a quiet "… finished" row where it arrived: a long
+run finishes many turns after its card, and that row is where the writer learns it is
+done and opens it from. The band's Subagents popover is the one list of every child,
+running ones first, and its rows jump to the card.
 
 The composer's Stop ends only this chat's reply, so a running background card carries
 its own Stop beside Open: `SubagentStop` presses the child's hand-back operation

@@ -247,24 +247,16 @@ export function buildTranscriptModel(
   const nextByPrev = new Map<string, Turn>();
   for (const turn of turns) if (turn.prevTurnId) nextByPrev.set(turn.prevTurnId, turn);
   const subagentUpdateByTurnId = new Map<string, CompletionFact["update"]>();
-  // A run whose launch card is in this transcript finishes on that card; only a run without one
-  // (a later run of the same child, or a card outside the loaded history) gets its own row.
-  const launchedExecutions = new Set<string>();
   const launchTitleByChildThreadId = new Map<string, string>();
   for (const turn of turns) {
     const facts = turnSubagentFacts(turn);
     if (facts.completion) subagentUpdateByTurnId.set(turn.id, facts.completion.update);
     for (const failure of facts.failures) onContractFailure(failure);
     for (const { card } of facts.invocations) {
-      if (card.execution) launchedExecutions.add(card.execution);
       if (card.childThreadId && card.title)
         launchTitleByChildThreadId.set(card.childThreadId, card.title);
     }
   }
-  const finishesOnCard = (turn: Turn) => {
-    const execution = subagentUpdateByTurnId.get(turn.id)?.execution;
-    return execution != null && launchedExecutions.has(execution);
-  };
   const deliveryEventFor = (turn: Turn): DeliveryEvent => {
     const update = subagentUpdateByTurnId.get(turn.id) ?? null;
     const title = update ? launchTitleByChildThreadId.get(update.childThreadId) : undefined;
@@ -285,7 +277,7 @@ export function buildTranscriptModel(
   const deliveriesByAssistant = new Map<string, Turn[]>();
   for (const turn of turns) {
     const placement = deliveryPlacements.get(turn.id);
-    if (placement?.kind !== "assistant" || finishesOnCard(turn)) continue;
+    if (placement?.kind !== "assistant") continue;
     const grouped = deliveriesByAssistant.get(placement.assistantTurnId) ?? [];
     grouped.push(turn);
     deliveriesByAssistant.set(placement.assistantTurnId, grouped);
@@ -300,7 +292,7 @@ export function buildTranscriptModel(
       ? { ownerThreadId: owner, startsOwner: false, endsInherited: false }
       : null;
     if (!shape) {
-      if (deliveryPlacements.get(turn.id)?.kind === "row" && !finishesOnCard(turn))
+      if (deliveryPlacements.get(turn.id)?.kind === "row")
         rows.push({ kind: "delivery", turn, event: deliveryEventFor(turn), inherited: mark });
       return;
     }
