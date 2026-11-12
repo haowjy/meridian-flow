@@ -1,6 +1,6 @@
-import { ChevronRight } from "lucide-react";
 import type { HTMLAttributes, ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { DisclosureMark } from "./marks";
 import { role } from "./roles";
 
 export type SectionFold = { open: boolean; onToggle: (open: boolean) => void };
@@ -57,10 +57,7 @@ export function ListSectionHeader({
             )}
           >
             {name}
-            <ChevronRight
-              aria-hidden
-              className={cn("size-3 shrink-0 transition-transform", fold.open && "rotate-90")}
-            />
+            <DisclosureMark open={fold.open} />
             {fold.open ? null : foldedMark}
           </button>
         ) : (

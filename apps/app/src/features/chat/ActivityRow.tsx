@@ -1,6 +1,7 @@
 /** Renders a single process activity row in the transcript. */
-import { ChevronRight, type LucideIcon } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
+import { DisclosureMark } from "@/components/ui/marks";
 import { cn } from "@/lib/utils";
 
 export type ActivityRowStatus = "running" | "done" | "error";
@@ -129,13 +130,7 @@ export function ActivityRow({
       ) : null}
       {dot}
       {hasInlineFold ? (
-        <ChevronRight
-          className={cn(
-            "mt-[var(--chat-space-inline)] size-3 shrink-0 text-muted-foreground transition-transform",
-            open && "rotate-90",
-          )}
-          aria-hidden
-        />
+        <DisclosureMark open={open} className="mt-[var(--chat-space-inline)]" />
       ) : null}
       {hasInlineFold ? (
         <button

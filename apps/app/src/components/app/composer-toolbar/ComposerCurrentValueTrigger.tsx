@@ -1,7 +1,7 @@
 /** Current-value chrome for interactive composer controls and readonly status. */
-import { ChevronsUpDown } from "lucide-react";
 import { type ComponentProps, forwardRef, type ReactNode } from "react";
 import { buttonVariants } from "@/components/ui/button";
+import { ChooserMark } from "@/components/ui/marks";
 import { cn } from "@/lib/utils";
 import type { ComposerToolbarTriggerBinding } from "./types";
 
@@ -25,9 +25,7 @@ const CurrentValueChrome = forwardRef<
       <span data-slot="composer-current-value-label" className="min-w-0 truncate">
         {value}
       </span>
-      {chevron ? (
-        <ChevronsUpDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-      ) : null}
+      {chevron ? <ChooserMark /> : null}
     </button>
   );
 });

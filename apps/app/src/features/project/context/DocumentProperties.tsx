@@ -8,12 +8,12 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { DocumentProperties as DocumentPropertiesDto } from "@meridian/contracts";
-import { ChevronRight } from "lucide-react";
 import { useId } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useDocumentProperties } from "@/client/query/useDocumentProperties";
 import { documentContextOwner, type OpenDocument } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { DisclosureMark } from "@/components/ui/marks";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
 import { cn } from "@/lib/utils";
@@ -77,11 +77,8 @@ function PropertiesRow({ projectId, documentId }: { projectId: string; documentI
           }}
           className="focus-ring -ml-1 flex h-7 w-full min-w-0 items-center rounded-md pr-1 pl-1 text-left"
         >
-          <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
-            <ChevronRight
-              aria-hidden
-              className={cn("size-3 transition-transform", open && "rotate-90")}
-            />
+          <span className="flex h-7 w-4 shrink-0 items-center justify-center">
+            <DisclosureMark open={open} />
           </span>
           <span className="shrink-0 font-medium text-caption text-muted-foreground">
             <Trans>Properties</Trans>

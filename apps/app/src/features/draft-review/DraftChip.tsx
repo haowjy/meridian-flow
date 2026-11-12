@@ -9,10 +9,9 @@
  * button or menu trigger that owns the click, focus ring and hit area (the
  * wrapper carries `group/chip` so the face can answer hover and open).
  */
-import { ChevronsUpDown } from "lucide-react";
 import type { ReactNode } from "react";
-
 import { Chip } from "@/components/ui/chip";
+import { ChooserMark } from "@/components/ui/marks";
 import { cn } from "@/lib/utils";
 
 export type DraftChipState = "live" | "pending" | "reviewing" | "failed";
@@ -65,7 +64,7 @@ export function DraftChipFace({
         />
       )}
       <span>{children}</span>
-      {menu ? <ChevronsUpDown aria-hidden className="-mr-0.5 size-3 shrink-0 opacity-70" /> : null}
+      {menu ? <ChooserMark className="-mr-0.5" /> : null}
     </Chip>
   );
 }
