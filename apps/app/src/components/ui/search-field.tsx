@@ -50,7 +50,7 @@ export function SearchField({
               }
             : undefined
         }
-        className="h-8 pr-2 pl-8 text-sm coarse:h-11"
+        className="h-8 pr-2 pl-8 coarse:h-11"
       />
     </div>
   );

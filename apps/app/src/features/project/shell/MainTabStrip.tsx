@@ -4,7 +4,6 @@
  * holds no tab for it (a chat, an address that names nothing, a document back within one history
  * entry) is drawn after the tabs as the active chip, so what main shows never depends on the record.
  */
-
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
@@ -185,29 +184,24 @@ export function MainTabStrip({
       {/* New document follows document tabs only: after main's other item (a chat) it would read
           as a new one of those. */}
       {current ? null : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={onNewDocument}
-              disabled={!onNewDocument}
-              title={!onNewDocument ? t`Open a Work to create an Untitled document` : undefined}
-              aria-label={t`New document`}
-              className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
-            >
-              {tabs.length > 0 && !lastActive ? (
-                <span
-                  aria-hidden
-                  className="absolute top-1/2 left-0 h-3.5 w-px -translate-y-1/2 bg-border"
-                />
-              ) : null}
-              <Plus className="size-3.5" aria-hidden />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            <Trans>New document</Trans>
-          </TooltipContent>
-        </Tooltip>
+        <IconButton
+          size="sm"
+          label={t`New document`}
+          // aria-disabled, not disabled: the tooltip has to say why it can't run.
+          tooltip={onNewDocument ? undefined : t`Open a Work to create an Untitled document`}
+          aria-disabled={!onNewDocument || undefined}
+          onClick={onNewDocument}
+          tooltipSide="bottom"
+          className="relative self-center aria-disabled:opacity-50"
+        >
+          {tabs.length > 0 && !lastActive ? (
+            <span
+              aria-hidden
+              className="absolute top-1/2 -left-1 h-3.5 w-px -translate-y-1/2 bg-border"
+            />
+          ) : null}
+          <Plus aria-hidden />
+        </IconButton>
       )}
     </div>
   );
