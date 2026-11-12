@@ -3,7 +3,7 @@ import { Trans } from "@lingui/react/macro";
 import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { Pin, Plus } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { runFavoriteCommand, usePinnedChatIds } from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -33,12 +33,12 @@ type Feed = ReturnType<typeof useProjectChatFeed>;
 const chatSelector = (id: string) => `[data-chat-id="${CSS.escape(id)}"]`;
 
 /** What every chat row needs from its list. */
+/** Other chats shown at first, and added by each Show more. */
+const OTHERS_PAGE = 20;
+
+/** What every chat row shares; stable across renders, so a row re-renders only for its own chat. */
 type RowContext = {
   projectId: string;
-  currentThreadId: string | null;
-  states: ReadonlyMap<string, RowState>;
-  replying: ReadonlySet<string>;
-  pinnedIds: ReadonlySet<string>;
   deletes: ChatDeletes;
   refused: ChatDeleteRefusal | null;
   touch: boolean;
@@ -49,9 +49,11 @@ type RowContext = {
 
 /**
  * The Chat list: a find field over every chat; the scoped Work's chats, pinned first, under no
- * heading; then Other chats, folded, the other Works' pinned chats first. Each chat shows once,
- * in its own Work's list, and opening it doesn't move it. Working helpers sit under their parent. Each chat row opens, renames, pins and
- * deletes its chat; a delete has an Undo. The API calls a pin `favorite`.
+ * heading; then Other chats, folded, the other Works' pinned chats first, shown a page at a time.
+ * Each chat shows once, in its own Work's list, and opening it doesn't move it; while Other chats
+ * is folded, the open chat in it shows under its heading. Working helpers sit under their parent.
+ * Each chat row opens, renames, pins and deletes its chat; a delete has an Undo. The API calls a
+ * pin `favorite`.
  */
 export function ChatsBody({
   projectId,
@@ -91,23 +93,37 @@ export function ChatsBody({
     () => groupChats(threads ?? [], scopeWorkId ?? noWorkId, noWorkId, pinnedIds),
     [threads, scopeWorkId, noWorkId, pinnedIds],
   );
-  const rows: RowContext = {
-    projectId,
-    currentThreadId,
-    states: groups.states,
-    replying: groups.replying,
-    pinnedIds,
-    deletes,
-    refused,
-    touch,
-    onOpenChat,
-    onMoved: (id, pinned) => {
-      const active = document.activeElement;
-      if (active === document.body || active?.closest(chatSelector(id))) {
-        setFocusRow({ id, pinned });
-      }
-    },
-  };
+  const openChat = useRef(onOpenChat);
+  openChat.current = onOpenChat;
+  const ctx = useMemo<RowContext>(
+    () => ({
+      projectId,
+      deletes,
+      refused,
+      touch,
+      onOpenChat: (id) => openChat.current(id),
+      onMoved: (id, pinned) => {
+        const active = document.activeElement;
+        if (active === document.body || active?.closest(chatSelector(id))) {
+          setFocusRow({ id, pinned });
+        }
+      },
+    }),
+    [projectId, deletes, refused, touch],
+  );
+  const row = (chat: RowChat, nested = false) => (
+    <ChatRow
+      key={chat.id}
+      ctx={ctx}
+      chat={chat}
+      state={groups.states.get(chat.id) ?? (nested ? "running" : "idle")}
+      replying={groups.replying.has(chat.id)}
+      pinned={pinnedIds.has(chat.id)}
+      current={chat.id === currentThreadId}
+      nested={nested}
+    />
+  );
+  const [othersShown, setOthersShown] = useState(OTHERS_PAGE);
   // After Undo, Pin or Unpin, focus goes to the chat's row in its list, or to Find when no list
   // here shows it. The row mounts only once the lists have loaded (a restored pin past the first
   // page loads later), and a pinned or unpinned row only once it has moved, so focus waits for
@@ -147,12 +163,16 @@ export function ChatsBody({
   const scopeEmpty = groups.scoped.length === 0 && groups.pinned.length === 0;
   const withHelpers = (thread: ThreadListItem) => (
     <div key={thread.id}>
-      <ChatRow {...rows} chat={thread} />
-      {groups.helpers.get(thread.id)?.map((helper) => (
-        <ChatRow key={helper.id} {...rows} chat={helper} state="running" nested />
-      ))}
+      {row(thread)}
+      {groups.helpers.get(thread.id)?.map((helper) => row(helper, true))}
     </div>
   );
+  const others = [...groups.othersPinned, ...groups.others];
+  const shownOthers = others.slice(0, othersShown);
+  // The open chat shows wherever it sits in Other chats, past the page or under the folded heading.
+  const openOther = others.find((chat) => chat.id === currentThreadId) ?? null;
+  const openPastPage = openOther !== null && !shownOthers.includes(openOther);
+  const pinnedShown = shownOthers.filter((chat) => pinnedIds.has(chat.id));
 
   return (
     <div ref={root} className="flex min-h-0 flex-1 flex-col">
@@ -182,7 +202,7 @@ export function ChatsBody({
         ) : null}
         {search ? (
           <section aria-label={t`Results`} className="px-2 pt-2">
-            <SearchResults search={search} rows={rows} />
+            <SearchResults projectId={projectId} search={search} row={row} />
           </section>
         ) : threads === null ? (
           <div className="px-2">
@@ -203,7 +223,7 @@ export function ChatsBody({
                 </ListLine>
               ) : null}
             </div>
-            {groups.others.length + groups.othersPinned.length > 0 ? (
+            {others.length > 0 ? (
               <ListSection
                 label={t`Other chats`}
                 fold={othersFold}
@@ -211,11 +231,25 @@ export function ChatsBody({
                   groups.othersState === "idle" ? null : <StateMark state={groups.othersState} />
                 }
               >
-                {groups.othersPinned.length > 0 ? (
-                  <div data-pinned-list>{groups.othersPinned.map(withHelpers)}</div>
+                {pinnedShown.length > 0 ? (
+                  <div data-pinned-list>{pinnedShown.map(withHelpers)}</div>
                 ) : null}
-                {groups.others.map(withHelpers)}
+                {shownOthers.slice(pinnedShown.length).map(withHelpers)}
+                {openPastPage ? withHelpers(openOther) : null}
+                {others.length > othersShown ? (
+                  <ListRow
+                    onOpen={() => setOthersShown((shown) => shown + OTHERS_PAGE)}
+                    title={
+                      <span className={role.secondary}>
+                        <Trans>Show more</Trans>
+                      </span>
+                    }
+                  />
+                ) : null}
               </ListSection>
+            ) : null}
+            {openOther && !othersFold.open ? (
+              <div className="px-2">{withHelpers(openOther)}</div>
             ) : null}
           </>
         )}
@@ -226,13 +260,29 @@ export function ChatsBody({
 }
 
 /** The server's search over every chat's title, paged. */
-function SearchResults({ search, rows }: { search: string; rows: RowContext }) {
-  const feed = useProjectChatFeed(rows.projectId, false, search);
-  return <FeedRows feed={feed} rows={rows} empty={<Trans>No chats match “{search}”.</Trans>} />;
+function SearchResults({
+  projectId,
+  search,
+  row,
+}: {
+  projectId: string;
+  search: string;
+  row: (chat: RowChat) => ReactNode;
+}) {
+  const feed = useProjectChatFeed(projectId, false, search);
+  return <FeedRows feed={feed} row={row} empty={<Trans>No chats match “{search}”.</Trans>} />;
 }
 
 /** A paged feed's rows, its Show more row, and its quiet failures. */
-function FeedRows({ feed, rows, empty }: { feed: Feed; rows: RowContext; empty: ReactNode }) {
+function FeedRows({
+  feed,
+  row,
+  empty,
+}: {
+  feed: Feed;
+  row: (chat: RowChat) => ReactNode;
+  empty: ReactNode;
+}) {
   if (feed.isPending)
     return (
       <ListLine status>
@@ -250,9 +300,7 @@ function FeedRows({ feed, rows, empty }: { feed: Feed; rows: RowContext; empty: 
     return empty ? <ListLine>{empty}</ListLine> : null;
   return (
     <div aria-busy={feed.isFetching || undefined}>
-      {feed.items.map((item) => (
-        <ChatRow key={item.id} {...rows} chat={item} />
-      ))}
+      {feed.items.map((item) => row(item))}
       {feed.isFetchNextPageError ? (
         <InlineErrorRow
           message={<Trans>More chats couldn't load.</Trans>}
@@ -320,31 +368,31 @@ function DeletedLine({
 /** A chat as either list names it: the thread list's row or a feed page's. */
 type RowChat = { id: string; title: string | null };
 
-function ChatRow({
-  projectId,
+const ChatRow = memo(function ChatRow({
+  ctx: { projectId, deletes, refused, touch, onOpenChat, onMoved },
   chat,
-  state = "idle",
-  currentThreadId,
-  states,
+  state,
   replying,
-  pinnedIds,
-  deletes,
-  refused,
-  touch,
-  nested = false,
-  onOpenChat,
-  onMoved,
-}: RowContext & { chat: RowChat; state?: RowState; nested?: boolean }) {
+  pinned,
+  current,
+  nested,
+}: {
+  ctx: RowContext;
+  chat: RowChat;
+  state: RowState;
+  replying: boolean;
+  pinned: boolean;
+  current: boolean;
+  nested: boolean;
+}) {
   const client = useQueryClient();
   const title = displayThreadTitle(chat.title);
-  const pinned = pinnedIds.has(chat.id);
   const [menuOpen, setMenuOpen] = useState(false);
   const [asking, setAsking] = useState(false);
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
   const rename = useRenameThread(projectId, chat.id, (confirmed) => {
     announce(t`Renamed to ${confirmed}`);
   });
-  const shownState = states.get(chat.id) ?? state;
   const onPin = (value: boolean) =>
     void runFavoriteCommand(client, projectId, chat.id, value).then((outcome) => {
       if (outcome.status !== "success") {
@@ -353,7 +401,7 @@ function ChatRow({
       } else announce(value ? t`Pinned ${title}` : t`Unpinned ${title}`);
     });
   // The server stops a running reply in the delete, and Undo can't restart it: that delete asks.
-  const onDelete = () => (replying.has(chat.id) ? setAsking(true) : deletes.delete(chat.id, title));
+  const onDelete = () => (replying ? setAsking(true) : deletes.delete(chat.id, title));
   return (
     <div data-chat-id={chat.id}>
       <TitleEditSlot
@@ -368,12 +416,12 @@ function ChatRow({
           <ListRow
             ref={triggerRef}
             onOpen={() => onOpenChat(chat.id)}
-            current={chat.id === currentThreadId ? "page" : false}
+            current={current ? "page" : false}
             depth={nested ? 1 : 0}
             revealActions={!touch && !menuOpen}
             icon={pinned ? Pin : undefined}
             title={title}
-            trailing={shownState === "idle" ? null : <StateMark state={shownState} />}
+            trailing={state === "idle" ? null : <StateMark state={state} />}
             actions={
               <OverflowMenu
                 dense
@@ -429,7 +477,7 @@ function ChatRow({
       </TitleEditSlot>
     </div>
   );
-}
+});
 
 function StateMark({ state }: { state: Exclude<RowState, "idle"> }) {
   if (state === "running")

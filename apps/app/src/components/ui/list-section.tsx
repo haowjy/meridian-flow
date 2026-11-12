@@ -6,9 +6,10 @@ import { role } from "./roles";
 export type SectionFold = { open: boolean; onToggle: (open: boolean) => void };
 
 /**
- * The name above a list or a group of its rows, the one heading every sidebar list uses. Its
- * text sits on the rows' text edge; a fold's chevron follows the label, so folding and plain
- * headings share that edge. Actions show on hover or focus (`.rail-pane-actions`, globals.css).
+ * The name above a list or a group of its rows, the one heading every sidebar list uses, as tall
+ * as a row. A plain heading's text sits on the rows' text edge; a fold's chevron leads, in the
+ * slot a row's icon takes, so its label lines up with titles that follow an icon. Actions show on
+ * hover or focus (`.rail-pane-actions`, globals.css).
  */
 export function ListSectionHeader({
   label,
@@ -24,7 +25,7 @@ export function ListSectionHeader({
   /** Tooltip and accessible name, for a list whose full name is longer than its label. */
   title?: string;
   fold?: SectionFold;
-  /** Shown after a folded heading's chevron: what its hidden rows would say. */
+  /** Shown after a folded heading's label: what its hidden rows would say. */
   foldedMark?: ReactNode;
   actions?: ReactNode;
   /** Drop handlers when the heading is a drop target. */
@@ -34,11 +35,7 @@ export function ListSectionHeader({
   const look = level === 2 ? role.groupLabel : role.subgroupLabel;
   const name = <span className="min-w-0 truncate">{label}</span>;
   return (
-    <div
-      {...headerProps}
-      data-rail-pane-header
-      className={cn("mx-2 flex shrink-0 items-center", level === 2 ? "min-h-7" : "min-h-6")}
-    >
+    <div {...headerProps} data-rail-pane-header className="mx-2 flex min-h-7 shrink-0 items-center">
       <Heading
         title={title}
         aria-label={fold ? undefined : title}
@@ -50,7 +47,7 @@ export function ListSectionHeader({
       >
         {fold ? (
           // The whole heading row folds, its box the rows' box, so its focus ring lines up with
-          // theirs. No hover fill: hover darkens the label and shows the chevron.
+          // theirs. No hover fill: hover darkens the label.
           <button
             type="button"
             aria-expanded={fold.open}
@@ -61,20 +58,15 @@ export function ListSectionHeader({
               if (event.key === "ArrowRight") fold.onToggle(true);
             }}
             className={cn(
-              "group/fold flex min-w-0 flex-1 items-center gap-1 self-stretch rounded-md px-1.5 text-left transition-colors hover:text-foreground focus-visible:text-foreground motion-reduce:transition-none coarse:min-h-11",
+              "focus-ring flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md px-1.5 text-left transition-colors hover:text-foreground focus-visible:text-foreground motion-reduce:transition-none coarse:min-h-11",
               // Preflight resets a button's text-transform; the label's case needs restating.
               look,
             )}
           >
+            <span className="flex w-4 shrink-0 justify-center">
+              <DisclosureMark open={fold.open} />
+            </span>
             {name}
-            {/* An open heading shows its chevron only on hover or focus; a folded one keeps it. */}
-            <DisclosureMark
-              open={fold.open}
-              className={cn(
-                fold.open &&
-                  "opacity-0 group-hover/fold:opacity-100 group-focus-visible/fold:opacity-100 [@media(hover:none)]:opacity-100",
-              )}
-            />
             {fold.open ? null : foldedMark}
           </button>
         ) : (
@@ -90,17 +82,14 @@ export function ListSectionHeader({
   );
 }
 
-/**
- * A heading and its rows, inset like every list's rows; a folded section shows its heading alone.
- * With no label yet (a Work whose name hasn't loaded) the rows show without one.
- */
+/** A heading and its rows, inset like every list's rows; a folded section shows its heading alone. */
 export function ListSection({
   children,
   ...header
 }: Parameters<typeof ListSectionHeader>[0] & { children: ReactNode }) {
   return (
-    <section aria-label={header.label || undefined} className="pt-2">
-      {header.label ? <ListSectionHeader {...header} /> : null}
+    <section aria-label={header.label} className="pt-2">
+      <ListSectionHeader {...header} />
       {header.fold && !header.fold.open ? null : <div className="px-2">{children}</div>}
     </section>
   );

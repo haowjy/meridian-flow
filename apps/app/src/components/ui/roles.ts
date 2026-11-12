@@ -10,7 +10,7 @@ export const role = {
   sectionHeading: "text-base font-semibold text-foreground",
   /** The name above a group of rows: a list, a menu group, a settings section. */
   groupLabel: "text-xs font-medium uppercase tracking-caps text-muted-foreground",
-  /** A group inside a named list (Pinned, a Work's chats): quieter than the list's own name. */
+  /** A group inside a named list (Other chats): quieter than the list's own name. */
   subgroupLabel: "text-xs font-medium text-muted-foreground",
   /** A row's name, and controls that read as rows. Colour is the inherited foreground. */
   row: "text-sm",
