@@ -178,6 +178,11 @@ msgstr "{0, plural, one {Couldn't move your queued message.} other {Couldn't mov
 msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr "{0, plural, one {read # document} other {read # documents}}"
 
+#. placeholder {0}: landed.length
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
+msgid "{0, plural, one {Restored # file.} other {Restored # files.}}"
+msgstr "{0, plural, one {Restored # file.} other {Restored # files.}}"
+
 #. placeholder {0}: restored.length
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "{0, plural, one {Restored # item to {destinationName}.} other {Restored # items to {destinationName}.}}"
@@ -494,6 +499,38 @@ msgstr "{minutes} min ago"
 #: src/lib/date-groups.ts
 msgid "{minutes}m"
 msgstr "{minutes}m"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "{n, plural, one {Delete # file} other {Delete # files}}"
+msgstr "{n, plural, one {Delete # file} other {Delete # files}}"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "{n, plural, one {Delete # folder} other {Delete # folders}}"
+msgstr "{n, plural, one {Delete # folder} other {Delete # folders}}"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "{n, plural, one {Delete # item} other {Delete # items}}"
+msgstr "{n, plural, one {Delete # item} other {Delete # items}}"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "{n, plural, one {Move # file…} other {Move # files…}}"
+msgstr "{n, plural, one {Move # file…} other {Move # files…}}"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "{n, plural, one {Move # folder…} other {Move # folders…}}"
+msgstr "{n, plural, one {Move # folder…} other {Move # folders…}}"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "{n, plural, one {Move # item…} other {Move # items…}}"
+msgstr "{n, plural, one {Move # item…} other {Move # items…}}"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "{n, plural, one {Restore # file} other {Restore # files}}"
+msgstr "{n, plural, one {Restore # file} other {Restore # files}}"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "{n, plural, one {Restore # item} other {Restore # items}}"
+msgstr "{n, plural, one {Restore # item} other {Restore # items}}"
 
 #: src/features/chat/document-display-name.ts
 msgid "{name} ({skill})"
@@ -865,7 +902,6 @@ msgid "Account: {label}"
 msgstr "Account: {label}"
 
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
 msgid "Actions"
 msgstr "Actions"
 
@@ -1311,6 +1347,10 @@ msgstr "Can't move {source}: that location is already taken."
 msgid "Can't move {source}: the folder for {place} doesn't exist."
 msgstr "Can't move {source}: the folder for {place} doesn't exist."
 
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Can't move or delete all of these"
+msgstr "Can't move or delete all of these"
+
 #: src/core/editor/landing/slice-drop.ts
 msgid "Can’t move part of a table"
 msgstr "Can’t move part of a table"
@@ -1350,6 +1390,10 @@ msgstr "Can't redo: the document was moved or deleted after you undid this chang
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Can't redo: the folder it would move to is gone."
 msgstr "Can't redo: the folder it would move to is gone."
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Can't restore all of these"
+msgstr "Can't restore all of these"
 
 #: src/features/project/context/entry-drag/restore-drop.ts
 msgid "Can't restore into {destinationName}"
@@ -4708,6 +4752,7 @@ msgid "Response complete"
 msgstr "Response complete"
 
 #: src/features/draft-review/TrashedChatNotice.tsx
+#: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore"
@@ -4730,6 +4775,12 @@ msgstr "Restore before {sibling}"
 msgid "Restore to {destinationName}"
 msgstr "Restore to {destinationName}"
 
+#. placeholder {0}: landed.length
+#. placeholder {1}: entries.length
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
+msgid "Restored {0} of {1} files."
+msgstr "Restored {0} of {1} files."
+
 #. placeholder {0}: restored.length
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Restored {0} of {requested} items to {destinationName}."
@@ -4749,7 +4800,7 @@ msgstr "Restored {name} to {destinationName}."
 msgid "Restored as {0}."
 msgstr "Restored as {0}."
 
-#. placeholder {0}: documentLocationName(outcome.landedAt)
+#. placeholder {0}: documentLocationName(only)
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Restored at {0}."
 msgstr "Restored at {0}."

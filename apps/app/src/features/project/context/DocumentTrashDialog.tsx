@@ -5,16 +5,14 @@ import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
 import { ArchiveRestore, ChevronLeft } from "lucide-react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { useDocumentTrash, useTrashedDocument } from "@/client/query/useDocumentTrash";
 import { DocumentNotice } from "@/components/app/DocumentNotice";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
-import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { PhoneTakeover } from "@/components/ui/phone-shell";
 import { role } from "@/components/ui/roles";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
@@ -26,15 +24,14 @@ import {
   useCaptureProjectNavigation,
   useProjectTrashNavigation,
 } from "../routing/ProjectNavigationContext";
+import { ContextEntryMenu, EntryKebabButton, useEntryMenu } from "./ContextEntryActions";
 import { RowIcon, rowPaddingLeft } from "./ContextTreeRows";
 import { fileKindIcon } from "./context-file-icon";
-import {
-  contextTreeFileRowClassName,
-  contextTreeOverflowTriggerClassName,
-} from "./context-row-geometry";
+import { contextTreeFileRowClassName } from "./context-row-geometry";
 import { schemeLabel } from "./context-schemes";
 import { type TrashRestoreState, useDocumentTrashRestore } from "./DocumentTrashRestoreProvider";
 import { trashDragEntry } from "./entry-drag/entry";
+import { EntrySelectionProvider, useEntrySelection } from "./entry-drag/selection";
 import { useEntryRow } from "./entry-drag/use-entry-row";
 import { useOpenProjectDocument } from "./open-project-document";
 import { type RemovalVoice, removalVoice } from "./RemovedDocumentNotice";
@@ -84,9 +81,10 @@ export function DocumentTrashDialog({ projectId }: { projectId: string }) {
             selectedId={selectedId}
             states={states}
             onSelect={(documentId) => void navigate(documentId, { replace: true })}
-            onRestore={(entry, afterRestore) => {
-              void navigate(entry.documentId, { replace: true });
-              restore(entry, afterRestore);
+            onRestore={(restored) => {
+              const [only] = restored;
+              if (restored.length === 1 && only) void navigate(only.documentId, { replace: true });
+              restore(restored);
             }}
             showHeading
             className="w-72 shrink-0 border-r border-border-subtle bg-ink-fill pt-4"
@@ -160,7 +158,7 @@ function PhoneTrashContent({
   states: ReadonlyMap<string, TrashRestoreState>;
   onSelect: (documentId: string) => void;
   onBack: () => void;
-  onRestore: (entry: TrashEntry, afterRestore?: AfterRestore) => void;
+  onRestore: (entries: readonly TrashEntry[], afterRestore?: AfterRestore) => void;
 }) {
   const detail = typeof destination === "string";
   return (
@@ -223,11 +221,13 @@ function TrashListPane({
   selectedId: string | undefined;
   states: ReadonlyMap<string, TrashRestoreState>;
   onSelect: (documentId: string) => void;
-  onRestore: (entry: TrashEntry, afterRestore?: AfterRestore) => void;
+  onRestore: (entries: readonly TrashEntry[]) => void;
   className?: string;
   showHeading?: boolean;
 }) {
   const now = useMinuteClock();
+  // The popup's own selection: rows select as in the sidebar, but a modal has nowhere to drop them.
+  const selection = useEntrySelection();
   return (
     <aside className={cn("min-h-0 overflow-y-auto", className)}>
       {showHeading ? (
@@ -245,21 +245,24 @@ function TrashListPane({
           <InlineErrorRow message={t`Couldn't load Trash.`} onRetry={() => void query.refetch()} />
         </div>
       ) : entries.length ? (
-        <div className="pb-2">
-          {entries.map((entry) => (
-            <TrashRow
-              key={entry.documentId}
-              entry={entry}
-              now={now}
-              selected={entry.documentId === selectedId}
-              state={states.get(entry.documentId)}
-              onOpen={() => onSelect(entry.documentId)}
-              onRestore={() => {
-                onRestore(entry);
-              }}
-            />
-          ))}
-        </div>
+        <EntrySelectionProvider selection={selection}>
+          <div className="pb-2">
+            {entries.map((entry) => (
+              <TrashRow
+                key={entry.documentId}
+                entry={entry}
+                now={now}
+                selected={entry.documentId === selectedId}
+                draggable={false}
+                state={states.get(entry.documentId)}
+                onOpen={() => onSelect(entry.documentId)}
+                onRestore={(ids) =>
+                  onRestore(entries.filter(({ documentId }) => ids.includes(documentId)))
+                }
+              />
+            ))}
+          </div>
+        </EntrySelectionProvider>
       ) : query.isPending ? (
         <p role="status" className={cn("px-4", role.emptyLine)}>
           <Trans>Loading Trash…</Trans>
@@ -273,11 +276,15 @@ function TrashListPane({
   );
 }
 
-/** One deleted document: its name, age and former place, with Restore. Drags like a tree row inside a list. */
+/**
+ * One deleted document: its name, age and former place, with Restore. Inside a list's selection it
+ * selects and drags like a tree row, and its menu restores the whole selection.
+ */
 export function TrashRow({
   entry,
   now,
   selected,
+  draggable = true,
   state,
   onOpen,
   onRestore,
@@ -285,64 +292,69 @@ export function TrashRow({
   entry: TrashEntry;
   now: number;
   selected: boolean;
+  /** False where nothing can take a drop (the Trash popup). */
+  draggable?: boolean;
   state?: TrashRestoreState;
   onOpen: () => void;
-  onRestore: () => void;
+  /** Restores these documents: this row, or the selection its menu acted on. */
+  onRestore: (documentIds: readonly string[]) => void;
 }) {
   const location = `${schemeLabel(entry.scheme)}/${entry.formerPath}`;
   const age = relativeTime(entry.removal.time, now);
   const restoring = state?.kind === "restoring";
-  // Inside a tree's selection scope the row selects and drags like a tree row, to be restored where it lands.
-  const row = useEntryRow(trashDragEntry(entry), selected, !restoring, "trash");
+  const dragged = useMemo(() => trashDragEntry(entry), [entry]);
+  const row = useEntryRow(dragged, {
+    active: selected,
+    draggable: draggable && !restoring,
+    source: "trash",
+  });
+  const menu = useEntryMenu(dragged, restoring ? [] : RESTORE, (_action, rows) =>
+    onRestore(rows ? rows.map(({ ref }) => ref.id) : [entry.documentId]),
+  );
   return (
     <div>
-      {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. slop-lint: allow suppression the reason is stated in this comment */}
-      <div
-        role="button"
-        tabIndex={0}
-        aria-current={selected ? "true" : undefined}
-        {...row.rowProps}
-        onClick={row.activate(onOpen)}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          row.activate(onOpen)(event);
-        }}
-        className={cn(contextTreeFileRowClassName(selected), "focus-ring py-1.5")}
-        style={{ paddingLeft: rowPaddingLeft(0) }}
-      >
-        <RowIcon icon={fileKindIcon(entry.name)} />
-        <span className="ml-0.5 min-w-0 flex-1">
-          <span className="flex min-w-0 items-baseline gap-2">
-            <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-            <span className={cn("shrink-0 font-normal tabular-nums", role.rowSecondary)}>
-              {restoring ? <Trans>Restoring</Trans> : age}
+      <ContextEntryMenu menu={menu}>
+        {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. slop-lint: allow suppression the reason is stated in this comment */}
+        <div
+          role="button"
+          tabIndex={0}
+          aria-current={selected ? "true" : undefined}
+          {...row.rowProps}
+          onClick={row.activate(onOpen)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            row.activate(onOpen)(event);
+          }}
+          className={cn(contextTreeFileRowClassName(selected, row.selected), "focus-ring py-1.5")}
+          style={{ paddingLeft: rowPaddingLeft(0) }}
+        >
+          <RowIcon icon={fileKindIcon(entry.name)} />
+          <span className="ml-0.5 min-w-0 flex-1">
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+              <span className={cn("shrink-0 font-normal tabular-nums", role.rowSecondary)}>
+                {restoring ? <Trans>Restoring</Trans> : age}
+              </span>
+            </span>
+            <span
+              className={cn("block truncate leading-snug font-normal", role.rowSecondary)}
+              title={location}
+            >
+              {location}
             </span>
           </span>
-          <span
-            className={cn("block truncate leading-snug font-normal", role.rowSecondary)}
-            title={location}
-          >
-            {location}
-          </span>
-        </span>
-        <OverflowMenu
-          label={t`Actions`}
-          triggerClassName={contextTreeOverflowTriggerClassName}
-          triggerProps={{ disabled: restoring }}
-        >
-          <DropdownMenuItem onSelect={onRestore}>
-            <ArchiveRestore className="size-3.5 text-muted-foreground" aria-hidden />
-            <Trans>Restore</Trans>
-          </DropdownMenuItem>
-        </OverflowMenu>
-      </div>
+          <EntryKebabButton menu={menu} />
+        </div>
+      </ContextEntryMenu>
       {state?.kind === "failed" ? (
         <InlineErrorRow message={state.message} className="pt-0 pr-2 pb-1 pl-3.5" />
       ) : null}
     </div>
   );
 }
+
+const RESTORE = ["restore"] as const;
 
 function TrashedDocumentView({
   projectId,
@@ -354,7 +366,7 @@ function TrashedDocumentView({
   projectId: string;
   documentId: string;
   state?: TrashRestoreState;
-  onRestore: (entry: TrashEntry, afterRestore?: AfterRestore) => void;
+  onRestore: (entries: readonly TrashEntry[], afterRestore?: AfterRestore) => void;
   showHeader: boolean;
 }) {
   const { i18n } = useLingui();
@@ -366,7 +378,7 @@ function TrashedDocumentView({
   const restore = useCallback(() => {
     if (!document || state?.kind === "restoring") return;
     const isCurrent = captureNavigation?.() ?? (() => true);
-    onRestore(document, async () => {
+    onRestore([document], async () => {
       if (!isCurrent()) return null;
       const opened = await openDocument({
         documentId,

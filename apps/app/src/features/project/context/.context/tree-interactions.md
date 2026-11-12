@@ -76,9 +76,23 @@ and it remains visible while its portaled menu is open. Mobile uses the same
 context adapter with a 44 px target. Labels, icons, grouping, destructive
 metadata, order, presentation, and dispatch actions therefore cannot drift.
 The ellipsis stops propagation so it doesn't trigger the row's click handler.
-`EntryAction` is five actions in fixed order — New file, New folder,
-separator, Rename, Move…, Delete (creation first, destructive last) —
-identical in both triggers. Each list declares which of them it supports. Actions dispatch through `useMenuActionDispatch`
+`EntryAction` is one ordered list: New file, New folder, Import…, separator, Rename, Move…,
+Copy to…, Delete, Restore (creation first; Restore is a Trash row's only action), identical in
+both triggers. Each row declares which of them it supports. `useEntryMenu` builds a row's menu for
+both triggers. Opened on a row inside a selection of two or more rows, the menu is the selection's,
+a second ordered spec through the same renderers: Move N…, Delete N, Restore N, each only when every
+selected row grants it, named by the selection's kind ("Move 3 files…", "Delete 2 folders", "Move 4
+items…" for a mix). A row's grants (`SelectionGrant`) are its own menu actions: `useEntryMenu`
+registers them with the selection, so a row passes its actions once and the selection's menu can't
+disagree with the row's. A selection whose rows share no action shows one disabled line in its list's
+verb ("Can't move or delete all of these"; in Trash "Can't restore all of these") rather than an
+empty menu.
+Opened on a row outside the selection (or alone in it), the menu selects that row alone, as
+Finder and VS Code do, and is the row's own. The selection is read once, as the menu opens, so the
+action acts on what the label counted. The context-menu key and Shift+F10 fire the same
+`contextmenu` on the focused row; there is no Delete-key shortcut for rows. Escape inside an open
+menu closes only the menu: the list's Escape clears the selection only for keys pressed in the
+list itself, since a portaled menu's key events still bubble to it. Actions dispatch through `useMenuActionDispatch`
 (`components/ui/dropdown-menu.tsx`): they run once the menu has closed and put
 focus back on its trigger. Run from the item, menu teardown would blur a freshly
 mounted inline row (blur commits or cancels it), and a dialog the action opens
@@ -112,6 +126,9 @@ settles the folder and exact descendant identities atomically. Pending deletion
 hides the subtree; refusal restores rows with a failure mark. Tree absence never
 proves document removal.
 
+A row's Delete, a selection's Delete N and a drop onto Trash are each one `runDelete`: one own
+removal covers every document they take away, and an entry inside another entry's folder goes
+with that folder, never on its own. Each refused entry toasts and keeps its documents.
 Writer deletion has no confirmation step and no Undo: the row leaves the tree, and the document
 waits in Trash. Delete progress is derived from the namespace journal. A document the server never
 accepted has no Trash entry; its deletion settles on this device. Its content is cleaned up after ten
@@ -183,8 +200,14 @@ Scratch/Uploads, never project-owned Manuscript/KB/User paths.
 
 Move… follows Rename in the shared action specification, including phone actions,
 and Copy to… follows Move…. They are one component:
-`EntryDestinationPicker` takes an `action` ("move" or "copy") and the row to pick
-for (one row, from the row menu).
+`EntryDestinationPicker` takes an `action` ("move" or "copy"), the row it opened from, and,
+for a selection's Move N…, the `selection` it moves. A selection moves together, minus rows inside
+a selected folder, skipping rows already in the destination; it offers no position choices, reads
+"Already in <folder>" only when every row is already there, and keeps the moved rows selected with
+focus on the first in its new place (the row the picker opened from may have moved and unmounted it).
+The rows arrive over several commits, and a keyed reorder blurs a focused row without remounting it,
+so for two seconds after a Move the list puts focus back on its first selected row whenever focus
+is lost or sits on another selected row (`settleFocus`).
 Both offer the same destinations, and a folder cannot go inside itself in either.
 They differ in what a pick does: Copy to… has no "Already in" refusal and no
 position choices (it always adds, and its copy takes the next free name in the
@@ -237,7 +260,10 @@ its drop scope. The Files list (also the phone drawer) is one list over every
 source it can show: Manuscript, Knowledge, Your files, Unfiled and the chat's
 Scratch, each tree keeping its own expansion. Rows join through `EntrySelectionProvider`.
 Selection keys are `kind:id` and carry no scheme or place, so a moved row keeps
-its key and stays selected. A plain click opens or toggles the row as before and leaves no
+its key and stays selected. Rows a delete or restore takes out of their list leave every list's
+selection (`leaveSelections`, run by `runDelete` and both Trash restores), with the documents and
+folders inside a deleted folder: Trash rows share the `file:<documentId>` key, so a row deleted while
+selected would otherwise arrive selected in Trash, and a restored one back in the tree. A plain click opens or toggles the row as before and leaves no
 selection of its own: until the writer Ctrl/Cmd- or Shift-clicks, the selection
 is just the open row, shown by the open row's own highlight. Ctrl/Cmd-click
 starts an explicit selection from the open row and adds or removes rows;
@@ -306,7 +332,7 @@ its heading or the space below its last row; the usual crossing-system rules app
 Your files and Scratch still ask. A drag that rests on a tab for 600 ms opens it, as on
 a closed folder, for a drop into a folder inside. Trash is a source too, not a scheme:
 rows dropped on its tab or its pane are deleted at once, with no menu, through
-`useDeleteContextEntry().deleteEntries`, and its rows drag out to be restored where
+`useDeleteContextEntries`, and its rows drag out to be restored where
 they land.
 
 A list row dropped within one system moves at once. A drop that crosses systems (the
@@ -462,3 +488,11 @@ refuses with the hint. The rows leave Trash and appear in the destination at onc
 journal entry: a reload shows the server). A refused item goes back to Trash with its reason; the
 notice offers Undo, which deletes the restored documents through the normal delete path. Trash's own
 list never takes a trash drag (the rows are already deleted).
+
+Trash rows (`TrashRow`, in the sidebar's Trash and the Trash popup) select like tree rows: the
+sidebar's through the Files list's selection, the popup's through its own (its rows don't drag: a
+modal has nowhere to drop them). Right-click and ⋯ share the tree's menu: Restore on one row,
+Restore N on a selection. `restore(entries)` on `DocumentTrashRestoreProvider` sends one request
+for all of them; each entry shows its own outcome on its row (a blocked one keeps "Couldn't restore
+… A file is in the way."), and one notice counts the ones that came back ("Restored 3 files.").
+There is no Delete forever: permanent removal is only the scheduled purge.

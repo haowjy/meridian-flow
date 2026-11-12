@@ -167,15 +167,17 @@ export function parentOf(view: PlacementView, ref: EntryRef): ParentRef | null {
   return placeEntryRef(view, ref)?.parent ?? null;
 }
 
-/** Drops each item whose parent sits inside another carried folder. */
-function dropNested<T extends { ref: EntryRef }>(
+/**
+ * Drops each item that sits inside another item's folder: a folder carries its contents, so
+ * nothing a drag, Move… or Delete acts on is acted on twice.
+ */
+export function outermost<T extends { ref: EntryRef }>(
   view: PlacementView,
   items: readonly T[],
-  parentOf: (item: T) => ParentRef | null,
 ): T[] {
   const folders = items.filter((item) => item.ref.kind === "folder");
   return items.filter((item) => {
-    const parent = parentOf(item);
+    const parent = parentOf(view, item.ref);
     return !folders.some((folder) => folder !== item && within(view, parent, folder.ref.id));
   });
 }
@@ -305,7 +307,7 @@ export function resolveDrop(
     now: placeEntryRef(view, entry.ref),
   }));
   const placed = looked.flatMap(({ now, view: read }) => (now ? [{ ...now, view: read }] : []));
-  const sources = dropNested(view, placed, (source) => source.parent);
+  const sources = outermost(view, placed);
   const system = entrySystem(scheme, owner);
   return {
     sources,

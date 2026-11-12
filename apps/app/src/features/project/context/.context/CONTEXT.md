@@ -83,7 +83,7 @@ ContextTreePanel (desktop sidebar and the phone's drawer)
        ├─ useCreateEntryForm
        ├─ useEntryInteraction
        │     └─ rename forms + move picker
-       ├─ useDeleteContextEntry
+       ├─ useDeleteContextEntries
        └─ ContextEntryActions (menus)
                      │
       useInlineEdit (components/ui, shared core)
