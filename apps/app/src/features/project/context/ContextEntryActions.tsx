@@ -1,8 +1,8 @@
 /** ContextEntryActions — right-click context menu and hover kebab button for file/folder rows in the desktop context tree. */
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import {
+  ArchiveRestore,
   ChevronRight,
   Copy,
   FilePlus,
@@ -16,7 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
-import { Fragment } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -35,6 +35,8 @@ import {
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
 import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
+import type { DragEntry } from "./entry-drag/entry";
+import { type SelectionGroup, useOptionalEntrySelection } from "./entry-drag/selection";
 
 // ─── Action types ────────────────────────────────────────────────────────────
 
@@ -46,11 +48,12 @@ export type EntryAction =
   | "rename"
   | "move"
   | "copy"
-  | "delete";
+  | "delete"
+  | "restore";
 
 type EntryActionSpec = {
   action: EntryAction;
-  label: React.ReactNode;
+  label: ReactNode;
   icon: LucideIcon;
   group: "create" | "manage";
   destructive?: true;
@@ -84,14 +87,109 @@ const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
     group: "manage",
     destructive: true,
   },
+  { action: "restore", label: <Trans>Restore</Trans>, icon: ArchiveRestore, group: "manage" },
 ];
+
+/** What every row of a selection is: one kind names it, a mix is "items". */
+function selectionNoun(entries: readonly DragEntry[]): "file" | "folder" | "item" {
+  const [first] = entries;
+  if (!first || entries.some((entry) => entry.ref.kind !== first.ref.kind)) return "item";
+  return first.ref.kind === "folder" ? "folder" : "file";
+}
+
+/**
+ * The menu of a selection of two or more rows: only what acts on all of them at once, so no
+ * creation and no Rename. A second ordered specification through the same renderers.
+ */
+function selectionActions(group: SelectionGroup): EntryActionSpec[] {
+  const n = group.entries.length;
+  const noun = selectionNoun(group.entries);
+  const specs: EntryActionSpec[] = [];
+  if (group.grants.includes("move"))
+    specs.push({
+      action: "move",
+      icon: FolderInput,
+      group: "manage",
+      label:
+        noun === "file"
+          ? plural(n, { one: "Move # file…", other: "Move # files…" })
+          : noun === "folder"
+            ? plural(n, { one: "Move # folder…", other: "Move # folders…" })
+            : plural(n, { one: "Move # item…", other: "Move # items…" }),
+    });
+  if (group.grants.includes("delete"))
+    specs.push({
+      action: "delete",
+      icon: Trash2,
+      group: "manage",
+      destructive: true,
+      label:
+        noun === "file"
+          ? plural(n, { one: "Delete # file", other: "Delete # files" })
+          : noun === "folder"
+            ? plural(n, { one: "Delete # folder", other: "Delete # folders" })
+            : plural(n, { one: "Delete # item", other: "Delete # items" }),
+    });
+  if (group.grants.includes("restore"))
+    specs.push({
+      action: "restore",
+      icon: ArchiveRestore,
+      group: "manage",
+      label:
+        noun === "file"
+          ? plural(n, { one: "Restore # file", other: "Restore # files" })
+          : plural(n, { one: "Restore # item", other: "Restore # items" }),
+    });
+  return specs;
+}
+
+/** One row's menu, for its right-click and its ⋯ alike. */
+export type EntryMenu = {
+  /** The row's own actions; a row with none has no menu, even inside a selection. */
+  enabled: boolean;
+  items: readonly EntryActionSpec[];
+  /** A selection whose rows share no action says so instead of opening empty. */
+  empty: boolean;
+  onOpen: () => void;
+  onAction: (action: EntryAction) => void;
+};
+
+/**
+ * A row's menu. Opened on a row inside a selection of two or more, it is the selection's menu and
+ * acts on all of it (`run` gets the selection's rows in screen order); opened on a row outside the
+ * selection, it selects that row alone and is the row's own menu (`run` gets null). The selection
+ * is read once, as the menu opens, so what it acts on is what it named.
+ */
+export function useEntryMenu(
+  entry: DragEntry,
+  actions: readonly EntryAction[],
+  run: (action: EntryAction, selection: readonly DragEntry[] | null) => void,
+): EntryMenu {
+  const selection = useOptionalEntrySelection();
+  const [group, setGroup] = useState<SelectionGroup | null>(null);
+  const items = group
+    ? selectionActions(group)
+    : ENTRY_ACTIONS.filter((spec) => actions.includes(spec.action));
+  return {
+    enabled: actions.length > 0,
+    items,
+    empty: group !== null && items.length === 0,
+    onOpen() {
+      const opened = selection?.group(entry) ?? null;
+      if (!opened) selection?.pick(entry);
+      setGroup(opened);
+    },
+    onAction(action) {
+      if (items.some((spec) => spec.action === action)) run(action, group?.entries ?? null);
+    },
+  };
+}
 
 type MenuRow =
   | { kind: "action"; spec: EntryActionSpec; startsGroup: boolean }
   | { kind: "import"; specs: EntryActionSpec[]; startsGroup: boolean };
 
-function menuRows(allowedActions: readonly EntryAction[]): MenuRow[] {
-  const specs = ENTRY_ACTIONS.filter((spec) => allowedActions.includes(spec.action));
+function menuRows(specs: readonly EntryActionSpec[]): MenuRow[] {
   const rows: MenuRow[] = [];
   let previous: EntryActionSpec | undefined;
   for (const spec of specs) {
@@ -105,34 +203,17 @@ function menuRows(allowedActions: readonly EntryAction[]): MenuRow[] {
   return rows;
 }
 
-export type EntryActionTarget = {
-  /** Display name of the entry (basename). */
-  name: string;
-  /** Full scheme-relative path. */
-  path: string;
-} & ({ kind: "file"; documentId: string } | { kind: "dir"; entryId: string });
-
-export type DeleteTarget = EntryActionTarget & {
-  owner: ContextOwner;
-  scheme: ProjectContextTreeScheme;
-};
+/** A selection holding a row that can't move and one that can't be deleted. */
+const cantActLabel = () => t`Can't move or delete all of these`;
 
 // ─── Right-click context menu (wraps the row) ───────────────────────────────
 
-export function ContextEntryMenu({
-  children,
-  allowedActions,
-  onAction,
-}: {
-  children: React.ReactNode;
-  allowedActions: readonly EntryAction[];
-  onAction: (action: EntryAction) => void;
-}) {
+export function ContextEntryMenu({ children, menu }: { children: ReactNode; menu: EntryMenu }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
-  const dispatchAction = (action: EntryAction) => dispatch(() => onAction(action));
-  if (allowedActions.length === 0) return children;
+  const dispatchAction = (action: EntryAction) => dispatch(() => menu.onAction(action));
+  if (!menu.enabled) return children;
   return (
-    <ContextMenuPrimitive.Root>
+    <ContextMenuPrimitive.Root onOpenChange={(open) => open && menu.onOpen()}>
       <ContextMenuPrimitive.Trigger asChild>{children}</ContextMenuPrimitive.Trigger>
       <ContextMenuPrimitive.Portal>
         <ContextMenuPrimitive.Content
@@ -143,7 +224,7 @@ export function ContextEntryMenu({
           )}
           onCloseAutoFocus={onCloseAutoFocus}
         >
-          <ContextActionItems allowedActions={allowedActions} onAction={dispatchAction} />
+          <ContextActionItems menu={menu} onAction={dispatchAction} />
         </ContextMenuPrimitive.Content>
       </ContextMenuPrimitive.Portal>
     </ContextMenuPrimitive.Root>
@@ -152,26 +233,19 @@ export function ContextEntryMenu({
 
 // ─── Hover kebab button + dropdown ──────────────────────────────────────────
 
-export function EntryKebabButton({
-  allowedActions,
-  onAction,
-  className,
-}: {
-  allowedActions: readonly EntryAction[];
-  onAction: (action: EntryAction) => void;
-  className?: string;
-}) {
+export function EntryKebabButton({ menu, className }: { menu: EntryMenu; className?: string }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
-  const dispatchAction = (action: EntryAction) => dispatch(() => onAction(action));
-  if (allowedActions.length === 0) return null;
+  const dispatchAction = (action: EntryAction) => dispatch(() => menu.onAction(action));
+  if (!menu.enabled) return null;
   return (
     <OverflowMenu
       label={t`Actions`}
       align="start"
+      onOpenChange={(open) => open && menu.onOpen()}
       onCloseAutoFocus={onCloseAutoFocus}
       triggerClassName={cn(contextTreeOverflowTriggerClassName, className)}
     >
-      <DropdownActionItems allowedActions={allowedActions} onAction={dispatchAction} />
+      <DropdownActionItems menu={menu} onAction={dispatchAction} />
     </OverflowMenu>
   );
 }
@@ -179,10 +253,10 @@ export function EntryKebabButton({
 // ─── Primitive-specific renderers over the shared action specification ─────
 
 function ContextActionItems({
-  allowedActions,
+  menu,
   onAction,
 }: {
-  allowedActions: readonly EntryAction[];
+  menu: EntryMenu;
   onAction: (action: EntryAction) => void;
 }) {
   const item = (spec: EntryActionSpec) => {
@@ -202,9 +276,18 @@ function ContextActionItems({
       </ContextMenuPrimitive.Item>
     );
   };
+  if (menu.empty)
+    return (
+      <ContextMenuPrimitive.Item
+        disabled
+        className={cn(dropdownRowVariants(), dropdownMenuItemClass)}
+      >
+        {cantActLabel()}
+      </ContextMenuPrimitive.Item>
+    );
   return (
     <>
-      {menuRows(allowedActions).map((row) => (
+      {menuRows(menu.items).map((row) => (
         <Fragment key={row.kind === "import" ? "import" : row.spec.action}>
           {row.startsGroup ? (
             <ContextMenuPrimitive.Separator className={dropdownMenuSeparatorClass} />
@@ -244,10 +327,10 @@ function ContextActionItems({
 }
 
 function DropdownActionItems({
-  allowedActions,
+  menu,
   onAction,
 }: {
-  allowedActions: readonly EntryAction[];
+  menu: EntryMenu;
   onAction: (action: EntryAction) => void;
 }) {
   const item = (spec: EntryActionSpec) => {
@@ -266,7 +349,8 @@ function DropdownActionItems({
       </DropdownMenuItem>
     );
   };
-  return menuRows(allowedActions).map((row) => (
+  if (menu.empty) return <DropdownMenuItem disabled>{cantActLabel()}</DropdownMenuItem>;
+  return menuRows(menu.items).map((row) => (
     <Fragment key={row.kind === "import" ? "import" : row.spec.action}>
       {row.startsGroup ? <DropdownMenuSeparator /> : null}
       {row.kind === "action" ? (

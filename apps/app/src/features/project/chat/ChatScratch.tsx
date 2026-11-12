@@ -21,15 +21,15 @@ import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { ListSectionHeader } from "@/components/ui/list-section";
-import type { DeleteTarget } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import { schemeLabel } from "../context/context-schemes";
+import type { DragEntry } from "../context/entry-drag/entry";
 import type { MoveArea } from "../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { serverDocumentFromFile } from "../context/open-document-from-file";
 import { AreaDropRegion } from "../context/tree-drop/AreaDropRegion";
 import { treeFolderIds } from "../context/tree-expansion-state";
-import { useDeleteContextEntry } from "../context/use-delete-context-entry";
+import { useDeleteContextEntries } from "../context/use-delete-context-entries";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
 import { useScratchCatalogs } from "../context/use-scratch-catalogs";
 import { useTreeExpansion } from "../context/use-tree-expansion";
@@ -251,7 +251,7 @@ function ChatScratchTree({
 }) {
   const { source, primary, earlier, editable, hasEarlier, ready } = scratch;
   const openId = useOpenDocumentId();
-  const deletion = useDeleteContextEntry(projectId);
+  const deleteEntries = useDeleteContextEntries(projectId);
   const folderIds = useMemo(() => {
     if (!ready) return null;
     const folders = (catalog: CatalogContextView | null) =>
@@ -297,7 +297,7 @@ function ChatScratchTree({
                 openId={openId}
                 expansion={expansion}
                 onPicked={onPicked}
-                onRequestDelete={deletion.requestDelete}
+                onRequestDelete={deleteEntries}
               />
             </TreeGroup>
           ) : null}
@@ -313,7 +313,7 @@ function ChatScratchTree({
           openId={openId}
           expansion={expansion}
           onPicked={onPicked}
-          onRequestDelete={deletion.requestDelete}
+          onRequestDelete={deleteEntries}
         />
       ) : null}
     </>
@@ -344,7 +344,7 @@ function ScratchCatalog({
   openId: string | undefined;
   expansion: Pick<ReturnType<typeof useTreeExpansion>, "isExpanded" | "toggleEntry">;
   onPicked?: () => void;
-  onRequestDelete: (target: DeleteTarget) => void;
+  onRequestDelete: (entries: readonly DragEntry[]) => void;
 }) {
   const openNote = useOpenDocumentInEditor();
   const { isExpanded, toggleEntry } = expansion;

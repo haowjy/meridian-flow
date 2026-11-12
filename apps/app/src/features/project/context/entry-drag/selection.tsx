@@ -27,6 +27,12 @@ import {
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { type DragEntry, type EntryRef, entryKey } from "./entry";
 
+/** What a row lets a selection's menu do with it. */
+export type SelectionGrant = "move" | "delete" | "restore";
+
+/** A selection of two or more rows, in screen order, and what every one of them grants. */
+export type SelectionGroup = { entries: DragEntry[]; grants: SelectionGrant[] };
+
 export type EntrySelection = {
   /** Rows drag on the desktop shell only; the phone has no drag (owner, 2026-10-11). */
   draggable: boolean;
@@ -36,6 +42,10 @@ export type EntrySelection = {
   click(entry: DragEntry, event: MouseEvent | KeyboardEvent): boolean;
   /** What a drag of this row carries, in screen order; a row outside the selection goes alone. */
   dragged(entry: DragEntry): DragEntry[];
+  /** The selection a menu on this row acts on; null when the row is outside it or alone in it. */
+  group(entry: DragEntry): SelectionGroup | null;
+  /** A menu opened on a row outside the selection selects that row alone. */
+  pick(entry: DragEntry): void;
   /** Selects exactly these keys (after a move), even one; none returns to the open row. */
   replace(keys: readonly string[]): void;
   clear(): void;
@@ -47,8 +57,8 @@ export type EntrySelection = {
   focus(): void;
   /** Whether a row mounting now should take focus (see `focus`). */
   reclaimsFocus(key: string): boolean;
-  /** Rows announce themselves while mounted; the open row says so. */
-  register(entry: DragEntry, active: boolean): () => void;
+  /** Rows announce themselves while mounted, with what they grant; the open row says so. */
+  register(entry: DragEntry, active: boolean, grants: readonly SelectionGrant[]): () => void;
   root: RefObject<HTMLDivElement | null>;
 };
 
@@ -67,7 +77,9 @@ export function useEntrySelection(): EntrySelection {
   // null: no explicit selection, so the selection is the open row.
   const [explicit, setExplicit] = useState<ReadonlySet<string> | null>(null);
   const anchor = useRef<string | null>(null);
-  const registry = useRef(new Map<string, { entry: DragEntry; active: boolean }>());
+  const registry = useRef(
+    new Map<string, { entry: DragEntry; active: boolean; grants: readonly SelectionGrant[] }>(),
+  );
   const root = useRef<HTMLDivElement>(null);
   const focusUntil = useRef(0);
   const shown = useRef<ReadonlySet<string> | null>(null);
@@ -127,6 +139,15 @@ export function useEntrySelection(): EntrySelection {
       const open = openKey();
       return new Set(open ? [open] : []);
     };
+    /** The mounted selected rows in screen order, or null when `entry` isn't one of them. */
+    const selectedRows = (entry: DragEntry) => {
+      const selected = current();
+      if (!selected.has(entryKey(entry.ref))) return null;
+      return screenOrder().flatMap((key) => {
+        const row = selected.has(key) ? registry.current.get(key) : undefined;
+        return row ? [row] : [];
+      });
+    };
     return {
       draggable,
       root,
@@ -159,13 +180,23 @@ export function useEntrySelection(): EntrySelection {
         return false;
       },
       dragged(entry) {
-        const selected = current();
-        if (!selected.has(entryKey(entry.ref))) return [entry];
-        const rows = screenOrder()
-          .filter((key) => selected.has(key))
-          .map((key) => registry.current.get(key)?.entry)
-          .filter((row): row is DragEntry => row !== undefined);
-        return rows;
+        return selectedRows(entry)?.map((row) => row.entry) ?? [entry];
+      },
+      group(entry) {
+        const rows = selectedRows(entry);
+        if (!rows || rows.length < 2) return null;
+        return {
+          entries: rows.map((row) => row.entry),
+          grants: (["move", "delete", "restore"] as const).filter((grant) =>
+            rows.every((row) => row.grants.includes(grant)),
+          ),
+        };
+      },
+      pick(entry) {
+        const key = entryKey(entry.ref);
+        if (current().has(key)) return;
+        anchor.current = key;
+        setExplicit(openKey() === key ? null : new Set([key]));
       },
       replace(keys) {
         setExplicit(keys.length > 0 ? new Set(keys) : null);
@@ -186,9 +217,9 @@ export function useEntrySelection(): EntrySelection {
         const lost = document.activeElement === null || document.activeElement === document.body;
         return lost && Date.now() < focusUntil.current && current().has(key);
       },
-      register(entry, active) {
+      register(entry, active, grants) {
         const key = entryKey(entry.ref);
-        registry.current.set(key, { entry, active });
+        registry.current.set(key, { entry, active, grants });
         paintRuns();
         return () => {
           if (registry.current.get(key)?.entry === entry) registry.current.delete(key);
@@ -220,7 +251,9 @@ export function EntrySelectionProvider({
   children: ReactNode;
 }) {
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") selection.clear();
+    // A row's menu is portaled but still bubbles here; its Escape closes the menu, not the selection.
+    if (event.key === "Escape" && selection.root.current?.contains(event.target as Node))
+      selection.clear();
   };
   return (
     <SelectionContext.Provider value={selection}>
@@ -233,10 +266,20 @@ export function EntrySelectionProvider({
 }
 
 /** A row's place in its list's selection; inert outside one (phone browsing). */
-export function useEntrySelectionRow(entry: DragEntry, active: boolean) {
+export function useEntrySelectionRow(
+  entry: DragEntry,
+  active: boolean,
+  grants: readonly SelectionGrant[],
+) {
   const selection = useContext(SelectionContext);
   const key = entryKey(entry.ref);
-  useLayoutEffect(() => selection?.register(entry, active), [selection, entry, active]);
+  // Joined so a caller's fresh array of the same grants doesn't re-register every render.
+  const granted = grants.join(" ");
+  useLayoutEffect(
+    () =>
+      selection?.register(entry, active, granted ? (granted.split(" ") as SelectionGrant[]) : []),
+    [selection, entry, active, granted],
+  );
   const selected = selection?.isSelected(key) ?? false;
   const reclaim = useCallback(
     (row: HTMLElement | null) => {

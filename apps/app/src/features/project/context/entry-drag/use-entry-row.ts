@@ -2,16 +2,25 @@
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { startEntryDrag } from "./drag-session";
 import type { DragEntry, DragSource } from "./entry";
-import { useEntrySelectionRow } from "./selection";
+import { type SelectionGrant, useEntrySelectionRow } from "./selection";
 
-/** `draggable` is false for a row that names nothing a drag could act on (a navigation-only folder). */
 export function useEntryRow(
   entry: DragEntry,
-  active: boolean,
-  draggable = true,
-  source: DragSource = "list-row",
+  {
+    active,
+    draggable = true,
+    source = "list-row",
+    grants,
+  }: {
+    active: boolean;
+    /** False for a row that names nothing a drag could act on (a navigation-only folder). */
+    draggable?: boolean;
+    source?: DragSource;
+    /** What a selection's menu may do with this row. */
+    grants: readonly SelectionGrant[];
+  },
 ) {
-  const { selection, selected, rowProps } = useEntrySelectionRow(entry, active);
+  const { selection, selected, rowProps } = useEntrySelectionRow(entry, active, grants);
   return {
     selected,
     rowProps: {

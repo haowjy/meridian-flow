@@ -35,8 +35,8 @@ type AfterRestore = (
 
 type RestoreContextValue = {
   states: ReadonlyMap<string, TrashRestoreState>;
-  /** Restores one entry to its original path. */
-  restore: (entry: DocumentTrashEntry, afterRestore?: AfterRestore) => void;
+  /** Restores entries to their original paths in one request; each shows its own outcome. */
+  restore: (entries: readonly DocumentTrashEntry[], afterRestore?: AfterRestore) => void;
   /**
    * Restores entries into a destination (a drag out of Trash). They leave the Trash list and
    * appear in the destination at once; one that fails goes back to Trash with its reason in
@@ -106,23 +106,38 @@ export function DocumentTrashRestoreProvider({
   );
 
   const restore = useCallback(
-    (entry: DocumentTrashEntry, afterRestore?: AfterRestore) => {
-      if (restoring.current.has(entry.documentId)) return;
-      restoring.current.add(entry.documentId);
-      setState(entry.documentId, { kind: "restoring" });
-      void restoreTrashedDocuments(queryClient, projectId, [entry])
-        .then(async (outcomes) => {
-          const outcome = outcomes.get(entry.documentId);
-          if (!outcome) throw new Error("Restore returned no result");
-          await settle(entry, outcome, afterRestore);
-          if (outcome.kind === "living" && outcome.landedAt)
-            setNotice({
-              id: Date.now(),
-              text: t`Restored at ${documentLocationName(outcome.landedAt)}.`,
-            });
-        })
-        .catch(() => settle(entry, "network"))
-        .finally(() => restoring.current.delete(entry.documentId));
+    (requested: readonly DocumentTrashEntry[], afterRestore?: AfterRestore) => {
+      const entries = requested.filter((entry) => !restoring.current.has(entry.documentId));
+      if (entries.length === 0) return;
+      for (const { documentId } of entries) {
+        restoring.current.add(documentId);
+        setState(documentId, { kind: "restoring" });
+      }
+      const finish = async (outcomes: Map<string, TrashRestoreOutcome> | null) => {
+        const landed: (string | undefined)[] = [];
+        for (const entry of entries) {
+          const outcome = outcomes?.get(entry.documentId) ?? "network";
+          if ((await settle(entry, outcome, afterRestore)) && outcome !== "network")
+            landed.push(outcome.kind === "living" ? outcome.landedAt : undefined);
+        }
+        const [only] = landed;
+        if (entries.length === 1 && only)
+          setNotice({ id: Date.now(), text: t`Restored at ${documentLocationName(only)}.` });
+        else if (entries.length > 1 && landed.length > 0)
+          setNotice({
+            id: Date.now(),
+            text: plural(landed.length, {
+              one: "Restored # file.",
+              other: "Restored # files.",
+            }),
+          });
+      };
+      // A request that never answered fails every entry the same way: "Try again."
+      void restoreTrashedDocuments(queryClient, projectId, entries)
+        .then(finish, () => finish(null))
+        .finally(() => {
+          for (const { documentId } of entries) restoring.current.delete(documentId);
+        });
     },
     [projectId, queryClient, settle, setState],
   );

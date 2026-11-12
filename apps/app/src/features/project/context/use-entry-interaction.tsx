@@ -1,14 +1,16 @@
 /** One namespace interaction model for tree, phone and Work Files rows. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import type { CatalogNode } from "@/client/query/context-catalog-projection";
 import type { OpenDocumentOwner } from "@/client/stores";
-import { ContextEntryMenu, type DeleteTarget, type EntryAction } from "./ContextEntryActions";
+import { ContextEntryMenu, type EntryAction, useEntryMenu } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
 import { parentContextEntryPath } from "./context-entry-name";
 import { EntryDestinationPicker } from "./EntryDestinationPicker";
+import { type DragEntry, dragEntry } from "./entry-drag/entry";
+import type { SelectionGrant } from "./entry-drag/selection";
 import { useRenameOperation } from "./LinkUpdateNote";
 import type { UseRenameEntryFormOptions } from "./use-rename-entry-form";
 import { useEntryRenameRepair } from "./use-repair-on-fresh-failure";
@@ -38,6 +40,8 @@ export function entryActions(
     : capabilities;
 }
 
+const SELECTION_GRANTS = ["move", "delete"] as const satisfies readonly SelectionGrant[];
+
 export function useEntryInteraction({
   projectId,
   node,
@@ -56,7 +60,8 @@ export function useEntryInteraction({
   owner: ContextOwner;
   scheme: ProjectContextTreeScheme;
   capabilities: EntryCapabilities;
-  onRequestDelete: (target: DeleteTarget) => void;
+  /** Deletes entries in one gesture: this row, or the selection its menu acted on. */
+  onRequestDelete: (entries: readonly DragEntry[]) => void;
   create?: EntryCreation;
   siblings: readonly ContextEntrySibling[];
   /** Creation may ask an arriving row to open its naming field. */
@@ -69,6 +74,9 @@ export function useEntryInteraction({
   const [renaming, setRenaming] = useState(false);
   // The picker is one component for both; which action opened it decides what a pick does.
   const [picking, setPicking] = useState<"move" | "copy" | null>(null);
+  // Set while the picker moves a selection rather than this row alone.
+  const [pickedSelection, setPickedSelection] = useState<readonly DragEntry[] | null>(null);
+  const entry = useMemo(() => dragEntry(node), [node]);
   const id = node.kind === "file" ? node.documentId : node.entryId;
   const kind: "file" | "folder" = node.kind === "file" ? "file" : "folder";
   const { operationId, remember } = useRenameOperation(projectId, { kind, id });
@@ -99,20 +107,17 @@ export function useEntryInteraction({
         action === "new-file" ? "file" : "folder",
         node.kind === "dir" ? node.path : parentContextEntryPath(node.path),
       );
-    else if (action === "delete")
-      onRequestDelete(
-        node.kind === "file"
-          ? {
-              name: node.name,
-              path: node.path,
-              kind: "file",
-              documentId: node.documentId,
-              owner,
-              scheme,
-            }
-          : { name: node.name, path: node.path, kind: "dir", entryId: node.entryId, owner, scheme },
-      );
+    else if (action === "delete") onRequestDelete([entry]);
   };
+  const menu = useEntryMenu(entry, actions, (action, selection) => {
+    if (!selection) {
+      setPickedSelection(null);
+      onAction(action);
+    } else if (action === "move") {
+      setPickedSelection(selection);
+      setPicking("move");
+    } else if (action === "delete") onRequestDelete(selection);
+  });
   const rename: UseRenameEntryFormOptions = {
     projectId,
     owner: resolvedOwner,
@@ -135,16 +140,24 @@ export function useEntryInteraction({
     operationId,
     actions,
     onAction,
+    entry,
+    menu,
+    /** What a selection's menu may do with this row: Move and Delete, never Rename or creation. */
+    grants: SELECTION_GRANTS.filter((grant) => actions.includes(grant)),
     picker: {
       projectId,
       // Closed, it still names the action it would open for.
       action: picking ?? "move",
       from: { scheme, owner: resolvedOwner },
       entry: { id, name: node.name, path: node.path, kind },
+      selection: pickedSelection ?? undefined,
       repairMove: node.namespaceRepairMove,
       open: picking !== null && actions.includes(picking),
       onOpenChange: (open: boolean) => {
-        if (!open) setPicking(null);
+        if (!open) {
+          setPicking(null);
+          setPickedSelection(null);
+        }
       },
     },
   };
@@ -162,9 +175,7 @@ export function EntryInteractionShell({
   return (
     <EntryDestinationPicker {...interaction.picker}>
       {contextMenu ? (
-        <ContextEntryMenu allowedActions={interaction.actions} onAction={interaction.onAction}>
-          {children}
-        </ContextEntryMenu>
+        <ContextEntryMenu menu={interaction.menu}>{children}</ContextEntryMenu>
       ) : (
         children
       )}

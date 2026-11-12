@@ -21,6 +21,7 @@ import { currentView, moveRows, type ReplicaContext } from "./execute-move";
 import {
   entryNameNow,
   type MoveRow,
+  outermost,
   type PlacementView,
   parentName,
   parentOf,
@@ -174,9 +175,8 @@ export async function runCopy(
 }
 
 /** The documents deleting `entry` takes away. */
-export async function ownRemovals(context: EntryContext, entry: EntryRef): Promise<string[]> {
+export function ownRemovals(view: PlacementView, entry: EntryRef): string[] {
   if (entry.kind === "file") return [entry.id];
-  const view = await currentView(context);
   return view.records.flatMap(({ resource }) => {
     const documentId = resource.identity.documentId;
     return within(view, parentOf(view, { kind: "file", id: documentId }), entry.id)
@@ -187,14 +187,20 @@ export async function ownRemovals(context: EntryContext, entry: EntryRef): Promi
 
 /**
  * Deletes one gesture's entries: one own removal covers every document they take away, so main's
- * go-back skips all of them. A refused entry toasts and keeps its documents.
+ * go-back skips all of them. An entry inside another one's folder goes with that folder, never on
+ * its own. A refused entry toasts and keeps its documents.
  */
 export async function runDelete(
   context: EntryContext,
-  entries: readonly (EntryRef & { name: string })[],
+  requested: readonly (EntryRef & { name: string })[],
 ): Promise<void> {
   const { resources, projectId, removal } = context;
-  const covered = await Promise.all(entries.map((entry) => ownRemovals(context, entry)));
+  const view = await currentView(context);
+  const entries = outermost(
+    view,
+    requested.map((entry) => ({ ref: entry, entry })),
+  ).map(({ entry }) => entry);
+  const covered = entries.map((entry) => ownRemovals(view, entry));
   const settleMark = removal?.beginOwnRemoval(projectId, covered.flat());
   const kept = await Promise.all(
     entries.map(async ({ name, ...entry }, index) => {

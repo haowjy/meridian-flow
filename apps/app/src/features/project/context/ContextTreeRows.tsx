@@ -28,7 +28,7 @@ import {
   siblingsOf,
 } from "@/features/import/tree-rows";
 import { cn } from "@/lib/utils";
-import { type DeleteTarget, EntryKebabButton } from "./ContextEntryActions";
+import { EntryKebabButton } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
@@ -41,7 +41,7 @@ import {
 } from "./context-row-geometry";
 import { EntryNameField } from "./EntryNameField";
 import { EntryRefusalNotice } from "./EntryRefusalNotice";
-import { dragEntry } from "./entry-drag/entry";
+import type { DragEntry } from "./entry-drag/entry";
 import { useEntryRow } from "./entry-drag/use-entry-row";
 import { LinkUpdateNote } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
@@ -70,7 +70,7 @@ export type TreeEnv = {
     createdFile: (path: string) => void;
   };
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  onRequestDelete: (target: DeleteTarget) => void;
+  onRequestDelete: (entries: readonly DragEntry[]) => void;
   importHere?: {
     folders: boolean;
     start: (
@@ -248,8 +248,11 @@ function DirRow({
       edges: { folder: parent, siblingId: dir.entryId, band: FOLDER_EDGE_BAND, after: !isOpen },
     },
   );
-  const entry = useMemo(() => dragEntry(dir), [dir]);
-  const row = useEntryRow(entry, false, !dir.navigationOnly);
+  const row = useEntryRow(interaction.entry, {
+    active: false,
+    draggable: !dir.navigationOnly,
+    grants: interaction.grants,
+  });
   const toggle = () => {
     if (env.creation?.creating) env.creation.done();
     env.toggleEntry(dir.entryId);
@@ -310,7 +313,7 @@ function DirRow({
               folder
             />
           ) : null}
-          <EntryKebabButton allowedActions={interaction.actions} onAction={interaction.onAction} />
+          <EntryKebabButton menu={interaction.menu} />
         </div>
       </EntryInteractionShell>
       {isOpen ? (
@@ -392,8 +395,7 @@ function FileRow({
   });
   const select = () => env.onSelectFile(env.scheme, file);
   const active = env.scheme === env.activeScheme && file.path === env.activePath;
-  const entry = useMemo(() => dragEntry(file), [file]);
-  const row = useEntryRow(entry, active);
+  const row = useEntryRow(interaction.entry, { active, grants: interaction.grants });
   if (interaction.renaming) {
     return <RenameRow options={interaction.rename} depth={depth} icon={fileKindIcon(file)} />;
   }
@@ -437,7 +439,7 @@ function FileRow({
             move={Boolean(file.namespaceRepairMove)}
           />
         ) : null}
-        <EntryKebabButton allowedActions={interaction.actions} onAction={interaction.onAction} />
+        <EntryKebabButton menu={interaction.menu} />
       </div>
     </EntryInteractionShell>
   );
