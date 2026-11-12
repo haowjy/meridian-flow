@@ -44,10 +44,12 @@ export async function restoreTrashedDocuments(
             }
           : current,
     );
+    // Main still shows the record until it opens the document; refetching it now would 404.
     for (const documentId of living)
-      queryClient.removeQueries({
+      void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.trashedDocument(projectId, documentId),
         exact: true,
+        refetchType: "none",
       });
     // An address left on the document while it was trashed answers "unavailable" until re-read.
     void queryClient.invalidateQueries({ queryKey: projectQueryKeys.documentAddresses(projectId) });

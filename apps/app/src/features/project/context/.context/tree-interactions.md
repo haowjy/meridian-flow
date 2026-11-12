@@ -257,7 +257,8 @@ and dialog serve all Scratch rows, retaining each target's owner. The actual own
 The Files list, the Chat list's Scratch and a Work's Files are each one list:
 `useEntryList` owns its selection, its entries route and, through `EntryList`,
 its drop scope. Recently opened (main's landing) is a list too, with its own
-`useEntrySelection` and no drop: its rows are `ListRow` links that drag as references, so Ctrl/Cmd-
+`useEntrySelection` and no drop: its rows are `ListRow` links whose drag carries the selection as
+references (`useEntryRow` with `source: "reference"`), so Ctrl/Cmd-
 and Shift-click are taken in the capture phase (`useEntryRow().select`) before the link would open a
 browser tab, and the row's ⋯ and right-click give Move… and Delete for a filed document (the same
 `useEntryMenu`, `EntryDestinationPicker` and `useDeleteContextEntries` as the tree). An Untitled
@@ -409,7 +410,7 @@ document drags as itself and a gone one answers "Some of these items are no long
 | Source | Names | View |
 |---|---|---|
 | Main's document title (`MainHeader`) | the document | the draft of the Work under review while the document is under review (`draftCopyView`, owned by draft review); local and draft-only documents don't drag |
-| Recent row | the document by id, never the path it was opened at | live |
+| Recent row (`useEntryRow`, not this adapter: it carries the selection) | each selected document by id, never the path it was opened at | live |
 | Transcript chip (`TranscriptReference`) | an exact reference the host still resolves; syntax links name no entry | live |
 | Composer chip (`ComposerReferenceMenu`) | its document or folder | live |
 | Receipt row (`TurnEditsReceipt`), Changes row (`ChangesSource`) | the document the row represents | `draft` for a draft row: the Work the turn wrote in (the receipt's lineage names it) or the Work the row lists (`draftCopyView`); a row the turn deleted, or a change with no draft text, doesn't drag |

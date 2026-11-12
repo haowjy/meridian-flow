@@ -35,6 +35,11 @@ export function schemeLocation(scheme: ProjectContextTreeScheme, folders: readon
   return [schemeLabel(scheme), ...folders].join(" / ");
 }
 
+/** Where the document at `path` lives (or lived, for one in Trash): its source and folders. */
+export function documentPlace(scheme: ProjectContextTreeScheme, path: string) {
+  return schemeLocation(scheme, path.split("/").filter(Boolean).slice(0, -1));
+}
+
 export function schemeLabel(scheme: ProjectContextTreeScheme): string {
   switch (scheme) {
     case "manuscript":

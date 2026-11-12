@@ -4553,6 +4553,10 @@ msgstr ""
 msgid "Remove reference"
 msgstr ""
 
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Removed from {place} on {deleted}, when the reply that created it didn't finish."
+msgstr ""
+
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx

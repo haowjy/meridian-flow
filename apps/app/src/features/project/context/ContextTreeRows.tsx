@@ -40,6 +40,7 @@ import {
   contextTreeSelectedRowClassName,
   sidebarIcon,
 } from "./context-row-geometry";
+import { EntryDestinationPicker } from "./EntryDestinationPicker";
 import { EntryNameField } from "./EntryNameField";
 import { EntryRefusalNotice } from "./EntryRefusalNotice";
 import type { DragEntry } from "./entry-drag/entry";
@@ -52,7 +53,6 @@ import { useCreateEntryForm } from "./use-create-entry-form";
 import {
   type EntryCapabilities,
   type EntryCreation,
-  EntryInteractionShell,
   useEntryInteraction,
 } from "./use-entry-interaction";
 import { useRenameEntryForm } from "./use-rename-entry-form";
@@ -267,55 +267,57 @@ function DirRow({
     <DropRegion state={drop.dropState}>
       {/* The region spans the subtree, so "after" lands below everything shown inside. */}
       <InsertionLine edge={drop.edge} inset={ROW_INSET_PX + rowPaddingLeft(depth)} />
-      <EntryInteractionShell interaction={interaction}>
-        {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. slop-lint: allow suppression the reason is stated in this comment */}
-        <div
-          role="button"
-          tabIndex={0}
-          aria-expanded={isOpen}
-          aria-label={t`Toggle folder ${dir.name}`}
-          onClick={row.activate(toggle)}
-          onKeyDown={activateOnKey(row.activate(toggle))}
-          {...row.rowProps}
-          {...drop.dropProps}
-          className={cn(
-            "group focus-ring mx-2 flex items-center rounded-md pr-1 text-foreground",
-            role.row,
-            row.selected ? contextTreeSelectedRowClassName : role.hover,
-            contextTreeRowGrowClassName,
-          )}
-          style={{ paddingLeft: rowPaddingLeft(depth) }}
-        >
-          {/* The open or closed folder is the twistie: rows need no chevron column. */}
-          <RowIcon icon={isOpen ? FolderOpen : Folder} />
-          <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
-            <span className="truncate">{dir.name}</span>
-            <LinkUpdateNote
-              projectId={env.projectId}
-              subject={{ kind: "folder", id: dir.entryId }}
-              operationId={interaction.operationId}
-              layout="stacked"
-            />
-            {dir.namespaceFailure && env.refusalNotice ? (
-              <EntryRefusalNotice
+      <EntryDestinationPicker {...interaction.picker}>
+        <ContextEntryMenu menu={interaction.menu}>
+          {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. slop-lint: allow suppression the reason is stated in this comment */}
+          <div
+            role="button"
+            tabIndex={0}
+            aria-expanded={isOpen}
+            aria-label={t`Toggle folder ${dir.name}`}
+            onClick={row.activate(toggle)}
+            onKeyDown={activateOnKey(row.activate(toggle))}
+            {...row.rowProps}
+            {...drop.dropProps}
+            className={cn(
+              "group focus-ring mx-2 flex items-center rounded-md pr-1 text-foreground",
+              role.row,
+              row.selected ? contextTreeSelectedRowClassName : role.hover,
+              contextTreeRowGrowClassName,
+            )}
+            style={{ paddingLeft: rowPaddingLeft(depth) }}
+          >
+            {/* The open or closed folder is the twistie: rows need no chevron column. */}
+            <RowIcon icon={isOpen ? FolderOpen : Folder} />
+            <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
+              <span className="truncate">{dir.name}</span>
+              <LinkUpdateNote
+                projectId={env.projectId}
+                subject={{ kind: "folder", id: dir.entryId }}
+                operationId={interaction.operationId}
+                layout="stacked"
+              />
+              {dir.namespaceFailure && env.refusalNotice ? (
+                <EntryRefusalNotice
+                  failure={dir.namespaceFailure}
+                  move={Boolean(dir.namespaceRepairMove)}
+                  folder
+                  actions={interaction.actions}
+                  onAction={interaction.onAction}
+                />
+              ) : null}
+            </span>
+            {dir.namespaceFailure && !env.refusalNotice ? (
+              <NamespaceFailureMark
                 failure={dir.namespaceFailure}
                 move={Boolean(dir.namespaceRepairMove)}
                 folder
-                actions={interaction.actions}
-                onAction={interaction.onAction}
               />
             ) : null}
-          </span>
-          {dir.namespaceFailure && !env.refusalNotice ? (
-            <NamespaceFailureMark
-              failure={dir.namespaceFailure}
-              move={Boolean(dir.namespaceRepairMove)}
-              folder
-            />
-          ) : null}
-          <EntryKebabButton menu={interaction.menu} />
-        </div>
-      </EntryInteractionShell>
+            <EntryKebabButton menu={interaction.menu} />
+          </div>
+        </ContextEntryMenu>
+      </EntryDestinationPicker>
       {isOpen ? (
         <TreeGroup depth={depth + 1}>
           <TreeChildren
@@ -401,7 +403,7 @@ function FileRow({
   }
 
   return (
-    <EntryInteractionShell interaction={interaction} contextMenu={false}>
+    <EntryDestinationPicker {...interaction.picker}>
       <DocumentRow
         row={row}
         menu={interaction.menu}
@@ -439,7 +441,7 @@ function FileRow({
           ) : null
         }
       />
-    </EntryInteractionShell>
+    </EntryDestinationPicker>
   );
 }
 

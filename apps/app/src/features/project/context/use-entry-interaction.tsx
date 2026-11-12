@@ -1,14 +1,13 @@
 /** One namespace interaction model for tree, phone and Work Files rows. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ReactNode, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { CatalogNode } from "@/client/query/context-catalog-projection";
 import type { OpenDocumentOwner } from "@/client/stores";
-import { ContextEntryMenu, type EntryAction, useEntryMenu } from "./ContextEntryActions";
+import { type EntryAction, useEntryMenu } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
 import { parentContextEntryPath } from "./context-entry-name";
-import { EntryDestinationPicker } from "./EntryDestinationPicker";
 import { type DragEntry, dragEntry } from "./entry-drag/entry";
 import { useRenameOperation } from "./LinkUpdateNote";
 import type { UseRenameEntryFormOptions } from "./use-rename-entry-form";
@@ -156,24 +155,4 @@ export function useEntryInteraction({
       },
     },
   };
-}
-
-export function EntryInteractionShell({
-  interaction,
-  children,
-  contextMenu = true,
-}: {
-  interaction: ReturnType<typeof useEntryInteraction>;
-  children: ReactNode;
-  contextMenu?: boolean;
-}) {
-  return (
-    <EntryDestinationPicker {...interaction.picker}>
-      {contextMenu ? (
-        <ContextEntryMenu menu={interaction.menu}>{children}</ContextEntryMenu>
-      ) : (
-        children
-      )}
-    </EntryDestinationPicker>
-  );
 }

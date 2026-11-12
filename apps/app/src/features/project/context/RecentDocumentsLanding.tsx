@@ -40,10 +40,9 @@ import {
   useEntryMenu,
 } from "./ContextEntryActions";
 import { fileKindIcon } from "./context-file-icon";
-import { schemeLocation } from "./context-schemes";
+import { documentPlace } from "./context-schemes";
 import { EntryDestinationPicker } from "./EntryDestinationPicker";
 import { type DragEntry, LIVE_VIEW } from "./entry-drag/entry";
-import { useReferenceDrag } from "./entry-drag/reference-source";
 import { EntrySelectionProvider, useEntrySelection } from "./entry-drag/selection";
 import { useEntryRow } from "./entry-drag/use-entry-row";
 import { useOpenProjectDocument } from "./open-project-document";
@@ -196,15 +195,17 @@ function RecentDocumentRow({
   const router = useRouter();
   const href = recentDocumentHref(item, projectId);
   const address = item.address.kind === "document" ? item.address : null;
-  // By the document's identity, never the path it was opened at; a local document is no entry yet.
-  const drag = useReferenceDrag(
-    address ? { ref: { kind: "file", id: item.documentId }, name: item.name } : null,
-  );
   const entry = useMemo<DragEntry>(
     () => ({ ref: { kind: "file", id: item.documentId }, name: item.name, view: LIVE_VIEW }),
     [item.documentId, item.name],
   );
-  const row = useEntryRow(entry, { active: false, draggable: false });
+  // A drag carries the selection by identity, never the path it was opened at, and asks Move or
+  // Copy as any reference does. A local document is no entry yet.
+  const row = useEntryRow(entry, {
+    active: false,
+    draggable: address !== null,
+    source: "reference",
+  });
   // A filed document moves and deletes from here; an Untitled one, or a note in a chat's
   // Scratch (whose owner the list doesn't know), grants nothing.
   const actions = address && address.scheme !== "scratch" ? MOVE_DELETE : NONE;
@@ -221,7 +222,6 @@ function RecentDocumentRow({
       selected={row.selected}
       controlProps={{
         ...selectionProps,
-        ...drag,
         // Ctrl/Cmd- and Shift-click select here, as in the sidebar, before the link sees them.
         onClickCapture: (event) => {
           if (!row.select(event)) return;
@@ -232,11 +232,7 @@ function RecentDocumentRow({
       wrapControl={(control) => <ContextEntryMenu menu={menu}>{control}</ContextEntryMenu>}
       icon={fileKindIcon(item.name)}
       title={item.name}
-      detail={
-        address
-          ? schemeLocation(address.scheme, address.path.split("/").filter(Boolean).slice(0, -1))
-          : null
-      }
+      detail={address ? documentPlace(address.scheme, address.path) : null}
       // The age is for the eye; the row's name is the document and where it lives.
       meta={<span aria-hidden>{relativeTime(item.openedAt, now)}</span>}
       actions={<EntryKebabButton menu={menu} className="opacity-100" />}

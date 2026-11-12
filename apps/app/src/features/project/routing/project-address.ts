@@ -39,7 +39,7 @@ export type ProjectAddress = {
 export type ParsedProjectAddress =
   | { kind: "valid"; address: ProjectAddress; href: string }
   | { kind: "invalid"; reason: string };
-const RECOGNIZED_QUERY = new Set(["owner", "item", "change", "settings", "trash"]);
+const RECOGNIZED_QUERY = new Set(["owner", "item", "change", "settings"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function uuid(value: string | undefined): string | null {
@@ -123,17 +123,12 @@ export function parseProjectAddress(pathname: string, rawSearch = ""): ParsedPro
   const projectId = uuid(parts[1]);
   if (parts[0] !== "p" || !projectId || parts.some((part) => !part))
     return { kind: "invalid", reason: "path" };
-  const parsedDestination = parseDestination(parts.slice(2));
-  if (!parsedDestination) return { kind: "invalid", reason: "destination" };
+  const destination = parseDestination(parts.slice(2));
+  if (!destination) return { kind: "invalid", reason: "destination" };
   const query = new URLSearchParams(rawSearch);
   for (const key of RECOGNIZED_QUERY) {
     if (query.getAll(key).length > 1) return { kind: "invalid", reason: `duplicate:${key}` };
   }
-  // The Trash popup's links (`?trash=<id>` over any page) land on that document in main.
-  const legacyTrash = uuid(query.get("trash") ?? undefined);
-  const destination: ProjectDestination = legacyTrash
-    ? { kind: "trashed", documentId: legacyTrash }
-    : parsedDestination;
   const document = destination.kind === "document";
   const itemKey = document ? query.get("item") || undefined : undefined;
   const changeId = itemKey ? query.get("change") || undefined : undefined;

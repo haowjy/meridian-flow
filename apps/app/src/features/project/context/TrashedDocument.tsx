@@ -15,7 +15,7 @@ import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { daysUntilPurge } from "../deletion-retention";
 import { useAccountId } from "./account-feature-context";
-import { schemeLocation } from "./context-schemes";
+import { documentPlace } from "./context-schemes";
 import { useDocumentTrashRestore } from "./DocumentTrashRestoreProvider";
 import { useOpenProjectDocument } from "./open-project-document";
 import { type RemovalVoice, removalVoice } from "./RemovedDocumentNotice";
@@ -37,7 +37,9 @@ export function TrashedDocument({
   const openFailed = useOpenOnceLiving(projectId, documentId, state?.kind, query.error);
   const document = query.data;
 
-  if (query.isError) {
+  // A refetch that fails after a restore (a catalog wake re-reads Trash) keeps the record on
+  // screen while main opens the document.
+  if (query.isError && !document) {
     return (
       <div className="p-4">
         {[404, 410].includes(httpErrorStatus(query.error) ?? 0) ? (
@@ -98,7 +100,8 @@ export function TrashedDocument({
 /**
  * Main follows the document out of Trash, wherever it was restored from (this Restore, the
  * sidebar's, a drag out), and an address naming a document no longer in Trash goes to it once.
- * Returns whether that open failed.
+ * One open leaves the view: a later 404 from re-reading the record must not start another, which
+ * would cancel this one and lose its failure. Returns whether that open failed.
  */
 function useOpenOnceLiving(
   projectId: string,
@@ -109,7 +112,15 @@ function useOpenOnceLiving(
   const openDocument = useOpenProjectDocument(projectId);
   const [failed, setFailed] = useState(false);
   const restoring = useRef(false);
+  const leaving = useRef(false);
+  const mounted = useRef(false);
   const missing = [404, 410].includes(httpErrorStatus(error) ?? 0);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   useEffect(() => {
     if (restore === "restoring") {
       restoring.current = true;
@@ -117,25 +128,17 @@ function useOpenOnceLiving(
     }
     const restored = restoring.current && restore === undefined;
     restoring.current = false;
-    if (!restored && !missing) return;
-    let current = true;
+    if (leaving.current || (!restored && !missing)) return;
+    leaving.current = true;
     void openDocument({ documentId, refreshIdentity: true, replace: true }).then((outcome) => {
-      if (current && restored && outcome.kind === "refused") setFailed(true);
+      if (restored && mounted.current && outcome.kind === "refused") setFailed(true);
     });
-    return () => {
-      current = false;
-    };
   }, [restore, missing, documentId, openDocument]);
   return failed;
 }
 
-/** Where the document was: the place every list writes the same way (`schemeLocation`). */
-export function formerPlace(entry: Pick<DocumentTrashEntry, "scheme" | "formerPath">): string {
-  return schemeLocation(entry.scheme, entry.formerPath.split("/").filter(Boolean).slice(0, -1));
-}
-
 function trashSentence(entry: DocumentTrashEntry, locale: string, accountId: string): string {
-  const place = formerPlace(entry);
+  const place = documentPlace(entry.scheme, entry.formerPath);
   const time = new Date(entry.removal.time);
   const deleted = new Intl.DateTimeFormat(
     locale,
@@ -146,7 +149,10 @@ function trashSentence(entry: DocumentTrashEntry, locale: string, accountId: str
   return `${deletedSentence(entry, place, deleted, accountId)} ${retentionSentence(entry, locale)}`;
 }
 
-/** Names who deleted it only when that says something: you, another writer, a chat's AI, a Work. */
+/**
+ * Names who deleted it only when that says something: you, another writer, a chat's AI, a Work,
+ * or a reply that didn't finish, in `RemovedDocumentNotice`'s words.
+ */
 function deletedSentence(
   entry: DocumentTrashEntry,
   place: string,
@@ -176,6 +182,7 @@ function deletedSentence(
       return t`Deleted from ${place} with the Work ${name} on ${deleted}.`;
     }
     case "unfinished-reply":
+      return t`Removed from ${place} on ${deleted}, when the reply that created it didn't finish.`;
     case "anonymous":
       return t`Deleted from ${place} on ${deleted}.`;
   }
