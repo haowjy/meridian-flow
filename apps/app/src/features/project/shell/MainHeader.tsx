@@ -1,6 +1,6 @@
 /**
  * MainHeader — the band above main's page, whatever main holds: the Recently opened door, main's
- * tabs (the page rises into the active one), the removed-documents notice, and main's item's own
+ * tabs (the page rises into the active one; a chat in main stands alone), the removed-documents notice, and main's item's own
  * controls.
  */
 import { t } from "@lingui/core/macro";
@@ -28,7 +28,6 @@ export function MainHeader({
   onNewDocument,
   sidebarToggle,
   sideToggle,
-  closedSide,
   actions,
 }: {
   projectId: string;
@@ -39,7 +38,7 @@ export function MainHeader({
   mainDocument?: OpenDocument;
   /** Main is the Recently opened landing: the door is the current place. */
   landing?: boolean;
-  /** Main shows a chat: Close all leaves it there. */
+  /** Main shows a chat: the band holds the chat alone, with no document tabs or tab list. */
   showsChat?: boolean;
   /** Main's item when it holds no tab (a chat, an address that names nothing). */
   current?: ReactNode;
@@ -48,8 +47,6 @@ export function MainHeader({
   onNewDocument?: () => void;
   sidebarToggle: PaneHeaderRailToggle;
   sideToggle: PaneHeaderRailToggle;
-  /** While the side is closed: the control naming what it would show. */
-  closedSide?: ReactNode;
   /** Main's item's own controls, before the side's. */
   actions?: ReactNode;
 }) {
@@ -67,6 +64,7 @@ export function MainHeader({
             open={open}
             mainKey={mainKey}
             mainDocument={mainDocument}
+            showsChat={showsChat}
             current={current}
             onShowRecents={onShowRecents}
             onNewDocument={onNewDocument}
@@ -74,23 +72,19 @@ export function MainHeader({
           <RemovedNoticeSlot>
             <RemovedDocumentChip projectId={projectId} />
           </RemovedNoticeSlot>
-          <MainTabMenu
-            projectId={projectId}
-            open={open}
-            mainKey={mainKey}
-            mainDocument={mainDocument}
-            keepMain={showsChat || landing}
-            onShowRecents={onShowRecents}
-          />
+          {showsChat ? null : (
+            <MainTabMenu
+              projectId={projectId}
+              open={open}
+              mainKey={mainKey}
+              mainDocument={mainDocument}
+              keepMain={landing}
+              onShowRecents={onShowRecents}
+            />
+          )}
         </div>
       }
-      actions={
-        <>
-          {actions}
-          {/* Last, beside the toggle that opens it. */}
-          {closedSide}
-        </>
-      }
+      actions={actions}
     />
   );
 }

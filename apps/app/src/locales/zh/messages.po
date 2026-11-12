@@ -822,8 +822,8 @@ msgid "A document blocks part of this location. Move or rename it, then apply ag
 msgstr ""
 
 #: src/features/project/DesktopProject.tsx
-msgid "A document you open shows here beside the chat."
-msgstr ""
+#~ msgid "A document you open shows here beside the chat."
+#~ msgstr ""
 
 #: src/core/editor/file-drop/file-drop-door.ts
 msgid "A file can’t go there."
@@ -1180,6 +1180,7 @@ msgstr "返回"
 #. placeholder {0}: choosing.label
 #. placeholder {0}: folder.title ?? folder.name
 #: src/components/app/DrillInMenu.tsx
+#: src/features/project/side/SideExplorer.tsx
 msgid "Back from {0}"
 msgstr ""
 
@@ -2100,8 +2101,8 @@ msgid "Couldn't load references."
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Couldn't load the chats for this document."
-msgstr ""
+#~ msgid "Couldn't load the chats for this document."
+#~ msgstr ""
 
 #: src/features/chat/TurnList.tsx
 msgid "Couldn't load the conversation this fork continues."
@@ -2112,8 +2113,8 @@ msgid "Couldn't load the preview."
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Couldn't load this chat's documents."
-msgstr ""
+#~ msgid "Couldn't load this chat's documents."
+#~ msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Couldn't load this document."
@@ -2721,6 +2722,10 @@ msgstr ""
 msgid "Document version"
 msgstr ""
 
+#: src/features/project/side/DocumentChoices.tsx
+msgid "Documents"
+msgstr ""
+
 #: src/features/export/ExportProjectDialog.tsx
 msgid "documents that were deleted"
 msgstr ""
@@ -2848,8 +2853,8 @@ msgid "Edited file"
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Edited this"
-msgstr ""
+#~ msgid "Edited this"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Editing"
@@ -3029,13 +3034,13 @@ msgstr "筛选子代理"
 msgid "Find a chat"
 msgstr ""
 
-#: src/features/project/side/SidePicker.tsx
+#: src/features/project/side/DocumentChoices.tsx
 msgid "Find a document"
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Find a document or chat"
-msgstr ""
+#~ msgid "Find a document or chat"
+#~ msgstr ""
 
 #: src/features/project/side/SideHeader.tsx
 msgid "Finding a document…"
@@ -3089,12 +3094,12 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "For {mainName}"
-msgstr ""
+#~ msgid "For {mainName}"
+#~ msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "For this chat"
-msgstr ""
+#~ msgid "For this chat"
+#~ msgstr ""
 
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Fork from here"
@@ -3986,13 +3991,13 @@ msgstr ""
 msgid "No column has been resized yet."
 msgstr ""
 
-#: src/features/project/side/SidePicker.tsx
+#: src/features/project/side/DocumentChoices.tsx
 msgid "No documents match “{search}”."
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "No documents or chats match “{search}”."
-msgstr ""
+#~ msgid "No documents or chats match “{search}”."
+#~ msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
 #~ msgid "No drafts"
@@ -4070,8 +4075,8 @@ msgid "None"
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "None yet"
-msgstr ""
+#~ msgid "None yet"
+#~ msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
@@ -4157,8 +4162,8 @@ msgid "Nothing was added. Your files are kept for 7 days so you can try again."
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Nothing yet"
-msgstr ""
+#~ msgid "Nothing yet"
+#~ msgstr ""
 
 #: src/lib/date-groups.ts
 msgid "now"
@@ -4323,6 +4328,7 @@ msgid "Organizing {name}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/side/SidePicker.tsx
 msgid "Other chats"
 msgstr ""
 
@@ -4494,7 +4500,6 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 #: src/features/chat/compaction/CompactionDivider.tsx
-#: src/features/project/side/SidePicker.tsx
 msgid "Read"
 msgstr ""
 
@@ -4507,8 +4512,8 @@ msgid "Read report from {line}"
 msgstr "已读取来自 {line} 的报告"
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Read this"
-msgstr ""
+#~ msgid "Read this"
+#~ msgstr ""
 
 #: src/features/project/context/viewers/ImageViewer.tsx
 msgid "Read-only preview"
@@ -4540,15 +4545,16 @@ msgid "Recent activity"
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Recent chats"
-msgstr ""
+#~ msgid "Recent chats"
+#~ msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Recent documents"
-msgstr ""
+#~ msgid "Recent documents"
+#~ msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/shell/MainHeader.tsx
+#: src/features/project/side/DocumentChoices.tsx
 msgid "Recently opened"
 msgstr ""
 
@@ -4778,6 +4784,7 @@ msgid "Restoring"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/side/DocumentChoices.tsx
 #: src/features/project/side/SidePicker.tsx
 msgid "Results"
 msgstr ""
@@ -5041,8 +5048,8 @@ msgid "Show"
 msgstr ""
 
 #: src/features/project/side/ClosedSideButton.tsx
-msgid "Show {name} beside"
-msgstr ""
+#~ msgid "Show {name} beside"
+#~ msgstr ""
 
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Show {sheetName}"
@@ -5059,6 +5066,7 @@ msgid "Show less"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/side/SidePicker.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Show more"
 msgstr ""
@@ -6572,8 +6580,8 @@ msgid "Writing the handoff brief"
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Wrote"
-msgstr ""
+#~ msgid "Wrote"
+#~ msgstr ""
 
 #: src/features/project/context/DocumentPropertyValue.tsx
 msgid "Yes"

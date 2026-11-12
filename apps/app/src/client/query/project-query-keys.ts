@@ -59,9 +59,6 @@ export const projectQueryKeys = {
   /** A document's imported properties, fetched by id once the catalog says it has any. */
   documentProperties: (projectId: string, documentId: string) =>
     ["projects", projectId, "documents", documentId, "properties"] as const,
-  /** The chats that worked on a document and the pages it links to. */
-  documentRelated: (projectId: string, documentId: string) =>
-    ["projects", projectId, "documents", documentId, "related"] as const,
   documentAddresses: (projectId: string) => ["projects", projectId, "document-addresses"] as const,
   documentTrash: (projectId: string) => ["projects", projectId, "document-trash"] as const,
   /** Where a folder is now, by its entry id: what a folder chip's menu opens inside. */

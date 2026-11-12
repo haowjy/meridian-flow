@@ -1,8 +1,9 @@
 /**
  * MainTabStrip — main's open items as folder tabs in main's band (`client/project-shell/main-tabs`).
  * The tab main shows is the active chip, joined to the page below it. Main's item when the record
- * holds no tab for it (a chat, an address that names nothing, a document back within one history
- * entry) is drawn after the tabs as the active chip, so what main shows never depends on the record.
+ * holds no tab for it (an address that names nothing, a document back within one history entry) is
+ * drawn after the tabs as the active chip, so what main shows never depends on the record. A chat
+ * in main takes main: its chip stands alone, and the record's tabs come back with a document.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -103,6 +104,7 @@ export function MainTabStrip({
   open,
   mainKey,
   mainDocument,
+  showsChat,
   current,
   onShowRecents,
   onNewDocument,
@@ -112,13 +114,17 @@ export function MainTabStrip({
   mainKey: string | null;
   /** The document main shows, drawn as the active chip after the tabs when the record lacks it. */
   mainDocument?: OpenDocument;
+  /** Main shows a chat: the strip draws it alone, without the document tabs. */
+  showsChat: boolean;
   /** Main's item when it is not a document, drawn as the active chip after the tabs. */
   current?: ReactNode;
   onShowRecents: (options: { replace: boolean }) => Promise<void>;
   /** Absent while no Work is ready to hold an Untitled document. */
   onNewDocument?: () => void;
 }) {
-  const { tabs, unrecorded } = useDrawnTabs(projectId, mainKey, mainDocument);
+  const drawn = useDrawnTabs(projectId, mainKey, mainDocument);
+  const tabs = showsChat ? NO_TABS : drawn.tabs;
+  const { unrecorded } = drawn;
   const commands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
   const stripRef = useRef<HTMLDivElement>(null);
   const more = useScrollEdges(stripRef);
@@ -219,7 +225,7 @@ export function MainTabMenu({
   open: OpenContextRoute;
   mainKey: string | null;
   mainDocument?: OpenDocument;
-  /** Close all leaves main's item where it is: a chat is not a tab, and the landing is the goal. */
+  /** Close all leaves main where it is: the landing is the goal. */
   keepMain: boolean;
   onShowRecents: (options: { replace: boolean }) => Promise<void>;
 }) {
@@ -315,6 +321,8 @@ function useDrawnTabs(projectId: string, mainKey: string | null, mainDocument?: 
   return { tabs, unrecorded };
 }
 
+const NO_TABS: readonly MainTab[] = [];
+
 const PROJECT_SCOPED_SCHEMES: ReadonlySet<string> = new Set(PROJECT_SCOPED_CONTEXT_URI_SCHEMES);
 
 /**
@@ -323,7 +331,7 @@ const PROJECT_SCOPED_SCHEMES: ReadonlySet<string> = new Set(PROJECT_SCOPED_CONTE
  * document it neither places nor knows as removed is gone. Drawing skips such a tab and leaves the
  * record alone, so a document the replica later shows live again has its tab back.
  */
-function useLiveTabs(projectId: string, tabs: readonly MainTab[]): readonly MainTab[] {
+export function useLiveTabs(projectId: string, tabs: readonly MainTab[]): readonly MainTab[] {
   const { records, placement } = useAccountResourceProjection(projectId);
   const isDraftOnly = useIsDraftOnly(projectId);
   return useMemo(
