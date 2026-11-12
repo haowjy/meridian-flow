@@ -9,7 +9,6 @@ import { useOpenContextRoute, useProjectRouteCommands } from "../routing/Project
 import type { NavigationSettlement } from "../routing/project-navigation";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
 import { useSideItem } from "../side/SideView";
-import { swapPanes } from "./pane-swap";
 
 type MainMode = "write" | "chat";
 
@@ -17,8 +16,9 @@ type MainMode = "write" | "chat";
  * The Write | Chat switch: main's mode, read from main's item (a chat is Chat, anything else is
  * Write) and never stored apart from it. Pressing a mode swaps the panes: main opens what the side
  * holds of that kind, else that lane's selected tab, else the lane's empty page (Recently opened,
- * a new chat). The side then shows what main left, by the slot rule, with no code of its own.
- * The pressed side shows at once, while main's navigation settles.
+ * a new chat). The side then shows what main left, by the slot rule, and the grid glides the
+ * hosts (`layout/SlotGrid.tsx`), with no code of its own. The pressed side shows at once, while
+ * main's navigation settles.
  */
 export function MainModeSwitch({
   projectId,
@@ -39,7 +39,8 @@ export function MainModeSwitch({
   const side = useSideItem();
   const beside = side.item;
   const mode: MainMode = chat.display ? "chat" : "write";
-  // The mode last pressed, shown until its navigation settles; a newer press takes over.
+  // The mode last pressed, shown until its navigation settles (whatever the settlement); a newer
+  // press takes over.
   const [pressed, setPressed] = useState<MainMode | null>(null);
   const latestPress = useRef(0);
 
@@ -77,7 +78,7 @@ export function MainModeSwitch({
         // Main's move holds the thread for a few frames: it starts after the switch has painted.
         requestAnimationFrame(() =>
           setTimeout(() => {
-            swapPanes(() => go(next))
+            go(next)
               .then((settled) => {
                 if (settled.kind === "applied") onSwitched?.();
               })

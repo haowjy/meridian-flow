@@ -38,7 +38,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { IconButton } from "@/components/ui/icon-button";
 import { useChatTitle } from "@/features/chat/ChatThreadTitle";
 import { draftCopyView } from "@/features/draft-review/copy-view";
 import { useScrollEdges } from "@/hooks/use-scroll-edges";
@@ -53,6 +52,7 @@ import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
 import { useDocumentPaint } from "../views";
+import { BandIconButton } from "./BandIconButton";
 import { tabChipClass } from "./tab-chip";
 
 /**
@@ -210,15 +210,13 @@ export function MainTabStrip({
       {/* New follows the lane's tabs only: after main's other item (a removed page) it would read
           as a new one of those. */}
       {current ? null : (
-        <IconButton
-          size="sm"
+        <BandIconButton
           label={newLabel}
           // aria-disabled, not disabled: the tooltip has to say why it can't run.
           tooltip={onNew ? undefined : t`Open a Work to create an Untitled document`}
           aria-disabled={!onNew || undefined}
           onClick={onNew}
-          tooltipSide="bottom"
-          className="relative self-center aria-disabled:opacity-50"
+          className="aria-disabled:opacity-50"
         >
           {tabs.length > 0 && !lastActive ? (
             <span
@@ -227,7 +225,7 @@ export function MainTabStrip({
             />
           ) : null}
           <Plus aria-hidden />
-        </IconButton>
+        </BandIconButton>
       )}
     </div>
   );
@@ -261,14 +259,9 @@ export function MainTabMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <IconButton
-          size="sm"
-          label={label}
-          tooltipSide="bottom"
-          className="mr-1 ml-auto self-center"
-        >
+        <BandIconButton label={label} className="ml-auto">
           <ChevronDown aria-hidden />
-        </IconButton>
+        </BandIconButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
