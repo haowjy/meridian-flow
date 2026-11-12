@@ -1632,6 +1632,10 @@ msgstr ""
 msgid "Choose Work for new chat, currently {name}"
 msgstr ""
 
+#: src/components/ui/search-field.tsx
+msgid "Clear search"
+msgstr ""
+
 #: src/features/chat/ask/permission-request.ts
 msgid "Clear the goal"
 msgstr "清除目标"

@@ -581,7 +581,7 @@
 }
 
 @utility user-message-bubble {
-  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-card px-4 py-3 text-foreground;
+  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-transparent bg-ink-fill px-4 py-3 text-foreground;
 }
 
 /* A queued message is not live yet: the draft link chip's outline (`link-chip.css`), dotted, with
