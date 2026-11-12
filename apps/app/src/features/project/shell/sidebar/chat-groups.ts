@@ -6,26 +6,32 @@ const IDLE_SHOWN = 6;
 export type RowState = "needs-you" | "running" | "idle";
 
 export type ChatGroups = {
+  /** Every pinned chat, from any Work, most urgent first. Listed nowhere else. */
+  pinned: ThreadListItem[];
+  /** The most urgent state among the pinned chats, for Pinned's heading while folded. */
+  pinnedState: RowState;
   needsYou: ThreadListItem[];
   running: ThreadListItem[];
   idle: ThreadListItem[];
   helpers: Map<string, ThreadListItem[]>;
   otherWorks: { workId: string; running: number; needsYou: number }[];
-  /** Every chat's state, for a row in any list: Favourites, All chats, find results. */
+  /** Every chat's state, for a row in any list: Pinned, All chats, find results. */
   states: Map<string, RowState>;
   /** The chats with a reply running: deleting one stops it. */
   replying: Set<string>;
 };
 
 /**
- * The scoped Work's chats by what they need from the writer, the working helpers under their
- * parent, and one count per other Work while one of its chats needs the writer or is running.
+ * The pinned chats, then the scoped Work's other chats, each by what they need from the writer;
+ * the working helpers under their parent; and one count per other Work while one of its unpinned
+ * chats needs the writer or is running. Pinned chats never take a place in the idle cap.
  */
 export function groupChats(
   threads: readonly ThreadListItem[],
   scopeWorkId: string | null,
   noWorkId: string | null,
   currentThreadId: string | null,
+  pinnedIds: ReadonlySet<string>,
 ): ChatGroups {
   const inScope = (thread: ThreadListItem) =>
     (thread.workId ?? noWorkId) === scopeWorkId || thread.id === currentThreadId;
@@ -40,6 +46,7 @@ export function groupChats(
   const recent = threads
     .filter((thread) => thread.kind === "primary" && thread.status !== "archived")
     .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
+  const pinned: Record<RowState, ThreadListItem[]> = { "needs-you": [], running: [], idle: [] };
   const needsYou: ThreadListItem[] = [];
   const running: ThreadListItem[] = [];
   const idle: ThreadListItem[] = [];
@@ -51,6 +58,10 @@ export function groupChats(
     if (busy) replying.add(thread.id);
     const state: RowState = thread.actionRequired ? "needs-you" : busy ? "running" : "idle";
     states.set(thread.id, state);
+    if (pinnedIds.has(thread.id)) {
+      pinned[state].push(thread);
+      continue;
+    }
     if (!inScope(thread)) {
       if (state === "idle") continue;
       const workId = thread.workId ?? noWorkId;
@@ -66,6 +77,12 @@ export function groupChats(
     else idle.push(thread);
   }
   return {
+    pinned: [...pinned["needs-you"], ...pinned.running, ...pinned.idle],
+    pinnedState: pinned["needs-you"].length
+      ? "needs-you"
+      : pinned.running.length
+        ? "running"
+        : "idle",
     needsYou,
     running,
     idle: idle.slice(0, IDLE_SHOWN),

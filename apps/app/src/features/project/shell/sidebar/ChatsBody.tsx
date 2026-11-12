@@ -1,10 +1,14 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { THREAD_TITLE_MAX_LENGTH } from "@meridian/contracts/protocol";
+import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Layers, Plus, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { runFavoriteCommand, useChatFavorite } from "@/client/query/thread-user-state-commands";
+import {
+  runFavoriteCommand,
+  useChatFavorite,
+  usePinnedChatIds,
+} from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useRenameThread } from "@/client/query/useRenameThread";
@@ -21,14 +25,9 @@ import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
-import { useAccountId } from "../../context/account-feature-context";
 import { RowIcon } from "../../context/ContextTreeRows";
 import { PaneHeaderActionButton } from "../../context/RailPaneHeader";
-import {
-  readTreeExpansion,
-  treeExpansionKey,
-  writeTreeExpansion,
-} from "../../context/tree-expansion-state";
+import { useTreeExpansion } from "../../context/use-tree-expansion";
 import { SettledSearchField } from "../../SearchField";
 import { TitleEditSlot } from "../TitleEditSlot";
 import { useChatDeleteState } from "./ChatDeleteProvider";
@@ -48,6 +47,8 @@ type RowContext = {
   refused: ChatDeleteRefusal | null;
   touch: boolean;
   onOpenChat: (threadId: string) => void;
+  /** The chat's row moved to another list (pinned, unpinned) and should keep focus. */
+  onMoved: (threadId: string, pinned: boolean) => void;
 };
 
 /**
@@ -84,19 +85,22 @@ export function ChatsBody({
   const touch = useCoarsePointer();
   const root = useRef<HTMLDivElement>(null);
   const favoriteFeed = useProjectChatFeed(projectId, true);
-  const pinnedIds = useMemo(
-    () => new Set(favoriteFeed.items.map((item) => item.id)),
+  const confirmedPins = useMemo(
+    () => favoriteFeed.items.map((item) => item.id),
     [favoriteFeed.items],
   );
-  const [pinnedOpen, setPinnedOpen] = usePinnedOpen(projectId);
+  const pinnedIds = usePinnedChatIds(projectId, confirmedPins);
+  // Pinned is open unless folded; its fold is kept like a tree folder's.
+  const expansion = useTreeExpansion(projectId, "chats", null);
+  const pinnedOpen = !expansion.isExpanded("pinned-folded");
   // Every pin loads, so no chat beyond the first page offers "Pin".
   const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = favoriteFeed;
   useEffect(() => {
     if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();
   }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
   const groups = useMemo(
-    () => groupChats(threads ?? [], scopeWorkId ?? noWorkId, noWorkId, currentThreadId),
-    [threads, scopeWorkId, noWorkId, currentThreadId],
+    () => groupChats(threads ?? [], scopeWorkId ?? noWorkId, noWorkId, currentThreadId, pinnedIds),
+    [threads, scopeWorkId, noWorkId, currentThreadId, pinnedIds],
   );
   const workName = (workId: string) =>
     workId === noWorkId
@@ -111,27 +115,46 @@ export function ChatsBody({
     refused,
     touch,
     onOpenChat,
+    onMoved: (id, pinned) => setFocusRow({ id, pinned }),
   };
-  // After Undo, focus goes to the chat's row, or to Find when no list here shows it. The row
-  // mounts only once the restored lists have loaded (a pin past the first page loads
-  // later), so focus waits for that render rather than look before it.
-  const [focusAfterUndo, setFocusAfterUndo] = useState<string | null>(null);
+  // After Undo, Pin or Unpin, focus goes to the chat's row in its list, or to Find when no list
+  // here shows it. The row mounts only once the lists have loaded (a restored pin past the first
+  // page loads later), and a pinned or unpinned row only once it has moved, so focus waits for
+  // that render rather than land on the row about to unmount.
+  const [focusRow, setFocusRow] = useState<{ id: string; pinned?: boolean } | null>(null);
   const listsSettled = threads !== null && !favoriteFeed.isFetching && !favoriteFeed.hasNextPage;
   useEffect(() => {
-    if (!focusAfterUndo) return;
-    const row = root.current?.querySelector<HTMLElement>(
-      `[data-chat-id="${CSS.escape(focusAfterUndo)}"] [data-list-item]`,
+    if (!focusRow) return;
+    const rows = [
+      ...(root.current?.querySelectorAll<HTMLElement>(
+        `[data-chat-id="${CSS.escape(focusRow.id)}"] [data-list-item]`,
+      ) ?? []),
+    ];
+    const row = rows.find(
+      (item) =>
+        focusRow.pinned === undefined ||
+        (item.closest("[data-pinned-list]") !== null) === focusRow.pinned,
     );
-    if (!row && !listsSettled) return;
-    setFocusAfterUndo(null);
+    // Still in the list it is leaving: wait for the move.
+    if (!row && (rows.length > 0 || !listsSettled)) return;
+    setFocusRow(null);
     const target = row ?? root.current?.querySelector<HTMLElement>("input");
     if (target) moveFocus(target, { ring: lastInputWasKeyboard() });
   });
 
-  // One list, most urgent first; the mark on a row says its state. A pinned chat is listed
-  // under Pinned only.
-  const scopedChats = [...groups.needsYou, ...groups.running, ...groups.idle];
-  const listed = scopedChats.filter((thread) => !pinnedIds.has(thread.id));
+  // Each list most urgent first; the mark on a row says its state.
+  const listed = [...groups.needsYou, ...groups.running, ...groups.idle];
+  const scopeId = scopeWorkId ?? noWorkId;
+  const scopeEmpty =
+    listed.length === 0 && groups.pinned.every((chat) => (chat.workId ?? noWorkId) !== scopeId);
+  const withHelpers = (thread: ThreadListItem) => (
+    <div key={thread.id}>
+      <ChatRow {...rows} chat={thread} />
+      {groups.helpers.get(thread.id)?.map((helper) => (
+        <ChatRow key={helper.id} {...rows} chat={helper} state="running" nested />
+      ))}
+    </div>
+  );
 
   return (
     <div ref={root} className="flex min-h-0 flex-1 flex-col">
@@ -149,7 +172,7 @@ export function ChatsBody({
             takeFocus={() => deletes.takeFocus(notice.id)}
             onUndo={() =>
               void deletes.undo().then((restored) => {
-                if (restored) setFocusAfterUndo(notice.threadId);
+                if (restored) setFocusRow({ id: notice.threadId });
               })
             }
             onDismiss={deletes.dismiss}
@@ -165,22 +188,21 @@ export function ChatsBody({
           </SourceHint>
         ) : (
           <>
-            {favoriteFeed.items.length > 0 ? (
-              <Group label={t`Pinned`} open={pinnedOpen} onToggle={setPinnedOpen}>
-                <FeedRows feed={favoriteFeed} rows={rows} empty={null} />
-              </Group>
-            ) : null}
-            <Group label={workName(scopeWorkId ?? noWorkId ?? "")} hidden={listed.length === 0}>
-              {listed.map((thread) => (
-                <div key={thread.id}>
-                  <ChatRow {...rows} chat={thread} />
-                  {groups.helpers.get(thread.id)?.map((helper) => (
-                    <ChatRow key={helper.id} {...rows} chat={helper} state="running" nested />
-                  ))}
-                </div>
-              ))}
+            <Group
+              label={t`Pinned`}
+              hidden={groups.pinned.length === 0}
+              open={pinnedOpen}
+              onToggle={() => expansion.toggleEntry("pinned-folded")}
+              foldedMark={
+                groups.pinnedState === "idle" ? null : <StateMark state={groups.pinnedState} />
+              }
+            >
+              <div data-pinned-list>{groups.pinned.map(withHelpers)}</div>
             </Group>
-            {scopedChats.length === 0 ? (
+            <Group label={workName(scopeId ?? "")} hidden={listed.length === 0}>
+              {listed.map(withHelpers)}
+            </Group>
+            {scopeEmpty ? (
               <SourceHint>
                 <Trans>No chats here yet.</Trans>
               </SourceHint>
@@ -335,32 +357,21 @@ function DeletedLine({
   );
 }
 
-/** Whether Pinned is unfolded, kept for this browser tab like the trees' folders. */
-function usePinnedOpen(projectId: string): [boolean, (open: boolean) => void] {
-  const accountId = useAccountId();
-  const key = treeExpansionKey(accountId, projectId, "chats");
-  const [open, setOpen] = useState(() => readTreeExpansion(key, accountId).entries.pinned ?? true);
-  return [
-    open,
-    (next) => {
-      setOpen(next);
-      writeTreeExpansion(key, accountId, { entries: { pinned: next } });
-    },
-  ];
-}
-
 function Group({
   label,
   hidden = false,
   open,
   onToggle,
+  foldedMark,
   children,
 }: {
   label: string;
   hidden?: boolean;
   /** Given with `onToggle`, the label folds the group. */
   open?: boolean;
-  onToggle?: (open: boolean) => void;
+  onToggle?: () => void;
+  /** Shown beside a folded group's label: what its hidden rows would say. */
+  foldedMark?: ReactNode;
   children: ReactNode;
 }) {
   if (hidden) return null;
@@ -372,18 +383,19 @@ function Group({
           <button
             type="button"
             aria-expanded={open}
-            onClick={() => onToggle(!open)}
+            onClick={onToggle}
             className={cn(
               "interactive flex items-center gap-1 rounded-sm px-1.5 coarse:min-h-11",
               role.groupLabel,
             )}
           >
-            {label}
             {open ? (
               <ChevronDown aria-hidden className="size-3" />
             ) : (
               <ChevronRight aria-hidden className="size-3" />
             )}
+            {label}
+            {open ? null : foldedMark}
           </button>
         </h3>
       ) : label ? (
@@ -409,6 +421,7 @@ function ChatRow({
   touch,
   nested = false,
   onOpenChat,
+  onMoved,
 }: RowContext & { chat: RowChat; state?: RowState; nested?: boolean }) {
   const client = useQueryClient();
   const title = displayThreadTitle(chat.title);
@@ -422,9 +435,10 @@ function ChatRow({
   const shownState = states.get(chat.id) ?? state;
   const onPin = (value: boolean) =>
     void runFavoriteCommand(client, projectId, chat.id, value).then((outcome) => {
-      if (outcome.status !== "success")
+      if (outcome.status !== "success") {
         announceError(value ? t`Couldn’t pin ${title}` : t`Couldn’t unpin ${title}`);
-      else announce(value ? t`Pinned ${title}` : t`Unpinned ${title}`);
+        onMoved(chat.id, !value);
+      } else announce(value ? t`Pinned ${title}` : t`Unpinned ${title}`);
     });
   // The server stops a running reply in the delete, and Undo can't restart it: that delete asks.
   const onDelete = () => (replying.has(chat.id) ? setAsking(true) : deletes.delete(chat.id, title));
@@ -457,7 +471,14 @@ function ChatRow({
                 <DropdownMenuItem onSelect={() => dispatch(() => start(title))}>
                   <span>{t`Rename`}</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => onPin(!pinned)}>
+                <DropdownMenuItem
+                  onSelect={() =>
+                    dispatch(() => {
+                      onPin(!pinned);
+                      onMoved(chat.id, !pinned);
+                    })
+                  }
+                >
                   <span>{pinned ? t`Unpin` : t`Pin`}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem variant="destructive" onSelect={() => dispatch(onDelete)}>
