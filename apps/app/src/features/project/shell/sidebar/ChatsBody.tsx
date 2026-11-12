@@ -416,6 +416,7 @@ function ChatRow({
             trailing={shownState === "idle" ? null : <StateMark state={shownState} />}
             actions={
               <OverflowMenu
+                dense
                 open={menuOpen}
                 onOpenChange={setMenuOpen}
                 onCloseAutoFocus={onCloseAutoFocus}

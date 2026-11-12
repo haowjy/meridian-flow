@@ -37,10 +37,10 @@ export function ListSectionHeader({
       <Heading
         title={title}
         aria-label={fold ? undefined : title}
-        className={cn("flex min-w-0 flex-1 items-center pr-1 pl-1.5", role.groupLabel)}
+        className={cn("flex min-w-0 flex-1 items-center self-stretch pr-1 pl-1.5", role.groupLabel)}
       >
         {fold ? (
-          // -mx/px keep the label on the rows' text edge while the hover fill reaches past it.
+          // The whole heading row folds; -mx/px keep the label on the rows' text edge.
           <button
             type="button"
             aria-expanded={fold.open}
@@ -51,7 +51,7 @@ export function ListSectionHeader({
               if (event.key === "ArrowRight") fold.onToggle(true);
             }}
             className={cn(
-              "interactive -mx-1.5 flex min-w-0 items-center gap-1 self-stretch rounded-sm px-1.5 coarse:min-h-11",
+              "interactive -mx-1.5 flex min-w-0 flex-1 items-center gap-1 self-stretch rounded-md px-1.5 text-left coarse:min-h-11",
               // Preflight resets a button's text-transform; the label's case needs restating.
               role.groupLabel,
             )}
