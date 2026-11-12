@@ -262,7 +262,10 @@ function DesktopDocumentFrame({
       <PaintScope active={onScreen}>
         <PaintHold
           status={t`Opening ${document.name}`}
-          className={cn(pageSheetClass(place === "side"), "relative flex min-h-0 flex-1 flex-col")}
+          className={cn(
+            pageSheetClass(place === "side"),
+            "paper relative flex min-h-0 flex-1 flex-col",
+          )}
         >
           <PaintCapture surface={document.documentId} />
           <DocumentStateSlotProvider>
@@ -431,7 +434,7 @@ function PhoneDocumentFrame({
   return (
     <PaintHold
       status={name ? t`Opening ${name}` : t`Opening draft`}
-      className="relative h-full min-h-0"
+      className="paper relative h-full min-h-0"
     >
       <PaintCapture surface={document.documentId} />
       {document.kind === "viewer" ? (

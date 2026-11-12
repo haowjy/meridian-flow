@@ -1,9 +1,10 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { ListChecks, type LucideIcon, Plus, Trash2 } from "lucide-react";
+import { ListChecks, type LucideIcon, MessageSquare, Plus, Trash2 } from "lucide-react";
 import {
   type ComponentType,
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -12,6 +13,7 @@ import {
 } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
+import { useWorks } from "@/client/query/useWorks";
 import { Chip } from "@/components/ui/chip";
 import {
   DropdownMenu,
@@ -21,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
+import { ListRow } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import { tabListKeys } from "@/components/ui/tab-keys";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -31,24 +34,38 @@ import {
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { cn } from "@/lib/utils";
-import { ScratchSource, useChatScratch } from "../../chat/ChatScratch";
+import { RailScratchSection } from "../../chat/ChatScratch";
 import { type CatalogState, ContextTreePanel } from "../../context/ContextTreePanel";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../../context/context-schemes";
 import type { MoveArea } from "../../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../../context/entry-drag/use-entry-list";
 import { useOptionalTreeCreation } from "../../context/TreeCreationProvider";
+import { DropRegion } from "../../context/tree-drop/DropRegion";
 import { type FilesRoute, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
+import { useChatNavigation } from "../../routing/chat-navigation";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { type ChangesScope, ChangesSource, useChangesScope } from "./ChangesSource";
+import { ChatsBody } from "./ChatsBody";
 import type { SourceDrop } from "./SourcePane";
-import { ALL_SOURCES, type SourceKey, useSidebarTabs } from "./sidebar-tabs-store";
+import { TREE_TABS, type TreeTab, useSidebarTabs } from "./sidebar-tabs-store";
 import { TrashSource } from "./TrashSource";
 import { useTrashDrop } from "./trash-drop";
 
 type TreeKey = (typeof EDITOR_CONTEXT_SCHEMES)[number];
 
+/**
+ * Every pane the sidebar can show: the strip's Chat, tree tabs and Changes, and the quiet rows
+ * at its foot, Unfiled and Trash.
+ */
+type SourceKey = "chat" | TreeTab | "unfiled" | "trash" | "changes";
+const FOOT_SOURCES = ["unfiled", "trash"] as const satisfies readonly SourceKey[];
+
 type WriteSources = {
   projectId: string;
+  /** The Work picker's scope, whose chats the Chat list shows first. */
+  scopeWorkId: string | null;
+  /** The chat on screen: its row reads as current, Scratch follows it, Changes asks of it. */
+  chatThreadId: string | null;
   /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
   editorWorkId: string | null;
   activeScheme: ProjectContextTreeScheme | null;
@@ -61,7 +78,6 @@ type WriteSources = {
   /** After a pick that opens something elsewhere (the phone drawer closes). */
   onPicked?: () => void;
   catalogs: Record<TreeKey, CatalogState>;
-  scratch: ReturnType<typeof useChatScratch>;
   changes: ChangesScope;
   /** Held here, not in the pane, so a Discard's Undo outlives a look at another tab. */
   changesCommands: WorkBranchCommands;
@@ -91,10 +107,8 @@ type Source = {
 };
 
 /** A drop at a catalog's top level; a drag resting on it accepted shows the source. */
-function useRootDrop(scheme: TreeKey | "scratch", reveal?: () => void): SourceDrop {
-  const { catalogs, scratch } = useWriteSources();
-  const catalog = scheme === "scratch" ? scratch.primary.catalog : catalogs[scheme].catalog;
-  const rootId = catalog?.root.entryId ?? null;
+function useRootDrop(scheme: TreeKey, reveal?: () => void): SourceDrop {
+  const rootId = useWriteSources().catalogs[scheme].catalog?.root.entryId ?? null;
   const target = useMemo(
     () => ({ scheme, catalogRootId: rootId ?? `${scheme}:loading`, folder: null }),
     [scheme, rootId],
@@ -126,21 +140,35 @@ function treeSource(scheme: TreeKey): Source {
 }
 
 const SOURCES: Record<SourceKey, Source> = {
+  chat: {
+    label: () => t`Chats`,
+    icon: MessageSquare,
+    useDrop: () => IDLE_DROP,
+    Body: () => {
+      const { projectId, scopeWorkId, chatThreadId, onPicked } = useWriteSources();
+      const chat = useChatNavigation();
+      const { noWork } = useWorks(projectId);
+      return (
+        <ChatsBody
+          projectId={projectId}
+          scopeWorkId={scopeWorkId}
+          noWorkId={noWork?.id ?? null}
+          currentThreadId={chatThreadId}
+          // The drawer closes once the navigation commits: a rejected one leaves it open.
+          onOpenChat={(threadId) => void chat.openChat(threadId).then(() => onPicked?.())}
+          onNewChat={() => void chat.openNewChat().then(() => onPicked?.())}
+          // Scratch lives with its chat. Renders nothing while no chat is open.
+          footer={
+            <RailScratchSection projectId={projectId} threadId={chatThreadId} onPicked={onPicked} />
+          }
+        />
+      );
+    },
+  },
   manuscript: treeSource("manuscript"),
   kb: treeSource("kb"),
   user: treeSource("user"),
   unfiled: treeSource("unfiled"),
-  scratch: {
-    label: () => schemeLabel("scratch"),
-    icon: schemeIcon("scratch"),
-    useDrop: (reveal) => useRootDrop("scratch", reveal),
-    Body: ({ drop }) => {
-      const { projectId, scratch, onPicked } = useWriteSources();
-      return (
-        <ScratchSource projectId={projectId} scratch={scratch} onPicked={onPicked} drop={drop} />
-      );
-    },
-  },
   trash: {
     label: () => t`Trash`,
     icon: Trash2,
@@ -181,20 +209,29 @@ const SOURCES: Record<SourceKey, Source> = {
 /** A source nothing is dropped on. */
 const IDLE_DROP: SourceDrop = { dropProps: {}, dropState: "idle" };
 
-function isSourceKey(key: string): key is SourceKey {
-  return Object.hasOwn(SOURCES, key);
+function isTreeTab(key: string): key is TreeTab {
+  return (TREE_TABS as readonly string[]).includes(key);
+}
+
+/** Where a document of this scheme is listed: its tree's tab, Unfiled, or Scratch under its chat. */
+function sourceOfScheme(scheme: ProjectContextTreeScheme): SourceKey | null {
+  if (isTreeTab(scheme) || scheme === "unfiled") return scheme;
+  return scheme === "scratch" ? "chat" : null;
 }
 
 /**
- * The Files list, on the sidebar and the phone drawer: one source at a time behind a
- * strip of tabs, so each list gets the full height. Tabs are icons named on
- * hover; the list names its source. + picks which tabs the strip shows. The
- * open document's source becomes the shown one when it changes, unless Changes is shown. The strip and
- * every source are one list: one selection, and a row dragged anywhere in the
- * sidebar drops on any tab or pane.
+ * The sidebar's sources, on the desktop sidebar and the phone drawer: one pane at a time behind
+ * a strip of tabs, so each list gets the full height. The strip is Chat, then the tree sources
+ * the writer chose (+ picks them), then Changes while it has something to offer. Unfiled and
+ * Trash sit as quiet rows at the foot and show their pane the same way. Tabs are icons named on
+ * hover; the pane names its source. Main's item's source becomes the shown one when it changes
+ * (a document's tree, Trash for a deleted one, the Chat list for a chat), unless Changes is
+ * shown. The strip, the foot and every pane are one list: one selection, and a row dragged
+ * anywhere in the sidebar drops on any tab, row or pane.
  */
 export function SourcesBody({
   projectId,
+  scopeWorkId,
   editorWorkId,
   chatThreadId,
   contextLive,
@@ -202,8 +239,7 @@ export function SourcesBody({
   activePath,
   onSelectFile,
   onPicked,
-}: Omit<WriteSources, "catalogs" | "scratch" | "changes" | "changesCommands"> & {
-  chatThreadId: string | null;
+}: Omit<WriteSources, "catalogs" | "changes" | "changesCommands"> & {
   contextLive: boolean;
 }) {
   const chosen = useSidebarTabs((state) => state.shown);
@@ -211,38 +247,57 @@ export function SourcesBody({
     void useSidebarTabs.persist.rehydrate();
   }, []);
   const showTab = useSidebarTabs((state) => state.show);
-  const [picked, setPicked] = useState<SourceKey>("manuscript");
-  // The open document's source is on the strip and, unless Changes is on show, the one shown.
+  const mainChat = useChatNavigation().display;
+  const mainChatKey = mainChat ? (mainChat.kind === "thread" ? mainChat.threadId : "new") : null;
+  const [picked, setPicked] = useState<SourceKey>(mainChat ? "chat" : "manuscript");
   // Changes stays: it is the list the writer opens drafts from, whatever tree they live in.
   // `picked` is Changes only while it is shown (see below).
+  const follow = useCallback(
+    (source: SourceKey) => {
+      if (isTreeTab(source)) showTab(source);
+      setPicked((current) => (current === "changes" ? current : source));
+    },
+    [showTab],
+  );
   useEffect(() => {
-    if (!activeScheme || !isSourceKey(activeScheme)) return;
-    showTab(activeScheme);
-    setPicked((current) => (current === "changes" ? current : activeScheme));
-  }, [activeScheme, showTab]);
+    const source = activeScheme && sourceOfScheme(activeScheme);
+    if (source) follow(source);
+  }, [activeScheme, follow]);
+  useEffect(() => {
+    if (mainChatKey) follow("chat");
+  }, [mainChatKey, follow]);
   // A deleted document main shows is Trash's, so Trash shows, as a document shows its tree.
   const trashShown = useTrashNavigation().shown;
   useEffect(() => {
-    if (!trashShown) return;
-    showTab("trash");
-    setPicked((current) => (current === "changes" ? current : "trash"));
-  }, [trashShown, showTab]);
+    if (trashShown) follow("trash");
+  }, [trashShown, follow]);
   // A new file or folder asked for elsewhere (the empty Editor) appears in its source.
   const creatingScheme = useOptionalTreeCreation()?.request?.scheme;
   useEffect(() => {
-    if (!creatingScheme || !isSourceKey(creatingScheme)) return;
-    showTab(creatingScheme);
-    setPicked(creatingScheme);
+    const source = creatingScheme && sourceOfScheme(creatingScheme);
+    if (!source) return;
+    if (isTreeTab(source)) showTab(source);
+    setPicked(source);
   }, [creatingScheme, showTab]);
   const changes = useChangesScope(projectId, chatThreadId);
   // Under None, Changes is offered only while the chat on screen has drafts, but it stays
   // while it is the pane on show, so emptying it keeps the last command's Undo in view.
-  const shown = useMemo(
-    () => chosen.filter((key) => key !== "changes" || changes.offered || picked === "changes"),
-    [chosen, changes.offered, picked],
+  const changesShown = changes.offered || picked === "changes";
+  const tabs = useMemo<readonly SourceKey[]>(
+    () => ["chat", ...chosen, ...(changesShown ? ["changes" as const] : [])],
+    [chosen, changesShown],
   );
-  // A tab that left the strip can't stay selected: the strip's first tab shows, and is picked.
-  const source = shown.includes(picked) ? picked : (shown[0] ?? "manuscript");
+  // A tab that left the strip can't stay selected: main's item's source shows, else the first
+  // tree tab, else Chat.
+  const fallback: SourceKey = mainChat
+    ? "chat"
+    : (tabs.find((key) => activeScheme !== null && key === sourceOfScheme(activeScheme)) ??
+      chosen[0] ??
+      "chat");
+  const source =
+    tabs.includes(picked) || (FOOT_SOURCES as readonly SourceKey[]).includes(picked)
+      ? picked
+      : fallback;
   if (source !== picked) setPicked(source);
   const changesCommands = useWorkBranchCommands({
     projectId,
@@ -255,16 +310,13 @@ export function SourcesBody({
     workId: editorWorkId,
     enabled: contextLive,
   });
-  const scratch = useChatScratch(projectId, chatThreadId);
   const areas = useMemo<MoveArea[]>(
-    () => [
-      ...EDITOR_CONTEXT_SCHEMES.flatMap((scheme) => {
+    () =>
+      EDITOR_CONTEXT_SCHEMES.flatMap((scheme) => {
         const catalog = catalogs[scheme].catalog;
         return catalog ? [{ scheme, owner: { workId: editorWorkId }, catalog, accepts: true }] : [];
       }),
-      ...scratch.areas,
-    ],
-    [catalogs, editorWorkId, scratch.areas],
+    [catalogs, editorWorkId],
   );
   const list = useEntryList({ projectId, areas });
   const dropImport = useOptionalImports()?.drop;
@@ -284,25 +336,27 @@ export function SourcesBody({
   const value = useMemo<WriteSources>(
     () => ({
       projectId,
+      scopeWorkId,
+      chatThreadId,
       editorWorkId,
       activeScheme,
       activePath,
       onSelectFile,
       onPicked,
       catalogs,
-      scratch,
       changes,
       changesCommands,
     }),
     [
       projectId,
+      scopeWorkId,
+      chatThreadId,
       editorWorkId,
       activeScheme,
       activePath,
       onSelectFile,
       onPicked,
       catalogs,
-      scratch,
       changes,
       changesCommands,
     ],
@@ -312,8 +366,18 @@ export function SourcesBody({
     <WriteSourcesContext.Provider value={value}>
       <EntryList list={list} files={files}>
         <div className="flex min-h-0 flex-1 flex-col">
-          <SourceTabs chosen={chosen} shown={shown} source={source} onSelect={setPicked} />
+          <SourceTabs chosen={chosen} tabs={tabs} source={source} onSelect={setPicked} />
           <SourceView key={source} source={source} />
+          <div className="shrink-0 px-2 pt-1">
+            {FOOT_SOURCES.map((key) => (
+              <FootSource
+                key={key}
+                source={key}
+                current={key === source}
+                onSelect={() => setPicked(key)}
+              />
+            ))}
+          </div>
         </div>
       </EntryList>
     </WriteSourcesContext.Provider>
@@ -329,70 +393,103 @@ function SourceView({ source }: { source: SourceKey }) {
 
 function SourceTabs({
   chosen,
-  shown,
+  tabs,
   source,
   onSelect,
 }: {
-  /** The writer's choice, which the + menu shows and changes. */
-  chosen: readonly SourceKey[];
-  /** The tabs offered now: the choice, less Changes when it has nothing to offer. */
-  shown: readonly SourceKey[];
+  /** The writer's tree tabs, which the + menu shows and changes. */
+  chosen: readonly TreeTab[];
+  /** The tabs on the strip now: Chat, the chosen trees, and Changes while it is offered. */
+  tabs: readonly SourceKey[];
   source: SourceKey;
   onSelect: (key: SourceKey) => void;
 }) {
   const toggle = useSidebarTabs((state) => state.toggle);
-  const keys = tabListKeys(shown, source, onSelect);
+  const keys = tabListKeys(tabs, source, onSelect);
+  const tab = (key: SourceKey) => (
+    <SourceTab
+      key={key}
+      source={key}
+      active={key === source}
+      tabIndex={keys.tabIndex(key)}
+      onSelect={() => onSelect(key)}
+    />
+  );
   return (
-    <div className="flex shrink-0 items-center gap-1 px-2 py-1 coarse:gap-0 coarse:px-1">
+    <div className="flex shrink-0 items-center px-2 py-1 coarse:px-1">
       <div
         role="tablist"
         aria-label={t`Sources`}
         onKeyDown={keys.onKeyDown}
         className="-m-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto p-1 coarse:gap-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        {shown.map((key) => (
-          <SourceTab
-            key={key}
-            source={key}
-            active={key === source}
-            tabIndex={keys.tabIndex(key)}
-            onSelect={() => onSelect(key)}
-          />
-        ))}
+        {tab("chat")}
+        <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border coarse:mx-0.5" />
+        {chosen.map(tab)}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            {/* Sized like the tabs it sits among. */}
+            <IconButton
+              size="sm"
+              label={t`Choose tabs`}
+              tooltipSide="bottom"
+              className="size-7 shrink-0 coarse:size-11"
+            >
+              <Plus aria-hidden />
+            </IconButton>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-52">
+            <DropdownMenuLabel>{t`Tabs`}</DropdownMenuLabel>
+            {TREE_TABS.map((key) => {
+              const Icon = SOURCES[key].icon;
+              return (
+                <DropdownMenuCheckboxItem
+                  key={key}
+                  checked={chosen.includes(key)}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    toggle(key);
+                  }}
+                >
+                  <Icon className="size-4" aria-hidden />
+                  {SOURCES[key].label()}
+                </DropdownMenuCheckboxItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {tabs.includes("changes") ? <span className="ml-auto flex">{tab("changes")}</span> : null}
       </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          {/* Sized like the tabs it sits among. */}
-          <IconButton size="sm" label={t`Choose tabs`} tooltipSide="bottom" className="size-7">
-            <Plus aria-hidden />
-          </IconButton>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuLabel>{t`Tabs`}</DropdownMenuLabel>
-          {ALL_SOURCES.map((key) => {
-            const on = chosen.includes(key);
-            const Icon = SOURCES[key].icon;
-            return (
-              <DropdownMenuCheckboxItem
-                key={key}
-                checked={on}
-                // The last tab stays: the sidebar always shows a list, and Changes may be hidden.
-                disabled={
-                  on && key !== "changes" && chosen.every((k) => k === key || k === "changes")
-                }
-                onSelect={(event) => {
-                  event.preventDefault();
-                  toggle(key);
-                }}
-              >
-                <Icon className="size-4" aria-hidden />
-                {SOURCES[key].label()}
-              </DropdownMenuCheckboxItem>
-            );
-          })}
-        </DropdownMenuContent>
-      </DropdownMenu>
     </div>
+  );
+}
+
+/** A quiet row at the sidebar's foot that shows its source's pane, and takes drops as its tab would. */
+function FootSource({
+  source,
+  current,
+  onSelect,
+}: {
+  source: (typeof FOOT_SOURCES)[number];
+  current: boolean;
+  onSelect: () => void;
+}) {
+  const { label, icon, useDrop } = SOURCES[source];
+  const { catalogs } = useWriteSources();
+  const count = source === "unfiled" ? (catalogs.unfiled.catalog?.files().length ?? 0) : 0;
+  const drop = useDrop(onSelect);
+  return (
+    <DropRegion state={drop.dropState} flush>
+      <div {...drop.dropProps}>
+        <ListRow
+          icon={icon}
+          title={label()}
+          meta={count > 0 ? count : undefined}
+          current={current}
+          onOpen={onSelect}
+        />
+      </div>
+    </DropRegion>
   );
 }
 

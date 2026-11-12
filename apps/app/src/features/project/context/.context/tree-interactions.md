@@ -248,7 +248,7 @@ and dialog serve all Scratch rows, retaining each target's owner. The actual own
 
 ## Selecting and dragging rows
 
-The Files list, the Chat list's Scratch and a Work's Files are each one list:
+The sidebar's sources, the Chat list's Scratch and a Work's Files are each one list:
 `useEntryList` owns its selection, its entries route and, through `EntryList`,
 its drop scope. Recently opened (main's landing) is a list too, with its own
 `useEntrySelection` and no drop: its rows are `ListRow` links whose drag carries the selection as
@@ -256,9 +256,9 @@ references (`useEntryRow` with `source: "reference"`), so Ctrl/Cmd-
 and Shift-click are taken in the capture phase (`useEntryRow().select`) before the link would open a
 browser tab, and the row's ⋯ and right-click give Move… and Delete for a filed document (the same
 `useEntryMenu`, `EntryDestinationPicker` and `useDeleteContextEntries` as the tree). An Untitled
-row, or a Scratch note (the list doesn't know its owner), grants nothing. The Files list (also the phone drawer) is one list over every
-source it can show: Manuscript, Knowledge, Your files, Unfiled and the chat's
-Scratch, each tree keeping its own expansion. Rows join through `EntrySelectionProvider`.
+row, or a Scratch note (the list doesn't know its owner), grants nothing. The sidebar's sources (also the phone drawer) are one list over every
+tree they can show: Manuscript, Knowledge, Your files and Unfiled, each tree keeping its own
+expansion. Rows join through `EntrySelectionProvider`.
 Selection keys are `kind:id` and carry no scheme or place, so a moved row keeps
 its key and stays selected. Rows a delete or restore takes out of their list leave every list's
 selection (`leaveSelections`, run by `runDelete` and both Trash restores), with the documents and
@@ -324,14 +324,15 @@ selection of one), not the open row.
 
 ### Dropping across systems, and dropping references
 
-In the Write sidebar the sources sit behind icon tabs (`shell/sidebar/SourcesBody.tsx`).
-Each source in its `SOURCES` table has one root drop, used by its tab and by its pane
-(`SourcePane`), and the strip and the pane share the sidebar's one drop scope. Dropping
-on a source's tab lands at that source's root ("Move to Knowledge"), and so does
-its heading or the space below its last row; the usual crossing-system rules apply, so
-Your files and Scratch still ask. A drag that rests on a tab for 600 ms opens it, as on
-a closed folder, for a drop into a folder inside. Trash is a source too, not a scheme:
-rows dropped on its tab or its pane are deleted at once, with no menu, through
+In the sidebar the sources sit behind icon tabs, with Unfiled and Trash as rows at its foot
+(`shell/sidebar/SourcesBody.tsx`). Each source in its `SOURCES` table has one root drop, used
+by its tab or foot row and by its pane (`SourcePane`), and the strip, the foot and the pane
+share the sidebar's one drop scope. Dropping on a source's tab lands at that source's root
+("Move to Knowledge"), and so does its heading or the space below its last row; the usual
+crossing-system rules apply, so Your files still asks. A drag that rests on a tab for 600 ms
+opens it, as on a closed folder, for a drop into a folder inside. Scratch is no tab: it docks
+under the Chat list with its own list and drop (`RailScratchSection`). Trash is a source too,
+not a scheme: rows dropped on its row or its pane are deleted at once, with no menu, through
 `useDeleteContextEntries`, and its rows drag out to be restored where
 they land.
 
@@ -489,7 +490,7 @@ journal entry: a reload shows the server). A refused item goes back to Trash wit
 notice offers Undo, which deletes the restored documents through the normal delete path. Trash's own
 list never takes a trash drag (the rows are already deleted).
 
-Trash rows are `ListRow`s with the trees' menu and select like tree rows, through the Files list's
+Trash rows are `ListRow`s with the trees' menu and select like tree rows, through the sidebar's
 selection. Right-click and ⋯ share the tree's menu: Restore on one row,
 Restore N on a selection. `restore(entries)` on `DocumentTrashRestoreProvider` sends one request
 for all of them; each entry shows its own outcome on its row (a blocked one keeps "Couldn't restore

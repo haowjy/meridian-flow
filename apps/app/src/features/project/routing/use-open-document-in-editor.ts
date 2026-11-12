@@ -6,6 +6,7 @@ import { type DraftPin, readDocumentView } from "@/client/project-shell/document
 import { isEditorOpenDocument, type OpenDocument } from "@/client/stores";
 import { useAccountId } from "../context/account-feature-context";
 import { type OpenContextRoute, useOpenContextRoute } from "./ProjectNavigationContext";
+import type { NavigationSettlement } from "./project-navigation";
 import { contextRouteRequest } from "./project-route";
 
 type EditorDocument =
@@ -57,11 +58,11 @@ export function useOpenDocumentInEditor() {
 export function useOpenInMain(
   projectId: string,
   open: OpenContextRoute,
-): (tab: OpenDocument, options?: { replace?: boolean }) => void {
+): (tab: OpenDocument, options?: { replace?: boolean }) => Promise<NavigationSettlement> {
   const accountId = useAccountId();
   return useCallback(
     (tab, options) =>
-      void openDocumentInEditor(open, tab, {
+      openDocumentInEditor(open, tab, {
         review: readDocumentView(accountId, projectId, tab.documentId).pin,
         ...options,
       }),

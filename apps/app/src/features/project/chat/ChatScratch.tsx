@@ -5,13 +5,11 @@
  * the Editor. Rows offer Rename, Move… and Delete like any list's while the
  * owner can still be edited; the AI makes the notes, so there is no New note.
  *
- * Three surfaces show it: the Files list's Scratch source (`ScratchSource`), the
- * Chat list's docked section (`RailScratchSection`), and a chat's Files menu
- * (`MenuScratchSection`). The wording "Scratch for this chat" / "Scratch for
+ * Two surfaces show it: the Chat list's docked section (`RailScratchSection`) and a
+ * chat's Files menu (`MenuScratchSection`). The wording "Scratch for this chat" / "Scratch for
  * <Work>" is the heading's tooltip and accessible name, not a line of text.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { Folder, FolderOpen } from "lucide-react";
@@ -36,7 +34,6 @@ import { useScratchCatalogs } from "../context/use-scratch-catalogs";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { DockedRailSection } from "../shell/DockedRailSection";
-import { type SourceDrop, SourcePane } from "../shell/sidebar/SourcePane";
 import { useOptionalMainItem } from "../views";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
@@ -105,52 +102,6 @@ export function useChatScratch(projectId: string, threadId: string | null) {
 }
 
 type ChatScratch = ReturnType<typeof useChatScratch>;
-
-/**
- * Write's Scratch source: the chat on screen's notes as flush rows, under the
- * same heading as every other source. Its rows sit in the sidebar's one list,
- * which `scratch.areas` joins.
- */
-export function ScratchSource({
-  projectId,
-  scratch,
-  onPicked,
-  drop,
-}: {
-  projectId: string;
-  scratch: ChatScratch;
-  onPicked?: () => void;
-  drop: SourceDrop;
-}) {
-  return (
-    <SourcePane label={schemeLabel("scratch")} title={scratch.source?.heading} drop={drop}>
-      {scratch.source ? (
-        <div className="px-2">
-          <ChatScratchTree projectId={projectId} scratch={scratch} depth={0} onPicked={onPicked} />
-        </div>
-      ) : null}
-      {scratch.source && scratch.isError ? (
-        <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.retry} />
-      ) : !scratch.source || !scratch.ready || !scratch.hasRows ? (
-        <div className="px-2">
-          {!scratch.source ? (
-            <ListLine iconSlot>
-              <Trans>Open a chat to see its Scratch.</Trans>
-            </ListLine>
-          ) : !scratch.ready ? (
-            <ListLine iconSlot status>
-              <Trans>Loading…</Trans>
-            </ListLine>
-          ) : (
-            <ListLine iconSlot>
-              <Trans>No scratch notes yet.</Trans>
-            </ListLine>
-          )}
-        </div>
-      ) : null}
-    </SourcePane>
-  );
-}
 
 /** The Chat list's Scratch, docked under the chat list; it collapses, and expanded takes up to 40% of the rail. */
 export function RailScratchSection({

@@ -1,7 +1,7 @@
 /**
  * The project's stored shell state, per (account, project) in this browser tab and seeded once from
  * the device by `tab-first-remembered-id`, so two browser tabs on one project do not fight over it.
- * It holds the Work scope, the sidebar list, and the project's current chat and current document:
+ * It holds the Work scope and the project's current chat and current document:
  * the last of each kind on screen, in main or beside. Main's mode decides which pane shows which.
  */
 import { useMemo, useSyncExternalStore } from "react";
@@ -10,10 +10,6 @@ import { readRememberedId, writeRememberedId } from "../tab-first-remembered-id"
 /** A Work row id, or `none` for No Work. Only the Work picker writes it. */
 export type ProjectScope = string;
 export const NO_SCOPE = "none";
-
-/** Which list the left sidebar shows. Only the Write | Chat switch writes it; no address follows it. */
-export type SidebarList = "files" | "chats";
-export const DEFAULT_SIDEBAR_LIST: SidebarList = "files";
 
 /** The last document on screen, in main or beside. A document followed from a link keeps the link's Work. */
 export type CurrentDocument = { documentId: string; workId?: string };
@@ -45,17 +41,6 @@ export function readProjectScope(accountId: string, projectId: string): ProjectS
 export function writeProjectScope(accountId: string, projectId: string, scope: ProjectScope): void {
   if (readProjectScope(accountId, projectId) === scope) return;
   writeRememberedId("work", accountId, projectId, scope);
-  notify(accountId, projectId);
-}
-
-export function readSidebarList(accountId: string, projectId: string): SidebarList {
-  const stored = readRememberedId("sidebar-list", accountId, projectId);
-  return stored === "files" || stored === "chats" ? stored : DEFAULT_SIDEBAR_LIST;
-}
-
-export function writeSidebarList(accountId: string, projectId: string, list: SidebarList): void {
-  if (readSidebarList(accountId, projectId) === list) return;
-  writeRememberedId("sidebar-list", accountId, projectId, list);
   notify(accountId, projectId);
 }
 
@@ -105,15 +90,6 @@ export function useProjectScope(accountId: string, projectId: string): ProjectSc
     (listener) => subscribe(accountId, projectId, listener),
     () => readProjectScope(accountId, projectId),
     () => NO_SCOPE,
-  );
-}
-
-/** The stored sidebar list, re-read when this tab's list changes. */
-export function useSidebarList(accountId: string, projectId: string): SidebarList {
-  return useSyncExternalStore(
-    (listener) => subscribe(accountId, projectId, listener),
-    () => readSidebarList(accountId, projectId),
-    () => DEFAULT_SIDEBAR_LIST,
   );
 }
 

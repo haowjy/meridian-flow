@@ -1,8 +1,8 @@
 /**
  * LeftSidebar — the desktop project sidebar. The header holds the project menu,
- * then the Work scope, then the Write | Chat switch. Under the switch sits the
- * list it picked (`SIDEBAR_LISTS`). The phone drawer composes the same switch
- * and list inside `WorkspaceNavBody`.
+ * then the Work scope, then the Write | Chat switch (main's mode). Under it sit
+ * the sources (`SourcesBody`). The phone drawer composes the same switch and
+ * sources inside `WorkspaceNavBody`.
  */
 
 import { t } from "@lingui/core/macro";
@@ -17,10 +17,10 @@ import { useOpenProjectDocument } from "../context/open-project-document";
 import { useWorkScope } from "../use-work-scope";
 import { useManageWorks } from "../work/ManageWorksDialog";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
+import { MainModeSwitch } from "./MainModeSwitch";
 import { PanelToggleSpacer } from "./PanelToggleButton";
 import { ProjectMenu } from "./ProjectMenu";
-import { ListSwitch } from "./sidebar/ListSwitch";
-import { SIDEBAR_LISTS, useSidebarListState } from "./sidebar/sidebar-lists";
+import { SourcesBody } from "./sidebar/SourcesBody";
 import { WorkScopePicker } from "./sidebar/WorkScopePicker";
 import type { TitleEditHandle } from "./TitleEditSlot";
 
@@ -49,8 +49,6 @@ export function LeftSidebar({
   const titleEditor = useRef<TitleEditHandle>(null);
   const openDocument = useOpenProjectDocument(projectId);
   const scope = useWorkScope(projectId);
-  const { list } = useSidebarListState(projectId);
-  const Sidebar = SIDEBAR_LISTS[list].Body;
 
   const handleSelectFile = (
     scheme: ProjectContextTreeScheme,
@@ -106,8 +104,8 @@ export function LeftSidebar({
         onPick={scope.setWorkId}
         onManage={() => manageWorks?.open()}
       />
-      <ListSwitch projectId={projectId} className="mx-2" />
-      <Sidebar
+      <MainModeSwitch projectId={projectId} className="mx-2" />
+      <SourcesBody
         projectId={projectId}
         editorWorkId={editorWorkId}
         chatThreadId={chatThreadId}

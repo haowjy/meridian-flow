@@ -2,7 +2,7 @@
 import { createContext, type ReactNode, useContext } from "react";
 import type { OpenDocument } from "@/client/stores";
 import type { NavigationSettlement } from "./project-navigation";
-import type { ContextRouteRequest } from "./project-route";
+import type { ContextRouteRequest, ProjectRouteCommands } from "./project-route";
 
 export type OpenContextOptions = {
   replace?: boolean;
@@ -39,6 +39,7 @@ const ProjectNavigationContext = createContext<{
   open: OpenContextRoute;
   capture?: () => () => boolean;
   trash: TrashNavigation;
+  routeCommands: ProjectRouteCommands;
 } | null>(null);
 
 export function ProjectNavigationProvider({
@@ -46,11 +47,13 @@ export function ProjectNavigationProvider({
   openContextRoute,
   captureNavigation,
   trash,
+  routeCommands,
 }: {
   children: ReactNode;
   openContextRoute: OpenContextRoute;
   captureNavigation?: () => () => boolean;
   trash: TrashNavigation;
+  routeCommands: ProjectRouteCommands;
 }) {
   return (
     <ProjectNavigationContext.Provider
@@ -58,6 +61,7 @@ export function ProjectNavigationProvider({
         open: openContextRoute,
         capture: captureNavigation,
         trash,
+        routeCommands,
       }}
     >
       {children}
@@ -78,4 +82,11 @@ export function useTrashNavigation(): TrashNavigation {
   const trash = useContext(ProjectNavigationContext)?.trash;
   if (!trash) throw new Error("Project Trash navigation is required");
   return trash;
+}
+
+/** The route's own commands (Recently opened), for a control outside main's header. */
+export function useProjectRouteCommands(): ProjectRouteCommands {
+  const commands = useContext(ProjectNavigationContext)?.routeCommands;
+  if (!commands) throw new Error("Project route commands are required");
+  return commands;
 }

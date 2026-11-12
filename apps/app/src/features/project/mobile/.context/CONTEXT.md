@@ -16,9 +16,8 @@ The route parent owns push/replace and invalid-address rendering. The phone has
 the desktop's two places, one on screen at a time: main fills the screen and
 shows what the address names (a document, a chat, `/chats`'s new-chat composer,
 or Recently opened), and the side is a bottom Sheet over it. Settings and Trash
-are query surfaces over main; the drawer's fixed row opens the full-screen Trash
-list without changing main, a row shows its read-only document in place, and
-Back returns to the list. Only the recognized owner/item/change/settings/trash
+are query surfaces over main; the drawer's Trash row shows the Trash list in the
+drawer, and a row there shows its read-only document in main. Only the recognized owner/item/change/settings/trash
 selectors are accepted.
 
 The Sheet shows the side's item (`useSideItem`, the same resolution as the
@@ -83,10 +82,10 @@ keyboard; mobile review never becomes an editable Editor.
 ## Drawer and phone chrome
 
 The navigation drawer is the desktop sidebar: the same Write | Chat switch and
-`SIDEBAR_LISTS` bodies (the file tree, the Chats list with find, this Work's chats
-and Other chats), so files are browsed, created, moved and deleted there with the
-desktop's rows and forms. Opening a file from it closes the drawer once the
-open commits.
+`SourcesBody` (the Chat list, the trees, Changes, and Unfiled and Trash at its foot above
+the account row), so files are browsed, created, moved and deleted there with the
+desktop's rows and forms. Opening a file or a chat from it, or pressing Write or Chat,
+closes the drawer once main's navigation commits.
 
 Mobile top chrome names a document once. `PhoneDocumentFrame` renders the shared
 document host without toolbar or identity bar; non-tracked viewers use a bare host. Breadcrumb ancestors are 44px

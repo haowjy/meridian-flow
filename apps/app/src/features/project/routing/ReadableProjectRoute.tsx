@@ -834,6 +834,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       openContextRoute={openContext}
       captureNavigation={captureNavigation}
       trash={trash}
+      routeCommands={routeCommands}
     >
       <ChatNavigationProvider value={chat}>
         <ProjectDocumentNavigationProvider
