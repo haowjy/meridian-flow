@@ -1,9 +1,9 @@
 /**
  * The one review-launch path. Every launcher (the composer strip, a change card, a link to a draft,
  * the Work page, the version menu, the phone) calls `openAiDraft`: it sets the document's view to
- * that draft, with the clicked change as the pin's change, and opens the document in main: the
- * route command opens it and writes the address. Main's host then paints the draft and focuses
- * the change. Latest launch wins.
+ * that draft, with the clicked change as the pin's change, and opens the document in the pane
+ * `useHoldFor` picks. In main, the route command opens it and writes the address; beside, the
+ * hold shows it. That pane's host then paints the draft and focuses the change. Latest launch wins.
  */
 
 import type { EventRecord } from "@meridian/contracts/observability";
@@ -15,17 +15,18 @@ import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import type { LinkFollowDisposition } from "@/core/editor/links";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
-import type { LinkDestination, LinkDocumentRef } from "@/features/links";
+import type { LinkDocumentRef } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
 import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
+import type { OpenDocumentOutcome } from "./context/open-project-document";
 import {
   type BesideHint,
   type OpenContextRoute,
   useOpenedFromChat,
 } from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
-import { useOptionalHoldBeside } from "./side/SideView";
+import { type HoldBeside, useOptionalSideHold } from "./side/SideView";
 
 export type AiDraftLaunchTarget = {
   ownerKey: string;
@@ -129,14 +130,8 @@ export function ReviewLaunchProvider({
   );
 }
 
-export function useOpenEditorReview(): EditorReviewCommand {
-  const command = useOptionalOpenEditorReview();
-  if (!command) throw new Error("Opening a draft requires the project review handoff owner");
-  return command;
-}
-
-/** For a surface that only sometimes launches a review (a link to a draft), and may mount without an owner. */
-export function useOptionalOpenEditorReview(): EditorReviewCommand | null {
+/** Null where no review owner is mounted: a surface that only sometimes launches a review (a link to a draft). */
+function useOptionalOpenEditorReview(): EditorReviewCommand | null {
   const command = useContext(EditorReviewCommandContext);
   const beside = useOpenedFromChat();
   return useMemo(
@@ -146,15 +141,68 @@ export function useOptionalOpenEditorReview(): EditorReviewCommand | null {
   );
 }
 
-export function useAiDraftLauncher() {
-  const openEditorReview = useOpenEditorReview();
-  const openAiDraft = useCallback(
-    (target: AiDraftLaunchTarget) => {
-      void openEditorReview(target).catch((error) => {
-        console.error("[editor-review] launch failed", error);
-      });
+/**
+ * Where an open goes. From a chat, the pane the chat is not in, whatever the gesture: a chat in
+ * main holds the page beside, a chat beside opens it in main, so the chat stays where it is and
+ * only the writer's own choice (the sidebar, Open in main) replaces a page in main. Anywhere else,
+ * main, and a cmd-click, ctrl-click or middle click holds the page beside. Null opens in main.
+ */
+function useHoldFor(): (gesture: LinkFollowDisposition) => HoldBeside | null {
+  const fromChat = useOpenedFromChat() !== null;
+  const side = useOptionalSideHold();
+  const hold = side?.hold ?? null;
+  const chatInMain = side?.mainIsChat ?? false;
+  return useCallback(
+    (gesture) => {
+      if (fromChat) return chatInMain ? hold : null;
+      return gesture === "new-tab" ? hold : null;
     },
-    [openEditorReview],
+    [fromChat, chatInMain, hold],
+  );
+}
+
+const committed = (documentId: string): OpenDocumentOutcome => ({ kind: "committed", documentId });
+
+/** Opens a document on a draft, in the pane `useHoldFor` picks. */
+function useOpenDraft(): (
+  target: AiDraftLaunchTarget,
+  gesture: LinkFollowDisposition,
+) => Promise<OpenDocumentOutcome> {
+  const openEditorReview = useOptionalOpenEditorReview();
+  const holdFor = useHoldFor();
+  return useCallback(
+    (target, gesture) => {
+      const hold = holdFor(gesture);
+      if (hold) {
+        hold(
+          { kind: "document", documentId: target.documentId },
+          {
+            ownerKey: target.ownerKey,
+            itemKey: target.itemKey,
+            ...(target.focus ? { changeId: target.focus.id } : {}),
+          },
+        );
+        return Promise.resolve(committed(target.documentId));
+      }
+      if (!openEditorReview)
+        throw new Error("Opening a draft requires the project review handoff owner");
+      return openEditorReview(target).then(
+        () => committed(target.documentId),
+        (error): OpenDocumentOutcome => {
+          console.error("[editor-review] launch failed", error);
+          return { kind: "cancelled" };
+        },
+      );
+    },
+    [holdFor, openEditorReview],
+  );
+}
+
+export function useAiDraftLauncher() {
+  const openDraft = useOpenDraft();
+  const openAiDraft = useCallback(
+    (target: AiDraftLaunchTarget) => void openDraft(target, "current"),
+    [openDraft],
   );
 
   /** Opens a listed draft in review. A draft with no address yet (still being written) has nothing to open. */
@@ -177,68 +225,54 @@ export function useAiDraftLauncher() {
 }
 
 /**
- * Where one followed link goes. `live` is the surface's own opener for a plain click on a live
- * page; `workId` is the Work the link names, which a hold beside keeps.
+ * Where one followed link goes. `live` is the surface's own opener for a live page in main;
+ * `workId` is the Work the link names, which a hold beside keeps.
  */
 export type LinkPlacement = (
   document: LinkDocumentRef,
   gesture: LinkFollowDisposition,
-  live: LinkDestination,
+  live: (document: LinkDocumentRef, gesture: LinkFollowDisposition) => Promise<OpenDocumentOutcome>,
   workId?: string | null,
-) => Promise<unknown>;
+) => Promise<OpenDocumentOutcome>;
 
 /**
  * What a followed link opens: the one rule for links in a chat or a page, a chat's doors and its
- * "Drafted N documents" rows.
- * - A page only a draft holds (`document.review`) opens in main on that draft, whatever the
- *   gesture: it can't be held beside.
- * - A page `ownerKey` drafted opens on that draft: a plain click in main, as the draft strip does;
- *   a cmd-click, ctrl-click or middle click holds it beside, on that draft (a page only the draft
- *   has opens in main).
- * - Any other page: a plain click goes to `live`; the other gestures hold it beside, in the
- *   link's Work. A page in the trash opens in main.
+ * "Drafted N documents" rows. The pane is `useHoldFor`'s.
+ * - A page only a draft holds (`document.review`) opens on that draft.
+ * - A page `ownerKey` drafted opens on that draft, as the draft strip does.
+ * - Any other page opens live, held beside in the link's Work, or through `live` in main. A page
+ *   in the trash opens in main.
  */
 export function useLinkPlacement(projectId: string | null, ownerKey: string | null): LinkPlacement {
   const { fileForDocument } = useOwnerDrafts(projectId, ownerKey);
-  const openEditorReview = useOptionalOpenEditorReview();
-  const holdBeside = useOptionalHoldBeside();
+  const openDraft = useOpenDraft();
+  const holdFor = useHoldFor();
   return useCallback(
     (document, gesture, live, workId) => {
-      const hold = gesture === "new-tab" ? holdBeside : null;
-      const launch = (target: AiDraftLaunchTarget) => {
-        if (!openEditorReview)
-          throw new Error("Opening a draft requires the project review handoff owner");
-        return openEditorReview(target).catch((error) => {
-          console.error("[editor-review] launch failed", error);
-        });
-      };
       if (document.review)
-        return launch({ documentId: document.documentId, ...document.review, draftOnly: true });
+        return openDraft(
+          { documentId: document.documentId, ...document.review, draftOnly: true },
+          gesture,
+        );
       if (document.trashed) return live(document, gesture);
       const drafted = ownerKey ? fileForDocument(document.documentId) : null;
-      if (ownerKey && drafted?.contextLocation) {
-        if (hold && !drafted.draftOnly) {
-          hold(
-            { kind: "document", documentId: document.documentId },
-            { ownerKey, itemKey: drafted.draft.itemKey },
-          );
-          return Promise.resolve();
-        }
-        return launch({
-          ownerKey,
-          documentId: document.documentId,
-          itemKey: drafted.draft.itemKey,
-          contextLocation: drafted.contextLocation,
-          documentName: drafted.documentName ?? undefined,
-          draftOnly: drafted.draftOnly,
-        });
-      }
-      if (hold) {
-        hold({ kind: "document", documentId: document.documentId, ...(workId ? { workId } : {}) });
-        return Promise.resolve();
-      }
-      return live(document, gesture);
+      if (ownerKey && drafted?.contextLocation)
+        return openDraft(
+          {
+            ownerKey,
+            documentId: document.documentId,
+            itemKey: drafted.draft.itemKey,
+            contextLocation: drafted.contextLocation,
+            documentName: drafted.documentName ?? undefined,
+            draftOnly: drafted.draftOnly,
+          },
+          gesture,
+        );
+      const hold = holdFor(gesture);
+      if (!hold) return live(document, gesture);
+      hold({ kind: "document", documentId: document.documentId, ...(workId ? { workId } : {}) });
+      return Promise.resolve(committed(document.documentId));
     },
-    [fileForDocument, ownerKey, openEditorReview, holdBeside],
+    [fileForDocument, ownerKey, openDraft, holdFor],
   );
 }

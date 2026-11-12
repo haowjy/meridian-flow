@@ -10,6 +10,8 @@
  * survives it. A held chat gives way to a chat in main, and a held document that no longer opens
  * is dropped.
  */
+
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -20,7 +22,11 @@ import {
   useRef,
   useState,
 } from "react";
-import { type DraftPin, setDocumentView } from "@/client/project-shell/document-views";
+import {
+  type DraftPin,
+  readDocumentView,
+  setDocumentView,
+} from "@/client/project-shell/document-views";
 import {
   type HeldPick,
   readHeldPick,
@@ -29,6 +35,7 @@ import {
   writeHeldPick,
 } from "@/client/project-shell/store";
 import { useDocumentRelated } from "@/client/query/useDocumentRelated";
+import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
 import type { OpenDocument } from "@/client/stores";
@@ -39,6 +46,7 @@ import {
   useOptionalPresentedDocuments,
   useShownDocuments,
 } from "../context/account-feature-context";
+import { openDocumentFromDraftGroup } from "../context/open-document-from-draft";
 import { useDescribeProjectDocument } from "../context/open-project-document";
 import { recentOpening } from "../context/recent-opening";
 import { useRecordOpenedDocument } from "../context/use-record-opened-document";
@@ -76,7 +84,7 @@ type SideView = {
   /** What the side's new-chat composer is about, as its draft stands. */
   newChatAbout: NewChatAbout;
   reportNewChatAbout: (about: NewChatAbout) => void;
-  /** Bumped by a hold from a link: the desktop opens the side so the hold is seen. */
+  /** Bumped by a hold from a link: the shell opens the side so the hold is seen. */
   revealed: number;
   /** With `draft`, the held document shows that draft. */
   holdBeside: (pick: HeldPick, draft?: DraftPin) => void;
@@ -150,7 +158,24 @@ type Descriptions = {
 
 /** Descriptors of documents that may sit beside, resolved once each, for the rule and the picker. */
 function useDescriptions(projectId: string): Descriptions {
-  const describe = useDescribeProjectDocument(projectId);
+  const describeLive = useDescribeProjectDocument(projectId);
+  const accountId = useAccountId();
+  const queryClient = useQueryClient();
+  // A page only a draft holds has no live entry: the draft its view shows describes it, as it
+  // does for main's address.
+  const describe = useCallback(
+    async (documentId: string, workId?: string) => {
+      const live = await describeLive(documentId, workId);
+      const pin = live ? null : readDocumentView(accountId, projectId, documentId).pin;
+      if (!pin) return live;
+      const drafts = await queryClient.fetchQuery(ownerDraftsQueryOptions(projectId, pin.ownerKey));
+      const row = drafts.items.find(
+        (item) => item.itemKey === pin.itemKey && item.documentId === documentId,
+      );
+      return row && (row.isNew || row.deletedLive) ? openDocumentFromDraftGroup(row) : null;
+    },
+    [describeLive, accountId, projectId, queryClient],
+  );
   const shown = useShownDocuments(projectId);
   const [answers, setAnswers] = useState<ReadonlyMap<string, OpenDocument | null | "failed">>(
     () => new Map(),
@@ -454,12 +479,17 @@ export function useNewChatAbout(): {
   return { about: newChatAbout, report: reportNewChatAbout };
 }
 
-/** Holds a document beside from a link, and has the side seen; null outside the project view. */
-export function useOptionalHoldBeside(): SideView["holdBeside"] | null {
-  return useContext(SideViewContext)?.holdBeside ?? null;
+export type HoldBeside = SideView["holdBeside"];
+
+/** Holds a document beside and has the side seen, and whether main shows a chat; null outside the project view. */
+export function useOptionalSideHold(): { hold: HoldBeside; mainIsChat: boolean } | null {
+  const view = useContext(SideViewContext);
+  const hold = view?.holdBeside;
+  const mainIsChat = view?.main.kind === "chat";
+  return useMemo(() => (hold ? { hold, mainIsChat } : null), [hold, mainIsChat]);
 }
 
-/** Counts holds made from a link: the desktop opens the side on each. */
+/** Counts holds made from a link: the shell opens the side on each. */
 export function useSideRevealed(): number {
   return useSideView().revealed;
 }

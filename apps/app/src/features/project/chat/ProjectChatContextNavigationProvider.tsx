@@ -6,13 +6,14 @@
  * it live or only in a draft? The chat owns the one follower that asks (`useChatLinkFollowing`),
  * so a door and a transcript link share one latest click, one dialog, and the chat's
  * visibility and thread lifetime. This file prepares each door as a question plus a policy:
- * a live answer opens by the document id the resolver named, in main; a hidden document goes
+ * a live answer opens by the document id the resolver named, in the pane `useLinkPlacement` picks; a hidden document goes
  * to its Work's review by item identity; a missing one routes by address, so the route says
  * so in place. An upload has no Editor address, so no door opens it.
  *
  * Every door (and, through `retire`, every transcript click) retires a passage still landing.
- * A passage door's answer hands the resolved id to passage navigation, which opens that
- * document inside the answer and lands on the anchor if the open result allows. No lookup
+ * A passage door's answer hands the resolved id and its placement to passage navigation, which
+ * opens that document inside the answer, in the pane the placement picks, and lands on the
+ * anchor if the open result allows. No lookup
  * stands between the answer and the open.
  */
 
@@ -112,19 +113,13 @@ export function ProjectChatContextNavigationProvider({
   // A live answer opens the document the resolver named, by identity: never by address, which
   // could be held by a hidden sibling's review.
   const openLive = useCallback(
-    (door: Placement, document: LinkDocumentRef) => {
-      if (door.passage) {
-        // The passage door opens the document itself, once, and lands on the passage.
-        passages.land(door.workId, door.passage, { documentId: document.documentId });
-      } else {
-        void openChatDocument({
-          documentId: document.documentId,
-          workId: door.workId ?? undefined,
-        });
-      }
-      return Promise.resolve();
-    },
-    [passages, openChatDocument],
+    (door: Placement, document: LinkDocumentRef, signal?: AbortSignal) =>
+      openChatDocument({
+        documentId: document.documentId,
+        workId: door.workId ?? undefined,
+        ...(signal ? { signal } : {}),
+      }),
+    [openChatDocument],
   );
   // The chat's own drafts: its Work's, or under No Work its lineage's. A link to a document the
   // chat drafted opens that draft, the way its draft strip does.
@@ -136,9 +131,16 @@ export function ProjectChatContextNavigationProvider({
     ) || null,
   );
   const openFound = useCallback(
-    (door: Placement, document: LinkDocumentRef, gesture: Parameters<LinkDestination>[1]) =>
-      place(document, gesture, (found) => openLive(door, found), door.workId),
-    [openLive, place],
+    (door: Placement, document: LinkDocumentRef, gesture: Parameters<LinkDestination>[1]) => {
+      const { passage } = door;
+      if (!passage) return place(document, gesture, (found) => openLive(door, found), door.workId);
+      // The passage door opens the document wherever the placement puts it, once, and lands there.
+      passages.land(passage, document.documentId, (signal) =>
+        place(document, gesture, (found) => openLive(door, found, signal), door.workId),
+      );
+      return Promise.resolve();
+    },
+    [openLive, passages, place],
   );
   // Only a route-backed door overrides the follower's missing outcome: its route says so in
   // place. A resource door has no route, so it keeps the follower's shared outcome.
