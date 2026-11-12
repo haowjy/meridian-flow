@@ -179,6 +179,7 @@ export function RailScratchSection({
             className="flex min-h-0 flex-col"
             header={(dropProps) => (
               <ListSectionHeader
+                level={2}
                 label={schemeLabel("scratch")}
                 title={source.heading}
                 fold={{ open: expanded, onToggle: setExpanded }}

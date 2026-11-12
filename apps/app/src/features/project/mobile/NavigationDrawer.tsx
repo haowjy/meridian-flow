@@ -138,7 +138,6 @@ export function NavigationDrawer({
                   activePath={activeContextPath}
                   onSelectFile={handleSelectFile}
                   scopeWorkId={scope.workId}
-                  onShowWork={scope.setWorkId}
                   onPicked={() => onOpenChange(false)}
                 />
               </TreeCreationProvider>

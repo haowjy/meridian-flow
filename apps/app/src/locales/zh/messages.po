@@ -282,8 +282,8 @@ msgstr "{0} 词元/秒"
 
 #. placeholder {0}: other.needsYou
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "{0} waiting on you"
-msgstr ""
+#~ msgid "{0} waiting on you"
+#~ msgstr ""
 
 #. placeholder {0}: only.name
 #. placeholder {1}: only.as
@@ -293,8 +293,8 @@ msgstr ""
 
 #. placeholder {0}: other.running
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "{0} working"
-msgstr ""
+#~ msgid "{0} working"
+#~ msgstr ""
 
 #: src/features/chat/ask/permission-request.ts
 msgid "{agent} wants to archive {work}?"
@@ -997,8 +997,8 @@ msgid "Alignment applies to paragraphs, headings, and tables."
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "All chats"
-msgstr ""
+#~ msgid "All chats"
+#~ msgstr ""
 
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "All open documents"
@@ -1568,7 +1568,6 @@ msgid "Chats"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Chats without a Work"
 msgstr ""
 
@@ -3954,7 +3953,6 @@ msgid "No chats match “{search}”."
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "No chats yet."
 msgstr ""
 
@@ -4299,8 +4297,12 @@ msgid "Organizing {name}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Other Works"
+msgid "Other chats"
 msgstr ""
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+#~ msgid "Other Works"
+#~ msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Output speed"
@@ -4375,8 +4377,8 @@ msgid "Pin"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Pinned"
-msgstr ""
+#~ msgid "Pinned"
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Pinned {title}"

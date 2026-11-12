@@ -27,7 +27,6 @@ export type SidebarListProps = {
     options?: { focus?: true },
   ) => void;
   scopeWorkId: string | null;
-  onShowWork: (workId: string) => void;
   /** The phone drawer closes after a pick. */
   onPicked?: () => void;
 };
@@ -36,13 +35,7 @@ function FilesList(props: SidebarListProps) {
   return <SourcesBody {...props} />;
 }
 
-function ChatsList({
-  projectId,
-  chatThreadId,
-  scopeWorkId,
-  onShowWork,
-  onPicked,
-}: SidebarListProps) {
+function ChatsList({ projectId, chatThreadId, scopeWorkId, onPicked }: SidebarListProps) {
   const chat = useChatNavigation();
   const { noWork } = useWorks(projectId);
   return (
@@ -54,7 +47,6 @@ function ChatsList({
       // The drawer closes once the navigation commits: a rejected one leaves it open.
       onOpenChat={(threadId) => void chat.openChat(threadId).then(() => onPicked?.())}
       onNewChat={() => void chat.openNewChat().then(() => onPicked?.())}
-      onShowWork={onShowWork}
       // Renders nothing while no chat is open.
       footer={
         <RailScratchSection projectId={projectId} threadId={chatThreadId} onPicked={onPicked} />

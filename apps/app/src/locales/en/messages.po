@@ -282,8 +282,8 @@ msgstr "{0} tok/s"
 
 #. placeholder {0}: other.needsYou
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "{0} waiting on you"
-msgstr "{0} waiting on you"
+#~ msgid "{0} waiting on you"
+#~ msgstr "{0} waiting on you"
 
 #. placeholder {0}: only.name
 #. placeholder {1}: only.as
@@ -293,8 +293,8 @@ msgstr "{0} will be renamed {1}"
 
 #. placeholder {0}: other.running
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "{0} working"
-msgstr "{0} working"
+#~ msgid "{0} working"
+#~ msgstr "{0} working"
 
 #: src/features/chat/ask/permission-request.ts
 msgid "{agent} wants to archive {work}?"
@@ -997,8 +997,8 @@ msgid "Alignment applies to paragraphs, headings, and tables."
 msgstr "Alignment applies to paragraphs, headings, and tables."
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "All chats"
-msgstr "All chats"
+#~ msgid "All chats"
+#~ msgstr "All chats"
 
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "All open documents"
@@ -1568,7 +1568,6 @@ msgid "Chats"
 msgstr "Chats"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Chats without a Work"
 msgstr "Chats without a Work"
 
@@ -3954,7 +3953,6 @@ msgid "No chats match “{search}”."
 msgstr "No chats match “{search}”."
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "No chats yet."
 msgstr "No chats yet."
 
@@ -4299,8 +4297,12 @@ msgid "Organizing {name}"
 msgstr "Organizing {name}"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Other Works"
-msgstr "Other Works"
+msgid "Other chats"
+msgstr "Other chats"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+#~ msgid "Other Works"
+#~ msgstr "Other Works"
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Output speed"
@@ -4375,8 +4377,8 @@ msgid "Pin"
 msgstr "Pin"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Pinned"
-msgstr "Pinned"
+#~ msgid "Pinned"
+#~ msgstr "Pinned"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Pinned {title}"

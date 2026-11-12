@@ -38,7 +38,7 @@ function controlClassName(density: Density): string {
 
 function IconSlot({ icon: Icon }: { icon: LucideIcon }) {
   return (
-    <span className={cn("flex h-7 w-4 shrink-0 items-center justify-center", role.secondary)}>
+    <span className={cn("flex h-5 w-4 shrink-0 items-center justify-center", role.secondary)}>
       <Icon aria-hidden className="size-3.5" />
     </span>
   );
