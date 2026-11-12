@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Layers, Plus, X } from "lucide-react";
+import { ChevronRight, Layers, Plus, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { runFavoriteCommand, usePinnedChatIds } from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
@@ -241,19 +241,9 @@ export function ChatsBody({
                 />
               ))}
             </Group>
-            <div className="px-2 pt-2">
-              <ListRow
-                onOpen={() => setAllOpen((open) => !open)}
-                controlProps={{ "aria-expanded": allOpen }}
-                leading={<RowIcon icon={allOpen ? ChevronDown : ChevronRight} />}
-                title={
-                  <span className={role.secondary}>
-                    <Trans>All chats</Trans>
-                  </span>
-                }
-              />
-              {allOpen ? <AllChats rows={rows} /> : null}
-            </div>
+            <Group label={t`All chats`} open={allOpen} onToggle={() => setAllOpen((open) => !open)}>
+              <AllChats rows={rows} />
+            </Group>
           </>
         )}
       </SourcePane>
@@ -393,28 +383,31 @@ function Group({
   const folds = open !== undefined && onToggle;
   return (
     <section aria-label={label || undefined} className="px-2 pt-2">
-      {folds ? (
-        <h3 className="pb-1">
-          <button
-            type="button"
-            aria-expanded={open}
-            onClick={onToggle}
-            className={cn(
-              "interactive flex items-center gap-1 rounded-sm px-1.5 coarse:min-h-11",
-              role.groupLabel,
-            )}
-          >
-            {open ? (
-              <ChevronDown aria-hidden className="size-3" />
-            ) : (
-              <ChevronRight aria-hidden className="size-3" />
-            )}
-            {label}
-            {open ? null : foldedMark}
-          </button>
+      {/* The pane heading's look and left edge, so every heading lines up with the rows'
+          text; a fold's chevron follows its label rather than push it in. */}
+      {label ? (
+        <h3 className={cn("flex min-h-7 items-center px-1.5", role.groupLabel)}>
+          {folds ? (
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={onToggle}
+              className={cn(
+                "interactive -mx-1.5 flex min-h-7 items-center gap-1 rounded-sm px-1.5 coarse:min-h-11",
+                role.groupLabel,
+              )}
+            >
+              {label}
+              <ChevronRight
+                aria-hidden
+                className={cn("size-3 transition-transform", open && "rotate-90")}
+              />
+              {open ? null : foldedMark}
+            </button>
+          ) : (
+            label
+          )}
         </h3>
-      ) : label ? (
-        <h3 className={cn("px-1.5 pb-1", role.groupLabel)}>{label}</h3>
       ) : null}
       {folds && !open ? null : children}
     </section>
