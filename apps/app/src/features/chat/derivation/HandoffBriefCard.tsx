@@ -18,11 +18,11 @@ import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { readHandoffSeed } from "@meridian/contracts/threads";
 import { Forward } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { useId, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/rich-content/Markdown";
 import { AnchoredCards, useCardsAt } from "../ChatCards";
-import { ClippedProse } from "../ClippedExpand";
+import { ExpandableProse } from "../ClippedExpand";
 import { useFocusWithinRow } from "../compaction/useFocusWithinRow";
 import { type BriefCardView, briefCardView } from "./handoff-seed";
 import { SourceChatLink, useSourceThread } from "./SourceChatLink";
@@ -168,32 +168,11 @@ export function HandoffBriefCard({
 
 /** The brief, clipped to the card's height until the writer asks for all of it. */
 function BriefText({ brief }: { brief: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const bodyId = useId();
-  const toggle = (
-    <Button
-      type="button"
-      variant="quiet"
-      size="meta"
-      aria-expanded={expanded}
-      aria-controls={bodyId}
-      onClick={() => setExpanded((value) => !value)}
-    >
-      {expanded ? <Trans>Show less</Trans> : <Trans>Show the whole brief</Trans>}
-    </Button>
-  );
   return (
-    <div id={bodyId} className="mt-[var(--chat-space-inline)]" data-handoff-brief-text>
-      {expanded ? (
-        <>
-          <Markdown variant="compact">{brief}</Markdown>
-          <div className="mt-[var(--chat-space-inline)]">{toggle}</div>
-        </>
-      ) : (
-        <ClippedProse footer={toggle}>
-          <Markdown variant="compact">{brief}</Markdown>
-        </ClippedProse>
-      )}
+    <div className="mt-[var(--chat-space-inline)]" data-handoff-brief-text>
+      <ExpandableProse more={<Trans>Show the whole brief</Trans>}>
+        <Markdown variant="compact">{brief}</Markdown>
+      </ExpandableProse>
     </div>
   );
 }

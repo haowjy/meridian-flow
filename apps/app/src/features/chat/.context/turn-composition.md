@@ -47,8 +47,10 @@ finished; direct cards retain launch, live edge, and expandable result.
 
 `thread_report` remains a process step because the invocation card is the
 one surface for that run. Child completion is a structured
-`subagent_update` transcript event correlated by execution ID; render it as a
-quiet row at its causal position and never infer it from notice text. Machine
+`subagent_update` transcript event correlated by execution ID. When the
+launch card for that execution is in the transcript, the card shows the finish
+and the event draws nothing; otherwise render it as a quiet row at its causal
+position. Never infer it from notice text. Machine
 deliveries (`inbox_message`) use the same row chrome with the sending chat's
 title/handle and message text. They group under the preceding assistant row;
 when none exists, the delivery has its own row so it never disappears;

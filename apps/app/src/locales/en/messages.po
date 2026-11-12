@@ -240,8 +240,8 @@ msgstr "{0} is text, so it was added as a document in assets. The chip links to 
 
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
-msgid "{0} running"
-msgstr "{0} running"
+#~ msgid "{0} running"
+#~ msgstr "{0} running"
 
 #. placeholder {0}: formatFixed(stats.ttftMs / 1000, i18n.locale)
 #: src/features/chat/AssistantTurnActions.tsx
@@ -261,8 +261,8 @@ msgstr "{0} stopped"
 
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
-msgid "{0} subagents"
-msgstr "{0} subagents"
+#~ msgid "{0} subagents"
+#~ msgstr "{0} subagents"
 
 #. placeholder {0}: names.length
 #: src/features/chat/subagent/DeliveryEventRows.tsx
@@ -3427,7 +3427,6 @@ msgstr "Its folder is gone"
 msgid "Its paragraph was removed"
 msgstr "Its paragraph was removed"
 
-#: src/features/chat/SubagentHeader.tsx
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Jump to in chat"
 msgstr "Jump to in chat"
@@ -4052,6 +4051,10 @@ msgstr "No report text was returned."
 #: src/features/project/chat/ChatScratch.tsx
 msgid "No scratch notes yet."
 msgstr "No scratch notes yet."
+
+#: src/features/chat/SubagentHeader.tsx
+msgid "No subagents match “{search}”."
+msgstr "No subagents match “{search}”."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work yet."
@@ -5053,7 +5056,7 @@ msgstr "Show {sheetName}"
 msgid "Show changes"
 msgstr "Show changes"
 
-#: src/features/chat/derivation/HandoffBriefCard.tsx
+#: src/features/chat/ClippedExpand.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Show less"
 msgstr "Show less"
@@ -5082,6 +5085,10 @@ msgstr "Show the changes list"
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Show the whole brief"
 msgstr "Show the whole brief"
+
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Show the whole report"
+msgstr "Show the whole report"
 
 #: src/features/project/work/WorkDetail.tsx
 msgid "Show this Work"
@@ -5215,7 +5222,7 @@ msgstr "Stayed as you edited it"
 msgid "Stop"
 msgstr "Stop"
 
-#: src/features/chat/RunningSubagentsStrip.tsx
+#: src/features/chat/subagent/SubagentStop.tsx
 msgid "Stop \"{name}\""
 msgstr "Stop \"{name}\""
 
@@ -5257,7 +5264,7 @@ msgstr "Stopped"
 msgid "Stopping"
 msgstr "Stopping"
 
-#: src/features/chat/RunningSubagentsStrip.tsx
+#: src/features/chat/subagent/SubagentStop.tsx
 msgid "Stopping \"{name}\""
 msgstr "Stopping \"{name}\""
 
@@ -5277,6 +5284,10 @@ msgstr "Strikethrough"
 #: src/features/project/chat/SubagentPathRow.tsx
 msgid "Subagent chat path"
 msgstr "Subagent chat path"
+
+#: src/features/chat/SubagentHeader.tsx
+msgid "Subagents"
+msgstr "Subagents"
 
 #. placeholder {0}: nodes.length
 #: src/features/chat/SubagentHeader.tsx
@@ -6165,7 +6176,7 @@ msgid "Trash"
 msgstr "Trash"
 
 #: src/features/chat/ChatCards.tsx
-#: src/features/chat/RunningSubagentsStrip.tsx
+#: src/features/chat/subagent/SubagentStop.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
