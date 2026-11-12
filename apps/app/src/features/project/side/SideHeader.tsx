@@ -60,7 +60,7 @@ function SideBand({
   return (
     // Over the page's top edge by main's band's 2px (`tab-band`), so both pages start level.
     <div className="-mb-0.5 shrink-0">
-      <header className="flex h-10 items-stretch pl-2 coarse:h-11">
+      <header className="flex h-10 items-stretch pl-3.5 coarse:h-11">
         {leading}
         {/* No overflow-hidden: clipping here shears the title's hover pill. */}
         <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1">
