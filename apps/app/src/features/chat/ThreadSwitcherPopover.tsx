@@ -62,6 +62,7 @@ export function ThreadSwitcherPopover({
   const now = useThreadStore((state) => state.now);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const search = query.trim();
   const filteredThreads = filterThreadsByTitle(primaryThreads, query);
   const filteredIds = new Set(filteredThreads.map((thread) => thread.id));
   const visibleWorkItems = workItems
@@ -186,11 +187,7 @@ export function ThreadSwitcherPopover({
           <PickerResults>
             {filteredThreads.length === 0 ? (
               <ListLine density="menu">
-                {query.trim() ? (
-                  <Trans>No chats match “{query}”.</Trans>
-                ) : (
-                  <Trans>No chats yet.</Trans>
-                )}
+                {search ? <Trans>No chats match “{search}”.</Trans> : <Trans>No chats yet.</Trans>}
               </ListLine>
             ) : null}
             {visibleWorkItems.map((group) => (

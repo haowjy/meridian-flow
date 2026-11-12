@@ -244,7 +244,8 @@ function SidePickerLists({
     })),
   ).slice(0, RECENT_LIMIT);
 
-  const searching = query.trim().length > 0;
+  const search = query.trim();
+  const searching = search.length > 0;
   const found: Row[] = searching
     ? keep([
         ...matchFileSuggestions(
@@ -323,9 +324,9 @@ function SidePickerLists({
               found.length === 0 ? (
                 <ListLine density="menu" iconSlot>
                   {offersChats ? (
-                    <Trans>No documents or chats match “{query}”.</Trans>
+                    <Trans>No documents or chats match “{search}”.</Trans>
                   ) : (
-                    <Trans>No documents match “{query}”.</Trans>
+                    <Trans>No documents match “{search}”.</Trans>
                   )}
                 </ListLine>
               ) : undefined

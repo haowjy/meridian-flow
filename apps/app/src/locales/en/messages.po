@@ -3928,9 +3928,10 @@ msgid "No chats here yet."
 msgstr "No chats here yet."
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-msgid "No chats match “{query}”."
-msgstr "No chats match “{query}”."
+#~ msgid "No chats match “{query}”."
+#~ msgstr "No chats match “{query}”."
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "No chats match “{search}”."
 msgstr "No chats match “{search}”."
@@ -3945,12 +3946,20 @@ msgid "No column has been resized yet."
 msgstr "No column has been resized yet."
 
 #: src/features/project/side/SidePicker.tsx
-msgid "No documents match “{query}”."
-msgstr "No documents match “{query}”."
+#~ msgid "No documents match “{query}”."
+#~ msgstr "No documents match “{query}”."
 
 #: src/features/project/side/SidePicker.tsx
-msgid "No documents or chats match “{query}”."
-msgstr "No documents or chats match “{query}”."
+msgid "No documents match “{search}”."
+msgstr "No documents match “{search}”."
+
+#: src/features/project/side/SidePicker.tsx
+#~ msgid "No documents or chats match “{query}”."
+#~ msgstr "No documents or chats match “{query}”."
+
+#: src/features/project/side/SidePicker.tsx
+msgid "No documents or chats match “{search}”."
+msgstr "No documents or chats match “{search}”."
 
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "No drafts"

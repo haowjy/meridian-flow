@@ -83,7 +83,7 @@ export function ReferenceSuggestionMenu({
         snapshot.meta?.loadFailed ? (
           <InlineErrorRow message={<Trans>Couldn't load references.</Trans>} />
         ) : (
-          <ListLine density="menu" iconSlot status={snapshot.meta?.incomplete}>
+          <ListLine density="menu" iconSlot status>
             {snapshot.meta?.incomplete ? (
               <Trans>Loading references…</Trans>
             ) : containerLabel ? (

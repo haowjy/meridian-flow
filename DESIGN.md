@@ -139,8 +139,8 @@ Core shell expectations:
   shown on hover, and, when it folds, a chevron after the label so folding and plain
   headings share that edge. A list section's fold is remembered per tab with
   `useSectionFold`; the docked Scratch keeps its open state as a device preference.
-- A list's rows are `ListRow`; a row's kind is its `icon`, one slot and one glyph size in
-  every list. The line that stands in for the rows (loading, empty, no matches) is
+- A list's rows are `ListRow`. In the sidebar and page lists a row's kind is its `icon`,
+  one slot and one glyph size; pickers keep their 16 px glyphs in `leading`. The line that stands in for the rows (loading, empty, no matches) is
   `ListLine`, placed where the rows go, so its text starts where theirs would. A search
   that finds nothing says "No {things} match “{query}”." in the list's own noun.
 - Editing text in place never moves or resizes it. Use `components/ui/inline-edit`

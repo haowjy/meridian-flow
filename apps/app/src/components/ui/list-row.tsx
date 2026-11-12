@@ -195,7 +195,7 @@ export function ListLine({
     <p
       role={status ? "status" : undefined}
       aria-live={status ? "polite" : undefined}
-      className={cn("pr-2 leading-snug", role.emptyLine)}
+      className={cn("pr-2", role.emptyLine)}
       style={{ paddingLeft: contentInset(density, depth) + (iconSlot ? ICON_SLOT_PX : 0) }}
     >
       {children}
