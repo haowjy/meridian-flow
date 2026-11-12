@@ -66,5 +66,9 @@ this directory never imports application packages. The `./mf` CLI lives in
 
 Run `pnpm dev:gc-dbs` after a batch of cleanups.
 
+A worktree's database is named from its branch. After switching a worktree's branch,
+restart its stack (`pnpm dev:restart`): the running stack keeps the old branch's database,
+which no name claims once it stops.
+
 Contracts for databases, sessions, cleanup evidence and migrations:
 [`.context/CONTEXT.md`](.context/CONTEXT.md).

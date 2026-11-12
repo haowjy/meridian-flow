@@ -112,7 +112,6 @@ export async function readAppliedMigrations(
   }
 }
 
-/** List local worktree-shaped databases for the registered dev DB base names. */
 /** Databases something is connected to right now: a running stack, a psql, a test. */
 export async function listConnectedDatabasesForUrl(databaseUrl: string): Promise<Set<string>> {
   assertLocalDevPostgresEndpoint(databaseUrl, "list connected databases");
@@ -129,6 +128,7 @@ export async function listConnectedDatabasesForUrl(databaseUrl: string): Promise
   }
 }
 
+/** List local worktree-shaped databases for the registered dev DB base names. */
 export async function listWorktreeDatabasesForUrl(
   databaseUrl: string,
   baseDbNames: readonly string[],
