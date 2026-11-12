@@ -65,6 +65,7 @@ export function RunningSubagentsStrip({
         ) : null}
         {/* One keyed list in every layout: a child's row, and the Stop it may be carrying, stays
             mounted when a second child arrives or the list collapses. */}
+        {/* Each child row brings its own chevron slot: this indent puts its mark under the name. */}
         <ul className={cn(listed && "pb-1 pl-[calc(1.5rem+var(--chat-space-inline))]")}>
           {children.map((run) => (
             <RunningSubagentRow

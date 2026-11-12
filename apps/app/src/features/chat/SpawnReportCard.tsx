@@ -10,11 +10,12 @@ import type { DirectInvocationResult } from "@meridian/thread-client";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { getThreadExecutionReport } from "@/client/api/execution-reports-api";
+import { cn } from "@/lib/utils";
 import { SourceChatLink, useSourceThread } from "./derivation/SourceChatLink";
 import { ReportContent } from "./ReportContent";
 import { useSubagentDisclosure } from "./subagent/DisclosureStore";
 import type { SubagentRun } from "./subagent/run-model";
-import { SubagentRow, SubagentToolLine } from "./subagent/SubagentRow";
+import { SubagentRow, SubagentToolLine, subagentBodyIndent } from "./subagent/SubagentRow";
 
 /** Where a background run's saved report lives; read only once the writer expands the card. */
 export type SavedReportSource = { threadId: string; childThreadId: string; execution: string };
@@ -126,7 +127,7 @@ export function SpawnReportCard({
       />
       {from ? <SpawnSourceLine source={from} /> : null}
       {expanded && expandable ? (
-        <div className="mt-[var(--chat-space-block)] pl-[calc(1.5rem+var(--chat-space-inline))] text-sm">
+        <div className={cn("mt-[var(--chat-space-block)] text-sm", subagentBodyIndent)}>
           {foreground && directResult ? (
             <ReportBody report={directResult} message={directResult.message} />
           ) : savedReport ? (
@@ -176,7 +177,10 @@ function SpawnSourceLine({ source: { threadId, title } }: { source: SpawnSource 
   return (
     <p
       data-spawn-source={threadId}
-      className="mt-[var(--chat-space-inline)] flex min-w-0 items-baseline gap-1 pl-[calc(1.5rem+var(--chat-space-inline))] text-xs text-muted-foreground"
+      className={cn(
+        "mt-[var(--chat-space-inline)] flex min-w-0 items-baseline gap-1 text-xs text-muted-foreground",
+        subagentBodyIndent,
+      )}
     >
       {/* One message, so a translation can put the source's name first. */}
       <Trans>

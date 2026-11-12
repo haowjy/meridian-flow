@@ -15,7 +15,10 @@ import {
   useDraftNotice,
 } from "@/features/draft-review/CommandNotice";
 import { draftCopyView } from "@/features/draft-review/copy-view";
-import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
+import {
+  DeletedFromManuscriptTag,
+  DraftCommandStatus,
+} from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import { DiscardQuestion, ReviewActions } from "@/features/draft-review/ReviewActions";
@@ -381,7 +384,12 @@ function ChangeRow({
         disabled={!opens}
         controlProps={drag}
         icon={fileKindIcon(file.contextLocation?.path ?? name)}
-        title={<span className={cn(deleted && "line-through")}>{name}</span>}
+        title={
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <span className={cn("truncate", deleted && "line-through")}>{name}</span>
+            <DeletedFromManuscriptTag item={file.draft} />
+          </span>
+        }
         detail={changeSummary(file, textChanges)}
         revealActions={!touch}
         actions={
@@ -412,7 +420,7 @@ function ChangeRow({
                 }}
               />
             ) : null}
-            <DraftCommandStatus itemKey={file.draft.itemKey} item={file.draft} />
+            <DraftCommandStatus itemKey={file.draft.itemKey} />
           </div>
         }
       />

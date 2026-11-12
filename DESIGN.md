@@ -140,8 +140,7 @@ Core shell expectations:
   filters); a picker's is `PickerSearch`.
 - The name above a list or a group of its rows is `ListSection` (or `ListSectionHeader`
   over a pane's own scroller): the uppercase group label on the rows' text edge, actions
-  shown on hover, and, when it folds, a chevron after the label so folding and plain
-  headings share that edge. A list section's fold is remembered per tab with
+  shown on hover, and, when it folds, a `FoldToggle` whose chevron leads the label. A list section's fold is remembered per tab with
   `useSectionFold`; the docked Scratch keeps its open state as a device preference.
 - A list's rows are `ListRow`. In the sidebar and page lists a row's kind is its `icon`,
   one slot and one glyph size; pickers keep their 16 px glyphs in `leading`. The line that stands in for the rows (loading, empty, no matches) is
@@ -151,9 +150,12 @@ Core shell expectations:
   small enough that rows with and without one are the same height. Selected rows that touch
   join into one block (`data-selection-run`). A name edited in place sits in `ListRowField`,
   where the title was, so the words don't move.
-- Anything that folds wears `DisclosureMark` (a chevron pointing right, turning down when
-  open); a control that opens a choice of values wears `ChooserMark`. One glyph and size
-  each, from `components/ui/marks`.
+- Anything that folds is a `FoldToggle`: its `DisclosureMark` chevron leads the label
+  (pointing right, turning down when open), there is no hover fill, and hover darkens the
+  label. It is a row's 28 px height, or `inline` in a line of text. Rows beside a fold that
+  doesn't fold keep the chevron's slot where they must line up (subagent rows). A control
+  that opens a choice of values wears `ChooserMark`. One glyph and size each, from
+  `components/ui/marks`.
 - Editing text in place never moves or resizes it. Use `components/ui/inline-edit`
   (`InlineEditInput`, `InlineEditTextarea`): the field inherits the text's
   typography, has no padding or border, sizes to its text, and paints its edge

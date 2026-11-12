@@ -1,6 +1,6 @@
 import type { HTMLAttributes, ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { DisclosureMark } from "./marks";
+import { FoldToggle } from "./fold-toggle";
 import { role } from "./roles";
 
 export type SectionFold = { open: boolean; onToggle: (open: boolean) => void };
@@ -46,26 +46,21 @@ export function ListSectionHeader({
       >
         {fold ? (
           // The whole heading row folds, its box the rows' box, so its focus ring lines up with
-          // theirs. No hover fill: hover darkens the label.
-          <button
-            type="button"
-            aria-expanded={fold.open}
+          // theirs.
+          <FoldToggle
+            open={fold.open}
+            onToggle={() => fold.onToggle(!fold.open)}
             aria-label={title}
-            onClick={() => fold.onToggle(!fold.open)}
             onKeyDown={(event) => {
               if (event.key === "ArrowLeft") fold.onToggle(false);
               if (event.key === "ArrowRight") fold.onToggle(true);
             }}
-            className={cn(
-              "focus-ring flex min-w-0 flex-1 items-center gap-1 self-stretch rounded-md px-1.5 text-left transition-colors hover:text-foreground focus-visible:text-foreground motion-reduce:transition-none coarse:min-h-11",
-              // Preflight resets a button's text-transform; the label's case needs restating.
-              look,
-            )}
+            // Preflight resets a button's text-transform; the label's case needs restating.
+            className={cn("flex-1 self-stretch px-1.5", look)}
           >
-            <DisclosureMark open={fold.open} />
             {name}
             {fold.open ? null : foldedMark}
-          </button>
+          </FoldToggle>
         ) : (
           name
         )}

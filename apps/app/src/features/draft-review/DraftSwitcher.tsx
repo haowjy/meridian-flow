@@ -19,7 +19,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Loader2 } from "lucide-react";
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +28,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DisclosureMark } from "@/components/ui/marks";
 import { cn } from "@/lib/utils";
 import { DraftChipFace, draftChipHitClass } from "./DraftChip";
 
@@ -40,7 +41,7 @@ export type DraftVersion = {
   detail?: ReactNode;
   /** The draft on screen. */
   current: boolean;
-  /** The picked Work's draft. */
+  /** The scope's own draft (the picked Work's, or the chat's): listed first, outside the fold. */
   scope: boolean;
   onSelect: () => void;
 };
@@ -87,7 +88,8 @@ export function DraftSwitcher({
   // closing (the menu's own focus return would otherwise land after the field's focus
   // and leave it on the page), and the menu must not hand focus back to the chip.
   const renaming = useRef(false);
-  const scopeDraft = drafts.some((draft) => draft.scope);
+  const scoped = drafts.filter((draft) => draft.scope);
+  const others = drafts.filter((draft) => !draft.scope);
 
   return (
     <DropdownMenu>
@@ -109,13 +111,6 @@ export function DraftSwitcher({
             ) : (
               <Trans>Draft</Trans>
             )
-          ) : scopeDraft ? (
-            <span className="flex items-baseline gap-1.5">
-              <Trans>Live</Trans>
-              <span className="font-normal text-muted-foreground">
-                <Trans>(draft waiting)</Trans>
-              </span>
-            </span>
           ) : (
             <Trans>Live</Trans>
           )}
@@ -132,37 +127,19 @@ export function DraftSwitcher({
         }}
       >
         <DropdownMenuLabel>
-          <Trans>Versions of this document</Trans>
+          <Trans>Versions</Trans>
         </DropdownMenuLabel>
         {draftOnly ? null : (
           <VersionItem current={showing === "live"} onSelect={onShowLive}>
-            <Trans>Live version</Trans>
+            <Trans>Live</Trans>
           </VersionItem>
         )}
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>
-          {drafts.length > 0 ? <Trans>Drafts</Trans> : <Trans>No drafts</Trans>}
-        </DropdownMenuLabel>
-        {drafts.map((draft) => (
-          <DropdownMenuItem
-            key={draft.key}
-            selected={draft.current}
-            onSelect={draft.current ? undefined : draft.onSelect}
-            className="h-auto min-h-8 flex-col items-start gap-0.5"
-          >
-            <span className="flex min-w-0 items-baseline gap-1.5">
-              <span className="min-w-0 truncate">{draft.name}</span>
-              {draft.scope ? (
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  <Trans>picked Work</Trans>
-                </span>
-              ) : null}
-            </span>
-            {draft.detail ? (
-              <span className="text-xs text-muted-foreground">{draft.detail}</span>
-            ) : null}
-          </DropdownMenuItem>
+        {drafts.length > 0 ? <DropdownMenuSeparator /> : null}
+        {scoped.map((draft) => (
+          <DraftItem key={draft.key} draft={draft} />
         ))}
+        {scoped.length > 0 && others.length > 0 ? <DropdownMenuSeparator /> : null}
+        {others.length > 0 ? <OtherDrafts drafts={others} folded={scoped.length > 0} /> : null}
         {draftCommands || marks ? <DropdownMenuSeparator /> : null}
         {draftCommands ? (
           <>
@@ -201,6 +178,43 @@ export function DraftSwitcher({
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * The other owners' drafts, folded behind the scope's own unless one of them is on screen. The
+ * menu remounts it on each open, so it folds again. Its toggle is a menu item, so arrows reach it, and picking it keeps the menu open.
+ */
+function OtherDrafts({ drafts, folded }: { drafts: readonly DraftVersion[]; folded: boolean }) {
+  const [open, setOpen] = useState(() => !folded || drafts.some((draft) => draft.current));
+  return (
+    <>
+      <DropdownMenuItem
+        aria-expanded={open}
+        onSelect={(event) => {
+          event.preventDefault();
+          setOpen(!open);
+        }}
+        className="gap-1 text-muted-foreground"
+      >
+        <DisclosureMark open={open} />
+        <Trans>Other drafts</Trans>
+      </DropdownMenuItem>
+      {open ? drafts.map((draft) => <DraftItem key={draft.key} draft={draft} />) : null}
+    </>
+  );
+}
+
+function DraftItem({ draft }: { draft: DraftVersion }) {
+  return (
+    <DropdownMenuItem
+      selected={draft.current}
+      onSelect={draft.current ? undefined : draft.onSelect}
+      className="h-auto min-h-8 flex-col items-start gap-0.5"
+    >
+      <span className="min-w-0 max-w-full truncate">{draft.name}</span>
+      {draft.detail ? <span className="text-xs text-muted-foreground">{draft.detail}</span> : null}
+    </DropdownMenuItem>
   );
 }
 

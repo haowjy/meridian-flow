@@ -4,7 +4,7 @@ import { plural, t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { DisclosureMark } from "@/components/ui/marks";
+import { FoldToggle } from "@/components/ui/fold-toggle";
 import {
   ApplyAllQuestion,
   CommandNotice,
@@ -12,7 +12,10 @@ import {
   noticeAction,
 } from "@/features/draft-review/CommandNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
-import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
+import {
+  DeletedFromManuscriptTag,
+  DraftCommandStatus,
+} from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
@@ -99,56 +102,49 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     </div>
   );
 
+  // The whole first line folds and unfolds the changes, except its commands. The changes'
+  // own rows open the draft.
+  // The extra pixel above and below matches the edits receipt over it, whose border adds one.
   const summary = (trouble: ReactNode = null) => (
-    <>
-      {/* The first line toggles expansion; document names and command buttons intercept their own clicks. */}
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
-      <div
-        onClick={askingApply ? undefined : () => setExpanded((value) => !value)}
-        className={cn(
-          "flex min-h-7 flex-wrap items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-xs text-foreground",
-          multi && "cursor-pointer transition-colors hover:bg-ink-fill",
-        )}
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the FoldToggle inside is the keyboard toggle; the row's click is a mouse convenience. slop-lint: allow suppression the reason is stated in this comment
+    // biome-ignore lint/a11y/noStaticElementInteractions: same: a mouse convenience over the FoldToggle. slop-lint: allow suppression the reason is stated in this comment
+    <div
+      onClick={askingApply ? undefined : () => setExpanded((value) => !value)}
+      className="flex cursor-pointer flex-wrap items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 py-[calc(0.25rem+1px)] pr-2 pl-[var(--chat-card-pad-x)] text-xs text-foreground @max-[25rem]/dock:gap-x-1 @max-[25rem]/dock:pl-1"
+    >
+      {/* Sized by its content, so a question too wide to sit beside it wraps to a line of its own. */}
+      <FoldToggle
+        open={expanded}
+        onToggle={(event) => {
+          event.stopPropagation();
+          setExpanded((value) => !value);
+        }}
+        inline
+        className="min-w-[12ch] flex-auto coarse:min-h-11"
       >
-        {/* Sized by its content, so a question too wide to sit beside it wraps to a line of its own. */}
-        <div className="flex min-w-0 flex-auto items-center gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1">
-          {
-            <button
-              type="button"
-              aria-expanded={expanded}
-              aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
-              onClick={(event) => {
-                event.stopPropagation();
-                setExpanded((value) => !value);
-              }}
-              className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm coarse:min-h-11 coarse:min-w-11"
-            >
-              <DisclosureMark open={expanded} />
-            </button>
-          }
-          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
-          {multi ? (
-            <span className="min-w-[10ch] shrink truncate">
-              <Trans>{dock.files.length} documents</Trans>
-            </span>
-          ) : only ? (
-            <DockFileName file={only} onReview={() => dock.review(only)} />
-          ) : null}
-          {trouble ||
-            (dock.changeCount !== null ? (
-              <span className="hidden shrink-0 whitespace-nowrap text-muted-foreground @min-[25rem]/dock:inline">
-                <ChangeCount count={dock.changeCount} />
-              </span>
-            ) : null)}
-        </div>
-        {commands}
-      </div>
-    </>
+        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
+        <span className="min-w-0 truncate text-foreground">
+          {multi ? <Trans>{dock.files.length} documents</Trans> : only ? fileLabel(only) : null}
+        </span>
+        {only && !multi ? <DeletedFromManuscriptTag item={only.row.draft} /> : null}
+      </FoldToggle>
+      {trouble}
+      {trouble || dock.changeCount === null ? null : (
+        <span className="hidden shrink-0 whitespace-nowrap text-muted-foreground @min-[25rem]/dock:inline">
+          <ChangeCount count={dock.changeCount} />
+        </span>
+      )}
+      {commands}
+    </div>
   );
 
   return (
-    <div ref={root} className="@container/dock rounded-t-lg bg-review" data-draft-dock="settled">
+    // Its background runs on behind the composer's top edge, so strip and composer read as one.
+    <div
+      ref={root}
+      className="@container/dock -mb-3 rounded-t-lg bg-review pb-3"
+      data-draft-dock="settled"
+    >
       {multi ? summary() : null}
       <div className={cn(expanded && multi && "app-scroll max-h-[min(40svh,20rem)]")}>
         {dock.files.map((file) => (
@@ -224,7 +220,7 @@ function DockFileLine({
   const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
   // A refused or lost command is the file's status line's (`DraftCommandStatus`), shown once.
   const trouble = file.status === "error" ? <FileTrouble file={file} row={!summary} /> : null;
-  const status = <DraftCommandStatus itemKey={file.row.draft.itemKey} item={file.row.draft} />;
+  const status = <DraftCommandStatus itemKey={file.row.draft.itemKey} />;
   if (!summary && !expanded) return null;
   return (
     <div
@@ -234,15 +230,16 @@ function DockFileLine({
       {summary ? (
         summary(trouble)
       ) : expanded && !wholeDocument ? (
-        <div className="flex min-h-7 items-center gap-1 px-2 text-xs text-foreground">
-          <DockFileName file={file} onReview={() => dock.review(file)} />
+        <div className="flex min-h-7 items-center gap-1.5 px-2 text-xs text-foreground">
+          <span className="min-w-0 truncate">{fileLabel(file)}</span>
+          <DeletedFromManuscriptTag item={file.row.draft} />
           {trouble}
         </div>
       ) : null}
       {!summary && wholeDocument ? trouble : null}
       {/* A file with no header row keeps its status line under its one row, which it describes. */}
       {wholeDocument && !summary ? null : status}
-      {expanded && file.status !== "error" && !(summary && wholeDocument) ? (
+      {expanded && file.status !== "error" ? (
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows
             documentName={file.name}
@@ -268,24 +265,8 @@ function FileTrouble({ file, row = false }: { file: DockFile; row?: boolean }) {
   );
 }
 
-/**
- * One document's review door, independent of the strip's expansion toggle. A file whose only
- * change is a move or delete says so ("ch13: Deleted"), since its row folds into this one.
- */
-function DockFileName({ file, onReview }: { file: DockFile; onReview: () => void }) {
-  const touch = useCoarsePointer();
+/** A file's name, or what its one change does when that is a move or delete ("ch13: Deleted"). */
+function fileLabel(file: DockFile): string {
   const [only] = file.changes;
-  const label = file.changes.length === 1 && only?.tree ? treeLineSentence(only.tree) : file.name;
-  return (
-    <button
-      type="button"
-      className={cn("focus-ring min-w-[12ch] flex-1 truncate text-left", touch && "min-h-11")}
-      onClick={(event) => {
-        event.stopPropagation();
-        onReview();
-      }}
-    >
-      {label}
-    </button>
-  );
+  return file.changes.length === 1 && only?.tree ? treeLineSentence(only.tree) : file.name;
 }

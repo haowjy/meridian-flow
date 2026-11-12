@@ -116,9 +116,12 @@ export function ActivityRow({
       className={cn(
         "relative -mx-1 flex items-start gap-[var(--chat-space-block)] rounded-md px-1",
         TITLE_ROW_PAD,
-        hasInlineFold && "transition-colors hover:bg-ink-fill",
       )}
     >
+      {/* A fold's chevron leads, as on every FoldToggle; there is no hover fill. */}
+      {hasInlineFold ? (
+        <DisclosureMark open={open} className="-mr-1 mt-[var(--chat-space-inline)]" />
+      ) : null}
       {title ? (
         // No `overflow-hidden` here: a door inside grows past the line box to
         // reach a touch target, and clipping it would shrink that back down.
@@ -129,9 +132,6 @@ export function ActivityRow({
         </span>
       ) : null}
       {dot}
-      {hasInlineFold ? (
-        <DisclosureMark open={open} className="mt-[var(--chat-space-inline)]" />
-      ) : null}
       {hasInlineFold ? (
         <button
           type="button"

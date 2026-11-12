@@ -54,7 +54,7 @@ can't stay visible after debug is disabled.
 
 ## Control placement
 
-Bare transcript rows don't right-align their controls: status dots, times, chevrons and
-the subagent chat icon sit directly after the text, so the writer can see which row a
+Bare transcript rows don't right-align their controls: status dots, times and the
+subagent chat icon sit directly after the text, and a fold's chevron leads it (`FoldToggle`), so the writer can see which row a
 control belongs to. A card is the exception, because its border already binds the
 controls to the row.

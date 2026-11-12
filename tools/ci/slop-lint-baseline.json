@@ -571,16 +571,6 @@
       },
       {
         "path": "apps/app/src/features/chat/DraftDock.tsx",
-        "line": "{/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/chat/DraftDock.tsx",
-        "line": "{/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/chat/DraftDock.tsx",
         "line": "// biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own.",
         "count": 1
       },

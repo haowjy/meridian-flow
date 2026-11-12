@@ -18,7 +18,7 @@ import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
-import { DisclosureMark } from "@/components/ui/marks";
+import { FoldToggle } from "@/components/ui/fold-toggle";
 import { followDisposition, MIDDLE_BUTTON } from "@/core/editor/links";
 import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
@@ -196,28 +196,24 @@ export function TurnEditsReceipt({
       className="overflow-hidden rounded-lg border border-border bg-card text-xs text-muted-foreground"
       data-turn-receipt
     >
-      {/* The WHOLE header row is the expand/collapse target — hover washes the
-            full width, wrapping around the Undo chip, which fences its own click. */}
+      {/* The WHOLE header row is the expand/collapse target, around the Undo chip, which
+            fences its own click. No hover fill, as on every fold. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the inner button is the keyboard-accessible toggle; the row onClick is a mouse convenience. slop-lint: allow suppression the reason is stated in this comment */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. slop-lint: allow suppression the reason is stated in this comment */}
       <div
         onClick={() => setExpanded((value) => !value)}
-        className="flex cursor-pointer items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] transition-colors hover:bg-ink-fill"
+        className="flex cursor-pointer items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] py-1"
       >
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-controls={panelId}
-          onClick={(event) => {
+        <FoldToggle
+          open={expanded}
+          onToggle={(event) => {
             event.stopPropagation();
             setExpanded((value) => !value);
           }}
-          className="focus-ring -mx-1 flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] rounded-md px-1 text-left coarse:min-h-11"
+          aria-controls={panelId}
+          inline
+          className="-mx-1 flex-1 px-1 coarse:min-h-11"
         >
-          <DisclosureMark open={expanded} />
-          <span aria-hidden className="text-muted-foreground">
-            ✎
-          </span>
           <span className="flex min-w-0 flex-1 items-baseline">
             <span className="min-w-0 truncate font-medium text-foreground">
               {hasEditedDocuments
@@ -225,7 +221,7 @@ export function TurnEditsReceipt({
                 : workCountLabel(reversibleWorkReceipts.length)}
             </span>
           </span>
-        </button>
+        </FoldToggle>
         {undoUnavailable ? (
           <Chip kind="label" className="shrink-0" data-undo-unavailable>
             <Trans>Can't undo</Trans>

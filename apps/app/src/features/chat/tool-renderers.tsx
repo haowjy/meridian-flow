@@ -12,7 +12,7 @@ import {
 import { FileText, Folder } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Chip } from "@/components/ui/chip";
-import { DisclosureMark } from "@/components/ui/marks";
+import { FoldToggle } from "@/components/ui/fold-toggle";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
@@ -147,20 +147,19 @@ function GrepHit({ row }: { row: GrepHitRow }) {
       ) : null}
       {rest.length > 0 ? (
         <>
-          <button
-            type="button"
-            aria-expanded={open}
-            onClick={(event) => {
+          <FoldToggle
+            open={open}
+            onToggle={(event) => {
               // The row behind this section is the expand toggle; growing a
               // document must not fold the whole search away.
               event.stopPropagation();
               setOpen((wasOpen) => !wasOpen);
             }}
-            className="focus-ring focus-ring-outside mt-[var(--chat-space-inline)] inline-flex items-center gap-[var(--chat-space-inline)] rounded-sm text-xs text-muted-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text focus-visible:text-jade-text focus-visible:decoration-jade-text"
+            inline
+            className="mt-[var(--chat-space-inline)] text-xs"
           >
             {moreMatchesLabel(rest.length)}
-            <DisclosureMark open={open} />
-          </button>
+          </FoldToggle>
           {open ? (
             // Indented against a rule so the extra passages read as belonging
             // to the document above them. It grows in place: the transcript is

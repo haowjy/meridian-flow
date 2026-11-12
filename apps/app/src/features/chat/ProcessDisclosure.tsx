@@ -14,7 +14,7 @@
  * blockquote border around the fold body would just clutter it.
  */
 import { type ReactNode, useId, useState } from "react";
-import { DisclosureMark } from "@/components/ui/marks";
+import { FoldToggle } from "@/components/ui/fold-toggle";
 import { cn } from "@/lib/utils";
 
 type ProcessDisclosureProps = {
@@ -39,19 +39,17 @@ export function ProcessDisclosure({ label, toolCallIds, children }: ProcessDiscl
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={handleToggle}
-        aria-expanded={open}
+      <FoldToggle
+        open={open}
+        onToggle={handleToggle}
         aria-controls={panelId}
         data-tool-call-ids={toolCallIds?.length ? toolCallIds.join(" ") : undefined}
-        className="disclosure-trigger justify-start"
+        className="w-full text-sm font-medium"
       >
-        <DisclosureMark open={open} />
         {/* The digest is short in English and not necessarily in translation;
             truncate is the backstop that keeps the fold header one line. */}
-        <span className="min-w-0 truncate text-left font-medium">{label}</span>
-      </button>
+        <span className="min-w-0 truncate">{label}</span>
+      </FoldToggle>
 
       <div
         id={panelId}

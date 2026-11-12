@@ -105,8 +105,8 @@ msgid "“{name}” doesn't exist yet"
 msgstr "“{name}” doesn't exist yet"
 
 #: src/features/draft-review/DraftSwitcher.tsx
-msgid "(draft waiting)"
-msgstr "(draft waiting)"
+#~ msgid "(draft waiting)"
+#~ msgstr "(draft waiting)"
 
 #. placeholder {0}: stats.callCount
 #: src/features/chat/AssistantTurnActions.tsx
@@ -1725,8 +1725,8 @@ msgid "Collaborator"
 msgstr "Collaborator"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Collapse changes"
-msgstr "Collapse changes"
+#~ msgid "Collapse changes"
+#~ msgstr "Collapse changes"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Color theme"
@@ -2500,6 +2500,7 @@ msgid "Delete Work"
 msgstr "Delete Work"
 
 #: src/features/chat/command-descriptor.ts
+#: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted"
@@ -2551,10 +2552,13 @@ msgstr "Deleted from {place} on {deleted}."
 msgid "Deleted from {place} with the Work {name} on {deleted}."
 msgstr "Deleted from {place} with the Work {name} on {deleted}."
 
-#: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 msgid "Deleted from the manuscript"
 msgstr "Deleted from the manuscript"
+
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "Deleted from the manuscript. Apply brings it back."
+msgstr "Deleted from the manuscript. Apply brings it back."
 
 #: src/features/draft-review/DraftedDeleteNotice.tsx
 msgid "Deleted in this draft"
@@ -2757,8 +2761,8 @@ msgid "Drafted 1 document"
 msgstr "Drafted 1 document"
 
 #: src/features/draft-review/DraftSwitcher.tsx
-msgid "Drafts"
-msgstr "Drafts"
+#~ msgid "Drafts"
+#~ msgstr "Drafts"
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 msgid "Drop to insert"
@@ -2880,8 +2884,8 @@ msgid "epigraph"
 msgstr "epigraph"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Expand changes"
-msgstr "Expand changes"
+#~ msgid "Expand changes"
+#~ msgstr "Expand changes"
 
 #. placeholder {0}: artifact.expiresAt
 #: src/features/chat/ArtifactGrid.tsx
@@ -3516,8 +3520,8 @@ msgid "Live artifact view"
 msgstr "Live artifact view"
 
 #: src/features/draft-review/DraftSwitcher.tsx
-msgid "Live version"
-msgstr "Live version"
+#~ msgid "Live version"
+#~ msgstr "Live version"
 
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Live view"
@@ -3969,8 +3973,8 @@ msgid "No documents or chats match “{search}”."
 msgstr "No documents or chats match “{search}”."
 
 #: src/features/draft-review/DraftSwitcher.tsx
-msgid "No drafts"
-msgstr "No drafts"
+#~ msgid "No drafts"
+#~ msgstr "No drafts"
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "No files attached in this chat yet."
@@ -4300,6 +4304,10 @@ msgstr "Organizing {name}"
 msgid "Other chats"
 msgstr "Other chats"
 
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "Other drafts"
+msgstr "Other drafts"
+
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #~ msgid "Other Works"
 #~ msgstr "Other Works"
@@ -4365,8 +4373,8 @@ msgid "Pick the folder named {name} to continue."
 msgstr "Pick the folder named {name} to continue."
 
 #: src/features/draft-review/DraftSwitcher.tsx
-msgid "picked Work"
-msgstr "picked Work"
+#~ msgid "picked Work"
+#~ msgstr "picked Work"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "picture"
@@ -6390,8 +6398,12 @@ msgid "Usage"
 msgstr "Usage"
 
 #: src/features/draft-review/DraftSwitcher.tsx
-msgid "Versions of this document"
-msgstr "Versions of this document"
+msgid "Versions"
+msgstr "Versions"
+
+#: src/features/draft-review/DraftSwitcher.tsx
+#~ msgid "Versions of this document"
+#~ msgstr "Versions of this document"
 
 #: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "View projects"
