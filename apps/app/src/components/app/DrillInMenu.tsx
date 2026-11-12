@@ -47,6 +47,8 @@ export type DrillNode = {
   icon: LucideIcon;
   /** A folder drills in; anything else is picked. */
   folder: boolean;
+  /** A file the editor can't open: `false` marks it for callers that only take editable ones. */
+  editable?: boolean;
 };
 
 export type DrillTree = {
@@ -148,8 +150,6 @@ export type Drill = {
   /** The folder on screen; null at the top level. */
   folder: DrillNode | null;
   entries: readonly DrillEntry[];
-  /** Replaces the trail and focuses the new level's first row. */
-  drillTo: (next: readonly DrillNode[]) => void;
   enter: (node: DrillNode) => void;
   back: () => void;
   focusFirstRow: () => void;
@@ -176,6 +176,7 @@ export function useDrill({
   const focusFirstRow = useCallback(() => {
     requestAnimationFrame(() => scopeRef.current?.querySelector<HTMLElement>(rowSelector)?.focus());
   }, [rowSelector]);
+  // Drilling unmounts the focused row, so every drill moves focus to the new level.
   const drillTo = (next: readonly DrillNode[]) => {
     setExitedId(next.length < trail.length ? (trail.at(-1)?.id ?? null) : null);
     setTrail(next);
@@ -196,7 +197,6 @@ export function useDrill({
     trail,
     folder,
     entries,
-    drillTo,
     enter: (node) => drillTo([...trail, node]),
     back: () => drillTo(trail.slice(0, -1)),
     focusFirstRow,

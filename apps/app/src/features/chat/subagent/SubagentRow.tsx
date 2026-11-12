@@ -106,9 +106,6 @@ export function SubagentRow({
   size = "row",
   expanded,
   onToggle,
-  onActivate,
-  activateLabel,
-  onOpened,
   expandable = false,
   door = true,
   threadIds,
@@ -123,9 +120,6 @@ export function SubagentRow({
   size?: "row" | "card";
   expanded?: boolean;
   onToggle?: () => void;
-  onActivate?: () => void;
-  activateLabel?: string;
-  onOpened?: () => void;
   expandable?: boolean;
   door?: boolean;
   threadIds?: string;
@@ -155,16 +149,6 @@ export function SubagentRow({
           >
             {line}
           </FoldToggle>
-        ) : onActivate ? (
-          <button
-            type="button"
-            title={activateLabel}
-            onClick={onActivate}
-            className={cn("focus-ring flex min-w-0 items-center gap-1 rounded-sm text-left", fill)}
-          >
-            {lead}
-            {line}
-          </button>
         ) : (
           <div className={cn("flex min-w-0 items-center gap-1", fill)}>
             {lead}
@@ -172,13 +156,7 @@ export function SubagentRow({
           </div>
         )}
         {trailing}
-        {door ? (
-          <OpenSubagentChatButton
-            threadId={run.threadId}
-            agentName={run.agentName}
-            onOpened={onOpened}
-          />
-        ) : null}
+        {door ? <OpenSubagentChatButton threadId={run.threadId} agentName={run.agentName} /> : null}
       </div>
       {detail ? (
         <div className={cn("mt-[var(--chat-space-inline)]", subagentBodyIndent)}>{detail}</div>

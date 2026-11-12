@@ -1,6 +1,7 @@
 /**
- * Writer-facing subagent launch card. Running, it shows the live tool call;
- * finished, the row expands to the report. Only the chat icon opens the child.
+ * Writer-facing subagent card, one per run from launch to finish. Running, it shows the live tool
+ * call and, for a background run, Stop; finished, the row expands to the report. Only the chat
+ * icon opens the child.
  */
 
 import { t } from "@lingui/core/macro";
@@ -11,11 +12,14 @@ import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { getThreadExecutionReport } from "@/client/api/execution-reports-api";
 import { cn } from "@/lib/utils";
+import { ExpandableProse } from "./ClippedExpand";
 import { SourceChatLink, useSourceThread } from "./derivation/SourceChatLink";
 import { ReportContent } from "./ReportContent";
 import { useSubagentDisclosure } from "./subagent/DisclosureStore";
+import { subagentMarkName } from "./subagent/display";
 import type { SubagentRun } from "./subagent/run-model";
 import { SubagentRow, SubagentToolLine, subagentBodyIndent } from "./subagent/SubagentRow";
+import { SubagentStop, useSubagentStopScope } from "./subagent/SubagentStop";
 
 /** Where a background run's saved report lives; read only once the writer expands the card. */
 export type SavedReportSource = { threadId: string; childThreadId: string; execution: string };
@@ -103,8 +107,9 @@ export function SpawnReportCard({
   };
   const foreground = deliveryMode === "direct";
   const expandable = !running && (foreground ? directResult != null : savedReport != null);
+  const stopScope = useSubagentStopScope();
 
-  return (
+  const card = (stop?: { button: ReactNode; failures: ReactNode }) => (
     <div
       className="min-w-0 chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] bg-background shadow-raise"
       data-subagent-card
@@ -117,9 +122,13 @@ export function SpawnReportCard({
         expanded={expanded}
         onToggle={() => setExpanded((value) => !value)}
         expandable={expandable}
+        trailing={stop?.button}
         detail={
           running ? (
-            <SubagentToolLine run={run} fallback={<Trans>Working</Trans>} />
+            <div className="space-y-[var(--chat-space-inline)]">
+              <SubagentToolLine run={run} fallback={<Trans>Working</Trans>} />
+              {stop?.failures}
+            </div>
           ) : statusText ? (
             <p className="text-xs text-muted-foreground">{statusText}</p>
           ) : undefined
@@ -137,6 +146,19 @@ export function SpawnReportCard({
       ) : null}
     </div>
   );
+  // A background child outlives the reply that started it, so the composer's Stop can't reach it.
+  if (running && !foreground && childThreadId && stopScope) {
+    return (
+      <SubagentStop
+        threadId={childThreadId}
+        name={run.name ?? subagentMarkName(run.agentName)}
+        stopScope={stopScope}
+      >
+        {card}
+      </SubagentStop>
+    );
+  }
+  return card();
 }
 
 function ReportBody({
@@ -147,13 +169,15 @@ function ReportBody({
   message?: string | null;
 }) {
   return (
-    <ReportContent
-      report={report}
-      empty={<Trans>No report text was returned.</Trans>}
-      message={message}
-      showStopMetadata={false}
-      className="space-y-[var(--chat-space-block)]"
-    />
+    <ExpandableProse more={<Trans>Show the whole report</Trans>}>
+      <ReportContent
+        report={report}
+        empty={<Trans>No report text was returned.</Trans>}
+        message={message}
+        showStopMetadata={false}
+        className="space-y-[var(--chat-space-block)]"
+      />
+    </ExpandableProse>
   );
 }
 

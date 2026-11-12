@@ -24,8 +24,8 @@ function parentFolder(path: string | undefined): string | undefined {
 /**
  * The documents that can sit beside a chat, as one list: search, the documents open in main's
  * tabs, recently opened ones, then the file explorer. A document that can't open in the editor
- * can't sit beside (`fits`): search, tabs and recents leave it out and the explorer lists it
- * disabled. It renders in the side's dropdown and in the side's empty pane alike. Recents are only
+ * can't sit beside: search, tabs and recents leave it out and the explorer lists it
+ * disabled; each source says whether its document is editable. It renders in the side's dropdown and in the side's empty pane alike. Recents are only
  * offered here; nothing derives the side from them. `choose` writes the current document.
  */
 export function DocumentChoices({
@@ -45,9 +45,6 @@ export function DocumentChoices({
   const files = FIND_SCHEMES.flatMap((scheme) =>
     (catalogs[scheme].catalog?.files() ?? []).map((file) => ({ scheme, file })),
   );
-  // A document no catalog lists yet is offered: the side skips it if it doesn't open.
-  const uneditable = new Set(files.flatMap(({ file }) => (file.editable ? [] : [file.documentId])));
-  const fits = (documentId: string) => !uneditable.has(documentId);
   const catalogState = FIND_SCHEMES.some(
     (scheme) => catalogs[scheme].isError && !catalogs[scheme].catalog,
   )
@@ -60,7 +57,7 @@ export function DocumentChoices({
   const found = search
     ? matchFileSuggestions(
         files.flatMap(({ scheme, file }) =>
-          fits(file.documentId)
+          file.editable
             ? [
                 {
                   entryId: file.documentId,
@@ -76,10 +73,10 @@ export function DocumentChoices({
         query,
       ).slice(0, FIND_LIMIT)
     : [];
-  const tabs = openTabs.filter(({ document }) => fits(document.documentId));
+  const tabs = openTabs.filter(({ document }) => document.kind === "new" || document.editable);
   const openIds = new Set(tabs.map((tab) => tab.document.documentId));
   const recents = recent.documents
-    .filter((item) => !openIds.has(item.documentId) && fits(item.documentId))
+    .filter((item) => !openIds.has(item.documentId) && item.editable)
     .slice(0, RECENT_LIMIT);
   const row = (documentId: string, name: string, meta?: string) => {
     const Icon = fileKindIcon(name);
@@ -165,13 +162,7 @@ export function DocumentChoices({
                 )}
               </PickerSection>
             ) : null}
-            <SideExplorer
-              projectId={projectId}
-              current={current}
-              fits={fits}
-              catalogs={catalogState}
-              onPick={choose}
-            />
+            <SideExplorer projectId={projectId} current={current} onPick={choose} />
           </>
         )}
       </PickerResults>

@@ -32,6 +32,7 @@ function listChildren(catalog: CatalogContextView, parentId: string | null): Dri
     name: node.name,
     folder: node.kind === "dir",
     icon: node.kind === "dir" ? Folder : fileKindIcon(node),
+    editable: node.kind === "dir" ? undefined : node.editable,
   }));
 }
 

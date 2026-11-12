@@ -18,36 +18,41 @@ const NO_TRAIL: readonly DrillNode[] = [];
 export function SideExplorer({
   projectId,
   current,
-  fits,
-  catalogs,
   onPick,
 }: {
   projectId: string;
   /** The document the side shows, marked in its folder. */
   current: string | null;
-  /** Whether a document can sit beside; leaves that can't are listed disabled. */
-  fits: (documentId: string) => boolean;
-  /** How the catalogs behind the folders are doing: what an empty folder means. */
-  catalogs: "ready" | "loading" | "failed";
   onPick: (documentId: string) => void;
 }) {
   const project = useProject(projectId);
   const scratch = useOnScreenChatScratchSource(projectId);
-  const { tree } = useProjectMenuSource({
+  const { tree, loadState } = useProjectMenuSource({
     projectId,
     title: project?.title ?? "",
     scratch,
     own: null,
   });
-  const { scopeRef, folder, entries, enter, back } = useDrill({
+  const { scopeRef, trail, folder, entries, enter, back } = useDrill({
     tree,
-    hereIds: current ? [current] : [],
+    hereIds: [],
     openAt: NO_TRAIL,
-    isDisabled: (node) => !node.folder && node.documentId !== undefined && !fits(node.documentId),
+    // Leaves the editor can't open can't sit beside.
+    isDisabled: (node) => !node.folder && node.editable === false,
     rowSelector: "[data-list-item]:not(:disabled)",
   });
+  const catalogs = loadState(trail);
   return (
-    <div ref={scopeRef}>
+    // biome-ignore lint/a11y/noStaticElementInteractions: only catches ArrowLeft bubbling from the rows, which are the focusable controls. slop-lint: allow suppression the reason is stated in this comment
+    <div
+      ref={scopeRef}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft" && folder) {
+          event.preventDefault();
+          back();
+        }
+      }}
+    >
       <PickerSection
         state={
           folder && entries.length === 0 && catalogs !== "ready" ? (
@@ -78,7 +83,8 @@ export function SideExplorer({
           <li key={node.id}>
             <ListRow
               density="menu"
-              current={here}
+              current={!node.folder && (node.documentId ?? node.id) === current}
+              selected={here}
               disabled={disabled}
               onOpen={() => (node.folder ? enter(node) : onPick(node.documentId ?? node.id))}
               leading={<node.icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />}

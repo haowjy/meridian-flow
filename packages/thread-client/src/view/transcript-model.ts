@@ -247,26 +247,19 @@ export function buildTranscriptModel(
   const nextByPrev = new Map<string, Turn>();
   for (const turn of turns) if (turn.prevTurnId) nextByPrev.set(turn.prevTurnId, turn);
   const subagentUpdateByTurnId = new Map<string, CompletionFact["update"]>();
-  const invocationByExecution = new Map<
-    string,
-    { threadId?: string; agentName: string; title?: string }
-  >();
+  const launchTitleByChildThreadId = new Map<string, string>();
   for (const turn of turns) {
     const facts = turnSubagentFacts(turn);
     if (facts.completion) subagentUpdateByTurnId.set(turn.id, facts.completion.update);
     for (const failure of facts.failures) onContractFailure(failure);
-    for (const { card } of facts.invocations)
-      if (card.execution)
-        invocationByExecution.set(card.execution, {
-          ...(card.childThreadId ? { threadId: card.childThreadId } : {}),
-          agentName: card.agentName,
-          ...(card.title ? { title: card.title } : {}),
-        });
+    for (const { card } of facts.invocations) {
+      if (card.childThreadId && card.title)
+        launchTitleByChildThreadId.set(card.childThreadId, card.title);
+    }
   }
   const deliveryEventFor = (turn: Turn): DeliveryEvent => {
     const update = subagentUpdateByTurnId.get(turn.id) ?? null;
-    const invocation = update?.execution ? invocationByExecution.get(update.execution) : undefined;
-    const childThreadId = update?.childThreadId ?? invocation?.threadId;
+    const title = update ? launchTitleByChildThreadId.get(update.childThreadId) : undefined;
     const sender = inboxMessageSender(turn);
     return internDeliveryEvent({
       turn,
@@ -275,11 +268,8 @@ export function buildTranscriptModel(
         .map((block) => block.textContent ?? "")
         .join(""),
       subagentUpdate: update,
-      ...(childThreadId ? { childThreadId } : {}),
-      ...(update?.agentName || invocation?.agentName
-        ? { agentName: update?.agentName ?? invocation?.agentName }
-        : {}),
-      ...(invocation?.title ? { title: invocation.title } : {}),
+      ...(update ? { childThreadId: update.childThreadId, agentName: update.agentName } : {}),
+      ...(title ? { title } : {}),
       ...(sender ? { sender } : {}),
     });
   };
@@ -344,7 +334,6 @@ export function buildTranscriptModel(
     visibleTurns,
     movedPast,
     deliveryEventsByAssistantTurnId,
-    invocationByExecution,
     latestRevealTurnByChildThreadId,
     continuing,
     partsByFinalTurnId,

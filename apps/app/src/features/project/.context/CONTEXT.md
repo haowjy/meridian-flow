@@ -58,6 +58,9 @@ side's document list; the record is left alone, so a document that comes back ha
 is the switch for chats. A tab's Live or Draft view is its document's view, so it is per tab
 already. The phone draws no strip; it records arrivals the same way.
 
+The owner's target rules for both panes are [`pane-state-machine.md`](pane-state-machine.md);
+where this section disagrees with it, this section is the code before PR A and PR B land.
+
 Main shows what the address names, resolved by `resolveMainDocument` / `useMainDocument`
 (`views.ts`), the resolver the phone uses too; `MainViewProvider` / `useMainItem` carry
 `{item, document}`. The side shows one item, never main's. The project keeps two pieces of state
@@ -291,6 +294,7 @@ preload the project route loader, which would repeat owner and shell-data reads.
 
 ## Related context
 
+- [`pane-state-machine.md`](pane-state-machine.md): where an item opens and what each pane shows
 - [`editor-document-lifecycle.md`](editor-document-lifecycle.md)
 - [`resource-lifecycle-architecture.md`](resource-lifecycle-architecture.md)
 - [`../mobile/.context/CONTEXT.md`](../mobile/.context/CONTEXT.md)

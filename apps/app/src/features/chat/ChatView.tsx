@@ -93,10 +93,10 @@ import { optimisticHandoffSeed } from "./derivation/handoff-seed";
 import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
 import { useHandoffBrief } from "./derivation/useHandoffBrief";
 import { reportPersistedContractFailure } from "./persisted-contract-debug";
-import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { ReferenceAvailabilityContext } from "./reference-availability";
 import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
+import { SubagentStopScope } from "./subagent/SubagentStop";
 import type { TurnQueueControls } from "./TurnList";
 import { TurnList } from "./TurnList";
 import { activeChildren } from "./thread-activity";
@@ -384,6 +384,10 @@ export function ChatView({
     ],
   );
   const handBack = useHandBack({ threadId, accountId, scope: stopScope });
+  const subagentStopScope = useMemo(
+    () => ({ accountId, scope: stopScope }),
+    [accountId, stopScope],
+  );
   const chatStop = useChatStop({ threadId, handBack });
   const queueControls = useQueueControls({ threadId, handBack });
   const sendNow = useSendNow(threadId);
@@ -699,34 +703,31 @@ export function ChatView({
                 <TurnDerivationProvider value={turnDerivation}>
                   <SubagentDisclosureProvider>
                     <SubagentActivityProvider nodes={activity.activity.children} turns={turns}>
-                      <div
-                        className="relative flex min-h-0 flex-1 flex-col"
-                        {...fileDrop.dropProps}
-                      >
-                        <RunningSubagentsStrip
-                          threadId={threadId}
-                          accountId={accountId}
-                          scope={stopScope}
-                        />
-                        <TurnList
-                          threadId={threadId}
-                          uploadsChat={topChat.chatRef ?? undefined}
-                          view={view}
-                          historySettled={historySettled}
-                          tailFollowRevision={tailFollowRevision}
-                          ariaLabel={t`Chat`}
-                          submissionRecoveryByTurnId={submissions.presentation}
-                          controls={controls}
-                          chatStop={chatStop}
-                          queue={queue}
-                          brief={brief}
-                          isStandIn={isStandIn}
-                          busy={running}
-                          inherited={inheritedView}
-                          onRetryInherited={inherited.failed ? inherited.retry : null}
-                          threadUsage={snapshotThreadUsage}
-                        />
-                      </div>
+                      <SubagentStopScope value={subagentStopScope}>
+                        <div
+                          className="relative flex min-h-0 flex-1 flex-col"
+                          {...fileDrop.dropProps}
+                        >
+                          <TurnList
+                            threadId={threadId}
+                            uploadsChat={topChat.chatRef ?? undefined}
+                            view={view}
+                            historySettled={historySettled}
+                            tailFollowRevision={tailFollowRevision}
+                            ariaLabel={t`Chat`}
+                            submissionRecoveryByTurnId={submissions.presentation}
+                            controls={controls}
+                            chatStop={chatStop}
+                            queue={queue}
+                            brief={brief}
+                            isStandIn={isStandIn}
+                            busy={running}
+                            inherited={inheritedView}
+                            onRetryInherited={inherited.failed ? inherited.retry : null}
+                            threadUsage={snapshotThreadUsage}
+                          />
+                        </div>
+                      </SubagentStopScope>
                     </SubagentActivityProvider>
                   </SubagentDisclosureProvider>
                 </TurnDerivationProvider>
