@@ -11,13 +11,13 @@ import { cn } from "@/lib/utils";
 import { useEntryMenu } from "../../context/ContextEntryActions";
 import { DocumentRow } from "../../context/ContextTreeRows";
 import { fileKindIcon } from "../../context/context-file-icon";
-import { schemeLabel } from "../../context/context-schemes";
 import {
   type TrashRestoreState,
   useDocumentTrashRestore,
 } from "../../context/DocumentTrashRestoreProvider";
 import { trashDragEntry } from "../../context/entry-drag/entry";
 import { useEntryRow } from "../../context/entry-drag/use-entry-row";
+import { formerPlace } from "../../context/TrashedDocument";
 import { relativeTime } from "../../relative-time";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { type SourceDrop, SourcePane } from "./SourcePane";
@@ -93,7 +93,7 @@ function TrashRow({
   /** Restores these documents: this row, or the selection its menu acted on. */
   onRestore: (documentIds: readonly string[]) => void;
 }) {
-  const location = `${schemeLabel(entry.scheme)}/${entry.formerPath}`;
+  const location = formerPlace(entry);
   const restoring = state?.kind === "restoring";
   const dragged = useMemo(() => trashDragEntry(entry), [entry]);
   const row = useEntryRow(dragged, { active, draggable: !restoring, source: "trash" });

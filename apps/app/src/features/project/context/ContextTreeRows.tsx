@@ -482,7 +482,7 @@ export function DocumentRow({
 }) {
   return (
     <ContextEntryMenu menu={menu}>
-      {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. slop-lint: allow suppression the reason is stated in this comment */}
+      {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
       <div
         role="button"
         tabIndex={0}

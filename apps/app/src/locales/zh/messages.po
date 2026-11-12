@@ -855,10 +855,6 @@ msgstr ""
 msgid "A Work groups the chats and drafts for one piece of writing."
 msgstr ""
 
-#: src/features/project/context/TrashedDocument.tsx
-msgid "a writer"
-msgstr ""
-
 #: src/features/export/ExportProjectDialog.tsx
 msgid "A ZIP of Markdown files and folders. Includes Manuscript, Knowledge and Unfiled."
 msgstr ""
@@ -962,15 +958,6 @@ msgstr ""
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "AI assistant"
-msgstr ""
-
-#. placeholder {0}: voice.chat
-#: src/features/project/context/TrashedDocument.tsx
-msgid "AI in {0}"
-msgstr ""
-
-#: src/features/project/context/TrashedDocument.tsx
-msgid "AI in a chat"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
@@ -2497,6 +2484,30 @@ msgstr ""
 msgid "Deleted a Work"
 msgstr ""
 
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} by {name} on {deleted}."
+msgstr ""
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} by the AI in {chat} on {deleted}."
+msgstr ""
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} by the AI in a chat on {deleted}."
+msgstr ""
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} by you on {deleted}."
+msgstr ""
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} on {deleted}."
+msgstr ""
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} with the Work {name} on {deleted}."
+msgstr ""
+
 #: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 msgid "Deleted from the manuscript"
@@ -3235,10 +3246,6 @@ msgstr ""
 
 #: src/features/import/reason-copy.ts
 msgid "In the trash folder."
-msgstr ""
-
-#: src/features/project/context/TrashedDocument.tsx
-msgid "In the trash. Deleted from {place} by {actor} on {deleted}."
 msgstr ""
 
 #: src/features/export/ExportProjectDialog.tsx
@@ -5575,10 +5582,6 @@ msgstr ""
 #: src/features/chat/ChatFilesMenu.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "the source chat"
-msgstr ""
-
-#: src/features/project/context/TrashedDocument.tsx
-msgid "the system"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx

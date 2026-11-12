@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { daysUntilPurge } from "../deletion-retention";
+import { useAccountId } from "./account-feature-context";
 import { schemeLocation } from "./context-schemes";
 import { useDocumentTrashRestore } from "./DocumentTrashRestoreProvider";
 import { useOpenProjectDocument } from "./open-project-document";
@@ -29,6 +30,7 @@ export function TrashedDocument({
   documentId: string;
 }) {
   const { i18n } = useLingui();
+  const accountId = useAccountId();
   const query = useTrashedDocument(projectId, documentId);
   const { states, restore } = useDocumentTrashRestore();
   const state = states.get(documentId);
@@ -81,7 +83,7 @@ export function TrashedDocument({
               </Button>
             }
           >
-            {trashSentence(document, i18n.locale)}
+            {trashSentence(document, i18n.locale, accountId)}
           </DocumentNotice>
           {failure ? <InlineErrorRow message={failure} className="px-0 pt-2 pb-0" /> : null}
         </div>
@@ -127,13 +129,56 @@ function useOpenOnceLiving(
   return failed;
 }
 
-function trashSentence(entry: DocumentTrashEntry, locale: string): string {
-  const actor = removalActor(entry);
-  const place = schemeLocation(entry.scheme, entry.formerPath.split("/").slice(0, -1));
-  const deleted = new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(
-    new Date(entry.removal.time),
-  );
-  return `${t`In the trash. Deleted from ${place} by ${actor} on ${deleted}.`} ${retentionSentence(entry, locale)}`;
+/** Where the document was: the place every list writes the same way (`schemeLocation`). */
+export function formerPlace(entry: Pick<DocumentTrashEntry, "scheme" | "formerPath">): string {
+  return schemeLocation(entry.scheme, entry.formerPath.split("/").filter(Boolean).slice(0, -1));
+}
+
+function trashSentence(entry: DocumentTrashEntry, locale: string, accountId: string): string {
+  const place = formerPlace(entry);
+  const time = new Date(entry.removal.time);
+  const deleted = new Intl.DateTimeFormat(
+    locale,
+    time.getFullYear() === new Date().getFullYear()
+      ? { month: "short", day: "numeric" }
+      : { dateStyle: "medium" },
+  ).format(time);
+  return `${deletedSentence(entry, place, deleted, accountId)} ${retentionSentence(entry, locale)}`;
+}
+
+/** Names who deleted it only when that says something: you, another writer, a chat's AI, a Work. */
+function deletedSentence(
+  entry: DocumentTrashEntry,
+  place: string,
+  deleted: string,
+  accountId: string,
+): string {
+  if (entry.actor?.kind === "user" && entry.actor.userId === accountId)
+    return t`Deleted from ${place} by you on ${deleted}.`;
+  const voice: RemovalVoice = removalVoice({
+    reason: "deleted",
+    actor: entry.actor,
+    time: entry.removal.time,
+  });
+  switch (voice.kind) {
+    case "person": {
+      const { name } = voice;
+      return t`Deleted from ${place} by ${name} on ${deleted}.`;
+    }
+    case "agent": {
+      const { chat } = voice;
+      return chat
+        ? t`Deleted from ${place} by the AI in ${chat} on ${deleted}.`
+        : t`Deleted from ${place} by the AI in a chat on ${deleted}.`;
+    }
+    case "work": {
+      const { name } = voice;
+      return t`Deleted from ${place} with the Work ${name} on ${deleted}.`;
+    }
+    case "unfinished-reply":
+    case "anonymous":
+      return t`Deleted from ${place} on ${deleted}.`;
+  }
 }
 
 function retentionSentence(entry: DocumentTrashEntry, locale: string): string {
@@ -150,24 +195,4 @@ function retentionSentence(entry: DocumentTrashEntry, locale: string): string {
     one: "Gone for good in # day.",
     other: "Gone for good in # days.",
   });
-}
-
-function removalActor(entry: DocumentTrashEntry): string {
-  const voice: RemovalVoice = removalVoice({
-    reason: "deleted",
-    actor: entry.actor,
-    time: entry.removal.time,
-  });
-  switch (voice.kind) {
-    case "person":
-      return voice.name;
-    case "agent":
-      return voice.chat ? t`AI in ${voice.chat}` : t`AI in a chat`;
-    case "work":
-      return voice.name;
-    case "unfinished-reply":
-      return t`the system`;
-    case "anonymous":
-      return t`a writer`;
-  }
 }
