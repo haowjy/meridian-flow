@@ -1,7 +1,7 @@
 /**
  * ReviewActions — the one Discard · Apply pair for pending changes. Apply is the filled
  * jade button; Discard is quiet ink, never red and never a trash icon (red and the trash
- * belong to Delete). Each scope has one name everywhere (`reviewActionLabel`).
+ * belong to Delete). Each scope has one name everywhere (`reviewActionNames`).
  *
  * A change's or a document's ✓ in a list row is jade ink, not a fill: the group's own Apply
  * is the one filled button, and a column of filled squares would drown it.
@@ -9,10 +9,11 @@
  * A Discard with no Undo asks once (`discardAsks`): its question takes the pair's place until
  * the writer keeps the draft or confirms. An undoable Discard never asks.
  *
- * `density` picks the form: the verb or ×/✓. A change's and a draft's actions show the bare
- * verb, since what they act on is named beside them (the change, the Draft chip, the row);
- * the scope's full name ("Discard draft") is the accessible name and the tooltip, and
- * `labels` replaces it where the row names more. Leave `density` unset where
+ * Each button has a word on screen and a name: the name ("Discard draft", or the caller's
+ * `labels` where the row names more) is the accessible name and the tooltip. A change's and a
+ * draft's word is the bare verb, since what they act on is named beside them (the change, the
+ * Draft chip, the row); `named` says nothing beside the pair names it, and the word is then the
+ * name. `density` picks the form: the word or ×/✓. Leave `density` unset where
  * a container measures its own fit and sets `data-density` on `[data-review-actions]`
  * itself (the identity row's ladder); React then never resets that attribute.
  */
@@ -27,17 +28,19 @@ import { cn } from "@/lib/utils";
 export type ReviewScope = "change" | "document" | "all";
 export type ReviewDensity = "full" | "icon";
 
-export function reviewActionLabel(action: "apply" | "discard", scope: ReviewScope): string {
+/** The scope's name, and its word beside a name: the bare verb, except for "all", whose scope is the word. */
+function reviewActionNames(
+  action: "apply" | "discard",
+  scope: ReviewScope,
+): { word: string; name: string } {
   if (action === "apply") {
-    return scope === "change" ? t`Apply` : scope === "document" ? t`Apply draft` : t`Apply all`;
+    const name =
+      scope === "change" ? t`Apply` : scope === "document" ? t`Apply draft` : t`Apply all`;
+    return { word: scope === "all" ? name : t`Apply`, name };
   }
-  return scope === "change" ? t`Discard` : scope === "document" ? t`Discard draft` : t`Discard all`;
-}
-
-/** The visible word: the verb alone, except "Apply all" and "Discard all", whose scope is the word. */
-function reviewActionVerb(action: "apply" | "discard", scope: ReviewScope): string {
-  if (scope === "all") return reviewActionLabel(action, scope);
-  return action === "apply" ? t`Apply` : t`Discard`;
+  const name =
+    scope === "change" ? t`Discard` : scope === "document" ? t`Discard draft` : t`Discard all`;
+  return { word: scope === "all" ? name : t`Discard`, name };
 }
 
 /**
@@ -84,8 +87,10 @@ function discardQuestion(scope: ReviewScope): string {
 
 export type ReviewActionsProps = {
   scope: ReviewScope;
-  /** Accessible names, where the visible words don't say what the buttons act on. */
+  /** Names, where the scope's name doesn't say all the buttons act on. */
   labels?: { apply: string; discard: string };
+  /** Nothing beside the pair names its scope: the words on screen are the full names. */
+  named?: boolean;
   density?: ReviewDensity;
   onDiscard: () => void;
   /** The Discard carries no Undo, so it asks first. */
@@ -104,6 +109,7 @@ export type ReviewActionsProps = {
 export function ReviewActions({
   scope,
   labels,
+  named = false,
   density,
   onDiscard,
   discardAsks = false,
@@ -115,6 +121,11 @@ export function ReviewActions({
   className,
 }: ReviewActionsProps) {
   const [asking, setAsking] = useState(false);
+  const names = (action: "apply" | "discard") => {
+    const scoped = reviewActionNames(action, scope);
+    const name = labels?.[action] ?? scoped.name;
+    return { word: named ? name : scoped.word, name };
+  };
   // Outlives the swap between the buttons and the question, so Keep can find Discard again.
   const place = useRef<HTMLSpanElement>(null);
   if (asking && discardAsks && !disabled)
@@ -145,8 +156,7 @@ export function ReviewActions({
       >
         <ReviewActionButton
           density={density}
-          name={reviewActionVerb("discard", scope)}
-          label={labels?.discard ?? reviewActionLabel("discard", scope)}
+          {...names("discard")}
           icon={<X aria-hidden />}
           variant="quiet"
           touch={touch}
@@ -160,8 +170,7 @@ export function ReviewActions({
         {onApply ? (
           <ReviewActionButton
             density={density}
-            name={reviewActionVerb("apply", scope)}
-            label={labels?.apply ?? reviewActionLabel("apply", scope)}
+            {...names("apply")}
             icon={
               applying ? <Loader2 aria-hidden className="animate-spin" /> : <Check aria-hidden />
             }
@@ -184,8 +193,8 @@ export function ReviewActions({
  */
 function ReviewActionButton({
   density,
+  word,
   name,
-  label,
   icon,
   busy = false,
   variant,
@@ -194,9 +203,10 @@ function ReviewActionButton({
   onClick,
 }: {
   density: ReviewDensity | undefined;
+  /** On screen in the full form. */
+  word: string;
+  /** The accessible name and the tooltip. */
   name: string;
-  /** The accessible name when it says more than `name`. */
-  label?: string;
   icon: ReactNode;
   /** Shows the icon in every form. */
   busy?: boolean;
@@ -208,19 +218,18 @@ function ReviewActionButton({
   const fullRef = useRef<HTMLSpanElement>(null);
   const [tooltip, setTooltip] = useState(false);
   const renders = (form: ReviewDensity) => density === undefined || density === form;
-  const accessibleName = label ?? name;
   return (
     <Tooltip
       open={tooltip}
       onOpenChange={(open) =>
-        setTooltip(open && (accessibleName !== name || fullRef.current?.offsetParent == null))
+        setTooltip(open && (name !== word || fullRef.current?.offsetParent == null))
       }
     >
       <TooltipTrigger asChild>
         <Button
           variant={variant === "row" ? "ghost" : variant}
           size="xs"
-          aria-label={accessibleName}
+          aria-label={name}
           disabled={disabled}
           onClick={onClick}
           className={cn(
@@ -240,12 +249,12 @@ function ReviewActionButton({
           ) : null}
           {renders("full") ? (
             <span ref={fullRef} className="group-data-[density=icon]/review:hidden">
-              {name}
+              {word}
             </span>
           ) : null}
         </Button>
       </TooltipTrigger>
-      <TooltipContent>{accessibleName}</TooltipContent>
+      <TooltipContent>{name}</TooltipContent>
     </Tooltip>
   );
 }

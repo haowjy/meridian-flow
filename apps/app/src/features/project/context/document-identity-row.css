@@ -21,11 +21,11 @@
 /* Extend only vertically: every visible box owns its full width, and gaps stay
    unclaimed (especially beside Discard). Real touch widths participate in fitting. */
 @media (max-width: 640px), (pointer: coarse) {
-  :is([data-document-identity-row], [data-review-line]) :is(button, [role="switch"]) {
+  :is([data-document-identity-row], [data-review-line]) button {
     position: relative;
     min-width: 24px;
   }
-  :is([data-document-identity-row], [data-review-line]) :is(button, [role="switch"])::after {
+  :is([data-document-identity-row], [data-review-line]) button::after {
     content: "";
     position: absolute;
     top: 50%;
@@ -38,7 +38,7 @@
 
 /* A finger owns the whole 44px square, as in the phone shell. */
 @media (pointer: coarse) {
-  :is([data-document-identity-row], [data-review-line]) :is(button, [role="switch"]) {
+  :is([data-document-identity-row], [data-review-line]) button {
     min-width: 44px;
     min-height: 44px;
   }
@@ -53,8 +53,7 @@
   :is([data-draft-review-controls], [data-review-actions]) {
   gap: 2px;
 }
-[data-review-line]:not([data-collapse="0"])
-  :is([data-review-actions][data-density="full"] button, [role="switch"]) {
+[data-review-line]:not([data-collapse="0"]) [data-review-actions][data-density="full"] button {
   padding-inline: 3px;
 }
 

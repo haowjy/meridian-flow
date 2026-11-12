@@ -4,7 +4,8 @@
  * adds only what is its own: its width, its gaps, its focus ring.
  *
  * The geometry itself (the folder tab's outline, the hover pill, the band's
- * gutter) is the tab-chip grammar in `styles/globals.css`.
+ * gutter and height) is the tab-chip grammar in `styles/globals.css`. The page a
+ * band's chips sit over takes its place here too (`pageSheetClass`).
  */
 import { cn } from "@/lib/utils";
 
@@ -33,6 +34,16 @@ export function titleChipClass(variant: "quiet" | "tab") {
   return cn(
     "w-fit min-w-0 max-w-full gap-[var(--chat-space-inline)]",
     tabChipClass(variant === "tab"),
+    // Pairs with the band's 14px gutter (`tab-band`) and the pill's 2px inset: the side
+    // picker's hover pill starts 8px in, on the side page's edge (`pageSheetClass`).
     variant === "quiet" && "-ml-2 coarse:min-h-11",
   );
+}
+
+/**
+ * The page under a pane's band. The side's is inset 8px from main's, the gap the quiet
+ * title chip's pill lines up with.
+ */
+export function pageSheetClass(side: boolean) {
+  return cn("page-sheet", side && "ml-2");
 }

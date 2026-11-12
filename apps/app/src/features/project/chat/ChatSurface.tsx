@@ -14,6 +14,7 @@ import { ChatPlaceContext } from "@/features/chat/chat-place";
 import { cn } from "@/lib/utils";
 import { OpenedFromChat } from "../routing/ProjectNavigationContext";
 import type { ContextRouteRequest } from "../routing/project-route";
+import { pageSheetClass } from "../shell/tab-chip";
 import { useNewChatAbout } from "../side/SideView";
 import { ChatScreen } from "./ChatScreen";
 
@@ -62,8 +63,7 @@ export function ChatSurface({
       <div
         className={cn(
           "main-pane flex min-h-0 flex-1 flex-col overflow-hidden",
-          presentation === "desktop" && "page-sheet",
-          presentation === "desktop" && place === "side" && "ml-2",
+          presentation === "desktop" && pageSheetClass(place === "side"),
         )}
       >
         {/* Every open made inside this chat keeps it beside what it opens. */}

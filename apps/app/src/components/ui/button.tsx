@@ -32,7 +32,7 @@ const buttonVariants = cva(
       // never add touch sizing; a dense row that must not grow pulls it back with -my.
       size: {
         default: "h-8 px-4 has-[>svg]:px-3 coarse:min-h-11",
-        xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3 coarse:min-h-11",
+        xs: "h-(--control-dense) gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3 coarse:min-h-11",
         // Dense inline toolbar action (history/restore/meta actions) — text-xs,
         // no fixed height so it hugs its label. Pair with variant="quiet".
         meta: "gap-1 rounded-md px-2 py-1 text-xs [&_svg:not([class*='size-'])]:size-3 coarse:min-h-11",

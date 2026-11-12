@@ -155,11 +155,10 @@ export function DocumentIdentityBar({
           Undo and an Undo's back to the controls. */}
       <div ref={lineFocus} className="contents">
         {controls || notice ? (
-          // 34px, the height of the chat's draft dock and edits receipt.
           <div
             ref={fitReviewLine}
             data-review-line
-            className="flex min-h-[2.125rem] shrink-0 flex-wrap items-center gap-x-2 gap-y-1 bg-review px-4 py-1 text-sm text-muted-foreground"
+            className="flex min-h-(--strip-row) shrink-0 flex-wrap items-center gap-x-2 gap-y-1 bg-review px-4 py-1 text-sm text-muted-foreground"
           >
             {notice ? <DraftNoticeLine notice={notice} className="flex-auto px-0" /> : null}
             {controls}

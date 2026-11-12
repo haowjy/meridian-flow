@@ -29,9 +29,9 @@ export function WriteModeNotice({
     <div
       data-write-mode-notice
       data-write-mode={mode}
-      // Tall as an Undo button's line, so the pending notice, the applied bridge and the
-      // switch turn that replaces them are one height: nothing below moves.
-      className="flex min-h-[calc(var(--text-xs--line-height)+0.5rem+var(--chat-space-block)*2)] min-w-0 flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)] py-[var(--chat-space-block)]"
+      // One height for the pending notice (with its Undo), the applied bridge and the switch
+      // turn that replaces them: nothing below moves.
+      className="flex min-h-(--write-mode-row) min-w-0 flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)] py-[var(--chat-space-block)]"
     >
       <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
         <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />

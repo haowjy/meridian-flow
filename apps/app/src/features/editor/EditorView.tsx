@@ -87,7 +87,6 @@ export function EditorView(props: EditorViewProps) {
         }
       : null;
   const surfaceOptions: EditorSurfaceOptions = {
-    className: props.className,
     editable: props.editable,
     showToolbar: props.showToolbar,
     active: props.active,
@@ -280,6 +279,7 @@ function ReviewError({ props }: { props: EditorViewProps }) {
           controller.inlineReview.itemKey === props.reviewItemKey ? (
             <ReviewActions
               scope="document"
+              named
               disabled={controller.dispositionLocked}
               discardAsks={controller.discardAsks({
                 documentId: props.documentId,

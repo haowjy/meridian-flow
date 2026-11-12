@@ -2,8 +2,8 @@
  * DraftReviewBand — a document's review controls: the version chip
  * (`DocumentVersionMenu`), which takes the Live chip's place on the toolbar row, and the
  * controls on a line of their own above the toolbar (`DocumentIdentityBar`): the change
- * list, the stepper, Show changes, Discard draft and Apply draft (the per-change bar's
- * Discard and Apply act on one change; these name their scope).
+ * list, the stepper, Show changes, then Discard and Apply for the whole draft (the Draft
+ * chip names it; their tooltips say "Discard draft" and "Apply draft").
  *
  * The list button, left of the stepper, opens this document's own change list
  * (`DocumentChanges`) in a popover under the row, independent of marks
@@ -25,7 +25,6 @@ import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, useAfterPaintRelease } from "@/components/app/PaintHold";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { changeListLabel, DocumentChanges } from "@/features/draft-review/DocumentChanges";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DiscardQuestion, ReviewActions } from "@/features/draft-review/ReviewActions";
@@ -42,7 +41,6 @@ import {
 } from "@/features/draft-review/useReviewHeader";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { focusIsFree, lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
-import { cn } from "@/lib/utils";
 import { DocumentVersionMenu } from "./DocumentVersionMenu";
 
 export type DraftReviewBandProps = {
@@ -260,9 +258,7 @@ function ChangeListPopover({ header }: { header: ReviewHeaderModel }) {
   );
 }
 
-/**
- * Show changes: the eye alone, named by tooltip and `aria-label`.
- */
+/** Show changes: the eye alone, a switch. */
 function ShowChangesToggle({
   visible,
   onChange,
@@ -271,26 +267,17 @@ function ShowChangesToggle({
   onChange: (visible: boolean) => void;
 }) {
   const Icon = visible ? Eye : EyeOff;
-  const name = t`Show changes`;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={visible}
-          aria-label={name}
-          onClick={() => onChange(!visible)}
-          className={cn(
-            "focus-ring inline-flex size-6 shrink-0 items-center justify-center rounded-md text-xs transition-colors hover:bg-ink-fill hover:text-foreground",
-            visible ? "text-foreground" : "text-muted-foreground",
-          )}
-        >
-          <Icon aria-hidden className="size-3.5" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">{name}</TooltipContent>
-    </Tooltip>
+    <IconButton
+      role="switch"
+      aria-checked={visible}
+      label={t`Show changes`}
+      tooltipSide="bottom"
+      onClick={() => onChange(!visible)}
+      className={visible ? "text-foreground" : "text-muted-foreground"}
+    >
+      <Icon aria-hidden />
+    </IconButton>
   );
 }
 

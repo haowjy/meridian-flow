@@ -86,7 +86,7 @@ separate browser check covers rendering and native keyboard history.
 | Action | Required result |
 |---|---|
 | Discard an editor change | Text reverts immediately; one Ctrl+Z restores it with restoration provenance and bylines. |
-| Discard the document draft (band) | All pending changes revert, the draft id stays, the page goes Live, and "Draft of ‹name› discarded." shows in the toolbar row. Undo returns the page to the draft with the same marks and bylines. |
+| Discard the document draft (band) | All pending changes revert, the draft id stays, the page goes Live, and "Draft of ‹name› discarded." takes the review line above the toolbar. Undo returns the page to the draft with the same marks and bylines. |
 | Discard from the dock or the Changes list | The item leaves immediately; the notice takes its row's place (a dock: its footer). Undo restores the same draft and bylines. |
 | Discard, open another document, come back | The Changes or dock notice is still there; Undo restores the draft and main does not move. |
 | Discard, then type in that draft or let a reply write to it | The notice goes without a word; editor Ctrl+Z undoes the typing, never the Discard. |

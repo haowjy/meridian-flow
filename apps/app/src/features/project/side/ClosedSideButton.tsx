@@ -5,7 +5,9 @@
 import { t } from "@lingui/core/macro";
 import { MessageSquare, Pin } from "lucide-react";
 import type { OpenDocument } from "@/client/stores";
+import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../context/context-file-icon";
+import { tabChipClass } from "../shell/tab-chip";
 import { useSideChatName } from "./SideHeader";
 import { useSideItem } from "./SideView";
 
@@ -30,7 +32,13 @@ export function ClosedSideButton({
       type="button"
       onClick={onOpen}
       aria-label={t`Show ${name} beside`}
-      className="focus-ring flex h-8 max-w-56 min-w-0 shrink items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-ink-fill hover:text-foreground"
+      // An inactive tab in main's band. The margin gives back the pill's 2px inset, so the
+      // pill and the name sit where they would with no inset.
+      className={cn(
+        "focus-ring",
+        tabChipClass(false),
+        "-mx-0.5 max-w-57 min-w-0 shrink gap-1.5 px-2.5 text-xs",
+      )}
     >
       <Icon className="size-3.5 shrink-0" aria-hidden />
       <span className="min-w-0 truncate">{name}</span>

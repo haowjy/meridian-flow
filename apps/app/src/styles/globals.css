@@ -78,6 +78,22 @@
   --prose-space-rule: 20px;
   --prose-space-quote: 12px;
   --prose-space-table: 12px;
+  /* Shell geometry. A pane band's height: every band (main's, the side's, the sidebar's
+     header) reads it, so the pages under them start level whatever the bands hold. A
+     finger's band is the 44px touch target its corner toggle grows to. */
+  --band-height: 2.5rem;
+  /* A dense control's box (`Button` xs, the meta chip's line), and the rows built on it:
+     the strip row (the draft dock's summary, the edits receipt's header, the review line)
+     and the write-mode notice, so each family is one height whether or not its control
+     shows. */
+  --control-dense: 1.5rem;
+  --strip-row: calc(var(--control-dense) + 0.625rem);
+  --write-mode-row: calc(var(--control-dense) + var(--chat-space-block) * 2);
+}
+@media (pointer: coarse) {
+  :root {
+    --band-height: 2.75rem;
+  }
 }
 
 /* Every virtual row owns a gap; user rows receive the larger user-to-reply spacing. */
@@ -724,9 +740,9 @@
 }
 
 /*
- * Page sheet — the lit paper rising out of the chrome. Every center pane
- * wears this below its h-10 chrome band (PaneHeader or the document tab
- * strip). It is a sheet set into the chrome: a hairline on its top and sides,
+ * Page sheet — the lit paper rising out of the chrome. Every pane wears
+ * this below its chrome band (`PaneHeader`), the side's inset from main's
+ * (`pageSheetClass`). It is a sheet set into the chrome: a hairline on its top and sides,
  * both top corners rounded, running to the foot of the window. The center
  * slot paints the chrome; the sheet is the ONE sanctioned surface paint on
  * top of it.
@@ -810,8 +826,11 @@
 @utility tab-band {
   position: relative;
   z-index: 1;
+  /* The band's own height, never its content's, so both pages start level. */
+  height: var(--band-height);
   /* The gutter: no chip starts closer to the pane's edge than the sheet's corner radius
-     plus a flare, so a flare lands on the sheet's straight edge. */
+     plus a flare (6 + 6px), with 2px to spare, so a flare lands on the sheet's straight
+     edge. The quiet title chip's -ml-2 (`titleChipClass`) is measured from it. */
   padding-inline-start: --spacing(3.5);
   /* Over the sheet's top edge and one row inside it, so an active chip's fill hides the
      edge beneath it with no gap at fractional display scales. */

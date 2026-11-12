@@ -29,6 +29,7 @@ import { MobileDocumentReview } from "../mobile/MobileDocumentReview";
 import { MobileRefusalNotice } from "../mobile/MobileRefusalNotice";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { contextRouteRequest } from "../routing/project-route";
+import { pageSheetClass } from "../shell/tab-chip";
 import type { MainDocument } from "../views";
 import {
   useAccountResourceProjection,
@@ -261,10 +262,7 @@ function DesktopDocumentFrame({
       <PaintScope active={onScreen}>
         <PaintHold
           status={t`Opening ${document.name}`}
-          className={cn(
-            "page-sheet relative flex min-h-0 flex-1 flex-col",
-            place === "side" && "ml-2",
-          )}
+          className={cn(pageSheetClass(place === "side"), "relative flex min-h-0 flex-1 flex-col")}
         >
           <PaintCapture surface={document.documentId} />
           <DocumentStateSlotProvider>
@@ -278,11 +276,7 @@ function DesktopDocumentFrame({
             />
             {document.kind === "viewer" ? (
               <div className="flex min-h-0 flex-1 flex-col">
-                <ContextViewerHost
-                  projectId={projectId}
-                  document={document}
-                  className={place === "main" ? undefined : "bg-transparent"}
-                />
+                <ContextViewerHost projectId={projectId} document={document} />
               </div>
             ) : (
               <div className="relative min-h-0 flex-1">
@@ -290,7 +284,6 @@ function DesktopDocumentFrame({
                   projectId={projectId}
                   document={document}
                   active={onScreen}
-                  editorClassName={place === "main" ? undefined : "bg-transparent"}
                   loadFocus={place === "main"}
                 />
               </div>
@@ -306,13 +299,11 @@ function EditableDocument({
   projectId,
   document,
   active,
-  editorClassName,
   loadFocus,
 }: {
   projectId: string;
   document: EditableOpenDocument;
   active: boolean;
-  editorClassName?: string;
   loadFocus: boolean;
 }) {
   const freeze = useHostFreeze(projectId, document);
@@ -322,7 +313,6 @@ function EditableDocument({
       document={document}
       active={active}
       readOnly={freeze !== null}
-      editorClassName={editorClassName}
       loadFocus={loadFocus}
     />
   );

@@ -15,6 +15,7 @@ import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { fileKindIcon } from "../context/context-file-icon";
+import { PaneHeader } from "../shell/PaneHeader";
 import { PanelToggleSpacer } from "../shell/PanelToggleButton";
 import { useMainItem } from "../views";
 import { SidePicker } from "./SidePicker";
@@ -41,8 +42,6 @@ function SideBand({
   icon,
   actions,
   onOpenInMain,
-  leading,
-  trailing,
 }: {
   projectId: string;
   /** Null while the side shows nothing. */
@@ -50,39 +49,34 @@ function SideBand({
   icon: ReactNode;
   actions?: ReactNode;
   onOpenInMain?: () => void;
-  /** Before the picker (the phone sheet's close). */
-  leading?: ReactNode;
-  /** After everything (the phone has no corner toggle to make room for). */
-  trailing?: ReactNode;
 }) {
   const side = useSideItem();
   const { releaseSide } = useShellCommands(projectId);
   return (
-    // Over the page's top edge by main's band's 2px (`tab-band`), so both pages start level.
-    <div className="-mb-0.5 shrink-0">
-      <header className="flex h-10 items-stretch pl-3.5 coarse:h-11">
-        {leading}
-        {/* No overflow-hidden: clipping here shears the title's hover pill. */}
-        <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1">
-          <SidePicker projectId={projectId} name={name} icon={icon} />
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5 pr-2">
-          {side.source === "held" ? (
-            <IconButton size="sm" label={t`Held here. Follow main again`} onClick={releaseSide}>
-              <Pin aria-hidden />
-            </IconButton>
-          ) : null}
-          {actions}
-          {onOpenInMain ? (
-            <IconButton size="sm" label={t`Open in main`} onClick={onOpenInMain}>
-              <Maximize2 aria-hidden />
-            </IconButton>
-          ) : null}
-          {trailing ?? <PanelToggleSpacer />}
-        </div>
-      </header>
+    <>
+      <PaneHeader
+        title={<SidePicker projectId={projectId} name={name} icon={icon} />}
+        actions={
+          // The corner toggle always floats over this band, open or closed: its spacer is the
+          // side's own, not PaneHeader's closed-rail one.
+          <div className="flex items-center gap-0.5">
+            {side.source === "held" ? (
+              <IconButton size="sm" label={t`Held here. Follow main again`} onClick={releaseSide}>
+                <Pin aria-hidden />
+              </IconButton>
+            ) : null}
+            {actions}
+            {onOpenInMain ? (
+              <IconButton size="sm" label={t`Open in main`} onClick={onOpenInMain}>
+                <Maximize2 aria-hidden />
+              </IconButton>
+            ) : null}
+            <PanelToggleSpacer />
+          </div>
+        }
+      />
       {side.failed ? (
-        <div className="px-2 pb-1">
+        <div className="shrink-0 px-2 pb-1">
           <InlineErrorRow
             message={
               side.failed.read === "document"
@@ -93,7 +87,7 @@ function SideBand({
           />
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -121,14 +115,10 @@ export function SideChatHeader({
   projectId,
   threadId,
   onOpenInMain,
-  leading,
-  trailing,
 }: {
   projectId: string;
   threadId: string | null;
   onOpenInMain?: () => void;
-  leading?: ReactNode;
-  trailing?: ReactNode;
 }) {
   const activity = useThreadActivity({ threadId: threadId ?? "", seed: null });
   const name = useSideChatName(projectId, threadId);
@@ -137,8 +127,6 @@ export function SideChatHeader({
       projectId={projectId}
       name={name}
       icon={<MessageSquare aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
-      leading={leading}
-      trailing={trailing}
       actions={
         threadId ? (
           <>
