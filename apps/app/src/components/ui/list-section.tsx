@@ -31,13 +31,18 @@ export function ListSectionHeader({
   headerProps?: HTMLAttributes<HTMLElement>;
 }) {
   const Heading = level === 2 ? "h2" : "h3";
+  const look = level === 2 ? role.groupLabel : role.subgroupLabel;
   const name = <span className="min-w-0 truncate">{label}</span>;
   return (
-    <div {...headerProps} data-rail-pane-header className="mx-2 flex min-h-7 shrink-0 items-center">
+    <div
+      {...headerProps}
+      data-rail-pane-header
+      className={cn("mx-2 flex shrink-0 items-center", level === 2 ? "min-h-7" : "min-h-6")}
+    >
       <Heading
         title={title}
         aria-label={fold ? undefined : title}
-        className={cn("flex min-w-0 flex-1 items-center self-stretch pr-1 pl-1.5", role.groupLabel)}
+        className={cn("flex min-w-0 flex-1 items-center self-stretch pr-1 pl-1.5", look)}
       >
         {fold ? (
           // The whole heading row folds; -mx/px keep the label on the rows' text edge.
@@ -51,13 +56,20 @@ export function ListSectionHeader({
               if (event.key === "ArrowRight") fold.onToggle(true);
             }}
             className={cn(
-              "interactive -mx-1.5 flex min-w-0 flex-1 items-center gap-1 self-stretch rounded-md px-1.5 text-left coarse:min-h-11",
+              "group/fold interactive -mx-1.5 flex min-w-0 flex-1 items-center gap-1 self-stretch rounded-md px-1.5 text-left coarse:min-h-11",
               // Preflight resets a button's text-transform; the label's case needs restating.
-              role.groupLabel,
+              look,
             )}
           >
             {name}
-            <DisclosureMark open={fold.open} />
+            {/* An open heading shows its chevron only on hover or focus; a folded one keeps it. */}
+            <DisclosureMark
+              open={fold.open}
+              className={cn(
+                fold.open &&
+                  "opacity-0 group-hover/fold:opacity-100 group-focus-visible/fold:opacity-100 [@media(hover:none)]:opacity-100",
+              )}
+            />
             {fold.open ? null : foldedMark}
           </button>
         ) : (

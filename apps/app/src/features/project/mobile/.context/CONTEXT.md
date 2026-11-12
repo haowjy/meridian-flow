@@ -83,8 +83,8 @@ keyboard; mobile review never becomes an editable Editor.
 ## Drawer and phone chrome
 
 The navigation drawer is the desktop sidebar: the same Write | Chat switch and
-`SIDEBAR_LISTS` bodies (the file tree, the Chats list with find, Pinned and
-All chats), so files are browsed, created, moved and deleted there with the
+`SIDEBAR_LISTS` bodies (the file tree, the Chats list with find, this Work's chats
+and Other chats), so files are browsed, created, moved and deleted there with the
 desktop's rows and forms. Opening a file from it closes the drawer once the
 open commits.
 

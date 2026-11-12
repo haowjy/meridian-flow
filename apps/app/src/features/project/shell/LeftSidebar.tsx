@@ -116,7 +116,6 @@ export function LeftSidebar({
         activePath={treeActivePath}
         onSelectFile={handleSelectFile}
         scopeWorkId={scope.workId}
-        onShowWork={scope.setWorkId}
       />
     </nav>
   );

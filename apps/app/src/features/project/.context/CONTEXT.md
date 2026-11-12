@@ -187,10 +187,12 @@ on that draft when the chat has one. No chat sits beside a chat, so a chat in ma
 to documents.
 
 There is no chat index. The sidebar's Chats list (`shell/sidebar/ChatsBody.tsx`) is how chats are
-found: a find field over the server's chat search, Pinned (foldable; its open state is kept per
-browser tab with the trees' folders), the scoped Work's other chats under the Work's name, and an
-"All chats" disclosure that pages the whole feed 24 at a time with Show more. A pinned chat is
-listed under Pinned only, with no mark of its own. Each row renames in place, pins or unpins from
+found: a find field over the server's chat search (its results replace the list, with no
+heading), then, with no heading, the pinned chats from every Work (a pin icon on each) and the
+scoped Work's chats, most urgent first; then "Other chats", folded by default (its open state is
+kept per browser tab with the trees' folders), holding every other chat newest first, with a mark
+while folded when one of them waits on the writer or is working. Each chat is listed once, all
+from the project's thread list (`chat-groups.ts`). Each row renames in place, pins or unpins from
 its ⋯ menu, and deletes with an Undo line in the list. The API and the client state still call a
 pin `favorite` (`isFavorite`).
 

@@ -2,13 +2,12 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { Layers, Plus } from "lucide-react";
+import { Pin, Plus } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { runFavoriteCommand, usePinnedChatIds } from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useRenameThread } from "@/client/query/useRenameThread";
-import { useWorks } from "@/client/query/useWorks";
 import { announce, announceError } from "@/client/stores";
 import { ActionNotice } from "@/components/app/ActionNotice";
 import { AskOnce } from "@/components/app/AskOnce";
@@ -49,11 +48,10 @@ type RowContext = {
 };
 
 /**
- * The Chat list: a find field over every chat, the writer's Pinned chats (foldable), the scoped
- * Work's other chats by what they need from the writer, then All chats, newest first and paged.
- * Working helpers sit under their parent. Other Works keep one row each while one of their chats
- * needs the writer or is running. Each chat row opens, renames, pins and deletes its chat; a
- * delete has an Undo. The API calls a pin `favorite`.
+ * The Chat list: a find field over every chat; the writer's pinned chats and the scoped Work's
+ * chats, most urgent first, under no heading; then Other chats, folded, newest first. Each chat
+ * shows once. Working helpers sit under their parent. Each chat row opens, renames, pins and
+ * deletes its chat; a delete has an Undo. The API calls a pin `favorite`.
  */
 export function ChatsBody({
   projectId,
@@ -62,7 +60,6 @@ export function ChatsBody({
   currentThreadId,
   onOpenChat,
   onNewChat,
-  onShowWork,
   footer,
 }: {
   projectId: string;
@@ -71,11 +68,9 @@ export function ChatsBody({
   currentThreadId: string | null;
   onOpenChat: (threadId: string) => void;
   onNewChat: () => void;
-  onShowWork: (workId: string) => void;
   footer?: ReactNode;
 }) {
   const { threads } = useProjectThreads(projectId);
-  const { works } = useWorks(projectId);
   const [search, setSearch] = useState<string | null>(null);
   const { deletes, notice, refused } = useChatDeleteState();
   const touch = useCoarsePointer();
@@ -86,9 +81,7 @@ export function ChatsBody({
     [favoriteFeed.items],
   );
   const pinnedIds = usePinnedChatIds(projectId, confirmedPins, favoriteFeed.dataUpdatedAt);
-  const pinnedFold = useSectionFold(projectId, "chats", "pinned");
-  // All chats loads only once opened.
-  const allFold = useSectionFold(projectId, "chats", "all", false);
+  const othersFold = useSectionFold(projectId, "chats", "others", false);
   // Every pin loads, so no chat beyond the first page offers "Pin".
   const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = favoriteFeed;
   useEffect(() => {
@@ -98,10 +91,6 @@ export function ChatsBody({
     () => groupChats(threads ?? [], scopeWorkId ?? noWorkId, noWorkId, currentThreadId, pinnedIds),
     [threads, scopeWorkId, noWorkId, currentThreadId, pinnedIds],
   );
-  const workName = (workId: string) =>
-    workId === noWorkId
-      ? t`Chats without a Work`
-      : (works?.find((work) => work.id === workId)?.name ?? "");
   const rows: RowContext = {
     projectId,
     currentThreadId,
@@ -155,11 +144,10 @@ export function ChatsBody({
     if (target) moveFocus(target, { ring: lastInputWasKeyboard() });
   });
 
-  // Each list most urgent first; the mark on a row says its state.
-  const listed = [...groups.needsYou, ...groups.running, ...groups.idle];
   const scopeId = scopeWorkId ?? noWorkId;
   const scopeEmpty =
-    listed.length === 0 && groups.pinned.every((chat) => (chat.workId ?? noWorkId) !== scopeId);
+    groups.scoped.length === 0 &&
+    groups.pinned.every((chat) => (chat.workId ?? noWorkId) !== scopeId);
   const withHelpers = (thread: ThreadListItem) => (
     <div key={thread.id}>
       <ChatRow {...rows} chat={thread} />
@@ -196,9 +184,9 @@ export function ChatsBody({
           />
         ) : null}
         {search ? (
-          <ListSection label={t`Results`}>
+          <section aria-label={t`Results`} className="px-2 pt-2">
             <SearchResults search={search} rows={rows} />
-          </ListSection>
+          </section>
         ) : threads === null ? (
           <div className="px-2">
             <ListLine status>
@@ -207,51 +195,28 @@ export function ChatsBody({
           </div>
         ) : (
           <>
-            {groups.pinned.length > 0 ? (
-              <ListSection
-                label={t`Pinned`}
-                fold={pinnedFold}
-                foldedMark={
-                  groups.pinnedState === "idle" ? null : <StateMark state={groups.pinnedState} />
-                }
-              >
+            <div className="px-2 pt-1">
+              {groups.pinned.length > 0 ? (
                 <div data-pinned-list>{groups.pinned.map(withHelpers)}</div>
-              </ListSection>
-            ) : null}
-            {listed.length > 0 ? (
-              <ListSection label={workName(scopeId ?? "")}>{listed.map(withHelpers)}</ListSection>
-            ) : null}
-            {scopeEmpty ? (
-              <div className="px-2">
+              ) : null}
+              {groups.scoped.map(withHelpers)}
+              {scopeEmpty ? (
                 <ListLine>
                   <Trans>No chats here yet.</Trans>
                 </ListLine>
-              </div>
-            ) : null}
-            {groups.otherWorks.length > 0 ? (
-              <ListSection label={t`Other Works`}>
-                {groups.otherWorks.map((other) => (
-                  <ListRow
-                    key={other.workId}
-                    onOpen={() => onShowWork(other.workId)}
-                    icon={Layers}
-                    title={workName(other.workId)}
-                    meta={
-                      other.needsYou > 0 ? (
-                        <span className="text-jade-text">
-                          <Trans>{other.needsYou} waiting on you</Trans>
-                        </span>
-                      ) : (
-                        <Trans>{other.running} working</Trans>
-                      )
-                    }
-                  />
-                ))}
+              ) : null}
+            </div>
+            {groups.others.length > 0 ? (
+              <ListSection
+                label={t`Other chats`}
+                fold={othersFold}
+                foldedMark={
+                  groups.othersState === "idle" ? null : <StateMark state={groups.othersState} />
+                }
+              >
+                {groups.others.map(withHelpers)}
               </ListSection>
             ) : null}
-            <ListSection label={t`All chats`} fold={allFold}>
-              <AllChats rows={rows} />
-            </ListSection>
           </>
         )}
       </SourcePane>
@@ -260,13 +225,7 @@ export function ChatsBody({
   );
 }
 
-/** Every chat in the project, newest first: loaded only once opened, a page at a time. */
-function AllChats({ rows }: { rows: RowContext }) {
-  const feed = useProjectChatFeed(rows.projectId);
-  return <FeedRows feed={feed} rows={rows} empty={<Trans>No chats yet.</Trans>} />;
-}
-
-/** The server's search over every chat's title, paged like All chats. */
+/** The server's search over every chat's title, paged. */
 function SearchResults({ search, rows }: { search: string; rows: RowContext }) {
   const feed = useProjectChatFeed(rows.projectId, false, search);
   return <FeedRows feed={feed} rows={rows} empty={<Trans>No chats match “{search}”.</Trans>} />;
@@ -412,6 +371,7 @@ function ChatRow({
             current={chat.id === currentThreadId ? "page" : false}
             depth={nested ? 1 : 0}
             revealActions={!touch && !menuOpen}
+            icon={pinned ? Pin : undefined}
             title={title}
             trailing={shownState === "idle" ? null : <StateMark state={shownState} />}
             actions={
