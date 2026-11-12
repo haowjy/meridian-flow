@@ -72,7 +72,7 @@ function DialogContent({
         {showCloseButton ? (
           <DialogPrimitive.Close asChild>
             <IconButton size="sm" label={t`Close`} className="absolute top-3 right-3">
-              <XIcon aria-hidden className="size-4" />
+              <XIcon aria-hidden />
             </IconButton>
           </DialogPrimitive.Close>
         ) : null}

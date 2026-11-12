@@ -114,10 +114,10 @@ export const DocumentToolbar = memo(function DocumentToolbar({
       >
         <div className="flex shrink-0 items-center gap-1">
           <ToolbarControl id="undo" state={controls.undo} onPress={run(undoDocument)}>
-            <Undo2 className="size-3.5" aria-hidden />
+            <Undo2 aria-hidden />
           </ToolbarControl>
           <ToolbarControl id="redo" state={controls.redo} onPress={run(redoDocument)}>
-            <Redo2 className="size-3.5" aria-hidden />
+            <Redo2 aria-hidden />
           </ToolbarControl>
         </div>
         {/* History is the writer's recovery, not a formatting verb; the rule
@@ -125,41 +125,41 @@ export const DocumentToolbar = memo(function DocumentToolbar({
         <span className="mx-0.5 h-3.5 w-px shrink-0 bg-border-subtle" aria-hidden />
         <div className="flex shrink-0 flex-wrap items-center gap-1">
           <ToolbarControl id="heading" state={controls.heading} onPress={run(toggleHeadingBlock)}>
-            <Heading1 className="size-3.5" aria-hidden />
+            <Heading1 aria-hidden />
           </ToolbarControl>
           <ToolbarControl
             id="bold"
             state={controls.bold}
             onPress={run((target) => toggleTextMark(target, "strong"))}
           >
-            <Bold className="size-3.5" aria-hidden />
+            <Bold aria-hidden />
           </ToolbarControl>
           <ToolbarControl
             id="italic"
             state={controls.italic}
             onPress={run((target) => toggleTextMark(target, "em"))}
           >
-            <Italic className="size-3.5" aria-hidden />
+            <Italic aria-hidden />
           </ToolbarControl>
           <ToolbarControl
             id="codeBlock"
             state={controls.codeBlock}
             onPress={run(toggleCodeBlockBlock)}
           >
-            <Code className="size-3.5" aria-hidden />
+            <Code aria-hidden />
           </ToolbarControl>
           <ToolbarControl
             id="bulletList"
             state={controls.bulletList}
             onPress={run(toggleBulletListBlock)}
           >
-            <List className="size-3.5" aria-hidden />
+            <List aria-hidden />
           </ToolbarControl>
           {/* The link form is not the toolbar's surface: it belongs to the
             link lane and opens over the writer's own words, wherever they are.
             The button is one more door into it, beside Ctrl+K and Add link. */}
           <ToolbarControl id="link" state={controls.link} onPress={() => openLinkForm(editor)}>
-            <LinkIcon className="size-3.5" aria-hidden />
+            <LinkIcon aria-hidden />
           </ToolbarControl>
           <AlignmentControl editor={editor} state={controls.alignment} value={alignment} />
           <ToolbarControl
@@ -167,7 +167,7 @@ export const DocumentToolbar = memo(function DocumentToolbar({
             state={controls.uploadFigure}
             onPress={() => onUploadFigure?.()}
           >
-            <ImageUp className="size-3.5" aria-hidden />
+            <ImageUp aria-hidden />
           </ToolbarControl>
         </div>
       </div>
@@ -310,7 +310,7 @@ function AlignmentTrigger({
           toolbarControlClass({ active, blocked }),
         )}
       >
-        <Icon className="size-3.5" aria-hidden />
+        <Icon aria-hidden />
         <ChooserMark />
       </Button>
     </ToolbarControlTooltip>

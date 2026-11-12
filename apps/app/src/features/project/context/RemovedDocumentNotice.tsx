@@ -259,7 +259,7 @@ function DismissNotice({
       label={t`Dismiss`}
       onClick={() => notices?.dismiss(projectId)}
     >
-      <X aria-hidden className="size-3" />
+      <X aria-hidden />
     </IconButton>
   );
 }

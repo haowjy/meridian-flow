@@ -41,7 +41,7 @@ const buttonVariants = cva(
         // Icon-only sizes: use IconButton, which names the button. A dense one keeps
         // its box and grows only its hit area (IconButton's `dense`).
         "icon-xs":
-          "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3 coarse:not-data-[touch=dense]:size-11",
+          "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3.5 coarse:not-data-[touch=dense]:size-11",
         "icon-sm": "size-8 coarse:not-data-[touch=dense]:size-11",
       },
     },

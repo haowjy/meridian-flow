@@ -329,7 +329,6 @@ export function IdentityPlacementField({
       </PopoverAnchor>
       <IconButton
         label={t`Save name and location`}
-        className="size-5.5"
         disabled={saving}
         onPointerDown={(event) => event.preventDefault()}
         onClick={() => void submit()}
@@ -338,7 +337,6 @@ export function IdentityPlacementField({
       </IconButton>
       <IconButton
         label={t`Cancel editing`}
-        className="size-5.5"
         disabled={saving}
         onPointerDown={(event) => event.preventDefault()}
         onClick={() => onExit("escape")}

@@ -166,7 +166,7 @@ function CornerToggle({
         side === "left" ? "left-2" : "right-2",
       )}
     >
-      <Icon className="size-4" aria-hidden />
+      <Icon aria-hidden />
     </IconButton>
   );
 }
