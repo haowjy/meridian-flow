@@ -4,9 +4,10 @@
  * The app sets the attribute on the root pre-paint (`apps/app/src/lib/ui-theme.ts`);
  * apps/www sets it on the night regions of the landing page.
  *
- * Dark orders its surfaces chrome < page < raised in the same warm grey, with light grey ink:
- * on a dark ground a raised surface needs its own step, where light lifts it by border and shadow. A theme re-points surfaces, inks and accents only: state fills and borders
- * are overlays of `foreground`, so they lighten here on their own.
+ * Dark orders its surfaces chrome < page < raised in the same warm grey, with light grey
+ * ink: on a dark ground a raised surface needs its own step, where light lifts it by
+ * border and shadow. A theme re-points surfaces, inks and accents only: state fills and
+ * borders are overlays of `foreground`, so they lighten here on their own.
  */
 :root[data-ui-theme="dark"],
 [data-ui-theme="dark"] {
