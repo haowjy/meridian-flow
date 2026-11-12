@@ -1,8 +1,9 @@
 /**
  * Ink & Jade — shared Tailwind theme tokens and runtime CSS variables for app and www.
  *
- * Surfaces: chrome (sidebar, tab band, dock) < page < raised (cards, menus, popovers),
- * plus the review ground under draft chrome. Every interactive state is an ink overlay
+ * Surfaces: chrome (sidebar, tab band, dock) below a white page; raised surfaces (cards, menus,
+ * popovers) are white too and lift by border and shadow. The review ground sits under draft
+ * chrome. Every interactive state is an ink overlay
  * over whatever surface it sits on: `ink-fill` (5%) for hover and static wells,
  * `ink-fill-strong` (10%) for current, selected, open and pressed. Borders are ink
  * overlays too. Because overlays follow `foreground`, the dark theme re-points only
@@ -49,21 +50,22 @@
   --color-primary-foreground: oklch(1 0 0);
   --color-jade-text: oklch(0.44 0.088 165);
 
-  /* Other accents. Notice tints stay opaque: an alpha tint drifts toward orange on cream. */
+  /* Other accents. Notice tints stay opaque, so they read the same on chrome and on the page. */
   --color-destructive: oklch(0.475 0.18 25);
   --color-destructive-tint: oklch(0.955 0.02 22);
   --color-destructive-border: oklch(0.86 0.07 20);
   --color-warning: oklch(0.68 0.16 55);
   --color-warning-ink: oklch(0.46 0.1 55);
   --color-warning-tint: oklch(0.965 0.025 80);
-  /* Darkened to hold 3:1 on the page in a current row: a filled star carries state. */
-  --color-gold: oklch(0.62 0.12 80);
+  /* Dark enough to hold 3:1 on chrome under a pressed button's and a current row's fills
+     (about 19% ink): a filled star carries state. */
+  --color-gold: oklch(0.545 0.108 80);
   --color-cinnabar: oklch(0.54 0.17 30);
 
   /* The login hero: a fixed ground, the same in both themes. */
-  --color-ink-deep: oklch(0.243 0.008 95.4);
-  --color-cream: oklch(0.961 0.0083 91.5);
-  --color-cream-muted: oklch(0.82 0.0171 91.6);
+  --color-ink-deep: oklch(0.243 0.006 60);
+  --color-cream: oklch(0.961 0.006 60);
+  --color-cream-muted: oklch(0.82 0.012 60);
 
   /* Syntax: Ink & Jade at low chroma, each >= 4.5:1 on a code well except the comment. */
   --color-syntax-keyword: oklch(0.42 0.1 175);

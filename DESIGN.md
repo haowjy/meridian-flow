@@ -47,7 +47,7 @@ Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 - `card` — white: cards, menus, popovers, the composer, bubbles; border and shadow lift them.
 - `review` — one step below chrome `oklch(0.938 0.008 60)`, under draft chrome and the reviewing tab.
 
-Every neutral (surfaces and both inks) is hue 60 at chroma 0.006 or less. Hues toward
+Every neutral (surfaces and both inks) is hue 60 at chroma 0.006 or less; the review ground takes 0.008. Hues toward
 yellow-green (85–140) read olive at that chroma; keep neutrals off them.
 - `foreground` / `muted-foreground` — the two inks. A hint differs by size, never by a paler ink.
 - `ink-fill` / `ink-fill-strong` — foreground at 5% and 10%: hover and wells, then current, selected, open and pressed. Filled controls take them through the `interactive` layer.
