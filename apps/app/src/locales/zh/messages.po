@@ -1556,6 +1556,7 @@ msgstr ""
 #: src/features/chat/ChatView.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/mobile/MobileTopBar.tsx
+#: src/features/project/shell/MainHeader.tsx
 #: src/features/project/shell/MainModeSwitch.tsx
 msgid "Chat"
 msgstr ""
@@ -6586,6 +6587,7 @@ msgstr ""
 msgid "Wrap lines"
 msgstr ""
 
+#: src/features/project/shell/MainHeader.tsx
 #: src/features/project/shell/MainModeSwitch.tsx
 msgid "Write"
 msgstr ""
