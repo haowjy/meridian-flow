@@ -15,7 +15,8 @@ import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover
 import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { handleListKeys } from "@/components/ui/list-keys";
-import { PickerLine, PickerResults, PickerRow, PickerSection } from "@/components/ui/picker";
+import { ListLine, ListRow } from "@/components/ui/list-row";
+import { PickerResults, PickerSection } from "@/components/ui/picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MenuScratchSection } from "@/features/project/chat/ChatScratch";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
@@ -186,9 +187,9 @@ function FilesDropdown({
               label={t`Uploads`}
               state={
                 rows.length === 0 ? (
-                  <PickerLine>
+                  <ListLine density="menu" iconSlot>
                     <Trans>No files attached in this chat yet.</Trans>
-                  </PickerLine>
+                  </ListLine>
                 ) : null
               }
             >
@@ -231,35 +232,38 @@ function UploadRow({
   const drag = useReferenceDrag({ ref: { kind: "file", id: upload.documentId }, name });
   const failure = failed ? t`Couldn’t delete this file. Try again.` : null;
   return (
-    <PickerRow
-      onSelect={onInsert}
-      buttonProps={{ ...drag, "aria-label": t`Add ${name} to your message` }}
-      leading={<Icon aria-hidden className="text-muted-foreground" />}
-      title={name}
-      detail={
-        failure ? (
-          <span aria-hidden="true" className="text-destructive">
+    <li>
+      <ListRow
+        density="menu"
+        onOpen={onInsert}
+        controlProps={{ ...drag, "aria-label": t`Add ${name} to your message` }}
+        leading={<Icon aria-hidden className="text-muted-foreground" />}
+        title={name}
+        detail={
+          failure ? (
+            <span aria-hidden="true" className="text-destructive">
+              {failure}
+            </span>
+          ) : (
+            uploadTypeLabel(upload.fileType)
+          )
+        }
+        meta={failure ? null : attachedAgo(upload.attachedAt, now)}
+        actions={
+          canDelete ? (
+            <IconButton size="xs" label={t`Delete ${name}`} onClick={onDelete} className="mr-1">
+              <Trash2 className="size-3.5" aria-hidden />
+            </IconButton>
+          ) : null
+        }
+        // The failure replaces the row's second line; this announces it without adding layout.
+        below={
+          <span role="status" className="sr-only">
             {failure}
           </span>
-        ) : (
-          uploadTypeLabel(upload.fileType)
-        )
-      }
-      meta={failure ? null : attachedAgo(upload.attachedAt, now)}
-      actions={
-        canDelete ? (
-          <IconButton size="xs" label={t`Delete ${name}`} onClick={onDelete} className="mr-1">
-            <Trash2 className="size-3.5" aria-hidden />
-          </IconButton>
-        ) : null
-      }
-      // The failure replaces the row's second line; this announces it without adding layout.
-      below={
-        <span role="status" className="sr-only">
-          {failure}
-        </span>
-      }
-    />
+        }
+      />
+    </li>
   );
 }
 

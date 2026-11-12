@@ -8,13 +8,11 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { Folder } from "lucide-react";
 import { forwardRef, type KeyboardEvent, type ReactNode, useImperativeHandle, useRef } from "react";
 import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
 import { handleListKeys } from "@/components/ui/list-keys";
-import { role } from "@/components/ui/roles";
-import { cn } from "@/lib/utils";
+import { ListLine } from "@/components/ui/list-row";
 import { fileKindIcon } from "../context-file-icon";
 import { schemeIcon, schemeLabel, schemeLocation } from "../context-schemes";
 import type { FileSuggestion } from "./file-suggestions";
@@ -37,7 +35,7 @@ export const FileSuggestionList = forwardRef<
     onNavigateUp?: () => void;
     /** Browse mode: rows share one folder, so per-row parent labels are noise. */
     hideParents?: boolean;
-    emptyMessage?: string;
+    emptyMessage: string;
     /** Rendered above the rows, inside the roving-focus boundary. */
     header?: ReactNode;
   }
@@ -90,9 +88,9 @@ export const FileSuggestionList = forwardRef<
           ) : null}
           {suggestions.length === 0 ? (
             <li>
-              <p className={cn("px-2", role.emptyLine)}>
-                {emptyMessage ?? <Trans>No matching files</Trans>}
-              </p>
+              <ListLine density="menu" iconSlot>
+                {emptyMessage}
+              </ListLine>
             </li>
           ) : (
             suggestions.map((suggestion) => {

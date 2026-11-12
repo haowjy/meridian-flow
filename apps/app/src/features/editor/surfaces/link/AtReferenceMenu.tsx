@@ -3,7 +3,9 @@ import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import { ChevronLeft, ChevronRight, FilePlus2, FileText, Folder, Image } from "lucide-react";
 import { useSyncExternalStore } from "react";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
+import { ListLine } from "@/components/ui/list-row";
 import {
   closedSuggestionMenu,
   type ReferenceBrowserMeta,
@@ -47,6 +49,7 @@ export function ReferenceSuggestionMenu({
   const containerLabel =
     snapshot.meta?.containerLabel ??
     (snapshot.meta?.containerScheme ? schemeLabel(snapshot.meta.containerScheme) : null);
+  const query = snapshot.query.trim();
   if (!menu) return null;
   return (
     <SuggestionMenu
@@ -62,36 +65,36 @@ export function ReferenceSuggestionMenu({
       onDismiss={menu.dismiss}
       className="max-w-96"
       note={
-        snapshot.items.length === 0 || snapshot.meta?.canBacktrack ? (
-          <div className="flex flex-col gap-1">
-            {snapshot.meta?.canBacktrack ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="justify-start"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => menu.backtrack()}
-              >
-                <ChevronLeft aria-hidden />
-                <Trans>Back</Trans>
-              </Button>
-            ) : null}
-            {snapshot.items.length === 0 ? (
-              <span role="status" className="px-2 py-1">
-                {snapshot.meta?.loadFailed ? (
-                  <Trans>Couldn't load references.</Trans>
-                ) : snapshot.meta?.incomplete ? (
-                  <Trans>Loading references…</Trans>
-                ) : containerLabel ? (
-                  <Trans>No files in {containerLabel}.</Trans>
-                ) : (
-                  <Trans>No matching files</Trans>
-                )}
-              </span>
-            ) : null}
-          </div>
+        snapshot.meta?.canBacktrack ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => menu.backtrack()}
+          >
+            <ChevronLeft aria-hidden />
+            <Trans>Back</Trans>
+          </Button>
         ) : undefined
+      }
+      empty={
+        snapshot.meta?.loadFailed ? (
+          <InlineErrorRow message={<Trans>Couldn't load references.</Trans>} />
+        ) : (
+          <ListLine density="menu" iconSlot status>
+            {snapshot.meta?.incomplete ? (
+              <Trans>Loading references…</Trans>
+            ) : containerLabel ? (
+              <Trans>No files in {containerLabel}.</Trans>
+            ) : query ? (
+              <Trans>No files match “{query}”.</Trans>
+            ) : (
+              <Trans>No files yet.</Trans>
+            )}
+          </ListLine>
+        )
       }
       rows={snapshot.items.map((row, index) => ({
         key: row.rowId,

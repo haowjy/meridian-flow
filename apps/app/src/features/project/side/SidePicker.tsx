@@ -21,14 +21,8 @@ import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocument
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
-import {
-  Picker,
-  PickerLine,
-  PickerResults,
-  PickerRow,
-  PickerSearch,
-  PickerSection,
-} from "@/components/ui/picker";
+import { ListLine, ListRow } from "@/components/ui/list-row";
+import { Picker, PickerResults, PickerSearch, PickerSection } from "@/components/ui/picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { filterThreadsByTitle } from "@/features/chat/thread-switcher";
 import { displayThreadTitle } from "@/lib/thread-title";
@@ -250,7 +244,8 @@ function SidePickerLists({
     })),
   ).slice(0, RECENT_LIMIT);
 
-  const searching = query.trim().length > 0;
+  const search = query.trim();
+  const searching = search.length > 0;
   const found: Row[] = searching
     ? keep([
         ...matchFileSuggestions(
@@ -292,19 +287,21 @@ function SidePickerLists({
     if (moves) focusTriggerAfterPick(trigger.current);
   };
   const row = (item: Row) => (
-    <PickerRow
-      key={item.key}
-      current={sameItem(item.pick, shownNow)}
-      onSelect={() => choose(item.pick)}
-      leading={<ItemIcon pick={item.pick} name={item.name} />}
-      title={item.name}
-      meta={item.meta}
-      trailing={
-        side.source === "held" && sameItem(item.pick, shownNow) ? (
-          <Pin className="size-3.5 shrink-0 text-muted-foreground" aria-label={t`Held`} />
-        ) : null
-      }
-    />
+    <li key={item.key}>
+      <ListRow
+        density="menu"
+        current={sameItem(item.pick, shownNow)}
+        onOpen={() => choose(item.pick)}
+        leading={<ItemIcon pick={item.pick} name={item.name} />}
+        title={item.name}
+        meta={item.meta}
+        trailing={
+          side.source === "held" && sameItem(item.pick, shownNow) ? (
+            <Pin className="size-3.5 shrink-0 text-muted-foreground" aria-label={t`Held`} />
+          ) : null
+        }
+      />
+    </li>
   );
 
   return (
@@ -325,9 +322,13 @@ function SidePickerLists({
             label={t`Results`}
             state={
               found.length === 0 ? (
-                <PickerLine>
-                  <Trans>No matches</Trans>
-                </PickerLine>
+                <ListLine density="menu" iconSlot>
+                  {offersChats ? (
+                    <Trans>No documents or chats match “{search}”.</Trans>
+                  ) : (
+                    <Trans>No documents match “{search}”.</Trans>
+                  )}
+                </ListLine>
               ) : undefined
             }
           >
@@ -340,32 +341,35 @@ function SidePickerLists({
                 label={mainName ? t`For ${mainName}` : t`For this chat`}
                 state={
                   forThisState === "loading" ? (
-                    <PickerLine>
+                    <ListLine density="menu" iconSlot status>
                       <Trans>Loading…</Trans>
-                    </PickerLine>
+                    </ListLine>
                   ) : forThisState ? (
                     <InlineErrorRow
                       message={t`Couldn't load what goes with this.`}
                       onRetry={forThisState.failed}
                     />
                   ) : forThis.length === 0 && side.source !== "held" ? (
-                    <PickerLine>
+                    <ListLine density="menu" iconSlot>
                       <Trans>Nothing yet</Trans>
-                    </PickerLine>
+                    </ListLine>
                   ) : undefined
                 }
               >
                 {side.source === "held" ? (
-                  <PickerRow
-                    onSelect={() => {
-                      releaseSide();
-                      onDone();
-                    }}
-                    leading={
-                      <Undo2 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                    }
-                    title={mainName ? t`Follow ${mainName}` : t`Follow this chat`}
-                  />
+                  <li>
+                    <ListRow
+                      density="menu"
+                      onOpen={() => {
+                        releaseSide();
+                        onDone();
+                      }}
+                      leading={
+                        <Undo2 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                      }
+                      title={mainName ? t`Follow ${mainName}` : t`Follow this chat`}
+                    />
+                  </li>
                 ) : null}
                 {forThis.map(row)}
               </PickerSection>
@@ -374,13 +378,15 @@ function SidePickerLists({
               label={t`Recent documents`}
               state={
                 recentDocuments.length === 0 ? (
-                  <PickerLine>
-                    {recent.status === "loading" ? (
+                  recent.status === "loading" ? (
+                    <ListLine density="menu" iconSlot status>
                       <Trans>Loading…</Trans>
-                    ) : (
+                    </ListLine>
+                  ) : (
+                    <ListLine density="menu" iconSlot>
                       <Trans>None yet</Trans>
-                    )}
-                  </PickerLine>
+                    </ListLine>
+                  )
                 ) : undefined
               }
             >
@@ -391,22 +397,23 @@ function SidePickerLists({
                 label={t`Recent chats`}
                 state={
                   threadsFailed ? (
-                    <PickerLine>
-                      <Trans>Couldn't load chats</Trans>
-                    </PickerLine>
+                    <InlineErrorRow message={<Trans>Couldn't load chats.</Trans>} />
                   ) : threads === null ? (
-                    <PickerLine>
+                    <ListLine density="menu" iconSlot status>
                       <Trans>Loading…</Trans>
-                    </PickerLine>
+                    </ListLine>
                   ) : undefined
                 }
               >
-                <PickerRow
-                  current={shownNow?.kind === "chat" && shownNow.chatId === null}
-                  onSelect={() => choose({ kind: "chat", chatId: null })}
-                  leading={<Plus className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
-                  title={mainName ? t`New chat about ${mainName}` : t`New chat`}
-                />
+                <li>
+                  <ListRow
+                    density="menu"
+                    current={shownNow?.kind === "chat" && shownNow.chatId === null}
+                    onOpen={() => choose({ kind: "chat", chatId: null })}
+                    leading={<Plus className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
+                    title={mainName ? t`New chat about ${mainName}` : t`New chat`}
+                  />
+                </li>
                 {recentChats.map(row)}
               </PickerSection>
             ) : null}

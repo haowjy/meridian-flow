@@ -10,6 +10,7 @@ import { useWorkMutations } from "@/client/query/work-command-store";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { ListLine } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -181,9 +182,11 @@ export function WorkCollection({
             entries={entries.archived}
             row={row}
             empty={
-              <p className="px-2 py-2 text-sm text-muted-foreground">
-                <Trans>No archived Work.</Trans>
-              </p>
+              <div className="px-0.5">
+                <ListLine>
+                  <Trans>No archived Work.</Trans>
+                </ListLine>
+              </div>
             }
           />
         ) : (

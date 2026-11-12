@@ -2091,10 +2091,11 @@ msgid "Couldn't load agents."
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Couldn't load chats"
-msgstr ""
+#~ msgid "Couldn't load chats"
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/side/SidePicker.tsx
 msgid "Couldn't load chats."
 msgstr ""
 
@@ -3970,16 +3971,38 @@ msgstr ""
 msgid "No chats here yet."
 msgstr ""
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
+#~ msgid "No chats match “{query}”."
+#~ msgstr ""
+
+#: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "No chats match “{search}”."
 msgstr ""
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "No chats yet."
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "No column has been resized yet."
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+#~ msgid "No documents match “{query}”."
+#~ msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "No documents match “{search}”."
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+#~ msgid "No documents or chats match “{query}”."
+#~ msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "No documents or chats match “{search}”."
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
@@ -3994,6 +4017,11 @@ msgstr ""
 msgid "No files in {containerLabel}."
 msgstr ""
 
+#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
+msgid "No files match “{query}”."
+msgstr ""
+
+#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "No files yet."
 msgstr ""
@@ -4012,21 +4040,21 @@ msgid "No longer available"
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "No matches"
-msgstr ""
+#~ msgid "No matches"
+#~ msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
 msgid "No matches found before the search stopped"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-msgid "No matching chats"
-msgstr ""
+#~ msgid "No matching chats"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 #: src/features/project/context/file-suggestions/FileSuggestionList.tsx
-msgid "No matching files"
-msgstr ""
+#~ msgid "No matching files"
+#~ msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
 msgid "No model"
@@ -4050,11 +4078,15 @@ msgid "No scratch notes yet."
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-msgid "No Work matches your search."
-msgstr ""
+#~ msgid "No Work matches your search."
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work yet."
+msgstr ""
+
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+msgid "No Works match “{query}”."
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx

@@ -14,14 +14,8 @@ import { useThreadStore } from "@/client/stores";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
-import {
-  Picker,
-  PickerLine,
-  PickerResults,
-  PickerRow,
-  PickerSearch,
-  PickerSection,
-} from "@/components/ui/picker";
+import { ListLine, ListRow } from "@/components/ui/list-row";
+import { Picker, PickerResults, PickerSearch, PickerSection } from "@/components/ui/picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { PaneTitle } from "@/features/project/PaneTitle";
@@ -68,6 +62,7 @@ export function ThreadSwitcherPopover({
   const now = useThreadStore((state) => state.now);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const search = query.trim();
   const filteredThreads = filterThreadsByTitle(primaryThreads, query);
   const filteredIds = new Set(filteredThreads.map((thread) => thread.id));
   const visibleWorkItems = workItems
@@ -101,30 +96,32 @@ export function ThreadSwitcherPopover({
   const threadRow = (thread: ThreadListItem) => {
     const active = thread.id === activeThreadId;
     return (
-      <PickerRow
-        key={thread.id}
-        current={active ? "page" : false}
-        onSelect={() => selectThread(thread.id)}
-        title={displayThreadTitle(thread.title)}
-        meta={
-          <>
-            <span className="font-medium">
-              <span className="sr-only">
-                <Trans>Agent:</Trans>{" "}
-              </span>
-              {thread.agentName ?? "General"}
-            </span>{" "}
-            {relativeTime(thread.updatedAt, now)}
-          </>
-        }
-        actions={
-          active ? (
-            <IconButton size="xs" label={t`Rename chat`} onClick={startRename} className="mr-1">
-              <Pencil className="size-3.5" aria-hidden />
-            </IconButton>
-          ) : null
-        }
-      />
+      <li key={thread.id}>
+        <ListRow
+          density="menu"
+          current={active ? "page" : false}
+          onOpen={() => selectThread(thread.id)}
+          title={displayThreadTitle(thread.title)}
+          meta={
+            <>
+              <span className="font-medium">
+                <span className="sr-only">
+                  <Trans>Agent:</Trans>{" "}
+                </span>
+                {thread.agentName ?? "General"}
+              </span>{" "}
+              {relativeTime(thread.updatedAt, now)}
+            </>
+          }
+          actions={
+            active ? (
+              <IconButton size="xs" label={t`Rename chat`} onClick={startRename} className="mr-1">
+                <Pencil className="size-3.5" aria-hidden />
+              </IconButton>
+            ) : null
+          }
+        />
+      </li>
     );
   };
 
@@ -166,15 +163,18 @@ export function ThreadSwitcherPopover({
       >
         <Picker label={t`Switch chat`}>
           <PickerSection>
-            <PickerRow
-              leading={<Plus className="text-muted-foreground" aria-hidden />}
-              title={<Trans>New chat</Trans>}
-              onSelect={() => {
-                focusHandoff.current = true;
-                changeOpen(false);
-                void openNewChat();
-              }}
-            />
+            <li>
+              <ListRow
+                density="menu"
+                leading={<Plus className="text-muted-foreground" aria-hidden />}
+                title={<Trans>New chat</Trans>}
+                onOpen={() => {
+                  focusHandoff.current = true;
+                  changeOpen(false);
+                  void openNewChat();
+                }}
+              />
+            </li>
           </PickerSection>
           {showSearch ? (
             <PickerSearch
@@ -186,9 +186,9 @@ export function ThreadSwitcherPopover({
           ) : null}
           <PickerResults>
             {filteredThreads.length === 0 ? (
-              <PickerLine>
-                <Trans>No matching chats</Trans>
-              </PickerLine>
+              <ListLine density="menu">
+                {search ? <Trans>No chats match “{search}”.</Trans> : <Trans>No chats yet.</Trans>}
+              </ListLine>
             ) : null}
             {visibleWorkItems.map((group) => (
               <PickerSection key={group.id} label={showGroupHeaders ? group.name : undefined}>

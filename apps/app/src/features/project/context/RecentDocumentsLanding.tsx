@@ -29,7 +29,6 @@ import { editorColumnChrome } from "@/features/editor/editor-column";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { cn } from "@/lib/utils";
 import { RecencyGroupedList } from "../RecencyGroupedList";
-import { RowIcon } from "../RuledList";
 import { relativeTime } from "../relative-time";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { projectAddressHref } from "../routing/project-address";
@@ -183,7 +182,7 @@ function RecentDocumentRow({
         href={href ?? undefined}
         onOpen={() => (href ? void router.navigate({ href }) : onOpen(item))}
         controlProps={drag}
-        leading={<RowIcon icon={fileKindIcon(item.name)} />}
+        icon={fileKindIcon(item.name)}
         title={item.name}
         detail={
           item.address.kind === "document"

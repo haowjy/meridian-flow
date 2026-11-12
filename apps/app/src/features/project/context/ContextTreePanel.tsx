@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import type { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { ListLine } from "@/components/ui/list-row";
 import { destinationOf, isImportScheme } from "@/features/import/destination";
 import {
   type PickKind,
@@ -18,7 +19,7 @@ import {
 import { canPickFolders } from "@/features/import/SelectionPicker";
 import { rowId, rowKind } from "@/features/import/tree-rows";
 import { useImportedTree } from "@/features/import/use-imported-tree";
-import { type SourceDrop, SourceHint, SourcePane } from "../shell/sidebar/SourcePane";
+import { type SourceDrop, SourcePane } from "../shell/sidebar/SourcePane";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
 import { schemeAllowsCreation, schemeLabel } from "./context-schemes";
@@ -270,13 +271,17 @@ export function ContextTreePanel({
       {isError ? (
         <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
       ) : !isComplete || !importedTree ? (
-        <SourceHint status>
-          <Trans>Loading files…</Trans>
-        </SourceHint>
+        <div className="px-2">
+          <ListLine iconSlot status>
+            <Trans>Loading files…</Trans>
+          </ListLine>
+        </div>
       ) : empty && !creating ? (
-        <SourceHint>
-          <Trans>No files yet.</Trans>
-        </SourceHint>
+        <div className="px-2">
+          <ListLine iconSlot>
+            <Trans>No files yet.</Trans>
+          </ListLine>
+        </div>
       ) : null}
     </SourcePane>
   );

@@ -1,9 +1,7 @@
 import { type HTMLAttributes, type ReactNode, useRef } from "react";
 import { ListSectionHeader } from "@/components/ui/list-section";
-import { role } from "@/components/ui/roles";
 import { dragPayloadKind } from "@/core/editor/landing/drag-payload";
 import { dragEdgeScroll } from "@/core/editor/landing/edge-scroll";
-import { cn } from "@/lib/utils";
 import { DropRegion } from "../../context/tree-drop/DropRegion";
 import type { TreeDropState } from "../../context/tree-drop/tree-drop";
 
@@ -56,24 +54,5 @@ export function SourcePane({
         </div>
       </div>
     </DropRegion>
-  );
-}
-
-/** A line standing in for a list's rows: loading, empty, or what the list needs first. */
-export function SourceHint({
-  children,
-  status = false,
-}: {
-  children: ReactNode;
-  status?: boolean;
-}) {
-  return (
-    <p
-      role={status ? "status" : undefined}
-      aria-live={status ? "polite" : undefined}
-      className={cn("pr-2 pl-3.5 leading-snug", role.emptyLine)}
-    >
-      {children}
-    </p>
   );
 }

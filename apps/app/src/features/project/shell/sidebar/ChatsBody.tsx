@@ -14,14 +14,13 @@ import { AskOnce } from "@/components/app/AskOnce";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DropdownMenuItem, useMenuActionDispatch } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
-import { ListRow } from "@/components/ui/list-row";
+import { ListLine, ListRow } from "@/components/ui/list-row";
 import { ListSection } from "@/components/ui/list-section";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { role } from "@/components/ui/roles";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { displayThreadTitle } from "@/lib/thread-title";
-import { RowIcon } from "../../context/ContextTreeRows";
 import { PaneHeaderActionButton } from "../../context/pane-header-action";
 import { useSectionFold } from "../../context/use-tree-expansion";
 import { SettledSearchField } from "../../SearchField";
@@ -29,7 +28,7 @@ import { TitleEditSlot } from "../TitleEditSlot";
 import { useChatDeleteState } from "./ChatDeleteProvider";
 import type { ChatDeleteNotice, ChatDeleteRefusal, ChatDeletes } from "./chat-deletes";
 import { groupChats, type RowState } from "./chat-groups";
-import { SourceHint, SourcePane } from "./SourcePane";
+import { SourcePane } from "./SourcePane";
 
 type Feed = ReturnType<typeof useProjectChatFeed>;
 const chatSelector = (id: string) => `[data-chat-id="${CSS.escape(id)}"]`;
@@ -197,9 +196,11 @@ export function ChatsBody({
             <SearchResults search={search} rows={rows} />
           </ListSection>
         ) : threads === null ? (
-          <SourceHint status>
-            <Trans>Loading…</Trans>
-          </SourceHint>
+          <div className="px-2">
+            <ListLine status>
+              <Trans>Loading…</Trans>
+            </ListLine>
+          </div>
         ) : (
           <>
             {groups.pinned.length > 0 ? (
@@ -217,9 +218,11 @@ export function ChatsBody({
               <ListSection label={workName(scopeId ?? "")}>{listed.map(withHelpers)}</ListSection>
             ) : null}
             {scopeEmpty ? (
-              <SourceHint>
-                <Trans>No chats here yet.</Trans>
-              </SourceHint>
+              <div className="px-2">
+                <ListLine>
+                  <Trans>No chats here yet.</Trans>
+                </ListLine>
+              </div>
             ) : null}
             {groups.otherWorks.length > 0 ? (
               <ListSection label={t`Other Works`}>
@@ -227,7 +230,7 @@ export function ChatsBody({
                   <ListRow
                     key={other.workId}
                     onOpen={() => onShowWork(other.workId)}
-                    leading={<RowIcon icon={Layers} />}
+                    icon={Layers}
                     title={workName(other.workId)}
                     meta={
                       other.needsYou > 0 ? (
@@ -269,9 +272,9 @@ function SearchResults({ search, rows }: { search: string; rows: RowContext }) {
 function FeedRows({ feed, rows, empty }: { feed: Feed; rows: RowContext; empty: ReactNode }) {
   if (feed.isPending)
     return (
-      <SourceHint status>
+      <ListLine status>
         <Trans>Loading…</Trans>
-      </SourceHint>
+      </ListLine>
     );
   if (feed.isError && !feed.data)
     return (
@@ -281,7 +284,7 @@ function FeedRows({ feed, rows, empty }: { feed: Feed; rows: RowContext; empty: 
       />
     );
   if (!feed.items.length && !feed.hasNextPage && !feed.isPlaceholderData)
-    return empty ? <SourceHint>{empty}</SourceHint> : null;
+    return empty ? <ListLine>{empty}</ListLine> : null;
   return (
     <div aria-busy={feed.isFetching || undefined}>
       {feed.items.map((item) => (
