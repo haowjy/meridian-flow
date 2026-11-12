@@ -18,12 +18,15 @@ leaf + jade “Choose a home” chip), never separate chrome; the editor banner
 slot below the toolbar belongs to draft chrome alone, and identity chrome must
 never occupy it again (structural separation, 2026-07-17).
 
-A review's controls take a line of their own above the toolbar (the review line), one rule for
-main and the side: only a line too narrow for them collapses labels to icons, hides the stepper
-count, then collapses Apply to its icon (`fitReviewLine`, `document-identity-row.css`). A
-Discard's notice takes that line when the Discard ends the review, and shares it, wrapping,
-when it does not; it never sits in the toolbar row, which a narrow pane can't widen. In the
-notice only the document's name shortens: the verb and Undo always show. The phone's review
+While a draft is reviewed, the toolbar row is the draft row (owner, 2026-11-12): the review's
+controls join the version chip at the row's end, and the row takes the draft ground
+(`--color-review`), as main's tab and the side's header do. One rule for main and the side.
+The formatting controls give way first: they start-align and scroll in what's left. Then
+`fitReviewLine` collapses labels to icons, hides the stepper count and collapses Apply to its
+icon (`document-identity-row.css`); only past that does the row wrap and grow. A Discard's
+notice takes the controls' place on that row when the Discard ends the review, and shares it
+when it doesn't. In the notice only the document's name shortens: the verb and Undo always
+show. The phone's review
 header gives the notice a row of its own under its first row. Coarse pointers give each
 control a 44px box. Renaming and
 moving a homed document belong to the lists (Files, Scratch section, phone

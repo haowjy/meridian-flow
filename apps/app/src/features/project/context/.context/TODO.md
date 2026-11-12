@@ -16,4 +16,4 @@
 - Review the inherited session-authority exception that terminalizes adopted local-origin lineage from availability; it is explicitly out of scope for PR #754.
 
 - Router scroll restoration (`scrollRestoration: true` in `src/router.tsx`) tracks every element that scrolls by its DOM path and writes its old offset back after each navigation, shell scrollers included (file tree, sidebar). Main's tab strip re-reveals its active tab after each render (`useActiveTabVisibility` in `shell/MainTabStrip.tsx`); the other shell scrollers are not checked. If one misbehaves, decide whether shell chrome should be outside restoration altogether rather than fixing each.
-- `document-identity-bar.md` still describes path crumbs (`DocumentPath.tsx`) that the identity row no longer renders; rewrite its first sections to what the bar shows now (state chips, the review line).
+- `document-identity-bar.md` still describes path crumbs (`DocumentPath.tsx`) that the identity row no longer renders; rewrite its first sections to what the bar shows now (state chips, the draft row).
