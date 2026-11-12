@@ -29,9 +29,28 @@ What every instance does, and why:
 - **`uncertain` is resolved by asking again**, by replaying the same request or by looking the
   identity up, never by guessing. Until it resolves, the command stays and whatever is queued
   behind it waits.
-- **A retry after a real refusal is a new command** with a new identity; a retry of an
-  unanswered one keeps the old identity.
+- **A retry of an unanswered command keeps its identity**, so the server deduplicates.
 - **The server stores the answer** so a replay gets the same one.
+
+## Where the instances differ
+
+The instances agree on the rules above and on little else. Before copying one, check which
+of these it does:
+
+| Instance | Survives a reload | Retries by itself | Retry after a refusal |
+|---|---|---|---|
+| Chat submission | Yes, in the account's journal | Yes, the driver replays | New submission id |
+| Creation record | No, memory only | No; one lookup, then `failed` | Same id |
+| Import creation | No, memory only | No | Same import id |
+| Apply click command | No, memory only | Yes: 1, 2, 4 seconds, then `stalled` | None: a final refusal settles it |
+| Queued control | No, memory only | No | Same id; a refusal and no answer are both `failed` |
+| Hand-back and Stop | Yes, in the host's command store | No; Retry or resume | None: a refusal drops the command |
+| Server hold | Yes, in the replica | Yes, by the namespace runner | Same id after a refused create; a new id once `spent` |
+
+Two of these are weaker than the pattern. A creation record that gets no answer and whose
+one lookup finds nothing becomes `failed`, although the create may still land. A queued
+control does not tell a refusal from no answer; both are `failed`, and Retry resends under
+the same id.
 
 ## Instances
 
