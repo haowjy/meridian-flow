@@ -114,11 +114,11 @@ export function WorkCollection({
         const { name } = work;
         return (
           <ActionNotice
-            sentence={t`Deleted ${name}`}
+            sentence={(name) => t`Deleted ${name}`}
             name={name}
             action={{ label: <Trans>Undo</Trans>, onClick: () => deletion.undo(work.id) }}
             onDismiss={() => deletion.dismiss(work.id)}
-            failure={failure ? workFailureLine(failure) : null}
+            failure={failure ? workFailureLine(failure, { name }) : null}
           />
         );
       }

@@ -335,7 +335,7 @@ function DeletedLine({
   return (
     <ActionNotice
       data-chat-delete-notice
-      sentence={t`Deleted ${title}`}
+      sentence={(title) => t`Deleted ${title}`}
       name={title}
       action={{
         label: <Trans>Undo</Trans>,

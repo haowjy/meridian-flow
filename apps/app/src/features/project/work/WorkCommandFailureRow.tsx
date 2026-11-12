@@ -30,28 +30,45 @@ export function WorkCommandFailureRow({
   /** Replaces the plain retry, to add what else Retry does there. */
   onRetry?: () => void;
 }) {
-  const line = workFailureLine(failure, onRetry);
+  const line = workFailureLine(failure, { onRetry });
   return <InlineErrorRow {...line} className={line.onRetry ? undefined : "px-0 pt-0 pb-2"} />;
 }
 
-/** What the failure line says and offers: Retry only where it can help. */
-export function workFailureLine(failure: WorkRowFailure, onRetry?: () => void) {
-  const refusal = failure.operation === "restore" ? restoreRefusal(failure.error) : null;
+/**
+ * What the failure line says and offers: Retry only where it can help. `name` is for a line
+ * shown where the Work itself no longer is (the Work list's Undo line), so it names the Work.
+ */
+export function workFailureLine(
+  failure: WorkRowFailure,
+  { onRetry, name }: { onRetry?: () => void; name?: string } = {},
+) {
+  const refusal = failure.operation === "restore" ? restoreRefusal(failure.error, name) : null;
   if (refusal) return { message: refusal, onDismiss: failure.dismiss };
   return {
-    message: messages[failure.operation](),
+    message:
+      name && failure.operation === "restore"
+        ? t`Couldn’t restore ${name}`
+        : messages[failure.operation](),
     onRetry: onRetry ?? (() => void failure.retry()),
     onDismiss: failure.dismiss,
   };
 }
 
 /** A restore the server will refuse again as it is: Retry can't help. */
-function restoreRefusal(error: Error): ReactNode {
+function restoreRefusal(error: Error, name?: string): ReactNode {
   const status = error instanceof HttpResponseError ? error.status : null;
   if (status === 409)
-    return <Trans>Another Work now has this name. Rename that Work, then restore this one.</Trans>;
+    return name ? (
+      <Trans>Another Work is now named {name}. Rename that Work, then restore this one.</Trans>
+    ) : (
+      <Trans>Another Work now has this name. Rename that Work, then restore this one.</Trans>
+    );
   if (status === 410)
-    return (
+    return name ? (
+      <Trans>
+        {name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored.
+      </Trans>
+    ) : (
       <Trans>
         This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored.
       </Trans>

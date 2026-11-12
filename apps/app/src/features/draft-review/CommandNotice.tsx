@@ -140,12 +140,21 @@ export function DraftNoticeLine({
     });
   };
   const { subject } = notice;
-  const sentence =
+  const { sentence, failedUndo } =
     subject.kind === "drafts"
-      ? t`${subject.count} drafts discarded.`
+      ? {
+          sentence: t`${subject.count} drafts discarded.`,
+          failedUndo: t`Couldn't bring back ${subject.count} drafts.`,
+        }
       : subject.kind === "draft"
-        ? t`Draft of ${subject.name} discarded.`
-        : t`Change to ${subject.name} discarded.`;
+        ? {
+            sentence: (name: string) => t`Draft of ${name} discarded.`,
+            failedUndo: t`Couldn't bring back the draft of ${subject.name}.`,
+          }
+        : {
+            sentence: (name: string) => t`Change to ${name} discarded.`,
+            failedUndo: t`Couldn't bring back the change to ${subject.name}.`,
+          };
   const failed = notice.status === "failed";
   return (
     <ActionNotice
@@ -154,11 +163,7 @@ export function DraftNoticeLine({
       name={subject.kind === "drafts" ? null : subject.name}
       action={{ label: <Trans>Undo</Trans>, onClick: undo, pending: notice.status === "undoing" }}
       onDismiss={notice.dismiss}
-      failure={
-        failed
-          ? { message: t`Couldn't undo. Try again.`, onRetry: undo, onDismiss: notice.dismiss }
-          : null
-      }
+      failure={failed ? { message: failedUndo, onRetry: undo, onDismiss: notice.dismiss } : null}
       className={className}
     />
   );
