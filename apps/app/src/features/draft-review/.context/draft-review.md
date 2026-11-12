@@ -166,7 +166,7 @@ the owner's notice holds. Editor Discard is synchronous.
 owner key: the latest Discard with its Undo, or the latest Apply's facts. A newer Apply or
 Discard by the owner replaces it; there is no timer; a reload starts empty. Each notice records
 the surface it was made on (Changes list, a chat's strip, a document's band) and shows only
-there; a band notice shows on that document's review line (the draft row, its toolbar row, in place of the
+there; a band notice shows on that document's review line (above the toolbar, in place of the
 review controls a whole-draft Discard removed; the phone's review header gives it a row), or on
 the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot (above a
 removed-documents notice). Only the document's name shortens in a notice; its verb and Undo

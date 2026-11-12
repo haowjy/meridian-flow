@@ -18,7 +18,6 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { Eye, EyeOff, List } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
@@ -262,9 +261,7 @@ function ChangeListPopover({ header }: { header: ReviewHeaderModel }) {
 }
 
 /**
- * Show changes: an eye and its name in a wide row, the eye alone (named by
- * tooltip and `aria-label`) in a narrow one. One switch either way, so the
- * accessible name and state never depend on the width.
+ * Show changes: the eye alone, named by tooltip and `aria-label`.
  */
 function ShowChangesToggle({
   visible,
@@ -285,14 +282,11 @@ function ShowChangesToggle({
           aria-label={name}
           onClick={() => onChange(!visible)}
           className={cn(
-            "focus-ring inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-ink-fill hover:text-foreground",
+            "focus-ring inline-flex size-6 shrink-0 items-center justify-center rounded-md text-xs transition-colors hover:bg-ink-fill hover:text-foreground",
             visible ? "text-foreground" : "text-muted-foreground",
           )}
         >
           <Icon aria-hidden className="size-3.5" />
-          <span className="identity-show-label">
-            <Trans>Show changes</Trans>
-          </span>
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom">{name}</TooltipContent>

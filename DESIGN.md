@@ -173,7 +173,8 @@ Core shell expectations:
   in quiet ink, then Apply as the filled jade button, as words or as ×/✓. Discard is
   never red and never a trash icon; those mean Delete. One name per scope: Apply and
   Discard for a change, Apply draft and Discard draft for a document, Apply all and
-  Discard all for everything.
+  Discard all for everything. A document's pair shows the bare verb, since the Draft chip
+  beside it names the scope; the full name is its tooltip and accessible name.
 - What a command did, with its Undo, is a line where it happened: `ActionNotice`
   ("Deleted Chapter 3 · Undo · ×"), quiet `text-xs`, staying until the next action or
   Dismiss. An Undo that failed takes its place as `InlineErrorRow`.

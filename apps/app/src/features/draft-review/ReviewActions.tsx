@@ -9,10 +9,10 @@
  * A Discard with no Undo asks once (`discardAsks`): its question takes the pair's place until
  * the writer keeps the draft or confirms. An undoable Discard never asks.
  *
- * `density` picks the form: the scope's name or ×/✓. "Apply draft" acts on the whole draft
- * and only the review header says it; the bare verb acts on what is named beside it (a
- * change, or the changes a row counts), and `labels` then names that scope in full for a
- * screen reader. Leave `density` unset where
+ * `density` picks the form: the verb or ×/✓. A change's and a draft's actions show the bare
+ * verb, since what they act on is named beside them (the change, the Draft chip, the row);
+ * the scope's full name ("Discard draft") is the accessible name and the tooltip, and
+ * `labels` replaces it where the row names more. Leave `density` unset where
  * a container measures its own fit and sets `data-density` on `[data-review-actions]`
  * itself (the identity row's ladder); React then never resets that attribute.
  */
@@ -32,6 +32,12 @@ export function reviewActionLabel(action: "apply" | "discard", scope: ReviewScop
     return scope === "change" ? t`Apply` : scope === "document" ? t`Apply draft` : t`Apply all`;
   }
   return scope === "change" ? t`Discard` : scope === "document" ? t`Discard draft` : t`Discard all`;
+}
+
+/** The visible word: the verb alone, except "Apply all" and "Discard all", whose scope is the word. */
+function reviewActionVerb(action: "apply" | "discard", scope: ReviewScope): string {
+  if (scope === "all") return reviewActionLabel(action, scope);
+  return action === "apply" ? t`Apply` : t`Discard`;
 }
 
 /**
@@ -139,8 +145,8 @@ export function ReviewActions({
       >
         <ReviewActionButton
           density={density}
-          name={reviewActionLabel("discard", scope)}
-          label={labels?.discard}
+          name={reviewActionVerb("discard", scope)}
+          label={labels?.discard ?? reviewActionLabel("discard", scope)}
           icon={<X aria-hidden />}
           variant="quiet"
           touch={touch}
@@ -154,8 +160,8 @@ export function ReviewActions({
         {onApply ? (
           <ReviewActionButton
             density={density}
-            name={reviewActionLabel("apply", scope)}
-            label={labels?.apply}
+            name={reviewActionVerb("apply", scope)}
+            label={labels?.apply ?? reviewActionLabel("apply", scope)}
             icon={
               applying ? <Loader2 aria-hidden className="animate-spin" /> : <Check aria-hidden />
             }
@@ -174,7 +180,7 @@ export function ReviewActions({
 /**
  * One action's form. A set `density` renders that form alone; unset, both render and
  * the container's `data-density` shows one. The full name is the accessible name
- * throughout, and the tooltip carries it whenever the full name isn't on screen.
+ * throughout, and the tooltip carries it whenever the words on screen don't say all of it.
  */
 function ReviewActionButton({
   density,
@@ -202,16 +208,19 @@ function ReviewActionButton({
   const fullRef = useRef<HTMLSpanElement>(null);
   const [tooltip, setTooltip] = useState(false);
   const renders = (form: ReviewDensity) => density === undefined || density === form;
+  const accessibleName = label ?? name;
   return (
     <Tooltip
       open={tooltip}
-      onOpenChange={(open) => setTooltip(open && fullRef.current?.offsetParent == null)}
+      onOpenChange={(open) =>
+        setTooltip(open && (accessibleName !== name || fullRef.current?.offsetParent == null))
+      }
     >
       <TooltipTrigger asChild>
         <Button
           variant={variant === "row" ? "ghost" : variant}
           size="xs"
-          aria-label={label ?? name}
+          aria-label={accessibleName}
           disabled={disabled}
           onClick={onClick}
           className={cn(
@@ -236,7 +245,7 @@ function ReviewActionButton({
           ) : null}
         </Button>
       </TooltipTrigger>
-      <TooltipContent>{name}</TooltipContent>
+      <TooltipContent>{accessibleName}</TooltipContent>
     </Tooltip>
   );
 }

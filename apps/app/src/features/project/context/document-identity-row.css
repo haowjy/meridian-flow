@@ -1,34 +1,3 @@
-/* While a draft is reviewed (or its Discard notice shows), the toolbar row is the draft row:
-   the draft ground, the state at the row's end, and the formatting controls start-aligned and
-   scrolling in what's left. */
-[data-toolbar-row]:has([data-review-line]) {
-  height: auto;
-  min-height: 2rem;
-  background-color: var(--color-review);
-  box-shadow: inset 0 -1px var(--color-border-subtle);
-}
-/* Past the last label it gives up, the state wraps rather than run under the toolbar. */
-[data-review-line][data-wrap] {
-  flex-wrap: wrap;
-}
-[data-review-line] {
-  justify-content: flex-end;
-  row-gap: 2px;
-  padding-block: 2px;
-}
-[data-toolbar-row]:has([data-review-line]) > :first-child {
-  flex-grow: 0;
-}
-/* The formatting controls give way first; the state shrinks (and wraps) only once they have. */
-[data-toolbar-row]:has([data-review-line]) > [data-toolbar-scroller] {
-  flex-shrink: 1000;
-}
-[data-toolbar-row]:has([data-review-line]) > [data-toolbar-trailing] {
-  flex: 0 1 auto;
-  min-width: 0;
-  margin-left: auto;
-}
-
 /* The review line's give-up ladder for a line too narrow for the review controls
    (levels 1 to 4, set by fitReviewLine in DocumentIdentityBar). */
 [data-document-identity-row] {
@@ -37,9 +6,6 @@
   z-index: 20;
 }
 /* The review actions' own form (their names, then icons) is set by fitReviewLine. */
-[data-review-line]:not([data-collapse="0"]) .identity-show-label {
-  display: none;
-}
 [data-review-line]:not([data-collapse="0"]) .identity-count-short {
   display: inline;
 }

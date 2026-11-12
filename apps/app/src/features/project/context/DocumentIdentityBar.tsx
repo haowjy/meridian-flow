@@ -8,7 +8,7 @@ import "./document-identity-row.css";
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { OpenDocument } from "@/client/stores";
@@ -142,80 +142,85 @@ export function DocumentIdentityBar({
   const repairable = location.provisional && !readOnly;
   const manuscriptState = useManuscriptState(projectId, document);
   const notice = useDocumentNotice(projectId, document.documentId);
-  // The row mounts in place, then again in the toolbar once its slot is up: the focus follows
-  // whichever element is there.
-  const [rowElement, setRowElement] = useState<HTMLDivElement | null>(null);
-  const lineFocus = useMemo(() => ({ current: rowElement }), [rowElement]);
+  const lineFocus = useRef<HTMLDivElement>(null);
   useFocusSuccession(lineFocus);
 
-  // Reviewing a draft is a mode, not a notice: its controls join the version chip on the
-  // toolbar row, which takes the draft ground while they're there (document-identity-row.css).
-  // A Discard's notice takes the controls' place on that row when it ends the review.
-  const reviewRow = useCallback((row: HTMLDivElement | null) => {
-    setRowElement(row);
-    return row ? fitReviewLine(row) : undefined;
-  }, []);
+  // Reviewing a draft is a mode, not a notice: its controls take a line of their own
+  // above the toolbar, and a Discard's notice takes that line when it ends the review (or
+  // shares it, wrapping, when it does not). The version chip and other state stay on the
+  // toolbar row.
   const renderState = (version: ReactNode, controls: ReactNode) => (
-    <DocumentStatePortal>
-      {/* Always mounted, so a Discard's focus follows to its notice's Undo and an Undo's back
-          to the controls. */}
-      <div
-        ref={reviewRow}
-        data-document-identity-row
-        data-review-line={controls || notice ? "" : undefined}
-        className="flex min-w-0 shrink items-center gap-1 text-sm text-muted-foreground"
-      >
-        {notice ? <DraftNoticeLine notice={notice} className="min-w-0 flex-auto px-0" /> : null}
-        {placementOpen ? (
-          <IdentityPlacementField
-            projectId={projectId}
-            editorWorkId={editorWorkId}
-            document={document}
-            location={location}
-            failure={identityFailure}
-            commit={commit}
-            onExit={(reason) => {
-              setFieldOpen(false);
-              if (repair) setDismissedRepairId(repair.intentId);
-              if (reason === "escape") focusEditorProse(document.documentId);
-            }}
-            onOpenExisting={onOpenExisting}
-          />
+    <>
+      {/* Mounted while the line comes and goes, so a Discard's focus follows to its notice's
+          Undo and an Undo's back to the controls. */}
+      <div ref={lineFocus} className="contents">
+        {controls || notice ? (
+          // 34px with its border, the height of the chat's draft dock and edits receipt.
+          <div
+            ref={fitReviewLine}
+            data-review-line
+            className="flex min-h-[2.125rem] shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-border-subtle bg-review px-4 py-1 text-sm text-muted-foreground"
+          >
+            {notice ? <DraftNoticeLine notice={notice} className="flex-auto px-0" /> : null}
+            {controls}
+          </div>
         ) : null}
-        <ManuscriptStateSlot state={manuscriptState} />
-        {repair && !placementOpen ? (
-          repairable ? (
-            <button
-              type="button"
-              className="focus-ring flex min-w-0 text-left"
-              onClick={() => {
-                setDismissedRepairId(null);
-                setFieldOpen(true);
-              }}
-            >
-              <NamespaceFailureMark failure={repair.kind} labelled />
-            </button>
-          ) : (
-            <NamespaceFailureMark
-              failure={repair.kind}
-              message={repair.kind === "create" ? undefined : passiveFailure}
-            />
-          )
-        ) : null}
-        <IdentityChipSlot
-          projectId={projectId}
-          document={document}
-          show={showChip && !placementOpen}
-          onChooseHome={() => setFieldOpen(true)}
-        />
-        {/* The version chip holds one place: Live, or Draft while reviewing. */}
-        {version ??
-          (reviewItemKey || reviewPending ? null : (
-            <DocumentVersionMenu projectId={projectId} document={document} />
-          ))}
-        {controls}
       </div>
-    </DocumentStatePortal>
+      <DocumentStatePortal>
+        <div
+          data-document-identity-row
+          className="flex min-w-0 shrink items-center gap-1 text-sm text-muted-foreground"
+        >
+          {placementOpen ? (
+            <IdentityPlacementField
+              projectId={projectId}
+              editorWorkId={editorWorkId}
+              document={document}
+              location={location}
+              failure={identityFailure}
+              commit={commit}
+              onExit={(reason) => {
+                setFieldOpen(false);
+                if (repair) setDismissedRepairId(repair.intentId);
+                if (reason === "escape") focusEditorProse(document.documentId);
+              }}
+              onOpenExisting={onOpenExisting}
+            />
+          ) : null}
+          <ManuscriptStateSlot state={manuscriptState} />
+          {repair && !placementOpen ? (
+            repairable ? (
+              <button
+                type="button"
+                className="focus-ring flex min-w-0 text-left"
+                onClick={() => {
+                  setDismissedRepairId(null);
+                  setFieldOpen(true);
+                }}
+              >
+                <NamespaceFailureMark failure={repair.kind} labelled />
+              </button>
+            ) : (
+              <NamespaceFailureMark
+                failure={repair.kind}
+                message={repair.kind === "create" ? undefined : passiveFailure}
+              />
+            )
+          ) : null}
+          <IdentityChipSlot
+            projectId={projectId}
+            document={document}
+            show={showChip && !placementOpen}
+            onChooseHome={() => setFieldOpen(true)}
+          />
+          {/* The version chip holds one place: Live, or Draft while reviewing. */}
+          {version ??
+            (reviewItemKey || reviewPending ? null : (
+              <DocumentVersionMenu projectId={projectId} document={document} />
+            ))}
+        </div>
+      </DocumentStatePortal>
+    </>
   );
   return (
     <DraftReviewBand
@@ -323,35 +328,21 @@ function focusEditorProseOnceShown(documentId: string, leaving: boolean) {
  * document-identity-row.css), only while its controls don't fit the line's width.
  */
 function fitReviewLine(line: HTMLDivElement) {
-  // The formatting controls scroll before a label goes: the state may take the whole row.
-  const row = line.closest<HTMLElement>("[data-toolbar-row]") ?? line;
   const fit = () => {
-    const cell = line.closest<HTMLElement>("[data-toolbar-trailing]");
-    // The cell's own padding, and the scroller's, which stays when its controls have scrolled away.
-    const padding = (element: Element | null | undefined) => {
-      if (!element) return 0;
-      const style = getComputedStyle(element);
-      return parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-    };
-    const available = row.clientWidth - padding(cell) - padding(cell?.previousElementSibling);
-    const actions = line.querySelector<HTMLElement>("[data-review-actions]");
-    // Measured at its one-line width: wrapping is what's left once every label has gone.
-    delete line.dataset.wrap;
-    line.style.width = "max-content";
-    line.style.flexShrink = "0";
-    const fits = () => line.getBoundingClientRect().width <= available;
+    const controls = line.querySelector<HTMLElement>("[data-draft-review-controls]");
+    const style = getComputedStyle(line);
+    const available =
+      line.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const actions = controls?.querySelector<HTMLElement>("[data-review-actions]");
     for (let level = 0; level < ACTIONS_DENSITY.length; level++) {
       line.dataset.collapse = String(level);
       if (actions) actions.dataset.density = ACTIONS_DENSITY[level];
-      if (fits()) break;
+      if (!controls || controls.getBoundingClientRect().width <= available) break;
     }
-    if (!fits()) line.dataset.wrap = "";
-    line.style.width = "";
-    line.style.flexShrink = "";
   };
   fit();
   const resize = new ResizeObserver(fit);
-  resize.observe(row);
+  resize.observe(line);
   const mutations = new MutationObserver(fit);
   mutations.observe(line, { childList: true, subtree: true, characterData: true });
   return () => {
