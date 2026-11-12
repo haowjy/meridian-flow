@@ -7,9 +7,8 @@ export type SectionFold = { open: boolean; onToggle: (open: boolean) => void };
 
 /**
  * The name above a list or a group of its rows, the one heading every sidebar list uses, as tall
- * as a row. A plain heading's text sits on the rows' text edge; a fold's chevron leads, in the
- * slot a row's icon takes, so its label lines up with titles that follow an icon. Actions show on
- * hover or focus (`.rail-pane-actions`, globals.css).
+ * as a row. A plain heading's text, and a fold's leading chevron, sit on the rows' text edge.
+ * Actions show on hover or focus (`.rail-pane-actions`, globals.css).
  */
 export function ListSectionHeader({
   label,
@@ -58,12 +57,12 @@ export function ListSectionHeader({
               if (event.key === "ArrowRight") fold.onToggle(true);
             }}
             className={cn(
-              "focus-ring flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md px-1.5 text-left transition-colors hover:text-foreground focus-visible:text-foreground motion-reduce:transition-none coarse:min-h-11",
+              "focus-ring flex min-w-0 flex-1 items-center gap-1 self-stretch rounded-md px-1.5 text-left transition-colors hover:text-foreground focus-visible:text-foreground motion-reduce:transition-none coarse:min-h-11",
               // Preflight resets a button's text-transform; the label's case needs restating.
               look,
             )}
           >
-            <span className="flex w-4 shrink-0 justify-center">
+            <span className="flex w-3 shrink-0 justify-center">
               <DisclosureMark open={fold.open} />
             </span>
             {name}
