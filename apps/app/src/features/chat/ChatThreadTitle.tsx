@@ -29,8 +29,6 @@ type ChatThreadTitleProps = {
   projectId: string;
   /** `null` — the empty New chat: the switcher reads "New chat" and has no rename. */
   threadId: string | null;
-  /** Trigger presentation — see `ThreadSwitcherPopover`. */
-  variant?: "quiet" | "tab";
   /** Where a refused rename sits against the host header's positioned ancestor. */
   failureClassName?: string;
 };
@@ -42,7 +40,6 @@ export function ChatThreadTitle(props: ChatThreadTitleProps) {
         projectId={props.projectId}
         activeThreadId={null}
         title={t`New chat`}
-        variant={props.variant}
       />
     );
   // Keyed: a refusal that lands after a switch must not reopen on another chat.
@@ -52,7 +49,6 @@ export function ChatThreadTitle(props: ChatThreadTitleProps) {
 function ExistingThreadTitle({
   projectId,
   threadId,
-  variant = "quiet",
   failureClassName,
 }: ChatThreadTitleProps & { threadId: string }) {
   const title = useChatTitle(projectId, threadId);
@@ -67,7 +63,7 @@ function ExistingThreadTitle({
       rename={rename}
       maxLength={THREAD_TITLE_MAX_LENGTH}
       // The chip itself, with the switcher label's inset, so the words stay put.
-      fieldClassName={cn(titleChipClass(variant), "pane-title *:mx-1")}
+      fieldClassName={cn(titleChipClass("quiet"), "pane-title *:mx-1")}
       failureClassName={failureClassName}
     >
       {({ start, triggerRef }) => (
@@ -77,7 +73,6 @@ function ExistingThreadTitle({
           title={title}
           onRename={() => start(title)}
           triggerRef={triggerRef}
-          variant={variant}
         />
       )}
     </TitleEditSlot>
