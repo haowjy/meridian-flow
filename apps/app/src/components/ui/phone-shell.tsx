@@ -68,7 +68,7 @@ export function PhoneTakeover({
             <DialogDescription className="sr-only">{description}</DialogDescription>
             <DialogClose asChild>
               <IconButton size="sm" label={closeLabel}>
-                <X className="size-5" aria-hidden />
+                <X aria-hidden />
               </IconButton>
             </DialogClose>
           </div>
@@ -111,7 +111,7 @@ export function PhoneSheet({
         <div className="flex shrink-0 items-center gap-2 pl-4 pr-1">
           <SheetTitle className="min-w-0 flex-1 truncate text-sm">{title}</SheetTitle>
           <IconButton size="sm" label={closeLabel} onClick={() => onOpenChange(false)}>
-            <X className="size-5" aria-hidden />
+            <X aria-hidden />
           </IconButton>
         </div>
         <SheetDescription className="sr-only">{description}</SheetDescription>

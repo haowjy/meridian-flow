@@ -35,7 +35,7 @@ export function MobileSideSheetHeader({
         style={{ paddingRight: "calc(0.5rem + env(safe-area-inset-right))" }}
       >
         <IconButton size="sm" onClick={onClose} label={t`Close`}>
-          <X className="size-5" aria-hidden />
+          <X aria-hidden />
         </IconButton>
       </div>
     </header>

@@ -148,7 +148,7 @@ function ManuscriptStateChip({ state, touch }: { state: ManuscriptState; touch: 
       </Popover>
       {state.dismiss ? (
         <IconButton label={t`Dismiss`} className="shrink-0" onClick={state.dismiss}>
-          <X aria-hidden className="size-3" />
+          <X aria-hidden />
         </IconButton>
       ) : null}
     </div>

@@ -14,16 +14,16 @@ import { ActionNotice } from "@/components/app/ActionNotice";
 import { AskOnce } from "@/components/app/AskOnce";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DropdownMenuItem, useMenuActionDispatch } from "@/components/ui/dropdown-menu";
+import { IconButton } from "@/components/ui/icon-button";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { ListSection } from "@/components/ui/list-section";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { role } from "@/components/ui/roles";
+import { SettledSearchField } from "@/components/ui/search-field";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { displayThreadTitle } from "@/lib/thread-title";
-import { PaneHeaderActionButton } from "../../context/pane-header-action";
 import { useSectionFold } from "../../context/use-tree-expansion";
-import { SettledSearchField } from "../../SearchField";
 import { TitleEditSlot } from "../TitleEditSlot";
 import { useChatDeleteState } from "./ChatDeleteProvider";
 import type { ChatDeleteNotice, ChatDeleteRefusal, ChatDeletes } from "./chat-deletes";
@@ -173,7 +173,11 @@ export function ChatsBody({
     <div ref={root} className="flex min-h-0 flex-1 flex-col">
       <SourcePane
         label={t`Chats`}
-        actions={<PaneHeaderActionButton icon={Plus} label={t`New chat`} onClick={onNewChat} />}
+        actions={
+          <IconButton label={t`New chat`} onClick={onNewChat}>
+            <Plus aria-hidden />
+          </IconButton>
+        }
       >
         <div className="px-2 pt-1 pb-1">
           <SettledSearchField label={t`Find a chat`} value={search} onSettle={setSearch} />

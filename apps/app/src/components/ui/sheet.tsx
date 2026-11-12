@@ -83,7 +83,7 @@ function SheetContent({
         {showCloseButton && (
           <SheetPrimitive.Close asChild>
             <IconButton size="sm" label={t`Close`} className="absolute top-3 right-3">
-              <XIcon aria-hidden className="size-4" />
+              <XIcon aria-hidden />
             </IconButton>
           </SheetPrimitive.Close>
         )}

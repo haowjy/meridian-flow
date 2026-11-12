@@ -3,7 +3,7 @@
  * bringing each into view. Before any change is focused it reads the count, and
  * the first step lands on the first (or, going back, the last) change.
  * `touch` makes both arrows 44px targets for a phone. `compact` is the identity
- * row's form: 22px boxes, and `4/4` once the row's container gets narrow.
+ * row's form: quiet arrows, and `4/4` once the row's container gets narrow.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -30,18 +30,16 @@ export function ReviewStepper({
 }) {
   if (count <= 1) return null;
   const position = focusedIndex + 1;
-  const arrow = compact && !touch ? "size-5.5" : undefined;
   return (
     <div className="flex items-center gap-0.5">
       <IconButton
         size="xs"
         variant={touch || compact ? "quiet" : "outline"}
-        className={arrow}
         label={t`Previous change`}
         disabled={disabled}
         onClick={() => onStep(-1)}
       >
-        <ChevronLeft aria-hidden className={touch ? "size-5" : undefined} />
+        <ChevronLeft aria-hidden />
       </IconButton>
       <span
         className={cn(
@@ -86,12 +84,11 @@ export function ReviewStepper({
       <IconButton
         size="xs"
         variant={touch || compact ? "quiet" : "outline"}
-        className={arrow}
         label={t`Next change`}
         disabled={disabled}
         onClick={() => onStep(1)}
       >
-        <ChevronRight aria-hidden className={touch ? "size-5" : undefined} />
+        <ChevronRight aria-hidden />
       </IconButton>
     </div>
   );

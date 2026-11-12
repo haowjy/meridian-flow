@@ -68,13 +68,13 @@ function SideBand({
         <div className="flex shrink-0 items-center gap-0.5 pr-2">
           {side.source === "held" ? (
             <IconButton size="sm" label={t`Held here. Follow main again`} onClick={releaseSide}>
-              <Pin className="size-3.5" aria-hidden />
+              <Pin aria-hidden />
             </IconButton>
           ) : null}
           {actions}
           {onOpenInMain ? (
             <IconButton size="sm" label={t`Open in main`} onClick={onOpenInMain}>
-              <Maximize2 className="size-3.5" aria-hidden />
+              <Maximize2 aria-hidden />
             </IconButton>
           ) : null}
           {trailing ?? <PanelToggleSpacer />}

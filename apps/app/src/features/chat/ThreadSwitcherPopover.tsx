@@ -117,7 +117,7 @@ export function ThreadSwitcherPopover({
           actions={
             active ? (
               <IconButton size="xs" label={t`Rename chat`} onClick={startRename} className="mr-1">
-                <Pencil className="size-3.5" aria-hidden />
+                <Pencil aria-hidden />
               </IconButton>
             ) : null
           }

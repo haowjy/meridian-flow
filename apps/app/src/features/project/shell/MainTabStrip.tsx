@@ -39,7 +39,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { IconButton } from "@/components/ui/icon-button";
 import { draftCopyView } from "@/features/draft-review/copy-view";
 import { useScrollEdges } from "@/hooks/use-scroll-edges";
 import { holdFocus } from "@/lib/focus-follow";
@@ -183,29 +183,24 @@ export function MainTabStrip({
       {/* New document follows document tabs only: after main's other item (a chat) it would read
           as a new one of those. */}
       {current ? null : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={onNewDocument}
-              disabled={!onNewDocument}
-              title={!onNewDocument ? t`Open a Work to create an Untitled document` : undefined}
-              aria-label={t`New document`}
-              className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill"
-            >
-              {tabs.length > 0 && !lastActive ? (
-                <span
-                  aria-hidden
-                  className="absolute top-1/2 left-0 h-3.5 w-px -translate-y-1/2 bg-border"
-                />
-              ) : null}
-              <Plus className="size-3.5" aria-hidden />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            <Trans>New document</Trans>
-          </TooltipContent>
-        </Tooltip>
+        <IconButton
+          size="sm"
+          label={t`New document`}
+          // aria-disabled, not disabled: the tooltip has to say why it can't run.
+          tooltip={onNewDocument ? undefined : t`Open a Work to create an Untitled document`}
+          aria-disabled={!onNewDocument || undefined}
+          onClick={onNewDocument}
+          tooltipSide="bottom"
+          className="relative self-center aria-disabled:opacity-50"
+        >
+          {tabs.length > 0 && !lastActive ? (
+            <span
+              aria-hidden
+              className="absolute top-1/2 -left-1 h-3.5 w-px -translate-y-1/2 bg-border"
+            />
+          ) : null}
+          <Plus aria-hidden />
+        </IconButton>
       )}
     </div>
   );
@@ -238,20 +233,16 @@ export function MainTabMenu({
   const label = t`All open documents`;
   return (
     <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={label}
-              className="focus-ring relative isolate ml-auto grid h-full w-9 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill data-[state=open]:text-foreground data-[state=open]:before:bg-ink-fill"
-            >
-              <ChevronDown className="size-3.5" aria-hidden />
-            </button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{label}</TooltipContent>
-      </Tooltip>
+      <DropdownMenuTrigger asChild>
+        <IconButton
+          size="sm"
+          label={label}
+          tooltipSide="bottom"
+          className="mr-1 ml-auto self-center"
+        >
+          <ChevronDown aria-hidden />
+        </IconButton>
+      </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
         className="w-64 max-w-[calc(100vw-1rem)]"

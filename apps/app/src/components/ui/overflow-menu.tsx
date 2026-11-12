@@ -46,7 +46,7 @@ export const OverflowMenuTrigger = React.forwardRef<HTMLButtonElement, OverflowM
         onKeyDown?.(event);
       }}
     >
-      <Ellipsis aria-hidden className="size-4" />
+      <Ellipsis aria-hidden />
     </IconButton>
   ),
 );

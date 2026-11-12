@@ -244,9 +244,8 @@ function ChangeListPopover({ header }: { header: ReviewHeaderModel }) {
           disabled={view.finished || !!view.completing}
           label={changeListLabel(view.items.length)}
           data-review-secondary
-          className="size-5.5"
         >
-          <List aria-hidden className="size-3.5" />
+          <List aria-hidden />
         </IconButton>
       </PopoverTrigger>
       <PopoverContent
