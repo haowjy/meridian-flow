@@ -134,6 +134,10 @@ Core shell expectations:
 - An icon-only control is `IconButton`. Its required `label` is both its accessible
   name and its tooltip. Under a coarse pointer it and `Button` grow to the 44px touch
   target themselves (the `coarse:` variant), so a call site never adds touch sizing.
+- The name above a list or a group of its rows is `ListSection` (or `ListSectionHeader`
+  over a pane's own scroller): the uppercase group label on the rows' text edge, actions
+  shown on hover, and, when it folds, a chevron after the label so folding and plain
+  headings share that edge. A fold is remembered per tab with `useSectionFold`.
 - Editing text in place never moves or resizes it. Use `components/ui/inline-edit`
   (`InlineEditInput`, `InlineEditTextarea`): the field inherits the text's
   typography, has no padding or border, sizes to its text, and paints its edge

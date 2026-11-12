@@ -14,8 +14,6 @@ import { t } from "@lingui/core/macro";
 import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
-
 import { collapseBreadcrumbSegments } from "./context-location";
 
 export type MobileBreadcrumbSegment = {

@@ -1,6 +1,5 @@
 /** Pending and failed UI for a Work still being created. */
 import { Trans } from "@lingui/react/macro";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { PlainWorkHeading } from "./WorkTitles";
 
