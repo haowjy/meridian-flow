@@ -91,6 +91,16 @@ const heldByPaint = (element: Element) =>
   element.matches("[data-paint-status], [data-paint-frame]");
 
 /**
+ * Focuses `element` a frame from now if focus is still free then. A name field closed by a
+ * click elsewhere ends during its blur, before the click moves focus: the click wins.
+ */
+export function focusWhenFree(element: HTMLElement) {
+  requestAnimationFrame(() => {
+    if (focusIsFree()) element.focus();
+  });
+}
+
+/**
  * Puts the focus on `target()` whenever it falls free, for a destination that may not be
  * shown yet or may be swapped for another copy after it took the focus. Ends at the
  * writer's first key or press, or when focus lands anywhere outside the target, and then

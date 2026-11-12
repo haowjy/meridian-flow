@@ -40,6 +40,8 @@ export type UseCreateEntryFormOptions = {
   siblings?: readonly ContextEntrySibling[];
   /** Called when the form completes (successful create or cancel). */
   onDone: () => void;
+  /** Called on cancel instead of `onDone`. */
+  onCancel?: () => void;
   /** Called after a successful create, with the new entry's path. */
   onCreated?: (path: string) => void;
 };
@@ -65,6 +67,7 @@ export function useCreateEntryForm({
   parent = "",
   siblings = [],
   onDone,
+  onCancel = onDone,
   onCreated,
 }: UseCreateEntryFormOptions): CreateEntryForm {
   const mutation = useCreateContextEntry(projectId);
@@ -133,7 +136,7 @@ export function useCreateEntryForm({
       await handleSubmit(name);
       onDone();
     },
-    onCancel: onDone,
+    onCancel,
   });
 
   return {

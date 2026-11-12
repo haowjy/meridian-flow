@@ -1,9 +1,10 @@
 /** One namespace interaction model for tree, phone and Work Files rows. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogNode } from "@/client/query/context-catalog-projection";
 import type { OpenDocumentOwner } from "@/client/stores";
+import { focusWhenFree } from "@/lib/focus-follow";
 import { type EntryAction, useEntryMenu } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
@@ -47,8 +48,8 @@ export function useEntryInteraction({
   onRequestDelete,
   create,
   siblings,
-  requestRename,
-  onRenameDone,
+  arriving,
+  onArrived,
   importHere,
 }: {
   projectId: string;
@@ -60,14 +61,28 @@ export function useEntryInteraction({
   onRequestDelete: (entries: readonly DragEntry[]) => void;
   create?: EntryCreation;
   siblings: readonly ContextEntrySibling[];
-  /** Creation may ask an arriving row to open its naming field. */
-  requestRename?: boolean;
-  onRenameDone?: () => void;
+  /** A row creation just made: it takes focus once it is on screen. */
+  arriving?: boolean;
+  onArrived?: () => void;
   /** Opens the OS picker for an import into this folder; only folders offer it. */
   importHere?: ImportHere;
   /** Sends a file whose import failed again; a failed file's menu leads with it. */
 }) {
   const [renaming, setRenaming] = useState(false);
+  const control = useRef<HTMLElement | null>(null);
+  // Set when the name field closes, so the row that replaces it takes focus back.
+  const refocus = useRef(false);
+  const controlRef = useCallback((element: HTMLElement | null) => {
+    control.current = element;
+    if (!element || !refocus.current) return;
+    refocus.current = false;
+    focusWhenFree(element);
+  }, []);
+  useEffect(() => {
+    if (!arriving) return;
+    onArrived?.();
+    if (control.current) focusWhenFree(control.current);
+  }, [arriving, onArrived]);
   // The picker is one component for both; which action opened it decides what a pick does.
   const [picking, setPicking] = useState<"move" | "copy" | null>(null);
   // Set while the picker moves a selection rather than this row alone.
@@ -126,13 +141,15 @@ export function useEntryInteraction({
     kind,
     onRenamed: remember,
     onDone: () => {
+      refocus.current = true;
       setRenaming(false);
-      onRenameDone?.();
     },
   };
   return {
-    renaming: (renaming || Boolean(requestRename)) && actions.includes("rename"),
+    renaming: renaming && actions.includes("rename"),
     rename,
+    /** The row's main control, which takes focus back when its name field closes. */
+    controlRef,
     operationId,
     actions,
     onAction,
