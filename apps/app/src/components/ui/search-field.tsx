@@ -27,7 +27,6 @@ export function SearchField({
   /** Its placement in the host. */
   className?: string;
 }) {
-  const input = useRef<HTMLInputElement | null>(null);
   return (
     <div className={cn("relative min-w-0", className)}>
       <Search
@@ -36,11 +35,7 @@ export function SearchField({
       />
       <Input
         data-list-item={listItem || undefined}
-        ref={(node) => {
-          input.current = node;
-          if (typeof ref === "function") return ref(node);
-          if (ref) ref.current = node;
-        }}
+        ref={ref}
         type="search"
         value={value}
         disabled={disabled}
@@ -64,9 +59,9 @@ export function SearchField({
           type="button"
           aria-label={t`Clear search`}
           title={t`Clear search`}
-          onClick={() => {
+          onClick={(event) => {
             onChange("");
-            input.current?.focus();
+            event.currentTarget.parentElement?.querySelector("input")?.focus();
           }}
           className="focus-ring absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground coarse:size-11 coarse:right-0"
         >
