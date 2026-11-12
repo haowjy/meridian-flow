@@ -42,10 +42,15 @@ export function ListSectionHeader({
       <Heading
         title={title}
         aria-label={fold ? undefined : title}
-        className={cn("flex min-w-0 flex-1 items-center self-stretch pr-1 pl-1.5", look)}
+        className={cn(
+          "flex min-w-0 flex-1 items-center self-stretch",
+          !fold && "pr-1 pl-1.5",
+          look,
+        )}
       >
         {fold ? (
-          // The whole heading row folds; -mx/px keep the label on the rows' text edge.
+          // The whole heading row folds, its box the rows' box, so its focus ring lines up with
+          // theirs. No hover fill: hover darkens the label and shows the chevron.
           <button
             type="button"
             aria-expanded={fold.open}
@@ -56,7 +61,7 @@ export function ListSectionHeader({
               if (event.key === "ArrowRight") fold.onToggle(true);
             }}
             className={cn(
-              "group/fold interactive -mx-1.5 flex min-w-0 flex-1 items-center gap-1 self-stretch rounded-md px-1.5 text-left coarse:min-h-11",
+              "group/fold flex min-w-0 flex-1 items-center gap-1 self-stretch rounded-md px-1.5 text-left transition-colors hover:text-foreground focus-visible:text-foreground motion-reduce:transition-none coarse:min-h-11",
               // Preflight resets a button's text-transform; the label's case needs restating.
               look,
             )}
