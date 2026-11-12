@@ -989,21 +989,3 @@
   }
 }
 
-/* The Write | Chat switch swaps the panes (`features/project/shell/pane-swap.ts`): each host glides
-   to its new place, and the new page shows throughout, so no text fades. A host's own enter
-   animation is skipped while the flag is up. */
-@media (prefers-reduced-motion: no-preference) {
-  html[data-pane-swap] [data-project-host] {
-    animation-delay: -1s;
-  }
-  html[data-pane-swap]::view-transition-group(*) {
-    animation-duration: 200ms;
-    animation-timing-function: ease-out;
-  }
-  html[data-pane-swap]::view-transition-old(*) {
-    display: none;
-  }
-  html[data-pane-swap]::view-transition-new(*) {
-    animation: none;
-  }
-}

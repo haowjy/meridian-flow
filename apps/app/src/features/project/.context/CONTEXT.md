@@ -159,7 +159,9 @@ merged layout subscription is the only whole-preferences subscription.
 The two panel toggles are `ProjectShell`'s corner buttons, drawn once over the grid, so they
 never move when a panel opens or closes. A header under one keeps a `PanelToggleSpacer` in its
 place instead of a button of its own. A panel's content slides in on open; the grid columns
-change in one step, because animating them reflows the chapter on every frame. Region separation is tonal. Repeated header primitives are
+change in one step, because animating them reflows the chapter on every frame. A host moving
+between slots (the panes swapping kinds) glides by transform from its old box, laid out at its new
+size and clipped, so text never scales (`SlotGrid`'s `useGlide`). Region separation is tonal. Repeated header primitives are
 shared.
 
 ## Routes
