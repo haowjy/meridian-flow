@@ -380,7 +380,7 @@
 /* Flex/grid shrink contract: apply on pane boundaries (shell inset, chat surface,
    scroll region, column utilities). Do not sprinkle on turn leaves — prose-tokens
    and user-turn handle content overflow. Exception: flex rows that truncate
-   (disclosure-trigger, activity summary) keep min-w-0 on the truncating child.
+   (FoldToggle, activity summary) keep min-w-0 on the truncating child.
 
    Viewport shell: `app-frame` locks the outer shell to one screen; `app-scroll`
    is the only vertical scroll opt-in inside it (see DESIGN.md § Layout). */
@@ -879,11 +879,6 @@
 /** Link-style control — always reads as clickable (not hover-only). */
 @utility text-button {
   @apply focus-ring focus-ring-outside text-sm font-medium text-jade-text underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline;
-}
-
-/** Plain collapsible row (reasoning / activity toggles) — text, not a card. */
-@utility disclosure-trigger {
-  @apply focus-ring flex w-full min-w-0 items-center gap-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground coarse:min-h-11;
 }
 
 /* Standard screen-reader-only pattern: visually hidden but exposed to

@@ -9,7 +9,7 @@ import type { AskReceipt as AskReceiptFacts } from "@meridian/thread-client";
 import { MessageCircleQuestion, ShieldCheck } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { useAskReceipt } from "@/client/stores";
-import { DisclosureMark } from "@/components/ui/marks";
+import { FoldToggle } from "@/components/ui/fold-toggle";
 import { cn } from "@/lib/utils";
 import { permissionRequestText } from "./permission-request";
 
@@ -92,12 +92,13 @@ function QuestionsReceipt({
   return (
     <ReceiptLine receipt={receipt}>
       <div className="min-w-0 flex-1">
-        <button
-          type="button"
-          aria-expanded={open}
+        <FoldToggle
+          open={open}
+          onToggle={() => setOpen((value) => !value)}
           aria-controls={panelId}
-          onClick={() => setOpen((value) => !value)}
-          className="focus-ring -mx-1 flex max-w-full items-start gap-[var(--chat-space-inline)] rounded-md px-1 text-left transition-colors hover:bg-ink-fill"
+          inline
+          multiline
+          className="-mx-1 max-w-full px-1"
         >
           <span className="min-w-0">
             <span className="text-muted-foreground">
@@ -108,8 +109,7 @@ function QuestionsReceipt({
             </Answer>
             <Sending pending={pending} />
           </span>
-          <DisclosureMark open={open} className="mt-1" />
-        </button>
+        </FoldToggle>
         <ol
           id={panelId}
           hidden={!open}

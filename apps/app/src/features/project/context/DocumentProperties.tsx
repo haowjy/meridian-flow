@@ -13,7 +13,7 @@ import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useDocumentProperties } from "@/client/query/useDocumentProperties";
 import { documentContextOwner, type OpenDocument } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { DisclosureMark } from "@/components/ui/marks";
+import { FoldToggle } from "@/components/ui/fold-toggle";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
 import { cn } from "@/lib/utils";
@@ -65,26 +65,22 @@ function PropertiesRow({ projectId, documentId }: { projectId: string; documentI
   return (
     <div className="@container shrink-0 border-b border-border-subtle">
       <div className={editorColumnChrome}>
-        <button
-          type="button"
-          aria-expanded={open}
+        <FoldToggle
+          open={open}
+          onToggle={() => setOpen(!open)}
           aria-controls={regionId}
-          onClick={() => setOpen(!open)}
           onKeyDown={(event) => {
-            // Left closes and Right opens, as a rail pane header does.
+            // Left closes and Right opens, as a list's heading does.
             if (event.key === "ArrowLeft") setOpen(false);
             if (event.key === "ArrowRight") setOpen(true);
           }}
-          className="focus-ring -ml-1 flex h-7 w-full min-w-0 items-center rounded-md pr-1 pl-1 text-left"
+          className="-ml-1 w-full px-1 font-medium text-xs"
         >
-          <span className="flex h-7 w-4 shrink-0 items-center justify-center">
-            <DisclosureMark open={open} />
-          </span>
-          <span className="shrink-0 font-medium text-xs text-muted-foreground">
+          <span className="shrink-0">
             <Trans>Properties</Trans>
           </span>
           {open ? null : <CollapsedSummary properties={properties} failed={query.isError} />}
-        </button>
+        </FoldToggle>
       </div>
       <section id={regionId} aria-label={t`Properties`} hidden={!open}>
         {open ? (

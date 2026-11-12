@@ -1,6 +1,6 @@
 /** Shared anatomy for subagent identity, state, detail, disclosure, and navigation. */
 import type { ReactNode } from "react";
-import { DisclosureMark } from "@/components/ui/marks";
+import { FoldToggle } from "@/components/ui/fold-toggle";
 import { cn } from "@/lib/utils";
 import { OpenSubagentChatButton } from "../OpenSubagentChatButton";
 import { Elapsed, formatSubagentElapsed, resolveSubagentName } from "./display";
@@ -139,16 +139,15 @@ export function SubagentRow({
     <div className={cn("min-w-0", className)}>
       <div className="flex min-w-0 items-center gap-1">
         {expandable ? (
-          <button
-            type="button"
-            aria-expanded={expanded}
+          <FoldToggle
+            open={Boolean(expanded)}
+            onToggle={() => onToggle?.()}
             data-subagent-thread-ids={threadIds}
-            onClick={onToggle}
-            className={cn("focus-ring flex min-w-0 items-center rounded-sm text-left", gap, fill)}
+            inline
+            className={cn(fill)}
           >
             {identity}
-            <DisclosureMark open={Boolean(expanded)} />
-          </button>
+          </FoldToggle>
         ) : onActivate ? (
           <button
             type="button"
