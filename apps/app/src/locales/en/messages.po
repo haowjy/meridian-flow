@@ -655,12 +655,12 @@ msgid "{submitLabel} (enter a name first)"
 msgstr "{submitLabel} (enter a name first)"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "{title} added to Favorites"
-msgstr "{title} added to Favorites"
+#~ msgid "{title} added to Favorites"
+#~ msgstr "{title} added to Favorites"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "{title} removed from Favorites"
-msgstr "{title} removed from Favorites"
+#~ msgid "{title} removed from Favorites"
+#~ msgstr "{title} removed from Favorites"
 
 #: src/features/project/shell/sidebar/chat-deletes.ts
 msgid "{title} restored"
@@ -911,8 +911,8 @@ msgid "Add row"
 msgstr "Add row"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Add to Favourites"
-msgstr "Add to Favourites"
+#~ msgid "Add to Favourites"
+#~ msgstr "Add to Favourites"
 
 #: src/features/chat/ChatCards.tsx
 msgid "Add usage"
@@ -2155,6 +2155,10 @@ msgstr "Couldn't open this draft. Try again."
 msgid "Couldn't open this folder."
 msgstr "Couldn't open this folder."
 
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Couldn’t pin {title}"
+msgstr "Couldn’t pin {title}"
+
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't queue the compaction."
 msgstr "Couldn't queue the compaction."
@@ -2346,6 +2350,10 @@ msgstr "Couldn't undo this Apply. Try again."
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Couldn't undo. Try again."
 msgstr "Couldn't undo. Try again."
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Couldn’t unpin {title}"
+msgstr "Couldn’t unpin {title}"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't update that Work"
@@ -2888,12 +2896,12 @@ msgid "Failures"
 msgstr "Failures"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Favorite wasn’t saved"
-msgstr "Favorite wasn’t saved"
+#~ msgid "Favorite wasn’t saved"
+#~ msgstr "Favorite wasn’t saved"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Favourites"
-msgstr "Favourites"
+#~ msgid "Favourites"
+#~ msgstr "Favourites"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "fence"
@@ -4339,6 +4347,18 @@ msgstr "picked Work"
 msgid "picture"
 msgstr "picture"
 
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Pin"
+msgstr "Pin"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Pinned"
+msgstr "Pinned"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Pinned {title}"
+msgstr "Pinned {title}"
+
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 msgid "Plain text"
 msgstr "Plain text"
@@ -4552,12 +4572,12 @@ msgid "Remove"
 msgstr "Remove"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Remove {title} from Favourites"
-msgstr "Remove {title} from Favourites"
+#~ msgid "Remove {title} from Favourites"
+#~ msgstr "Remove {title} from Favourites"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Remove from Favourites"
-msgstr "Remove from Favourites"
+#~ msgid "Remove from Favourites"
+#~ msgstr "Remove from Favourites"
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
@@ -6241,6 +6261,14 @@ msgstr "Unknown component: {kindLabel}"
 #: src/features/editor/DocumentVersionMenu.tsx
 msgid "Unnamed draft"
 msgstr "Unnamed draft"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Unpin"
+msgstr "Unpin"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Unpinned {title}"
+msgstr "Unpinned {title}"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx

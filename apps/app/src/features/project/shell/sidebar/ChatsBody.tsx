@@ -1,8 +1,8 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contracts/protocol";
+import { THREAD_TITLE_MAX_LENGTH } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Layers, Plus, Star, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Layers, Plus, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { runFavoriteCommand, useChatFavorite } from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
@@ -21,8 +21,14 @@ import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
+import { useAccountId } from "../../context/account-feature-context";
 import { RowIcon } from "../../context/ContextTreeRows";
 import { PaneHeaderActionButton } from "../../context/RailPaneHeader";
+import {
+  readTreeExpansion,
+  treeExpansionKey,
+  writeTreeExpansion,
+} from "../../context/tree-expansion-state";
 import { SettledSearchField } from "../../SearchField";
 import { TitleEditSlot } from "../TitleEditSlot";
 import { useChatDeleteState } from "./ChatDeleteProvider";
@@ -45,10 +51,11 @@ type RowContext = {
 };
 
 /**
- * The Chat list: a find field over every chat, the writer's Favourites, the scoped Work's chats
- * by what they need from the writer, then All chats, newest first and paged. Working helpers sit
- * under their parent. Other Works keep one row each while one of their chats needs the writer or
- * is running. Each chat row opens, renames, favourites and deletes its chat; a delete has an Undo.
+ * The Chat list: a find field over every chat, the writer's Pinned chats (foldable), the scoped
+ * Work's other chats by what they need from the writer, then All chats, newest first and paged.
+ * Working helpers sit under their parent. Other Works keep one row each while one of their chats
+ * needs the writer or is running. Each chat row opens, renames, pins and deletes its chat; a
+ * delete has an Undo. The API calls a pin `favorite`.
  */
 export function ChatsBody({
   projectId,
@@ -77,7 +84,12 @@ export function ChatsBody({
   const touch = useCoarsePointer();
   const root = useRef<HTMLDivElement>(null);
   const favoriteFeed = useProjectChatFeed(projectId, true);
-  // Every favourite loads, so no chat beyond the first page offers "Add to Favourites".
+  const pinnedIds = useMemo(
+    () => new Set(favoriteFeed.items.map((item) => item.id)),
+    [favoriteFeed.items],
+  );
+  const [pinnedOpen, setPinnedOpen] = usePinnedOpen(projectId);
+  // Every pin loads, so no chat beyond the first page offers "Pin".
   const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = favoriteFeed;
   useEffect(() => {
     if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();
@@ -101,7 +113,7 @@ export function ChatsBody({
     onOpenChat,
   };
   // After Undo, focus goes to the chat's row, or to Find when no list here shows it. The row
-  // mounts only once the restored lists have loaded (a favourite past the first page loads
+  // mounts only once the restored lists have loaded (a pin past the first page loads
   // later), so focus waits for that render rather than look before it.
   const [focusAfterUndo, setFocusAfterUndo] = useState<string | null>(null);
   const listsSettled = threads !== null && !favoriteFeed.isFetching && !favoriteFeed.hasNextPage;
@@ -116,14 +128,10 @@ export function ChatsBody({
     if (target) moveFocus(target, { ring: lastInputWasKeyboard() });
   });
 
-  const scoped = (thread: ThreadListItem) => (
-    <div key={thread.id}>
-      <ChatRow {...rows} chat={thread} />
-      {groups.helpers.get(thread.id)?.map((helper) => (
-        <ChatRow key={helper.id} {...rows} chat={helper} state="running" nested />
-      ))}
-    </div>
-  );
+  // One list, most urgent first; the mark on a row says its state. A pinned chat is listed
+  // under Pinned only.
+  const scopedChats = [...groups.needsYou, ...groups.running, ...groups.idle];
+  const listed = scopedChats.filter((thread) => !pinnedIds.has(thread.id));
 
   return (
     <div ref={root} className="flex min-h-0 flex-1 flex-col">
@@ -158,17 +166,21 @@ export function ChatsBody({
         ) : (
           <>
             {favoriteFeed.items.length > 0 ? (
-              <Group label={t`Favourites`}>
+              <Group label={t`Pinned`} open={pinnedOpen} onToggle={setPinnedOpen}>
                 <FeedRows feed={favoriteFeed} rows={rows} empty={null} />
               </Group>
             ) : null}
-            {/* One list, most urgent first; the mark on a row says its state. */}
-            <div className="px-2 pt-1">
-              {groups.needsYou.map(scoped)}
-              {groups.running.map(scoped)}
-              {groups.idle.map(scoped)}
-            </div>
-            {groups.needsYou.length + groups.running.length + groups.idle.length === 0 ? (
+            <Group label={workName(scopeWorkId ?? noWorkId ?? "")} hidden={listed.length === 0}>
+              {listed.map((thread) => (
+                <div key={thread.id}>
+                  <ChatRow {...rows} chat={thread} />
+                  {groups.helpers.get(thread.id)?.map((helper) => (
+                    <ChatRow key={helper.id} {...rows} chat={helper} state="running" nested />
+                  ))}
+                </div>
+              ))}
+            </Group>
+            {scopedChats.length === 0 ? (
               <SourceHint>
                 <Trans>No chats here yet.</Trans>
               </SourceHint>
@@ -323,26 +335,67 @@ function DeletedLine({
   );
 }
 
+/** Whether Pinned is unfolded, kept for this browser tab like the trees' folders. */
+function usePinnedOpen(projectId: string): [boolean, (open: boolean) => void] {
+  const accountId = useAccountId();
+  const key = treeExpansionKey(accountId, projectId, "chats");
+  const [open, setOpen] = useState(() => readTreeExpansion(key, accountId).entries.pinned ?? true);
+  return [
+    open,
+    (next) => {
+      setOpen(next);
+      writeTreeExpansion(key, accountId, { entries: { pinned: next } });
+    },
+  ];
+}
+
 function Group({
   label,
   hidden = false,
+  open,
+  onToggle,
   children,
 }: {
   label: string;
   hidden?: boolean;
+  /** Given with `onToggle`, the label folds the group. */
+  open?: boolean;
+  onToggle?: (open: boolean) => void;
   children: ReactNode;
 }) {
   if (hidden) return null;
+  const folds = open !== undefined && onToggle;
   return (
-    <section aria-label={label} className="px-2 pt-2">
-      <h3 className={cn("px-1.5 pb-1", role.groupLabel)}>{label}</h3>
-      {children}
+    <section aria-label={label || undefined} className="px-2 pt-2">
+      {folds ? (
+        <h3 className="pb-1">
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => onToggle(!open)}
+            className={cn(
+              "interactive flex items-center gap-1 rounded-sm px-1.5 coarse:min-h-11",
+              role.groupLabel,
+            )}
+          >
+            {label}
+            {open ? (
+              <ChevronDown aria-hidden className="size-3" />
+            ) : (
+              <ChevronRight aria-hidden className="size-3" />
+            )}
+          </button>
+        </h3>
+      ) : label ? (
+        <h3 className={cn("px-1.5 pb-1", role.groupLabel)}>{label}</h3>
+      ) : null}
+      {folds && !open ? null : children}
     </section>
   );
 }
 
 /** A chat as either list names it: the thread list's row or a feed page's. */
-type RowChat = { id: string; title: string | null; agentName: string | null };
+type RowChat = { id: string; title: string | null };
 
 function ChatRow({
   projectId,
@@ -359,7 +412,7 @@ function ChatRow({
 }: RowContext & { chat: RowChat; state?: RowState; nested?: boolean }) {
   const client = useQueryClient();
   const title = displayThreadTitle(chat.title);
-  const favorite = useChatFavorite(projectId, chat.id);
+  const pinned = useChatFavorite(projectId, chat.id);
   const [menuOpen, setMenuOpen] = useState(false);
   const [asking, setAsking] = useState(false);
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
@@ -367,10 +420,11 @@ function ChatRow({
     announce(t`Renamed to ${confirmed}`);
   });
   const shownState = states.get(chat.id) ?? state;
-  const onFavorite = (value: boolean) =>
+  const onPin = (value: boolean) =>
     void runFavoriteCommand(client, projectId, chat.id, value).then((outcome) => {
-      if (outcome.status !== "success") announceError(t`Favorite wasn’t saved`);
-      else announce(value ? t`${title} added to Favorites` : t`${title} removed from Favorites`);
+      if (outcome.status !== "success")
+        announceError(value ? t`Couldn’t pin ${title}` : t`Couldn’t unpin ${title}`);
+      else announce(value ? t`Pinned ${title}` : t`Unpinned ${title}`);
     });
   // The server stops a running reply in the delete, and Undo can't restart it: that delete asks.
   const onDelete = () => (replying.has(chat.id) ? setAsking(true) : deletes.delete(chat.id, title));
@@ -391,52 +445,25 @@ function ChatRow({
             current={chat.id === currentThreadId ? "page" : false}
             depth={nested ? 1 : 0}
             revealActions={!touch && !menuOpen}
-            leading={
-              chat.agentName ? (
-                <span
-                  aria-hidden
-                  className={cn(
-                    "grid size-4 shrink-0 place-items-center rounded-sm border border-border-subtle font-medium leading-none",
-                    role.rowSecondary,
-                  )}
-                  title={chat.agentName}
-                >
-                  {chat.agentName.slice(0, 1).toUpperCase()}
-                </span>
-              ) : null
-            }
             title={title}
             trailing={shownState === "idle" ? null : <StateMark state={shownState} />}
             actions={
-              <>
-                {favorite ? (
-                  <IconButton
-                    size="sm"
-                    aria-pressed
-                    label={t`Remove ${title} from Favourites`}
-                    onClick={() => onFavorite(false)}
-                    className="text-gold hover:text-gold"
-                  >
-                    <Star aria-hidden className="size-3.5 fill-current" />
-                  </IconButton>
-                ) : null}
-                <OverflowMenu
-                  open={menuOpen}
-                  onOpenChange={setMenuOpen}
-                  onCloseAutoFocus={onCloseAutoFocus}
-                  label={t`Actions for ${title}`}
-                >
-                  <DropdownMenuItem onSelect={() => dispatch(() => start(title))}>
-                    <span>{t`Rename`}</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onFavorite(!favorite)}>
-                    <span>{favorite ? t`Remove from Favourites` : t`Add to Favourites`}</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" onSelect={() => dispatch(onDelete)}>
-                    <span>{t`Delete chat`}</span>
-                  </DropdownMenuItem>
-                </OverflowMenu>
-              </>
+              <OverflowMenu
+                open={menuOpen}
+                onOpenChange={setMenuOpen}
+                onCloseAutoFocus={onCloseAutoFocus}
+                label={t`Actions for ${title}`}
+              >
+                <DropdownMenuItem onSelect={() => dispatch(() => start(title))}>
+                  <span>{t`Rename`}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => onPin(!pinned)}>
+                  <span>{pinned ? t`Unpin` : t`Pin`}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem variant="destructive" onSelect={() => dispatch(onDelete)}>
+                  <span>{t`Delete chat`}</span>
+                </DropdownMenuItem>
+              </OverflowMenu>
             }
             below={
               asking ? (
