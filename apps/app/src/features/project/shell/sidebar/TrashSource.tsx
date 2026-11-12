@@ -40,7 +40,7 @@ export function TrashSource({
             void navigate(entry.documentId);
             onPicked?.();
           }}
-          onRestore={() => restore(entry)}
+          onRestore={(ids) => restore(entries.filter(({ documentId }) => ids.includes(documentId)))}
         />
       ))}
       {query.isError ? (

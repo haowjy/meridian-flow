@@ -1,6 +1,6 @@
 import { type DragEvent, useMemo, useState } from "react";
 import { activeDragSession } from "../../context/entry-drag/drag-session";
-import { useDeleteContextEntry } from "../../context/use-delete-context-entry";
+import { useDeleteContextEntries } from "../../context/use-delete-context-entries";
 import type { SourceDrop } from "./SourcePane";
 
 /**
@@ -8,7 +8,7 @@ import type { SourceDrop } from "./SourcePane";
  * own rows are already deleted, so a drag of them passes over quietly.
  */
 export function useTrashDrop(projectId: string): SourceDrop {
-  const deletion = useDeleteContextEntry(projectId);
+  const deleteEntries = useDeleteContextEntries(projectId);
   const [over, setOver] = useState(false);
   const dropProps = useMemo(() => {
     // Accepting on enter as well as over: a drag released right after it arrives sends no `dragover`.
@@ -31,9 +31,9 @@ export function useTrashDrop(projectId: string): SourceDrop {
         const drag = activeDragSession();
         if (!drag || drag.source === "trash") return;
         event.preventDefault();
-        deletion.deleteEntries(drag.entries);
+        deleteEntries(drag.entries);
       },
     };
-  }, [deletion.deleteEntries]);
+  }, [deleteEntries]);
   return { dropProps, dropState: over ? "over" : "idle" };
 }

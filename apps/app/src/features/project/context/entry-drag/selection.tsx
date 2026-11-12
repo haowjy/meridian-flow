@@ -19,6 +19,7 @@ import {
   type RefObject,
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -26,6 +27,12 @@ import {
 } from "react";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { type DragEntry, type EntryRef, entryKey } from "./entry";
+
+/** What a row lets a selection's menu do with it. */
+export type SelectionGrant = "move" | "delete" | "restore";
+
+/** A selection of two or more rows, in screen order, and what every one of them grants. */
+export type SelectionGroup = { entries: DragEntry[]; grants: SelectionGrant[] };
 
 export type EntrySelection = {
   /** Rows drag on the desktop shell only; the phone has no drag (owner, 2026-10-11). */
@@ -36,27 +43,47 @@ export type EntrySelection = {
   click(entry: DragEntry, event: MouseEvent | KeyboardEvent): boolean;
   /** What a drag of this row carries, in screen order; a row outside the selection goes alone. */
   dragged(entry: DragEntry): DragEntry[];
+  /** The selection a menu on this row acts on; null when the row is outside it or alone in it. */
+  group(entry: DragEntry): SelectionGroup | null;
+  /** A menu opened on a row outside the selection selects that row alone. */
+  pick(entry: DragEntry): void;
   /** Selects exactly these keys (after a move), even one; none returns to the open row. */
   replace(keys: readonly string[]): void;
   clear(): void;
   /**
-   * Focuses the list's first selected row, or its first row. A selected row that
-   * remounts soon after (a moved row arriving in its folder) takes focus back
-   * while nothing else holds it.
+   * Focuses the list's first selected row, or its first row. For a short while after,
+   * focus follows the first selected row on screen (`settleFocus`).
    */
   focus(): void;
-  /** Whether a row mounting now should take focus (see `focus`). */
-  reclaimsFocus(key: string): boolean;
+  /**
+   * Soon after `focus`, puts focus back on the first selected row on screen when it was lost or
+   * sits on another selected row. Moved rows arrive in their folder over several commits, and a
+   * keyed reorder moves a focused row's node, which blurs it without remounting it.
+   */
+  settleFocus(): void;
   /** Rows announce themselves while mounted; the open row says so. */
   register(entry: DragEntry, active: boolean): () => void;
+  /** What a row's menu lets a selection's menu do with it, while the menu is mounted. */
+  grant(entry: DragEntry, grants: readonly SelectionGrant[]): () => void;
   root: RefObject<HTMLDivElement | null>;
 };
 
 const KEY_ATTRIBUTE = "data-entry-key";
 /** Set on a selected row: `start`, `middle`, `end` or `single` within its run. */
 const RUN_ATTRIBUTE = "data-selection-run";
-// Long enough for the catalogs to catch up with a move and remount its rows.
+// Long enough for the catalogs to catch up with a move and place its rows.
 const FOCUS_RECLAIM_MS = 2000;
+
+const departures = new Set<(keys: ReadonlySet<string>) => void>();
+
+/**
+ * Rows a delete or restore takes out of their list leave every list's selection, so a row that
+ * comes back (restored, or deleted into Trash) never arrives selected.
+ */
+export function leaveSelections(refs: readonly EntryRef[]) {
+  const keys = new Set(refs.map(entryKey));
+  for (const leave of departures) leave(keys);
+}
 
 /**
  * One list's selection; the list component owns it and hands it to its rows and
@@ -68,11 +95,15 @@ export function useEntrySelection(): EntrySelection {
   const [explicit, setExplicit] = useState<ReadonlySet<string> | null>(null);
   const anchor = useRef<string | null>(null);
   const registry = useRef(new Map<string, { entry: DragEntry; active: boolean }>());
+  const granted = useRef(
+    new Map<string, { entry: DragEntry; grants: readonly SelectionGrant[] }>(),
+  );
   const root = useRef<HTMLDivElement>(null);
   const focusUntil = useRef(0);
   const shown = useRef<ReadonlySet<string> | null>(null);
   shown.current = explicit;
   const painting = useRef(false);
+  const settling = useRef(false);
 
   /**
    * Marks where each run of selected rows that touch on screen starts and ends,
@@ -111,6 +142,38 @@ export function useEntrySelection(): EntrySelection {
   }, []);
   const draggable = usePhoneShell() !== true;
 
+  const settleFocus = useCallback(() => {
+    if (settling.current || Date.now() >= focusUntil.current) return;
+    settling.current = true;
+    requestAnimationFrame(() => {
+      settling.current = false;
+      const selected = shown.current;
+      const rows = Array.from(
+        root.current?.querySelectorAll<HTMLElement>(`[${KEY_ATTRIBUTE}]`) ?? [],
+      ).filter((row) => selected?.has(row.getAttribute(KEY_ATTRIBUTE) ?? ""));
+      const [first] = rows;
+      const active = document.activeElement;
+      const lost = active === null || active === document.body;
+      if (first && first !== active && (lost || rows.some((row) => row === active))) first.focus();
+    });
+  }, []);
+
+  useEffect(() => {
+    const leave = (keys: ReadonlySet<string>) => {
+      if (anchor.current && keys.has(anchor.current)) anchor.current = null;
+      setExplicit((previous) => {
+        if (!previous) return previous;
+        const next = new Set([...previous].filter((key) => !keys.has(key)));
+        if (next.size === previous.size) return previous;
+        return next.size > 0 ? next : null;
+      });
+    };
+    departures.add(leave);
+    return () => {
+      departures.delete(leave);
+    };
+  }, []);
+
   const screenOrder = useCallback((): string[] => {
     const nodes = root.current?.querySelectorAll<HTMLElement>(`[${KEY_ATTRIBUTE}]`) ?? [];
     return Array.from(nodes, (node) => node.getAttribute(KEY_ATTRIBUTE) ?? "");
@@ -126,6 +189,15 @@ export function useEntrySelection(): EntrySelection {
       if (explicit) return explicit;
       const open = openKey();
       return new Set(open ? [open] : []);
+    };
+    /** The mounted selected rows in screen order, or null when `entry` isn't one of them. */
+    const selectedRows = (entry: DragEntry) => {
+      const selected = current();
+      if (!selected.has(entryKey(entry.ref))) return null;
+      return screenOrder().flatMap((key) => {
+        const row = selected.has(key) ? registry.current.get(key) : undefined;
+        return row ? [row] : [];
+      });
     };
     return {
       draggable,
@@ -159,13 +231,25 @@ export function useEntrySelection(): EntrySelection {
         return false;
       },
       dragged(entry) {
-        const selected = current();
-        if (!selected.has(entryKey(entry.ref))) return [entry];
-        const rows = screenOrder()
-          .filter((key) => selected.has(key))
-          .map((key) => registry.current.get(key)?.entry)
-          .filter((row): row is DragEntry => row !== undefined);
-        return rows;
+        return selectedRows(entry)?.map((row) => row.entry) ?? [entry];
+      },
+      group(entry) {
+        const rows = selectedRows(entry);
+        if (!rows || rows.length < 2) return null;
+        return {
+          entries: rows.map((row) => row.entry),
+          grants: (["move", "delete", "restore"] as const).filter((grant) =>
+            rows.every((row) =>
+              granted.current.get(entryKey(row.entry.ref))?.grants.includes(grant),
+            ),
+          ),
+        };
+      },
+      pick(entry) {
+        const key = entryKey(entry.ref);
+        if (current().has(key)) return;
+        anchor.current = key;
+        setExplicit(openKey() === key ? null : new Set([key]));
       },
       replace(keys) {
         setExplicit(keys.length > 0 ? new Set(keys) : null);
@@ -182,21 +266,26 @@ export function useEntrySelection(): EntrySelection {
         (first ?? rows[0])?.focus();
         focusUntil.current = Date.now() + FOCUS_RECLAIM_MS;
       },
-      reclaimsFocus(key) {
-        const lost = document.activeElement === null || document.activeElement === document.body;
-        return lost && Date.now() < focusUntil.current && current().has(key);
-      },
+      settleFocus,
       register(entry, active) {
         const key = entryKey(entry.ref);
         registry.current.set(key, { entry, active });
         paintRuns();
+        settleFocus();
         return () => {
           if (registry.current.get(key)?.entry === entry) registry.current.delete(key);
           paintRuns();
         };
       },
+      grant(entry, grants) {
+        const key = entryKey(entry.ref);
+        granted.current.set(key, { entry, grants });
+        return () => {
+          if (granted.current.get(key)?.entry === entry) granted.current.delete(key);
+        };
+      },
     };
-  }, [explicit, draggable, screenOrder, openKey, paintRuns]);
+  }, [explicit, draggable, screenOrder, openKey, paintRuns, settleFocus]);
 }
 
 const SelectionContext = createContext<EntrySelection | null>(null);
@@ -220,12 +309,19 @@ export function EntrySelectionProvider({
   children: ReactNode;
 }) {
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") selection.clear();
+    // A row's menu is portaled but still bubbles here; its Escape closes the menu, not the selection.
+    if (event.key === "Escape" && selection.root.current?.contains(event.target as Node))
+      selection.clear();
   };
   return (
     <SelectionContext.Provider value={selection}>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Escape clears the selection made by the rows inside. slop-lint: allow suppression the reason is stated in this comment */}
-      <div ref={selection.root} className="contents" onKeyDown={onKeyDown}>
+      <div
+        ref={selection.root}
+        className="contents"
+        onKeyDown={onKeyDown}
+        onBlur={selection.settleFocus}
+      >
         {children}
       </div>
     </SelectionContext.Provider>
@@ -238,12 +334,6 @@ export function useEntrySelectionRow(entry: DragEntry, active: boolean) {
   const key = entryKey(entry.ref);
   useLayoutEffect(() => selection?.register(entry, active), [selection, entry, active]);
   const selected = selection?.isSelected(key) ?? false;
-  const reclaim = useCallback(
-    (row: HTMLElement | null) => {
-      if (row && selection?.reclaimsFocus(key)) row.focus();
-    },
-    [selection, key],
-  );
   return {
     selection,
     selected,
@@ -251,6 +341,6 @@ export function useEntrySelectionRow(entry: DragEntry, active: boolean) {
      * Spread on the row so range selection can read screen order. Rows are buttons, so
      * the selection is their pressed state; outside an explicit selection they aren't toggles.
      */
-    rowProps: { [KEY_ATTRIBUTE]: key, "aria-pressed": selected || undefined, ref: reclaim },
+    rowProps: { [KEY_ATTRIBUTE]: key, "aria-pressed": selected || undefined },
   };
 }

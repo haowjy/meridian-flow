@@ -1,6 +1,7 @@
 import { projectFolderNeedsRepair, projectResourceNeedsRepair } from "@meridian/resource-replica";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { ownRemovals } from "./entry-drag/entry-failure";
+import { currentView } from "./entry-drag/execute-move";
 import type { RemovedNoticeStore } from "./removed-notice-store";
 
 /**
@@ -37,8 +38,11 @@ export function observeRefusedDeletes(
         )?.projectId;
         if (!projectId) continue;
         reported.add(repair.intentId);
-        void ownRemovals({ resources, projectId }, { kind: "folder", id: folder.folderId }).then(
-          (documentIds) => notices.ownRemovalEnded(projectId, documentIds),
+        void currentView({ resources, projectId }).then((view) =>
+          notices.ownRemovalEnded(
+            projectId,
+            ownRemovals(view, { kind: "folder", id: folder.folderId }),
+          ),
         );
       }
     },

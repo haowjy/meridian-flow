@@ -27,7 +27,7 @@ import { PaneHeaderActionButton } from "./pane-header-action";
 import { useOptionalTreeCreation } from "./TreeCreationProvider";
 import { treeFolderIds } from "./tree-expansion-state";
 import { subscribeFolderReveal } from "./tree-reveal";
-import { useDeleteContextEntry } from "./use-delete-context-entry";
+import { useDeleteContextEntries } from "./use-delete-context-entries";
 import { useTreeExpansion } from "./use-tree-expansion";
 
 export type CatalogState = ReturnType<typeof useContextCatalogViews>[ProjectContextTreeScheme];
@@ -168,7 +168,7 @@ export function ContextTreePanel({
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 
   const owner = useMemo(() => ({ workId: editorWorkId }), [editorWorkId]);
-  const deletion = useDeleteContextEntry(projectId);
+  const deleteEntries = useDeleteContextEntries(projectId);
   const importScheme = imports !== null && isImportScheme(scheme) ? scheme : null;
   const importable = importScheme !== null;
   const pickImport = imports?.pick;
@@ -196,7 +196,7 @@ export function ContextTreePanel({
                 }
               : undefined,
             onSelectFile,
-            onRequestDelete: deletion.requestDelete,
+            onRequestDelete: deleteEntries,
             importHere: importable
               ? {
                   folders: canPickFolders(),
@@ -221,7 +221,7 @@ export function ContextTreePanel({
       creating,
       onSelectFile,
       requestCreate,
-      deletion.requestDelete,
+      deleteEntries,
       onCreateDone,
       isExpanded,
       toggleEntry,
