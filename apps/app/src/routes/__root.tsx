@@ -114,7 +114,7 @@ function RootDocument({
         <style dangerouslySetInnerHTML={{ __html: LINK_CHIP_ICON_CSS }} />
         <script dangerouslySetInnerHTML={{ __html: IOS_FOCUS_ZOOM_BOOT_SCRIPT }} />
       </head>
-      <body className="paper-grain">
+      <body>
         {children}
         <Scripts />
       </body>

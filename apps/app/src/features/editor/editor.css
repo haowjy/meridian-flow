@@ -22,9 +22,10 @@
  */
 .meridian-editor-shell {
   --editor-cursor-label-offset: 0.25rem;
-  /* Sit above the body paper-grain overlay so the manuscript reads pristine. */
   position: relative;
-  z-index: 2;
+  /* Keeps the editor's own z-layers (the review bar, the word-count pill) below the pane's
+     header popups. */
+  isolation: isolate;
 }
 
 /* The pane is the size container so a picture's height cap answers to the pane

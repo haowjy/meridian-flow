@@ -171,7 +171,7 @@
     @apply bg-ink-fill text-left text-foreground;
   }
   & tbody tr:nth-child(even) {
-    @apply bg-card/60;
+    @apply bg-ink-fill/50;
   }
   & tr {
     @apply border-b border-border-subtle last:border-0;
