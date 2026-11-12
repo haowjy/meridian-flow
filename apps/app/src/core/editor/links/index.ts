@@ -54,7 +54,6 @@ export {
 } from "./link-commands";
 export {
   canFollowLink,
-  followDisposition,
   followLink,
   type InternalLinkNavigator,
   type LinkFollowDisposition,

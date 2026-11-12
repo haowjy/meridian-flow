@@ -5,7 +5,7 @@
  * mounted but not presented. One document has at most one host, so the document id names it.
  *
  * `shown` is the mounted documents newest first by when they were last on screen: the desktop
- * picks its kept host and the side's fallback from it. A close, a Discard or a removal `forget`s a
+ * picks its kept host from it. A close, a Discard or a removal `forget`s a
  * document, so it is no longer picked and its host unmounts.
  */
 import type { OpenDocument } from "@/client/stores";

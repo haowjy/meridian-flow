@@ -1,5 +1,5 @@
 /**
- * Project chat navigation over this browser tab's last chat (the last chat opened in main).
+ * Project chat navigation over this browser tab's current chat (the last chat on screen, in either pane).
  *
  * Main shows a new chat's composer (`/chats`) or one chat the address names. What chat sits beside a document is the side's resolution (`side/side-item.ts`), not
  * this. Every way of opening a chat navigates main to it.
@@ -28,18 +28,18 @@ export type ChatDisplay = { kind: "new" } | { kind: "thread"; threadId: string }
 export type ChatNavigation = {
   /** The chat main shows; null when main holds no chat. */
   display: ChatDisplay | null;
-  /** The last chat opened in main. */
+  /** The current chat: the last chat on screen, in either pane. */
   currentChatId: string | null;
   /** Main goes to this chat: every chat door (a row, a mention, a link) is this one open. */
   openChat: (threadId: string, options?: { replace?: boolean }) => Promise<void>;
   /** Main goes to a new chat's composer, which takes focus unless `focus` is false. */
   openNewChat: (options?: { replace?: boolean; focus?: boolean }) => Promise<void>;
   /**
-   * A just-sent new chat becomes the last chat. Sent from main's composer it becomes main's chat;
+   * A just-sent new chat becomes the current chat. Sent from main's composer it becomes main's chat;
    * sent from the side's composer it stays there, beside main.
    */
   acceptCreatedChat: (threadId: string) => void;
-  /** A deleted chat stops being the last chat, and the side lets go of it. */
+  /** A deleted chat stops being the current chat, and the side lets go of it. */
   forgetChat: (threadId: string) => void;
   /**
    * One-shot New chat focus intent for the pinned empty composer. Non-null
@@ -56,7 +56,7 @@ type Go = (
   options: NavigationOptions,
 ) => Promise<NavigationSettlement>;
 
-/** Owns the last chat for one project route; returns the provider value. */
+/** Owns the current chat for one project route; returns the provider value. */
 export function useProjectChatNavigation({
   accountId,
   projectId,
@@ -116,9 +116,12 @@ export function useProjectChatNavigation({
     return { remember, commands };
   }, []);
 
+  // The current chat is the last chat on screen: a new-chat composer in main is null, as the
+  // side's New chat is.
   useEffect(() => {
     if (urlChatId) remember(urlChatId);
-  }, [urlChatId, remember]);
+    else if (mainKind === "new") remember(null);
+  }, [urlChatId, mainKind, remember]);
   useMissingChatFallback(accountId, surfaceThreadId, () => {
     remember(null);
     // Replace, never push: Back must not land on the missing chat again.

@@ -12,7 +12,6 @@ import { setDocumentView } from "@/client/project-shell/document-views";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import type { LinkFollowDisposition } from "@/core/editor/links";
 import { useOptionalChatPlace } from "@/features/chat/chat-place";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
@@ -132,9 +131,9 @@ function useOptionalOpenEditorReview(): EditorReviewCommand | null {
 }
 
 /**
- * Where an open goes. From a chat in main, a page is held beside, whatever the gesture; the chat
- * stays where it is. From a chat beside, or anywhere else (a document never sits beside a
- * document), it opens in main, whatever the gesture. Null opens in main.
+ * Where an open goes. From a chat in main, a page is held beside; the chat stays where it is.
+ * From a chat beside, or anywhere else (a document never sits beside a document), it opens in
+ * main. Null opens in main.
  */
 function useHoldBeside(): ShowBeside | null {
   const chatInMain = useOptionalChatPlace() === "main";
@@ -207,8 +206,7 @@ export function useAiDraftLauncher() {
  */
 export type LinkPlacement = (
   document: LinkDocumentRef,
-  gesture: LinkFollowDisposition,
-  live: (document: LinkDocumentRef, gesture: LinkFollowDisposition) => Promise<OpenDocumentOutcome>,
+  live: (document: LinkDocumentRef) => Promise<OpenDocumentOutcome>,
   workId?: string | null,
 ) => Promise<OpenDocumentOutcome>;
 
@@ -225,14 +223,14 @@ export function useLinkPlacement(projectId: string | null, ownerKey: string | nu
   const openDraft = useOpenDraft();
   const hold = useHoldBeside();
   return useCallback(
-    (document, gesture, live, workId) => {
+    (document, live, workId) => {
       if (document.review)
         return openDraft({
           documentId: document.documentId,
           ...document.review,
           draftOnly: true,
         });
-      if (document.trashed) return live(document, gesture);
+      if (document.trashed) return live(document);
       const drafted = ownerKey ? fileForDocument(document.documentId) : null;
       if (ownerKey && drafted?.contextLocation)
         return openDraft({
@@ -243,7 +241,7 @@ export function useLinkPlacement(projectId: string | null, ownerKey: string | nu
           documentName: drafted.documentName ?? undefined,
           draftOnly: drafted.draftOnly,
         });
-      if (!hold) return live(document, gesture);
+      if (!hold) return live(document);
       hold({ documentId: document.documentId, ...(workId ? { workId } : {}) });
       return Promise.resolve(committed(document.documentId));
     },

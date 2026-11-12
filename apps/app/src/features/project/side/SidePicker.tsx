@@ -3,7 +3,7 @@
  *
  * It offers only the kind main is not: chats beside a document, documents beside a chat. Its
  * lists: for main's item (a document's chats; a chat's documents), recent documents, recent chats
- * with New chat, and one merged Find list while searching. Each section loads on its own. A pick
+ * with New chat, and one merged Find list while searching. Each section loads on its own. A choice
  * writes the project's current chat or document, which lasts until main changes mode.
  */
 import { t } from "@lingui/core/macro";
@@ -39,7 +39,7 @@ const FIND_SCHEMES: readonly ProjectContextTreeScheme[] = ["manuscript", "kb", "
 
 type Row = {
   key: string;
-  pick: Item;
+  item: Item;
   name: string;
   meta?: string;
 };
@@ -58,7 +58,6 @@ export function SidePicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
   const changeOpen = (next: boolean) => {
     setOpen(next);
     if (!next) setQuery("");
@@ -67,9 +66,7 @@ export function SidePicker({
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
         <button
-          ref={triggerRef}
           type="button"
-          data-side-picker-trigger
           aria-label={
             name === null ? t`Choose what sits beside` : t`Choose what sits beside, now ${name}`
           }
@@ -102,7 +99,6 @@ export function SidePicker({
             query={query}
             onQueryChange={setQuery}
             searchRef={searchRef}
-            trigger={triggerRef}
             onDone={() => changeOpen(false)}
           />
         ) : null}
@@ -116,14 +112,12 @@ function SidePickerLists({
   query,
   onQueryChange,
   searchRef,
-  trigger,
   onDone,
 }: {
   projectId: string;
   query: string;
   onQueryChange: (query: string) => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
-  trigger: React.RefObject<HTMLButtonElement | null>;
   onDone: () => void;
 }) {
   const main = useMainForSide();
@@ -159,7 +153,7 @@ function SidePickerLists({
   const keep = (rows: Row[]) => {
     const seen = new Set<string>();
     return rows.filter((row) => {
-      if (seen.has(row.key) || !fitsBeside(row.pick, main)) return false;
+      if (seen.has(row.key) || !fitsBeside(row.item, main)) return false;
       seen.add(row.key);
       return true;
     });
@@ -179,7 +173,7 @@ function SidePickerLists({
       ? [
           ...(related.data?.chats ?? []).map((chat) => ({
             key: `chat:${chat.chatId}`,
-            pick: { kind: "chat" as const, chatId: chat.chatId },
+            item: { kind: "chat" as const, chatId: chat.chatId },
             name: chatTitle(chat.chatId, chat.title),
             meta: chat.edited ? t`Edited this` : t`Read this`,
           })),
@@ -192,7 +186,7 @@ function SidePickerLists({
             })
             .map((row) => ({
               key: `document:${row.documentId}`,
-              pick: { kind: "document" as const, documentId: row.documentId },
+              item: { kind: "document" as const, documentId: row.documentId },
               name: row.name,
               meta: row.edited ? t`Wrote` : t`Read`,
             }))
@@ -212,14 +206,14 @@ function SidePickerLists({
   const recentDocuments: Row[] = keep(
     recent.documents.map((item) => ({
       key: `document:${item.documentId}`,
-      pick: { kind: "document" as const, documentId: item.documentId },
+      item: { kind: "document" as const, documentId: item.documentId },
       name: item.name,
     })),
   ).slice(0, RECENT_LIMIT);
   const recentChats: Row[] = keep(
     chats.map((chat) => ({
       key: `chat:${chat.id}`,
-      pick: { kind: "chat" as const, chatId: chat.id },
+      item: { kind: "chat" as const, chatId: chat.id },
       name: displayThreadTitle(chat.title),
     })),
   ).slice(0, RECENT_LIMIT);
@@ -248,31 +242,29 @@ function SidePickerLists({
           query,
         ).map((file) => ({
           key: `document:${file.entryId}`,
-          pick: { kind: "document" as const, documentId: file.entryId },
+          item: { kind: "document" as const, documentId: file.entryId },
           name: file.name,
           meta: file.parents.at(-1),
         })),
         ...filterThreadsByTitle(chats, query).map((chat) => ({
           key: `chat:${chat.id}`,
-          pick: { kind: "chat" as const, chatId: chat.id },
+          item: { kind: "chat" as const, chatId: chat.id },
           name: displayThreadTitle(chat.title),
         })),
       ]).slice(0, FIND_LIMIT)
     : [];
 
-  const choose = (pick: Item) => {
-    const moves = !sameItem(pick, shownNow);
-    swapSide(pick);
+  const choose = (item: Item) => {
+    swapSide(item);
     onDone();
-    if (moves) focusTriggerAfterPick(trigger.current);
   };
   const row = (item: Row) => (
     <li key={item.key}>
       <ListRow
         density="menu"
-        current={sameItem(item.pick, shownNow)}
-        onOpen={() => choose(item.pick)}
-        leading={<ItemIcon pick={item.pick} name={item.name} />}
+        current={sameItem(item.item, shownNow)}
+        onOpen={() => choose(item.item)}
+        leading={<ItemIcon item={item.item} name={item.name} />}
         title={item.name}
         meta={item.meta}
       />
@@ -287,7 +279,7 @@ function SidePickerLists({
         onChange={onQueryChange}
         onSubmit={() => {
           const first = found[0];
-          if (first) choose(first.pick);
+          if (first) choose(first.item);
         }}
         label={
           offersChats && offersDocuments
@@ -329,7 +321,11 @@ function SidePickerLists({
                     </ListLine>
                   ) : forThisState ? (
                     <InlineErrorRow
-                      message={t`Couldn't load what goes with this.`}
+                      message={
+                        mainDocumentId
+                          ? t`Couldn't load the chats for this document.`
+                          : t`Couldn't load this chat's documents.`
+                      }
                       onRetry={forThisState.failed}
                     />
                   ) : forThis.length === 0 ? (
@@ -394,27 +390,7 @@ function SidePickerLists({
   );
 }
 
-/**
- * A pick can move the side to another host (a document's in place of the chat's), whose header
- * mounts a new trigger: the focus the popover returns to the old one is lost when it unmounts.
- * For a few frames after the pick, while focus is still on the old trigger or nowhere, the new
- * trigger takes it; focus the writer moved elsewhere stays.
- */
-function focusTriggerAfterPick(from: HTMLElement | null) {
-  let frames = 0;
-  const check = () => {
-    const active = document.activeElement;
-    if (active && active !== document.body && active !== from) return;
-    const next = [...document.querySelectorAll<HTMLElement>("[data-side-picker-trigger]")].find(
-      (trigger) => trigger !== from && !trigger.closest("[inert]"),
-    );
-    if (next) next.focus();
-    else if (++frames < 10) requestAnimationFrame(check);
-  };
-  requestAnimationFrame(check);
-}
-
-function ItemIcon({ pick, name }: { pick: Item; name: string }) {
-  const Icon = pick.kind === "chat" ? MessageSquare : fileKindIcon(name);
+function ItemIcon({ item, name }: { item: Item; name: string }) {
+  const Icon = item.kind === "chat" ? MessageSquare : fileKindIcon(name);
   return <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />;
 }

@@ -5,8 +5,8 @@
  *
  * ```text
  * main document / landing   side = current chat ?? a new chat (about main's document)
- * main chat / new chat      side = current document, else the most recent document that opens,
- *                                  else nothing
+ * main chat / new chat      side = current document, else main's open tabs (the one main
+ *                                  showed last, then from the right), else nothing
  * main opening              side keeps what it showed
  * ```
  *
@@ -21,7 +21,7 @@ import type { OpenDocument } from "@/client/stores";
 import type { Item } from "../views";
 
 export type SettledSide = {
-  /** Null: nothing to show (a chat beside which no document was ever opened). */
+  /** Null: nothing to show (a chat beside which no document is open). */
   item: Item | null;
   /** A document item's descriptor. */
   document: OpenDocument | null;
@@ -44,7 +44,7 @@ export type Described =
   | { status: "failed"; retry: () => void }
   | { status: "ready"; document: OpenDocument | null };
 
-/** A document to describe: a document picked from a link keeps the link's Work. */
+/** A document to describe: a document held beside from a link keeps the link's Work. */
 export type Describing = { documentId: string; workId?: string };
 
 /** The side waits: `describing` is the document whose descriptor it waits on. */
@@ -86,7 +86,7 @@ export function fitsBeside(item: Item, main: MainForSide): boolean {
 export function resolveSide(input: {
   main: MainForSide;
   currentChat: string | null;
-  /** Documents to try beside a chat, best first: the current document, then the most recent. */
+  /** Documents to try beside a chat, best first: the current document, then main's open tabs. */
   documents: readonly Describing[];
   describe: (document: Describing) => Described;
 }): SideResolution {

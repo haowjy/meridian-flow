@@ -28,7 +28,7 @@ import {
   type PreparedDoor,
 } from "@/features/chat/ChatContextNavigation";
 import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
-import type { LinkDestination, LinkDocumentRef } from "@/features/links";
+import type { LinkDocumentRef } from "@/features/links";
 import {
   type ChatLineages,
   type ChatUploadOwners,
@@ -131,12 +131,12 @@ export function ProjectChatContextNavigationProvider({
     ) || null,
   );
   const openFound = useCallback(
-    (door: Placement, document: LinkDocumentRef, gesture: Parameters<LinkDestination>[1]) => {
+    (door: Placement, document: LinkDocumentRef) => {
       const { passage } = door;
-      if (!passage) return place(document, gesture, (found) => openLive(door, found), door.workId);
+      if (!passage) return place(document, (found) => openLive(door, found), door.workId);
       // The passage door opens the document wherever the placement puts it, once, and lands there.
       passages.land(passage, document.documentId, (signal) =>
-        place(document, gesture, (found) => openLive(door, found, signal), door.workId),
+        place(document, (found) => openLive(door, found, signal), door.workId),
       );
       return Promise.resolve();
     },
@@ -181,7 +181,7 @@ export function ProjectChatContextNavigationProvider({
       return {
         link,
         policy: {
-          open: (document, gesture) => openFound(door, document, gesture),
+          open: (document) => openFound(door, document),
           missing: () => openMissing(door, target),
         },
       };

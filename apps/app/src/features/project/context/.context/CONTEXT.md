@@ -70,8 +70,7 @@ address, never lead it: arriving at a document opens or selects its tab. Hosts m
 documents in `PresentedDocuments` (`presented-documents.ts`: places main, side and kept). Its
 `documents` are main's and the side's only (main first): the removal coordinator, availability
 and removed notices read them to know what is on screen. Its `shown` list, every mounted document
-newest on screen first, is where the desktop picks the kept host (an open tab only) and the side's
-fallback; the coordinator's close, Discard and removal paths `forget` a document there, which also
+newest on screen first, is where the desktop picks the kept host (an open tab only); the coordinator's close, Discard and removal paths `forget` a document there, which also
 closes its tab, so its host unmounts. One document has at most one host, keyed `document:<id>` (`DocumentHost.tsx`), so a move
 between main and the side doesn't remount it.
 

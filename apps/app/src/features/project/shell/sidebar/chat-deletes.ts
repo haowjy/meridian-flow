@@ -3,8 +3,7 @@
  * delete. The project owns it, so switching the sidebar's list, closing the phone's drawer or
  * remounting the sidebar keeps it; leaving the project, signing out or reloading ends it.
  *
- * A delete takes what showed the chat at once (main goes to a new chat, the side lets go of a
- * pick) and leaves its saved words alone: the composer's draft and unsent records stay
+ * A delete takes what showed the chat at once (main goes to a new chat, the side lets go of it) and leaves its saved words alone: the composer's draft and unsent records stay
  * while the Undo can still bring the chat back, and go when the notice ends without one. Undo
  * puts back each thing the delete took that nothing has replaced since.
  *

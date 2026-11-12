@@ -68,7 +68,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const sidebarToggle: PaneHeaderRailToggle = { open: panels["rail-l"].open };
   const sideToggle: PaneHeaderRailToggle = { open: panels.side.open };
   const sideOpen = panels.side.open;
-  // A pick made from a link opens the side, so the click has a visible result.
+  // A document held beside from a link opens the side, so the click has a visible result.
   const revealed = useSideRevealed();
   const seenReveal = useRef(revealed);
   useEffect(() => {

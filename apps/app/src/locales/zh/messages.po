@@ -2091,12 +2091,20 @@ msgstr ""
 msgid "Couldn't load references."
 msgstr ""
 
+#: src/features/project/side/SidePicker.tsx
+msgid "Couldn't load the chats for this document."
+msgstr ""
+
 #: src/features/chat/TurnList.tsx
 msgid "Couldn't load the conversation this fork continues."
 msgstr ""
 
 #: src/features/export/ExportProjectDialog.tsx
 msgid "Couldn't load the preview."
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "Couldn't load this chat's documents."
 msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx
@@ -2117,8 +2125,8 @@ msgid "Couldn't load Trash."
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Couldn't load what goes with this."
-msgstr ""
+#~ msgid "Couldn't load what goes with this."
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."

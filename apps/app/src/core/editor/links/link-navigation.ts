@@ -81,18 +81,6 @@ export function linkClickIntent({
   return { action: "follow", disposition: "current" };
 }
 
-/**
- * What a click on a link chip, a door or a row that opens a page asks for: the middle button,
- * Ctrl or Cmd mean "somewhere else", like the editor's own links above.
- */
-export function followDisposition(click: {
-  button: number;
-  ctrlKey: boolean;
-  metaKey: boolean;
-}): LinkFollowDisposition {
-  return click.button === MIDDLE_BUTTON || click.ctrlKey || click.metaKey ? "new-tab" : "current";
-}
-
 export type LinkFollowResult =
   /** External: a new tab, so the draft and its state are never lost. */
   | "opened"

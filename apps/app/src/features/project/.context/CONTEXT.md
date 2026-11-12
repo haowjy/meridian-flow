@@ -69,29 +69,35 @@ panes; main's mode decides the organisation. This holds for any future side UI (
 what each shows is browser-level state, independent of the panes; which appear, and how they are
 arranged, follows what is in main. `resolveSide` (`side/side-item.ts`): beside a
 document or the landing, the current chat, else a new chat about main's document; beside a chat
-or the new-chat composer, the current document if it opens, else the most recent document that
-does (those on screen, then recents), else nothing; while main's document is opening, what the
-side showed. Nothing derives the side from activity (the chat that last edited a document, the
-documents a chat touched): the writer's own state decides. A swap (the side picker, a link held
-beside, the side composer's send) writes the current chat or document and lasts until main
-changes mode, which falls out of the rule. `fitsBeside` is "the item's kind differs from main's
-mode", for the rule and the picker, which offers only the other kind. A document fits beside only
+or the new-chat composer, the current document if it opens, else main's open tabs (the one main
+showed last, then from the right) that open, else nothing (the side's empty state). Recents are
+not a source: a document the writer closed must not come back. While main's document is opening,
+the side keeps what it showed. Nothing derives the side from activity (the chat that last edited
+a document, the documents a chat touched): the writer's own state decides. A new-chat composer on
+screen in either pane is `currentChat = null`: main at `/chats` writes it, as the side's New chat
+does, so the bare address lands on a new chat. A swap (the side picker, a link held beside, the
+side composer's send) writes the current chat or document and lasts until main changes mode,
+which falls out of the rule. `fitsBeside` is "the item's kind differs from main's mode", for the
+rule and the picker, which offers only the other kind; its "For this" rows (a document's chats, a
+chat's documents by activity) are an offer, not a source of the side. A document fits beside only
 once it is described (`describe` in `context/open-project-document.ts`) and opens in the editor:
 one that doesn't (removed, an upload) is skipped for the next candidate. While a describe is out,
-the side keeps what it showed. The current document is cleared when it is closed, Discarded or
-removed: its tab closing (`client/project-shell/main-tabs.ts`) clears it. The header names the item and says
-no reason for it. `side/SideView.tsx` holds this state and the swap command
-(`useShellCommands`); both shells read it, and the phone's sheet shows the same item. The sheet
-is no history entry: Back while it is open dismisses it and leaves main where it is. Back and
-Forward move main only; the side follows the rule for the new main and the stored state.
+the side keeps what it showed. The current document is cleared when its tab goes
+(`forgetClosedCurrentDocument` in `client/project-shell/main-tabs.ts`: closed, Discarded or
+removed). The header names the item and says no reason for it. `side/SideView.tsx` holds this
+state and the swap command (`useShellCommands`); both shells read it, and the phone's sheet shows
+the same item. The sheet is no history entry: Back while it is open dismisses it and leaves main
+where it is. Back and Forward move main only; the side follows the rule for the new main and the
+stored state.
 Every document link follows one placement rule (`useHoldBeside` in `review-launch.tsx`). From a
-chat in main (`ChatPlaceContext`), a page is held beside, whatever the gesture: it becomes the
-current document and a closed side opens. From a chat beside, and from anywhere else, it opens in
-main, whatever the gesture: a document never sits beside a document, and a cmd-click or middle
-click goes to the surface's own main opener. So from a chat only the sidebar and Open in main
-replace main. Editor links, transcript links, chat doors, the draft dock's rows and a reply's
-"Drafted N documents" rows all go through it. The phone's main chat is outside
-`ChatPlaceContext`, so its links open in main, and the sheet closes, as every phone open does.
+chat in main (`ChatPlaceContext`), a page is held beside: it becomes the current document and a
+closed side opens. From a chat beside, and from anywhere else, it opens in main: a document never
+sits beside a document. The click's modifier (cmd, ctrl, middle) places nothing and the link
+follower treats every follow alike (a newer follow aborts the last): main's opener has no
+new-tab mode. So from a chat only the sidebar and Open in main replace main. Editor links,
+transcript links, chat doors, the draft dock's rows and a reply's "Drafted N documents" rows all
+go through it. The phone's main chat is outside `ChatPlaceContext`, so its links open in main,
+and the sheet closes, as every phone open does.
 A page only a draft holds (created by it, or deleted live) is described from the draft its
 view pins (`useDescriptions` in `side/SideView.tsx`), the way main's address describes it, since
 the live catalog has no entry for it. The sidebar tree marks main's document only, never the side's. Each header renders inside its host

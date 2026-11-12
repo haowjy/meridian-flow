@@ -86,16 +86,24 @@ export function readMainTabs(accountId: string, projectId: string): MainTabs {
   return tabs;
 }
 
+/**
+ * A document whose tab closes (closed, Discarded or removed) is no longer the current one, so the
+ * side does not bring back what the writer put away. Every path that removes a tab writes through
+ * here, which is why this is not a hook of the closing commands.
+ */
+function forgetClosedCurrentDocument(accountId: string, projectId: string, next: MainTabs): void {
+  const current = readCurrentDocument(accountId, projectId)?.documentId;
+  if (!current) return;
+  const hadTab = readMainTabs(accountId, projectId).tabs.some(
+    (tab) => tab.document.documentId === current,
+  );
+  const keeps = next.tabs.some((tab) => tab.document.documentId === current);
+  if (hadTab && !keeps) writeCurrentDocument(accountId, projectId, null);
+}
+
 function write(accountId: string, projectId: string, next: MainTabs): void {
   const key = recordKey(accountId, projectId);
-  const kept = new Set(next.tabs.map((tab) => tab.document.documentId));
-  const closed = readMainTabs(accountId, projectId).tabs.some(
-    (tab) =>
-      !kept.has(tab.document.documentId) &&
-      tab.document.documentId === readCurrentDocument(accountId, projectId)?.documentId,
-  );
-  // A document whose tab closes (closed, Discarded or removed) is no longer the current one.
-  if (closed) writeCurrentDocument(accountId, projectId, null);
+  forgetClosedCurrentDocument(accountId, projectId, next);
   cache.set(key, next);
   record(accountId, projectId).write(next.tabs.length > 0 ? next : undefined);
   for (const listener of listeners.get(key) ?? []) listener();

@@ -34,7 +34,6 @@ import {
   writeCurrentDocument,
 } from "@/client/project-shell/store";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
-import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import type { OpenDocument } from "@/client/stores";
 import type { NewChatAbout } from "@/features/chat/CreationComposer";
 import {
@@ -85,8 +84,6 @@ type SideView = {
 };
 
 const SideViewContext = createContext<SideView | null>(null);
-
-const RECENT_CANDIDATES = 5;
 
 const describeKey = ({ documentId, workId }: Describing) => `${documentId}|${workId ?? ""}`;
 
@@ -228,11 +225,9 @@ export function SideViewProvider({
   const currentChatId = useCurrentChat(accountId, projectId);
   const currentDocument = useCurrentDocument(accountId, projectId);
   const { tabs, selected } = useMainTabs(accountId, projectId);
-  const recent = useRecentDocuments(projectId);
-  // Beside a chat: the current document, else the most recent that opens: main's open tabs (the
-  // one main showed last, then from the right), then the account's recents, which still list a
-  // document whose tab was closed. Not the mounted documents: a closed tab's host stays mounted,
-  // hidden, for its undo.
+  // Beside a chat: the current document, else main's open tabs (the one main showed last, then
+  // from the right), else nothing. Not recents or the mounted documents: a document the writer
+  // closed must not come back, and a closed tab's host stays mounted, hidden, for its undo.
   const documents = useMemo(() => {
     const seen = new Set<string>();
     const open = [...tabs]
@@ -241,11 +236,8 @@ export function SideViewProvider({
     return [
       ...(currentDocument ? [currentDocument] : []),
       ...open.map((tab) => ({ documentId: tab.document.documentId })),
-      ...recent.documents
-        .slice(0, RECENT_CANDIDATES)
-        .map((row) => ({ documentId: row.documentId })),
     ].filter(({ documentId }) => !seen.has(documentId) && seen.add(documentId));
-  }, [currentDocument, tabs, selected, recent.documents]);
+  }, [currentDocument, tabs, selected]);
   const descriptions = useDescriptions(projectId);
   const resolution = resolveSide({
     main,
@@ -290,7 +282,7 @@ export function SideViewProvider({
   const sideChat = side.item?.kind === "chat" ? side.item : null;
   const chatOnScreen = mainChat ?? (main.kind === "new-chat" ? null : (sideChat?.chatId ?? null));
   // The thread the one chat host renders. It keeps the last chat it showed while no chat is on
-  // screen, so a stream and the transcript stay warm behind a picked document.
+  // screen, so a stream and the transcript stay warm behind the document the side shows.
   const showing: string | null | undefined =
     mainChat ?? (main.kind === "new-chat" ? null : sideChat ? sideChat.chatId : undefined);
   const [hostChatId, setHostChatId] = useState<string | null>(showing ?? currentChatId);
