@@ -8,7 +8,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import { useRouter } from "@tanstack/react-router";
-import { ChevronDown, FileQuestion, Plus, X } from "lucide-react";
+import { ChevronDown, type LucideIcon, Plus, X } from "lucide-react";
 import {
   type HTMLAttributes,
   type KeyboardEvent,
@@ -461,11 +461,22 @@ function DocumentTabChip({
   );
 }
 
-/** Main's address names nothing: its tab says so, and closing it leaves the address. */
-export function UnavailableTabChip({ name, onClose }: { name: string; onClose: () => void }) {
+/**
+ * Main's item when it takes no tab (an address that names nothing, a document in Trash): a chip
+ * in the strip that says what main shows, and closing it leaves the address.
+ */
+export function UntabbedChip({
+  icon: Icon,
+  name,
+  onClose,
+}: {
+  icon: LucideIcon;
+  name: string;
+  onClose: () => void;
+}) {
   return (
     <TabChipFrame active divider={false}>
-      <FileQuestion aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       <span
         role="tab"
         aria-selected

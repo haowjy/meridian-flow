@@ -3,9 +3,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { Folder, FolderOpen, LoaderCircle } from "lucide-react";
+import { Folder, FolderOpen, LoaderCircle, type LucideIcon } from "lucide-react";
 import {
   createContext,
+  type HTMLAttributes,
   type KeyboardEvent,
   type ReactNode,
   useContext,
@@ -28,7 +29,7 @@ import {
   siblingsOf,
 } from "@/features/import/tree-rows";
 import { cn } from "@/lib/utils";
-import { EntryKebabButton } from "./ContextEntryActions";
+import { ContextEntryMenu, EntryKebabButton, type EntryMenu } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
@@ -39,6 +40,7 @@ import {
   contextTreeSelectedRowClassName,
   sidebarIcon,
 } from "./context-row-geometry";
+import { EntryDestinationPicker } from "./EntryDestinationPicker";
 import { EntryNameField } from "./EntryNameField";
 import { EntryRefusalNotice } from "./EntryRefusalNotice";
 import type { DragEntry } from "./entry-drag/entry";
@@ -51,7 +53,6 @@ import { useCreateEntryForm } from "./use-create-entry-form";
 import {
   type EntryCapabilities,
   type EntryCreation,
-  EntryInteractionShell,
   useEntryInteraction,
 } from "./use-entry-interaction";
 import { useRenameEntryForm } from "./use-rename-entry-form";
@@ -191,7 +192,7 @@ function activateOnKey(handler: (event: KeyboardEvent) => void) {
   };
 }
 
-export function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
+export function RowIcon({ icon: Icon }: { icon: LucideIcon }) {
   return (
     <span className={cn("flex h-7 w-4 shrink-0 items-center justify-center", role.secondary)}>
       <Icon aria-hidden className={sidebarIcon.row} />
@@ -266,55 +267,57 @@ function DirRow({
     <DropRegion state={drop.dropState}>
       {/* The region spans the subtree, so "after" lands below everything shown inside. */}
       <InsertionLine edge={drop.edge} inset={ROW_INSET_PX + rowPaddingLeft(depth)} />
-      <EntryInteractionShell interaction={interaction}>
-        {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. slop-lint: allow suppression the reason is stated in this comment */}
-        <div
-          role="button"
-          tabIndex={0}
-          aria-expanded={isOpen}
-          aria-label={t`Toggle folder ${dir.name}`}
-          onClick={row.activate(toggle)}
-          onKeyDown={activateOnKey(row.activate(toggle))}
-          {...row.rowProps}
-          {...drop.dropProps}
-          className={cn(
-            "group focus-ring mx-2 flex items-center rounded-md pr-1 text-foreground",
-            role.row,
-            row.selected ? contextTreeSelectedRowClassName : role.hover,
-            contextTreeRowGrowClassName,
-          )}
-          style={{ paddingLeft: rowPaddingLeft(depth) }}
-        >
-          {/* The open or closed folder is the twistie: rows need no chevron column. */}
-          <RowIcon icon={isOpen ? FolderOpen : Folder} />
-          <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
-            <span className="truncate">{dir.name}</span>
-            <LinkUpdateNote
-              projectId={env.projectId}
-              subject={{ kind: "folder", id: dir.entryId }}
-              operationId={interaction.operationId}
-              layout="stacked"
-            />
-            {dir.namespaceFailure && env.refusalNotice ? (
-              <EntryRefusalNotice
+      <EntryDestinationPicker {...interaction.picker}>
+        <ContextEntryMenu menu={interaction.menu}>
+          {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. slop-lint: allow suppression the reason is stated in this comment */}
+          <div
+            role="button"
+            tabIndex={0}
+            aria-expanded={isOpen}
+            aria-label={t`Toggle folder ${dir.name}`}
+            onClick={row.activate(toggle)}
+            onKeyDown={activateOnKey(row.activate(toggle))}
+            {...row.rowProps}
+            {...drop.dropProps}
+            className={cn(
+              "group focus-ring mx-2 flex items-center rounded-md pr-1 text-foreground",
+              role.row,
+              row.selected ? contextTreeSelectedRowClassName : role.hover,
+              contextTreeRowGrowClassName,
+            )}
+            style={{ paddingLeft: rowPaddingLeft(depth) }}
+          >
+            {/* The open or closed folder is the twistie: rows need no chevron column. */}
+            <RowIcon icon={isOpen ? FolderOpen : Folder} />
+            <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
+              <span className="truncate">{dir.name}</span>
+              <LinkUpdateNote
+                projectId={env.projectId}
+                subject={{ kind: "folder", id: dir.entryId }}
+                operationId={interaction.operationId}
+                layout="stacked"
+              />
+              {dir.namespaceFailure && env.refusalNotice ? (
+                <EntryRefusalNotice
+                  failure={dir.namespaceFailure}
+                  move={Boolean(dir.namespaceRepairMove)}
+                  folder
+                  actions={interaction.actions}
+                  onAction={interaction.onAction}
+                />
+              ) : null}
+            </span>
+            {dir.namespaceFailure && !env.refusalNotice ? (
+              <NamespaceFailureMark
                 failure={dir.namespaceFailure}
                 move={Boolean(dir.namespaceRepairMove)}
                 folder
-                actions={interaction.actions}
-                onAction={interaction.onAction}
               />
             ) : null}
-          </span>
-          {dir.namespaceFailure && !env.refusalNotice ? (
-            <NamespaceFailureMark
-              failure={dir.namespaceFailure}
-              move={Boolean(dir.namespaceRepairMove)}
-              folder
-            />
-          ) : null}
-          <EntryKebabButton menu={interaction.menu} />
-        </div>
-      </EntryInteractionShell>
+            <EntryKebabButton menu={interaction.menu} />
+          </div>
+        </ContextEntryMenu>
+      </EntryDestinationPicker>
       {isOpen ? (
         <TreeGroup depth={depth + 1}>
           <TreeChildren
@@ -400,47 +403,118 @@ function FileRow({
   }
 
   return (
-    <EntryInteractionShell interaction={interaction}>
+    <EntryDestinationPicker {...interaction.picker}>
+      <DocumentRow
+        row={row}
+        menu={interaction.menu}
+        active={active}
+        depth={depth}
+        icon={fileKindIcon(file)}
+        name={file.name}
+        onOpen={select}
+        controlProps={drop.dropProps}
+        overlay={<InsertionLine edge={drop.edge} inset={rowPaddingLeft(depth)} />}
+        detail={
+          <>
+            <LinkUpdateNote
+              projectId={env.projectId}
+              subject={{ kind: "file", id: file.documentId }}
+              operationId={interaction.operationId}
+              layout="stacked"
+            />
+            {file.namespaceFailure && env.refusalNotice ? (
+              <EntryRefusalNotice
+                failure={file.namespaceFailure}
+                move={Boolean(file.namespaceRepairMove)}
+                actions={interaction.actions}
+                onAction={interaction.onAction}
+              />
+            ) : null}
+          </>
+        }
+        trailing={
+          file.namespaceFailure && !env.refusalNotice ? (
+            <NamespaceFailureMark
+              failure={file.namespaceFailure}
+              move={Boolean(file.namespaceRepairMove)}
+            />
+          ) : null
+        }
+      />
+    </EntryDestinationPicker>
+  );
+}
+
+/**
+ * A document's row in every sidebar list, the trees' files and Trash alike: it opens on a click,
+ * joins its list's selection on a Ctrl/Cmd- or Shift-click, and its right-click and ⋯ open the
+ * same menu. Lists differ only in what they put beside and under the name.
+ */
+export function DocumentRow({
+  row,
+  menu,
+  active,
+  depth,
+  icon,
+  name,
+  meta,
+  detail,
+  trailing,
+  onOpen,
+  controlProps,
+  overlay,
+}: {
+  row: ReturnType<typeof useEntryRow>;
+  menu: EntryMenu;
+  /** What main shows. */
+  active: boolean;
+  depth: number;
+  icon: LucideIcon;
+  name: string;
+  /** Quiet, at the right of the name. */
+  meta?: ReactNode;
+  /** Under the name. */
+  detail?: ReactNode;
+  /** Before the ⋯. */
+  trailing?: ReactNode;
+  onOpen: () => void;
+  controlProps?: HTMLAttributes<HTMLElement>;
+  /** Drawn over the row (a drop's insertion line). */
+  overlay?: ReactNode;
+}) {
+  return (
+    <ContextEntryMenu menu={menu}>
       {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
       <div
         role="button"
         tabIndex={0}
         aria-current={active ? "page" : undefined}
-        onClick={row.activate(select)}
-        onKeyDown={activateOnKey(row.activate(select))}
+        onClick={row.activate(onOpen)}
+        onKeyDown={activateOnKey(row.activate(onOpen))}
         {...row.rowProps}
-        {...drop.dropProps}
+        {...controlProps}
         className={cn("focus-ring relative", contextTreeFileRowClassName(active, row.selected))}
         style={{ paddingLeft: rowPaddingLeft(depth) }}
       >
-        <InsertionLine edge={drop.edge} inset={rowPaddingLeft(depth)} />
-        <RowIcon icon={fileKindIcon(file)} />
+        {overlay}
+        <RowIcon icon={icon} />
         <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
-          <span className="truncate">{file.name}</span>
-          <LinkUpdateNote
-            projectId={env.projectId}
-            subject={{ kind: "file", id: file.documentId }}
-            operationId={interaction.operationId}
-            layout="stacked"
-          />
-          {file.namespaceFailure && env.refusalNotice ? (
-            <EntryRefusalNotice
-              failure={file.namespaceFailure}
-              move={Boolean(file.namespaceRepairMove)}
-              actions={interaction.actions}
-              onAction={interaction.onAction}
-            />
-          ) : null}
+          {meta ? (
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="min-w-0 flex-1 truncate">{name}</span>
+              <span className={cn("shrink-0 font-normal tabular-nums", role.rowSecondary)}>
+                {meta}
+              </span>
+            </span>
+          ) : (
+            <span className="truncate">{name}</span>
+          )}
+          {detail}
         </span>
-        {file.namespaceFailure && !env.refusalNotice ? (
-          <NamespaceFailureMark
-            failure={file.namespaceFailure}
-            move={Boolean(file.namespaceRepairMove)}
-          />
-        ) : null}
-        <EntryKebabButton menu={interaction.menu} />
+        {trailing}
+        <EntryKebabButton menu={menu} />
       </div>
-    </EntryInteractionShell>
+    </ContextEntryMenu>
   );
 }
 

@@ -18,6 +18,9 @@ export function useEntryRow(
   },
 ) {
   const { selection, selected, rowProps } = useEntrySelectionRow(entry, active);
+  /** A selection gesture (Ctrl/Cmd or Shift) selects; true when it did, so the click must not open. */
+  const select = (event: MouseEvent | KeyboardEvent): boolean =>
+    selection?.click(entry, event) ?? false;
   return {
     selected,
     rowProps: {
@@ -28,12 +31,12 @@ export function useEntryRow(
         startEntryDrag(event, selection ? selection.dragged(entry) : [entry], source);
       },
     },
+    select,
     /** A selection gesture (Ctrl/Cmd or Shift) selects instead of opening or toggling. */
     activate:
       (open: () => void) =>
       (event: MouseEvent | KeyboardEvent): void => {
-        if (selection?.click(entry, event)) return;
-        open();
+        if (!select(event)) open();
       },
   };
 }

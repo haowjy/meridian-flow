@@ -48,16 +48,16 @@ export type OpenContextRoute = (
   options?: OpenContextOptions,
 ) => Promise<NavigationSettlement>;
 
+/** Main's deleted document: the one the address names, and the command that shows one. */
+export type TrashNavigation = {
+  shown: string | undefined;
+  open: (documentId: string, options?: { replace?: boolean }) => Promise<unknown>;
+};
+
 const ProjectNavigationContext = createContext<{
   open: OpenContextRoute;
   capture?: () => () => boolean;
-  trash: {
-    destination: true | string | undefined;
-    navigate: (
-      destination: false | true | string,
-      options?: { replace?: boolean },
-    ) => Promise<unknown>;
-  };
+  trash: TrashNavigation;
 } | null>(null);
 
 export function ProjectNavigationProvider({
@@ -69,13 +69,7 @@ export function ProjectNavigationProvider({
   children: ReactNode;
   openContextRoute: OpenContextRoute;
   captureNavigation?: () => () => boolean;
-  trash: {
-    destination: true | string | undefined;
-    navigate: (
-      destination: false | true | string,
-      options?: { replace?: boolean },
-    ) => Promise<unknown>;
-  };
+  trash: TrashNavigation;
 }) {
   return (
     <ProjectNavigationContext.Provider
@@ -127,8 +121,7 @@ export function useCaptureProjectNavigation() {
   return useContext(ProjectNavigationContext)?.capture;
 }
 
-/** The route-owned Trash overlay destination and its one navigation operation. */
-export function useProjectTrashNavigation() {
+export function useTrashNavigation(): TrashNavigation {
   const trash = useContext(ProjectNavigationContext)?.trash;
   if (!trash) throw new Error("Project Trash navigation is required");
   return trash;

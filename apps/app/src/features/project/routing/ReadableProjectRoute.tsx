@@ -69,7 +69,11 @@ import {
   addressedDocument,
   ProjectAddressDocument,
 } from "./ProjectAddressDocument";
-import { besideHintOf, ProjectNavigationProvider } from "./ProjectNavigationContext";
+import {
+  besideHintOf,
+  ProjectNavigationProvider,
+  type TrashNavigation,
+} from "./ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import {
   addressLineage,
@@ -651,7 +655,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     return {
       ...address,
       destination: next,
-      trash: undefined,
       itemKey: undefined,
       changeId: undefined,
       owner: undefined,
@@ -714,22 +717,24 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     },
     [contextRemoval, projectId],
   );
-  const navigateTrash = useCallback(
-    (trash: false | true | string, options?: { replace?: boolean }) => {
-      const current = router.history.location;
-      const query = new URLSearchParams(current.search);
-      if (trash) query.set("trash", String(trash));
-      else query.delete("trash");
-      const search = query.toString();
-      router.history[options?.replace ? "replace" : "push"](
-        `${current.pathname}${search ? `?${search}` : ""}${current.hash}`,
-        current.state,
-      );
-      return Promise.resolve();
-    },
-    [router],
+  // Stable, so the document opener built on it outlives a change of what main shows.
+  const openTrashed = useCallback<TrashNavigation["open"]>(async (documentId, options) => {
+    const { navigation, address } = latest.current;
+    if (!navigation) return { kind: "superseded" };
+    return navigation.navigate(
+      {
+        projectId: address.projectId,
+        destination: { kind: "trashed", documentId },
+        ...(address.settings ? { settings: address.settings } : {}),
+      },
+      { replace: options?.replace ?? false },
+    );
+  }, []);
+  const shownTrashed = destination.kind === "trashed" ? destination.documentId : undefined;
+  const trash = useMemo<TrashNavigation>(
+    () => ({ shown: shownTrashed, open: openTrashed }),
+    [shownTrashed, openTrashed],
   );
-  const trashDestination = address.trash;
   useEffect(() => {
     if (!closingRef || !closeState.closed || closeState.removed) return;
     const itemKey = closingRef.itemKey;
@@ -832,7 +837,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     <ProjectNavigationProvider
       openContextRoute={openContext}
       captureNavigation={captureNavigation}
-      trash={{ destination: trashDestination, navigate: navigateTrash }}
+      trash={trash}
     >
       <ChatNavigationProvider value={chat}>
         <ProjectDocumentNavigationProvider

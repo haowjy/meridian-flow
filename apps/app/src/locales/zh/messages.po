@@ -88,6 +88,10 @@ msgstr ""
 msgid ", "
 msgstr "，"
 
+#: src/components/ui/list-row.tsx
+msgid ", selected"
+msgstr ""
+
 #: src/features/project/context/context-entry-name.ts
 msgid "'.' and '..' cannot be used as names"
 msgstr ""
@@ -103,10 +107,6 @@ msgstr ""
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "(draft waiting)"
 msgstr ""
-
-#: src/features/draft-review/DraftSwitcher.tsx
-#~ msgid "(Work has a draft)"
-#~ msgstr ""
 
 #. placeholder {0}: stats.callCount
 #: src/features/chat/AssistantTurnActions.tsx
@@ -428,7 +428,7 @@ msgstr ""
 msgid "{days, plural, one {# day left} other {# days left}}"
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/TrashedDocument.tsx
 msgid "{days, plural, one {Gone for good in # day.} other {Gone for good in # days.}}"
 msgstr ""
 
@@ -646,10 +646,6 @@ msgstr ""
 msgid "{pending, plural, one {# document to review} other {# documents to review}}"
 msgstr ""
 
-#: src/features/project/shell/sidebar/WorkScopePicker.tsx
-#~ msgid "{pending} documents to review"
-#~ msgstr ""
-
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{position} of {count}"
@@ -694,14 +690,6 @@ msgstr ""
 #: src/features/creation/CreationDialog.tsx
 msgid "{submitLabel} (enter a name first)"
 msgstr ""
-
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#~ msgid "{title} added to Favorites"
-#~ msgstr ""
-
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#~ msgid "{title} removed from Favorites"
-#~ msgstr ""
 
 #: src/features/project/shell/sidebar/chat-deletes.ts
 msgid "{title} restored"
@@ -875,17 +863,9 @@ msgstr ""
 msgid "A Work groups the chats and drafts for one piece of writing."
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
-msgid "a writer"
-msgstr ""
-
 #: src/features/export/ExportProjectDialog.tsx
 msgid "A ZIP of Markdown files and folders. Includes Manuscript, Knowledge and Unfiled."
 msgstr ""
-
-#: src/features/export/ExportProjectDialog.tsx
-#~ msgid "A ZIP of Markdown files and folders. Includes Manuscript, Knowledge Base and Unfiled."
-#~ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
@@ -950,10 +930,6 @@ msgstr ""
 msgid "Add row"
 msgstr ""
 
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#~ msgid "Add to Favourites"
-#~ msgstr ""
-
 #: src/features/chat/ChatCards.tsx
 msgid "Add usage"
 msgstr ""
@@ -990,15 +966,6 @@ msgstr ""
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "AI assistant"
-msgstr ""
-
-#. placeholder {0}: voice.chat
-#: src/features/project/context/DocumentTrashDialog.tsx
-msgid "AI in {0}"
-msgstr ""
-
-#: src/features/project/context/DocumentTrashDialog.tsx
-msgid "AI in a chat"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
@@ -1223,10 +1190,6 @@ msgstr ""
 #: src/features/draft-review/ReviewCompletion.tsx
 #: src/features/editor/EditorView.tsx
 msgid "Back to live"
-msgstr ""
-
-#: src/features/project/context/DocumentTrashDialog.tsx
-msgid "Back to Trash"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -1662,18 +1625,9 @@ msgstr ""
 msgid "Choose Work for new chat"
 msgstr ""
 
-#. placeholder {0}: work.name
-#: src/features/project/chat/NewThreadComposerToolbar.tsx
-#~ msgid "Choose Work for new chat, currently {0}"
-#~ msgstr ""
-
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat, currently {name}"
 msgstr ""
-
-#: src/features/project/chat/NewThreadComposerToolbar.tsx
-#~ msgid "Choose Work for new chat, currently {unavailableLabel}"
-#~ msgstr ""
 
 #: src/features/chat/ask/permission-request.ts
 msgid "Clear the goal"
@@ -1723,10 +1677,6 @@ msgstr ""
 
 #: src/features/project/mobile/MobileChangeSheet.tsx
 msgid "Close the list"
-msgstr ""
-
-#: src/features/project/context/DocumentTrashDialog.tsx
-msgid "Close Trash"
 msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
@@ -2117,10 +2067,6 @@ msgstr ""
 msgid "Couldn't load agents."
 msgstr ""
 
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Couldn't load chats"
-#~ msgstr ""
-
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SidePicker.tsx
 msgid "Couldn't load chats."
@@ -2150,7 +2096,7 @@ msgstr ""
 msgid "Couldn't load the preview."
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/TrashedDocument.tsx
 msgid "Couldn't load this document."
 msgstr ""
 
@@ -2163,7 +2109,6 @@ msgstr ""
 msgid "Couldn't load this file."
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Couldn't load Trash."
 msgstr ""
@@ -2579,8 +2524,28 @@ msgstr ""
 msgid "Deleted a Work"
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
-msgid "Deleted documents."
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} by {name} on {deleted}."
+msgstr ""
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} by the AI in {chat} on {deleted}."
+msgstr ""
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} by the AI in a chat on {deleted}."
+msgstr ""
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} by you on {deleted}."
+msgstr ""
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} on {deleted}."
+msgstr ""
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Deleted from {place} with the Work {name} on {deleted}."
 msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
@@ -2847,10 +2812,6 @@ msgstr ""
 msgid "Edited {count} documents"
 msgstr ""
 
-#: src/features/project/side/SideHeader.tsx
-#~ msgid "Edited {mainName}"
-#~ msgstr ""
-
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Edited 1 document"
 msgstr ""
@@ -2977,14 +2938,6 @@ msgstr ""
 #: src/components/app/failure-toast.tsx
 msgid "Failures"
 msgstr ""
-
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#~ msgid "Favorite wasn’t saved"
-#~ msgstr ""
-
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#~ msgid "Favourites"
-#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "fence"
@@ -3337,10 +3290,6 @@ msgstr ""
 msgid "In the trash folder."
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
-msgid "In the trash. Deleted by {actor} on {deleted}."
-msgstr ""
-
 #: src/features/export/ExportProjectDialog.tsx
 msgid "Include Scratch"
 msgstr ""
@@ -3476,11 +3425,11 @@ msgstr ""
 msgid "Keep this tab open until the upload finishes."
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/TrashedDocument.tsx
 msgid "Kept while {works} has changes to it."
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/TrashedDocument.tsx
 msgid "Kept while {works} have changes to it."
 msgstr ""
 
@@ -3488,11 +3437,6 @@ msgstr ""
 #: src/features/project/context/context-schemes.ts
 msgid "Knowledge"
 msgstr ""
-
-#: src/features/import/destination.ts
-#: src/features/project/context/context-schemes.ts
-#~ msgid "Knowledge Base"
-#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Label"
@@ -3506,14 +3450,6 @@ msgstr "语言"
 #: src/features/account/SettingsDialog.tsx
 msgid "Large"
 msgstr ""
-
-#: src/features/project/side/SideHeader.tsx
-#~ msgid "Last chat"
-#~ msgstr ""
-
-#: src/features/project/side/SideHeader.tsx
-#~ msgid "Last document"
-#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Last name"
@@ -3597,7 +3533,7 @@ msgstr ""
 msgid "Loading changes…"
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/TrashedDocument.tsx
 msgid "Loading document…"
 msgstr ""
 
@@ -3642,7 +3578,6 @@ msgstr ""
 msgid "Loading signed image URL…"
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Loading Trash…"
 msgstr ""
@@ -4010,10 +3945,6 @@ msgid "No chats here yet."
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#~ msgid "No chats match “{query}”."
-#~ msgstr ""
-
-#: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "No chats match “{search}”."
 msgstr ""
@@ -4028,16 +3959,8 @@ msgid "No column has been resized yet."
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-#~ msgid "No documents match “{query}”."
-#~ msgstr ""
-
-#: src/features/project/side/SidePicker.tsx
 msgid "No documents match “{search}”."
 msgstr ""
-
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "No documents or chats match “{query}”."
-#~ msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
 msgid "No documents or chats match “{search}”."
@@ -4072,27 +3995,14 @@ msgstr ""
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/TrashedDocument.tsx
 #: src/rich-content/TranscriptReference.tsx
 msgid "No longer available"
 msgstr ""
 
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "No matches"
-#~ msgstr ""
-
 #: src/features/chat/tool-result-preview.ts
 msgid "No matches found before the search stopped"
 msgstr ""
-
-#: src/features/chat/ThreadSwitcherPopover.tsx
-#~ msgid "No matching chats"
-#~ msgstr ""
-
-#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
-#: src/features/project/context/file-suggestions/FileSuggestionList.tsx
-#~ msgid "No matching files"
-#~ msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
 msgid "No model"
@@ -4114,10 +4024,6 @@ msgstr ""
 #: src/features/project/chat/ChatScratch.tsx
 msgid "No scratch notes yet."
 msgstr ""
-
-#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#~ msgid "No Work matches your search."
-#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work yet."
@@ -4190,7 +4096,6 @@ msgstr ""
 msgid "Nothing here yet"
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Nothing in the trash."
 msgstr ""
@@ -4569,10 +4474,6 @@ msgstr "已读取来自 {line} 的报告"
 msgid "Read this"
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
-msgid "Read-only document in Trash."
-msgstr ""
-
 #: src/features/project/context/viewers/ImageViewer.tsx
 msgid "Read-only preview"
 msgstr ""
@@ -4685,14 +4586,6 @@ msgstr ""
 msgid "Remove"
 msgstr ""
 
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#~ msgid "Remove {title} from Favourites"
-#~ msgstr ""
-
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#~ msgid "Remove from Favourites"
-#~ msgstr ""
-
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Remove link"
@@ -4700,6 +4593,10 @@ msgstr ""
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
 msgid "Remove reference"
+msgstr ""
+
+#: src/features/project/context/TrashedDocument.tsx
+msgid "Removed from {place} on {deleted}, when the reply that created it didn't finish."
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
@@ -4772,11 +4669,6 @@ msgstr ""
 msgid "Reset size"
 msgstr ""
 
-#. placeholder {0}: schemeLabel(id)
-#: src/features/project/shell/DockedRailSection.tsx
-#~ msgid "Resize {0}"
-#~ msgstr ""
-
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize side panel"
 msgstr ""
@@ -4791,7 +4683,7 @@ msgstr "回复完成"
 
 #: src/features/draft-review/TrashedChatNotice.tsx
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/TrashedDocument.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore"
 msgstr ""
@@ -4825,7 +4717,7 @@ msgid "Restored {0} of {requested} items to {destinationName}."
 msgstr ""
 
 #. placeholder {0}: document.name
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/TrashedDocument.tsx
 msgid "Restored {0}, but couldn't open it. Try again from the file list."
 msgstr ""
 
@@ -4843,7 +4735,8 @@ msgstr ""
 msgid "Restored at {0}."
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/context/TrashedDocument.tsx
+#: src/features/project/shell/sidebar/TrashSource.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Restoring"
 msgstr ""
@@ -5737,10 +5630,6 @@ msgstr ""
 msgid "the source chat"
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
-msgid "the system"
-msgstr ""
-
 #: src/features/chat/tool-renderers.tsx
 msgid "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
 msgstr ""
@@ -5897,10 +5786,6 @@ msgstr ""
 msgid "This chat now uses {0}."
 msgstr ""
 
-#: src/features/project/side/SideHeader.tsx
-#~ msgid "This chat read it"
-#~ msgstr ""
-
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "This chat uses {0}."
@@ -5909,10 +5794,6 @@ msgstr ""
 #: src/client/api/meridian-error.ts
 msgid "This chat was deleted."
 msgstr ""
-
-#: src/features/project/side/SideHeader.tsx
-#~ msgid "This chat wrote it"
-#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
@@ -6240,7 +6121,8 @@ msgstr ""
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr ""
 
-#: src/features/project/context/DocumentTrashDialog.tsx
+#: src/features/project/DesktopProject.tsx
+#: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Trash"
@@ -6677,10 +6559,6 @@ msgstr ""
 #: src/features/project/context/entry-drag/copy-refusal.ts
 msgid "You can't copy there."
 msgstr ""
-
-#: src/features/project/side/SideHeader.tsx
-#~ msgid "You followed a link from here"
-#~ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."

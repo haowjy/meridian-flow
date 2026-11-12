@@ -1,7 +1,7 @@
 /**
  * Browser project addresses. After `/p/<projectId>` the first segment is the kind of main's item
- * (`chats` or `editor`) and the rest names it. The Work scope is not in the address; the query
- * holds the owner of a Scratch document or of a draft, and overlays.
+ * (`chats`, `editor` or `trash`) and the rest names it. The Work scope is not in the address; the
+ * query holds the owner of a Scratch document or of a draft, and overlays.
  */
 import {
   type DraftOwnerKey,
@@ -18,7 +18,9 @@ import { isSettingsSection, type SettingsSection } from "@/features/account/sett
 export type ProjectDestination =
   | { kind: "new-chat" | "editor" }
   | { kind: "chat"; chatId: string }
-  | { kind: "document"; scheme: ProjectContextTreeScheme; path: string };
+  | { kind: "document"; scheme: ProjectContextTreeScheme; path: string }
+  /** A document in Trash, by identity: it has no path while deleted. */
+  | { kind: "trashed"; documentId: string };
 
 export type ProjectAddress = {
   projectId: string;
@@ -32,14 +34,12 @@ export type ProjectAddress = {
   itemKey?: string;
   /** Stable selected closure class within the addressed review. */
   changeId?: string;
-  /** Trash overlay: true selects the newest entry; an id selects that document. */
-  trash?: true | string;
   settings?: SettingsSection;
 };
 export type ParsedProjectAddress =
   | { kind: "valid"; address: ProjectAddress; href: string }
   | { kind: "invalid"; reason: string };
-const RECOGNIZED_QUERY = new Set(["owner", "item", "change", "settings", "trash"]);
+const RECOGNIZED_QUERY = new Set(["owner", "item", "change", "settings"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function uuid(value: string | undefined): string | null {
@@ -90,6 +90,10 @@ function parseDestination(parts: string[]): ProjectDestination | null {
     if (rest.length === 0) return { kind: "new-chat" };
     const chatId = rest.length === 1 ? uuid(rest[0]) : null;
     return chatId ? { kind: "chat", chatId } : null;
+  }
+  if (screen === "trash") {
+    const documentId = rest.length === 1 ? uuid(rest[0]) : null;
+    return documentId ? { kind: "trashed", documentId } : null;
   }
   if (screen !== "editor") return null;
   if (rest.length === 0) return { kind: "editor" };
@@ -144,15 +148,12 @@ export function parseProjectAddress(pathname: string, rawSearch = ""): ParsedPro
         )
       : undefined;
   const settings = query.get("settings");
-  const trashValue = query.get("trash");
-  const trash = trashValue === "true" ? true : trashValue || undefined;
   const address: ProjectAddress = {
     projectId,
     destination,
     ...(owner ? { owner } : {}),
     ...(itemKey ? { itemKey } : {}),
     ...(changeId ? { changeId } : {}),
-    ...(trash ? { trash } : {}),
     ...(isSettingsSection(settings) ? { settings } : {}),
   };
   return { kind: "valid", address, href: projectAddressHref(address) };
@@ -175,6 +176,9 @@ export function projectAddressHref(address: ProjectAddress): string {
     case "document":
       push("editor", d.scheme, ...(d.path ? d.path.split("/") : []));
       break;
+    case "trashed":
+      push("trash", d.documentId);
+      break;
   }
   const query = new URLSearchParams();
   if (d.kind === "document") {
@@ -184,7 +188,6 @@ export function projectAddressHref(address: ProjectAddress): string {
       if (address.changeId) query.set("change", address.changeId);
     }
   }
-  if (address.trash) query.set("trash", String(address.trash));
   if (address.settings) query.set("settings", address.settings);
   const search = query.toString();
   const path = parts.join("/");

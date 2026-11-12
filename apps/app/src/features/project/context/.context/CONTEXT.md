@@ -93,13 +93,14 @@ ContextTreePanel (desktop sidebar and the phone's drawer)
 
 Document trash is a server snapshot separate from the live catalog projection.
 The tree doesn't read it: Trash is a sidebar source (`shell/sidebar/TrashSource.tsx`)
-listing it newest first, and picking a row opens the routed `DocumentTrashDialog`,
-which owns the list and the selected read-only record in one popup. Desktop keeps
-the list and record side by side; phone shows the list or record, with Back to
-return to the list. The detail reads the server's Markdown, serialized from the document's frozen Yjs, and composes
-`ReadOnlyViewerFrame` with `TextViewer`; it never uses the live path-based read.
-Stable-ID navigation confirms a deleted document through that endpoint before
-opening the detail. List and detail restore through one command using the exact
+listing it newest first, with the trees' `DocumentRow`. A deleted document has its own address,
+`/p/<id>/trash/<documentId>`, and opens like any document: the sidebar shows Trash with its
+row current, and main shows `TrashedDocument`, the text read-only under a notice with Restore.
+It takes no tab; the strip shows it as an untabbed chip, as it does an address that names nothing. Main follows the document out of Trash, whichever
+Restore brought it back, by opening it in place. The record reads the server's Markdown,
+serialized from the document's frozen Yjs, and composes `ReadOnlyViewerFrame` with `TextViewer`;
+it never uses the live path-based read. Stable-ID navigation confirms a deleted document through
+that endpoint before opening it. Every restore goes through one command using the exact
 serialized removal identity. Committed catalog wake hints invalidate the
 snapshot after deletes and restores, while the catalog stream remains the owner
 of a restored document's return to the live tree.

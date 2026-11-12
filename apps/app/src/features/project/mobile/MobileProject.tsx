@@ -5,6 +5,7 @@ import { useBlocker, useRouterState } from "@tanstack/react-router";
 import { type LucideIcon, Maximize2, MessageSquare, Pin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { isThreadAwaitingCreation } from "@/client/chat-submissions";
+import { useTrashedDocument } from "@/client/query/useDocumentTrash";
 import { useDismissalFocus } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -16,9 +17,11 @@ import { fileKindIcon } from "../context/context-file-icon";
 import { DocumentHost, MainDocumentStatus } from "../context/DocumentHost";
 import { RecentDocumentsLanding } from "../context/RecentDocumentsLanding";
 import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice";
+import { TrashedDocument } from "../context/TrashedDocument";
 import { useNewDocument } from "../context/use-new-document";
 import type { ReviewScopedProjectProps } from "../ProjectView";
 import { useChatNavigation } from "../routing/chat-navigation";
+import { useTrashNavigation } from "../routing/ProjectNavigationContext";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
 import { useSideChatName } from "../side/SideHeader";
@@ -57,10 +60,14 @@ export function MobileProject(props: MobileProjectProps) {
   }, [position]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const main = useMainItem();
-  const crumbs = contextBreadcrumbSegments(
-    props,
-    main.document.local ? main.document.document?.name : undefined,
-  );
+  const trashedId = useTrashNavigation().shown;
+  const trashedName = useTrashedDocument(props.projectId, trashedId ?? null).data?.name;
+  const crumbs = trashedId
+    ? [{ label: trashedName ?? t`Trash` }]
+    : contextBreadcrumbSegments(
+        props,
+        main.document.local ? main.document.document?.name : undefined,
+      );
   const removedNotice = useRemovedDocumentPhoneNotice(props.projectId);
   // The sheet shows the side's item: a document or a chat, with the desktop's held pick and picker.
   const side = useSideItem();
@@ -279,6 +286,7 @@ function renderActiveView(props: MobileProjectProps) {
 /** The phone's one view on a document address: main's document host, its status, or Recents. */
 function PhoneMain(props: MobileProjectProps) {
   const main = useMainItem();
+  const trashedId = useTrashNavigation().shown;
   const onNewDocument = useNewDocument(
     props.projectId,
     props.contextLive ? props.onOpenContextTarget : null,
@@ -287,6 +295,8 @@ function PhoneMain(props: MobileProjectProps) {
   // A masked cold address must not mount a host that repairs it.
   // A warm pending address still owns its retained document presentation.
   if (props.routeIssues?.editor && !props.retainEditorWhileLoading) return null;
+  if (trashedId)
+    return <TrashedDocument key={trashedId} projectId={props.projectId} documentId={trashedId} />;
   if (!main.document.requested)
     return (
       <RecentDocumentsLanding

@@ -52,7 +52,7 @@ import {
   type OpenContextRoute,
   useOpenContextRoute,
   useOpenedFromChat,
-  useProjectTrashNavigation,
+  useTrashNavigation,
 } from "../routing/ProjectNavigationContext";
 import {
   useOptionalAccountResourceReplica,
@@ -305,7 +305,7 @@ type NavigationAdapterDependencies = {
   opener: Pick<ProjectDocumentLiveOpener, "resolveIdentity" | "replaceTransfer">;
   openRoute: OpenContextRoute | null;
   captureNavigation?: () => () => boolean;
-  openTrash(documentId: string): Promise<unknown>;
+  openTrash(documentId: string, options: { replace?: boolean }): Promise<unknown>;
   resources?: Pick<
     import("@/core/resources/account-resource-replica").AccountResourceReplica,
     "accountId" | "observeProjection" | "readProjectionState"
@@ -392,7 +392,7 @@ export class ProjectDocumentNavigationAdapter {
         const resolution = await this.dependencies.opener.resolveIdentity(projectId, documentId);
         if (!isCurrent()) return { kind: "cancelled" };
         if (resolution.kind === "deleted")
-          return this.openTrash(documentId, controller.signal, isCurrent);
+          return this.openTrash(documentId, controller.signal, isCurrent, replace);
         return {
           kind: "refused",
           reason:
@@ -411,7 +411,7 @@ export class ProjectDocumentNavigationAdapter {
       if (identified.kind === "cancelled") return identified;
       if (identified.kind === "refused") return identified;
       if (identified.kind === "trashed")
-        return this.openTrash(documentId, controller.signal, isCurrent);
+        return this.openTrash(documentId, controller.signal, isCurrent, replace);
       const { identity, transfer } = identified;
 
       if (refreshIdentity && this.dependencies.resources) {
@@ -564,10 +564,11 @@ export class ProjectDocumentNavigationAdapter {
     documentId: string,
     signal: AbortSignal,
     isCurrent: () => boolean,
+    replace: true | undefined,
   ): Promise<OpenDocumentOutcome> {
     if (signal.aborted) return { kind: "cancelled" };
     if (!isCurrent()) return { kind: "cancelled" };
-    await this.dependencies.openTrash(documentId);
+    await this.dependencies.openTrash(documentId, { replace });
     return { kind: "trashed", documentId };
   }
 
@@ -684,7 +685,7 @@ export function ProjectDocumentNavigationProvider({
   children: ReactNode;
   captureNavigation?: () => () => boolean;
 }) {
-  const { navigate: openTrash } = useProjectTrashNavigation();
+  const { open: openTrash } = useTrashNavigation();
   const opener = useProjectDocumentLiveOpener();
   const resources = useOptionalAccountResourceReplica();
   const presented = useOptionalPresentedDocuments();

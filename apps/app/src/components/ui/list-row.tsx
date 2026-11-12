@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { LucideIcon } from "lucide-react";
 import type { HTMLAttributes, MouseEvent, ReactElement, ReactNode, Ref } from "react";
 
@@ -29,6 +30,7 @@ export function ListRow({
   href,
   onOpen,
   current = false,
+  selected = false,
   disabled,
   depth = 0,
   ref,
@@ -55,6 +57,8 @@ export function ListRow({
   onOpen: () => void;
   /** The value in effect, or with `"page"` the place the writer is on. */
   current?: boolean | "page";
+  /** Part of the list's selection (Ctrl/Cmd- or Shift-click): the current fill, not its weight. */
+  selected?: boolean;
   /** Disables the main control; the actions beside it stay live. */
   disabled?: boolean;
   /** Indent steps for a row nested under another, the file tree's step. */
@@ -109,7 +113,11 @@ export function ListRow({
       {leading}
       <span className="flex min-w-0 flex-1 flex-col justify-center">
         <span className="flex min-w-0 items-baseline justify-between gap-2">
-          <span className="truncate">{title}</span>
+          <span className="truncate">
+            {title}
+            {/* A link can't be pressed or selected; its name says it joined the selection. */}
+            {selected && href ? <span className="sr-only">{t`, selected`}</span> : null}
+          </span>
           {meta ? (
             <span className="max-w-1/2 shrink-0 truncate text-xs font-normal tabular-nums text-muted-foreground">
               {meta}
@@ -150,7 +158,8 @@ export function ListRow({
         data-list-row
         className={cn(
           "group/row dropdown-focus-ring flex min-w-0 items-center rounded-md transition-colors has-[>[data-list-item]:focus-visible]:bg-ink-fill data-[selected=true]:bg-ink-fill-strong data-[selected=true]:font-medium motion-reduce:transition-none",
-          !current && !disabled && "hover:bg-ink-fill",
+          selected && !current && role.selected,
+          !current && !selected && !disabled && "hover:bg-ink-fill",
         )}
       >
         {wrapControl ? wrapControl(control) : control}
