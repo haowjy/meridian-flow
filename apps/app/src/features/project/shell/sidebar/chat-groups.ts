@@ -3,13 +3,15 @@ import type { ThreadListItem } from "@meridian/contracts/protocol";
 export type RowState = "needs-you" | "running" | "idle";
 
 export type ChatGroups = {
-  /** Every pinned chat, from any Work, most urgent first. Listed nowhere else. */
+  /** The scoped Work's pinned chats, most urgent first. */
   pinned: ThreadListItem[];
   /** The scoped Work's unpinned chats, most urgent first. */
   scoped: ThreadListItem[];
-  /** Every other unpinned chat, newest first. */
+  /** The other Works' pinned chats, most urgent first. */
+  othersPinned: ThreadListItem[];
+  /** Every other chat unpinned, newest first. */
   others: ThreadListItem[];
-  /** The most urgent state among `others`, for its heading while folded. */
+  /** The most urgent state among the other Works' chats, pinned or not, for the folded heading. */
   othersState: RowState;
   helpers: Map<string, ThreadListItem[]>;
   /** Every chat's state, for a row in any list: the lists, find results. */
@@ -21,18 +23,16 @@ export type ChatGroups = {
 const URGENCY: Record<RowState, number> = { "needs-you": 0, running: 1, idle: 2 };
 
 /**
- * Each chat once: pinned, else the scoped Work's (the open chat counts as the Work's), else
- * the others; the working helpers under their parent.
+ * Each chat once, in its own Work's list: the scoped Work's (pinned first) or the others' (pinned
+ * first); the working helpers under their parent. Opening a chat never moves it.
  */
 export function groupChats(
   threads: readonly ThreadListItem[],
   scopeWorkId: string | null,
   noWorkId: string | null,
-  currentThreadId: string | null,
   pinnedIds: ReadonlySet<string>,
 ): ChatGroups {
-  const inScope = (thread: ThreadListItem) =>
-    (thread.workId ?? noWorkId) === scopeWorkId || thread.id === currentThreadId;
+  const inScope = (thread: ThreadListItem) => (thread.workId ?? noWorkId) === scopeWorkId;
   const helpers = new Map<string, ThreadListItem[]>();
   for (const thread of threads) {
     if (thread.kind !== "subagent" || thread.spawnStatus !== "running" || !thread.parentThreadId)
@@ -49,16 +49,17 @@ export function groupChats(
   const pinned: ThreadListItem[] = [];
   const scoped: ThreadListItem[] = [];
   const others: ThreadListItem[] = [];
+  const othersPinned: ThreadListItem[] = [];
   let othersState: RowState = "idle";
   for (const thread of recent) {
     const busy = thread.runningTurnId !== null;
     if (busy) replying.add(thread.id);
     const state: RowState = thread.actionRequired ? "needs-you" : busy ? "running" : "idle";
     states.set(thread.id, state);
-    if (pinnedIds.has(thread.id)) pinned.push(thread);
-    else if (inScope(thread)) scoped.push(thread);
+    const pin = pinnedIds.has(thread.id);
+    if (inScope(thread)) (pin ? pinned : scoped).push(thread);
     else {
-      others.push(thread);
+      (pin ? othersPinned : others).push(thread);
       if (URGENCY[state] < URGENCY[othersState]) othersState = state;
     }
   }
@@ -67,6 +68,7 @@ export function groupChats(
   return {
     pinned: pinned.sort(byUrgency),
     scoped: scoped.sort(byUrgency),
+    othersPinned: othersPinned.sort(byUrgency),
     others,
     othersState,
     helpers,

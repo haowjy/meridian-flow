@@ -48,9 +48,9 @@ type RowContext = {
 };
 
 /**
- * The Chat list: a find field over every chat; the writer's pinned chats and the scoped Work's
- * chats, most urgent first, under no heading; then Other chats, folded, newest first. Each chat
- * shows once. Working helpers sit under their parent. Each chat row opens, renames, pins and
+ * The Chat list: a find field over every chat; the scoped Work's chats, pinned first, under no
+ * heading; then Other chats, folded, the other Works' pinned chats first. Each chat shows once,
+ * in its own Work's list, and opening it doesn't move it. Working helpers sit under their parent. Each chat row opens, renames, pins and
  * deletes its chat; a delete has an Undo. The API calls a pin `favorite`.
  */
 export function ChatsBody({
@@ -88,8 +88,8 @@ export function ChatsBody({
     if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();
   }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
   const groups = useMemo(
-    () => groupChats(threads ?? [], scopeWorkId ?? noWorkId, noWorkId, currentThreadId, pinnedIds),
-    [threads, scopeWorkId, noWorkId, currentThreadId, pinnedIds],
+    () => groupChats(threads ?? [], scopeWorkId ?? noWorkId, noWorkId, pinnedIds),
+    [threads, scopeWorkId, noWorkId, pinnedIds],
   );
   const rows: RowContext = {
     projectId,
@@ -144,10 +144,7 @@ export function ChatsBody({
     if (target) moveFocus(target, { ring: lastInputWasKeyboard() });
   });
 
-  const scopeId = scopeWorkId ?? noWorkId;
-  const scopeEmpty =
-    groups.scoped.length === 0 &&
-    groups.pinned.every((chat) => (chat.workId ?? noWorkId) !== scopeId);
+  const scopeEmpty = groups.scoped.length === 0 && groups.pinned.length === 0;
   const withHelpers = (thread: ThreadListItem) => (
     <div key={thread.id}>
       <ChatRow {...rows} chat={thread} />
@@ -206,7 +203,7 @@ export function ChatsBody({
                 </ListLine>
               ) : null}
             </div>
-            {groups.others.length > 0 ? (
+            {groups.others.length + groups.othersPinned.length > 0 ? (
               <ListSection
                 label={t`Other chats`}
                 fold={othersFold}
@@ -214,6 +211,9 @@ export function ChatsBody({
                   groups.othersState === "idle" ? null : <StateMark state={groups.othersState} />
                 }
               >
+                {groups.othersPinned.length > 0 ? (
+                  <div data-pinned-list>{groups.othersPinned.map(withHelpers)}</div>
+                ) : null}
                 {groups.others.map(withHelpers)}
               </ListSection>
             ) : null}
