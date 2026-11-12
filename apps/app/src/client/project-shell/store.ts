@@ -74,7 +74,7 @@ export function writeCurrentDocument(
   notify(accountId, projectId);
 }
 
-/** The last chat on screen, in main or beside: where the bare address lands. Null: a new chat. */
+/** The last chat on screen, in main or beside: the one the side shows beside a document. Null: a new chat. */
 export function readCurrentChat(accountId: string, projectId: string): string | null {
   return readRememberedId("chat", accountId, projectId);
 }

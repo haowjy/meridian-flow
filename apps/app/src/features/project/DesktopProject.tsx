@@ -11,6 +11,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import { FileQuestion, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMainTabs } from "@/client/project-shell/main-tabs";
@@ -321,11 +322,17 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   );
 }
 
-/** The side with nothing to show: what goes with main is still being found, or there is none. */
+/** The side with nothing to show: a document is still being found, or none is open. */
 function SideEmpty({ projectId }: { projectId: string }) {
+  const { pending, failed } = useSideItem();
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SideEmptyHeader projectId={projectId} />
+      {pending || failed ? null : (
+        <p className="m-auto max-w-56 px-4 text-center text-xs text-muted-foreground">
+          <Trans>A document you open shows here beside the chat.</Trans>
+        </p>
+      )}
     </div>
   );
 }

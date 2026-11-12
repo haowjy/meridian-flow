@@ -821,6 +821,10 @@ msgstr ""
 msgid "A document blocks part of this location. Move or rename it, then apply again."
 msgstr ""
 
+#: src/features/project/DesktopProject.tsx
+msgid "A document you open shows here beside the chat."
+msgstr ""
+
 #: src/core/editor/file-drop/file-drop-door.ts
 msgid "A file can’t go there."
 msgstr "文件不能放在那里。"

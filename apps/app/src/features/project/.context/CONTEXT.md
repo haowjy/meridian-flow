@@ -62,7 +62,7 @@ Main shows what the address names, resolved by `resolveMainDocument` / `useMainD
 `{item, document}`. The side shows one item, never main's. The project keeps two pieces of state
 (`client/project-shell/store.ts`, per account and project in each browser tab, seeded from the
 device, never in history): the current chat, the last chat on screen in either pane (null: a new
-chat; the bare address lands on it), and the current document, the last document on screen in
+chat), and the current document, the last document on screen in
 either pane. Main showing something makes it current of its kind (`ProjectView` writes the
 document; the chat navigation writes the chat). The data is project-level and independent of
 panes; main's mode decides the organisation. This holds for any future side UI (tiles, tabs):
@@ -75,7 +75,7 @@ not a source: a document the writer closed must not come back. While main's docu
 the side keeps what it showed. Nothing derives the side from activity (the chat that last edited
 a document, the documents a chat touched): the writer's own state decides. A new-chat composer on
 screen in either pane is `currentChat = null`: main at `/chats` writes it, as the side's New chat
-does, so the bare address lands on a new chat. A swap (the side picker, a link held beside, the
+does (the bare address opens a new chat in main, so it writes null too). A swap (the side picker, a link held beside, the
 side composer's send) writes the current chat or document and lasts until main changes mode,
 which falls out of the rule. `fitsBeside` is "the item's kind differs from main's mode", for the
 rule and the picker, which offers only the other kind; its "For this" rows (a document's chats, a
