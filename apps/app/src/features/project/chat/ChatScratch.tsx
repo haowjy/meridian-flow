@@ -20,7 +20,7 @@ import type { CatalogContextView } from "@/client/query/context-catalog-projecti
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
-import { ListLine } from "@/components/ui/list-row";
+import { ListLine, ListRow } from "@/components/ui/list-row";
 import { ListSectionHeader } from "@/components/ui/list-section";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import { schemeLabel } from "../context/context-schemes";
@@ -36,7 +36,6 @@ import { useScratchCatalogs } from "../context/use-scratch-catalogs";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { DockedRailSection } from "../shell/DockedRailSection";
-import { RailEmptyHint, RailFolderRow } from "../shell/RailSection";
 import { type SourceDrop, SourcePane } from "../shell/sidebar/SourcePane";
 import { useOptionalMainItem } from "../views";
 import { useChatScratchSource } from "./use-chat-scratch-source";
@@ -126,7 +125,9 @@ export function ScratchSource({
   return (
     <SourcePane label={schemeLabel("scratch")} title={scratch.source?.heading} drop={drop}>
       {scratch.source ? (
-        <ChatScratchTree projectId={projectId} scratch={scratch} depth={0} onPicked={onPicked} />
+        <div className="px-2">
+          <ChatScratchTree projectId={projectId} scratch={scratch} depth={0} onPicked={onPicked} />
+        </div>
       ) : null}
       {scratch.source && scratch.isError ? (
         <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.retry} />
@@ -187,14 +188,16 @@ export function RailScratchSection({
           >
             {expanded ? (
               <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
-                <TreeGroup depth={1}>
-                  <ChatScratchTree
-                    projectId={projectId}
-                    scratch={scratch}
-                    depth={1}
-                    onPicked={onPicked}
-                  />
-                </TreeGroup>
+                <div className="px-2">
+                  <TreeGroup depth={1}>
+                    <ChatScratchTree
+                      projectId={projectId}
+                      scratch={scratch}
+                      depth={1}
+                      onPicked={onPicked}
+                    />
+                  </TreeGroup>
+                </div>
                 <ChatScratchStatus scratch={scratch} />
               </div>
             ) : null}
@@ -225,9 +228,16 @@ export function MenuScratchSection({
     <section aria-label={scratch.source.heading}>
       <h3 className={dropdownGroupLabelClass}>{scratch.source.heading}</h3>
       <EntryList list={list}>
-        <TreeGroup depth={1}>
-          <ChatScratchTree projectId={projectId} scratch={scratch} depth={1} onPicked={onPicked} />
-        </TreeGroup>
+        <div className="px-2">
+          <TreeGroup depth={1}>
+            <ChatScratchTree
+              projectId={projectId}
+              scratch={scratch}
+              depth={1}
+              onPicked={onPicked}
+            />
+          </TreeGroup>
+        </div>
         <ChatScratchStatus scratch={scratch} />
       </EntryList>
     </section>
@@ -239,7 +249,11 @@ function ChatScratchStatus({ scratch }: { scratch: ChatScratch }) {
     return <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.retry} />;
   if (scratch.hasRows) return null;
   if (!scratch.ready) return <div aria-busy className="min-h-8" />;
-  return <RailEmptyHint>{t`No scratch notes yet.`}</RailEmptyHint>;
+  return (
+    <div className="px-2">
+      <ListLine depth={1} iconSlot>{t`No scratch notes yet.`}</ListLine>
+    </div>
+  );
 }
 
 /** A chat's Scratch rows: Earlier notes first, then the current notes, starting at `depth`. */
@@ -284,12 +298,12 @@ function ChatScratchTree({
     <>
       {hasEarlier && earlier.catalog && source.earlierRootThreadId ? (
         <div>
-          <RailFolderRow
+          <ListRow
             icon={earlierOpen ? FolderOpen : Folder}
-            name={t`Earlier notes`}
+            title={t`Earlier notes`}
             depth={depth}
-            expanded={earlierOpen}
-            onToggle={() => expansion.toggleEntry(EARLIER_NOTES_ID)}
+            controlProps={{ "aria-expanded": earlierOpen }}
+            onOpen={() => expansion.toggleEntry(EARLIER_NOTES_ID)}
           />
           {earlierOpen ? (
             <TreeGroup depth={depth + 1}>

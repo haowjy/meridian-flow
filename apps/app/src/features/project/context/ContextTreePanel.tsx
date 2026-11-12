@@ -264,7 +264,9 @@ export function ContextTreePanel({
     <SourcePane label={schemeLabel(scheme)} actions={actions} drop={drop}>
       {env && catalog ? (
         <TreeEnvProvider value={env}>
-          <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={0} />
+          <div className="px-2">
+            <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={0} />
+          </div>
         </TreeEnvProvider>
       ) : null}
       {/* A load still running and a load that failed both leave the list empty; this line says which. */}

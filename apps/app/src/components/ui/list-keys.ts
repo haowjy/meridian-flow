@@ -17,26 +17,20 @@ const TEXT_FIELD = "input, textarea, [contenteditable='true']";
  * A search field can be a stop too, so Down leaves it for the first row. Escape
  * stays with the surface that owns closing. The rows' focus fill comes from
  * `focus-visible`, which only keyboard navigation turns on.
- *
- * `stops` widens what Up, Down, Home and End walk, for a list that also holds rows
- * built elsewhere (the file tree's), which press themselves on Enter.
  */
-export function handleListKeys(
-  event: KeyboardEvent<HTMLElement>,
-  stops = "[data-list-item]",
-): void {
+export function handleListKeys(event: KeyboardEvent<HTMLElement>): void {
   const target = event.target as HTMLElement;
   // A menu portalled out of a row still bubbles its keys here through React, and
   // a field that is not a stop (a rename) keeps its arrows.
   if (event.defaultPrevented || !event.currentTarget.contains(target)) return;
   const inField = target.matches(TEXT_FIELD);
-  if (inField && !target.matches(stops)) return;
+  if (inField && !target.matches("[data-list-item]")) return;
 
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     if (inField) return;
     const row = target.closest<HTMLElement>("[data-list-row]");
-    const stops = [...(row?.querySelectorAll<HTMLElement>("button:not(:disabled)") ?? [])];
-    const next = stops[stops.indexOf(target) + (event.key === "ArrowRight" ? 1 : -1)];
+    const buttons = [...(row?.querySelectorAll<HTMLElement>("button:not(:disabled)") ?? [])];
+    const next = buttons[buttons.indexOf(target) + (event.key === "ArrowRight" ? 1 : -1)];
     if (!next) return;
     event.preventDefault();
     next.focus();
@@ -52,7 +46,7 @@ export function handleListKeys(
 
   if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
   if (inField && (event.key === "Home" || event.key === "End")) return;
-  const items = [...event.currentTarget.querySelectorAll<HTMLElement>(stops)].filter(
+  const items = [...event.currentTarget.querySelectorAll<HTMLElement>("[data-list-item]")].filter(
     (item) => !item.matches(":disabled"),
   );
   if (items.length === 0) return;

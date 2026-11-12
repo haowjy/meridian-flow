@@ -4,7 +4,6 @@ import type { LucideIcon } from "lucide-react";
 import type React from "react";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
-import { sidebarIcon } from "./context-row-geometry";
 
 /** One header action (VS Code Explorer-header anatomy): ~20px hit target around a 16px icon, transparent at rest, rail hover tint + icon darken on hover, focus-ring for keyboard. */
 export function PaneHeaderActionButton({
@@ -29,7 +28,7 @@ export function PaneHeaderActionButton({
       }}
       className="relative size-5 rounded-sm"
     >
-      <Icon aria-hidden className={cn(sidebarIcon.action, iconClassName)} />
+      <Icon aria-hidden className={cn("size-4", iconClassName)} />
       {children}
     </IconButton>
   );

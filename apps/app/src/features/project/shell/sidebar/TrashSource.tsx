@@ -4,12 +4,9 @@ import type { DocumentTrashEntry } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
 import { useDocumentTrash } from "@/client/query/useDocumentTrash";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { ListLine } from "@/components/ui/list-row";
-import { role } from "@/components/ui/roles";
+import { ListLine, ListRow } from "@/components/ui/list-row";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
-import { cn } from "@/lib/utils";
 import { useEntryMenu } from "../../context/ContextEntryActions";
-import { DocumentRow } from "../../context/ContextTreeRows";
 import { fileKindIcon } from "../../context/context-file-icon";
 import { documentPlace } from "../../context/context-schemes";
 import {
@@ -43,20 +40,26 @@ export function TrashSource({
   const entries = query.data?.documents ?? [];
   return (
     <SourcePane label={t`Trash`} drop={drop}>
-      {entries.map((entry) => (
-        <TrashRow
-          key={entry.documentId}
-          entry={entry}
-          now={now}
-          active={entry.documentId === trash.shown}
-          state={states.get(entry.documentId)}
-          onOpen={() => {
-            void trash.open(entry.documentId);
-            onPicked?.();
-          }}
-          onRestore={(ids) => restore(entries.filter(({ documentId }) => ids.includes(documentId)))}
-        />
-      ))}
+      {entries.length > 0 ? (
+        <div className="px-2">
+          {entries.map((entry) => (
+            <TrashRow
+              key={entry.documentId}
+              entry={entry}
+              now={now}
+              active={entry.documentId === trash.shown}
+              state={states.get(entry.documentId)}
+              onOpen={() => {
+                void trash.open(entry.documentId);
+                onPicked?.();
+              }}
+              onRestore={(ids) =>
+                restore(entries.filter(({ documentId }) => ids.includes(documentId)))
+              }
+            />
+          ))}
+        </div>
+      ) : null}
       {query.isError ? (
         <InlineErrorRow message={t`Couldn't load Trash.`} onRetry={() => void query.refetch()} />
       ) : entries.length > 0 ? null : (
@@ -101,29 +104,23 @@ function TrashRow({
     onRestore(rows ? rows.map(({ ref }) => ref.id) : [entry.documentId]),
   );
   return (
-    <div>
-      <DocumentRow
-        row={row}
-        menu={menu}
-        active={active}
-        depth={0}
-        icon={fileKindIcon(entry.name)}
-        name={entry.name}
-        meta={restoring ? <Trans>Restoring</Trans> : relativeTime(entry.removal.time, now)}
-        detail={
-          <span
-            className={cn("block truncate leading-snug font-normal", role.rowSecondary)}
-            title={location}
-          >
-            {location}
-          </span>
-        }
-        onOpen={onOpen}
-      />
-      {state?.kind === "failed" ? (
-        <InlineErrorRow message={state.message} className="pt-0 pr-2 pb-1 pl-3.5" />
-      ) : null}
-    </div>
+    <ListRow
+      icon={fileKindIcon(entry.name)}
+      title={entry.name}
+      meta={restoring ? <Trans>Restoring</Trans> : relativeTime(entry.removal.time, now)}
+      detail={<span title={location}>{location}</span>}
+      onOpen={onOpen}
+      current={active && "page"}
+      selected={row.selected}
+      controlProps={row.rowProps}
+      menu={menu}
+      revealActions
+      below={
+        state?.kind === "failed" ? (
+          <InlineErrorRow message={state.message} className="pt-0 pr-2 pb-1 pl-1.5" />
+        ) : null
+      }
+    />
   );
 }
 
