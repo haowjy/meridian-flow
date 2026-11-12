@@ -11,8 +11,10 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { FileQuestion, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMainTabs } from "@/client/project-shell/main-tabs";
+import { useTrashedDocument } from "@/client/query/useDocumentTrash";
 import type { OpenDocument } from "@/client/stores";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { ChatPaneController } from "./ChatPaneController";
@@ -20,6 +22,7 @@ import { ChatSurface } from "./chat/ChatSurface";
 import { useAccountId, useShownDocuments } from "./context/account-feature-context";
 import { DocumentHost, MainDocumentStatus } from "./context/DocumentHost";
 import { RecentDocumentsLanding } from "./context/RecentDocumentsLanding";
+import { TrashedDocument } from "./context/TrashedDocument";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { useNewDocument } from "./context/use-new-document";
 import {
@@ -32,11 +35,12 @@ import {
 import { pathLeafName } from "./mobile/context-location";
 import type { ReviewScopedProjectProps } from "./ProjectView";
 import { useChatNavigation } from "./routing/chat-navigation";
+import { useTrashNavigation } from "./routing/ProjectNavigationContext";
 import { isProjectRouteMasked, ProjectRouteBoundary } from "./routing/ProjectRouteBoundary";
 import { useOpenInMain } from "./routing/use-open-document-in-editor";
 import { LeftSidebar } from "./shell/LeftSidebar";
 import { MainHeader } from "./shell/MainHeader";
-import { UnavailableTabChip, useMainTabCommands } from "./shell/MainTabStrip";
+import { UntabbedChip, useMainTabCommands } from "./shell/MainTabStrip";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import { ClosedSideButton } from "./side/ClosedSideButton";
@@ -93,6 +97,8 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     retainWhileLoading: props.retainEditorWhileLoading,
   };
   const masked = isProjectRouteMasked(mask);
+  const trashedId = useTrashNavigation().shown;
+  const trashedName = useTrashedDocument(projectId, trashedId ?? null).data?.name;
   // A masked address paints no document: a removed one shows its removed state in place.
   const mainTab = !mainChat && !masked && props.contextLive ? main.document.document : null;
 
@@ -264,10 +270,17 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
             projectId={projectId}
             open={open}
             mainKey={null}
-            landing={!main.document.requested}
+            landing={!main.document.requested && !trashedId}
             current={
-              main.document.requested && mask.issue && mask.issue !== "loading" ? (
-                <UnavailableTabChip
+              trashedId ? (
+                <UntabbedChip
+                  icon={Trash2}
+                  name={trashedName ?? t`Trash`}
+                  onClose={tabCommands.closeMain}
+                />
+              ) : main.document.requested && mask.issue && mask.issue !== "loading" ? (
+                <UntabbedChip
+                  icon={FileQuestion}
                   name={main.document.path ? pathLeafName(main.document.path) : t`Unavailable`}
                   onClose={tabCommands.closeMain}
                 />
@@ -281,7 +294,9 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           />
           <div className="page-sheet relative flex min-h-0 flex-1 flex-col">
             <ProjectRouteBoundary {...mask}>
-              {!props.contextLive ? null : main.document.requested ? (
+              {!props.contextLive ? null : trashedId ? (
+                <TrashedDocument key={trashedId} projectId={projectId} documentId={trashedId} />
+              ) : main.document.requested ? (
                 <MainDocumentStatus projectId={projectId} main={main.document} />
               ) : (
                 <RecentDocumentsLanding

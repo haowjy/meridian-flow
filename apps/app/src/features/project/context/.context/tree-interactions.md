@@ -478,7 +478,7 @@ appeared to accept but landed elsewhere would mislead.
 
 ## Trash rows dragged onto the tree
 
-A Trash row starts its drag as source `trash` (`useEntryRow(entry, active, true, "trash")`), carrying
+A Trash row starts its drag as source `trash` (`useEntryRow(entry, { active, source: "trash" })`), carrying
 the document's id. The entries route recognises it before `resolveDrop`: `planRestore`
 (`entry-drag/restore-drop.ts`) judges the same targets (folder, area root, row edge) and a drop calls
 `restoreInto` on `DocumentTrashRestoreProvider`, which posts one restore request with the destination.
@@ -489,9 +489,8 @@ journal entry: a reload shows the server). A refused item goes back to Trash wit
 notice offers Undo, which deletes the restored documents through the normal delete path. Trash's own
 list never takes a trash drag (the rows are already deleted).
 
-Trash rows (`TrashRow`, in the sidebar's Trash and the Trash popup) select like tree rows: the
-sidebar's through the Files list's selection, the popup's through its own (its rows don't drag: a
-modal has nowhere to drop them). Right-click and ⋯ share the tree's menu: Restore on one row,
+Trash rows are the trees' `DocumentRow` and select like tree rows, through the Files list's
+selection. Right-click and ⋯ share the tree's menu: Restore on one row,
 Restore N on a selection. `restore(entries)` on `DocumentTrashRestoreProvider` sends one request
 for all of them; each entry shows its own outcome on its row (a blocked one keeps "Couldn't restore
 … A file is in the way."), and one notice counts the ones that came back ("Restored 3 files.").

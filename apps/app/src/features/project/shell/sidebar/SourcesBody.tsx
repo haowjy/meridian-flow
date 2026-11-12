@@ -38,6 +38,7 @@ import type { MoveArea } from "../../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../../context/entry-drag/use-entry-list";
 import { useOptionalTreeCreation } from "../../context/TreeCreationProvider";
 import { type FilesRoute, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
+import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { type ChangesScope, ChangesSource, useChangesScope } from "./ChangesSource";
 import type { SourceDrop } from "./SourcePane";
 import { ALL_SOURCES, type SourceKey, useSidebarTabs } from "./sidebar-tabs-store";
@@ -219,6 +220,13 @@ export function SourcesBody({
     showTab(activeScheme);
     setPicked((current) => (current === "changes" ? current : activeScheme));
   }, [activeScheme, showTab]);
+  // A deleted document main shows is Trash's, so Trash shows, as a document shows its tree.
+  const trashShown = useTrashNavigation().shown;
+  useEffect(() => {
+    if (!trashShown) return;
+    showTab("trash");
+    setPicked((current) => (current === "changes" ? current : "trash"));
+  }, [trashShown, showTab]);
   // A new file or folder asked for elsewhere (the empty Editor) appears in its source.
   const creatingScheme = useOptionalTreeCreation()?.request?.scheme;
   useEffect(() => {

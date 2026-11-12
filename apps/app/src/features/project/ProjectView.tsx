@@ -54,7 +54,6 @@ import {
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
-import { DocumentTrashDialog } from "./context/DocumentTrashDialog";
 import { DocumentTrashRestoreProvider } from "./context/DocumentTrashRestoreProvider";
 import { RefusalToasts } from "./context/entry-drag/RefusalToasts";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
@@ -310,7 +309,6 @@ export function ProjectView(props: ProjectViewProps) {
         <ManageWorksProvider>
           <RefusalToasts projectId={props.projectId} />
           <div className="flex h-full min-h-0 w-full bg-background text-foreground">
-            <DocumentTrashDialog projectId={props.projectId} />
             {hydrated ? (
               <>
                 {resolvedProps.contextLive && editorScope.status === "ready" ? (

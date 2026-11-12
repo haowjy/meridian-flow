@@ -250,7 +250,6 @@ export function prepareEditorDestination(
     address: {
       ...previous,
       destination,
-      trash: undefined,
       ...(owner ? { owner } : {}),
       itemKey: owner ? itemKey : undefined,
       changeId: owner && itemKey ? changeId : undefined,
