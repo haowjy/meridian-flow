@@ -82,7 +82,7 @@ export function FailureCard({
               label={t`Dismiss`}
               onClick={onDismiss}
             >
-              <X aria-hidden className="size-3.5" />
+              <X aria-hidden />
             </IconButton>
           ) : null}
         </div>

@@ -252,7 +252,7 @@ function UploadRow({
         actions={
           canDelete ? (
             <IconButton size="xs" label={t`Delete ${name}`} onClick={onDelete} className="mr-1">
-              <Trash2 className="size-3.5" aria-hidden />
+              <Trash2 aria-hidden />
             </IconButton>
           ) : null
         }

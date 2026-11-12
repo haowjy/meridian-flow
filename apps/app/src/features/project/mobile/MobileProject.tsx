@@ -232,7 +232,7 @@ function OpenInMainButton({ onOpen }: { onOpen: () => void }) {
   return (
     <div className="flex shrink-0 items-center">
       <IconButton size="sm" label={t`Open in main`} onClick={onOpen}>
-        <Maximize2 className="size-4" aria-hidden />
+        <Maximize2 aria-hidden />
       </IconButton>
     </div>
   );
@@ -259,7 +259,7 @@ function PhoneSideTitle({
       />
       {side.source === "held" ? (
         <IconButton size="sm" label={t`Held here. Follow main again`} onClick={releaseSide}>
-          <Pin className="size-4" aria-hidden />
+          <Pin aria-hidden />
         </IconButton>
       ) : null}
     </>

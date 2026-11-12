@@ -1,52 +1,75 @@
-/**
- * The project lists' search box, and `SettledSearchField`: a search box that
- * keeps keystrokes to itself and reports only the settled (debounced) value,
- * so typing never re-renders the list it filters.
- */
 import { Search } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type Ref, useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
+/** The one search box: pickers' and lists' filters. Its label is also the placeholder. */
 export function SearchField({
-  label,
+  ref,
   value,
   onChange,
+  label,
+  disabled,
+  onSubmit,
+  listItem,
+  className,
 }: {
-  /** Also the placeholder. */
-  label: string;
+  ref?: Ref<HTMLInputElement>;
   value: string;
   onChange: (value: string) => void;
+  label: string;
+  disabled?: boolean;
+  /** Enter in the field: a picker whose first result is the obvious choice picks it. */
+  onSubmit?: () => void;
+  /** Takes part in its list's arrow keys (`handleListKeys`). */
+  listItem?: boolean;
+  /** Its placement in the host. */
+  className?: string;
 }) {
   return (
-    <div className="relative min-w-0 flex-1">
+    <div className={cn("relative min-w-0", className)}>
       <Search
-        className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+        className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
         aria-hidden
       />
       <Input
+        data-list-item={listItem || undefined}
+        ref={ref}
         type="search"
         value={value}
+        disabled={disabled}
         aria-label={label}
         placeholder={label}
         onChange={(event) => onChange(event.target.value)}
-        className="h-8 pl-8 coarse:h-11"
+        onKeyDown={
+          onSubmit
+            ? (event) => {
+                if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+                event.preventDefault();
+                onSubmit();
+              }
+            : undefined
+        }
+        className="h-8 pr-2 pl-8 text-sm coarse:h-11"
       />
     </div>
   );
 }
 
-/** A search box whose settled value alone leaves it; see `useSettledSearch`. */
+/**
+ * A search box that keeps keystrokes to itself and reports only the settled value, so typing
+ * never re-renders the list it filters; see `useSettledSearch`.
+ */
 export function SettledSearchField({
-  label,
   value,
   onSettle,
-}: {
-  label: string;
+  ...field
+}: Omit<Parameters<typeof SearchField>[0], "value" | "onChange"> & {
   value: string | null;
   onSettle: (value: string | null) => void;
 }) {
   const [text, setText] = useSettledSearch(value, onSettle);
-  return <SearchField label={label} value={text} onChange={setText} />;
+  return <SearchField {...field} value={text} onChange={setText} />;
 }
 
 /**

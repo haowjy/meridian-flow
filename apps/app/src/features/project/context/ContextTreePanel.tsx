@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import type { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { IconButton } from "@/components/ui/icon-button";
 import { ListLine } from "@/components/ui/list-row";
 import { destinationOf, isImportScheme } from "@/features/import/destination";
 import {
@@ -24,7 +25,6 @@ import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
 import { schemeAllowsCreation, schemeLabel } from "./context-schemes";
 import { ImportHeaderAction } from "./ImportHeaderAction";
-import { PaneHeaderActionButton } from "./pane-header-action";
 import { useOptionalTreeCreation } from "./TreeCreationProvider";
 import { treeFolderIds } from "./tree-expansion-state";
 import { subscribeFolderReveal } from "./tree-reveal";
@@ -235,16 +235,12 @@ export function ContextTreePanel({
 
   const actions = schemeAllowsCreation(scheme) ? (
     <>
-      <PaneHeaderActionButton
-        icon={FilePlus}
-        label={t`New file`}
-        onClick={() => requestCreate("file", "")}
-      />
-      <PaneHeaderActionButton
-        icon={FolderPlus}
-        label={t`New folder`}
-        onClick={() => requestCreate("folder", "")}
-      />
+      <IconButton label={t`New file`} onClick={() => requestCreate("file", "")}>
+        <FilePlus aria-hidden />
+      </IconButton>
+      <IconButton label={t`New folder`} onClick={() => requestCreate("folder", "")}>
+        <FolderPlus aria-hidden />
+      </IconButton>
       {importScheme ? (
         <ImportHeaderAction
           scheme={importScheme}

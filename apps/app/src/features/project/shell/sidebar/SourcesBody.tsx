@@ -20,6 +20,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { IconButton } from "@/components/ui/icon-button";
 import { role } from "@/components/ui/roles";
 import { tabListKeys } from "@/components/ui/tab-keys";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -361,23 +362,12 @@ function SourceTabs({
         ))}
       </div>
       <DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DropdownMenuTrigger
-              aria-label={t`Choose tabs`}
-              className={cn(
-                TAB_BUTTON,
-                role.secondary,
-                role.hover,
-                role.open,
-                "hover:text-foreground",
-              )}
-            >
-              <Plus className={sidebarIcon.tab} aria-hidden />
-            </DropdownMenuTrigger>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{t`Choose tabs`}</TooltipContent>
-        </Tooltip>
+        <DropdownMenuTrigger asChild>
+          {/* Sized like the tabs it sits among. */}
+          <IconButton size="sm" label={t`Choose tabs`} tooltipSide="bottom" className="size-7">
+            <Plus aria-hidden />
+          </IconButton>
+        </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuLabel>{t`Tabs`}</DropdownMenuLabel>
           {ALL_SOURCES.map((key) => {
@@ -408,13 +398,13 @@ function SourceTabs({
 }
 
 /**
- * A tab and the strip's + button: 28px, 44px under a finger. With a mouse every tab and +
+ * A tab, like the strip's + button: 28px, 44px under a finger. With a mouse every tab and +
  * fit a default-width sidebar; under a finger six tabs and + fill the 320px phone drawer only
  * because the row drops its gaps and half its inset. More tabs, or a narrower sidebar, scroll
  * the strip.
  */
 const TAB_BUTTON =
-  "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors [@media(hover:none)_and_(pointer:fine)]:size-9 coarse:size-11";
+  "focus-ring grid size-7 shrink-0 place-items-center rounded-md transition-colors coarse:size-11";
 
 /** A source's tab: a drop on it lands at the source's root, and a drag that rests opens it. */
 function SourceTab({

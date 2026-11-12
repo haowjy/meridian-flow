@@ -324,7 +324,7 @@ function QuestionTakeover({
             disabled={entry.choice?.kind !== "text"}
             onClick={forward}
           >
-            <ArrowUp className="size-4" />
+            <ArrowUp />
           </IconButton>
         )}
       </div>

@@ -61,7 +61,7 @@ export function MobileTopBar({
         }}
       >
         <IconButton size="sm" onClick={onOpenDrawer} label={t`Open navigation`}>
-          <Menu className="size-5" aria-hidden />
+          <Menu aria-hidden />
         </IconButton>
         {balance ? <div aria-hidden className="size-11 shrink-0" /> : null}
         <div className="flex min-w-0 flex-1 flex-col items-center justify-center px-1">

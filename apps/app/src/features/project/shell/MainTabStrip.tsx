@@ -4,6 +4,7 @@
  * holds no tab for it (a chat, an address that names nothing, a document back within one history
  * entry) is drawn after the tabs as the active chip, so what main shows never depends on the record.
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
@@ -39,6 +40,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { draftCopyView } from "@/features/draft-review/copy-view";
 import { useScrollEdges } from "@/hooks/use-scroll-edges";
@@ -238,20 +240,16 @@ export function MainTabMenu({
   const label = t`All open documents`;
   return (
     <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={label}
-              className="focus-ring relative isolate ml-auto grid h-full w-9 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-ink-fill data-[state=open]:text-foreground data-[state=open]:before:bg-ink-fill"
-            >
-              <ChevronDown className="size-3.5" aria-hidden />
-            </button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{label}</TooltipContent>
-      </Tooltip>
+      <DropdownMenuTrigger asChild>
+        <IconButton
+          size="sm"
+          label={label}
+          tooltipSide="bottom"
+          className="mr-1 ml-auto self-center"
+        >
+          <ChevronDown aria-hidden />
+        </IconButton>
+      </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
         className="w-64 max-w-[calc(100vw-1rem)]"

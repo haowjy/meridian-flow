@@ -47,7 +47,7 @@ export function InlineErrorRow({
       ) : null}
       {onDismiss ? (
         <IconButton className="shrink-0" label={t`Dismiss`} onClick={onDismiss}>
-          <X aria-hidden className="size-3.5" />
+          <X aria-hidden />
         </IconButton>
       ) : null}
     </div>

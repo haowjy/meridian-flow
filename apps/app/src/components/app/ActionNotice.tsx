@@ -101,7 +101,7 @@ export function ActionNotice({
             </button>
           ) : null}
           <IconButton label={t`Dismiss`} className="shrink-0" onClick={onDismiss}>
-            <X aria-hidden className="size-3" />
+            <X aria-hidden />
           </IconButton>
         </>
       )}

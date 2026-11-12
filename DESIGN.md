@@ -132,8 +132,12 @@ Core shell expectations:
   text button, a link chip) or a small control filled in the focus colour (a checked
   switch). Over a sticky or pinned bar, give the scroller `scroll-padding`.
 - An icon-only control is `IconButton`. Its required `label` is both its accessible
-  name and its tooltip. Under a coarse pointer it and `Button` grow to the 44px touch
+  name and its tooltip. Its `size` sets the glyph too: `xs` is a 24px box with a 14px glyph,
+  `sm` a 32px box with a 16px glyph, so a call site never sizes the glyph. A menu or popover
+  trigger wraps it (`asChild`). Under a coarse pointer it and `Button` grow to the 44px touch
   target themselves (the `coarse:` variant), so a call site never adds touch sizing.
+- A search box is `SearchField` (`SettledSearchField` when typing must not re-render the list it
+  filters); a picker's is `PickerSearch`.
 - The name above a list or a group of its rows is `ListSection` (or `ListSectionHeader`
   over a pane's own scroller): the uppercase group label on the rows' text edge, actions
   shown on hover, and, when it folds, a chevron after the label so folding and plain

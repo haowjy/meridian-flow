@@ -743,7 +743,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 label={t`Attach file`}
                 onClick={() => fileRef.current?.click()}
               >
-                <Paperclip className="size-4" />
+                <Paperclip />
               </IconButton>
             </>
           ) : null}
@@ -785,7 +785,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               aria-describedby={submitDisabledReason ? disabledReasonId : undefined}
               className={running ? "relative rounded-full" : "rounded-lg"}
             >
-              <ArrowUp className="size-4" />
+              <ArrowUp />
               {running ? (
                 <span
                   aria-hidden="true"
