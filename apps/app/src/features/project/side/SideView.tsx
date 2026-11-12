@@ -165,14 +165,17 @@ function useDescriptions(projectId: string): Descriptions {
   // does for main's address.
   const describe = useCallback(
     async (documentId: string, workId?: string) => {
-      const live = await describeLive(documentId, workId);
-      const pin = live ? null : readDocumentView(accountId, projectId, documentId).pin;
-      if (!pin) return live;
-      const drafts = await queryClient.fetchQuery(ownerDraftsQueryOptions(projectId, pin.ownerKey));
-      const row = drafts.items.find(
-        (item) => item.itemKey === pin.itemKey && item.documentId === documentId,
-      );
-      return row && (row.isNew || row.deletedLive) ? openDocumentFromDraftGroup(row) : null;
+      const pin = readDocumentView(accountId, projectId, documentId).pin;
+      if (pin) {
+        const drafts = await queryClient.fetchQuery(
+          ownerDraftsQueryOptions(projectId, pin.ownerKey),
+        );
+        const row = drafts.items.find(
+          (item) => item.itemKey === pin.itemKey && item.documentId === documentId,
+        );
+        if (row && (row.isNew || row.deletedLive)) return openDocumentFromDraftGroup(row);
+      }
+      return describeLive(documentId, workId);
     },
     [describeLive, accountId, projectId, queryClient],
   );
