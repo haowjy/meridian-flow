@@ -4,28 +4,6 @@ The root `AGENTS.md` states each invariant and why writers rely on it. This page
 how the code keeps it today, what checks it, and where it falls short. The mechanisms
 are current choices; the invariant is what they serve.
 
-## Writer data survives
-
-**How.** A release with pending migrations needs a confirmed backup first (the KB's
-`wiki/architecture/hosting.md`). `tools/dev/migration-lint.ts` rejects unsafe DDL (a `NOT NULL` column without a
-default, a rename, a drop without a lock timeout, a non-concurrent index, an unbounded
-`UPDATE` or `DELETE`). `tools/dev/check-migration-history.ts` freezes merged history,
-and the migration runner refuses an inconsistent ledger. CI runs both; lefthook runs
-the lint on staged files. Rules: `packages/database/.context/CONTEXT.md` (Migration
-integrity); reasons: the KB's `wiki/conventions/practice/database-migrations.md`.
-
-**Checked by** `tools/dev/migration-lint.test.ts`,
-`tools/dev/lib/migration-history.test.ts`, `tools/dev/lib/migration-runner.db.test.ts`
-and `packages/database/src/fresh-migrations.db.test.ts`, which replays migrations over
-seeded rows.
-
-**Gaps.** The lint isn't part of `pnpm check`. A `-- migration-lint: skip <RULE>` needs no
-reason, and nothing checks that a skip doesn't assume empty tables. The rules are
-regular expressions, so a vacuous `WHERE true` passes. `tools/dev/.context/CONTEXT.md`
-says the `0000_` baseline is exempt from warnings only; the lint skips every rule there.
-The backup mechanism isn't chosen yet, and database functions are applied after
-migrations commit, so `consume_credit_lots_fifo` can be missing mid-deploy (#589).
-
 ## Text converges
 
 **How.** An edit is appended to the document's journal before it is applied, broadcast

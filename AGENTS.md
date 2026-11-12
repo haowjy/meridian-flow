@@ -19,9 +19,6 @@ no longer serves writers, propose the change to the owner as its own step, never
 side effect of getting a task to pass. How the code keeps each one, what checks it and
 where it falls short: [.context/invariants.md](.context/invariants.md).
 
-- **Writer data survives.** Nothing a writer saved is lost or broken in production, by a
-  release, a migration or a deploy: a writer's manuscript is the product. Work as if
-  production is full of it.
 - **Text converges.** Every copy of a document's text converges, and no accepted edit is
   lost in the merge: the writer and the model edit the same document at once.
 - **Writer text stays out of logs and diagnostics:** it is unpublished, private work.
