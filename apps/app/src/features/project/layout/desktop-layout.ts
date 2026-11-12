@@ -23,6 +23,6 @@ export function getDesktopGridTemplate(): {
   return {
     areas: '"rail-l left-resize center side-resize side"',
     columns:
-      "var(--project-left-width) var(--project-left-handle-width) minmax(var(--project-main-min-width), 1fr) var(--project-side-handle-width) var(--project-side-width)",
+      "var(--project-left-width) var(--project-left-handle-width) minmax(var(--project-main-min-width), 1fr) var(--project-side-handle-width) min(var(--project-side-width), calc((100% - var(--project-left-width)) / 2))",
   };
 }
