@@ -26,6 +26,10 @@
   /* Draft chrome (the review strip, the reviewing tab): a step below chrome, so it never
      reads as a hovered chrome row. */
   --color-review: oklch(0.938 0.008 60);
+  /* A document's page: slightly aged paper and a warm ink, so a document reads apart from a
+     chat at a glance. Body ink holds 7:1 on it and `muted-foreground` 4.5:1. */
+  --color-paper: oklch(0.975 0.008 85);
+  --color-paper-ink: oklch(0.25 0.012 60);
 
   /* Inks. Secondary text is one ink; a hint differs by size, never by a paler colour.
      Recheck AA in a current row (10% overlay) on the review ground if either changes. */

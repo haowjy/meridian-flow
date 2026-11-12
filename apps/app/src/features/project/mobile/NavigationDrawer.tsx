@@ -1,5 +1,5 @@
 /**
- * NavigationDrawer — the phone project drawer: the Write | Chat switch, its list, and the account.
+ * NavigationDrawer — the phone project drawer: the Write | Chat switch, the sources, and the account.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { TreeCreationProvider } from "../context/TreeCreationProvider";
 import { InlineProjectTitle, type ProjectTitleEdit } from "../shell/InlineProjectTitle";
-import { SIDEBAR_LISTS, useSidebarListState } from "../shell/sidebar/sidebar-lists";
+import { SourcesBody } from "../shell/sidebar/SourcesBody";
 import { WorkScopePicker } from "../shell/sidebar/WorkScopePicker";
 import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
 import { useWorkScope } from "../use-work-scope";
@@ -45,8 +45,6 @@ export function NavigationDrawer({
   activeContextPath,
   chatThreadId,
 }: NavigationDrawerProps) {
-  const { list } = useSidebarListState(projectId);
-  const Body = SIDEBAR_LISTS[list].Body;
   const openDocument = useOpenProjectDocument(projectId);
   const scope = useWorkScope(projectId);
   const manageWorks = useManageWorks();
@@ -114,8 +112,8 @@ export function NavigationDrawer({
               />
             </div>
 
-            {/* The switch only changes the list; a pick inside the list closes the drawer. */}
-            <WorkspaceNavBody projectId={projectId}>
+            {/* The switch moves main and closes the drawer onto it, as a pick in a list does. */}
+            <WorkspaceNavBody projectId={projectId} onSwitched={() => onOpenChange(false)}>
               {/* The drawer's own creation seam: closing the drawer unmounts it, ending any inline create. */}
               <TreeCreationProvider expandSidebar={keepOpen}>
                 <div className="flex shrink-0 flex-col py-1">
@@ -129,7 +127,7 @@ export function NavigationDrawer({
                     }}
                   />
                 </div>
-                <Body
+                <SourcesBody
                   projectId={projectId}
                   editorWorkId={editorWorkId}
                   chatThreadId={chatThreadId}

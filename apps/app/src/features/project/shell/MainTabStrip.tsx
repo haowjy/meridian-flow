@@ -346,7 +346,7 @@ function DocumentTabChip({
   return (
     <TabChipFrame
       active={active}
-      reviewing={reviewing}
+      surface={reviewing ? "review" : "paper"}
       divider={divider}
       tabProps={{
         ...drag,
@@ -575,16 +575,17 @@ function scrollStripWithWheel(event: WheelEvent<HTMLDivElement>) {
   event.currentTarget.scrollBy({ left: event.deltaY * linePx });
 }
 
-export function TabChipFrame({
+function TabChipFrame({
   active,
-  reviewing = false,
+  surface = "page",
   divider,
   children,
   tabProps,
   className,
 }: {
   active: boolean;
-  reviewing?: boolean;
+  /** What the active chip joins below it: a plain page, a document's paper, or the review strip. */
+  surface?: "page" | "paper" | "review";
   divider: boolean;
   children: ReactNode;
   tabProps?: HTMLAttributes<HTMLDivElement>;
@@ -599,8 +600,9 @@ export function TabChipFrame({
         // its height. scroll-mx: scrolled into view, the active tab keeps room for its flares.
         "group scroll-mx-6 gap-1.5",
         tabChipClass(active),
-        // Under review the chip takes the review strip's tone, so tab and band read as one.
-        reviewing && "[--tab-chip-surface:var(--color-review)]",
+        // The active chip takes the surface under it, so tab and page (or review strip) read as one.
+        active && surface === "paper" && "[--tab-chip-surface:var(--color-paper)]",
+        active && surface === "review" && "[--tab-chip-surface:var(--color-review)]",
         className,
       )}
     >

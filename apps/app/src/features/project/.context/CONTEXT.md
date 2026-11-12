@@ -134,9 +134,22 @@ is not on screen for removals or availability. A close, a Discard and a removal 
 document through the removal coordinator, so nothing picks it again and its host unmounts (taking
 its draft-only presentation with it). Nothing here is persisted.
 
-Slot wrappers paint their material, and document shells stay transparent. The Write | Chat switch is not a mode:
-it stores `sidebarList` (`client/project-shell/store.ts`, per browser tab) and `SIDEBAR_LISTS` picks the
-sidebar body, so flipping it never navigates. Widths are per slot; the sidebar and the side panel each have one open/closed
+Slot wrappers paint their material, and document shells stay transparent, except that a document's
+page is paper (`paper` in `styles/globals.css`: the `paper` and `paper-ink` tokens re-pointed as the
+page and its ink, on main's and the side's page and the phone's), and main's active document tab
+takes the same surface; a chat's page stays plain.
+
+The Write | Chat switch (`shell/MainModeSwitch.tsx`) is main's mode, read from main's item (a chat
+or the new-chat composer is Chat, anything else Write) and never stored. Pressing it navigates:
+Write to main's selected document tab, else its first, else Recently opened; Chat to the current
+chat, else a new one. The pressed side shows until main's item agrees.
+
+Under it, the sidebar's sources (`shell/sidebar/SourcesBody.tsx`, also the phone drawer's) are one
+strip, Chat, then the tree tabs the writer chose with + (`sidebar-tabs-store.ts`: Manuscript and
+Knowledge by default; + adds Your files), then Changes while it has something to offer; Unfiled (with its
+count) and Trash are quiet rows at the foot. The shown pane follows main's item: a document's tree,
+Unfiled, Trash for a deleted one, the Chat list for a chat or a Scratch note, unless Changes is on
+show. Scratch docks under the Chat list. Widths are per slot; the sidebar and the side panel each have one open/closed
 preference for every kind of main. Preferences hydrate before the desktop component
 mounts, and `ProjectView` gates the mount rather than placing a conditional between hooks. One
 merged layout subscription is the only whole-preferences subscription.
@@ -227,7 +240,7 @@ its ⋯ menu, and deletes with an Undo line in the list. The API and the client 
 pin `favorite` (`isFavorite`).
 
 A chat delete belongs to the project, not the list (`shell/sidebar/chat-deletes.ts`, mounted by
-`ChatDeleteProvider` in `ProjectView`): its notice survives switching the sidebar's list, closing
+`ChatDeleteProvider` in `ProjectView`): its notice survives switching the sidebar's source, closing
 the phone's drawer and remounting the sidebar, and ends on the next delete, Dismiss, leaving the
 project, signing out or a reload. The delete takes main to `/chats` and forgets it as the current
 chat at once; the chat's saved composer words and unsent records stay held (`beginOwnChatDelete` in

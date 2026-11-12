@@ -46,8 +46,9 @@ Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 - `background` — white, the page.
 - `card` — white: cards, menus, popovers, the composer, bubbles; border and shadow lift them.
 - `review` — one step below chrome `oklch(0.938 0.008 60)`, under draft chrome and the reviewing tab.
+- `paper` / `paper-ink` — a document's page and its text: slightly aged paper `oklch(0.975 0.008 85)` and a warm ink `oklch(0.25 0.012 60)`, so a document reads apart from a chat at a glance (owner, 2026-11-12). The `paper` utility re-points `background` and `foreground` to them inside a document's page, and main's active document tab takes the same surface. Chats, the composer and the sidebars stay plain.
 
-Every neutral (surfaces and both inks) is hue 60 at chroma 0.006 or less; the review ground takes 0.008. Hues toward
+Every neutral (surfaces and both inks) is hue 60 at chroma 0.006 or less; the review ground takes 0.008, and paper is the one warm exception. Hues toward
 yellow-green (85–140) read olive at that chroma; keep neutrals off them.
 - `foreground` / `muted-foreground` — the two inks. A hint differs by size, never by a paler ink.
 - `ink-fill` / `ink-fill-strong` — foreground at 5% and 10%: hover and wells, then current, selected, open and pressed. Filled controls take them through the `interactive` layer.

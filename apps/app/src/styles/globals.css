@@ -753,6 +753,19 @@
 }
 
 /*
+ * Paper — a document's page. It re-points the page and its ink inside it, so everything drawn
+ * on the page (toolbar, word count, prose) sits on the paper in the paper's ink with no surface
+ * of its own. A chat's page stays plain `page-sheet`. A document's active tab takes the same
+ * surface (`--tab-chip-surface`), so tab and page stay one piece.
+ */
+@utility paper {
+  --color-background: var(--color-paper);
+  --color-foreground: var(--color-paper-ink);
+  background-color: var(--color-paper);
+  color: var(--color-paper-ink);
+}
+
+/*
  * Chrome field — the center cell's material: the whisper chrome with its
  * rounded top-left curving against the project header (the grid backdrop).
  * Two elements can occupy that cell — the center slot (Editor/Chat surfaces)

@@ -1552,7 +1552,7 @@ msgstr "chart"
 #: src/features/chat/ChatView.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/mobile/MobileTopBar.tsx
-#: src/features/project/shell/sidebar/sidebar-lists.tsx
+#: src/features/project/shell/MainModeSwitch.tsx
 msgid "Chat"
 msgstr "Chat"
 
@@ -1569,6 +1569,7 @@ msgid "Chat updates disconnected"
 msgstr "Chat updates disconnected"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Chats"
 msgstr "Chats"
 
@@ -3634,7 +3635,6 @@ msgid "Loading Works…"
 msgstr "Loading Works…"
 
 #: src/features/billing/UsageCard.tsx
-#: src/features/project/chat/ChatScratch.tsx
 #: src/features/project/context/FolderMenu.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/DocumentChoices.tsx
@@ -4242,8 +4242,8 @@ msgid "Open {title}"
 msgstr "Open {title}"
 
 #: src/features/project/chat/ChatScratch.tsx
-msgid "Open a chat to see its Scratch."
-msgstr "Open a chat to see its Scratch."
+#~ msgid "Open a chat to see its Scratch."
+#~ msgstr "Open a chat to see its Scratch."
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Open a document from the project tree, or start a new one."
@@ -5119,8 +5119,8 @@ msgid "Shows token counts and the model on each reply and compaction"
 msgstr "Shows token counts and the model on each reply and compaction"
 
 #: src/features/project/shell/sidebar/ListSwitch.tsx
-msgid "Sidebar list"
-msgstr "Sidebar list"
+#~ msgid "Sidebar list"
+#~ msgstr "Sidebar list"
 
 #: src/features/account/AccountMenu.tsx
 msgid "Signed in"
@@ -6577,7 +6577,7 @@ msgstr "Workspace navigation"
 msgid "Wrap lines"
 msgstr "Wrap lines"
 
-#: src/features/project/shell/sidebar/sidebar-lists.tsx
+#: src/features/project/shell/MainModeSwitch.tsx
 msgid "Write"
 msgstr "Write"
 
@@ -6588,6 +6588,10 @@ msgstr "Write away"
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "Write mode"
 msgstr "Write mode"
+
+#: src/features/project/shell/MainModeSwitch.tsx
+msgid "Write or chat"
+msgstr "Write or chat"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Writing"
