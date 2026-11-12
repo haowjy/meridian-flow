@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
-import { requestConversationReveal } from "@/features/chat/conversation-reveal";
+import { useRequestConversationReveal } from "@/features/chat/conversation-reveal";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import { writerIn } from "./review-attribution";
@@ -61,8 +61,10 @@ export function ChangeAuthor({
   touch?: boolean;
 }) {
   const openThread = useOpenChatThread();
+  const reveal = useRequestConversationReveal();
+  const open = openThread ? (chat: ChatRef) => openChat(chat, openThread, reveal) : null;
   const writer = writerIn(change);
-  const links = openThread ? change.chats : [];
+  const links = open ? change.chats : [];
   if (!writer && links.length === 0) return null;
   return (
     <span
@@ -86,8 +88,8 @@ export function ChangeAuthor({
           <Trans>You</Trans>
         </span>
       ) : null}
-      {openThread && links.length > 0 ? (
-        <OverflowChats fit={fit} chats={links} openThread={openThread} touch={touch} />
+      {open && links.length > 0 ? (
+        <OverflowChats fit={fit} chats={links} open={open} touch={touch} />
       ) : null}
     </span>
   );
@@ -116,12 +118,12 @@ const chatLabel = (chat: ChatRef) =>
 function OverflowChats({
   fit,
   chats,
-  openThread,
+  open,
   touch,
 }: {
   fit: "names" | "first";
   chats: readonly ChatRef[];
-  openThread: (threadId: string) => void;
+  open: (chat: ChatRef) => void;
   touch: boolean;
 }) {
   const container = useRef<HTMLSpanElement>(null);
@@ -185,7 +187,7 @@ function OverflowChats({
         <ChatLink
           key={chatKey(chat)}
           chat={chat}
-          onOpenThread={openThread}
+          onOpen={open}
           touch={touch}
           truncate={index === 0}
         />
@@ -210,7 +212,7 @@ function OverflowChats({
               <DropdownMenuItem
                 key={chatKey(chat)}
                 title={chat.subagentTitle ? chatLabel(chat) : undefined}
-                onSelect={() => openChat(chat, openThread)}
+                onSelect={() => open(chat)}
               >
                 {chatName(chat)}
                 <ArrowUpRight aria-hidden className="size-3" />
@@ -227,12 +229,12 @@ const chatKey = (chat: ChatRef) => chat.chatId;
 
 function ChatLink({
   chat,
-  onOpenThread,
+  onOpen,
   touch,
   truncate,
 }: {
   chat: ChatRef;
-  onOpenThread: (threadId: string) => void;
+  onOpen: (chat: ChatRef) => void;
   touch: boolean;
   /** The first name: it truncates rather than leave the byline (a row's floor keeps a few letters). */
   truncate: boolean;
@@ -247,7 +249,7 @@ function ChatLink({
           aria-label={chat.subagentTitle ? chatLabel(chat) : undefined}
           onClick={(event) => {
             event.stopPropagation();
-            openChat(chat, onOpenThread);
+            onOpen(chat);
           }}
           className={cn(
             "focus-ring inline-flex items-center gap-0.5 self-stretch whitespace-nowrap rounded-sm text-jade-text hover:underline",
@@ -268,12 +270,16 @@ function ChatLink({
  * Opens the chat at the write that made the change (KF14); a subagent's change opens the spawn row in the
  * conversation that launched it. With no write known (a list row), the chat.
  */
-function openChat(chat: ChatRef, openThread: (threadId: string) => void) {
-  openThread(chat.chatId);
+function openChat(
+  chat: ChatRef,
+  openThread: (threadId: string) => void,
+  reveal: ReturnType<typeof useRequestConversationReveal>,
+) {
   if (chat.reveal)
-    requestConversationReveal({
+    reveal({
       kind: "turn",
       ...chat.reveal,
       ...(chat.reveal.subagentThreadId ? { subagentBlock: "card" } : {}),
     });
+  else openThread(chat.chatId);
 }

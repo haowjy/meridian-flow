@@ -1,13 +1,14 @@
 /**
- * MainTabStrip — main's open items as folder tabs in main's band (`client/project-shell/main-tabs`).
- * The tab main shows is the active chip, joined to the page below it. Main's item when the record
- * holds no tab for it (an address that names nothing, a document back within one history entry) is
- * drawn after the tabs as the active chip, so what main shows never depends on the record.
+ * MainTabStrip — one lane of main's open items as folder tabs in main's band
+ * (`client/project-shell/main-tabs`): the document lane in Write, the chat lane in Chat. The tab
+ * main shows is the active chip, joined to the page below it. Main's item when the record holds no
+ * tab for it (an address that names nothing, a document back within one history entry) is drawn
+ * after the tabs as the active chip, so what main shows never depends on the record.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useRouter } from "@tanstack/react-router";
-import { ChevronDown, type LucideIcon, Plus, X } from "lucide-react";
+import { ChevronDown, type LucideIcon, MessageSquare, Plus, X } from "lucide-react";
 import {
   type HTMLAttributes,
   type KeyboardEvent,
@@ -25,6 +26,7 @@ import {
   closeAllMainTabs,
   closeMainTab,
   type MainTab,
+  type MainTabKind,
   mainTabKey,
   readMainTabs,
 } from "@/client/project-shell/main-tabs";
@@ -38,6 +40,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
+import { useChatTitle } from "@/features/chat/ChatThreadTitle";
 import { draftCopyView } from "@/features/draft-review/copy-view";
 import { useScrollEdges } from "@/hooks/use-scroll-edges";
 import { holdFocus } from "@/lib/focus-follow";
@@ -46,19 +49,25 @@ import { useAccountId } from "../context/account-feature-context";
 import { useReferenceDrag } from "../context/entry-drag/reference-source";
 import { tabSubject } from "../context/tab-subject";
 import { useIsDraftOnly } from "../context/use-is-draft-only";
+import { useChatNavigation } from "../routing/chat-navigation";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
 import { useDocumentPaint } from "../views";
 import { tabChipClass } from "./tab-chip";
 
-/** Selecting and closing main's tabs: each writes the address from the tab it names. */
+/**
+ * Selecting and closing one lane's tabs: each writes the address from the tab it names. Closing
+ * main's last tab leaves for the lane's empty page: Recently opened, or the new-chat composer.
+ */
 export function useMainTabCommands({
   projectId,
+  kind,
   open,
   mainKey,
   onShowRecents,
 }: {
   projectId: string;
+  kind: MainTabKind;
   open: OpenContextRoute;
   /** The tab main shows; null while main holds no tab. */
   mainKey: string | null;
@@ -66,30 +75,40 @@ export function useMainTabCommands({
 }) {
   const accountId = useAccountId();
   const openInMain = useOpenInMain(projectId, open);
-  const show = useCallback(
-    (tab: MainTab | null) => {
-      if (tab) openInMain(tab.document, { replace: true });
-      else onShowRecents({ replace: true });
+  const chat = useChatNavigation();
+  const select = useCallback(
+    (tab: MainTab, options?: { replace: boolean }) => {
+      if (tab.kind === "document") void openInMain(tab.document, options);
+      else void chat.openChat(tab.chatId, options);
     },
-    [openInMain, onShowRecents],
+    [openInMain, chat],
+  );
+  const showEmpty = useCallback(
+    () =>
+      kind === "document" ? onShowRecents({ replace: true }) : chat.openNewChat({ replace: true }),
+    [kind, onShowRecents, chat],
+  );
+  const show = useCallback(
+    (tab: MainTab | null) => (tab ? select(tab, { replace: true }) : void showEmpty()),
+    [select, showEmpty],
   );
   return {
-    select: (document: OpenDocument) => openInMain(document),
+    select,
     close: (tab: MainTab) => {
       const key = mainTabKey(tab);
-      const next = closeMainTab(accountId, projectId, key, mainKey);
+      const next = closeMainTab(accountId, projectId, kind, key, mainKey);
       if (key === mainKey) show(next);
     },
-    /** Main goes to Recently opened unless it keeps its item (a chat, or the landing itself). */
+    /** Main goes to the lane's empty page unless it is there already. */
     closeAll: async ({ keepMain }: { keepMain: boolean }) => {
-      // Main leaves first: while it still shows a document, that document's arrival puts its tab
-      // back (`ProjectView`). An Untitled page leaves later than a filed one.
-      if (!keepMain) await onShowRecents({ replace: true });
-      closeAllMainTabs(accountId, projectId);
+      // Main leaves first: while it still shows an item, that item's arrival puts its tab back
+      // (`useMainArrival`). An Untitled page leaves later than a filed one.
+      if (!keepMain) await showEmpty();
+      closeAllMainTabs(accountId, projectId, kind);
     },
-    /** Main's item holds no tab: main goes to the tab it showed last, else Recently opened. */
+    /** Main's item holds no tab: main goes to the tab it showed last, else the empty page. */
     closeMain: () => {
-      const { tabs, selected } = readMainTabs(accountId, projectId);
+      const { tabs, selected } = readMainTabs(accountId, projectId)[kind];
       show(tabs.find((tab) => mainTabKey(tab) === selected) ?? tabs.at(-1) ?? null);
     },
   };
@@ -97,35 +116,60 @@ export function useMainTabCommands({
 
 export function MainTabStrip({
   projectId,
+  kind,
   open,
-  mainKey,
-  mainDocument,
+  mainTab,
   current,
   onShowRecents,
-  onNewDocument,
+  onNew,
 }: {
   projectId: string;
+  /** The lane this strip draws. */
+  kind: MainTabKind;
   open: OpenContextRoute;
-  mainKey: string | null;
-  /** The document main shows, drawn as the active chip after the tabs when the record lacks it. */
-  mainDocument?: OpenDocument;
-  /** Main's item when it is not a document, drawn as the active chip after the tabs. */
+  /** The item main shows in this lane, drawn as the active chip after the tabs when the record lacks it. */
+  mainTab?: MainTab;
+  /** Main's item when it takes no tab (a removed page, the Trash), drawn as the active chip after the tabs. */
   current?: ReactNode;
   onShowRecents: (options: { replace: boolean }) => Promise<void>;
-  /** Absent while no Work is ready to hold an Untitled document. */
-  onNewDocument?: () => void;
+  /** Absent while nothing can be created (documents: no Work is ready to hold an Untitled one). */
+  onNew?: () => void;
 }) {
-  const { tabs, unrecorded } = useDrawnTabs(projectId, mainKey, mainDocument);
-  const commands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
+  const mainKey = mainTab ? mainTabKey(mainTab) : null;
+  const { tabs, unrecorded } = useDrawnTabs(projectId, kind, mainTab);
+  const commands = useMainTabCommands({ projectId, kind, open, mainKey, onShowRecents });
   const stripRef = useRef<HTMLDivElement>(null);
   const more = useScrollEdges(stripRef);
   useActiveTabVisibility(stripRef, mainKey ?? (current ? "current" : null));
   const lastActive =
     unrecorded !== undefined || (tabs.at(-1) && mainTabKey(tabs.at(-1) as MainTab) === mainKey);
+  const chip = (tab: MainTab, active: boolean, divider: boolean) =>
+    tab.kind === "document" ? (
+      <DocumentTabChip
+        key={mainTabKey(tab)}
+        projectId={projectId}
+        document={tab.document}
+        active={active}
+        divider={divider}
+        onSelect={() => commands.select(tab)}
+        onClose={() => commands.close(tab)}
+      />
+    ) : (
+      <ChatTabChip
+        key={mainTabKey(tab)}
+        projectId={projectId}
+        chatId={tab.chatId}
+        active={active}
+        divider={divider}
+        onSelect={() => commands.select(tab)}
+        onClose={() => commands.close(tab)}
+      />
+    );
+  const newLabel = kind === "document" ? t`New document` : t`New chat`;
   return (
     <div
       role="tablist"
-      aria-label={t`Open documents`}
+      aria-label={kind === "document" ? t`Open documents` : t`Open chats`}
       data-main-tab-strip
       onKeyDown={moveAlongStrip}
       className="flex h-full min-w-0 shrink items-stretch"
@@ -142,30 +186,14 @@ export function MainTabStrip({
         {tabs.map((tab, index) => {
           const active = mainTabKey(tab) === mainKey;
           const previous = tabs[index - 1];
-          return (
-            <DocumentTabChip
-              key={mainTabKey(tab)}
-              projectId={projectId}
-              document={tab.document}
-              active={active}
-              // A divider only between two inactive tabs: the active tab's shape separates itself.
-              divider={!active && previous !== undefined && mainTabKey(previous) !== mainKey}
-              onSelect={(document) => commands.select(document)}
-              onClose={() => commands.close(tab)}
-            />
+          // A divider only between two inactive tabs: the active tab's shape separates itself.
+          return chip(
+            tab,
+            active,
+            !active && previous !== undefined && mainTabKey(previous) !== mainKey,
           );
         })}
-        {unrecorded ? (
-          <DocumentTabChip
-            key={mainKey}
-            projectId={projectId}
-            document={unrecorded}
-            active
-            divider={false}
-            onSelect={(document) => commands.select(document)}
-            onClose={() => commands.close({ kind: "document", document: unrecorded })}
-          />
-        ) : null}
+        {unrecorded ? chip(unrecorded, true, false) : null}
         {current ? (
           // The active item never shrinks: the inactive tabs give way first, then the strip scrolls.
           <div
@@ -177,16 +205,16 @@ export function MainTabStrip({
           </div>
         ) : null}
       </div>
-      {/* New document follows document tabs only: after main's other item (a chat) it would read
+      {/* New follows the lane's tabs only: after main's other item (a removed page) it would read
           as a new one of those. */}
       {current ? null : (
         <IconButton
           size="sm"
-          label={t`New document`}
+          label={newLabel}
           // aria-disabled, not disabled: the tooltip has to say why it can't run.
-          tooltip={onNewDocument ? undefined : t`Open a Work to create an Untitled document`}
-          aria-disabled={!onNewDocument || undefined}
-          onClick={onNewDocument}
+          tooltip={onNew ? undefined : t`Open a Work to create an Untitled document`}
+          aria-disabled={!onNew || undefined}
+          onClick={onNew}
           tooltipSide="bottom"
           className="relative self-center aria-disabled:opacity-50"
         >
@@ -203,31 +231,31 @@ export function MainTabStrip({
   );
 }
 
-/** Every tab of the strip in one list, to jump to one the strip has squeezed or scrolled away. */
+/** Every tab of the lane in one list, to jump to one the strip has squeezed or scrolled away. */
 export function MainTabMenu({
   projectId,
+  kind,
   open,
-  mainKey,
-  mainDocument,
+  mainTab,
   keepMain,
   onShowRecents,
 }: {
   projectId: string;
+  kind: MainTabKind;
   open: OpenContextRoute;
-  mainKey: string | null;
-  mainDocument?: OpenDocument;
-  /** Close all leaves main's item where it is: a chat is not a tab, and the landing is the goal. */
+  mainTab?: MainTab;
+  /** Close all leaves main's item where it is: the lane's empty page is the goal. */
   keepMain: boolean;
   onShowRecents: (options: { replace: boolean }) => Promise<void>;
 }) {
-  const { tabs, unrecorded } = useDrawnTabs(projectId, mainKey, mainDocument);
-  const commands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
+  const mainKey = mainTab ? mainTabKey(mainTab) : null;
+  const { tabs, unrecorded } = useDrawnTabs(projectId, kind, mainTab);
+  const commands = useMainTabCommands({ projectId, kind, open, mainKey, onShowRecents });
   // Each document's page has its own band, so the trigger Radix would refocus is gone.
   const focusAfter = useRef<(() => HTMLElement | null) | null>(null);
-  const documents = tabs.map((tab) => tab.document);
-  if (unrecorded) documents.push(unrecorded);
-  if (documents.length === 0) return null;
-  const label = t`All open documents`;
+  const listed = unrecorded ? [...tabs, unrecorded] : tabs;
+  if (listed.length === 0) return null;
+  const label = kind === "document" ? t`All open documents` : t`All open chats`;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -261,14 +289,15 @@ export function MainTabMenu({
           <Trans>Close all</Trans>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        {documents.map((document) => (
+        {listed.map((tab) => (
           <TabMenuItem
-            key={document.documentId}
-            document={document}
-            active={mainTabKey({ kind: "document", document }) === mainKey}
-            onSelect={(picked) => {
-              focusAfter.current = () => selectedTabFor(picked.documentId);
-              commands.select(picked);
+            key={mainTabKey(tab)}
+            projectId={projectId}
+            tab={tab}
+            active={mainTabKey(tab) === mainKey}
+            onSelect={() => {
+              focusAfter.current = () => selectedTabFor(mainTabKey(tab));
+              commands.select(tab);
             }}
           />
         ))}
@@ -278,33 +307,60 @@ export function MainTabMenu({
 }
 
 function TabMenuItem({
-  document,
+  projectId,
+  tab,
   active,
   onSelect,
 }: {
-  document: OpenDocument;
+  projectId: string;
+  tab: MainTab;
   active: boolean;
-  onSelect: (document: OpenDocument) => void;
+  onSelect: () => void;
 }) {
-  return (
+  return tab.kind === "document" ? (
     <DropdownMenuItem
       selected={active}
-      onSelect={() => onSelect(document)}
-      title={document.kind === "new" ? document.name : document.path}
+      onSelect={onSelect}
+      title={tab.document.kind === "new" ? tab.document.name : tab.document.path}
     >
-      <span className="min-w-0 truncate">{document.name}</span>
+      <span className="min-w-0 truncate">{tab.document.name}</span>
+    </DropdownMenuItem>
+  ) : (
+    <ChatMenuItem projectId={projectId} chatId={tab.chatId} active={active} onSelect={onSelect} />
+  );
+}
+
+function ChatMenuItem({
+  projectId,
+  chatId,
+  active,
+  onSelect,
+}: {
+  projectId: string;
+  chatId: string;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const title = useChatTitle(projectId, chatId);
+  return (
+    <DropdownMenuItem selected={active} onSelect={onSelect}>
+      <span className="min-w-0 truncate">{title}</span>
     </DropdownMenuItem>
   );
 }
 
-/** The document tabs the strip draws: the live record, then main's document when it lacks it. */
-function useDrawnTabs(projectId: string, mainKey: string | null, mainDocument?: OpenDocument) {
+/** The lane's tabs the strip draws: the live record, then main's item when it lacks one. */
+function useDrawnTabs(projectId: string, kind: MainTabKind, mainTab?: MainTab) {
   const { tabs, project } = useLiveTabs(projectId);
+  const lane = tabs[kind];
+  const mainKey = mainTab ? mainTabKey(mainTab) : null;
   const unrecorded =
-    mainDocument && mainKey && !tabs.some((tab) => mainTabKey(tab) === mainKey)
-      ? project(mainDocument)
+    mainTab && mainTab.kind === kind && !lane.some((tab) => mainTabKey(tab) === mainKey)
+      ? mainTab.kind === "document"
+        ? ({ kind: "document", document: project(mainTab.document) } as const)
+        : mainTab
       : undefined;
-  return { tabs, unrecorded };
+  return { tabs: lane, unrecorded };
 }
 
 function DocumentTabChip({
@@ -319,7 +375,7 @@ function DocumentTabChip({
   document: OpenDocument;
   active: boolean;
   divider: boolean;
-  onSelect: (document: OpenDocument) => void;
+  onSelect: () => void;
   onClose: () => void;
 }) {
   // The active tab names what main paints: its draft while main reviews one.
@@ -343,6 +399,7 @@ function DocumentTabChip({
     holdTabWidth(chip);
     onClose();
   };
+  const key = mainTabKey({ kind: "document", document });
   return (
     <TabChipFrame
       active={active}
@@ -368,12 +425,12 @@ function DocumentTabChip({
         aria-label={document.name}
         // One stop in the Tab order; the arrows move along the strip (`moveAlongStrip`).
         tabIndex={active ? 0 : -1}
-        data-main-tab={document.documentId}
+        data-main-tab={key}
         onClick={(event) => {
           const focused = event.currentTarget === window.document.activeElement;
-          onSelect(document);
+          onSelect();
           // Each document's page has its own band: the focus follows to this tab in the new one.
-          if (focused) holdFocus(() => selectedTabFor(document.documentId));
+          if (focused) holdFocus(() => selectedTabFor(key));
         }}
         // The whole chip is the hit target; the close button sits above it. The overlay carries
         // the name, so the visible label is hidden from assistive tech.
@@ -385,6 +442,66 @@ function DocumentTabChip({
       </span>
       <TabCloseButton
         name={document.name}
+        active={active}
+        onClose={(event) =>
+          event.detail > 0 ? closeByPointer(event.currentTarget.parentElement) : onClose()
+        }
+      />
+    </TabChipFrame>
+  );
+}
+
+/** A chat's tab: the chat bubble and the thread's live title. */
+function ChatTabChip({
+  projectId,
+  chatId,
+  active,
+  divider,
+  onSelect,
+  onClose,
+}: {
+  projectId: string;
+  chatId: string;
+  active: boolean;
+  divider: boolean;
+  onSelect: () => void;
+  onClose: () => void;
+}) {
+  const title = useChatTitle(projectId, chatId);
+  const heldWidth = useHeldTabWidth();
+  const closeByPointer = (chip: HTMLElement | null) => {
+    holdTabWidth(chip);
+    onClose();
+  };
+  return (
+    <TabChipFrame
+      active={active}
+      divider={divider}
+      tabProps={{
+        style: heldWidth === null ? undefined : { flex: `0 0 ${heldWidth}px` },
+        onAuxClick: (event) => {
+          if (event.button === 1) closeByPointer(event.currentTarget);
+        },
+      }}
+      className={cn("@container/tab w-60 shrink", active ? "min-w-16" : "min-w-12")}
+    >
+      <button
+        type="button"
+        role="tab"
+        aria-selected={active}
+        aria-label={title}
+        tabIndex={active ? 0 : -1}
+        data-main-tab={mainTabKey({ kind: "chat", chatId })}
+        onClick={onSelect}
+        className="focus-ring absolute inset-0"
+        title={title}
+      />
+      <MessageSquare aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <span aria-hidden className="min-w-0 flex-1 truncate text-left text-xs">
+        {title}
+      </span>
+      <TabCloseButton
+        name={title}
         active={active}
         onClose={(event) =>
           event.detail > 0 ? closeByPointer(event.currentTarget.parentElement) : onClose()
@@ -531,9 +648,9 @@ function useActiveTabVisibility(
   }, [router, stripRef, activeKey]);
 }
 
-function selectedTabFor(documentId: string): HTMLElement | null {
+function selectedTabFor(key: string): HTMLElement | null {
   const tabs = document.querySelectorAll<HTMLElement>(
-    `[data-main-tab="${CSS.escape(documentId)}"][aria-selected="true"]`,
+    `[data-main-tab="${CSS.escape(key)}"][aria-selected="true"]`,
   );
   return [...tabs].find((tab) => tab.checkVisibility()) ?? null;
 }

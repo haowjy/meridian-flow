@@ -10,7 +10,7 @@ import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerResults, PickerSearch, PickerSection } from "@/components/ui/picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { requestConversationReveal } from "./conversation-reveal";
+import { useRequestConversationReveal } from "./conversation-reveal";
 import { OpenSubagentChatButton } from "./OpenSubagentChatButton";
 import {
   Elapsed,
@@ -31,6 +31,7 @@ export function SubagentHeader({
   threadId: string;
   nodes: ThreadActivityNode[];
 }) {
+  const requestConversationReveal = useRequestConversationReveal();
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   const contentRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState("");

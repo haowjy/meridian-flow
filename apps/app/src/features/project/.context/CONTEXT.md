@@ -22,68 +22,67 @@ in development, its effects are replayed (the app runs under TanStack Start's de
 `StrictMode`), which destroys a live editor while its child effects still hold it (#1351). The
 cost is that DOM (tab) order among documents follows their ids, not main-then-side.
 
-Main holds tabs. `client/project-shell/main-tabs.ts` is the one record of what is open in main: an
-ordered list of documents per project in this browser tab's sessionStorage, so a reload keeps them
-and two windows keep their own. The address still names main's item. Arriving at an address
-(`ProjectView`) opens or selects its tab, a new one to the right of the tab main showed last; the
-address no longer resolving ends the arrival, so a document that comes back at it (restored from
-another window) arrives afresh, and a document main shows always has its tab in the record. Later
-descriptor changes only refresh a tab that is still open. Selecting a tab opens its document on its
-view's draft or Live (`useOpenInMain`); closing main's tab replaces the entry with its right
-neighbour, else its left, else Recently opened. Back and Forward reopen a tab the writer closed, by
-design: the address leads, the tabs follow it. A close, a Discard, a removal or a vanished document
-closes its tab through the coordinator's `tabs` port (`forget`; a draft-only page's own Close
-closes it once main's address has left, so main's page is not drawn without it). `MainTabStrip`
-draws the tabs in main's band with the inset sheet's folder-tab look. What main shows never depends
-on the record: main's document with no tab in it, a chat, or an address that names nothing is the
-active chip after the tabs, so a link to a deleted chapter keeps its URL and shows the removed page
-in a tab of its own. New document (+) follows the document tabs only, never a chat or an
-unavailable address, where it would read as a new one of those. Document tabs follow Chrome: one
-width for all (240px, shrinking together to the start of their name, with no icon; the open tab keeps room
-for its ×), the ×
-in the same place on each, and while the writer closes tabs with the pointer the widths hold until
-the pointer leaves the strip, so the next × lands under it (`holdTabWidth`; one value per window,
-since each document has its own band). A chat in main keeps its own width. Past that the strip
-scrolls, with no scrollbar and a faded edge
-where tabs are behind it (`useScrollEdges`, `scroll-fade-x`, as the editor toolbar). The keyboard
-follows the tabs pattern: main's item is the one Tab stop, arrows, Home and End move along the
-strip, Enter opens; each document's page has its own band, so the focus follows to the new one.
-The band's far right holds the tab list (`MainTabMenu`, while any document tab is open): Close all,
-then every tab, the open one filled. Close all sends main to Recently opened (an unavailable address
-included) unless main shows a chat, which stays. Every control in the band shares the
-chips' centre line. Stored tabs of documents deleted while the window was closed are not drawn
-once the replica holds the catalog, and a tab shows its document's current name and place
-(`useLiveTabs` in `client/project-shell/live-tabs.ts`, read by the strip, the tab list and the
-side's document list; the record is left alone, so a document that comes back has its tab). Only documents take a tab: a tab is an item with a kind, and `TAB_KINDS`
-is the switch for chats. A tab's Live or Draft view is its document's view, so it is per tab
+Main holds tabs, one lane per kind. `client/project-shell/main-tabs.ts` is the one record of what is
+open in main: `{document, chat}`, each lane an ordered list of tabs and the `selected` one (the pane
+page's "current" item of that kind), per project in this browser tab's sessionStorage, so a reload
+keeps them and two windows keep their own. The address still names main's item. Arriving at an
+address (`useMainArrival`, the only caller of `arriveMainTab`) opens or selects its tab in that
+kind's lane, a new one to the right of the lane's selected tab; the address no longer resolving ends
+the arrival, so a document that comes back at it (restored from another window) arrives afresh, and a
+document main shows always has its tab in the record. A send from the side's composer opens no main
+tab: main's composer send navigates, and the arrival opens the tab. Later descriptor changes only
+refresh a tab that is still open. Selecting a tab opens its item (`useMainTabCommands`, lane-generic;
+a document on its view's draft or Live, `useOpenInMain`); closing main's tab replaces the entry with
+its right neighbour, else its left, else the lane's empty page (Recently opened; the new-chat
+composer). Back and Forward reopen a tab the writer closed, by design: the address leads, the tabs
+follow it. A close, a Discard, a removal or a vanished document closes its tab through the
+coordinator's `tabs` port (`forget`; a draft-only page's own Close closes it once main's address has
+left, so main's page is not drawn without it); a deleted chat, or one `useMissingChatFallback` finds
+missing, drops its chat tab (`dropMainTabChat`). `MainTabStrip` draws the mode's lane in main's band:
+documents in Write, chats in Chat, with the inset sheet's folder-tab look and a per-kind chip (a
+document's name; the chat bubble and the thread's live title). What main shows never depends on the
+record: main's document with no tab in it, or an address that names nothing, is the active chip
+after the tabs, so a link to a deleted chapter keeps its URL and shows the removed page in a tab of
+its own. New (+) follows the lane's tabs only, never an unavailable address, where it would read as
+a new one of those: New document in Write, New chat in Chat. Tabs follow Chrome: one
+width for all (240px, shrinking together to the start of their name; the open tab keeps room
+for its ×), the × in the same place on each, and while the writer closes tabs with the pointer the
+widths hold until the pointer leaves the strip, so the next × lands under it (`holdTabWidth`; one
+value per window, since each document has its own band). Past that the strip
+scrolls, with no scrollbar and a faded edge where tabs are behind it (`useScrollEdges`,
+`scroll-fade-x`, as the editor toolbar). The keyboard follows the tabs pattern: main's item is the
+one Tab stop, arrows, Home and End move along the strip, Enter opens; each document's page has its
+own band, so the focus follows to the new one. The band's far right holds the tab list
+(`MainTabMenu`, while the lane has a tab): Close all, then every tab, the open one filled. Close all
+sends main to the lane's empty page unless it is there already. Every control in the band shares the
+chips' centre line. Stored tabs of documents deleted while the window was closed, and of chats the
+project's list no longer holds, are not drawn once the replica or the list has loaded, and a tab
+shows its item's current name and place (`useLiveTabs` in `client/project-shell/live-tabs.ts`, read
+by the strip, the tab list and the side's document list; the record is left alone, so a document
+that comes back has its tab). A tab's Live or Draft view is its document's view, so it is per tab
 already. The phone draws no strip; it records arrivals the same way.
 
-The owner's target rules for both panes are [`pane-state-machine.md`](pane-state-machine.md);
-where this section disagrees with it, this section is the code before PR A and PR B land.
+Where an item opens and what each pane shows are the rules of [`pane-state-machine.md`](pane-state-machine.md).
 
 Main shows what the address names, resolved by `resolveMainDocument` / `useMainDocument`
 (`views.ts`), the resolver the phone uses too; `MainViewProvider` / `useMainItem` carry
-`{item, document}`. The side shows one item, never main's. The project keeps two pieces of state
+`{item, document}`. The side shows one item, never main's kind. The project keeps one slot per kind
 (`client/project-shell/store.ts`, per account and project in each browser tab, seeded from the
-device, never in history): the current chat, the last chat on screen in either pane (null: a new
-chat), and the current document, the last document on screen in
-either pane. Main showing something makes it current of its kind (`ProjectView` writes the
-document; the chat navigation writes the chat). The data is project-level and independent of
-panes; main's mode decides the organisation. This holds for any future side UI (tiles, tabs):
-what each shows is browser-level state, independent of the panes; which appear, and how they are
-arranged, follows what is in main. `resolveSide` (`side/side-item.ts`): beside a
-document or the landing, the current chat, else a new chat about main's document; beside a chat
-or the new-chat composer, the current document if it opens, else main's open tabs (the one main
-showed last, then from the right) that open, else nothing (the side's empty state). Recents are
-not a source: a document the writer closed must not come back. While main's document is opening,
+device, never in history): the last chat and the last document on screen in either pane, or none.
+`useMainArrival` (`use-main-arrival.ts`) is the one writer for main: every arrival of main, a
+document or a chat, writes its kind's slot (none on the landing and on the new-chat composer, main's
+empty pages), so the side never holds what main left empty. A pick or link into the side writes the
+other kind's slot. `resolveSide` (`side/side-item.ts`) is then only a read: the side shows the slot
+of the kind main is not, and a change of kind needs no swap code, because the slot of the kind
+main left already holds main's last item. Beside a document or the landing: the chat slot, else a
+new chat about main's document. Beside a chat or the new-chat composer: the document slot if it
+opens, else nothing (the side's empty state). Nothing else is a source: not recents, not main's
+open tabs, so a document the writer closed does not come back. While main's document is opening,
 the side keeps what it showed. Nothing derives the side from activity (the chat that last edited
-a document, the documents a chat touched): the writer's own state decides. The writer's New chat, in
-either pane, is `currentChat = null` (`openNewChat`, or the side picker's New chat). Arriving at
-`/chats` is not: the bare address, a reload and Back land there too, and must not forget the chat
-beside. A swap (the side picker, a link held beside, the
-side composer's send) writes the current chat or document and lasts until main changes mode,
-which falls out of the rule. `fitsBeside` is "the item's kind differs from main's mode", for the
-rule. The picker (`side/SidePicker.tsx`) offers only the other kind. Beside a document: New chat,
+a document, the documents a chat touched): the writer's own state decides. The writer's New chat,
+in either pane, nulls the chat slot (`openNewChat` arrives at the composer; the side picker's New
+chat writes it). `fitsBeside` is "the item's kind differs from main's mode". The picker
+(`side/SidePicker.tsx`) offers only the other kind. Beside a document: New chat,
 then the scoped Work's chats (pinned first) and Other chats, grouped by `useChatGroups` as the
 sidebar's Chats list is; archived chats are left out, search included. Beside a chat:
 `DocumentChoices`, one list also drawn inline in the side's empty pane: the documents open in
@@ -92,23 +91,25 @@ main's tabs, Recently opened, then the file explorer (`SideExplorer`: the projec
 that open in the editor are offered (`canSitBeside`); the explorer shows others disabled. Recents
 and the tabs are choices on offer, never a source of the side. A document fits beside only
 once it is described (`describe` in `context/open-project-document.ts`) and opens in the editor:
-one that doesn't (removed, an upload) is skipped for the next candidate. While a describe is out,
-the side keeps what it showed. The current document is cleared when its tab goes
-(`forgetClosedCurrentDocument` in `client/project-shell/main-tabs.ts`: closed, Discarded or
-removed). The header names the item and says no reason for it. `side/SideView.tsx` holds this
-state and the swap command (`useShellCommands`); both shells read it, and the phone's sheet shows
-the same item. The sheet is no history entry: Back while it is open dismisses it and leaves main
-where it is. Back and Forward move main only; the side follows the rule for the new main and the
-stored state.
-Every document link follows one placement rule (`useHoldBeside` in `review-launch.tsx`). From a
-chat in main (`ChatPlaceContext`), a page is held beside: it becomes the current document and a
-closed side opens. From a chat beside, and from anywhere else, it opens in main: a document never
-sits beside a document. The click's modifier (cmd, ctrl, middle) places nothing and the link
-follower treats every follow alike (a newer follow aborts the last): main's opener has no
-new-tab mode. So from a chat only the sidebar and Open in main replace main. Editor links,
-transcript links, chat doors, the draft dock's rows and a reply's "Drafted N documents" rows all
-go through it. The phone's main chat is outside `ChatPlaceContext`, so its links open in main,
-and the sheet closes, as every phone open does.
+one that doesn't (removed, an upload) leaves the side empty. While a describe is out, the side
+keeps what it showed. The header names the item and says no reason for it. `side/SideView.tsx`
+holds this state and the pick command (`useShellCommands`); both shells read it, and the phone's
+sheet shows the same item. The sheet is no history entry: Back while it is open dismisses it and
+leaves main where it is. Back and Forward move main only; the side follows the slots.
+Every link, door and reveal of an item follows one placement command, `place(item, from)`
+(`side/SideView.tsx`, `placeIn` in `side/side-item.ts`): the same kind as the pane it was followed
+in opens in that pane, the other kind in the other pane, and the left sidebar always opens in main.
+Each host provides its pane (`PanePlaceContext`, `pane-place.ts`: the document host, the chat
+surface, the phone's sheet and main chat), which is `from`; with no host it is the sidebar. For the
+side, `place` writes the slot (and the draft the document shows) and has the side seen: the desktop
+opens it, the phone opens the sheet; for main the caller opens the item, since only it knows how.
+Documents come through `useLinkPlacement` (`review-launch.tsx`: editor links, transcript links,
+chat doors, the draft dock's rows and a reply's "Drafted N documents" rows). Chats come through
+`usePlaceChat`, behind `ChatThreadNavigation` (spawn doors, the subagent button) and the
+conversation reveal (`useRequestConversationReveal` carries `from`: a peer mark's or change's chat
+in a document, a subagent link in a chat). So a subagent link inside the side's chat replaces the
+side. The click's modifier (cmd, ctrl, middle) places nothing and the link follower treats every
+follow alike (a newer follow aborts the last): main's opener has no new-tab mode.
 A page only a draft holds (created by it, or deleted live) is described from the draft its
 view pins (`useDescriptions` in `side/SideView.tsx`), the way main's address describes it, since
 the live catalog has no entry for it. The sidebar tree marks main's document only, never the side's. Each header renders inside its host
@@ -140,9 +141,10 @@ the page and its ink), documents and chats alike, the phone's page uses `paper` 
 active tab chip takes the same surface.
 
 The Write | Chat switch (`shell/MainModeSwitch.tsx`) is main's mode, read from main's item (a chat
-or the new-chat composer is Chat, anything else Write) and never stored. Pressing it navigates:
-Write to main's selected document tab, else its first, else Recently opened; Chat to the current
-chat, else a new one. The pressed side shows until main's item agrees.
+or the new-chat composer is Chat, anything else Write) and never stored. Pressing it swaps the
+panes: main navigates to what the side holds of the pressed kind, else that lane's selected tab, else
+the lane's empty page (Recently opened; a new chat); the side then shows what main left, by the slot
+rule. The pressed side shows until main's item agrees.
 
 Under it, the sidebar's sources (`shell/sidebar/SourcesBody.tsx`, also the phone drawer's) are one
 strip, Chat, then the tree tabs the writer chose with + (`sidebar-tabs-store.ts`: Manuscript and
@@ -216,14 +218,13 @@ on refusal, returns to the origin tab if the user hasn't moved focus elsewhere.
 
 ## Navigation and chat
 
-`routing/chat-navigation.tsx` is the single command seam for main: `openChat` always navigates
-main to the chat, and `openNewChat` to `/chats`, main's new-chat composer. The side chooses its
-own chat only through the current chat (the side's picker, or a chat created from the side's
-composer). `display` is the chat main shows (`new` or one thread), null when main holds no chat;
-`currentChatId` is the current chat (`readCurrentChat` in `client/project-shell/store.ts`). A chat
-created from `/chats` takes main; one created from the side's composer becomes the current chat
-and stays beside. A link followed inside a chat in main holds the page beside (the placement rule
-above); the chat stays beside a document opened from it because it is the current chat. A link or door to a page that
+`routing/chat-navigation.tsx` is the single command seam for main: `openChat` navigates main to the
+chat, and `openNewChat` to `/chats`, main's new-chat composer. The side chooses its own chat only
+through the chat slot (the side's picker, or a chat created from the side's composer). `display` is
+the chat main shows (`new` or one thread), null when main holds no chat; `lastShownChatId` is the
+chat slot (`readLastShownChat` in `client/project-shell/store.ts`). A chat created from `/chats`
+takes main and its arrival fills the slot; one created from the side's composer fills the slot
+and stays beside. A link or door to a page that
 chat drafted opens its draft (`useLinkPlacement`), with or without a passage, and a passage door
 lands in whichever pane the page opened in (draft editors don't register as passage targets yet,
 so a draft opens at its top).
@@ -247,7 +248,7 @@ chat at once; the chat's saved composer words and unsent records stay held (`beg
 `client/chat-submissions/deleted-chat.ts`) until the notice ends without Undo, and then go only if
 the server still says the chat is deleted: no answer keeps them for the next load's sweep, since
 another tab or device may have restored it. Undo returns main to
-the chat only if main is still on `/chats`, and the current chat only if nothing has replaced it since. A
+the chat only if main is still on `/chats`, and the chat slot only if nothing has replaced it since. A
 chat with a reply running asks first: the server stops the run in the delete and Undo can't
 restart it. Every restore goes through `ChatDeletes` (Undo, and `restore` for a trashed chat's
 Restore line), so a restore of the chat a notice names ends the notice without dropping anything.

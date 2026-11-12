@@ -1005,6 +1005,10 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/shell/MainTabStrip.tsx
+msgid "All open chats"
+msgstr ""
+
+#: src/features/project/shell/MainTabStrip.tsx
 msgid "All open documents"
 msgstr ""
 
@@ -3906,6 +3910,7 @@ msgstr ""
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat/ChatScreen.tsx
+#: src/features/project/shell/MainTabStrip.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SideHeader.tsx
 #: src/features/project/side/SidePicker.tsx
@@ -4251,6 +4256,10 @@ msgstr ""
 
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "Open a Work to create an Untitled document"
+msgstr ""
+
+#: src/features/project/shell/MainTabStrip.tsx
+msgid "Open chats"
 msgstr ""
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx

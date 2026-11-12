@@ -39,7 +39,8 @@ export function DocumentChoices({
 }) {
   const shown = useSideItem().item;
   const current = shown?.kind === "document" ? shown.documentId : null;
-  const { tabs: openTabs } = useLiveTabs(projectId);
+  const { tabs: live } = useLiveTabs(projectId);
+  const openTabs = live.document.flatMap((tab) => (tab.kind === "document" ? [tab] : []));
   const recent = useRecentDocuments(projectId);
   const catalogs = useContextCatalogViews(projectId, FIND_SCHEMES, {});
   const files = FIND_SCHEMES.flatMap((scheme) =>

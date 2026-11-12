@@ -1,19 +1,22 @@
 import { t } from "@lingui/core/macro";
 import { MessageSquare, PenLine } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { mainTabKey, readMainTabs } from "@/client/project-shell/main-tabs";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { useAccountId } from "../context/account-feature-context";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useOpenContextRoute, useProjectRouteCommands } from "../routing/ProjectNavigationContext";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
+import { useSideItem } from "../side/SideView";
+import { swapPanes } from "./pane-swap";
 
 type MainMode = "write" | "chat";
 
 /**
  * The Write | Chat switch: main's mode, read from main's item (a chat is Chat, anything else is
- * Write) and never stored apart from it. Pressing Write goes to main's selected document tab,
- * else its first, else Recently opened; pressing Chat goes to the current chat, else a new one.
+ * Write) and never stored apart from it. Pressing a mode swaps the panes: main opens what the side
+ * holds of that kind, else that lane's selected tab, else the lane's empty page (Recently opened,
+ * a new chat). The side then shows what main left, by the slot rule, with no code of its own.
  * The pressed side shows at once, while main's navigation settles.
  */
 export function MainModeSwitch({
@@ -32,26 +35,43 @@ export function MainModeSwitch({
   if (!open) throw new Error("The Write | Chat switch needs a project route");
   const openInMain = useOpenInMain(projectId, open);
   const { showEditorRecents } = useProjectRouteCommands();
+  const side = useSideItem();
+  const beside = side.item;
   const mode: MainMode = chat.display ? "chat" : "write";
   const [pressed, setPressed] = useState<MainMode | null>(null);
+  // Ends the swap's transition once the new layout is committed, or the switch gave up.
+  const endSwap = useRef<(() => void) | null>(null);
+  const settle = () => {
+    endSwap.current?.();
+    endSwap.current = null;
+    setPressed(null);
+  };
   useEffect(() => {
-    if (pressed === mode) setPressed(null);
-  }, [pressed, mode]);
+    if (pressed === mode) settle();
+  });
 
   /** Moves main; false when the navigation did not land (refused, superseded, failed). */
   const go = async (next: MainMode): Promise<boolean> => {
+    const lane = readMainTabs(accountId, projectId)[next === "chat" ? "chat" : "document"];
+    const selected = lane.tabs.find((member) => mainTabKey(member) === lane.selected);
     if (next === "chat") {
-      const chatId = chat.currentChatId;
-      await (chatId ? chat.openChat(chatId) : chat.openNewChat());
+      const chatId = beside?.kind === "chat" ? beside.chatId : null;
+      if (chatId) await chat.openChat(chatId);
+      else if (selected?.kind === "chat") await chat.openChat(selected.chatId);
+      else await chat.openNewChat();
       return true;
     }
-    const { tabs, selected } = readMainTabs(accountId, projectId);
-    const tab = tabs.find((member) => mainTabKey(member) === selected) ?? tabs[0];
-    if (!tab) {
+    const document =
+      beside?.kind === "document" && side.document
+        ? side.document
+        : selected?.kind === "document"
+          ? selected.document
+          : null;
+    if (!document) {
       await showEditorRecents({ replace: false });
       return true;
     }
-    return (await openInMain(tab.document)).kind === "applied";
+    return (await openInMain(document)).kind === "applied";
   };
 
   return (
@@ -70,10 +90,13 @@ export function MainModeSwitch({
         // A landed switch lets go once main's item says the same; one that didn't, at once.
         requestAnimationFrame(() =>
           setTimeout(() =>
-            go(next).then(
-              (moved) => (moved ? onSwitched?.() : setPressed(null)),
-              () => setPressed(null),
-            ),
+            swapPanes((done) => {
+              endSwap.current = done;
+              go(next).then(
+                (moved) => (moved ? onSwitched?.() : settle()),
+                () => settle(),
+              );
+            }),
           ),
         );
       }}

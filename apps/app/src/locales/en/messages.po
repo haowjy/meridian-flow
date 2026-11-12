@@ -1005,6 +1005,10 @@ msgstr "Alignment applies to paragraphs, headings, and tables."
 #~ msgstr "All chats"
 
 #: src/features/project/shell/MainTabStrip.tsx
+msgid "All open chats"
+msgstr "All open chats"
+
+#: src/features/project/shell/MainTabStrip.tsx
 msgid "All open documents"
 msgstr "All open documents"
 
@@ -3906,6 +3910,7 @@ msgstr "New"
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat/ChatScreen.tsx
+#: src/features/project/shell/MainTabStrip.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SideHeader.tsx
 #: src/features/project/side/SidePicker.tsx
@@ -4252,6 +4257,10 @@ msgstr "Open a document from the project tree, or start a new one."
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "Open a Work to create an Untitled document"
 msgstr "Open a Work to create an Untitled document"
+
+#: src/features/project/shell/MainTabStrip.tsx
+msgid "Open chats"
+msgstr "Open chats"
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Open conversation"

@@ -9,7 +9,7 @@ import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { bindChatSubmissions } from "@/client/chat-submissions";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
 import { FailureLogProvider } from "@/client/failures/failure-log";
-import { readCurrentChat } from "@/client/project-shell/store";
+import { readLastShownChat } from "@/client/project-shell/store";
 import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
@@ -110,7 +110,7 @@ function AuthenticatedLayout() {
     const { projectId, destination } = route.address;
     return (
       (destination.kind === "chat" && destination.chatId === id) ||
-      readCurrentChat(user.userId, projectId) === id
+      readLastShownChat(user.userId, projectId) === id
     );
   });
 

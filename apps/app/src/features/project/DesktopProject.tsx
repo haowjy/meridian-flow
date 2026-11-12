@@ -13,7 +13,7 @@
 import { t } from "@lingui/core/macro";
 import { FileQuestion, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useMainTabs } from "@/client/project-shell/main-tabs";
+import { mainTabKey, useMainTabs } from "@/client/project-shell/main-tabs";
 import { useTrashedDocument } from "@/client/query/useDocumentTrash";
 import type { OpenDocument } from "@/client/stores";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
@@ -110,21 +110,29 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // between main and the side passes through here while main's address loads, so it never
   // remounts.
   const accountId = useAccountId();
-  const { tabs } = useMainTabs(accountId, projectId);
+  const { tabs } = useMainTabs(accountId, projectId).document;
   const keptTab =
     shown.find(
       (tab) =>
         tab.documentId !== mainTab?.documentId &&
         tab.documentId !== sideTab?.documentId &&
-        tabs.some((open) => open.document.documentId === tab.documentId),
+        tabs.some(
+          (open) => open.kind === "document" && open.document.documentId === tab.documentId,
+        ),
     ) ?? null;
 
   const open = props.onOpenContextTarget;
   const openInMain = useOpenInMain(projectId, open);
   const onNewDocument = useNewDocument(projectId, props.contextLive ? open : null);
   const onShowRecents = props.routeCommands.showEditorRecents;
-  const mainKey = mainTab ? `document:${mainTab.documentId}` : null;
-  const tabCommands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
+  const mainKey = mainTab ? mainTabKey({ kind: "document", document: mainTab }) : null;
+  const tabCommands = useMainTabCommands({
+    projectId,
+    kind: "document",
+    open,
+    mainKey,
+    onShowRecents,
+  });
 
   // Each document has its own host, so the draft that takes the focus when its controls show is
   // kept here.
@@ -147,11 +155,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           place === "main" ? (
             <MainHeader
               projectId={projectId}
+              kind="document"
               open={open}
-              mainKey={mainKey}
-              mainDocument={tab}
+              mainTab={{ kind: "document", document: tab }}
               onShowRecents={onShowRecents}
-              onNewDocument={onNewDocument}
+              onNew={onNewDocument}
               sidebarToggle={sidebarToggle}
               sideToggle={sideToggle}
             />
@@ -256,8 +264,8 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         <main className="flex min-h-0 flex-1 flex-col">
           <MainHeader
             projectId={projectId}
+            kind="document"
             open={open}
-            mainKey={null}
             landing={!main.document.requested && !trashedId}
             current={
               trashedId ? (
@@ -275,7 +283,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               ) : undefined
             }
             onShowRecents={onShowRecents}
-            onNewDocument={onNewDocument}
+            onNew={onNewDocument}
             sidebarToggle={sidebarToggle}
             sideToggle={sideToggle}
           />

@@ -26,7 +26,8 @@ phone presentation, or a chat. Its header is the desktop side's: the picker
 and Open in main (`MobileSideSheetHeader`). The top bar's button
 names what the Sheet will show and is there whenever the side has an item. The
 Sheet is closed on arrival and any navigation closes it, so a door followed
-from inside it lands in main with the Sheet out of the way.
+from inside it lands in main with the Sheet out of the way. An item placed in the side (a chat
+link in a document: `place`, see the project context) opens the Sheet.
 
 User navigation pushes so OS/browser Back traverses screens and drill-in.
 Canonical repair or an explicitly guarded controller may replace. A malformed

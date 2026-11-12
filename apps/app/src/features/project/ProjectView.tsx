@@ -13,13 +13,6 @@ import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protoco
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type DraftPin, returnDraftsToLive } from "@/client/project-shell/document-views";
-import {
-  arriveMainTab,
-  mainTabKey,
-  refreshMainTab,
-  useMainTabs,
-} from "@/client/project-shell/main-tabs";
-import { writeCurrentDocument } from "@/client/project-shell/store";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -38,6 +31,7 @@ import {
   type WorkingSetHydrationPlan,
 } from "@/client/working-set";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
+import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import { DraftOnlySettlement } from "@/features/draft-review/DraftOnlySettlement";
 import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import {
@@ -71,15 +65,16 @@ import { type MainReviewAddress, MainReviewAddressContext } from "./DocumentRevi
 import { useProjectSurfacePrefsStore } from "./layout";
 import { MobileProject } from "./mobile/MobileProject";
 import { ReviewLaunchProvider } from "./review-launch";
-import { type ChatDisplay, useChatNavigation } from "./routing/chat-navigation";
+import type { ChatDisplay } from "./routing/chat-navigation";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import type { ProjectRouteIssue, ProjectRouteMask } from "./routing/ProjectRouteBoundary";
 import type { LocalDocument } from "./routing/project-local-selection";
 import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { ChatDeleteProvider } from "./shell/sidebar/ChatDeleteProvider";
-import { SideViewProvider, useChatOnScreen } from "./side/SideView";
+import { SideViewProvider, useChatOnScreen, usePlaceChat } from "./side/SideView";
 import type { MainForSide } from "./side/side-item";
+import { useMainArrival } from "./use-main-arrival";
 import { useReviewAddressSync } from "./use-review-address-sync";
 import type { ReviewAddressAdmission } from "./use-review-admission";
 import { useWorkScopeState, type WorkScope } from "./use-work-scope";
@@ -366,19 +361,13 @@ export type ReviewScopedProjectProps = ResolvedProjectViewProps &
   };
 
 function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentityProps) {
-  const { openChat } = useChatNavigation();
   return (
-    <ChatThreadNavigationProvider onOpenThread={openChat}>
-      <ReviewLaunchProvider
-        projectId={props.projectId}
-        openContextRoute={props.onOpenContextTarget}
-      >
-        <HydratedReviewScopes {...props} />
-        <ManageWorksDialogHost projectId={props.projectId} />
-        {/* Every row drop in the view (rail, Work Files) labels the pointer here. */}
-        <DragHint />
-      </ReviewLaunchProvider>
-    </ChatThreadNavigationProvider>
+    <ReviewLaunchProvider projectId={props.projectId} openContextRoute={props.onOpenContextTarget}>
+      <HydratedReviewScopes {...props} />
+      <ManageWorksDialogHost projectId={props.projectId} />
+      {/* Every row drop in the view (rail, Work Files) labels the pointer here. */}
+      <DragHint />
+    </ReviewLaunchProvider>
   );
 }
 
@@ -456,39 +445,11 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
       prior.current = null;
     }
   });
-  // Main arriving at a document is the one write that opens or selects its tab, once per arrival
-  // at an address; after that its descriptor only refreshes the tab while it is open.
   const accountId = useAccountId();
   const arrived =
     onDocument && props.contextLive && !props.routeIssues?.main && !props.routeIssues?.editor
       ? requestedMain.document.document
       : null;
-  const arrivedAt = useRef<string | undefined>(undefined);
-  const { tabs } = useMainTabs(accountId, props.projectId);
-  const arrivedKey = arrived ? mainTabKey({ kind: "document", document: arrived }) : null;
-  const recorded = tabs.some((tab) => mainTabKey(tab) === arrivedKey);
-  useEffect(() => {
-    // The address no longer resolving ends the arrival: a document that comes back at the same
-    // address (restored from another window) arrives afresh. A document main shows always has its
-    // tab, even after a removal verdict closed it that the document then outlived.
-    if (!arrived) {
-      arrivedAt.current = undefined;
-      return;
-    }
-    const tab = { kind: "document", document: arrived } as const;
-    if (arrivedAt.current === props.routeLocationKey && recorded)
-      refreshMainTab(accountId, props.projectId, tab);
-    else {
-      arrivedAt.current = props.routeLocationKey;
-      arriveMainTab(accountId, props.projectId, tab);
-    }
-    // Showing a document in main makes it the project's current document.
-    writeCurrentDocument(accountId, props.projectId, {
-      documentId: arrived.documentId,
-      ...("workId" in arrived && arrived.workId ? { workId: arrived.workId } : {}),
-    });
-  }, [accountId, props.projectId, props.routeLocationKey, arrived, recorded]);
-  if (usePhone === null) return null;
   const mainForSide: MainForSide = props.chatDisplay
     ? props.chatDisplay.kind === "thread"
       ? { kind: "chat", chatId: props.chatDisplay.threadId }
@@ -498,6 +459,14 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
       : main.document.requested && (props.routeIssues?.editor === "loading" || !props.contextLive)
         ? { kind: "opening" }
         : { kind: "landing" };
+  useMainArrival({
+    accountId,
+    projectId: props.projectId,
+    main: mainForSide,
+    document: arrived,
+    locationKey: props.routeLocationKey,
+  });
+  if (usePhone === null) return null;
   return (
     <MainViewProvider value={main}>
       <SideViewProvider projectId={props.projectId} main={mainForSide}>
@@ -522,6 +491,9 @@ function HydratedReviewControllers({
 }) {
   // Under None the draft scope is the chat on screen: beside a document, the side's chat.
   const chatThreadId = useChatOnScreen();
+  // Every chat door and reveal opens through the one placement command.
+  const openThread = usePlaceChat();
+  useConversationRevealRouting(openThread);
   const { threads: projectThreads } = useProjectThreads(props.projectId);
   const { works, noWork } = useWorks(props.projectId);
   const chatThread = projectThreads?.find((thread) => thread.id === chatThreadId);
@@ -589,9 +561,11 @@ function HydratedReviewControllers({
   });
   const scopedProps = { ...props, chatWork, chatCommands };
   return (
-    <MainReviewAddressContext.Provider value={main ? mainAddress : null}>
-      <DraftOnlySettlement projectId={props.projectId} />
-      {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
-    </MainReviewAddressContext.Provider>
+    <ChatThreadNavigationProvider onOpenThread={openThread}>
+      <MainReviewAddressContext.Provider value={main ? mainAddress : null}>
+        <DraftOnlySettlement projectId={props.projectId} />
+        {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
+      </MainReviewAddressContext.Provider>
+    </ChatThreadNavigationProvider>
   );
 }

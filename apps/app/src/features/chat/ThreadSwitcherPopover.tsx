@@ -36,7 +36,6 @@ export function ThreadSwitcherPopover({
   title,
   onRename,
   triggerRef,
-  variant = "quiet",
 }: {
   projectId: string;
   activeThreadId: string | null;
@@ -44,14 +43,6 @@ export function ThreadSwitcherPopover({
   onRename?: () => void;
   /** Where a closed rename field hands focus back. */
   triggerRef?: RefObject<HTMLButtonElement | null>;
-  /**
-   * `quiet` — chrome that stays chrome (the side): hovers like an inactive
-   *   chip.
-   * `tab` — the active-tab chip grammar: the chat pane's page material
-   * continues up into the band, same as a document's title chip. Use only
-   * where the pane below the band is `page-sheet`.
-   */
-  variant?: "quiet" | "tab";
 }) {
   const { openChat: onSelectThread, openNewChat } = useChatNavigation();
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
@@ -135,7 +126,7 @@ export function ThreadSwitcherPopover({
           aria-label={t`Switch chat, currently ${title}`}
           aria-expanded={open}
           aria-haspopup="dialog"
-          className={cn("focus-ring text-left", titleChipClass(variant))}
+          className={cn("focus-ring text-left", titleChipClass("quiet"))}
         >
           <PaneTitle className="min-w-0 flex-1">{title}</PaneTitle>
           <ChooserMark />
