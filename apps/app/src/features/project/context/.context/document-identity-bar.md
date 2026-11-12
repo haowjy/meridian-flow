@@ -20,7 +20,8 @@ never occupy it again (structural separation, 2026-07-17).
 
 While a draft is reviewed, the toolbar row is the draft row (owner, 2026-11-12): the review's
 controls join the version chip at the row's end, and the row takes the draft ground
-(`--color-review`), as main's tab and the side's header do. One rule for main and the side.
+(`--color-review`), as main's tab does. One rule for main and the side: the draft ground is
+the top bar of the document's page, so it reads against white, never against chrome.
 The formatting controls give way first: they start-align and scroll in what's left. Then
 `fitReviewLine` collapses labels to icons, hides the stepper count and collapses Apply to its
 icon (`document-identity-row.css`); only past that does the row wrap and grow. A Discard's

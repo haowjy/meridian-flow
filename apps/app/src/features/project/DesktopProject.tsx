@@ -197,6 +197,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
             activeWork={props.chatWork}
             availableWorks={props.availableWorks}
             place={chatInMain ? "main" : "side"}
+            presentation="desktop"
             visible={chatInMain || (sideChat !== null && sideOpen)}
             onOpenContextTarget={(target) =>
               void open(target, chatThread ? { beside: { chatId: chatThread } } : undefined)

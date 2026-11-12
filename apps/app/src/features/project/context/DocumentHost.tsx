@@ -241,7 +241,7 @@ function MainDocumentBinding({
   return null;
 }
 
-/** Desktop: the band, then the page (main's) or the side's body, then the document itself. */
+/** Desktop: the band, then the page (the side's inset from main's), then the document itself. */
 function DesktopDocumentFrame({
   projectId,
   document,
@@ -261,7 +261,10 @@ function DesktopDocumentFrame({
       <PaintScope active={onScreen}>
         <PaintHold
           status={t`Opening ${document.name}`}
-          className={cn("relative flex min-h-0 flex-1 flex-col", place === "main" && "page-sheet")}
+          className={cn(
+            "page-sheet relative flex min-h-0 flex-1 flex-col",
+            place === "side" && "ml-2",
+          )}
         >
           <PaintCapture surface={document.documentId} />
           <DocumentStateSlotProvider>

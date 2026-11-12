@@ -1,6 +1,6 @@
 /**
- * SideHeader — the band above the side view: the picker naming what it shows, the held mark while a pick is in force (pressing it releases the hold), and Open in main. No
- * page rises into it. The side's own toggle is the shell's corner button; the spacer holds its
+ * SideHeader — the band above the side view: the picker naming what it shows, the held mark while a pick is in force (pressing it releases the hold), and Open in main. The
+ * side's page sits below it, inset from main's. The side's own toggle is the shell's corner button; the spacer holds its
  * place.
  */
 import { t } from "@lingui/core/macro";
@@ -14,10 +14,9 @@ import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { displayThreadTitle } from "@/lib/thread-title";
-import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../context/context-file-icon";
 import { PanelToggleSpacer } from "../shell/PanelToggleButton";
-import { useDocumentPaint, useMainItem } from "../views";
+import { useMainItem } from "../views";
 import { SidePicker } from "./SidePicker";
 import { useNewChatAbout, useShellCommands, useSideItem } from "./SideView";
 
@@ -44,11 +43,8 @@ function SideBand({
   onOpenInMain,
   leading,
   trailing,
-  reviewing = false,
 }: {
   projectId: string;
-  /** The side shows a draft: the band takes the draft ground, as main's tab does. */
-  reviewing?: boolean;
   /** Null while the side shows nothing. */
   name: string | null;
   icon: ReactNode;
@@ -62,7 +58,7 @@ function SideBand({
   const side = useSideItem();
   const { releaseSide } = useShellCommands(projectId);
   return (
-    <div className={cn("shrink-0", reviewing && "bg-review")}>
+    <div className="shrink-0">
       <header className="flex h-10 items-stretch pl-2 coarse:h-11">
         {leading}
         {/* No overflow-hidden: clipping here shears the title's hover pill. */}
@@ -110,11 +106,9 @@ export function SideDocumentHeader({
   onOpenInMain: () => void;
 }) {
   const Icon = fileKindIcon(document.name);
-  const reviewing = useDocumentPaint(projectId, document).showing === "draft";
   return (
     <SideBand
       projectId={projectId}
-      reviewing={reviewing}
       name={document.name}
       icon={<Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
       onOpenInMain={onOpenInMain}

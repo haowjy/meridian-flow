@@ -31,9 +31,9 @@ writer acts; cinnabar is a scarce seal.
 - **Density:** comfortable reading/drafting rhythm in the main column; compact but legible metadata in rails and rows.
 - **Scope:** authenticated app shell, project views, chat/thread surfaces, context/document surfaces, and marketing-adjacent pages that share the brand language.
 
-The shell has at most two region tones: chrome for both side panels (the sidebar and the
-dock) and the tab band, and page for the main view. The two sit close together, so the
-page is a sheet set into the chrome with a hairline on its top and sides; no line runs
+The shell has at most two region tones: chrome for the sidebar, the tab band and the
+side's header, and page for the main view and the side's document or chat. The two sit close
+together, so each page is a sheet set into the chrome with a hairline on its top and sides; no line runs
 the height of the window between a side panel and the centre. Cards, menus and the composer are
 white like the page and separate by border and shadow, and a review ground one step
 below chrome sits under draft chrome only while a draft is under review.
@@ -68,7 +68,7 @@ them here.
 
 ## Shell shape and atmosphere
 
-- The sidebar, the document band and the dock are one chrome. The dock shows one document or its native occupant on that chrome, never tabs or a view switch. Only the main view's sheet (`page-sheet`) paints page; the editor takes its host's surface.
+- The sidebar, the document band and the dock are one chrome. The dock shows one document or its native occupant on its own `page-sheet` below its header (owner, 2026-11-12: the draft ground must sit on a page, not on chrome), never tabs or a view switch. Only a `page-sheet` paints page; the editor takes its host's surface.
 - The page rises from chrome with the same top radius as its active document tab. The centered chat header's title chip is the same tab-chip grammar — the chat page continuing up into the band. The page is a sheet with a `page-edge` hairline on its top and sides and rounded top corners; the active tab is a folder tab whose outline is one shape, flaring outward into the sheet's edge. No structural shadow.
 - Dark mode re-points surfaces, inks and accents only (`themes.css`); state fills and borders follow the foreground.
 - Headings, group labels, rows, hints, empty lines and fills come from `role` (`apps/app/src/components/ui/roles.ts`).

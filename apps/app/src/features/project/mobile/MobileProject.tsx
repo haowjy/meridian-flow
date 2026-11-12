@@ -183,6 +183,7 @@ export function MobileProject(props: MobileProjectProps) {
                   activeWork={props.chatWork}
                   availableWorks={props.availableWorks}
                   place="side"
+                  presentation="phone"
                   header={
                     <MobileSideSheetHeader
                       title={sheetTitle}
