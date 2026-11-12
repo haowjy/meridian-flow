@@ -3,7 +3,7 @@
  * The side keeps following its rule while closed, so the name changes as main does.
  */
 import { t } from "@lingui/core/macro";
-import { MessageSquare, Pin } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import type { OpenDocument } from "@/client/stores";
 import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../context/context-file-icon";
@@ -42,7 +42,6 @@ export function ClosedSideButton({
     >
       <Icon className="size-3.5 shrink-0" aria-hidden />
       <span className="min-w-0 truncate">{name}</span>
-      {side.source === "held" ? <Pin className="size-3 shrink-0" aria-label={t`Held`} /> : null}
     </button>
   );
 }

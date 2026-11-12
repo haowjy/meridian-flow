@@ -1,6 +1,6 @@
 /** Renders transcript document names and their navigation affordance. */
 import { t } from "@lingui/core/macro";
-import { followDisposition, MIDDLE_BUTTON } from "@/core/editor/links";
+import { MIDDLE_BUTTON } from "@/core/editor/links";
 
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
@@ -49,12 +49,12 @@ export function DocumentName({
       // fold the row open.
       onClick={(event) => {
         event.stopPropagation();
-        openContextUri(uri, undefined, followDisposition(event));
+        openContextUri(uri, undefined);
       }}
       onAuxClick={(event) => {
         if (event.button !== MIDDLE_BUTTON) return;
         event.stopPropagation();
-        openContextUri(uri, undefined, "new-tab");
+        openContextUri(uri);
       }}
       // `-my-2 py-[var(--chat-card-pad-y)]` grows the touch target to ~37px without changing row
       // rhythm. The overflow lands inside the row's own 8px bottom padding, so

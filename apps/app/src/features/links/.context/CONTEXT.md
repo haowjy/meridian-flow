@@ -77,9 +77,7 @@ An abort only stops a follow before it opens: `LinkDestination` takes no signal,
 procedure decides to open, the navigation completes. That makes an unmount abort safe in the
 Editor, where a follow in the current pane replaces the editor that asked.
 
-- A newer `current` follow aborts the previous `current` one, because the pane can only go one
-  place.
-- A `new-tab` follow is never aborted by a newer follow and aborts nothing.
+- A newer follow aborts the previous one, because the pane can only go one place.
 - Dismissing a checking dialog aborts that follow only.
 - Unmount, a different cache, a project or Work change, and the surface hiding abort everything
   in flight.

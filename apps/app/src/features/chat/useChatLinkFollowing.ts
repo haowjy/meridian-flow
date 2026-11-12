@@ -50,11 +50,7 @@ import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState 
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { useTopChat } from "@/client/query/useTopChat";
 import { useWorks } from "@/client/query/useWorks";
-import {
-  createLinkAnswerCache,
-  createLinkRequester,
-  type LinkFollowDisposition,
-} from "@/core/editor/links";
+import { createLinkAnswerCache, createLinkRequester } from "@/core/editor/links";
 import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import {
   type LinkDestination,
@@ -172,11 +168,11 @@ export function useChatLinkFollowing({
   );
   const linkWorkId = activeWork?.id ?? null;
   const open = useCallback<LinkDestination>(
-    (document, gesture) => place(document, gesture, openLive, linkWorkId),
+    (document) => place(document, openLive, linkWorkId),
     [place, openLive, linkWorkId],
   );
   const folders = useMemo<FolderMenuHost>(
-    () => ({ projectId, openDocument: (documentId) => void open({ documentId }, "current") }),
+    () => ({ projectId, openDocument: (documentId) => void open({ documentId }) }),
     [open, projectId],
   );
 
@@ -224,13 +220,9 @@ export function useChatLinkFollowing({
       shellDoors
         ? {
             canOpen: shellDoors.canOpen,
-            open: (
-              uri: string,
-              passage?: ContextPassageAnchor,
-              gesture: LinkFollowDisposition = "current",
-            ) => {
+            open: (uri: string, passage?: ContextPassageAnchor) => {
               const door = shellDoors.prepare(uri, passage);
-              if (door) follower.follow(door.link, gesture, null, door.policy);
+              if (door) follower.follow(door.link, null, door.policy);
             },
           }
         : null,
@@ -239,9 +231,9 @@ export function useChatLinkFollowing({
 
   const navigation = useMemo<TranscriptLinkNavigation>(
     () => ({
-      follow: (target, gesture) => {
+      follow: (target) => {
         shellDoors?.retire();
-        follower.follow(target, gesture);
+        follower.follow(target);
       },
       canFollow: follower.canFollow,
       resolution,
@@ -261,7 +253,7 @@ export function useChatLinkFollowing({
       scratchRootThreadId: scope === "pending" ? null : (scope.rootThreadId ?? null),
       onClose: follower.dismiss,
       onRetry: follower.retry,
-      onOpen: (document) => open(document, "current"),
+      onOpen: (document) => open(document),
     },
   };
 }

@@ -24,20 +24,9 @@ export type InternalLinkNavigator = (request: {
   target: LinkTarget;
   /** The stored link's ref: what it names, beside the address it is spelled with. */
   ref: string | null;
-  disposition: LinkFollowDisposition;
 }) => void;
 
-/**
- * Where a follow puts the writer. External always means a new tab either way
- * (§5.5: the draft and its state are never lost), so this is really about the
- * internal family, where "same pane" and "new tab" are genuinely different
- * places and only the app knows how to reach the second one.
- */
-export type LinkFollowDisposition = "current" | "new-tab";
-
-export type LinkClickIntent =
-  | { action: "place-caret" }
-  | { action: "follow"; disposition: LinkFollowDisposition };
+export type LinkClickIntent = { action: "place-caret" } | { action: "follow" };
 
 export type LinkClickGesture = {
   /** 0 primary, 1 middle. A right-click never arrives here; it is a claim. */
@@ -64,8 +53,8 @@ export function linkClickIntent({
   swept,
 }: LinkClickGesture): LinkClickIntent {
   // The middle button places nothing anywhere, so none of the caret rules
-  // below can apply to it. Everywhere else on the web it means a new tab.
-  if (button === MIDDLE_BUTTON) return { action: "follow", disposition: "new-tab" };
+  // below can apply to it. The app opens a followed link in one place, so it follows like a click.
+  if (button === MIDDLE_BUTTON) return { action: "follow" };
 
   if (altKey) return { action: "place-caret" };
   if (shiftKey) return { action: "place-caret" };
@@ -76,21 +65,9 @@ export function linkClickIntent({
   // Ctrl on Windows and Linux, Cmd on macOS. Taking both is safe: macOS turns
   // Ctrl+click into a context menu before it can become a click, and the claim
   // ladder has already answered that one.
-  if (ctrlKey || metaKey) return { action: "follow", disposition: "new-tab" };
+  if (ctrlKey || metaKey) return { action: "follow" };
 
-  return { action: "follow", disposition: "current" };
-}
-
-/**
- * What a click on a link chip, a door or a row that opens a page asks for: the middle button,
- * Ctrl or Cmd mean "somewhere else", like the editor's own links above.
- */
-export function followDisposition(click: {
-  button: number;
-  ctrlKey: boolean;
-  metaKey: boolean;
-}): LinkFollowDisposition {
-  return click.button === MIDDLE_BUTTON || click.ctrlKey || click.metaKey ? "new-tab" : "current";
+  return { action: "follow" };
 }
 
 export type LinkFollowResult =
@@ -122,22 +99,20 @@ export function canFollowLink(
 export type LinkFollowRequest = {
   target: LinkTarget | null;
   ref: string | null;
-  disposition: LinkFollowDisposition;
 };
 
 export function followLink(
-  { target, ref, disposition }: LinkFollowRequest,
+  { target, ref }: LinkFollowRequest,
   navigator: InternalLinkNavigator | null,
   open: OpenExternalLink = openInNewTab,
 ): LinkFollowResult {
   if (!target) return "unavailable";
-  // External ignores the disposition: §5.5 sends it to a new tab either way,
-  // and a page the editor replaced would take the draft's state with it.
+  // External always opens a new tab: a page the editor replaced would take the draft's state with it.
   if (target.kind === "external") {
     open(target.url);
     return "opened";
   }
   if (!navigator) return "unavailable";
-  navigator({ target, ref, disposition });
+  navigator({ target, ref });
   return "navigated";
 }

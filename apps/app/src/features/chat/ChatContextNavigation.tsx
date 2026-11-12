@@ -3,7 +3,7 @@
  * to whichever shell owns context-file routing.
  */
 import { createContext, type ReactNode, useContext } from "react";
-import type { LinkFollowDisposition, LinkTarget } from "@/core/editor/links";
+import type { LinkTarget } from "@/core/editor/links";
 import type { FollowPolicy } from "@/features/links";
 
 /**
@@ -15,12 +15,7 @@ import type { FollowPolicy } from "@/features/links";
  */
 export type ContextPassageAnchor = { blockHash: string; term: string };
 
-/** `gesture` is what the click asked for (`followDisposition`): a plain click is "current". */
-export type OpenContextUri = (
-  uri: string,
-  passage?: ContextPassageAnchor,
-  gesture?: LinkFollowDisposition,
-) => void;
+export type OpenContextUri = (uri: string, passage?: ContextPassageAnchor) => void;
 export type CanOpenContextUri = (uri: string) => boolean;
 
 const ChatContextNavigationContext = createContext<OpenContextUri | null>(null);

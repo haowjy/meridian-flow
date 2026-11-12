@@ -1,5 +1,5 @@
 /**
- * Project chat navigation over this browser tab's last chat (the last chat opened in main).
+ * Project chat navigation over this browser tab's current chat (the last chat on screen, in either pane).
  *
  * Main shows a new chat's composer (`/chats`) or one chat the address names. What chat sits beside a document is the side's resolution (`side/side-item.ts`), not
  * this. Every way of opening a chat navigates main to it.
@@ -14,13 +14,7 @@ import {
   useState,
 } from "react";
 import { threadAvailability } from "@/client/chat-submissions/thread-availability";
-import {
-  readHeldPick,
-  readLastChat,
-  useLastChat,
-  writeHeldPick,
-  writeLastChat,
-} from "@/client/project-shell/store";
+import { readCurrentChat, useCurrentChat, writeCurrentChat } from "@/client/project-shell/store";
 import { useThreadSnapshotCache } from "@/client/query/thread-snapshot-query";
 import { useIsThreadPendingCreation } from "@/client/stores";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
@@ -34,18 +28,18 @@ export type ChatDisplay = { kind: "new" } | { kind: "thread"; threadId: string }
 export type ChatNavigation = {
   /** The chat main shows; null when main holds no chat. */
   display: ChatDisplay | null;
-  /** The last chat opened in main. */
-  lastChatId: string | null;
+  /** The current chat: the last chat on screen, in either pane. */
+  currentChatId: string | null;
   /** Main goes to this chat: every chat door (a row, a mention, a link) is this one open. */
   openChat: (threadId: string, options?: { replace?: boolean }) => Promise<void>;
   /** Main goes to a new chat's composer, which takes focus unless `focus` is false. */
   openNewChat: (options?: { replace?: boolean; focus?: boolean }) => Promise<void>;
   /**
-   * A just-sent new chat becomes the last chat. Sent from main's composer it becomes main's chat;
-   * sent from the side's composer it is held there, beside main.
+   * A just-sent new chat becomes the current chat. Sent from main's composer it becomes main's chat;
+   * sent from the side's composer it stays there, beside main.
    */
   acceptCreatedChat: (threadId: string) => void;
-  /** A deleted chat stops being the last chat, and the side lets go of it. */
+  /** A deleted chat stops being the current chat, and the side lets go of it. */
   forgetChat: (threadId: string) => void;
   /**
    * One-shot New chat focus intent for the pinned empty composer. Non-null
@@ -62,7 +56,7 @@ type Go = (
   options: NavigationOptions,
 ) => Promise<NavigationSettlement>;
 
-/** Owns the last chat for one project route; returns the provider value. */
+/** Owns the current chat for one project route; returns the provider value. */
 export function useProjectChatNavigation({
   accountId,
   projectId,
@@ -75,10 +69,10 @@ export function useProjectChatNavigation({
   mainChat: ChatDisplay | null;
   go: Go;
 }): ChatNavigation {
-  const lastChatId = useLastChat(accountId, projectId);
+  const currentChatId = useCurrentChat(accountId, projectId);
   const urlChatId = mainChat?.kind === "thread" ? mainChat.threadId : null;
   const display = mainChat;
-  const surfaceThreadId = urlChatId ?? lastChatId;
+  const surfaceThreadId = urlChatId ?? currentChatId;
   const [newChatRequest, setNewChatRequest] = useState<number | null>(null);
   const nextFocusRequestId = useRef(1);
   const mainKind = mainChat?.kind ?? null;
@@ -88,7 +82,7 @@ export function useProjectChatNavigation({
   const { remember, commands } = useMemo(() => {
     const remember = (threadId: string | null) => {
       const { accountId, projectId } = latest.current;
-      writeLastChat(accountId, projectId, threadId);
+      writeCurrentChat(accountId, projectId, threadId);
     };
     const go = async (destination: ProjectDestination, options: NavigationOptions) => {
       const result = await latest.current.go(destination, options);
@@ -101,22 +95,23 @@ export function useProjectChatNavigation({
       openChat,
       openNewChat: async (options?: { replace?: boolean; focus?: boolean }) => {
         if (options?.focus !== false) setNewChatRequest(nextFocusRequestId.current++);
-        if (latest.current.mainKind === "new") return;
-        await go({ kind: "new-chat" }, { replace: options?.replace ?? false });
+        // The writer's New chat is the current chat, as the side's is. Arriving at the composer
+        // (the bare address, a reload, Back) is not: it must not forget the chat beside. It is
+        // forgotten once main has arrived, so the side does not flash empty before the move.
+        if (latest.current.mainKind !== "new")
+          await go({ kind: "new-chat" }, { replace: options?.replace ?? false });
+        remember(null);
       },
       acceptCreatedChat: (threadId: string) => {
+        // Only the side's composer sends while main is not a new chat: the chat stays beside as
+        // the current chat.
         remember(threadId);
-        const { accountId, projectId, mainKind } = latest.current;
-        if (mainKind === "new") void go({ kind: "chat", chatId: threadId }, { replace: false });
-        // Only the side's composer sends while main is not a new chat: the chat stays beside.
-        else writeHeldPick(accountId, projectId, { kind: "chat", chatId: threadId });
+        if (latest.current.mainKind === "new")
+          void go({ kind: "chat", chatId: threadId }, { replace: false });
       },
       forgetChat: (threadId: string) => {
         const { accountId, projectId } = latest.current;
-        if (readLastChat(accountId, projectId) === threadId) remember(null);
-        const held = readHeldPick(accountId, projectId);
-        if (held?.kind === "chat" && held.chatId === threadId)
-          writeHeldPick(accountId, projectId, null);
+        if (readCurrentChat(accountId, projectId) === threadId) remember(null);
       },
       consumeNewChatFocusRequest: (id: number) => {
         setNewChatRequest((current) => (current === id ? null : current));
@@ -144,10 +139,10 @@ export function useProjectChatNavigation({
     () => ({
       ...commands,
       display: stableDisplay,
-      lastChatId,
+      currentChatId,
       newChatFocusRequestId,
     }),
-    [commands, stableDisplay, lastChatId, newChatFocusRequestId],
+    [commands, stableDisplay, currentChatId, newChatFocusRequestId],
   );
 }
 

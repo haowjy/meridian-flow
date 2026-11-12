@@ -19,6 +19,7 @@ import {
   refreshMainTab,
   useMainTabs,
 } from "@/client/project-shell/main-tabs";
+import { writeCurrentDocument } from "@/client/project-shell/store";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -102,8 +103,6 @@ export type ProjectViewProps = {
   project: Project;
   /** The chat main shows; null when main holds no chat. */
   chatDisplay: ChatDisplay | null;
-  /** The chat this history entry was opened from: it stays beside the document. */
-  besideChatId: string | null;
   activeLocalDocumentId?: string;
   /** The untitled document the history entry names, as the replica holds it. */
   activeLocalDocument?: LocalDocument;
@@ -483,6 +482,11 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
       arrivedAt.current = props.routeLocationKey;
       arriveMainTab(accountId, props.projectId, tab);
     }
+    // Showing a document in main makes it the project's current document.
+    writeCurrentDocument(accountId, props.projectId, {
+      documentId: arrived.documentId,
+      ...("workId" in arrived && arrived.workId ? { workId: arrived.workId } : {}),
+    });
   }, [accountId, props.projectId, props.routeLocationKey, arrived, recorded]);
   if (usePhone === null) return null;
   const mainForSide: MainForSide = props.chatDisplay
@@ -496,12 +500,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
         : { kind: "landing" };
   return (
     <MainViewProvider value={main}>
-      <SideViewProvider
-        projectId={props.projectId}
-        main={mainForSide}
-        mainIsLocal={main.document.local || main.document.document?.kind === "new"}
-        besideChatId={props.besideChatId}
-      >
+      <SideViewProvider projectId={props.projectId} main={mainForSide}>
         <HydratedReviewControllers
           {...displayedProps}
           retainEditorWhileLoading={retainEditorWhileLoading}

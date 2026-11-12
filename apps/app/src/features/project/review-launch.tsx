@@ -2,34 +2,29 @@
  * The one review-launch path. Every launcher (the composer strip, a change card, a link to a draft,
  * the Work page, the version menu, the phone) calls `openAiDraft`: it sets the document's view to
  * that draft, with the clicked change as the pin's change, and opens the document in the pane
- * `useHoldFor` picks. In main, the route command opens it and writes the address; beside, the
+ * `useHoldBeside` picks. In main, the route command opens it and writes the address; beside, the
  * hold shows it. That pane's host then paints the draft and focuses the change. Latest launch wins.
  */
 
 import type { EventRecord } from "@meridian/contracts/observability";
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useRef } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import type { LinkFollowDisposition } from "@/core/editor/links";
-import { useChatPlace } from "@/features/chat/chat-place";
+import { useOptionalChatPlace } from "@/features/chat/chat-place";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDocumentRef } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
 import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
-import type { OpenDocumentOutcome } from "./context/open-project-document";
-import {
-  type BesideHint,
-  type OpenContextRoute,
-  useOpenedFromChat,
-} from "./routing/ProjectNavigationContext";
+import { type OpenDocumentOutcome, useOpenProjectDocument } from "./context/open-project-document";
+import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
-import { useOptionalHoldBeside } from "./side/SideView";
+import { useOptionalShowBeside } from "./side/SideView";
 
-type HoldBeside = NonNullable<ReturnType<typeof useOptionalHoldBeside>>;
+type ShowBeside = NonNullable<ReturnType<typeof useOptionalShowBeside>>;
 
 export type AiDraftLaunchTarget = {
   ownerKey: string;
@@ -41,8 +36,6 @@ export type AiDraftLaunchTarget = {
   draftOnly?: boolean;
   /** A projection-local change to focus, only if that projection still paints. */
   focus?: ReviewFocus;
-  /** The chat the launch was made from: the new entry keeps it beside the document. */
-  beside?: BesideHint;
 };
 
 type EditorReviewCommand = (target: AiDraftLaunchTarget) => Promise<void>;
@@ -112,7 +105,6 @@ export function ReviewLaunchProvider({
             itemKey: target.itemKey,
             reviewOwner: target.ownerKey,
             changeId: target.focus?.id,
-            ...(target.beside ? { beside: target.beside } : {}),
             canCommit: () => sequence.current === launch,
             afterCommit: pin,
           },
@@ -135,49 +127,31 @@ export function ReviewLaunchProvider({
 
 /** Null where no review owner is mounted: a surface that only sometimes launches a review (a link to a draft). */
 function useOptionalOpenEditorReview(): EditorReviewCommand | null {
-  const command = useContext(EditorReviewCommandContext);
-  const beside = useOpenedFromChat();
-  return useMemo(
-    () =>
-      command && beside ? (target: AiDraftLaunchTarget) => command({ beside, ...target }) : command,
-    [command, beside],
-  );
+  return useContext(EditorReviewCommandContext);
 }
 
 /**
- * Where an open goes. From a chat, the pane the chat is not in, whatever the gesture: a chat in
- * main holds the page beside, a chat beside opens it in main, so the chat stays where it is and
- * only the writer's own choice (the sidebar, Open in main) replaces a page in main. Anywhere else,
- * main, and a cmd-click, ctrl-click or middle click holds the page beside. Null opens in main.
+ * Where an open goes. From a chat in main, a page is held beside; the chat stays where it is.
+ * From a chat beside, or anywhere else (a document never sits beside a document), it opens in
+ * main. Null opens in main.
  */
-function useHoldFor(): (gesture: LinkFollowDisposition) => HoldBeside | null {
-  const fromChat = useOpenedFromChat() !== null;
-  const chatInMain = useChatPlace() === "main";
-  const hold = useOptionalHoldBeside();
-  return useCallback(
-    (gesture) => {
-      if (fromChat) return chatInMain ? hold : null;
-      return gesture === "new-tab" ? hold : null;
-    },
-    [fromChat, chatInMain, hold],
-  );
+function useHoldBeside(): ShowBeside | null {
+  const chatInMain = useOptionalChatPlace() === "main";
+  const hold = useOptionalShowBeside();
+  return chatInMain ? hold : null;
 }
 
 const committed = (documentId: string): OpenDocumentOutcome => ({ kind: "committed", documentId });
 
-/** Opens a document on a draft, in the pane `useHoldFor` picks. */
-function useOpenDraft(): (
-  target: AiDraftLaunchTarget,
-  gesture: LinkFollowDisposition,
-) => Promise<OpenDocumentOutcome> {
+/** Opens a document on a draft, in the pane `useHoldBeside` picks. */
+function useOpenDraft(): (target: AiDraftLaunchTarget) => Promise<OpenDocumentOutcome> {
   const openEditorReview = useOptionalOpenEditorReview();
-  const holdFor = useHoldFor();
+  const hold = useHoldBeside();
   return useCallback(
-    (target, gesture) => {
-      const hold = holdFor(gesture);
+    (target) => {
       if (hold) {
         hold(
-          { kind: "document", documentId: target.documentId },
+          { documentId: target.documentId },
           {
             ownerKey: target.ownerKey,
             itemKey: target.itemKey,
@@ -196,14 +170,14 @@ function useOpenDraft(): (
         },
       );
     },
-    [holdFor, openEditorReview],
+    [hold, openEditorReview],
   );
 }
 
 export function useAiDraftLauncher() {
   const openDraft = useOpenDraft();
   const openAiDraft = useCallback(
-    (target: AiDraftLaunchTarget) => void openDraft(target, "current"),
+    (target: AiDraftLaunchTarget) => void openDraft(target),
     [openDraft],
   );
 
@@ -232,14 +206,13 @@ export function useAiDraftLauncher() {
  */
 export type LinkPlacement = (
   document: LinkDocumentRef,
-  gesture: LinkFollowDisposition,
-  live: (document: LinkDocumentRef, gesture: LinkFollowDisposition) => Promise<OpenDocumentOutcome>,
+  live: (document: LinkDocumentRef) => Promise<OpenDocumentOutcome>,
   workId?: string | null,
 ) => Promise<OpenDocumentOutcome>;
 
 /**
  * What a followed link opens: the one rule for links in a chat or a page, a chat's doors and its
- * "Drafted N documents" rows. The pane is `useHoldFor`'s.
+ * "Drafted N documents" rows. The pane is `useHoldBeside`'s.
  * - A page only a draft holds (`document.review`) opens on that draft.
  * - A page `ownerKey` drafted opens on that draft, as the draft strip does.
  * - Any other page opens live, held beside in the link's Work, or through `live` in main. A page
@@ -248,33 +221,46 @@ export type LinkPlacement = (
 export function useLinkPlacement(projectId: string | null, ownerKey: string | null): LinkPlacement {
   const { fileForDocument } = useOwnerDrafts(projectId, ownerKey);
   const openDraft = useOpenDraft();
-  const holdFor = useHoldFor();
+  const hold = useHoldBeside();
   return useCallback(
-    (document, gesture, live, workId) => {
+    (document, live, workId) => {
       if (document.review)
-        return openDraft(
-          { documentId: document.documentId, ...document.review, draftOnly: true },
-          gesture,
-        );
-      if (document.trashed) return live(document, gesture);
+        return openDraft({
+          documentId: document.documentId,
+          ...document.review,
+          draftOnly: true,
+        });
+      if (document.trashed) return live(document);
       const drafted = ownerKey ? fileForDocument(document.documentId) : null;
       if (ownerKey && drafted?.contextLocation)
-        return openDraft(
-          {
-            ownerKey,
-            documentId: document.documentId,
-            itemKey: drafted.draft.itemKey,
-            contextLocation: drafted.contextLocation,
-            documentName: drafted.documentName ?? undefined,
-            draftOnly: drafted.draftOnly,
-          },
-          gesture,
-        );
-      const hold = holdFor(gesture);
-      if (!hold) return live(document, gesture);
-      hold({ kind: "document", documentId: document.documentId, ...(workId ? { workId } : {}) });
+        return openDraft({
+          ownerKey,
+          documentId: document.documentId,
+          itemKey: drafted.draft.itemKey,
+          contextLocation: drafted.contextLocation,
+          documentName: drafted.documentName ?? undefined,
+          draftOnly: drafted.draftOnly,
+        });
+      if (!hold) return live(document);
+      hold({ documentId: document.documentId, ...(workId ? { workId } : {}) });
       return Promise.resolve(committed(document.documentId));
     },
-    [fileForDocument, ownerKey, openDraft, holdFor],
+    [fileForDocument, ownerKey, openDraft, hold],
+  );
+}
+
+/**
+ * Opens a document by id where `useLinkPlacement` puts it: a chip or a mention in a chat's
+ * message or composer. Beside from a chat in main, main otherwise.
+ */
+export function useOpenPlacedDocument(
+  projectId: string | undefined,
+): (documentId: string) => Promise<OpenDocumentOutcome> {
+  const openDocument = useOpenProjectDocument(projectId);
+  const place = useLinkPlacement(projectId ?? null, null);
+  return useCallback(
+    (documentId) =>
+      place({ documentId }, (found) => openDocument({ documentId: found.documentId })),
+    [place, openDocument],
   );
 }

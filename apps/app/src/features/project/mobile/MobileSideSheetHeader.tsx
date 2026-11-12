@@ -1,6 +1,6 @@
 /**
- * MobileSideSheetHeader — the band above the phone's side sheet: what the side shows (its picker,
- * reason and held mark), its actions, and the sheet's close.
+ * MobileSideSheetHeader — the band above the phone's side sheet: what the side shows (its picker),
+ * its actions, and the sheet's close.
  *
  * Built from the same status-bar-aware chrome primitives as `MobileTopBar` (`IconButton`,
  * safe-area padding), independent of the desktop `SideHeader`.

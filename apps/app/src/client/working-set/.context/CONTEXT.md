@@ -25,7 +25,7 @@ push, absent keeps local, matching pending lineage keeps local, and every other
 row adopts server. The account sync toggle guards the operation.
 
 Server adoption updates recency, never what main shows. The current
-chat lives outside the working set (`readLastChat` in `../project-shell/store.ts`). Recent routes never reopen a
+chat lives outside the working set (`readCurrentChat` in `../project-shell/store.ts`). Recent routes never reopen a
 historical path. An empty Editor stays empty through entry and reload.
 
 ## Refusals and routes the server does not hold

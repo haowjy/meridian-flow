@@ -328,7 +328,6 @@ it("routes each link to the local index or the server", async () => {
       await followProjectLink({
         target,
         ref: link.ref,
-        gesture: "current",
         resolution,
         open: async (opened) => {
           events.push(`open:${opened.documentId}`);
@@ -392,7 +391,6 @@ it("a link to a document that exists only in a draft is followed to that Work's 
   await followProjectLink({
     target,
     ref,
-    gesture: "current",
     resolution,
     open: async (document) => void opened.push(document),
     reporter: { report: () => {}, clear: () => {} },

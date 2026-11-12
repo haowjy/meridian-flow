@@ -62,7 +62,7 @@ export function useEditorLinkDestination(): LinkDestination {
   );
   const place = useLinkPlacement(projectId, null);
   return useCallback<LinkDestination>(
-    (document, gesture) => place(document, gesture, openLive, workId),
+    (document) => place(document, openLive, workId),
     [place, openLive, workId],
   );
 }
@@ -123,8 +123,8 @@ export function ProjectLinkRuntime({
 
   useEffect(() => {
     if (!active || !surface || !projectId) return;
-    const navigate: InternalLinkNavigator = ({ target, ref, disposition }) => {
-      follower.follow(target, disposition, ref);
+    const navigate: InternalLinkNavigator = ({ target, ref }) => {
+      follower.follow(target, ref);
     };
     const unregisterNavigator = surface.registerNavigator(navigate);
     // A selected link drags as the entry it names, whatever draft the holder shows.

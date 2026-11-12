@@ -1,25 +1,8 @@
 /** Route-owned command channel for project destination commands. */
-import { createContext, type ReactNode, useContext, useMemo } from "react";
+import { createContext, type ReactNode, useContext } from "react";
 import type { OpenDocument } from "@/client/stores";
 import type { NavigationSettlement } from "./project-navigation";
 import type { ContextRouteRequest } from "./project-route";
-
-/**
- * The chat an open was made from. It rides on the history entry the open pushes, so that entry
- * keeps the chat beside the document it opened, Back included.
- */
-export type BesideHint = { chatId: string };
-
-/** The history-state key the beside hint is stored under. */
-export const BESIDE_STATE_KEY = "meridianBeside";
-
-/** The beside hint a history entry's state carries, if any. */
-export function besideHintOf(state: object): BesideHint | null {
-  const value = (state as Record<string, unknown>)[BESIDE_STATE_KEY];
-  if (!value || typeof value !== "object") return null;
-  const chatId = (value as { chatId?: unknown }).chatId;
-  return typeof chatId === "string" && chatId.length > 0 ? { chatId } : null;
-}
 
 export type OpenContextOptions = {
   replace?: boolean;
@@ -39,8 +22,6 @@ export type OpenContextOptions = {
   changeId?: string;
   isCurrent?: () => boolean;
   canCommit?: () => boolean;
-  /** The chat the open was made from (`OpenedFromChat`). */
-  beside?: BesideHint;
 };
 
 export type OpenContextRoute = (
@@ -84,36 +65,8 @@ export function ProjectNavigationProvider({
   );
 }
 
-const OpenedFromChatContext = createContext<BesideHint | null>(null);
-
-/** Every open made inside this chat carries it as the new entry's beside hint. */
-export function OpenedFromChat({
-  chatId,
-  children,
-}: {
-  chatId: string | null;
-  children: ReactNode;
-}) {
-  const hint = useMemo(() => (chatId ? { chatId } : null), [chatId]);
-  return <OpenedFromChatContext.Provider value={hint}>{children}</OpenedFromChatContext.Provider>;
-}
-
-/** The chat the surrounding UI is inside, if any (`OpenedFromChat`). */
-export function useOpenedFromChat(): BesideHint | null {
-  return useContext(OpenedFromChatContext);
-}
-
 export function useOpenContextRoute(): OpenContextRoute | null {
-  const open = useContext(ProjectNavigationContext)?.open ?? null;
-  const beside = useOpenedFromChat();
-  return useMemo(
-    () =>
-      open && beside
-        ? (target: ContextRouteRequest, options?: OpenContextOptions) =>
-            open(target, { beside, ...options })
-        : open,
-    [open, beside],
-  );
+  return useContext(ProjectNavigationContext)?.open ?? null;
 }
 
 /** Capture before an asynchronous create; completion must not steal a later destination. */

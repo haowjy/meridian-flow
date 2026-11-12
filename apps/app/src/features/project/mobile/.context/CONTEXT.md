@@ -23,8 +23,8 @@ selectors are accepted.
 
 The Sheet shows the side's item (`useSideItem`, the same resolution as the
 desktop side): a document through `DocumentHost` with `place="side"` and the
-phone presentation, or a chat. Its header is the desktop side's: the picker,
-the held mark and Open in main (`MobileSideSheetHeader`). The top bar's button
+phone presentation, or a chat. Its header is the desktop side's: the picker
+and Open in main (`MobileSideSheetHeader`). The top bar's button
 names what the Sheet will show and is there whenever the side has an item. The
 Sheet is closed on arrival and any navigation closes it, so a door followed
 from inside it lands in main with the Sheet out of the way.

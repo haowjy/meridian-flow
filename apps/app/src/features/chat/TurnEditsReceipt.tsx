@@ -19,7 +19,7 @@ import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { FoldToggle } from "@/components/ui/fold-toggle";
-import { followDisposition, MIDDLE_BUTTON } from "@/core/editor/links";
+import { MIDDLE_BUTTON } from "@/core/editor/links";
 import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
@@ -365,10 +365,9 @@ function DocumentRow({
     <button
       type="button"
       {...drag}
-      onClick={(event) => onOpenContextUri(document.uri, undefined, followDisposition(event))}
+      onClick={() => onOpenContextUri(document.uri)}
       onAuxClick={(event) => {
-        if (event.button === MIDDLE_BUTTON)
-          onOpenContextUri(document.uri, undefined, followDisposition(event));
+        if (event.button === MIDDLE_BUTTON) onOpenContextUri(document.uri);
       }}
       className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-ink-fill"
     >

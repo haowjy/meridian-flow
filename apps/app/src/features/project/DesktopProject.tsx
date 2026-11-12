@@ -11,6 +11,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import { FileQuestion, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMainTabs } from "@/client/project-shell/main-tabs";
@@ -45,13 +46,7 @@ import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
 import { ClosedSideButton } from "./side/ClosedSideButton";
 import { SideChatHeader, SideDocumentHeader, SideEmptyHeader } from "./side/SideHeader";
-import {
-  useChatOnScreen,
-  useHostChatId,
-  useShellCommands,
-  useSideItem,
-  useSideRevealed,
-} from "./side/SideView";
+import { useChatOnScreen, useHostChatId, useSideItem, useSideRevealed } from "./side/SideView";
 import { useMainItem } from "./views";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
@@ -67,17 +62,14 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const { setSlotOpen, setSlotWidth } = useProjectSurfacePrefsActions();
   // The single writer-driven open/close entry for a panel. Opening a panel also releases the
   // narrow-window hold on it, so the control can never write a pref that changes nothing.
-  const { releaseSide } = useShellCommands(projectId);
   const setSlotOpenHere = (slot: PanelSlotId, open: boolean) => {
     if (open) narrowHold.openByHand(slot);
-    // Closing the side lets go of a held pick: it reopens following main.
-    else if (slot === "side") releaseSide();
     setSlotOpen(slot, open);
   };
   const sidebarToggle: PaneHeaderRailToggle = { open: panels["rail-l"].open };
   const sideToggle: PaneHeaderRailToggle = { open: panels.side.open };
   const sideOpen = panels.side.open;
-  // A hold made from a link opens the side, so the click has a visible result.
+  // A document held beside from a link opens the side, so the click has a visible result.
   const revealed = useSideRevealed();
   const seenReveal = useRef(revealed);
   useEffect(() => {
@@ -136,7 +128,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const tabCommands = useMainTabCommands({ projectId, open, mainKey, onShowRecents });
 
   // Each document has its own host, so the draft that takes the focus when its controls show is
-  // held here.
+  // kept here.
   const [focusReview, setFocusReview] = useState<string | null>(null);
   const documentHost = (tab: OpenDocument, place: "main" | "side" | "kept"): SlotGridHost => ({
     key: `document:${tab.documentId}`,
@@ -199,9 +191,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
             place={chatInMain ? "main" : "side"}
             presentation="desktop"
             visible={chatInMain || (sideChat !== null && sideOpen)}
-            onOpenContextTarget={(target) =>
-              void open(target, chatThread ? { beside: { chatId: chatThread } } : undefined)
-            }
+            onOpenContextTarget={(target) => void open(target)}
             header={
               chatInMain ? (
                 <ChatPaneController
@@ -332,11 +322,17 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   );
 }
 
-/** The side with nothing to show: what goes with main is still being found, or there is none. */
+/** The side with nothing to show: a document is still being found, or none is open. */
 function SideEmpty({ projectId }: { projectId: string }) {
+  const { pending, failed } = useSideItem();
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SideEmptyHeader projectId={projectId} />
+      {pending || failed ? null : (
+        <p className="m-auto max-w-56 px-4 text-center text-xs text-muted-foreground">
+          <Trans>A document you open shows here beside the chat.</Trans>
+        </p>
+      )}
     </div>
   );
 }

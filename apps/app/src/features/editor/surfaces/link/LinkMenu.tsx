@@ -119,7 +119,7 @@ export function LinkMenu({
       {followable ? (
         <EditorMenuItem
           onSelect={() => {
-            followLinkFrom(editor, { ref: menu.ref, href: menu.href }, "current", menu.at);
+            followLinkFrom(editor, { ref: menu.ref, href: menu.href }, menu.at);
             close();
           }}
         >

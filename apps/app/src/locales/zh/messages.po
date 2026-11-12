@@ -821,6 +821,10 @@ msgstr ""
 msgid "A document blocks part of this location. Move or rename it, then apply again."
 msgstr ""
 
+#: src/features/project/DesktopProject.tsx
+msgid "A document you open shows here beside the chat."
+msgstr ""
+
 #: src/core/editor/file-drop/file-drop-door.ts
 msgid "A file can’t go there."
 msgstr "文件不能放在那里。"
@@ -2058,8 +2062,8 @@ msgid "Couldn't find {source}."
 msgstr ""
 
 #: src/features/project/side/SideHeader.tsx
-msgid "Couldn't find what goes with this."
-msgstr ""
+#~ msgid "Couldn't find what goes with this."
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't finish that step"
@@ -2095,12 +2099,20 @@ msgstr ""
 msgid "Couldn't load references."
 msgstr ""
 
+#: src/features/project/side/SidePicker.tsx
+msgid "Couldn't load the chats for this document."
+msgstr ""
+
 #: src/features/chat/TurnList.tsx
 msgid "Couldn't load the conversation this fork continues."
 msgstr ""
 
 #: src/features/export/ExportProjectDialog.tsx
 msgid "Couldn't load the preview."
+msgstr ""
+
+#: src/features/project/side/SidePicker.tsx
+msgid "Couldn't load this chat's documents."
 msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx
@@ -2121,8 +2133,8 @@ msgid "Couldn't load Trash."
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Couldn't load what goes with this."
-msgstr ""
+#~ msgid "Couldn't load what goes with this."
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
@@ -3013,6 +3025,7 @@ msgid "Filter subagents"
 msgstr "筛选子代理"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/side/SidePicker.tsx
 msgid "Find a chat"
 msgstr ""
 
@@ -3025,8 +3038,12 @@ msgid "Find a document or chat"
 msgstr ""
 
 #: src/features/project/side/SideHeader.tsx
-msgid "Finding what goes with this…"
+msgid "Finding a document…"
 msgstr ""
+
+#: src/features/project/side/SideHeader.tsx
+#~ msgid "Finding what goes with this…"
+#~ msgstr ""
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
@@ -3064,12 +3081,12 @@ msgid "Folders can't be attached"
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Follow {mainName}"
-msgstr ""
+#~ msgid "Follow {mainName}"
+#~ msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Follow this chat"
-msgstr ""
+#~ msgid "Follow this chat"
+#~ msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
 msgid "For {mainName}"
@@ -3175,13 +3192,13 @@ msgstr ""
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/side/ClosedSideButton.tsx
 #: src/features/project/side/SidePicker.tsx
-msgid "Held"
-msgstr ""
+#~ msgid "Held"
+#~ msgstr ""
 
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/side/SideHeader.tsx
-msgid "Held here. Follow main again"
-msgstr ""
+#~ msgid "Held here. Follow main again"
+#~ msgstr ""
 
 #: src/features/import/reason-copy.ts
 msgid "Hidden file."
@@ -3663,8 +3680,8 @@ msgid "Mention {0}"
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Mentioned"
-msgstr ""
+#~ msgid "Mentioned"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Merge cells"
@@ -3957,6 +3974,7 @@ msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/side/SidePicker.tsx
 msgid "No chats match “{search}”."
 msgstr ""
 
@@ -4413,8 +4431,8 @@ msgid "Previous change"
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Previous chapter"
-msgstr ""
+#~ msgid "Previous chapter"
+#~ msgstr ""
 
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/SettingsDialog.tsx

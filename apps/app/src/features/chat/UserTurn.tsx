@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import {
   canOpenReference,
-  useOpenProjectDocument,
   useProjectDocumentNavigationProjectId,
 } from "@/features/project/context/open-project-document";
+import { useOpenPlacedDocument } from "@/features/project/review-launch";
 import { Markdown } from "@/rich-content/Markdown";
 import { referenceKey } from "@/rich-content/TranscriptReference";
 import { AnchoredCards } from "./ChatCards";
@@ -49,7 +49,7 @@ function UserTurnComponent({
   // cutoff the server would use, so it offers none.
   const handoff = useTurnDerivation() !== null && !queued && turn.status === "complete";
   const projectId = useProjectDocumentNavigationProjectId();
-  const openDocument = useOpenProjectDocument(projectId ?? undefined);
+  const openDocument = useOpenPlacedDocument(projectId ?? undefined);
   const resolutions = useReferenceAvailability(
     useMemo(
       () => [
@@ -74,7 +74,7 @@ function UserTurnComponent({
       referenceResolutions={resolutions}
       canOpenReference={canOpenReference}
       uploadsChat={uploadsChat}
-      onOpenReference={(documentId) => void openDocument({ documentId })}
+      onOpenReference={(documentId) => void openDocument(documentId)}
     >
       {projected.text}
     </Markdown>

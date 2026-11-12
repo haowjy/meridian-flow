@@ -1,14 +1,12 @@
 /**
  * The side's state for one project view: what it shows (`useSideItem`), which chat is on screen,
- * and the held pick's commands (`useShellCommands`). Both shells read it: the phone's side is
- * its sheet.
+ * and the swap command (`useShellCommands`). Both shells read it: the phone's side is its sheet.
  *
- * The held pick is stored per browser tab (`client/project-shell/store.ts`) and never written to
- * history: Back moves main, and the beside hint returns with its entry. Only the writer's own acts
- * release a hold: the held mark, For this, the close button, the held item becoming main, and its
- * document being closed, Discarded or removed. A fold from a narrow window is not one: the hold
- * survives it. A held chat gives way to a chat in main, and a held document that no longer opens
- * is dropped.
+ * The side shows the project's current item of the kind main is not (`resolveSide`). A swap writes
+ * the current chat or document, stored per browser tab (`client/project-shell/store.ts`), never in
+ * history; it lasts until main changes mode. The current document is cleared when its tab closes
+ * (closed, Discarded or removed: `client/project-shell/main-tabs.ts`); one that no longer opens is
+ * skipped.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -27,23 +25,20 @@ import {
   readDocumentView,
   setDocumentView,
 } from "@/client/project-shell/document-views";
+import { mainTabKey, useMainTabs } from "@/client/project-shell/main-tabs";
 import {
-  type HeldPick,
-  readHeldPick,
-  useHeldPick,
-  useLastChat,
-  writeHeldPick,
+  type CurrentDocument,
+  useCurrentChat,
+  useCurrentDocument,
+  writeCurrentChat,
+  writeCurrentDocument,
 } from "@/client/project-shell/store";
-import { useDocumentRelated } from "@/client/query/useDocumentRelated";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
-import { useRecentDocuments } from "@/client/query/useRecentDocuments";
-import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
 import type { OpenDocument } from "@/client/stores";
 import type { NewChatAbout } from "@/features/chat/CreationComposer";
 import {
   useAccountId,
   useAccountResourceProjection,
-  useOptionalPresentedDocuments,
   useShownDocuments,
 } from "../context/account-feature-context";
 import { openDocumentFromDraftGroup } from "../context/open-document-from-draft";
@@ -52,7 +47,6 @@ import { recentOpening } from "../context/recent-opening";
 import { useRecordOpenedDocument } from "../context/use-record-opened-document";
 import type { Item } from "../views";
 import {
-  type Companion,
   type Described,
   type Describing,
   fitsBeside,
@@ -60,15 +54,13 @@ import {
   resolveSide,
   type SettledSide,
   type SideFailure,
-  type SideSource,
 } from "./side-item";
 
 export type SideItem = {
   item: Item | null;
   /** A document item's descriptor. */
   document: OpenDocument | null;
-  source: SideSource | null;
-  /** The companion read has not answered: the side keeps what it showed. */
+  /** A document's descriptor has not answered: the side keeps what it showed. */
   pending: boolean;
   /** A read the side waits on failed: the side keeps what it showed and offers a retry. */
   failed: SideFailure | null;
@@ -84,68 +76,14 @@ type SideView = {
   /** What the side's new-chat composer is about, as its draft stands. */
   newChatAbout: NewChatAbout;
   reportNewChatAbout: (about: NewChatAbout) => void;
-  /** Bumped by a hold from a link: the desktop opens the side so the hold is seen. */
+  /** Bumped by a document held beside from a link: the desktop opens the side so it is seen. */
   revealed: number;
-  /** With `draft`, the held document shows that draft. */
-  holdBeside: (pick: HeldPick, draft?: DraftPin) => void;
+  /** With `draft`, the document shows that draft. */
+  showBeside: (document: CurrentDocument, draft?: DraftPin) => void;
   descriptions: Descriptions;
 };
 
 const SideViewContext = createContext<SideView | null>(null);
-
-function useCompanion(
-  projectId: string,
-  main: MainForSide,
-  lastChatId: string | null,
-  /** Main's document lives only on this device: the server has no chats for it. */
-  mainIsLocal: boolean,
-): Companion {
-  const documentId = main.kind === "document" && !mainIsLocal ? main.documentId : null;
-  const related = useDocumentRelated(projectId, documentId);
-  const chatId = main.kind === "chat" ? main.chatId : null;
-  const chatDocuments = useThreadRecentDocuments(chatId);
-  const shown = useShownDocuments(projectId);
-  const recent = useRecentDocuments(projectId);
-  // The document the writer was on: the last one on screen (a draft-only one included, which
-  // recents never list), else the account's most recent.
-  const lastDocuments: Item[] = [shown[0]?.documentId, recent.documents[0]?.documentId]
-    .filter((id): id is string => Boolean(id))
-    .map((id) => ({ kind: "document", documentId: id }));
-  switch (main.kind) {
-    case "opening":
-      return { status: "pending" };
-    case "landing":
-      return {
-        status: "ready",
-        candidates: lastChatId ? [{ kind: "chat", chatId: lastChatId }] : [],
-      };
-    case "new-chat":
-      return { status: "ready", candidates: lastDocuments };
-    case "document": {
-      if (mainIsLocal) return { status: "ready", candidates: [] };
-      if (related.data) {
-        // The newest chat that edited it. A chat that only read it is not "working on" it.
-        const edited = related.data.chats.find((chat) => chat.edited);
-        return {
-          status: "ready",
-          candidates: edited ? [{ kind: "chat", chatId: edited.chatId }] : [],
-        };
-      }
-      if (related.isError) return { status: "failed", retry: () => void related.refetch() };
-      return { status: "pending" };
-    }
-    case "chat": {
-      if (chatDocuments.status === "loading") return { status: "pending" };
-      if (chatDocuments.status === "error")
-        return { status: "failed", retry: () => void chatDocuments.refetch() };
-      // Newest first; one that no longer opens (removed, an upload) gives way to the next.
-      const touched: Item[] = (chatDocuments.documents ?? [])
-        .filter((row) => row.kind === "tracked")
-        .map((row) => ({ kind: "document", documentId: row.documentId }));
-      return { status: "ready", candidates: [...touched, ...lastDocuments] };
-    }
-  }
-}
 
 const describeKey = ({ documentId, workId }: Describing) => `${documentId}|${workId ?? ""}`;
 
@@ -277,26 +215,34 @@ function useDescriptions(projectId: string): Descriptions {
 export function SideViewProvider({
   projectId,
   main,
-  mainIsLocal,
-  besideChatId,
   children,
 }: {
   projectId: string;
   main: MainForSide;
-  mainIsLocal: boolean;
-  besideChatId: string | null;
   children: ReactNode;
 }) {
   const accountId = useAccountId();
-  const held = useHeldPick(accountId, projectId);
-  const lastChatId = useLastChat(accountId, projectId);
-  const companion = useCompanion(projectId, main, lastChatId, mainIsLocal);
+  const currentChatId = useCurrentChat(accountId, projectId);
+  const currentDocument = useCurrentDocument(accountId, projectId);
+  const { tabs, selected } = useMainTabs(accountId, projectId);
+  // Beside a chat: the current document, else main's open tabs (the one main showed last, then
+  // from the right), else nothing. Not recents or the mounted documents: a document the writer
+  // closed must not come back, and a closed tab's host stays mounted, hidden, for its undo.
+  const documents = useMemo(() => {
+    const seen = new Set<string>();
+    const open = [...tabs]
+      .reverse()
+      .sort((a, b) => +(mainTabKey(b) === selected) - +(mainTabKey(a) === selected));
+    return [
+      ...(currentDocument ? [currentDocument] : []),
+      ...open.map((tab) => ({ documentId: tab.document.documentId })),
+    ].filter(({ documentId }) => !seen.has(documentId) && seen.add(documentId));
+  }, [currentDocument, tabs, selected]);
   const descriptions = useDescriptions(projectId);
   const resolution = resolveSide({
     main,
-    held,
-    besideChatId,
-    companion,
+    currentChat: currentChatId,
+    documents,
     describe: descriptions.read,
   });
   const describing = resolution.kind === "pending" ? resolution.describing : null;
@@ -323,7 +269,6 @@ export function SideViewProvider({
     () => ({
       item: settled?.item ?? null,
       document: settled?.document ?? null,
-      source: settled?.source ?? null,
       pending: resolution.kind === "pending",
       failed,
     }),
@@ -331,26 +276,24 @@ export function SideViewProvider({
     [sideKey],
   );
 
-  useReleaseHold(accountId, projectId, held, resolution.releaseHeld);
-  useRecordSidePick(projectId, side.source === "held" ? side.document : null);
+  useRecordBesideDocument(projectId, side.item?.kind === "document" ? side.document : null);
 
   const mainChat = main.kind === "chat" ? main.chatId : null;
   const sideChat = side.item?.kind === "chat" ? side.item : null;
   const chatOnScreen = mainChat ?? (main.kind === "new-chat" ? null : (sideChat?.chatId ?? null));
   // The thread the one chat host renders. It keeps the last chat it showed while no chat is on
-  // screen, so a stream and the transcript stay warm behind a picked document.
+  // screen, so a stream and the transcript stay warm behind the document the side shows.
   const showing: string | null | undefined =
     mainChat ?? (main.kind === "new-chat" ? null : sideChat ? sideChat.chatId : undefined);
-  const [hostChatId, setHostChatId] = useState<string | null>(showing ?? lastChatId);
+  const [hostChatId, setHostChatId] = useState<string | null>(showing ?? currentChatId);
   if (showing !== undefined && showing !== hostChatId) setHostChatId(showing);
 
   const [newChatAbout, reportNewChatAbout] = useState<NewChatAbout>("follows");
   const [revealed, setRevealed] = useState(0);
-  const holdBeside = useCallback(
-    (pick: HeldPick, draft?: DraftPin) => {
-      if (draft && pick.kind === "document")
-        setDocumentView(accountId, projectId, pick.documentId, { pin: draft });
-      writeHeldPick(accountId, projectId, pick);
+  const showBeside = useCallback(
+    (document: CurrentDocument, draft?: DraftPin) => {
+      if (draft) setDocumentView(accountId, projectId, document.documentId, { pin: draft });
+      writeCurrentDocument(accountId, projectId, document);
       setRevealed((count) => count + 1);
     },
     [accountId, projectId],
@@ -365,7 +308,7 @@ export function SideViewProvider({
       newChatAbout,
       reportNewChatAbout,
       revealed,
-      holdBeside,
+      showBeside,
       descriptions,
     }),
     [
@@ -375,28 +318,28 @@ export function SideViewProvider({
       hostChatId,
       newChatAbout,
       revealed,
-      holdBeside,
+      showBeside,
       descriptions,
     ],
   );
   return <SideViewContext.Provider value={value}>{children}</SideViewContext.Provider>;
 }
 
-/** A document the writer picked beside counts as recently opened, once per pick. */
-function useRecordSidePick(projectId: string, picked: OpenDocument | null) {
+/** A document shown beside counts as recently opened, once. */
+function useRecordBesideDocument(projectId: string, beside: OpenDocument | null) {
   const record = useRecordOpenedDocument();
   const recorded = useRef<string | null>(null);
   useEffect(() => {
-    if (!picked) {
+    if (!beside) {
       recorded.current = null;
       return;
     }
-    if (recorded.current === picked.documentId) return;
-    const opening = recentOpening(projectId, picked, new Date().toISOString(), false);
+    if (recorded.current === beside.documentId) return;
+    const opening = recentOpening(projectId, beside, new Date().toISOString(), false);
     if (!opening) return;
-    recorded.current = picked.documentId;
+    recorded.current = beside.documentId;
     record(opening);
-  }, [picked, projectId, record]);
+  }, [beside, projectId, record]);
 }
 
 /** A kept new-chat composer is about main's document, not the one it was settled beside. */
@@ -406,41 +349,6 @@ function reaimComposer(kept: SettledSide, main: MainForSide): SettledSide {
   return main.kind === "document" && item.about !== main.documentId
     ? { ...kept, item: { ...item, about: main.documentId } }
     : kept;
-}
-
-/**
- * A hold ends when the side's rule says it can no longer sit beside main, and when its document
- * is closed, Discarded or removed: the registry forgets it, and the side resolves again. Nothing
- * navigates.
- */
-function useReleaseHold(
-  accountId: string,
-  projectId: string,
-  held: HeldPick | null,
-  release: boolean,
-) {
-  const heldKey = JSON.stringify(held);
-  useEffect(() => {
-    if (release && JSON.stringify(readHeldPick(accountId, projectId)) === heldKey)
-      writeHeldPick(accountId, projectId, null);
-  }, [release, heldKey, accountId, projectId]);
-  const presented = useOptionalPresentedDocuments();
-  const heldDocumentId = held?.kind === "document" ? held.documentId : null;
-  useEffect(() => {
-    if (!presented || !heldDocumentId) return;
-    const check = () => {
-      const mounted = presented
-        .documents(projectId)
-        .some((tab) => tab.documentId === heldDocumentId);
-      const forgotten =
-        mounted && !presented.shown(projectId).some((tab) => tab.documentId === heldDocumentId);
-      const current = readHeldPick(accountId, projectId);
-      if (forgotten && current?.kind === "document" && current.documentId === heldDocumentId)
-        writeHeldPick(accountId, projectId, null);
-    };
-    check();
-    return presented.subscribe(check);
-  }, [presented, heldDocumentId, accountId, projectId]);
 }
 
 function useSideView(): SideView {
@@ -484,11 +392,11 @@ export function useNewChatAbout(): {
 }
 
 /** Holds a document beside from a link, and has the side seen; null outside the project view. */
-export function useOptionalHoldBeside(): SideView["holdBeside"] | null {
-  return useContext(SideViewContext)?.holdBeside ?? null;
+export function useOptionalShowBeside(): SideView["showBeside"] | null {
+  return useContext(SideViewContext)?.showBeside ?? null;
 }
 
-/** Counts holds made from a link: the desktop opens the side on each. */
+/** Counts documents held beside from a link: the desktop opens the side on each. */
 export function useSideRevealed(): number {
   return useSideView().revealed;
 }
@@ -498,18 +406,18 @@ export function useSideDescriptions(): Descriptions {
   return useSideView().descriptions;
 }
 
-/** The shell's commands for the side. Neither writes main or history. */
+/** The shell's command for the side. It writes neither main nor history. */
 export function useShellCommands(projectId: string): {
-  /** Sets the held pick: the side shows it until released. */
-  pickSide(item: HeldPick): void;
-  /** Back to following main. */
-  releaseSide(): void;
+  /** Swaps what the side shows: writes the current chat or document. */
+  swapSide(item: Item): void;
 } {
   const accountId = useAccountId();
   return useMemo(
     () => ({
-      pickSide: (item) => writeHeldPick(accountId, projectId, item),
-      releaseSide: () => writeHeldPick(accountId, projectId, null),
+      swapSide: (item) =>
+        item.kind === "chat"
+          ? writeCurrentChat(accountId, projectId, item.chatId)
+          : writeCurrentDocument(accountId, projectId, { documentId: item.documentId }),
     }),
     [accountId, projectId],
   );

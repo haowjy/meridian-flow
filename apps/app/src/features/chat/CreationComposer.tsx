@@ -15,10 +15,8 @@ import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
 import { FolderMenuContext, type FolderMenuHost } from "@/features/project/context/FolderMenu";
-import {
-  canOpenReference,
-  useOpenProjectDocument,
-} from "@/features/project/context/open-project-document";
+import { canOpenReference } from "@/features/project/context/open-project-document";
+import { useOpenPlacedDocument } from "@/features/project/review-launch";
 import { useWorkScope } from "@/features/project/use-work-scope";
 import { DeletedChatCard } from "./DeletedChatCard";
 import { useCreationComposer } from "./useCreationComposer";
@@ -80,11 +78,11 @@ export function CreationComposer({
     creation.draft.chatId,
   );
   const noteDraft = useAttachAbout(composerRef, creation.draft, references, about, onAboutChange);
-  const openDocument = useOpenProjectDocument(projectId);
+  const openDocument = useOpenPlacedDocument(projectId);
   const folders = useMemo<FolderMenuHost>(
     () => ({
       projectId,
-      openDocument: (documentId) => void openDocument({ documentId }),
+      openDocument: (documentId) => void openDocument(documentId),
     }),
     [openDocument, projectId],
   );
@@ -149,7 +147,7 @@ export function CreationComposer({
         availableSkills={availableSkills.skills}
         onOpenReference={(reference) => {
           if (!canOpenReference(reference.uri)) return;
-          void openDocument({ documentId: reference.documentId });
+          void openDocument(reference.documentId);
         }}
         uploadPort={chatUploadPort}
         uploadScope={{ kind: "chat", projectId, chatId: creation.draft.chatId }}

@@ -1,6 +1,6 @@
 /** PassageDoor — a matched passage rendered as the way into it. */
 import { t } from "@lingui/core/macro";
-import { followDisposition, MIDDLE_BUTTON } from "@/core/editor/links";
+import { MIDDLE_BUTTON } from "@/core/editor/links";
 
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import {
@@ -64,12 +64,12 @@ export function PassageDoor({ path, excerpt, passage }: PassageDoorProps) {
       onClick={(event) => {
         // The row behind this expand is the toggle; opening must not fold it.
         event.stopPropagation();
-        openContextUri(uri, passage, followDisposition(event));
+        openContextUri(uri, passage);
       }}
       onAuxClick={(event) => {
         if (event.button !== MIDDLE_BUTTON) return;
         event.stopPropagation();
-        openContextUri(uri, passage, "new-tab");
+        openContextUri(uri, passage);
       }}
       className="focus-ring group block w-full rounded-sm py-px text-left text-xs leading-relaxed text-muted-foreground"
     >

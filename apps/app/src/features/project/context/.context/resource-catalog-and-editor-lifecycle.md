@@ -77,7 +77,7 @@ reopened document. Leaving main removes only browser-local presentation. It neve
 deletes the durable resource.
 
 Nothing persists open documents: main shows the document its address names, the side shows
-the last chat or last document, and the newest document shown that is off screen stays mounted
+the project's current chat or document, and the newest document shown that is off screen stays mounted
 hidden (`kept`) until a close, a Discard or a removal forgets it. Each browser tab/window presents independently. Project bootstrap keeps durable local
 documents from the replica without remote availability admission; ordinary server documents still
 use exact availability. Accepted navigation commits browser history in one prepared operation.

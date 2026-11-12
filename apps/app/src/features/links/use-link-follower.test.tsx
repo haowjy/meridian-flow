@@ -53,8 +53,8 @@ const reporter: FollowReporter = {
   report: (outcome) => events.push(`report:${outcome.state}`),
   clear: () => events.push("clear"),
 };
-const open: LinkDestination = async (document, gesture) => {
-  events.push(`open:${document.documentId}:${gesture}`);
+const open: LinkDestination = async (document) => {
+  events.push(`open:${document.documentId}`);
 };
 
 /** Incomplete, so every question reaches the (mocked) server. */
@@ -142,7 +142,7 @@ afterEach(() => {
 });
 
 describe("useLinkFollower", () => {
-  it("lets the latest current follow win", async () => {
+  it("lets the latest follow win", async () => {
     render({ scope, index: catalog("a") });
     act(() => follower.follow(address("First")));
     act(() => follower.follow(address("Second")));
@@ -151,7 +151,7 @@ describe("useLinkFollower", () => {
     await answer("First", doc("first"));
 
     // Nothing was shown, so the second follow has nothing of its own to clear.
-    expect(events).toEqual([`open:${IDS.second}:current`]);
+    expect(events).toEqual([`open:${IDS.second}`]);
   });
 
   it("never opens a follow cancelled while checking", async () => {
@@ -168,7 +168,7 @@ describe("useLinkFollower", () => {
   it("keeps the shared missing outcome for a policy that supplies only open", async () => {
     // A resource door (an upload) has no route to say "missing" in place.
     render({ scope, index: catalog("a") });
-    act(() => follower.follow(address("First"), "current", null, { open }));
+    act(() => follower.follow(address("First"), null, { open }));
 
     await answer("First", null);
 
