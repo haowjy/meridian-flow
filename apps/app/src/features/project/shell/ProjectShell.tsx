@@ -117,6 +117,11 @@ export function ProjectShell({
             widthPx={sideWidth}
             minWidthPx={SLOT_WIDTH_BOUNDS.side.min}
             maxWidthPx={SLOT_WIDTH_BOUNDS.side.max}
+            measure={() => {
+              const half = Math.floor(((gridRef.current?.clientWidth ?? 0) - leftWidth) / 2);
+              const { min } = SLOT_WIDTH_BOUNDS.side;
+              return { value: Math.min(sideWidth, half), min, max: Math.max(min, half) };
+            }}
             onCommit={(px) => onSetSlotWidth("side", px)}
             ariaLabel={t`Resize side panel`}
             dragDirection={-1}
