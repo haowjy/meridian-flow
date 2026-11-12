@@ -88,6 +88,10 @@ msgstr ""
 msgid ", "
 msgstr "，"
 
+#: src/components/ui/list-row.tsx
+msgid ", selected"
+msgstr ""
+
 #: src/features/project/context/context-entry-name.ts
 msgid "'.' and '..' cannot be used as names"
 msgstr ""

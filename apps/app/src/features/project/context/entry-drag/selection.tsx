@@ -205,11 +205,19 @@ export function useEntrySelection(): EntrySelection {
       isSelected: (key) => explicit?.has(key) ?? false,
       click(entry, event) {
         const key = entryKey(entry.ref);
-        if (event.shiftKey && anchor.current) {
+        if (event.shiftKey) {
           const order = screenOrder();
-          const from = order.indexOf(anchor.current);
           const to = order.indexOf(key);
-          if (from >= 0 && to >= 0) {
+          // With no anchor on screen (a list whose plain click navigates away, or an anchor row
+          // since removed), the range starts at the open row, else at this row.
+          let from = anchor.current ? order.indexOf(anchor.current) : -1;
+          if (from < 0) {
+            const open = openKey();
+            from = open ? order.indexOf(open) : -1;
+            if (from < 0) from = to;
+            anchor.current = order[from] ?? key;
+          }
+          if (to >= 0) {
             const [start, end] = from < to ? [from, to] : [to, from];
             setExplicit(new Set(order.slice(start, end + 1)));
             return true;

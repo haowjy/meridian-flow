@@ -88,6 +88,10 @@ msgstr "{agentName} deleted a passage"
 msgid ", "
 msgstr ", "
 
+#: src/components/ui/list-row.tsx
+msgid ", selected"
+msgstr ", selected"
+
 #: src/features/project/context/context-entry-name.ts
 msgid "'.' and '..' cannot be used as names"
 msgstr "'.' and '..' cannot be used as names"

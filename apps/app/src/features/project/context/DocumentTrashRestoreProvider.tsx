@@ -30,14 +30,10 @@ import { restoreTrashedDocuments, type TrashRestoreOutcome } from "./restore-tra
 
 export type TrashRestoreState = { kind: "restoring" } | { kind: "failed"; message: string };
 
-type AfterRestore = (
-  outcome: Extract<TrashRestoreOutcome, { kind: "living" }>,
-) => Promise<string | null>;
-
 type RestoreContextValue = {
   states: ReadonlyMap<string, TrashRestoreState>;
   /** Restores entries to their original paths in one request; each shows its own outcome. */
-  restore: (entries: readonly DocumentTrashEntry[], afterRestore?: AfterRestore) => void;
+  restore: (entries: readonly DocumentTrashEntry[]) => void;
   /**
    * Restores entries into a destination (a drag out of Trash). They leave the Trash list and
    * appear in the destination at once; one that fails goes back to Trash with its reason in
@@ -84,14 +80,9 @@ export function DocumentTrashRestoreProvider({
 
   /** One entry's outcome, shown on it. Returns whether it is living now. */
   const settle = useCallback(
-    async (
-      entry: DocumentTrashEntry,
-      outcome: TrashRestoreOutcome | "network",
-      afterRestore?: AfterRestore,
-    ) => {
+    (entry: DocumentTrashEntry, outcome: TrashRestoreOutcome | "network") => {
       if (outcome !== "network" && outcome.kind === "living") {
-        const failure = afterRestore ? await afterRestore(outcome) : null;
-        setState(entry.documentId, failure ? { kind: "failed", message: failure } : null);
+        setState(entry.documentId, null);
         return true;
       }
       const kind = outcome === "network" ? "network" : outcome.kind;
@@ -107,7 +98,7 @@ export function DocumentTrashRestoreProvider({
   );
 
   const restore = useCallback(
-    (requested: readonly DocumentTrashEntry[], afterRestore?: AfterRestore) => {
+    (requested: readonly DocumentTrashEntry[]) => {
       const entries = requested.filter((entry) => !restoring.current.has(entry.documentId));
       if (entries.length === 0) return;
       leaveSelections(entries.map(({ documentId }) => ({ kind: "file", id: documentId })));
@@ -119,7 +110,7 @@ export function DocumentTrashRestoreProvider({
         const landed: (string | undefined)[] = [];
         for (const entry of entries) {
           const outcome = outcomes?.get(entry.documentId) ?? "network";
-          if ((await settle(entry, outcome, afterRestore)) && outcome !== "network")
+          if (settle(entry, outcome) && outcome !== "network")
             landed.push(outcome.kind === "living" ? outcome.landedAt : undefined);
         }
         const [only] = landed;
@@ -175,7 +166,7 @@ export function DocumentTrashRestoreProvider({
         let landedAt: string | undefined;
         for (const entry of entries) {
           const outcome = outcomes?.get(entry.documentId) ?? "network";
-          if (await settle(entry, outcome)) {
+          if (settle(entry, outcome)) {
             restored.push(entry);
             if (outcome !== "network" && outcome.kind === "living") landedAt = outcome.landedAt;
           } else putBackInTrash(queryClient, projectId, entry, places.get(entry.documentId) ?? 0);
