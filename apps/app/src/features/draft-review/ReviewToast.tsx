@@ -29,7 +29,7 @@ export function ReviewToast({
       role="status"
       data-review-toast={toast.code}
       className={cn(
-        "pointer-events-auto absolute bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-md px-3 py-1.5 text-caption shadow-float",
+        "pointer-events-auto absolute bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-md px-3 py-1.5 text-xs shadow-float",
         "animate-in fade-in-0 slide-in-from-bottom-1 motion-reduce:animate-none",
         "bg-foreground text-background",
         className,

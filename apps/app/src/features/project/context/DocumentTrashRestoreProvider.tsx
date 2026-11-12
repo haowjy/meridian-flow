@@ -314,7 +314,7 @@ function RestoredNoticeToast({
     <div
       key={notice.id}
       role="status"
-      className="fixed bottom-4 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-3 rounded-md bg-foreground px-3 py-1.5 text-background text-caption shadow-float"
+      className="fixed bottom-4 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-3 rounded-md bg-foreground px-3 py-1.5 text-background text-xs shadow-float"
     >
       <span>{notice.text}</span>
       {notice.undo ? (

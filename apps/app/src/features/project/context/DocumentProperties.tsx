@@ -83,7 +83,7 @@ function PropertiesRow({ projectId, documentId }: { projectId: string; documentI
               className={cn("size-3 transition-transform", open && "rotate-90")}
             />
           </span>
-          <span className="shrink-0 font-medium text-caption text-muted-foreground">
+          <span className="shrink-0 font-medium text-xs text-muted-foreground">
             <Trans>Properties</Trans>
           </span>
           {open ? null : <CollapsedSummary properties={properties} failed={query.isError} />}
@@ -122,7 +122,7 @@ function CollapsedSummary({
 }) {
   if (failed) {
     return (
-      <span className="ml-3 min-w-0 truncate text-caption text-destructive">
+      <span className="ml-3 min-w-0 truncate text-xs text-destructive">
         <Trans>Couldn't load</Trans>
       </span>
     );
@@ -130,13 +130,13 @@ function CollapsedSummary({
   if (!properties) return null;
   if (properties.unreadable) {
     return (
-      <span className="ml-3 min-w-0 truncate text-caption text-muted-foreground">
+      <span className="ml-3 min-w-0 truncate text-xs text-muted-foreground">
         {properties.truncated ? <Trans>Too large to show</Trans> : <Trans>Couldn't be read</Trans>}
       </span>
     );
   }
   return (
-    <span className="ml-3 min-w-0 truncate text-caption text-muted-foreground">
+    <span className="ml-3 min-w-0 truncate text-xs text-muted-foreground">
       {properties.entries.map((entry) => entry.key).join(", ")}
     </span>
   );
@@ -157,7 +157,7 @@ function PropertiesBody({
   if (properties.unreadable) {
     return (
       <div className="flex flex-col gap-2 pt-1">
-        <p className="text-caption text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {properties.truncated ? (
             <Trans>
               These properties are too large to show in full. The start is shown as written.
@@ -188,7 +188,7 @@ function PropertiesBody({
 function PropertyPair({ entry }: { entry: DocumentPropertiesDto["entries"][number] }) {
   return (
     <>
-      <dt title={entry.key} className="truncate text-caption text-muted-foreground @max-md:pt-1">
+      <dt title={entry.key} className="truncate text-xs text-muted-foreground @max-md:pt-1">
         {entry.key}
       </dt>
       <dd className="min-w-0 text-foreground text-sm">

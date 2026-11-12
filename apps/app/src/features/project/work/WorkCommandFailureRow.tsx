@@ -30,18 +30,19 @@ export function WorkCommandFailureRow({
   /** Replaces the plain retry, to add what else Retry does there. */
   onRetry?: () => void;
 }) {
+  const line = workFailureLine(failure, onRetry);
+  return <InlineErrorRow {...line} className={line.onRetry ? undefined : "px-0 pt-0 pb-2"} />;
+}
+
+/** What the failure line says and offers: Retry only where it can help. */
+export function workFailureLine(failure: WorkRowFailure, onRetry?: () => void) {
   const refusal = failure.operation === "restore" ? restoreRefusal(failure.error) : null;
-  if (refusal)
-    return (
-      <InlineErrorRow message={refusal} onDismiss={failure.dismiss} className="px-0 pt-0 pb-2" />
-    );
-  return (
-    <InlineErrorRow
-      message={messages[failure.operation]()}
-      onRetry={onRetry ?? (() => void failure.retry())}
-      onDismiss={failure.dismiss}
-    />
-  );
+  if (refusal) return { message: refusal, onDismiss: failure.dismiss };
+  return {
+    message: messages[failure.operation](),
+    onRetry: onRetry ?? (() => void failure.retry()),
+    onDismiss: failure.dismiss,
+  };
 }
 
 /** A restore the server will refuse again as it is: Retry can't help. */

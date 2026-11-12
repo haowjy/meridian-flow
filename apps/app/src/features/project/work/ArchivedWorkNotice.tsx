@@ -41,7 +41,7 @@ export function ArchivedWorkNotice({
       {strip ? (
         <div
           role="status"
-          className="flex min-h-8 min-w-0 items-center gap-[var(--chat-space-inline)] py-0.5 pr-1 pl-[var(--chat-card-pad-x)] text-caption"
+          className="flex min-h-8 min-w-0 items-center gap-[var(--chat-space-inline)] py-0.5 pr-1 pl-[var(--chat-card-pad-x)] text-xs"
         >
           <Archive className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           <p className="min-w-0 flex-1 text-muted-foreground">

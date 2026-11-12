@@ -60,7 +60,7 @@ export function RunningSubagentsStrip({
             expanded={expanded}
             onToggle={toggle}
             expandable
-            className="py-1 text-caption text-muted-foreground"
+            className="py-1 text-xs text-muted-foreground"
           />
         ) : null}
         {/* One keyed list in every layout: a child's row, and the Stop it may be carrying, stays
@@ -111,7 +111,7 @@ function RunningSubagentRow({
   return (
     <li
       hidden={layout === "collapsed" && cards.length === 0}
-      className="py-1 text-caption text-muted-foreground"
+      className="py-1 text-xs text-muted-foreground"
     >
       <SubagentRow
         run={run}

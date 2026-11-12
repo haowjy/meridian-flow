@@ -67,7 +67,7 @@ export function ChangeAuthor({
   return (
     <span
       className={cn(
-        "flex items-center gap-1.5 text-caption text-muted-foreground",
+        "flex items-center gap-1.5 text-xs text-muted-foreground",
         // A row's byline with no chat is "You" alone and keeps its width.
         fit === "names" && "w-full min-w-0",
         className,
@@ -93,7 +93,7 @@ export function ChangeAuthor({
   );
 }
 
-/** The row byline's narrowest width, in rem: the parts below, at text-caption, plus their 0.375rem gaps. */
+/** The row byline's narrowest width, in rem: the parts below, at text-xs, plus their 0.375rem gaps. */
 function bylineFloor(writer: boolean, chats: number, touch: boolean): string {
   const you = writer ? 2 : 0;
   const firstName = FIRST_NAME_MIN_REM + 0.875; // the name's floor, then its arrow and the gap before it

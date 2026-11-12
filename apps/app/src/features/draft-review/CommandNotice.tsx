@@ -7,18 +7,15 @@ import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
-import { X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { IconButton } from "@/components/ui/icon-button";
+import { ActionNotice } from "@/components/app/ActionNotice";
 import {
   useAccountId,
   useDraftCommandOwner,
   useOptionalPresentedDocuments,
 } from "@/features/project/context/account-feature-context";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
-import { cn } from "@/lib/utils";
 import type { DraftNotice } from "./draft-notices";
 
 /** Apply all's question: the sentence, a way out, and the command itself. */
@@ -77,7 +74,7 @@ export function CommandNotice({
   return (
     <div
       ref={footer}
-      className="flex min-h-7 coarse:min-h-11 flex-wrap items-center gap-x-2 gap-y-0.5 px-2 py-0.5 text-caption text-muted-foreground"
+      className="flex min-h-7 coarse:min-h-11 flex-wrap items-center gap-x-2 gap-y-0.5 px-2 py-0.5 text-xs text-muted-foreground"
       role="status"
       data-command-question={question?.kind}
     >
@@ -116,29 +113,17 @@ export function DraftNoticeLine({
   const presented = useOptionalPresentedDocuments();
   const accountId = useAccountId();
   const { openReviewFile } = useAiDraftLauncher();
-  const dismiss = (
-    <IconButton label={t`Dismiss`} className="shrink-0" onClick={notice.dismiss}>
-      <X aria-hidden className="size-3" />
-    </IconButton>
-  );
-  if (notice.kind === "applied")
+  if (notice.kind === "applied") {
+    const sentence = appliedSentence(notice.restored, notice.renamed, notice.alsoApplied);
     return (
-      <div
-        role="status"
+      <ActionNotice
         data-command-notice="applied"
-        className={cn(
-          "flex min-h-7 coarse:min-h-11 min-w-0 items-center gap-x-2 px-2 py-0.5 text-caption text-muted-foreground",
-          className,
-        )}
-      >
-        <AppliedSentence
-          restored={notice.restored}
-          renamed={notice.renamed}
-          alsoApplied={notice.alsoApplied}
-        />
-        {dismiss}
-      </div>
+        sentence={sentence}
+        onDismiss={notice.dismiss}
+        className={className}
+      />
     );
+  }
   const undo = () => {
     const { review, left, projectId, ownerKey } = notice;
     // Where main was when the notice showed (null: Recently opened); the view follows only
@@ -154,16 +139,6 @@ export function DraftNoticeLine({
         });
     });
   };
-  if (notice.status === "failed")
-    return (
-      <div role="status" data-command-notice="undo-failed" className={className}>
-        <InlineErrorRow
-          message={t`Couldn't undo. Try again.`}
-          onRetry={undo}
-          onDismiss={notice.dismiss}
-        />
-      </div>
-    );
   const { subject } = notice;
   const sentence =
     subject.kind === "drafts"
@@ -171,53 +146,27 @@ export function DraftNoticeLine({
       : subject.kind === "draft"
         ? t`Draft of ${subject.name} discarded.`
         : t`Change to ${subject.name} discarded.`;
+  const failed = notice.status === "failed";
   return (
-    <div
-      role="status"
-      data-command-notice="discarded"
-      className={cn(
-        "flex min-h-7 coarse:min-h-11 min-w-0 items-center gap-x-2 px-2 py-0.5 text-caption text-muted-foreground",
-        className,
-      )}
-    >
-      <NoticeSentence sentence={sentence} name={subject.kind === "drafts" ? null : subject.name} />
-      <button
-        type="button"
-        className="text-button shrink-0 text-xs disabled:opacity-50 coarse:min-h-11 coarse:min-w-11"
-        disabled={notice.status === "undoing"}
-        onClick={undo}
-      >
-        <Trans>Undo</Trans>
-      </button>
-      {dismiss}
-    </div>
+    <ActionNotice
+      data-command-notice={failed ? "undo-failed" : "discarded"}
+      sentence={sentence}
+      name={subject.kind === "drafts" ? null : subject.name}
+      action={{ label: <Trans>Undo</Trans>, onClick: undo, pending: notice.status === "undoing" }}
+      onDismiss={notice.dismiss}
+      failure={
+        failed
+          ? { message: t`Couldn't undo. Try again.`, onRetry: undo, onDismiss: notice.dismiss }
+          : null
+      }
+      className={className}
+    />
   );
 }
 
 /** A notice's action in `container` (Undo, Retry): where the focus goes when the notice took the pressed control's place. */
 export const noticeAction = (container: HTMLElement) =>
   container.querySelector<HTMLElement>("[data-command-notice] button:not(:disabled)");
-
-/**
- * A notice's sentence, where the document's name is what shortens: the verb that says what
- * happened stays whole at any width.
- */
-function NoticeSentence({ sentence, name }: { sentence: string; name: string | null }) {
-  const at = name ? sentence.indexOf(name) : -1;
-  if (!name || at < 0)
-    return (
-      <span className="min-w-0 truncate" title={sentence}>
-        {sentence}
-      </span>
-    );
-  return (
-    <span className="flex min-w-0 whitespace-pre" title={sentence}>
-      <span className="shrink-0">{sentence.slice(0, at)}</span>
-      <span className="min-w-0 truncate">{name}</span>
-      <span className="shrink-0">{sentence.slice(at + name.length)}</span>
-    </span>
-  );
-}
 
 /**
  * The question an Apply all asks first, naming every document it will delete from the
@@ -256,24 +205,6 @@ export function restoredSentence(titles: readonly string[]): string {
   return titles.length === 1
     ? t`${names} is back in the manuscript.`
     : t`${names} are back in the manuscript.`;
-}
-
-function AppliedSentence({
-  restored,
-  renamed,
-  alsoApplied,
-}: {
-  restored: readonly string[];
-  renamed: readonly string[];
-  alsoApplied: readonly string[];
-}) {
-  useLingui();
-  const sentence = appliedSentence(restored, renamed, alsoApplied);
-  return (
-    <span className="min-w-0 truncate" title={sentence}>
-      {sentence}
-    </span>
-  );
 }
 
 export function appliedSentence(

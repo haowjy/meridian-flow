@@ -107,7 +107,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       <div
         onClick={askingApply ? undefined : () => setExpanded((value) => !value)}
         className={cn(
-          "flex min-h-7 flex-wrap items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-caption @max-[20rem]/dock:text-xs text-foreground",
+          "flex min-h-7 flex-wrap items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-xs text-foreground",
           multi && "cursor-pointer transition-colors hover:bg-ink-fill",
         )}
       >
@@ -237,7 +237,7 @@ function DockFileLine({
       {summary ? (
         summary(trouble)
       ) : expanded && !wholeDocument ? (
-        <div className="flex min-h-7 items-center gap-1 px-2 text-caption text-foreground">
+        <div className="flex min-h-7 items-center gap-1 px-2 text-xs text-foreground">
           <DockFileName file={file} onReview={() => dock.review(file)} />
           {trouble}
         </div>

@@ -91,13 +91,11 @@
   --shadow-modal: 0 2px 6px rgb(26 26 23 / 0.06), 0 16px 40px -8px rgb(26 26 23 / 0.2);
 
   /* The UI uses two sizes: xs (12px) for labels, counts, chips and meta, and sm (13px) for
-     every control and row. Chat reads at 14px and prose at 16px. `caption` and `compact` are
-     xs and sm with prose leading for multi-line secondary text, and `body` is the 15px reading
-     step. Register every custom name in apps/app/src/lib/utils.ts. */
+     every control and row. Chat reads at 14px and prose at 16px. `compact` is sm with prose
+     leading for multi-line secondary text, and `body` is the 15px reading step. Register every
+     custom name in apps/app/src/lib/utils.ts. */
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
-  --text-caption: 0.75rem;
-  --text-caption--line-height: 1.45;
   --text-sm: 0.8125rem;
   --text-sm--line-height: 1.25rem;
   --text-compact: 0.8125rem;

@@ -194,7 +194,7 @@ export function TurnEditsReceipt({
   }
   return (
     <div
-      className="overflow-hidden rounded-lg border border-border bg-card text-caption text-muted-foreground"
+      className="overflow-hidden rounded-lg border border-border bg-card text-xs text-muted-foreground"
       data-turn-receipt
     >
       {/* The WHOLE header row is the expand/collapse target — hover washes the

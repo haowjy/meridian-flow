@@ -45,7 +45,7 @@ export function ReviewStepper({
       </IconButton>
       <span
         className={cn(
-          "px-1 text-center text-caption text-muted-foreground tabular-nums",
+          "px-1 text-center text-xs text-muted-foreground tabular-nums",
           compact ? "identity-step-count whitespace-nowrap" : "min-w-14",
           touch && "text-sm",
         )}

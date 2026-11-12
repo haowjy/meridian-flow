@@ -161,6 +161,9 @@ Core shell expectations:
   never red and never a trash icon; those mean Delete. One name per scope: Apply and
   Discard for a change, Apply draft and Discard draft for a document, Apply all and
   Discard all for everything.
+- What a command did, with its Undo, is a line where it happened: `ActionNotice`
+  ("Deleted Chapter 3 · Undo · ×"), quiet `text-xs`, staying until the next action or
+  Dismiss. An Undo that failed takes its place as `InlineErrorRow`.
 - An error is a line: `InlineErrorRow`, a red icon with body-ink text and at most one
   text action. A floating editor message is `EditorNoticePill`; a standing note above a
   document is `DocumentNotice`. None of them push content down when they appear.

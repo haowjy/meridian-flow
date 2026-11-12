@@ -2255,8 +2255,8 @@ msgstr "Couldn't rename. Use Rename in the file list to try again."
 
 #. placeholder {0}: notice.title
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Couldn't restore {0}"
-msgstr "Couldn't restore {0}"
+#~ msgid "Couldn't restore {0}"
+#~ msgstr "Couldn't restore {0}"
 
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 msgid "Couldn't restore {name}."
@@ -2275,6 +2275,7 @@ msgid "Couldn't restore {name}. Try again."
 msgstr "Couldn't restore {name}. Try again."
 
 #: src/features/project/shell/sidebar/chat-deletes.ts
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Couldn't restore {title}"
 msgstr "Couldn't restore {title}"
 
@@ -2527,13 +2528,17 @@ msgstr "Deleted"
 
 #. placeholder {0}: notice.title
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Deleted {0}"
-msgstr "Deleted {0}"
+#~ msgid "Deleted {0}"
+#~ msgstr "Deleted {0}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted {name}"
 msgstr "Deleted {name}"
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Deleted {title}"
+msgstr "Deleted {title}"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Deleted a document"
@@ -2665,16 +2670,14 @@ msgstr "Discarded"
 msgid "Discarding"
 msgstr "Discarding"
 
+#: src/components/app/ActionNotice.tsx
 #: src/components/app/failure-toast.tsx
 #: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
-#: src/features/draft-review/CommandNotice.tsx
 #: src/features/draft-review/ReviewToast.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/SchemaNotices.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#: src/features/project/work/WorkCollection.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
 
