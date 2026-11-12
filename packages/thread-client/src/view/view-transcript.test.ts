@@ -356,8 +356,7 @@ it("keeps delivery-group identity across tail growth but refreshes invocation-de
     metadata: {
       kind: "subagent_update",
       handle: "p1",
-      // A later run of the child: the launch card's own run finishes on the card, not in a row.
-      execution: "execution-2",
+      execution: "execution-1",
       outcome: "succeeded",
       childThreadId: "child-1",
       agentName: "Critic",
