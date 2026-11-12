@@ -89,6 +89,7 @@ export function ContextTreePanel({
   );
   const activeLocationPath = activeScheme === scheme ? activePath : null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
+  const [createdFolder, setCreatedFolder] = useState<string | null>(null);
   const revealed = useRef<string | null>(null);
 
   const revealPath = useCallback(
@@ -194,6 +195,8 @@ export function ContextTreePanel({
                   request: requestCreate,
                   done: onCreateDone,
                   createdFile: setPendingOpenPath,
+                  createdFolder,
+                  setCreatedFolder,
                 }
               : undefined,
             onSelectFile,
@@ -220,6 +223,7 @@ export function ContextTreePanel({
       activeScheme,
       activePath,
       creating,
+      createdFolder,
       onSelectFile,
       requestCreate,
       deleteEntries,

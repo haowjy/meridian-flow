@@ -4,7 +4,15 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Folder, FolderOpen, LoaderCircle, type LucideIcon } from "lucide-react";
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   CatalogContextView,
   CatalogFile as ContextFile,
@@ -20,6 +28,7 @@ import {
   rowId,
   siblingsOf,
 } from "@/features/import/tree-rows";
+import { focusWhenFree } from "@/lib/focus-follow";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
@@ -52,6 +61,9 @@ export type TreeEnv = {
     request: EntryCreation;
     done: () => void;
     createdFile: (path: string) => void;
+    /** The folder creation just made, until its row takes focus. */
+    createdFolder: string | null;
+    setCreatedFolder: (path: string | null) => void;
   };
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
   onRequestDelete: (entries: readonly DragEntry[]) => void;
@@ -67,7 +79,6 @@ export type TreeEnv = {
   catalog: CatalogContextView;
   tree?: ImportedTree;
   visibleIds?: ReadonlySet<string>;
-  rename?: { path: string; done: () => void };
   /** Rows say a refusal in words with its repair, where nothing can hover (the phone). */
   refusalNotice?: true;
 };
@@ -191,6 +202,8 @@ function DirRow({
     capabilities: env.capabilities,
     create: env.creation?.request,
     onRequestDelete: env.onRequestDelete,
+    arriving: env.creation?.createdFolder === dir.path,
+    onArrived: () => env.creation?.setCreatedFolder(null),
     importHere: env.importHere
       ? {
           folders: env.importHere.folders,
@@ -330,8 +343,6 @@ function FileRow({
   const interaction = useEntryInteraction({
     projectId: env.projectId,
     node: file,
-    requestRename: env.rename?.path === file.path,
-    onRenameDone: env.rename?.done,
     owner: env.owner,
     scheme: env.scheme,
     capabilities: env.capabilities,
@@ -428,6 +439,8 @@ function CreateRow({
   const env = useTreeEnv();
   const creation = env.creation;
   if (!creation) throw new Error("Create row requires creation capability");
+  // What opened the field (New file, New folder) takes focus back when it is cancelled.
+  const [opener] = useState(() => document.activeElement);
   const form = useCreateEntryForm({
     projectId: env.projectId,
     scheme: env.scheme,
@@ -435,7 +448,11 @@ function CreateRow({
     parent,
     siblings,
     onDone: creation.done,
-    onCreated: kind === "file" ? creation.createdFile : undefined,
+    onCancel: () => {
+      creation.done();
+      if (opener instanceof HTMLElement) focusWhenFree(opener);
+    },
+    onCreated: kind === "file" ? creation.createdFile : creation.setCreatedFolder,
   });
   return (
     <ListRowField depth={depth} icon={form.icon}>
