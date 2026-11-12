@@ -190,9 +190,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
             place={chatInMain ? "main" : "side"}
             presentation="desktop"
             visible={chatInMain || (sideChat !== null && sideOpen)}
-            onOpenContextTarget={(target) =>
-              void open(target, chatThread ? { beside: { chatId: chatThread } } : undefined)
-            }
+            onOpenContextTarget={(target) => void open(target)}
             header={
               chatInMain ? (
                 <ChatPaneController

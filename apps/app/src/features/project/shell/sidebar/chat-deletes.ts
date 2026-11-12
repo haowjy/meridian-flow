@@ -15,13 +15,7 @@ import { t } from "@lingui/core/macro";
 import type { QueryClient } from "@tanstack/react-query";
 import { beginOwnChatDelete, cleanDeletedChat } from "@/client/chat-submissions/deleted-chat";
 import { probeChatDestination } from "@/client/chat-submissions/thread-availability";
-import {
-  readLastChat,
-  readSidePick,
-  type SidePick,
-  writeLastChat,
-  writeSidePick,
-} from "@/client/project-shell/store";
+import { readCurrentChat, writeCurrentChat } from "@/client/project-shell/store";
 import {
   type ChatCommandOutcome,
   deleteProjectChat,
@@ -48,7 +42,7 @@ type Ports = {
 };
 
 /** What the delete took from the screen, for Undo to put back. */
-type Taken = { main: boolean; pick: SidePick | null; last: boolean };
+type Taken = { main: boolean; current: boolean };
 
 type Held = {
   notice: ChatDeleteNotice;
@@ -215,11 +209,9 @@ export class ChatDeletes {
     const { accountId, projectId } = this.ports;
     const navigation = this.ports.navigation();
     const display = navigation.display;
-    const pick = readSidePick(accountId, projectId);
     const taken: Taken = {
       main: display?.kind === "thread" && display.threadId === threadId,
-      pick: pick?.kind === "chat" && pick.chatId === threadId ? pick : null,
-      last: readLastChat(accountId, projectId) === threadId,
+      current: readCurrentChat(accountId, projectId) === threadId,
     };
     navigation.forgetChat(threadId);
     // Focus stays with the notice's Undo, not the new chat's composer.
@@ -231,10 +223,8 @@ export class ChatDeletes {
   private putBack(threadId: string, taken: Taken) {
     const { accountId, projectId } = this.ports;
     const navigation = this.ports.navigation();
-    if (taken.last && readLastChat(accountId, projectId) === null)
-      writeLastChat(accountId, projectId, threadId);
-    if (taken.pick && readSidePick(accountId, projectId) === null)
-      writeSidePick(accountId, projectId, taken.pick);
+    if (taken.current && readCurrentChat(accountId, projectId) === null)
+      writeCurrentChat(accountId, projectId, threadId);
     if (taken.main && navigation.display?.kind === "new")
       void navigation.openChat(threadId, { replace: true });
   }

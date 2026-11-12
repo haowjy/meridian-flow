@@ -1,18 +1,16 @@
 /**
  * SidePicker — the side header's name, and the list that chooses what sits beside main.
  *
- * Its lists (plan §4.4): for main's item (a document's chats, its previous chapter, the pages it
- * mentions; a chat's documents), recent documents, recent chats with New chat, and one merged
- * Find list while searching. Each section loads on its own. Main's own item never appears, and
- * no chat is offered beside a chat. A pick swaps what the side shows until main moves.
+ * It offers only the kind main is not: chats beside a document, documents beside a chat. Its
+ * lists: for main's item (a document's chats; a chat's documents), recent documents, recent chats
+ * with New chat, and one merged Find list while searching. Each section loads on its own. A pick
+ * writes the project's current chat or document, which lasts until main changes mode.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { MessageSquare, Plus } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import type { SidePick } from "@/client/project-shell/store";
-import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useDocumentRelated } from "@/client/query/useDocumentRelated";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -31,7 +29,7 @@ import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../context/context-file-icon";
 import { matchFileSuggestions } from "../context/file-suggestions/file-suggestions";
 import { titleChipClass } from "../shell/tab-chip";
-import { useMainItem } from "../views";
+import { type Item, useMainItem } from "../views";
 import { useMainForSide, useShellCommands, useSideDescriptions, useSideItem } from "./SideView";
 import { fitsBeside, sameItem } from "./side-item";
 
@@ -41,7 +39,7 @@ const FIND_SCHEMES: readonly ProjectContextTreeScheme[] = ["manuscript", "kb", "
 
 type Row = {
   key: string;
-  pick: SidePick;
+  pick: Item;
   name: string;
   meta?: string;
 };
@@ -132,17 +130,17 @@ function SidePickerLists({
   const mainDocument = useMainItem().document.document;
   const side = useSideItem();
   const descriptions = useSideDescriptions();
-  const { pickSide } = useShellCommands(projectId);
+  const { swapSide } = useShellCommands(projectId);
   const mainDocumentId = main.kind === "document" ? main.documentId : null;
   const mainChatId = main.kind === "chat" ? main.chatId : null;
   const offersChats = fitsBeside({ kind: "chat", chatId: null }, main);
+  const offersDocuments = fitsBeside({ kind: "document", documentId: "" }, main);
 
   const catalogs = useContextCatalogViews(projectId, FIND_SCHEMES, {});
   const loaded = FIND_SCHEMES.flatMap((scheme) => {
     const catalog = catalogs[scheme].catalog;
     return catalog ? [{ scheme, catalog }] : [];
   });
-  const nameOf = (documentId: string) => findInCatalogs(loaded, documentId)?.name ?? null;
 
   const related = useDocumentRelated(projectId, mainDocumentId);
   const chatDocuments = useThreadRecentDocuments(mainChatId);
@@ -185,25 +183,6 @@ function SidePickerLists({
             name: chatTitle(chat.chatId, chat.title),
             meta: chat.edited ? t`Edited this` : t`Read this`,
           })),
-          ...previousChapter(loaded, mainDocumentId).map((file) => ({
-            key: `document:${file.documentId}`,
-            pick: { kind: "document" as const, documentId: file.documentId },
-            name: file.name,
-            meta: t`Previous chapter`,
-          })),
-          ...(related.data?.mentions ?? []).flatMap((mention) => {
-            const name = nameOf(mention.documentId);
-            return name
-              ? [
-                  {
-                    key: `document:${mention.documentId}`,
-                    pick: { kind: "document" as const, documentId: mention.documentId },
-                    name,
-                    meta: t`Mentioned`,
-                  },
-                ]
-              : [];
-          }),
         ]
       : mainChatId
         ? touched
@@ -281,9 +260,9 @@ function SidePickerLists({
       ]).slice(0, FIND_LIMIT)
     : [];
 
-  const choose = (pick: SidePick) => {
+  const choose = (pick: Item) => {
     const moves = !sameItem(pick, shownNow);
-    pickSide(pick);
+    swapSide(pick);
     onDone();
     if (moves) focusTriggerAfterPick(trigger.current);
   };
@@ -310,7 +289,13 @@ function SidePickerLists({
           const first = found[0];
           if (first) choose(first.pick);
         }}
-        label={offersChats ? t`Find a document or chat` : t`Find a document`}
+        label={
+          offersChats && offersDocuments
+            ? t`Find a document or chat`
+            : offersChats
+              ? t`Find a chat`
+              : t`Find a document`
+        }
       />
       <PickerResults bound="fill">
         {searching ? (
@@ -319,8 +304,10 @@ function SidePickerLists({
             state={
               found.length === 0 ? (
                 <ListLine density="menu" iconSlot>
-                  {offersChats ? (
+                  {offersChats && offersDocuments ? (
                     <Trans>No documents or chats match “{search}”.</Trans>
+                  ) : offersChats ? (
+                    <Trans>No chats match “{search}”.</Trans>
                   ) : (
                     <Trans>No documents match “{search}”.</Trans>
                   )}
@@ -355,24 +342,26 @@ function SidePickerLists({
                 {forThis.map(row)}
               </PickerSection>
             ) : null}
-            <PickerSection
-              label={t`Recent documents`}
-              state={
-                recentDocuments.length === 0 ? (
-                  recent.status === "loading" ? (
-                    <ListLine density="menu" iconSlot status>
-                      <Trans>Loading…</Trans>
-                    </ListLine>
-                  ) : (
-                    <ListLine density="menu" iconSlot>
-                      <Trans>None yet</Trans>
-                    </ListLine>
-                  )
-                ) : undefined
-              }
-            >
-              {recentDocuments.map(row)}
-            </PickerSection>
+            {offersDocuments ? (
+              <PickerSection
+                label={t`Recent documents`}
+                state={
+                  recentDocuments.length === 0 ? (
+                    recent.status === "loading" ? (
+                      <ListLine density="menu" iconSlot status>
+                        <Trans>Loading…</Trans>
+                      </ListLine>
+                    ) : (
+                      <ListLine density="menu" iconSlot>
+                        <Trans>None yet</Trans>
+                      </ListLine>
+                    )
+                  ) : undefined
+                }
+              >
+                {recentDocuments.map(row)}
+              </PickerSection>
+            ) : null}
             {offersChats ? (
               <PickerSection
                 label={t`Recent chats`}
@@ -425,31 +414,7 @@ function focusTriggerAfterPick(from: HTMLElement | null) {
   requestAnimationFrame(check);
 }
 
-function ItemIcon({ pick, name }: { pick: SidePick; name: string }) {
+function ItemIcon({ pick, name }: { pick: Item; name: string }) {
   const Icon = pick.kind === "chat" ? MessageSquare : fileKindIcon(name);
   return <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />;
-}
-
-function findInCatalogs(loaded: readonly { catalog: CatalogContextView }[], documentId: string) {
-  for (const { catalog } of loaded) {
-    const file = catalog.findDocument(documentId);
-    if (file) return file;
-  }
-  return null;
-}
-
-/** The document before this one in its folder's order, from the catalog replica. */
-function previousChapter(loaded: readonly { catalog: CatalogContextView }[], documentId: string) {
-  for (const { catalog } of loaded) {
-    const file = catalog.findDocument(documentId);
-    if (!file) continue;
-    const siblings = catalog.children(file.parentId);
-    const at = siblings.findIndex((node) => node.kind === "file" && node.documentId === documentId);
-    for (let index = at - 1; index >= 0; index -= 1) {
-      const node = siblings[index];
-      if (node?.kind === "file" && node.editable) return [node];
-    }
-    return [];
-  }
-  return [];
 }

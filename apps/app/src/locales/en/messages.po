@@ -2054,8 +2054,8 @@ msgid "Couldn't find {source}."
 msgstr "Couldn't find {source}."
 
 #: src/features/project/side/SideHeader.tsx
-msgid "Couldn't find what goes with this."
-msgstr "Couldn't find what goes with this."
+#~ msgid "Couldn't find what goes with this."
+#~ msgstr "Couldn't find what goes with this."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't finish that step"
@@ -3009,6 +3009,7 @@ msgid "Filter subagents"
 msgstr "Filter subagents"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/side/SidePicker.tsx
 msgid "Find a chat"
 msgstr "Find a chat"
 
@@ -3021,8 +3022,12 @@ msgid "Find a document or chat"
 msgstr "Find a document or chat"
 
 #: src/features/project/side/SideHeader.tsx
-msgid "Finding what goes with this…"
-msgstr "Finding what goes with this…"
+msgid "Finding a document…"
+msgstr "Finding a document…"
+
+#: src/features/project/side/SideHeader.tsx
+#~ msgid "Finding what goes with this…"
+#~ msgstr "Finding what goes with this…"
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
@@ -3659,8 +3664,8 @@ msgid "Mention {0}"
 msgstr "Mention {0}"
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Mentioned"
-msgstr "Mentioned"
+#~ msgid "Mentioned"
+#~ msgstr "Mentioned"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Merge cells"
@@ -3953,6 +3958,7 @@ msgstr "No chats here yet."
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/side/SidePicker.tsx
 msgid "No chats match “{search}”."
 msgstr "No chats match “{search}”."
 
@@ -4409,8 +4415,8 @@ msgid "Previous change"
 msgstr "Previous change"
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Previous chapter"
-msgstr "Previous chapter"
+#~ msgid "Previous chapter"
+#~ msgstr "Previous chapter"
 
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/SettingsDialog.tsx

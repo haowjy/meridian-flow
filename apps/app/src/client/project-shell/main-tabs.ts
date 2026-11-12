@@ -11,6 +11,7 @@ import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useSyncExternalStore } from "react";
 import { browserRecord, isRecord } from "../storage/browser-record";
 import type { OpenDocument } from "../stores";
+import { readCurrentDocument, writeCurrentDocument } from "./store";
 
 export type MainTab = { kind: "document"; document: OpenDocument };
 
@@ -87,6 +88,14 @@ export function readMainTabs(accountId: string, projectId: string): MainTabs {
 
 function write(accountId: string, projectId: string, next: MainTabs): void {
   const key = recordKey(accountId, projectId);
+  const kept = new Set(next.tabs.map((tab) => tab.document.documentId));
+  const closed = readMainTabs(accountId, projectId).tabs.some(
+    (tab) =>
+      !kept.has(tab.document.documentId) &&
+      tab.document.documentId === readCurrentDocument(accountId, projectId)?.documentId,
+  );
+  // A document whose tab closes (closed, Discarded or removed) is no longer the current one.
+  if (closed) writeCurrentDocument(accountId, projectId, null);
   cache.set(key, next);
   record(accountId, projectId).write(next.tabs.length > 0 ? next : undefined);
   for (const listener of listeners.get(key) ?? []) listener();

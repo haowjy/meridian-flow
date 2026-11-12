@@ -6,6 +6,9 @@ import { createContext, useContext } from "react";
  */
 export type ChatPlace = "main" | "side";
 
-export const ChatPlaceContext = createContext<ChatPlace>("main");
+export const ChatPlaceContext = createContext<ChatPlace | null>(null);
 
-export const useChatPlace = () => useContext(ChatPlaceContext);
+/** Null outside a chat. */
+export const useOptionalChatPlace = () => useContext(ChatPlaceContext);
+
+export const useChatPlace = (): ChatPlace => useOptionalChatPlace() ?? "main";

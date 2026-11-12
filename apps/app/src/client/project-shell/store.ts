@@ -1,7 +1,8 @@
 /**
  * The project's stored shell state, per (account, project) in this browser tab and seeded once from
  * the device by `tab-first-remembered-id`, so two browser tabs on one project do not fight over it.
- * It holds the Work scope, the sidebar list, the side's pick and the last chat opened in main.
+ * It holds the Work scope, the sidebar list, and the project's current chat and current document:
+ * the last of each kind on screen, in main or beside. Main's mode decides which pane shows which.
  */
 import { useMemo, useSyncExternalStore } from "react";
 import { readRememberedId, writeRememberedId } from "../tab-first-remembered-id";
@@ -14,33 +15,20 @@ export const NO_SCOPE = "none";
 export type SidebarList = "files" | "chats";
 export const DEFAULT_SIDEBAR_LIST: SidebarList = "files";
 
-/**
- * What the writer swapped into the side, until main moves. A chat with no id is a new chat's
- * composer. A document followed from a link keeps the link's Work.
- */
-export type SidePick =
-  | { kind: "document"; documentId: string; workId?: string }
-  | { kind: "chat"; chatId: string | null };
+/** The last document on screen, in main or beside. A document followed from a link keeps the link's Work. */
+export type CurrentDocument = { documentId: string; workId?: string };
 
-const DOCUMENT = "document:";
 const WORK = "?work=";
-const NEW_CHAT = "chat:";
 
-function encodePick(pick: SidePick): string {
-  return pick.kind === "document"
-    ? `${DOCUMENT}${pick.documentId}${pick.workId ? `${WORK}${pick.workId}` : ""}`
-    : `${NEW_CHAT}${pick.chatId ?? ""}`;
+function encodeDocument(document: CurrentDocument): string {
+  return `${document.documentId}${document.workId ? `${WORK}${document.workId}` : ""}`;
 }
 
-function decodePick(stored: string | null): SidePick | null {
-  if (stored?.startsWith(DOCUMENT)) {
-    const [documentId, workId] = stored.slice(DOCUMENT.length).split(WORK);
-    if (!documentId) return null;
-    return workId ? { kind: "document", documentId, workId } : { kind: "document", documentId };
-  }
-  if (stored?.startsWith(NEW_CHAT))
-    return { kind: "chat", chatId: stored.slice(NEW_CHAT.length) || null };
-  return null;
+function decodeDocument(stored: string | null): CurrentDocument | null {
+  if (!stored) return null;
+  const [documentId, workId] = stored.split(WORK);
+  if (!documentId) return null;
+  return workId ? { documentId, workId } : { documentId };
 }
 
 const listeners = new Map<string, Set<() => void>>();
@@ -71,24 +59,32 @@ export function writeSidebarList(accountId: string, projectId: string, list: Sid
   notify(accountId, projectId);
 }
 
-export function readSidePick(accountId: string, projectId: string): SidePick | null {
-  return decodePick(readRememberedId("side-pick", accountId, projectId));
+export function readCurrentDocument(accountId: string, projectId: string): CurrentDocument | null {
+  return decodeDocument(readRememberedId("document", accountId, projectId));
 }
 
-export function writeSidePick(accountId: string, projectId: string, pick: SidePick | null): void {
-  const next = pick ? encodePick(pick) : null;
-  if (readRememberedId("side-pick", accountId, projectId) === next) return;
-  writeRememberedId("side-pick", accountId, projectId, next);
+export function writeCurrentDocument(
+  accountId: string,
+  projectId: string,
+  document: CurrentDocument | null,
+): void {
+  const next = document ? encodeDocument(document) : null;
+  if (readRememberedId("document", accountId, projectId) === next) return;
+  writeRememberedId("document", accountId, projectId, next);
   notify(accountId, projectId);
 }
 
-/** The last chat opened in main: where the bare address lands. */
-export function readLastChat(accountId: string, projectId: string): string | null {
+/** The last chat on screen, in main or beside: where the bare address lands. Null: a new chat. */
+export function readCurrentChat(accountId: string, projectId: string): string | null {
   return readRememberedId("chat", accountId, projectId);
 }
 
-export function writeLastChat(accountId: string, projectId: string, chatId: string | null): void {
-  if (readLastChat(accountId, projectId) === chatId) return;
+export function writeCurrentChat(
+  accountId: string,
+  projectId: string,
+  chatId: string | null,
+): void {
+  if (readCurrentChat(accountId, projectId) === chatId) return;
   writeRememberedId("chat", accountId, projectId, chatId);
   notify(accountId, projectId);
 }
@@ -121,21 +117,21 @@ export function useSidebarList(accountId: string, projectId: string): SidebarLis
   );
 }
 
-/** The side's pick, re-read when this tab's pick changes. Decoded from one stored string, so stable. */
-export function useSidePick(accountId: string, projectId: string): SidePick | null {
+/** The current document, re-read when it changes. Decoded from one stored string, so stable. */
+export function useCurrentDocument(accountId: string, projectId: string): CurrentDocument | null {
   const stored = useSyncExternalStore(
     (listener) => subscribe(accountId, projectId, listener),
-    () => readRememberedId("side-pick", accountId, projectId),
+    () => readRememberedId("document", accountId, projectId),
     () => null,
   );
-  return useMemo(() => decodePick(stored), [stored]);
+  return useMemo(() => decodeDocument(stored), [stored]);
 }
 
-/** The last chat opened in main, re-read when it changes. */
-export function useLastChat(accountId: string, projectId: string): string | null {
+/** The current chat, re-read when it changes. */
+export function useCurrentChat(accountId: string, projectId: string): string | null {
   return useSyncExternalStore(
     (listener) => subscribe(accountId, projectId, listener),
-    () => readLastChat(accountId, projectId),
+    () => readCurrentChat(accountId, projectId),
     () => null,
   );
 }

@@ -72,11 +72,7 @@ function SideBand({
       {side.failed ? (
         <div className="shrink-0 px-2 pb-1">
           <InlineErrorRow
-            message={
-              side.failed.read === "document"
-                ? t`Couldn't look up the document to show here.`
-                : t`Couldn't find what goes with this.`
-            }
+            message={t`Couldn't look up the document to show here.`}
             onRetry={side.failed.retry}
           />
         </div>
@@ -134,13 +130,13 @@ export function SideChatHeader({
   );
 }
 
-/** The side with nothing to show: its first companion read is out or failed, or main has no companion. */
+/** The side with nothing to show: a document's lookup is out, or no document has been opened. */
 export function SideEmptyHeader({ projectId }: { projectId: string }) {
   const side = useSideItem();
   return (
     <SideBand
       projectId={projectId}
-      name={side.pending ? t`Finding what goes with this…` : null}
+      name={side.pending ? t`Finding a document…` : null}
       icon={null}
     />
   );

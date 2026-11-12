@@ -46,7 +46,7 @@ export function MobileProject(props: MobileProjectProps) {
   // The sheet is the phone's side: never open on arrival, except for a first send still
   // recovering when the phone shell mounts, which needs its chat on screen.
   const [sheetOpen, setSheetOpen] = useState(
-    () => !onChat && isThreadAwaitingCreation(accountId, chat.lastChatId),
+    () => !onChat && isThreadAwaitingCreation(accountId, chat.currentChatId),
   );
   // Any open goes to main: the sheet closes rather than cover where the writer went. Arriving is
   // not an open, so a recovering first send keeps its sheet. The history position, not the
@@ -119,7 +119,7 @@ export function MobileProject(props: MobileProjectProps) {
         notice={onChat ? undefined : removedNotice}
         chatAction={
           sheetName ? (
-            // Names what the sheet will show: main's companion, or the writer's pick.
+            // Names what the sheet will show: the project's current item of the kind main is not.
             <button
               type="button"
               aria-label={t`Show ${sheetName}`}
@@ -202,12 +202,7 @@ export function MobileProject(props: MobileProjectProps) {
                     />
                   }
                   visible
-                  onOpenContextTarget={(target) =>
-                    void props.onOpenContextTarget(
-                      target,
-                      sheetChat ? { beside: { chatId: sheetChat } } : undefined,
-                    )
-                  }
+                  onOpenContextTarget={(target) => void props.onOpenContextTarget(target)}
                 />
               </MobileKeyboardAware>
             </WorkBranchCommandsBoundary>

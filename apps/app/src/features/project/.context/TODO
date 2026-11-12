@@ -15,3 +15,10 @@
   drawer, which closed. Fall back to "Open navigation" when the dialog's opener is gone.
 - Phone: the side sheet closes when the history position changes (`MobileProject.tsx`), so an open
   that replaces the entry instead of pushing leaves the sheet over main.
+- Tiles in the side: once there is a second thing to put there, the side could hold several items
+  as tiles (one at a time, tabs in the side's band, layout remembered per main mode), in the manner
+  of voluma's workflow tiles. Mock: https://claude.ai/artifact/Nfaxgs5Cm13GvLThxCUoJ1; design:
+  `/home/jimyao/.meridian/git/voluma-bio-docs/work/workflow-authoring/TILES.md`. Nothing built.
+  The side's rules carry over to any such UI: what each tile shows is browser-level (per tab)
+  state, independent of the panes; which tiles appear, and how they are arranged, follows what is
+  in main.

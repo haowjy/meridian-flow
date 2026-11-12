@@ -69,11 +69,7 @@ import {
   addressedDocument,
   ProjectAddressDocument,
 } from "./ProjectAddressDocument";
-import {
-  besideHintOf,
-  ProjectNavigationProvider,
-  type TrashNavigation,
-} from "./ProjectNavigationContext";
+import { ProjectNavigationProvider, type TrashNavigation } from "./ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import {
   addressLineage,
@@ -861,7 +857,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
             project={project}
             projectId={projectId}
             chatDisplay={chat.display}
-            besideChatId={besideHintOf(location.state)?.chatId ?? null}
             entryHydration={entryHydration}
             routeLocationKey={location.state.__TSR_key ?? location.href}
             routeIssues={{

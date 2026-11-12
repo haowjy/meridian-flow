@@ -2054,8 +2054,8 @@ msgid "Couldn't find {source}."
 msgstr ""
 
 #: src/features/project/side/SideHeader.tsx
-msgid "Couldn't find what goes with this."
-msgstr ""
+#~ msgid "Couldn't find what goes with this."
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't finish that step"
@@ -3009,6 +3009,7 @@ msgid "Filter subagents"
 msgstr "筛选子代理"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/side/SidePicker.tsx
 msgid "Find a chat"
 msgstr ""
 
@@ -3021,8 +3022,12 @@ msgid "Find a document or chat"
 msgstr ""
 
 #: src/features/project/side/SideHeader.tsx
-msgid "Finding what goes with this…"
+msgid "Finding a document…"
 msgstr ""
+
+#: src/features/project/side/SideHeader.tsx
+#~ msgid "Finding what goes with this…"
+#~ msgstr ""
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
@@ -3659,8 +3664,8 @@ msgid "Mention {0}"
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Mentioned"
-msgstr ""
+#~ msgid "Mentioned"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Merge cells"
@@ -3953,6 +3958,7 @@ msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/side/SidePicker.tsx
 msgid "No chats match “{search}”."
 msgstr ""
 
@@ -4409,8 +4415,8 @@ msgid "Previous change"
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
-msgid "Previous chapter"
-msgstr ""
+#~ msgid "Previous chapter"
+#~ msgstr ""
 
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/SettingsDialog.tsx

@@ -12,7 +12,6 @@ import type { Work } from "@meridian/contracts/protocol";
 import type { ReactNode } from "react";
 import { ChatPlaceContext } from "@/features/chat/chat-place";
 import { cn } from "@/lib/utils";
-import { OpenedFromChat } from "../routing/ProjectNavigationContext";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { pageSheetClass } from "../shell/tab-chip";
 import { useNewChatAbout } from "../side/SideView";
@@ -66,21 +65,18 @@ export function ChatSurface({
           presentation === "desktop" && pageSheetClass(place === "side"),
         )}
       >
-        {/* Every open made inside this chat keeps it beside what it opens. */}
-        <OpenedFromChat chatId={threadId}>
-          <ChatPlaceContext.Provider value={place}>
-            <ChatScreen
-              projectId={projectId}
-              threadId={threadId}
-              about={about}
-              onAboutChange={place === "side" ? reportAbout : undefined}
-              activeWork={activeWork}
-              availableWorks={availableWorks}
-              onOpenContextTarget={onOpenContextTarget}
-              visible={visible}
-            />
-          </ChatPlaceContext.Provider>
-        </OpenedFromChat>
+        <ChatPlaceContext.Provider value={place}>
+          <ChatScreen
+            projectId={projectId}
+            threadId={threadId}
+            about={about}
+            onAboutChange={place === "side" ? reportAbout : undefined}
+            activeWork={activeWork}
+            availableWorks={availableWorks}
+            onOpenContextTarget={onOpenContextTarget}
+            visible={visible}
+          />
+        </ChatPlaceContext.Provider>
       </div>
     </div>
   );
