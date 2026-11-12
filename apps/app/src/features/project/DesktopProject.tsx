@@ -18,6 +18,7 @@ import { useMainTabs } from "@/client/project-shell/main-tabs";
 import { useTrashedDocument } from "@/client/query/useDocumentTrash";
 import type { OpenDocument } from "@/client/stores";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
+import { cn } from "@/lib/utils";
 import { ChatPaneController } from "./ChatPaneController";
 import { ChatSurface } from "./chat/ChatSurface";
 import { useAccountId, useShownDocuments } from "./context/account-feature-context";
@@ -44,6 +45,7 @@ import { MainHeader } from "./shell/MainHeader";
 import { UntabbedChip, useMainTabCommands } from "./shell/MainTabStrip";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
+import { pageSheetClass } from "./shell/tab-chip";
 import { ClosedSideButton } from "./side/ClosedSideButton";
 import { SideChatHeader, SideDocumentHeader, SideEmptyHeader } from "./side/SideHeader";
 import { useChatOnScreen, useHostChatId, useSideItem, useSideRevealed } from "./side/SideView";
@@ -328,11 +330,13 @@ function SideEmpty({ projectId }: { projectId: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SideEmptyHeader projectId={projectId} />
-      {pending || failed ? null : (
-        <p className="m-auto max-w-56 px-4 text-center text-xs text-muted-foreground">
-          <Trans>A document you open shows here beside the chat.</Trans>
-        </p>
-      )}
+      <div className={cn(pageSheetClass(true), "flex min-h-0 flex-1")}>
+        {pending || failed ? null : (
+          <p className="m-auto max-w-56 px-4 text-center text-xs text-muted-foreground">
+            <Trans>A document you open shows here beside the chat.</Trans>
+          </p>
+        )}
+      </div>
     </div>
   );
 }
