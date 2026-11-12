@@ -154,7 +154,8 @@ function refreshed(tabs: readonly MainTab[], at: number, tab: MainTab): readonly
 
 /**
  * Closes a tab. Returns the tab main should show in its place when it was main's (its right
- * neighbour, else its left), or null when none is left or it was not main's.
+ * neighbour, else its left, among `drawn`: the tabs the strip shows, not the whole record), or null
+ * when none is left or it was not main's.
  */
 export function closeMainTab(
   accountId: string,
@@ -162,14 +163,15 @@ export function closeMainTab(
   kind: MainTabKind,
   key: string,
   mainKey: string | null,
+  drawn: readonly MainTab[],
 ): MainTab | null {
   const current = readMainTabs(accountId, projectId)[kind];
-  const at = current.tabs.findIndex((member) => mainTabKey(member) === key);
-  if (at < 0) return null;
-  const tabs = current.tabs.filter((_, i) => i !== at);
-  const next = key === mainKey ? (tabs[at] ?? tabs[at - 1] ?? null) : null;
+  if (!current.tabs.some((member) => mainTabKey(member) === key)) return null;
+  const shown = drawn.filter((member) => mainTabKey(member) !== key);
+  const at = drawn.findIndex((member) => mainTabKey(member) === key);
+  const next = key === mainKey ? (shown[at] ?? shown[at - 1] ?? null) : null;
   writeLane(accountId, projectId, kind, {
-    tabs,
+    tabs: current.tabs.filter((member) => mainTabKey(member) !== key),
     selected: current.selected === key ? null : current.selected,
   });
   return next;

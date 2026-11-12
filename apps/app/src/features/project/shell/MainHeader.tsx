@@ -12,6 +12,7 @@ import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { RemovedDocumentChip, RemovedNoticeSlot } from "../context/RemovedDocumentNotice";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
+import type { ProjectRouteCommands } from "../routing/project-route";
 import { MainTabMenu, MainTabStrip } from "./MainTabStrip";
 import { PaneHeader, type PaneHeaderRailToggle } from "./PaneHeader";
 import { tabChipClass } from "./tab-chip";
@@ -42,7 +43,7 @@ export function MainHeader({
   keepMain?: boolean;
   /** Main's item when it takes no tab (an address that names nothing, the Trash). */
   current?: ReactNode;
-  onShowRecents: (options: { replace: boolean }) => Promise<void>;
+  onShowRecents: ProjectRouteCommands["showEditorRecents"];
   /** Absent while no Work is ready to hold an Untitled document. */
   onNew?: () => void;
   sidebarToggle: PaneHeaderRailToggle;

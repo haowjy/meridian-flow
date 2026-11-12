@@ -28,7 +28,6 @@ import {
   type MainTab,
   type MainTabKind,
   mainTabKey,
-  readMainTabs,
 } from "@/client/project-shell/main-tabs";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { OpenDocument } from "@/client/stores";
@@ -51,6 +50,7 @@ import { tabSubject } from "../context/tab-subject";
 import { useIsDraftOnly } from "../context/use-is-draft-only";
 import { useChatNavigation } from "../routing/chat-navigation";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
+import type { ProjectRouteCommands } from "../routing/project-route";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
 import { useDocumentPaint } from "../views";
 import { tabChipClass } from "./tab-chip";
@@ -71,11 +71,13 @@ export function useMainTabCommands({
   open: OpenContextRoute;
   /** The tab main shows; null while main holds no tab. */
   mainKey: string | null;
-  onShowRecents: (options: { replace: boolean }) => Promise<void>;
+  onShowRecents: ProjectRouteCommands["showEditorRecents"];
 }) {
   const accountId = useAccountId();
   const openInMain = useOpenInMain(projectId, open);
   const chat = useChatNavigation();
+  const { lanes } = useLiveTabs(projectId);
+  const lane = lanes[kind];
   const select = useCallback(
     (tab: MainTab, options?: { replace: boolean }) => {
       if (tab.kind === "document") void openInMain(tab.document, options);
@@ -96,7 +98,7 @@ export function useMainTabCommands({
     select,
     close: (tab: MainTab) => {
       const key = mainTabKey(tab);
-      const next = closeMainTab(accountId, projectId, kind, key, mainKey);
+      const next = closeMainTab(accountId, projectId, kind, key, mainKey, lane.tabs);
       if (key === mainKey) show(next);
     },
     /** Main goes to the lane's empty page unless it is there already. */
@@ -108,7 +110,7 @@ export function useMainTabCommands({
     },
     /** Main's item holds no tab: main goes to the tab it showed last, else the empty page. */
     closeMain: () => {
-      const { tabs, selected } = readMainTabs(accountId, projectId)[kind];
+      const { tabs, selected } = lane;
       show(tabs.find((tab) => mainTabKey(tab) === selected) ?? tabs.at(-1) ?? null);
     },
   };
@@ -131,7 +133,7 @@ export function MainTabStrip({
   mainTab?: MainTab;
   /** Main's item when it takes no tab (a removed page, the Trash), drawn as the active chip after the tabs. */
   current?: ReactNode;
-  onShowRecents: (options: { replace: boolean }) => Promise<void>;
+  onShowRecents: ProjectRouteCommands["showEditorRecents"];
   /** Absent while nothing can be created (documents: no Work is ready to hold an Untitled one). */
   onNew?: () => void;
 }) {
@@ -246,7 +248,7 @@ export function MainTabMenu({
   mainTab?: MainTab;
   /** Close all leaves main's item where it is: the lane's empty page is the goal. */
   keepMain: boolean;
-  onShowRecents: (options: { replace: boolean }) => Promise<void>;
+  onShowRecents: ProjectRouteCommands["showEditorRecents"];
 }) {
   const mainKey = mainTab ? mainTabKey(mainTab) : null;
   const { tabs, unrecorded } = useDrawnTabs(projectId, kind, mainTab);
@@ -351,8 +353,8 @@ function ChatMenuItem({
 
 /** The lane's tabs the strip draws: the live record, then main's item when it lacks one. */
 function useDrawnTabs(projectId: string, kind: MainTabKind, mainTab?: MainTab) {
-  const { tabs, project } = useLiveTabs(projectId);
-  const lane = tabs[kind];
+  const { lanes, project } = useLiveTabs(projectId);
+  const lane = lanes[kind].tabs;
   const mainKey = mainTab ? mainTabKey(mainTab) : null;
   const unrecorded =
     mainTab && mainTab.kind === kind && !lane.some((tab) => mainTabKey(tab) === mainKey)

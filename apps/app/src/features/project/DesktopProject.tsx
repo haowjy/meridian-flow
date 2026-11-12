@@ -50,7 +50,7 @@ import { SideChatHeader, SideDocumentHeader, SideEmptyHeader } from "./side/Side
 import {
   useChatOnScreen,
   useHostChatId,
-  useShellCommands,
+  usePlace,
   useSideItem,
   useSideRevealed,
 } from "./side/SideView";
@@ -329,7 +329,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
 /** The side with nothing to show: a document is still being found, or none is open. */
 function SideEmpty({ projectId }: { projectId: string }) {
   const { pending, failed } = useSideItem();
-  const { swapSide } = useShellCommands(projectId);
+  const place = usePlace();
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SideEmptyHeader projectId={projectId} />
@@ -339,7 +339,7 @@ function SideEmpty({ projectId }: { projectId: string }) {
           <div className="flex min-h-0 min-w-0 flex-1 p-1.5">
             <DocumentChoices
               projectId={projectId}
-              choose={(documentId) => swapSide({ kind: "document", documentId })}
+              choose={(documentId) => place({ kind: "document", documentId })}
             />
           </div>
         )}

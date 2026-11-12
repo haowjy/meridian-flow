@@ -1,11 +1,12 @@
 import { t } from "@lingui/core/macro";
 import { MessageSquare, PenLine } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { mainTabKey, readMainTabs } from "@/client/project-shell/main-tabs";
+import { useRef, useState } from "react";
+import { useLiveTabs } from "@/client/project-shell/live-tabs";
+import { mainTabKey } from "@/client/project-shell/main-tabs";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
-import { useAccountId } from "../context/account-feature-context";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useOpenContextRoute, useProjectRouteCommands } from "../routing/ProjectNavigationContext";
+import type { NavigationSettlement } from "../routing/project-navigation";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
 import { useSideItem } from "../side/SideView";
 import { swapPanes } from "./pane-swap";
@@ -29,37 +30,27 @@ export function MainModeSwitch({
   onSwitched?: () => void;
   className?: string;
 }) {
-  const accountId = useAccountId();
   const chat = useChatNavigation();
   const open = useOpenContextRoute();
   if (!open) throw new Error("The Write | Chat switch needs a project route");
   const openInMain = useOpenInMain(projectId, open);
   const { showEditorRecents } = useProjectRouteCommands();
+  const { lanes } = useLiveTabs(projectId);
   const side = useSideItem();
   const beside = side.item;
   const mode: MainMode = chat.display ? "chat" : "write";
+  // The mode last pressed, shown until its navigation settles; a newer press takes over.
   const [pressed, setPressed] = useState<MainMode | null>(null);
-  // Ends the swap's transition once the new layout is committed, or the switch gave up.
-  const endSwap = useRef<(() => void) | null>(null);
-  const settle = () => {
-    endSwap.current?.();
-    endSwap.current = null;
-    setPressed(null);
-  };
-  useEffect(() => {
-    if (pressed === mode) settle();
-  });
+  const latestPress = useRef(0);
 
-  /** Moves main; false when the navigation did not land (refused, superseded, failed). */
-  const go = async (next: MainMode): Promise<boolean> => {
-    const lane = readMainTabs(accountId, projectId)[next === "chat" ? "chat" : "document"];
+  const go = (next: MainMode): Promise<NavigationSettlement> => {
+    const lane = lanes[next === "chat" ? "chat" : "document"];
     const selected = lane.tabs.find((member) => mainTabKey(member) === lane.selected);
     if (next === "chat") {
       const chatId = beside?.kind === "chat" ? beside.chatId : null;
-      if (chatId) await chat.openChat(chatId);
-      else if (selected?.kind === "chat") await chat.openChat(selected.chatId);
-      else await chat.openNewChat();
-      return true;
+      if (chatId) return chat.openChat(chatId);
+      if (selected?.kind === "chat") return chat.openChat(selected.chatId);
+      return chat.openNewChat();
     }
     const document =
       beside?.kind === "document" && side.document
@@ -67,11 +58,7 @@ export function MainModeSwitch({
         : selected?.kind === "document"
           ? selected.document
           : null;
-    if (!document) {
-      await showEditorRecents({ replace: false });
-      return true;
-    }
-    return (await openInMain(document)).kind === "applied";
+    return document ? openInMain(document) : showEditorRecents({ replace: false });
   };
 
   return (
@@ -85,19 +72,19 @@ export function MainModeSwitch({
         { value: "chat", label: t`Chat`, icon: MessageSquare },
       ]}
       onChange={(next) => {
+        const press = ++latestPress.current;
         setPressed(next);
         // Main's move holds the thread for a few frames: it starts after the switch has painted.
-        // A landed switch lets go once main's item says the same; one that didn't, at once.
         requestAnimationFrame(() =>
-          setTimeout(() =>
-            swapPanes((done) => {
-              endSwap.current = done;
-              go(next).then(
-                (moved) => (moved ? onSwitched?.() : settle()),
-                () => settle(),
-              );
-            }),
-          ),
+          setTimeout(() => {
+            swapPanes(() => go(next))
+              .then((settled) => {
+                if (settled.kind === "applied") onSwitched?.();
+              })
+              .finally(() => {
+                if (latestPress.current === press) setPressed(null);
+              });
+          }),
         );
       }}
     />

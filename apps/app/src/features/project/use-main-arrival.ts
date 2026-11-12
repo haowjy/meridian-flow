@@ -4,10 +4,13 @@
  * the side reads, so a change of kind needs no swap code. Main's empty pages (the landing, the
  * new-chat composer) null their slot: the side never holds what main left empty.
  *
+ * It also closes the chat tabs of chats deleted elsewhere (`useDropGoneChatTabs`).
+ *
  * Placement follows `features/project/.context/pane-state-machine.md`: change that page's rules and
  * diagrams with any change here.
  */
 import { useEffect, useRef } from "react";
+import { useDropGoneChatTabs } from "@/client/project-shell/gone-chat-tabs";
 import {
   arriveMainTab,
   mainTabKey,
@@ -32,6 +35,7 @@ export function useMainArrival({
   document: OpenDocument | null;
   locationKey: string | undefined;
 }) {
+  useDropGoneChatTabs(accountId, projectId);
   // A document's arrival opens or selects its tab once per arrival at an address; after that its
   // descriptor only refreshes the tab while it is open.
   const arrivedAt = useRef<string | undefined>(undefined);

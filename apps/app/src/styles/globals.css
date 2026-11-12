@@ -990,7 +990,8 @@
 }
 
 /* The Write | Chat switch swaps the panes (`features/project/shell/pane-swap.ts`): each host glides
-   to its new place, and the new page shows throughout, so no text fades. A host's own enter
+   to its new place, and the new page shows throughout, so no text fades or scales: the image keeps
+   its size, anchored top-left, and the group's changing size clips it. A host's own enter
    animation is skipped while the flag is up. */
 @media (prefers-reduced-motion: no-preference) {
   html[data-pane-swap] [data-project-host] {
@@ -1003,7 +1004,14 @@
   html[data-pane-swap]::view-transition-old(*) {
     display: none;
   }
+  html[data-pane-swap]::view-transition-image-pair(*) {
+    overflow: hidden;
+  }
   html[data-pane-swap]::view-transition-new(*) {
     animation: none;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: none;
+    object-position: top left;
   }
 }

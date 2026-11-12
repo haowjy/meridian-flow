@@ -9,18 +9,35 @@
 /** How long the flag outlives the transition: the hosts' enter animation has finished by then. */
 const FLAG_LINGER_MS = 300;
 
+/**
+ * How long the screen may stay frozen on the old page while the navigation runs: the browser paints
+ * nothing until the transition's update callback settles. A navigation slower than this lands
+ * without the glide.
+ */
+const FREEZE_CAP_MS = 250;
+
 const hostName = (host: HTMLElement) =>
   `host-${(host.dataset.projectHost ?? "").replace(/\W/g, "_")}`;
 
+const noop = () => {};
+
+/** Transitions in flight or lingering: a second press must not lose the flag to the first. */
+let flagged = 0;
+
+/** The next commit React makes from work that just settled, or soon after if no frame comes. */
+const afterCommit = () =>
+  new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+    setTimeout(resolve, 50);
+  });
+
 /**
- * Runs `update`, which moves the panes and calls `done` once the new layout is committed, inside a
- * transition. `done` is called at most once; the transition ends when it has been.
+ * Runs `update`, which moves the panes, inside a transition and returns what it settles with. The
+ * transition ends at the commit after `update` settles, or after `FREEZE_CAP_MS`.
  */
-export function swapPanes(update: (done: () => void) => void): void {
-  if (!document.startViewTransition || matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    update(() => {});
-    return;
-  }
+export async function swapPanes<T>(update: () => Promise<T>): Promise<T> {
+  if (!document.startViewTransition || matchMedia("(prefers-reduced-motion: reduce)").matches)
+    return update();
   const hosts = [
     ...document.querySelectorAll<HTMLElement>(
       '[data-project-host][data-project-surface-state="active"]',
@@ -29,19 +46,27 @@ export function swapPanes(update: (done: () => void) => void): void {
   for (const host of hosts) host.style.viewTransitionName = hostName(host);
   const root = document.documentElement;
   root.dataset.paneSwap = "";
-  const transition = document.startViewTransition(
-    () =>
-      new Promise<void>((resolve) =>
-        update(() => {
-          // A host the swap parks has no new rect to glide to: it goes without an animation.
-          for (const host of hosts)
-            if (host.dataset.projectSurfaceState === "parked") host.style.viewTransitionName = "";
-          resolve();
-        }),
-      ),
-  );
-  void transition.finished.finally(() => {
-    for (const host of hosts) host.style.viewTransitionName = "";
-    setTimeout(() => delete root.dataset.paneSwap, FLAG_LINGER_MS);
+  flagged += 1;
+  let result: Promise<T> | undefined;
+  const transition = document.startViewTransition(async () => {
+    result = update();
+    await Promise.race([
+      result.then(afterCommit, noop),
+      new Promise((resolve) => setTimeout(resolve, FREEZE_CAP_MS)),
+    ]);
+    // A host the swap parks has no new rect to glide to: it goes without an animation.
+    for (const host of hosts)
+      if (host.dataset.projectSurfaceState === "parked") host.style.viewTransitionName = "";
   });
+  // A transition a newer press skipped rejects these; its update has run all the same.
+  void transition.ready.catch(noop);
+  void transition.finished.catch(noop).finally(() => {
+    for (const host of hosts) host.style.viewTransitionName = "";
+    setTimeout(() => {
+      flagged -= 1;
+      if (flagged === 0) delete root.dataset.paneSwap;
+    }, FLAG_LINGER_MS);
+  });
+  await transition.updateCallbackDone.catch(noop);
+  return result as Promise<T>;
 }

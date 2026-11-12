@@ -1,6 +1,6 @@
 /**
  * The side's state for one project view: what it shows (`useSideItem`), which chat is on screen,
- * and the swap command (`useShellCommands`). Both shells read it: the phone's side is its sheet.
+ * and the placement command. Both shells read it: the phone's side is its sheet.
  *
  * The side shows the slot of the kind main is not (`resolveSide`, `side-item.ts`). A pick or a link
  * into the side writes its kind's slot, stored per browser tab (`client/project-shell/store.ts`),
@@ -38,8 +38,10 @@ import {
   useShownDocuments,
 } from "../context/account-feature-context";
 import { openDocumentFromDraftGroup } from "../context/open-document-from-draft";
+import { projectResourceDocument } from "../context/open-document-from-file";
 import { useDescribeProjectDocument } from "../context/open-project-document";
 import { recentOpening } from "../context/recent-opening";
+import { useIsDraftOnly } from "../context/use-is-draft-only";
 import { useRecordOpenedDocument } from "../context/use-record-opened-document";
 import { type PanePlace, useOptionalPanePlace } from "../pane-place";
 import { useChatNavigation } from "../routing/chat-navigation";
@@ -123,7 +125,8 @@ function useDescriptions(projectId: string): Descriptions {
   const asked = useRef(new Set<string>());
   // "Cannot open" holds only while the document stays as it was then: a trashed document that
   // is restored opens again.
-  const { records } = useAccountResourceProjection(projectId);
+  const { records, placement } = useAccountResourceProjection(projectId);
+  const isDraftOnly = useIsDraftOnly(projectId);
   const lifecycleOf = (documentId: string) =>
     records.find((record) => record.resource.identity.documentId === documentId)?.resource.lifecycle
       .kind ?? null;
@@ -190,7 +193,19 @@ function useDescriptions(projectId: string): Descriptions {
     () => ({
       read: (document) => {
         const mounted = shown.find((tab) => tab.documentId === document.documentId);
-        if (mounted) return { status: "ready", document: mounted };
+        if (mounted) {
+          // A document deleted or removed while it sits here no longer opens: the side is empty.
+          const { kind } = projectResourceDocument(
+            mounted,
+            records,
+            placement,
+            isDraftOnly(mounted.documentId),
+          );
+          return {
+            status: "ready",
+            document: kind === "terminal" || kind === "removed" ? null : mounted,
+          };
+        }
         const key = describeKey(document);
         const known = answers.get(key);
         if (known === undefined) return { status: "pending" };
@@ -206,7 +221,7 @@ function useDescriptions(projectId: string): Descriptions {
       },
       request,
     }),
-    [shown, answers, request, store],
+    [shown, answers, request, store, records, placement, isDraftOnly],
   );
 }
 
@@ -277,8 +292,8 @@ export function SideViewProvider({
   const mainRef = useRef(main);
   mainRef.current = main;
   const place = useCallback<Place>(
-    (item, from, draft) => {
-      const pane = placeIn(item.kind, mainRef.current, from);
+    (item, draft) => {
+      const pane = placeIn(item.kind, mainRef.current);
       if (pane === "main") return pane;
       if (item.kind === "document") {
         if (draft) setDocumentView(accountId, projectId, item.documentId, { pin: draft });
@@ -385,42 +400,48 @@ export function useNewChatAbout(): {
   return { about: newChatAbout, report: reportNewChatAbout };
 }
 
-/** What `place` opens: a link's target, with the Work a document link names. */
+/** What `place` opens: a link's target, with the Work a document link names; a null chat is the side's new chat. */
 export type PlacedItem =
   | { kind: "document"; documentId: string; workId?: string }
-  | { kind: "chat"; chatId: string };
+  | { kind: "chat"; chatId: string | null };
 
 /**
- * The one placement command: where `item` opens, from a pane or the left sidebar (`placeIn`). It
- * returns the pane. For the side it has already written the slot (and the draft the document shows)
- * and had the side seen; for main the caller opens the item, since only it knows how (a live page, a
- * draft, a chat).
+ * The one placement command: where `item` opens (`placeIn`). It returns the pane. For the side it
+ * has already written the slot (and the draft the document shows) and had the side seen; for main
+ * the caller opens the item, since only it knows how (a live page, a draft, a chat).
  */
 export type Place = (
   item: PlacedItem,
-  from: PanePlace | "sidebar",
   /** With a document, the draft it shows. */
   draft?: DraftPin,
 ) => PanePlace;
 
-/** `place` from the pane this surface is drawn in; null outside the project view. */
-export function useOptionalPlaceHere(): ((item: PlacedItem, draft?: DraftPin) => PanePlace) | null {
+/** The placement command; the side's picker and empty list choose through it too. */
+export function usePlace(): Place {
+  return useSideView().place;
+}
+
+/**
+ * `place` for a surface that follows links: outside a pane (the left sidebar) there is nothing to
+ * place beside, so an open goes to main. Null outside the project view.
+ */
+export function useOptionalPlaceHere(): Place | null {
   const place = useContext(SideViewContext)?.place;
-  const from = useOptionalPanePlace() ?? "sidebar";
-  return useMemo(() => (place ? (item, draft) => place(item, from, draft) : null), [place, from]);
+  const inPane = useOptionalPanePlace() !== null;
+  return place ? (inPane ? place : () => "main") : null;
 }
 
 /**
  * Opens a chat from a pane (a link, a door, a reveal): in the side or in main. The one entrance for
- * `ChatThreadNavigation` and the conversation reveal.
+ * `ChatThreadNavigation` and the conversation reveal. `from` is null outside a pane (the sidebar).
  */
 export function usePlaceChat(): (threadId: string, from: PanePlace | undefined) => void {
   const place = useSideView().place;
   const { openChat } = useChatNavigation();
   return useCallback(
     (threadId, from) => {
-      if (place({ kind: "chat", chatId: threadId }, from ?? "sidebar") === "main")
-        void openChat(threadId);
+      if (from && place({ kind: "chat", chatId: threadId }) === "side") return;
+      void openChat(threadId);
     },
     [place, openChat],
   );
@@ -434,21 +455,4 @@ export function useSideRevealed(): number {
 /** Whether documents open beside, as the side's rule describes them. */
 export function useSideDescriptions(): Descriptions {
   return useSideView().descriptions;
-}
-
-/** The shell's command for the side. It writes neither main nor history. */
-export function useShellCommands(projectId: string): {
-  /** Swaps what the side shows: writes the current chat or document. */
-  swapSide(item: Item): void;
-} {
-  const accountId = useAccountId();
-  return useMemo(
-    () => ({
-      swapSide: (item) =>
-        item.kind === "chat"
-          ? writeLastShownChat(accountId, projectId, item.chatId)
-          : writeLastShownDocument(accountId, projectId, { documentId: item.documentId }),
-    }),
-    [accountId, projectId],
-  );
 }
