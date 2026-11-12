@@ -4,6 +4,7 @@ import {
   captureEditFrontier,
   captureEditParts,
   type EditTarget,
+  heldDeletes,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TreeChange, TurnId, UserId } from "@meridian/contracts";
 import {
@@ -101,18 +102,24 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
   }
   return edit.id;
 }
-/** Authoritative pre-write state plus transaction deltas, never a state-vector diff. */
+/**
+ * Authoritative pre-write state plus transaction deltas, never a state-vector diff. A delete of
+ * an item the room had already deleted when the row applied is not the row's effect, whether the
+ * author read a stale view or the writer's delete landed after the call.
+ */
 export function captureReceiptRows(
   doc: Y.Doc,
   rows: readonly { update: Uint8Array; origin: EditOrigin }[],
-): ReceiptWrite["receipts"] {
+): (ReceiptWrite["receipts"][number] & { held: ReadonlySet<string> })[] {
   const receipts = rows.map((row) => {
     const frontier = captureEditFrontier(doc);
+    const held = heldDeletes(doc, row.update, Y.decodeStateVector(Y.encodeStateVector(doc)));
     Y.applyUpdate(doc, row.update);
-    return { ...row, frontier };
+    return { ...row, frontier, held };
   });
   return receipts.map((receipt, i) => ({
     ...captureEditParts(doc, [receipt])[0],
     origin: rows[i].origin,
+    held: receipt.held,
   }));
 }

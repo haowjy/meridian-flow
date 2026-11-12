@@ -19,7 +19,7 @@ import {
   type TextWindow,
 } from "./find.js";
 import { type HashLocateContext, hashLocateContext, locateBlockByHash } from "./hash-locator.js";
-import { isFlatTextblock, lowerBlock } from "./lower-block.js";
+import { lowerBlock } from "./lower-block.js";
 import {
   type BlockScope,
   resolveScope,
@@ -65,11 +65,6 @@ export interface ResolveWriteContext {
   links: WriteLinks;
   /** Exact revision whose live block handles and source ranges the resolver inspects. */
   inputRevision?: string;
-  /**
-   * The current room when `doc` is the model's view of it. A flat text block rewritten in
-   * place is then decided against what the room deleted since the view (`lower-block.ts`).
-   */
-  current?: DocHandle;
 }
 
 /** Ref assignment for a write, or `"preassigned"` for nodes whose refs are already assigned. */
@@ -80,8 +75,6 @@ export type ResolveWriteResult =
       ok: true;
       edits: ResolvedEdit[];
       ir: SemanticEditIRV1;
-      /** Changes not made because the room deleted text they change or sit in. */
-      skipped?: number;
     }
   | {
       ok: false;
@@ -163,7 +156,6 @@ export function planWrite(
         ok: true,
         edits: resolved.edits,
         ir: semanticIrForResolvedEdits(concreteCtx, normalized, resolved),
-        ...(resolved.skipped > 0 ? { skipped: resolved.skipped } : {}),
       };
     },
   };
@@ -215,7 +207,6 @@ function assignPlannedWrite(
   links: WriteLinks,
 ): ResolveWriteResultWithoutIr {
   const edits: ResolvedEdit[] = [];
-  let skipped = 0;
   let keptBlocks = false;
   for (const step of steps) {
     switch (step.kind) {
@@ -237,19 +228,16 @@ function assignPlannedWrite(
           step.kind === "spliced" ? step.windows : null,
         );
         edits.push(...lowered.edits);
-        skipped += lowered.skipped;
         keptBlocks ||= lowered.keptBlocks === true;
         break;
       }
     }
   }
-  return { ok: true, edits, skipped, ...(keptBlocks ? { keptBlocks: true } : {}) };
+  return { ok: true, edits, ...(keptBlocks ? { keptBlocks: true } : {}) };
 }
 
 interface LoweredScope {
   edits: ResolvedEdit[];
-  /** Changes not made because the room deleted text they change or sit in. */
-  skipped: number;
   /** Some of the scope's blocks were already equal to their replacement and kept. */
   keptBlocks?: true;
 }
@@ -611,7 +599,7 @@ function planSplicedGroup(
  * Rewrite a scope as assigned `newBlocks`: blocks equal to their replacement are
  * left alone, a changed block keeps its identity and is changed in place, and
  * only blocks with no counterpart are inserted or removed. Atoms (pictures,
- * hard breaks) are matched as nodes, never through flat text offsets. With
+ * hard breaks) are units of their textblock, matched as nodes, never as text. With
  * `windows`, a changed block is rewritten only inside them; otherwise it is
  * word-diffed whole.
  */
@@ -623,7 +611,6 @@ function replaceScope(
   windows: CutWindows | null = null,
 ): LoweredScope {
   const edits: ResolvedEdit[] = [];
-  let skipped = 0;
   const oldBlocks = scope.blocks;
   const oldNodes = scopeNodes(ctx, scope);
   let anchor: BlockRef | undefined =
@@ -678,8 +665,7 @@ function replaceScope(
         const before = oldNodes[step.old];
         const after = newBlocks[step.next];
         const lowered = lowerBlock(
-          ctx,
-          oldBlocks[step.old],
+          ctx.codec,
           before,
           after,
           windows && [windows.old[step.old], windows.new[step.next]],
@@ -687,8 +673,7 @@ function replaceScope(
         anchor = oldBlocks[step.old];
         insertionRun = {};
         if (lowered) {
-          skipped += lowered.skipped;
-          if (lowered.ops.length === 0) keptBlocks = true;
+          if (lowered.length === 0) keptBlocks = true;
           else
             edits.push({
               documentId: params.documentAddress.documentId,
@@ -696,7 +681,7 @@ function replaceScope(
               block: oldBlocks[step.old],
               structuralBoundary: step.structuralBoundary,
               kind: "ops",
-              ops: lowered.ops,
+              ops: lowered,
             });
           break;
         }
@@ -720,20 +705,12 @@ function replaceScope(
   }
   flushStructural();
 
-  return { edits, skipped, ...(keptBlocks ? { keptBlocks: true } : {}) };
+  return { edits, ...(keptBlocks ? { keptBlocks: true } : {}) };
 }
 
-/**
- * A block keeps its element as the same node type. A heading's level changes in place only
- * where the lowering sets it as an attribute; any other heading is replaced to change level.
- */
+/** A block keeps its element only as the same node type. */
 function canRewriteInPlace(old: Block, next: Block): boolean {
-  if (old.type !== next.type) return false;
-  return (
-    old.type.name !== "heading" ||
-    old.attrs.level === next.attrs.level ||
-    (isFlatTextblock(old) && isFlatTextblock(next))
-  );
+  return old.type === next.type;
 }
 
 function serializeReplacementBlocks(
@@ -768,7 +745,7 @@ function semanticIrForResolvedEdits(
       for (const op of edit.ops) {
         if (op.kind !== "text") continue;
         for (const splice of op.splices) {
-          deleted.push(...sliceLineage(lineage, splice.from, splice.to));
+          deleted.push(...ctx.model.textblockLineage(edit.block, op.path, splice.from, splice.to));
           const text = splice.content.textBetween(0, splice.content.size, "");
           if (text.length > 0)
             outputRuns.push({
@@ -838,24 +815,6 @@ function sameLineageRanges(left: readonly LineageRange[], right: readonly Lineag
         range.length === right[index]?.length,
     )
   );
-}
-
-function sliceLineage(lineage: readonly LineageRange[], from: number, to: number): LineageRange[] {
-  const slices: LineageRange[] = [];
-  let cursor = 0;
-  for (const range of lineage) {
-    const start = Math.max(from, cursor);
-    const end = Math.min(to, cursor + range.length);
-    if (start < end) {
-      slices.push({
-        clientID: range.clientID,
-        clock: range.clock + start - cursor,
-        length: end - start,
-      });
-    }
-    cursor += range.length;
-  }
-  return slices;
 }
 
 /** The revision a semantic IR names: the document's state vector, in hex. */

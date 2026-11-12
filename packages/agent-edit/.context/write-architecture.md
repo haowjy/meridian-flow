@@ -22,54 +22,66 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   plus insert ([#111](https://github.com/haowjy/meridian-flow/issues/111)).
 - A find write rewrites only its matches. It splices the content into the serialized
   block group, reparses it, and replaces each match's text window whole at its
-  position (`cutTextWindows`); a block that isn't a single run of text is block-diffed
-  instead, and a find whose windows can't be mapped is word-diffed.
-- A write is planned on the model's view, so a block it rewrites in place may have
-  lost text in the room since (the writer deleted it). A flat text block
-  (`isFlatTextblock`: a paragraph or heading that is one run of text) is lowered by
-  `lowerBlock` (`resolver/lower-block.ts`) into operations (`EditOp`): text splices with
-  format ranges, and attribute sets (a heading's level). They are decided against those
-  deletions (`roomTextblock`, `roomNodeRemoved` on the model port); every other block
-  lowers as a whole-block rewrite as if there were no room. A unit is one UTF-16 code
-  unit. The model's changes come from a find's window when it holds no deleted unit,
-  otherwise from a token diff in which a Chinese or Japanese character is one token, a
-  run of other letters is one (so a spaceless Thai phrase is one), and formatting is not
-  part of a token. The rule: an operation whose target is gone is not made and is
-  counted (`skipped` in the result). A replace lands only if every unit it replaces
-  survives; an insert lands unless it sits in deleted text; a delete deletes whatever is
-  left; a format range lands if one of its units survives; an attribute set lands if the
-  block does; no deleted unit is put back. An attribute the codec does not write is never
-  set: the model's block is compared with what the codec shows of the block it saw.
-- What that guarantees, for a flat text block, and no more:
-  - The write's update neither deletes nor re-inserts any unit the room deleted.
-  - The model's new text lands only in place of units that all survive, after a find
-    match whose last unit survives, or as a diff-placed insert with a surviving unit, or
-    the block's end, on at least one side.
-  - A change not made is counted in the result and never marked.
+  position (`cutTextWindows`); a find whose windows can't be mapped is word-diffed, and a
+  block the lowering does not keep (below) is block-diffed instead.
+- A write is planned on the model's view and never reads the room. `lowerBlock`
+  (`resolver/lower-block.ts`) lowers the rewrite of a block into operations (`EditOp`):
+  per textblock at any depth (a paragraph, heading, code block, or a paragraph in a
+  quote, list item or table cell), text splices with format ranges; per node at any depth,
+  attribute sets (a heading's level, a task item's `checked`, a code block's language);
+  and for an inline atom the model kept (an image, a line break), attribute sets
+  addressed by its unit. A unit is one UTF-16 code unit of text, or one inline atom. The
+  model's changes come from a find's window, otherwise from the word diff (`wordHunks`;
+  an atom is one token, compared by type, and a changed attribute is an attribute set;
+  formatting is not part of a token). A replace is not trimmed: the model's whole new text
+  is written. Every operation is made and Yjs merges it,
+  as for two people. The lowering never reads the room, so text the writer deleted since
+  the model's read is no input to it. The owner chose "the AI's whole word" and to
+  trust the model to notice an odd merge in the write's echo and its listing of concurrent
+  edits (`He sighedthen he cried.`, `AlphaGamma.`). A word the writer deleted that the
+  model's new text repeats comes back inside it (`sighed softly` over a deleted `sighed`
+  lands `He sighed softly,`). A trim of the shared edges would keep the deleted word out,
+  but loses model letters (`Gamma` over a deleted `Beta` lands `Gamm`); it was tried and
+  removed. The apply step never reads the room either: the update deletes what the model's
+  view held, including units the writer has since deleted, and Yjs merges it. The write's
+  record is made at save, where the journal takes `heldDeletes` of the room before the
+  update applies and `captureEditParts` drops those items from the part's `deleted`
+  (a stale read, or a writer's delete that landed between the call and the save). The record
+  and turn Undo therefore never claim the writer's deletion. An attribute the codec does
+  not write (`uploadToken`) is never set: the model's node is compared with what the codec
+  shows of the node it saw (a round trip of the top-level block), so a model edit to a
+  paragraph leaves an image whose upload is in flight alone.
+- Shapes `lowerBlock` does not keep return null and the block is rewritten whole, as if
+  there were no room: a node added, removed or retyped inside the block (a list item, a
+  table row, a quote paragraph; a paragraph made a heading), and an inline atom put into
+  the middle of a run of text (a verse line broken in two). An atom added or removed at
+  the edge of a run of text is an operation. Deleting an atom between two runs leaves
+  them as two adjacent `Y.XmlText` children, which the editor's binding never writes;
+  merging them would re-insert the writer's text as the model's, so they stay
+  (the minimal-ops design, section 6).
+- What that guarantees, for a block it keeps, and no more:
+  - The write's record holds only what the model changed in the room it merged into, so
+    Undo restores the writer's exact text.
+  - The model's new text lands where the model put it, even beside or in place of deleted
+    text, so pieces such as `the, steadily moving train` appear. Nothing marks or reports
+    them; the echo shows the merged text.
   - Words the writer deleted can still appear as the model's text: the model's new text
     may contain them, and when the model moved text past a deletion, the half of the
     move that lands can carry them (`First. Second. Third.`, `Second. ` deleted, written
-    as `Second. First. Third.`, gives `Second. Third.`, one skipped).
-- How it is applied: the room's deletions stay in the view and the landed changes lower
-  as exact splices. Never drop the deletions from the view and re-diff: the lowering's
-  character diff would then place the model's text at the dropped run's edge, where Yjs
+    as `Second. First. Third.`, gives `Second. Third.`).
+- The view keeps the room's deletions. Never drop them from the view and re-diff: the
+  word diff would then place the model's text at the dropped run's edge, where Yjs
   orders it against what the writer typed there by client id (`He  loudlygroaned.`).
-  That is why the rule stops at flat text until the operations reach nested blocks
-  ([#1363](https://github.com/haowjy/meridian-flow/issues/1363)).
-- What the rule does not cover:
-  - Quotes, lists, verse, paragraphs with a hard break or an image, code blocks and
-    tables lower exactly as without a room. A model change there that meets text the
+- What the lowering does not cover:
+  - A block the lowering does not keep (above): a model change there that meets text the
     writer deleted since its read can bring that text back, and an insert beside a
     deleted line can land split, by client id
     ([TODO](TODO.md#stale-view-writes-into-structural-blocks)).
   - A write that removes a block and adds another (merging or splitting top-level
     paragraphs, a paragraph turned into a heading): the writer's typing in the removed
     block goes, and text deleted from it can come back in the added one.
-  - The rule sees only what the writer deleted, never what they added. A model delete
-    can take letters the editor kept from an old sentence inside a pasted one, and
-    typing that deleted nothing merges as plain concurrent edits.
-  - A delete that lands after the call read its room
-    ([TODO](TODO.md#deletes-that-land-after-a-write-read-its-room)).
+  - Two changes the model makes to one word where the writer retyped it merge by client
+    id, as two people's concurrent typing does.
 - Equal serialized content does not preserve Yjs identity, tombstones or authorship,
   so rebuilding an existing replica from Markdown as a merge path loses all three.
 

@@ -16,7 +16,11 @@ export interface ContentLineage {
   length: number;
 }
 
-/** Replace units `[from, to)` of one textblock with inline `content`, applied as given. */
+/**
+ * Replace units `[from, to)` of one textblock with inline `content`, applied as given.
+ * `content` may hold inline atoms (a line break, an image) only where it lands between
+ * runs of text, never inside one.
+ */
 export interface TextSplice {
   from: number;
   to: number;
@@ -34,11 +38,17 @@ export interface FormatRange {
 /**
  * The smallest changes to one top-level block, each addressed to a node the model saw.
  * `path` is child indexes from that block down to the node, in the model's view; a unit
- * is one inline position of a textblock (a UTF-16 code unit of text).
+ * is one inline position of a textblock (a UTF-16 code unit of text, or an inline atom).
  */
 export type EditOp =
   | { kind: "text"; path: readonly number[]; splices: TextSplice[]; formats: FormatRange[] }
-  | { kind: "attrs"; path: readonly number[]; attrs: Record<string, unknown> };
+  | {
+      kind: "attrs";
+      path: readonly number[];
+      attrs: Record<string, unknown>;
+      /** Set for an inline atom: its unit in the textblock at `path`. */
+      unit?: number;
+    };
 
 export type EditOpsResult = { ok: true } | { ok: false; code: "invalid_write"; message: string };
 
@@ -76,6 +86,17 @@ export interface DocumentModel {
 
   /** Immutable CRDT identities for the currently visible prose units in this block. */
   getVisibleContentLineage(block: BlockRef): ContentLineage[];
+
+  /**
+   * Identities of the text in units [from, to) of the textblock at `path` under `block`, in
+   * the model's view; an inline atom is a unit with no identity.
+   */
+  textblockLineage(
+    block: BlockRef,
+    path: readonly number[],
+    from: number,
+    to: number,
+  ): ContentLineage[];
 
   /** Run a document transaction with the adapter/runtime's native origin. */
   transact(doc: DocHandle, fn: () => void, origin: unknown): void;
@@ -120,16 +141,6 @@ export interface AgentEditModel extends DocumentModel {
 
   /** Replace one same-type block's complete content while preserving its CRDT parent identity. */
   applyBlockReplacement(doc: DocHandle, block: BlockRef, replacement: Block): void;
-
-  /**
-   * Runs of units of the textblock at `path` under `block` that `current` has deleted, in
-   * order; all of them when the textblock or a node above it is deleted. The block's
-   * document is the model's view of `current`'s room, so the two share item identities.
-   */
-  roomTextblock(block: BlockRef, path: readonly number[], current: DocHandle): Span[];
-
-  /** Whether `current` has deleted the node at `path` under `block`, or a node above it. */
-  roomNodeRemoved(block: BlockRef, path: readonly number[], current: DocHandle): boolean;
 
   /**
    * Every top-level block with its display hash and ProseMirror node, built in one walk so

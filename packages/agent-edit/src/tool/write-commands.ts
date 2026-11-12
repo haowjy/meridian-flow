@@ -8,7 +8,7 @@ import { resolveOverwrite } from "../apply/overwrite.js";
 import type { ResolvedEdit } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
 import { createPlanningView, planningSnapshot } from "../frontier.js";
-import { type DocHandle, toDocHandle } from "../handles.js";
+import { toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import { getTopLevelXmlBlocks } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -340,7 +340,6 @@ export function createWriteCommands(deps: {
       const resolved = resolveOverwrite(
         {
           doc: toDocHandle(planDoc),
-          ...currentRoom(planDoc, room),
           model: options.model,
           codec: links.codec,
           links: boundNodes ? "preassigned" : assigner,
@@ -357,7 +356,7 @@ export function createWriteCommands(deps: {
           documentBlocksDetail(resolved.error.details),
         );
       }
-      if (resolved.edits.length === 0) return formatUnchangedSuccess(resolved.skipped);
+      if (resolved.edits.length === 0) return formatUnchangedSuccess();
       overwrite = resolved;
     }
     // Copies and bound nodes carry what they name; written content into an empty document is
@@ -378,7 +377,6 @@ export function createWriteCommands(deps: {
       docId: address.documentId,
       filePath: address.filePath,
       plan: overwrite ? { edits: overwrite.edits, ir: overwrite.ir } : { blocks: written.blocks },
-      ...(overwrite?.skipped ? { skipped: overwrite.skipped } : {}),
       creation: {
         createdDocument: context.createdDocument === true,
         ...(overwriting ? {} : { refuseUnlessEmpty: alreadyExists }),
@@ -430,7 +428,6 @@ export function createWriteCommands(deps: {
           const plan = planWrite(
             {
               doc: toDocHandle(planDoc),
-              ...currentRoom(planDoc, room),
               model: options.model,
               codec: links.codec,
             },
@@ -479,7 +476,7 @@ export function createWriteCommands(deps: {
             );
           }
           validateResolvedIr(resolved.ir, address.documentId, appliedPlanDoc);
-          if (resolved.edits.length === 0) return formatUnchangedSuccess(resolved.skipped);
+          if (resolved.edits.length === 0) return formatUnchangedSuccess();
           return finishPreparedEdit({
             command,
             session,
@@ -492,7 +489,6 @@ export function createWriteCommands(deps: {
             docId: address.documentId,
             filePath: address.filePath,
             plan: { edits: resolved.edits, ir: resolved.ir },
-            ...(resolved.skipped ? { skipped: resolved.skipped } : {}),
             ...(from && copiedNodes ? { copy: { from: from.path, edges: true } } : {}),
           });
         }),
@@ -516,8 +512,6 @@ export function createWriteCommands(deps: {
     plan: { edits: readonly ResolvedEdit[]; ir: SemanticEditIRV1 } | { blocks: readonly Block[] };
     creation?: { createdDocument: boolean; refuseUnlessEmpty?: InternalWriteResult };
     copy?: { from: string; edges: boolean };
-    /** Changes the plan did not make because the room deleted text they change or sit in. */
-    skipped?: number;
   }
 
   /** One acceptance boundary for every edit; report failures cannot enter its restoration path. */
@@ -618,7 +612,6 @@ export function createWriteCommands(deps: {
         preOwnSnapshot,
         semanticEditIr,
         copied,
-        ...(edit.skipped ? { skipped: edit.skipped } : {}),
         interactionContext,
         ...(context.frontiers?.reply ? { reply: context.frontiers.reply } : {}),
       });
@@ -690,7 +683,6 @@ export function createWriteCommands(deps: {
             touchedBlocks,
             deletedBlocks,
             copied,
-            ...(edit.skipped ? { skipped: edit.skipped } : {}),
           },
           planned,
           snapshotProjected(echoProjected, links.codec),
@@ -766,10 +758,6 @@ export function createWriteCommands(deps: {
   }
 
   /** A view lowers without what the room deleted since; the room copy is current already. */
-  function currentRoom(planDoc: Y.Doc, room: RoomCopy): { current?: DocHandle } {
-    return planDoc === room.doc ? {} : { current: toDocHandle(room.doc) };
-  }
-
   function hasMissingTarget(edits: readonly ResolvedEdit[], current: Y.Doc): boolean {
     const live = new Set(
       options.model.getBlocks(toDocHandle(current)).map((block) => {

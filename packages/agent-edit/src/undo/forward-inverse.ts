@@ -19,6 +19,7 @@ import {
   snapshotRedone,
 } from "../yjs-mutation.js";
 import { shouldDeleteUndoItem } from "./delete-filter.js";
+import { withoutClocks } from "./held-deletes.js";
 
 export interface EditRange {
   client: number;
@@ -124,7 +125,7 @@ function proseRanges(doc: Y.Doc, input: readonly EditRange[]): EditRange[] {
 }
 const find = (doc: Y.Doc, k: Key) => findItem(doc, parse(k)) ?? undefined;
 const inFragment = (doc: Y.Doc, item: Y.Item) => itemIsInFragment(doc, item, ROOT);
-function rawEffect(update: Uint8Array): EditEffect {
+function rawEffect(update: Uint8Array, held?: ReadonlySet<string>): EditEffect {
   const decoded = Y.decodeUpdate(update);
   return {
     inserted: normalizedRanges(
@@ -133,8 +134,11 @@ function rawEffect(update: Uint8Array): EditEffect {
         .map((s) => ({ client: s.id.client, clock: s.id.clock, len: s.length })),
     ),
     deleted: normalizedRanges(
-      [...decoded.ds.clients].flatMap(([client, rs]) =>
-        rs.map((r) => ({ client, clock: r.clock, len: r.len })),
+      withoutClocks(
+        [...decoded.ds.clients].flatMap(([client, rs]) =>
+          rs.map((r) => ({ client, clock: r.clock, len: r.len })),
+        ),
+        held,
       ),
     ),
   };
@@ -143,12 +147,16 @@ function rawEffect(update: Uint8Array): EditEffect {
 export function captureEditFrontier(doc: Y.Doc): EditFrontier {
   return Object.fromEntries(Y.decodeStateVector(Y.encodeStateVector(doc)));
 }
-/** Normalize the whole write together, excluding cross-part transients and non-prose roots. */
+/**
+ * Normalize the whole write together, excluding cross-part transients and non-prose roots.
+ * `held` is `heldDeletes` taken before the update applied: a delete of an item the room had
+ * already deleted is not the update's effect, so Undo never restores it.
+ */
 export function captureEditParts(
   doc: Y.Doc,
-  receipts: readonly { update: Uint8Array; frontier: EditFrontier }[],
+  receipts: readonly { update: Uint8Array; frontier: EditFrontier; held?: ReadonlySet<string> }[],
 ): CapturedPart[] {
-  const raw = receipts.map((r) => rawEffect(r.update));
+  const raw = receipts.map((r) => rawEffect(r.update, r.held));
   const inserted = normalizedRanges(raw.flatMap((effect) => effect.inserted)),
     deleted = normalizedRanges(raw.flatMap((effect) => effect.deleted)),
     transient = intersectLineageRanges(inserted.map(lineageRange), deleted.map(lineageRange));

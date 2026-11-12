@@ -152,13 +152,6 @@ function notes(result: AgentEditResultV1): string[] {
       `${listed(surviving)} still ${surviving.length === 1 ? "has" : "have"} changes to it; applying them brings it back.`,
     );
   if (result.unchanged) lines.push(UNCHANGED_NOTE);
-  if (result.skipped) {
-    lines.push(
-      result.skipped === 1
-        ? "skipped: 1 change was not made; the text it changes was deleted since your last read."
-        : `skipped: ${result.skipped} changes were not made; the text they change was deleted since your last read.`,
-    );
-  }
   if (result.awarenessDegraded) {
     lines.push("the write landed, but concurrent changes could not be reported.");
   }
