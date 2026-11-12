@@ -383,17 +383,17 @@ function Group({
   const folds = open !== undefined && onToggle;
   return (
     <section aria-label={label || undefined} className="px-2 pt-2">
-      {/* The pane heading's look and left edge, so every heading lines up with the rows'
-          text; a fold's chevron follows its label rather than push it in. */}
       {label ? (
         <h3 className={cn("flex min-h-7 items-center px-1.5", role.groupLabel)}>
           {folds ? (
+            // -mx/px keep the label on the rows' text edge while the hover fill reaches past it.
             <button
               type="button"
               aria-expanded={open}
               onClick={onToggle}
               className={cn(
-                "interactive -mx-1.5 flex min-h-7 items-center gap-1 rounded-sm px-1.5 coarse:min-h-11",
+                "interactive -mx-1.5 flex items-center self-stretch gap-1 rounded-sm px-1.5 coarse:min-h-11",
+                // Preflight resets a button's text-transform; the label's case needs restating.
                 role.groupLabel,
               )}
             >
