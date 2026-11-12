@@ -50,6 +50,12 @@ context. See [Work][work].
 adapters. Use package public exports. Architecture:
 [.context/CONTEXT.md](.context/CONTEXT.md).
 
+**State machines.** Each one is drawn in a `state-machines.md` in the `.context/`
+beside its code, indexed in
+[.context/state-machines](.context/state-machines/index.md). When you change a
+machine's states or transitions, update its diagram in the same commit. Keep machines
+simple: before adding a state, check whether an existing one already covers the case.
+
 **Tooling.** `pnpm`, Biome and Nx, never npm. No raw colors outside
 `packages/design-tokens`.
 
