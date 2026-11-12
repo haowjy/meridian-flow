@@ -25,6 +25,7 @@ import {
   useOptionalContextRemovalCoordinator,
 } from "./account-feature-context";
 import { runDelete } from "./entry-drag/entry-failure";
+import { leaveSelections } from "./entry-drag/selection";
 import { restoreTrashedDocuments, type TrashRestoreOutcome } from "./restore-trashed-document";
 
 export type TrashRestoreState = { kind: "restoring" } | { kind: "failed"; message: string };
@@ -109,6 +110,7 @@ export function DocumentTrashRestoreProvider({
     (requested: readonly DocumentTrashEntry[], afterRestore?: AfterRestore) => {
       const entries = requested.filter((entry) => !restoring.current.has(entry.documentId));
       if (entries.length === 0) return;
+      leaveSelections(entries.map(({ documentId }) => ({ kind: "file", id: documentId })));
       for (const { documentId } of entries) {
         restoring.current.add(documentId);
         setState(documentId, { kind: "restoring" });
@@ -126,10 +128,10 @@ export function DocumentTrashRestoreProvider({
         else if (entries.length > 1 && landed.length > 0)
           setNotice({
             id: Date.now(),
-            text: plural(landed.length, {
-              one: "Restored # file.",
-              other: "Restored # files.",
-            }),
+            text:
+              landed.length === entries.length
+                ? plural(landed.length, { one: "Restored # file.", other: "Restored # files." })
+                : t`Restored ${landed.length} of ${entries.length} files.`,
           });
       };
       // A request that never answered fails every entry the same way: "Try again."
@@ -151,6 +153,7 @@ export function DocumentTrashRestoreProvider({
       const entries = dragged.filter((entry) => !restoring.current.has(entry.documentId));
       if (entries.length === 0) return;
       const ids = entries.map(({ documentId }) => documentId);
+      leaveSelections(ids.map((id) => ({ kind: "file", id })));
       for (const id of ids) restoring.current.add(id);
       for (const id of ids) setState(id, { kind: "restoring" });
       const listed = trashEntries(queryClient, projectId);

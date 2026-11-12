@@ -81,9 +81,12 @@ Copy to…, Delete, Restore (creation first; Restore is a Trash row's only actio
 both triggers. Each row declares which of them it supports. `useEntryMenu` builds a row's menu for
 both triggers. Opened on a row inside a selection of two or more rows, the menu is the selection's,
 a second ordered spec through the same renderers: Move N…, Delete N, Restore N, each only when every
-selected row grants it (`SelectionGrant`, registered by the row with the selection), named by the
-selection's kind ("Move 3 files…", "Delete 2 folders", "Move 4 items…" for a mix). A selection that
-shares neither shows one disabled line ("Can't move or delete all of these") rather than an empty menu.
+selected row grants it, named by the selection's kind ("Move 3 files…", "Delete 2 folders", "Move 4
+items…" for a mix). A row's grants (`SelectionGrant`) are its own menu actions: `useEntryMenu`
+registers them with the selection, so a row passes its actions once and the selection's menu can't
+disagree with the row's. A selection whose rows share no action shows one disabled line in its list's
+verb ("Can't move or delete all of these"; in Trash "Can't restore all of these") rather than an
+empty menu.
 Opened on a row outside the selection (or alone in it), the menu selects that row alone, as
 Finder and VS Code do, and is the row's own. The selection is read once, as the menu opens, so the
 action acts on what the label counted. The context-menu key and Shift+F10 fire the same
@@ -201,7 +204,8 @@ and Copy to… follows Move…. They are one component:
 for a selection's Move N…, the `selection` it moves. A selection moves together, minus rows inside
 a selected folder, skipping rows already in the destination; it offers no position choices, reads
 "Already in <folder>" only when every row is already there, and keeps the moved rows selected with
-focus on the first in its new place (the row the picker opened from may have moved and unmounted it).
+focus on the first in its new place (the row the picker opened from may have moved and unmounted it;
+of the selected rows that remount, only the first on screen takes focus back).
 Both offer the same destinations, and a folder cannot go inside itself in either.
 They differ in what a pick does: Copy to… has no "Already in" refusal and no
 position choices (it always adds, and its copy takes the next free name in the
@@ -254,7 +258,10 @@ its drop scope. The Files list (also the phone drawer) is one list over every
 source it can show: Manuscript, Knowledge, Your files, Unfiled and the chat's
 Scratch, each tree keeping its own expansion. Rows join through `EntrySelectionProvider`.
 Selection keys are `kind:id` and carry no scheme or place, so a moved row keeps
-its key and stays selected. A plain click opens or toggles the row as before and leaves no
+its key and stays selected. Rows a delete or restore takes out of their list leave every list's
+selection (`leaveSelections`, run by `runDelete` and both Trash restores), with the documents and
+folders inside a deleted folder: Trash rows share the `file:<documentId>` key, so a row deleted while
+selected would otherwise arrive selected in Trash, and a restored one back in the tree. A plain click opens or toggles the row as before and leaves no
 selection of its own: until the writer Ctrl/Cmd- or Shift-clicks, the selection
 is just the open row, shown by the open row's own highlight. Ctrl/Cmd-click
 starts an explicit selection from the open row and adds or removes rows;

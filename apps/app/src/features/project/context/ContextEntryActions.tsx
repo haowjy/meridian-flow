@@ -16,7 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
-import { Fragment, type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useLayoutEffect, useState } from "react";
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -36,7 +36,11 @@ import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
 import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 import type { DragEntry } from "./entry-drag/entry";
-import { type SelectionGroup, useOptionalEntrySelection } from "./entry-drag/selection";
+import {
+  type SelectionGrant,
+  type SelectionGroup,
+  useOptionalEntrySelection,
+} from "./entry-drag/selection";
 
 // ─── Action types ────────────────────────────────────────────────────────────
 
@@ -148,17 +152,20 @@ export type EntryMenu = {
   /** The row's own actions; a row with none has no menu, even inside a selection. */
   enabled: boolean;
   items: readonly EntryActionSpec[];
-  /** A selection whose rows share no action says so instead of opening empty. */
-  empty: boolean;
+  /** What a selection whose rows share no action says instead of opening empty; null otherwise. */
+  empty: ReactNode;
   onOpen: () => void;
   onAction: (action: EntryAction) => void;
 };
+
+const SELECTION_GRANTS = ["move", "delete", "restore"] as const satisfies readonly SelectionGrant[];
 
 /**
  * A row's menu. Opened on a row inside a selection of two or more, it is the selection's menu and
  * acts on all of it (`run` gets the selection's rows in screen order); opened on a row outside the
  * selection, it selects that row alone and is the row's own menu (`run` gets null). The selection
- * is read once, as the menu opens, so what it acts on is what it named.
+ * is read once, as the menu opens, so what it acts on is what it named. The row's actions are also
+ * what it grants a selection's menu (Move, Delete, Restore; never Rename or creation).
  */
 export function useEntryMenu(
   entry: DragEntry,
@@ -167,13 +174,25 @@ export function useEntryMenu(
 ): EntryMenu {
   const selection = useOptionalEntrySelection();
   const [group, setGroup] = useState<SelectionGroup | null>(null);
+  // Joined so a caller's fresh array of the same actions doesn't re-register every render.
+  const grants = SELECTION_GRANTS.filter((grant) => actions.includes(grant)).join(" ");
+  useLayoutEffect(
+    () => selection?.grant(entry, grants ? (grants.split(" ") as SelectionGrant[]) : []),
+    [selection, entry, grants],
+  );
   const items = group
     ? selectionActions(group)
     : ENTRY_ACTIONS.filter((spec) => actions.includes(spec.action));
   return {
     enabled: actions.length > 0,
     items,
-    empty: group !== null && items.length === 0,
+    // Trash rows restore; every other list's rows move and delete.
+    empty:
+      group === null || items.length > 0 ? null : actions.includes("restore") ? (
+        <Trans>Can't restore all of these</Trans>
+      ) : (
+        <Trans>Can't move or delete all of these</Trans>
+      ),
     onOpen() {
       const opened = selection?.group(entry) ?? null;
       if (!opened) selection?.pick(entry);
@@ -202,9 +221,6 @@ function menuRows(specs: readonly EntryActionSpec[]): MenuRow[] {
   }
   return rows;
 }
-
-/** A selection holding a row that can't move and one that can't be deleted. */
-const cantActLabel = () => t`Can't move or delete all of these`;
 
 // ─── Right-click context menu (wraps the row) ───────────────────────────────
 
@@ -282,7 +298,7 @@ function ContextActionItems({
         disabled
         className={cn(dropdownRowVariants(), dropdownMenuItemClass)}
       >
-        {cantActLabel()}
+        {menu.empty}
       </ContextMenuPrimitive.Item>
     );
   return (
@@ -349,7 +365,7 @@ function DropdownActionItems({
       </DropdownMenuItem>
     );
   };
-  if (menu.empty) return <DropdownMenuItem disabled>{cantActLabel()}</DropdownMenuItem>;
+  if (menu.empty) return <DropdownMenuItem disabled>{menu.empty}</DropdownMenuItem>;
   return menuRows(menu.items).map((row) => (
     <Fragment key={row.kind === "import" ? "import" : row.spec.action}>
       {row.startsGroup ? <DropdownMenuSeparator /> : null}

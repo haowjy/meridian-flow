@@ -10,7 +10,6 @@ import type { ContextEntrySibling } from "./context-entry-name";
 import { parentContextEntryPath } from "./context-entry-name";
 import { EntryDestinationPicker } from "./EntryDestinationPicker";
 import { type DragEntry, dragEntry } from "./entry-drag/entry";
-import type { SelectionGrant } from "./entry-drag/selection";
 import { useRenameOperation } from "./LinkUpdateNote";
 import type { UseRenameEntryFormOptions } from "./use-rename-entry-form";
 import { useEntryRenameRepair } from "./use-repair-on-fresh-failure";
@@ -39,8 +38,6 @@ export function entryActions(
       ]
     : capabilities;
 }
-
-const SELECTION_GRANTS = ["move", "delete"] as const satisfies readonly SelectionGrant[];
 
 export function useEntryInteraction({
   projectId,
@@ -142,8 +139,6 @@ export function useEntryInteraction({
     onAction,
     entry,
     menu,
-    /** What a selection's menu may do with this row: Move and Delete, never Rename or creation. */
-    grants: SELECTION_GRANTS.filter((grant) => actions.includes(grant)),
     picker: {
       projectId,
       // Closed, it still names the action it would open for.

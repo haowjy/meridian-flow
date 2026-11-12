@@ -29,6 +29,7 @@ import {
   sameParent,
   within,
 } from "./move-plan";
+import { leaveSelections } from "./selection";
 
 export type EntryContext = ReplicaContext & {
   removal?: Pick<ContextRemovalCoordinator, "beginOwnRemoval"> | null;
@@ -201,6 +202,19 @@ export async function runDelete(
     requested.map((entry) => ({ ref: entry, entry })),
   ).map(({ entry }) => entry);
   const covered = entries.map((entry) => ownRemovals(view, entry));
+  leaveSelections([
+    ...requested,
+    ...covered.flat().map((id) => ({ kind: "file" as const, id })),
+    ...(view.folders ?? []).flatMap(({ folderId }) =>
+      entries.some(
+        (entry) =>
+          entry.kind === "folder" &&
+          within(view, view.placement.parentForFolder(folderId), entry.id),
+      )
+        ? [{ kind: "folder" as const, id: folderId }]
+        : [],
+    ),
+  ]);
   const settleMark = removal?.beginOwnRemoval(projectId, covered.flat());
   const kept = await Promise.all(
     entries.map(async ({ name, ...entry }, index) => {

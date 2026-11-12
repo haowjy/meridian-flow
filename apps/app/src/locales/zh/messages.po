@@ -1391,6 +1391,10 @@ msgstr ""
 msgid "Can't redo: the folder it would move to is gone."
 msgstr ""
 
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Can't restore all of these"
+msgstr ""
+
 #: src/features/project/context/entry-drag/restore-drop.ts
 msgid "Can't restore into {destinationName}"
 msgstr ""
@@ -4737,6 +4741,12 @@ msgstr ""
 
 #: src/features/project/context/entry-drag/restore-drop.ts
 msgid "Restore to {destinationName}"
+msgstr ""
+
+#. placeholder {0}: landed.length
+#. placeholder {1}: entries.length
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
+msgid "Restored {0} of {1} files."
 msgstr ""
 
 #. placeholder {0}: restored.length

@@ -307,7 +307,6 @@ export function TrashRow({
     active: selected,
     draggable: draggable && !restoring,
     source: "trash",
-    grants: restoring ? [] : RESTORE,
   });
   const menu = useEntryMenu(dragged, restoring ? [] : RESTORE, (_action, rows) =>
     onRestore(rows ? rows.map(({ ref }) => ref.id) : [entry.documentId]),

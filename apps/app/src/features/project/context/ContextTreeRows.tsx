@@ -251,7 +251,6 @@ function DirRow({
   const row = useEntryRow(interaction.entry, {
     active: false,
     draggable: !dir.navigationOnly,
-    grants: interaction.grants,
   });
   const toggle = () => {
     if (env.creation?.creating) env.creation.done();
@@ -395,7 +394,7 @@ function FileRow({
   });
   const select = () => env.onSelectFile(env.scheme, file);
   const active = env.scheme === env.activeScheme && file.path === env.activePath;
-  const row = useEntryRow(interaction.entry, { active, grants: interaction.grants });
+  const row = useEntryRow(interaction.entry, { active });
   if (interaction.renaming) {
     return <RenameRow options={interaction.rename} depth={depth} icon={fileKindIcon(file)} />;
   }

@@ -19,6 +19,7 @@ import {
   type RefObject,
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -50,15 +51,17 @@ export type EntrySelection = {
   replace(keys: readonly string[]): void;
   clear(): void;
   /**
-   * Focuses the list's first selected row, or its first row. A selected row that
-   * remounts soon after (a moved row arriving in its folder) takes focus back
-   * while nothing else holds it.
+   * Focuses the list's first selected row, or its first row. If the first selected
+   * row remounts soon after (a moved row arriving in its folder), it takes focus
+   * back while nothing else holds it.
    */
   focus(): void;
   /** Whether a row mounting now should take focus (see `focus`). */
   reclaimsFocus(key: string): boolean;
-  /** Rows announce themselves while mounted, with what they grant; the open row says so. */
-  register(entry: DragEntry, active: boolean, grants: readonly SelectionGrant[]): () => void;
+  /** Rows announce themselves while mounted; the open row says so. */
+  register(entry: DragEntry, active: boolean): () => void;
+  /** What a row's menu lets a selection's menu do with it, while the menu is mounted. */
+  grant(entry: DragEntry, grants: readonly SelectionGrant[]): () => void;
   root: RefObject<HTMLDivElement | null>;
 };
 
@@ -67,6 +70,17 @@ const KEY_ATTRIBUTE = "data-entry-key";
 const RUN_ATTRIBUTE = "data-selection-run";
 // Long enough for the catalogs to catch up with a move and remount its rows.
 const FOCUS_RECLAIM_MS = 2000;
+
+const departures = new Set<(keys: ReadonlySet<string>) => void>();
+
+/**
+ * Rows a delete or restore takes out of their list leave every list's selection, so a row that
+ * comes back (restored, or deleted into Trash) never arrives selected.
+ */
+export function leaveSelections(refs: readonly EntryRef[]) {
+  const keys = new Set(refs.map(entryKey));
+  for (const leave of departures) leave(keys);
+}
 
 /**
  * One list's selection; the list component owns it and hands it to its rows and
@@ -77,8 +91,9 @@ export function useEntrySelection(): EntrySelection {
   // null: no explicit selection, so the selection is the open row.
   const [explicit, setExplicit] = useState<ReadonlySet<string> | null>(null);
   const anchor = useRef<string | null>(null);
-  const registry = useRef(
-    new Map<string, { entry: DragEntry; active: boolean; grants: readonly SelectionGrant[] }>(),
+  const registry = useRef(new Map<string, { entry: DragEntry; active: boolean }>());
+  const granted = useRef(
+    new Map<string, { entry: DragEntry; grants: readonly SelectionGrant[] }>(),
   );
   const root = useRef<HTMLDivElement>(null);
   const focusUntil = useRef(0);
@@ -122,6 +137,22 @@ export function useEntrySelection(): EntrySelection {
     });
   }, []);
   const draggable = usePhoneShell() !== true;
+
+  useEffect(() => {
+    const leave = (keys: ReadonlySet<string>) => {
+      if (anchor.current && keys.has(anchor.current)) anchor.current = null;
+      setExplicit((previous) => {
+        if (!previous) return previous;
+        const next = new Set([...previous].filter((key) => !keys.has(key)));
+        if (next.size === previous.size) return previous;
+        return next.size > 0 ? next : null;
+      });
+    };
+    departures.add(leave);
+    return () => {
+      departures.delete(leave);
+    };
+  }, []);
 
   const screenOrder = useCallback((): string[] => {
     const nodes = root.current?.querySelectorAll<HTMLElement>(`[${KEY_ATTRIBUTE}]`) ?? [];
@@ -188,7 +219,9 @@ export function useEntrySelection(): EntrySelection {
         return {
           entries: rows.map((row) => row.entry),
           grants: (["move", "delete", "restore"] as const).filter((grant) =>
-            rows.every((row) => row.grants.includes(grant)),
+            rows.every((row) =>
+              granted.current.get(entryKey(row.entry.ref))?.grants.includes(grant),
+            ),
           ),
         };
       },
@@ -215,15 +248,25 @@ export function useEntrySelection(): EntrySelection {
       },
       reclaimsFocus(key) {
         const lost = document.activeElement === null || document.activeElement === document.body;
-        return lost && Date.now() < focusUntil.current && current().has(key);
+        if (!lost || Date.now() >= focusUntil.current) return false;
+        // Rows of one commit attach in screen order, so only the first selected one may take focus.
+        const selected = current();
+        return screenOrder().find((row) => selected.has(row)) === key;
       },
-      register(entry, active, grants) {
+      register(entry, active) {
         const key = entryKey(entry.ref);
-        registry.current.set(key, { entry, active, grants });
+        registry.current.set(key, { entry, active });
         paintRuns();
         return () => {
           if (registry.current.get(key)?.entry === entry) registry.current.delete(key);
           paintRuns();
+        };
+      },
+      grant(entry, grants) {
+        const key = entryKey(entry.ref);
+        granted.current.set(key, { entry, grants });
+        return () => {
+          if (granted.current.get(key)?.entry === entry) granted.current.delete(key);
         };
       },
     };
@@ -266,20 +309,10 @@ export function EntrySelectionProvider({
 }
 
 /** A row's place in its list's selection; inert outside one (phone browsing). */
-export function useEntrySelectionRow(
-  entry: DragEntry,
-  active: boolean,
-  grants: readonly SelectionGrant[],
-) {
+export function useEntrySelectionRow(entry: DragEntry, active: boolean) {
   const selection = useContext(SelectionContext);
   const key = entryKey(entry.ref);
-  // Joined so a caller's fresh array of the same grants doesn't re-register every render.
-  const granted = grants.join(" ");
-  useLayoutEffect(
-    () =>
-      selection?.register(entry, active, granted ? (granted.split(" ") as SelectionGrant[]) : []),
-    [selection, entry, active, granted],
-  );
+  useLayoutEffect(() => selection?.register(entry, active), [selection, entry, active]);
   const selected = selection?.isSelected(key) ?? false;
   const reclaim = useCallback(
     (row: HTMLElement | null) => {

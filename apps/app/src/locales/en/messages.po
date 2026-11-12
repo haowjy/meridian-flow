@@ -1391,6 +1391,10 @@ msgstr "Can't redo: the document was moved or deleted after you undid this chang
 msgid "Can't redo: the folder it would move to is gone."
 msgstr "Can't redo: the folder it would move to is gone."
 
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Can't restore all of these"
+msgstr "Can't restore all of these"
+
 #: src/features/project/context/entry-drag/restore-drop.ts
 msgid "Can't restore into {destinationName}"
 msgstr "Can't restore into {destinationName}"
@@ -4738,6 +4742,12 @@ msgstr "Restore before {sibling}"
 #: src/features/project/context/entry-drag/restore-drop.ts
 msgid "Restore to {destinationName}"
 msgstr "Restore to {destinationName}"
+
+#. placeholder {0}: landed.length
+#. placeholder {1}: entries.length
+#: src/features/project/context/DocumentTrashRestoreProvider.tsx
+msgid "Restored {0} of {1} files."
+msgstr "Restored {0} of {1} files."
 
 #. placeholder {0}: restored.length
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx

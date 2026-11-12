@@ -2,7 +2,7 @@
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { startEntryDrag } from "./drag-session";
 import type { DragEntry, DragSource } from "./entry";
-import { type SelectionGrant, useEntrySelectionRow } from "./selection";
+import { useEntrySelectionRow } from "./selection";
 
 export function useEntryRow(
   entry: DragEntry,
@@ -10,17 +10,14 @@ export function useEntryRow(
     active,
     draggable = true,
     source = "list-row",
-    grants,
   }: {
     active: boolean;
     /** False for a row that names nothing a drag could act on (a navigation-only folder). */
     draggable?: boolean;
     source?: DragSource;
-    /** What a selection's menu may do with this row. */
-    grants: readonly SelectionGrant[];
   },
 ) {
-  const { selection, selected, rowProps } = useEntrySelectionRow(entry, active, grants);
+  const { selection, selected, rowProps } = useEntrySelectionRow(entry, active);
   return {
     selected,
     rowProps: {

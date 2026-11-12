@@ -20,7 +20,7 @@ function entry(id: string): DragEntry {
 }
 
 function Row({ row, active }: { row: DragEntry; active: boolean }) {
-  const { selection, selected, rowProps } = useEntrySelectionRow(row, active, []);
+  const { selection, selected, rowProps } = useEntrySelectionRow(row, active);
   return (
     <button
       type="button"
