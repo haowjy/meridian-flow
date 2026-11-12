@@ -1,5 +1,5 @@
 /** React owner for a tree's tab-local disclosure state; unloaded catalogs never prune. */
-import { type SetStateAction, useCallback, useEffect, useState } from "react";
+import { type SetStateAction, useCallback, useEffect, useSyncExternalStore } from "react";
 import type { SectionFold } from "@/components/ui/list-section";
 import { useAccountId } from "./account-feature-context";
 import {
@@ -14,6 +14,33 @@ function entryIsExpanded(entries: TreeExpansion["entries"], entryId: string): bo
   return entries[entryId] ?? false;
 }
 
+// One owner per stored key: a tree can show on several surfaces at once (a chat's Scratch in the
+// sidebar and in its Files menu), and every one of them must show and change the same state.
+const states = new Map<string, TreeExpansion>();
+const listeners = new Map<string, Set<() => void>>();
+
+function storedState(key: string, accountId: string): TreeExpansion {
+  let state = states.get(key);
+  if (!state) {
+    state = readTreeExpansion(key, accountId);
+    states.set(key, state);
+  }
+  return state;
+}
+
+function changeState(
+  key: string,
+  accountId: string,
+  change: (current: TreeExpansion) => TreeExpansion,
+) {
+  const current = storedState(key, accountId);
+  const next = change(current);
+  if (next === current) return;
+  states.set(key, next);
+  writeTreeExpansion(key, accountId, next);
+  for (const listener of listeners.get(key) ?? []) listener();
+}
+
 export function useTreeExpansion(
   projectId: string,
   scope: string,
@@ -21,20 +48,18 @@ export function useTreeExpansion(
 ) {
   const accountId = useAccountId();
   const key = treeExpansionKey(accountId, projectId, scope);
-  const [saved, setSaved] = useState(() => ({ key, state: readTreeExpansion(key, accountId) }));
-  if (saved.key !== key) setSaved({ key, state: readTreeExpansion(key, accountId) });
-  const update = useCallback(
-    (change: (current: TreeExpansion) => TreeExpansion) => {
-      setSaved((current) => {
-        // From storage, not this hook's copy: another hook on the same key (two folds in one
-        // list) may have written since, and a write from a stale copy would drop its entry.
-        const stored = readTreeExpansion(key, accountId);
-        const state = change(stored);
-        if (state === stored) return current.key === key ? current : { key, state };
-        writeTreeExpansion(key, accountId, state);
-        return { key, state };
-      });
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const keyListeners = listeners.get(key) ?? new Set();
+      listeners.set(key, keyListeners);
+      keyListeners.add(listener);
+      return () => keyListeners.delete(listener);
     },
+    [key],
+  );
+  const state = useSyncExternalStore(subscribe, () => storedState(key, accountId));
+  const update = useCallback(
+    (change: (current: TreeExpansion) => TreeExpansion) => changeState(key, accountId, change),
     [key, accountId],
   );
   useEffect(() => {
@@ -50,8 +75,8 @@ export function useTreeExpansion(
     [update],
   );
   const isExpanded = useCallback(
-    (entryId: string) => entryIsExpanded(saved.state.entries, entryId),
-    [saved.state.entries],
+    (entryId: string) => entryIsExpanded(state.entries, entryId),
+    [state.entries],
   );
   const toggleEntry = useCallback(
     (entryId: string) =>
@@ -67,7 +92,7 @@ export function useTreeExpansion(
   return {
     isExpanded,
     toggleEntry,
-    expandedEntryIds: saved.state.entries,
+    expandedEntryIds: state.entries,
     setExpandedEntryIds,
   };
 }
