@@ -16,6 +16,7 @@ import {
   useState,
 } from "react";
 import { threadAvailability } from "@/client/chat-submissions/thread-availability";
+import { dropMainTabChat } from "@/client/project-shell/main-tabs";
 import {
   readLastShownChat,
   useLastShownChat,
@@ -113,6 +114,7 @@ export function useProjectChatNavigation({
       forgetChat: (threadId: string) => {
         const { accountId, projectId } = latest.current;
         if (readLastShownChat(accountId, projectId) === threadId) remember(null);
+        dropMainTabChat(accountId, projectId, threadId);
       },
       consumeNewChatFocusRequest: (id: number) => {
         setNewChatRequest((current) => (current === id ? null : current));
@@ -123,6 +125,7 @@ export function useProjectChatNavigation({
 
   useMissingChatFallback(accountId, surfaceThreadId, () => {
     remember(null);
+    if (surfaceThreadId) dropMainTabChat(accountId, projectId, surfaceThreadId);
     // Replace, never push: Back must not land on the missing chat again.
     if (latest.current.urlChatId) void go({ kind: "new-chat" }, { replace: true });
   });

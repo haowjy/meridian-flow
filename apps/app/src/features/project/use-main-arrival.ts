@@ -35,7 +35,7 @@ export function useMainArrival({
   // A document's arrival opens or selects its tab once per arrival at an address; after that its
   // descriptor only refreshes the tab while it is open.
   const arrivedAt = useRef<string | undefined>(undefined);
-  const { tabs } = useMainTabs(accountId, projectId);
+  const { tabs } = useMainTabs(accountId, projectId).document;
   const arrivedKey = document ? mainTabKey({ kind: "document", document }) : null;
   const recorded = tabs.some((tab) => mainTabKey(tab) === arrivedKey);
   useEffect(() => {
@@ -62,8 +62,10 @@ export function useMainArrival({
   const onNewChat = main.kind === "new-chat";
   const onLanding = main.kind === "landing";
   useEffect(() => {
-    if (chatId) writeLastShownChat(accountId, projectId, chatId);
-    else if (onNewChat) writeLastShownChat(accountId, projectId, null);
+    if (chatId) {
+      arriveMainTab(accountId, projectId, { kind: "chat", chatId });
+      writeLastShownChat(accountId, projectId, chatId);
+    } else if (onNewChat) writeLastShownChat(accountId, projectId, null);
   }, [accountId, projectId, chatId, onNewChat]);
   useEffect(() => {
     if (onLanding) writeLastShownDocument(accountId, projectId, null);

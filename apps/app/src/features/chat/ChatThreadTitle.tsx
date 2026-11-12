@@ -55,18 +55,7 @@ function ExistingThreadTitle({
   variant = "quiet",
   failureClassName,
 }: ChatThreadTitleProps & { threadId: string }) {
-  const { threadById } = useProjectThreadGroups(projectId);
-  // A subagent's chat isn't in the project's chat list; the open chat's snapshot names it.
-  const opened = useQuery({
-    queryKey: threadQueryKeys.snapshot(threadId),
-    queryFn: skipToken,
-    select: (snapshot: DeserializedThreadSnapshot) => snapshot.thread,
-  }).data;
-  const title = displayThreadTitle(
-    threadById.get(threadId)?.title ??
-      opened?.title ??
-      (opened?.kind === "subagent" ? subagentMarkName(opened.agentName) : null),
-  );
+  const title = useChatTitle(projectId, threadId);
   const rename = useRenameThread(projectId, threadId, (confirmed) => {
     announce(t`Renamed to ${confirmed}`);
   });
@@ -92,5 +81,20 @@ function ExistingThreadTitle({
         />
       )}
     </TitleEditSlot>
+  );
+}
+
+/** A chat's live title: its row in the project's chat list, else the open chat's snapshot (a subagent's chat has no row). */
+export function useChatTitle(projectId: string, threadId: string): string {
+  const { threadById } = useProjectThreadGroups(projectId);
+  const opened = useQuery({
+    queryKey: threadQueryKeys.snapshot(threadId),
+    queryFn: skipToken,
+    select: (snapshot: DeserializedThreadSnapshot) => snapshot.thread,
+  }).data;
+  return displayThreadTitle(
+    threadById.get(threadId)?.title ??
+      opened?.title ??
+      (opened?.kind === "subagent" ? subagentMarkName(opened.agentName) : null),
   );
 }
