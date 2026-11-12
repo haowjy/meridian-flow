@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { MessageSquare, PenLine } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { mainTabKey, readMainTabs } from "@/client/project-shell/main-tabs";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { useAccountId } from "../context/account-feature-context";
@@ -8,7 +8,6 @@ import { useChatNavigation } from "../routing/chat-navigation";
 import { useOpenContextRoute, useProjectRouteCommands } from "../routing/ProjectNavigationContext";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
 import { useSideItem } from "../side/SideView";
-import { swapPanes } from "./pane-swap";
 
 type MainMode = "write" | "chat";
 
@@ -16,8 +15,9 @@ type MainMode = "write" | "chat";
  * The Write | Chat switch: main's mode, read from main's item (a chat is Chat, anything else is
  * Write) and never stored apart from it. Pressing a mode swaps the panes: main opens what the side
  * holds of that kind, else that lane's selected tab, else the lane's empty page (Recently opened,
- * a new chat). The side then shows what main left, by the slot rule, with no code of its own.
- * The pressed side shows at once, while main's navigation settles.
+ * a new chat). The side then shows what main left, by the slot rule, and the grid glides the
+ * hosts (`layout/SlotGrid.tsx`), with no code of its own. The pressed side shows at once, while
+ * main's navigation settles.
  */
 export function MainModeSwitch({
   projectId,
@@ -39,16 +39,9 @@ export function MainModeSwitch({
   const beside = side.item;
   const mode: MainMode = chat.display ? "chat" : "write";
   const [pressed, setPressed] = useState<MainMode | null>(null);
-  // Ends the swap's transition once the new layout is committed, or the switch gave up.
-  const endSwap = useRef<(() => void) | null>(null);
-  const settle = () => {
-    endSwap.current?.();
-    endSwap.current = null;
-    setPressed(null);
-  };
   useEffect(() => {
-    if (pressed === mode) settle();
-  });
+    if (pressed === mode) setPressed(null);
+  }, [pressed, mode]);
 
   /** Moves main; false when the navigation did not land (refused, superseded, failed). */
   const go = async (next: MainMode): Promise<boolean> => {
@@ -90,13 +83,10 @@ export function MainModeSwitch({
         // A landed switch lets go once main's item says the same; one that didn't, at once.
         requestAnimationFrame(() =>
           setTimeout(() =>
-            swapPanes((done) => {
-              endSwap.current = done;
-              go(next).then(
-                (moved) => (moved ? onSwitched?.() : settle()),
-                () => settle(),
-              );
-            }),
+            go(next).then(
+              (moved) => (moved ? onSwitched?.() : setPressed(null)),
+              () => setPressed(null),
+            ),
           ),
         );
       }}
