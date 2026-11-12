@@ -14,7 +14,8 @@ this page as each PR lands.
 
 - **main**: an item, or its kind's empty page (the editor with no document; the new-chat composer,
   which is also the project's home).
-- **side**: an item of either kind, or nothing.
+- **side**: an item of either kind, or nothing. Two chats are never on screen at once: beside a chat
+  the side holds a document or nothing. Two documents side by side are allowed.
 - **current document**, **current chat**: the last item of each kind main showed.
 - **mode** (Write | Chat) is not stored: it is the kind of main's item. Main keeps tabs per kind;
   the switch shows the current mode's tabs.
@@ -28,7 +29,8 @@ this page as each PR lands.
 3. X becomes the current item of its kind.
 4. If the side now shows main's item, the side falls back to its previous item, else nothing.
 
-`openSide(X)`: the side shows X. The side's picker doesn't offer main's item.
+`openSide(X)`: the side shows X. The side's picker doesn't offer main's item, and beside a chat it
+offers documents only.
 
 ```mermaid
 flowchart TD
@@ -74,7 +76,8 @@ suggested document is the other kind, so it opens in the side.
 
 ## Mode and side kinds
 
-Each state is (main's mode, the side's kind). Same-kind moves inside a state are left out.
+Each state is (main's mode, the side's kind). Same-kind moves inside a state are left out. There is no
+"Chat · side chat" state.
 
 ```mermaid
 stateDiagram-v2
@@ -82,15 +85,11 @@ stateDiagram-v2
   state "Write · side chat" as WC
   state "Write · side document" as WD
   state "Chat · side document" as CD
-  state "Chat · side chat" as CC
   WC --> CD: open a chat in main (side takes main's document)
   CD --> WC: open a document in main (side takes main's chat)
   WD --> CD: open a chat in main
-  CC --> WC: open a document in main
   WC --> WD: side picks a document
   WD --> WC: side picks a chat
-  CD --> CC: side picks a chat
-  CC --> CD: side picks a document
 ```
 
 ## Example
@@ -102,10 +101,3 @@ stateDiagram-v2
 | Open chat2 from the left sidebar | chat2 | ch2 |
 | Press Write | ch2 | chat2 |
 | Chapter link inside the side's chat2 | ch5 | chat2 |
-
-## Open
-
-- Main and the side both show chats, and the writer opens a chapter link inside the side's chat.
-  `openMain` would send main's chat into the side, replacing the chat just clicked in. Proposed: a
-  pick from the side keeps the side; main's chat leaves the screen and stays a chat tab. Waiting on
-  the owner.
