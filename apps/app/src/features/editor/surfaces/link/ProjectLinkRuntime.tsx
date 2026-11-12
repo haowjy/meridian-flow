@@ -34,6 +34,7 @@ import {
   type FollowReporter,
   type LinkableDocumentIndex,
   type LinkDestination,
+  type LinkDocumentRef,
   type LinkResolutionScope,
   useLinkFollower,
 } from "@/features/links";
@@ -49,8 +50,8 @@ import { useEditorScope } from "../../editor-scope";
 export function useEditorLinkDestination(): LinkDestination {
   const { projectId, workId } = useEditorScope();
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
-  const openLive = useCallback<LinkDestination>(
-    (document) =>
+  const openLive = useCallback(
+    (document: LinkDocumentRef) =>
       openDocument({
         documentId: document.documentId,
         ...(document.trashed ? { trashed: true as const } : {}),

@@ -10,6 +10,8 @@
  * survives it. A held chat gives way to a chat in main, and a held document that no longer opens
  * is dropped.
  */
+
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -20,7 +22,11 @@ import {
   useRef,
   useState,
 } from "react";
-import { type DraftPin, setDocumentView } from "@/client/project-shell/document-views";
+import {
+  type DraftPin,
+  readDocumentView,
+  setDocumentView,
+} from "@/client/project-shell/document-views";
 import {
   type HeldPick,
   readHeldPick,
@@ -29,6 +35,7 @@ import {
   writeHeldPick,
 } from "@/client/project-shell/store";
 import { useDocumentRelated } from "@/client/query/useDocumentRelated";
+import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
 import type { OpenDocument } from "@/client/stores";
@@ -39,6 +46,7 @@ import {
   useOptionalPresentedDocuments,
   useShownDocuments,
 } from "../context/account-feature-context";
+import { openDocumentFromDraftGroup } from "../context/open-document-from-draft";
 import { useDescribeProjectDocument } from "../context/open-project-document";
 import { recentOpening } from "../context/recent-opening";
 import { useRecordOpenedDocument } from "../context/use-record-opened-document";
@@ -150,7 +158,28 @@ type Descriptions = {
 
 /** Descriptors of documents that may sit beside, resolved once each, for the rule and the picker. */
 function useDescriptions(projectId: string): Descriptions {
-  const describe = useDescribeProjectDocument(projectId);
+  const describeLive = useDescribeProjectDocument(projectId);
+  const accountId = useAccountId();
+  const queryClient = useQueryClient();
+  // A page only a draft holds has no live entry: the draft its view shows describes it, as it
+  // does for main's address.
+  const describe = useCallback(
+    async (documentId: string, workId?: string) => {
+      const pin = readDocumentView(accountId, projectId, documentId).pin;
+      if (pin) {
+        // slop-lint: allow swallowed-error a draft list that won't load leaves the live lookup to answer
+        const drafts = await queryClient
+          .fetchQuery(ownerDraftsQueryOptions(projectId, pin.ownerKey))
+          .catch(() => null);
+        const row = drafts?.items.find(
+          (item) => item.itemKey === pin.itemKey && item.documentId === documentId,
+        );
+        if (row && (row.isNew || row.deletedLive)) return openDocumentFromDraftGroup(row);
+      }
+      return describeLive(documentId, workId);
+    },
+    [describeLive, accountId, projectId, queryClient],
+  );
   const shown = useShownDocuments(projectId);
   const [answers, setAnswers] = useState<ReadonlyMap<string, OpenDocument | null | "failed">>(
     () => new Map(),

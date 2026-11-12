@@ -58,6 +58,7 @@ import {
 import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import {
   type LinkDestination,
+  type LinkDocumentRef,
   type LinkFollowDialog,
   type LinkResolutionScope,
   useFollowOutcomeState,
@@ -155,8 +156,8 @@ export function useChatLinkFollowing({
   );
 
   const openReferenceDocument = useOpenProjectDocument(projectId);
-  const openLive = useCallback<LinkDestination>(
-    (document) =>
+  const openLive = useCallback(
+    (document: LinkDocumentRef) =>
       openReferenceDocument({
         documentId: document.documentId,
         ...(document.trashed ? { trashed: true as const } : {}),

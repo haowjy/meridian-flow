@@ -12,7 +12,7 @@ vi.mock("@/core/editor/passage-navigation", () => ({
   navigateToPassage: (...args: unknown[]) => navigateToPassage(...(args as [])),
 }));
 
-const RESOLVED = { documentId: "doc-2" };
+const OPEN = () => Promise.resolve({ kind: "committed" as const, documentId: "doc-2" });
 const ANCHOR = { blockHash: "79b9", term: "elara" };
 
 /** Mounts the hook and hands its callback plus a live read of the notice. */
@@ -49,7 +49,7 @@ describe("passage doors", () => {
     );
 
     await withDoors(async (open, noticeFor) => {
-      open.land(null, ANCHOR, RESOLVED);
+      open.land(ANCHOR, "doc-2", OPEN);
       expect(navigateToPassage).toHaveBeenCalledTimes(1);
 
       // The writer changes their mind and follows another link.
@@ -67,7 +67,7 @@ describe("passage doors", () => {
     navigateToPassage.mockResolvedValue({ kind: "stale" });
 
     await withDoors(async (open, noticeFor) => {
-      await act(async () => open.land(null, ANCHOR, RESOLVED));
+      await act(async () => open.land(ANCHOR, "doc-2", OPEN));
 
       expect(noticeFor()).toBe(true);
     });

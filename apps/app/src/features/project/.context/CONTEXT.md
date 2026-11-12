@@ -77,11 +77,18 @@ the held mark, For this, the close button, the held item becoming main, and its 
 closed, Discarded or removed. A fold from a narrow window is not one: the hold survives it and is
 back when the window widens. A held chat also gives way when the writer opens a chat in main (no
 chat sits beside a chat), and a held document that no longer opens is dropped.
-Every document link follows one click rule (`useLinkPlacement` in `review-launch.tsx`, the
-gesture from `followDisposition` in `core/editor/links`): a plain click opens in main, and a
-cmd-click, ctrl-click or middle click holds the page beside, with the link's Work, and opens a
-closed side. Editor links, transcript links, chat doors and a reply's "Drafted N documents" rows
-all go through it. The sidebar tree marks main's document only, never the side's. Each header renders inside its host
+Every document link follows one placement rule (`useHoldFor` in `review-launch.tsx`, the gesture
+from `followDisposition` in `core/editor/links`). From a chat (inside `OpenedFromChat`), a page
+opens in the pane the chat is not in, whatever the gesture (`ChatPlaceContext` says which): a chat
+in main holds it beside, a chat beside opens it in main and stays beside. So from a chat, only the
+sidebar and Open in main replace main. Anywhere else, a plain click opens in main and a
+cmd-click, ctrl-click or middle click holds the page beside, with the link's Work. A hold from a
+link opens a closed side. Editor links, transcript links, chat doors, the draft dock's rows and a
+reply's "Drafted N documents" rows all go through it. The phone's main chat is not inside
+`OpenedFromChat`, so its links open in main, and the sheet closes, as every phone open does.
+A held page only a draft holds (created by it, or deleted live) is described from the draft its
+view pins (`useDescriptions` in `side/SideView.tsx`), the way main's address describes it, since
+the live catalog has no entry for it. The sidebar tree marks main's document only, never the side's. Each header renders inside its host
 (`shell/MainHeader.tsx`, `side/SideHeader.tsx`); while the side is closed, main's header names it
 (`side/ClosedSideButton.tsx`).
 
@@ -179,11 +186,11 @@ own chat only through the held pick (the side's picker, or a chat created from t
 composer). `display` is the chat main shows (`new` or one thread), null when main holds no chat;
 `lastChatId` is the last chat opened (`readLastChat` in `client/project-shell/store.ts`). A chat
 created from `/chats` takes main; one created from the side's composer is held beside. A link
-followed inside a chat opens the page in main, and the entry records that chat as its beside
-hint. A link or door to a page that chat drafted opens its draft (`useLinkPlacement`), with or
-without a passage (a passage door opens the draft at its top: draft editors don't register as
-passage targets yet); a cmd-click, ctrl-click or middle click holds the page beside main instead,
-on that draft when the chat has one. No chat sits beside a chat, so a chat in main takes the side's picker down
+followed inside a chat opens the page in the pane the chat is not in (the placement rule above);
+opened in main, the entry records that chat as its beside hint. A link or door to a page that
+chat drafted opens its draft (`useLinkPlacement`), with or without a passage, and a passage door
+lands in whichever pane the page opened in (draft editors don't register as passage targets yet,
+so a draft opens at its top). No chat sits beside a chat, so a chat in main takes the side's picker down
 to documents.
 
 There is no chat index. The sidebar's Chats list (`shell/sidebar/ChatsBody.tsx`) is how chats are
