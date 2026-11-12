@@ -1,4 +1,4 @@
-import { ChevronRight, type LucideIcon } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { HTMLAttributes, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { role } from "./roles";
@@ -13,7 +13,6 @@ export type SectionFold = { open: boolean; onToggle: (open: boolean) => void };
 export function ListSectionHeader({
   label,
   level = 3,
-  icon: Icon,
   title,
   fold,
   foldedMark,
@@ -22,8 +21,6 @@ export function ListSectionHeader({
 }: {
   label: string;
   level?: 2 | 3;
-  /** A mark for what the list holds, before the label. */
-  icon?: LucideIcon;
   /** Tooltip and accessible name, for a list whose full name is longer than its label. */
   title?: string;
   fold?: SectionFold;
@@ -34,12 +31,7 @@ export function ListSectionHeader({
   headerProps?: HTMLAttributes<HTMLElement>;
 }) {
   const Heading = level === 2 ? "h2" : "h3";
-  const name = (
-    <>
-      {Icon ? <Icon aria-hidden className={cn("size-3.5 shrink-0", role.secondary)} /> : null}
-      <span className="min-w-0 truncate">{label}</span>
-    </>
-  );
+  const name = <span className="min-w-0 truncate">{label}</span>;
   return (
     <div {...headerProps} data-rail-pane-header className="mx-2 flex min-h-7 shrink-0 items-center">
       <Heading
@@ -72,7 +64,7 @@ export function ListSectionHeader({
             {fold.open ? null : foldedMark}
           </button>
         ) : (
-          <span className="flex min-w-0 items-center gap-1">{name}</span>
+          name
         )}
       </Heading>
       {actions ? (

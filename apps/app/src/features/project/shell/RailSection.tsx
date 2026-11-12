@@ -1,8 +1,8 @@
 /**
  * RailSection — building blocks for lists drawn in the tree's own parts: a chat's
- * Scratch. Section heads are
- * `RailPaneHeader`, rows wear `contextTreeFileRowClassName` with the tree's
- * `RowIcon`, and the hint takes the sidebar's hint role.
+ * Scratch. Section heads are `ListSectionHeader`, rows wear
+ * `contextTreeFileRowClassName` with the tree's `RowIcon`, and the hint takes the
+ * sidebar's hint role.
  */
 
 import type { LucideIcon } from "lucide-react";

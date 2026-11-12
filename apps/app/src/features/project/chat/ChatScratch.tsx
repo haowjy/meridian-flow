@@ -23,7 +23,7 @@ import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { ListSectionHeader } from "@/components/ui/list-section";
 import type { DeleteTarget } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
-import { schemeIcon, schemeLabel } from "../context/context-schemes";
+import { schemeLabel } from "../context/context-schemes";
 import type { MoveArea } from "../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { serverDocumentFromFile } from "../context/open-document-from-file";
@@ -174,7 +174,6 @@ export function RailScratchSection({
             header={(dropProps) => (
               <ListSectionHeader
                 label={schemeLabel("scratch")}
-                icon={schemeIcon("scratch")}
                 title={source.heading}
                 fold={{ open: expanded, onToggle: setExpanded }}
                 headerProps={dropProps}

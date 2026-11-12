@@ -137,7 +137,8 @@ Core shell expectations:
 - The name above a list or a group of its rows is `ListSection` (or `ListSectionHeader`
   over a pane's own scroller): the uppercase group label on the rows' text edge, actions
   shown on hover, and, when it folds, a chevron after the label so folding and plain
-  headings share that edge. A fold is remembered per tab with `useSectionFold`.
+  headings share that edge. A list section's fold is remembered per tab with
+  `useSectionFold`; the docked Scratch keeps its open state as a device preference.
 - Editing text in place never moves or resizes it. Use `components/ui/inline-edit`
   (`InlineEditInput`, `InlineEditTextarea`): the field inherits the text's
   typography, has no padding or border, sizes to its text, and paints its edge

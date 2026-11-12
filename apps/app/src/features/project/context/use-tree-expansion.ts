@@ -26,10 +26,11 @@ export function useTreeExpansion(
   const update = useCallback(
     (change: (current: TreeExpansion) => TreeExpansion) => {
       setSaved((current) => {
-        const state = change(
-          current.key === key ? current.state : readTreeExpansion(key, accountId),
-        );
-        if (current.key === key && current.state === state) return current;
+        // From storage, not this hook's copy: another hook on the same key (two folds in one
+        // list) may have written since, and a write from a stale copy would drop its entry.
+        const stored = readTreeExpansion(key, accountId);
+        const state = change(stored);
+        if (state === stored) return current.key === key ? current : { key, state };
         writeTreeExpansion(key, accountId, state);
         return { key, state };
       });

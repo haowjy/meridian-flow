@@ -22,7 +22,7 @@ import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { RowIcon } from "../../context/ContextTreeRows";
-import { PaneHeaderActionButton } from "../../context/RailPaneHeader";
+import { PaneHeaderActionButton } from "../../context/pane-header-action";
 import { useSectionFold } from "../../context/use-tree-expansion";
 import { SettledSearchField } from "../../SearchField";
 import { TitleEditSlot } from "../TitleEditSlot";
