@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { Layers, Plus, X } from "lucide-react";
+import { Layers, Plus } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { runFavoriteCommand, usePinnedChatIds } from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
@@ -10,10 +10,10 @@ import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useRenameThread } from "@/client/query/useRenameThread";
 import { useWorks } from "@/client/query/useWorks";
 import { announce, announceError } from "@/client/stores";
+import { ActionNotice } from "@/components/app/ActionNotice";
 import { AskOnce } from "@/components/app/AskOnce";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DropdownMenuItem, useMenuActionDispatch } from "@/components/ui/dropdown-menu";
-import { IconButton } from "@/components/ui/icon-button";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { ListSection } from "@/components/ui/list-section";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
@@ -331,38 +331,26 @@ function DeletedLine({
   useEffect(() => {
     if (latest.current() && undo.current) moveFocus(undo.current, { ring: lastInputWasKeyboard() });
   }, []);
-  if (notice.status === "failed")
-    return (
-      <div className="px-2 pb-1">
-        <InlineErrorRow
-          message={t`Couldn't restore ${notice.title}`}
-          onRetry={onUndo}
-          onDismiss={onDismiss}
-        />
-      </div>
-    );
+  const { title } = notice;
   return (
-    <div
-      className="flex min-h-7 coarse:min-h-11 min-w-0 items-center gap-2 pr-2 pl-3.5 text-caption text-muted-foreground"
-      role="status"
+    <ActionNotice
       data-chat-delete-notice
-    >
-      <span className="min-w-0 flex-1 truncate">
-        <Trans>Deleted {notice.title}</Trans>
-      </span>
-      <button
-        ref={undo}
-        type="button"
-        className="text-button text-xs coarse:min-h-11"
-        onClick={onUndo}
-        disabled={notice.status === "restoring"}
-      >
-        <Trans>Undo</Trans>
-      </button>
-      <IconButton label={t`Dismiss`} className="shrink-0" onClick={onDismiss}>
-        <X aria-hidden className="size-3" />
-      </IconButton>
-    </div>
+      sentence={(title) => t`Deleted ${title}`}
+      name={title}
+      action={{
+        label: <Trans>Undo</Trans>,
+        onClick: onUndo,
+        pending: notice.status === "restoring",
+        ref: undo,
+      }}
+      onDismiss={onDismiss}
+      failure={
+        notice.status === "failed"
+          ? { message: t`Couldn't restore ${title}`, onRetry: onUndo, onDismiss }
+          : null
+      }
+      className="pl-3.5"
+    />
   );
 }
 

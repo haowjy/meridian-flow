@@ -25,7 +25,7 @@ export function DocumentChanges({
     if (view.completing) {
       return (
         <p
-          className="flex items-center gap-2 px-2 py-2 text-caption text-muted-foreground"
+          className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground"
           role="status"
           aria-busy={!!view.completing}
         >

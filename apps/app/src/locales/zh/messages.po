@@ -588,6 +588,10 @@ msgstr ""
 msgid "{name} was deleted before this reply saved its change."
 msgstr ""
 
+#: src/features/project/work/WorkCommandFailureRow.tsx
+msgid "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "{name} was deleted with the Work {work} before this reply saved its change."
 msgstr "{name} 已随工作区 {work} 删除，在此回复保存其更改之前。"
@@ -1091,6 +1095,10 @@ msgid "Another Work already has this name. Choose a different name."
 msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
+msgid "Another Work is now named {name}. Rename that Work, then restore this one."
+msgstr ""
+
+#: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Another Work now has this name. Rename that Work, then restore this one."
 msgstr ""
 
@@ -1473,7 +1481,11 @@ msgstr ""
 
 #. placeholder {0}: subject.name
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Change to {0} discarded."
+#~ msgid "Change to {0} discarded."
+#~ msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Change to {name} discarded."
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
@@ -1949,6 +1961,21 @@ msgstr ""
 msgid "Couldn't be reversed"
 msgstr ""
 
+#. placeholder {0}: subject.count
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Couldn't bring back {0} drafts."
+msgstr ""
+
+#. placeholder {0}: subject.name
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Couldn't bring back the change to {0}."
+msgstr ""
+
+#. placeholder {0}: subject.name
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Couldn't bring back the draft of {0}."
+msgstr ""
+
 #: src/features/chat/ask/AskTakeover.tsx
 msgid "Couldn't check how this question ended."
 msgstr "无法确认这个问题的结果。"
@@ -2255,7 +2282,11 @@ msgstr ""
 
 #. placeholder {0}: notice.title
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Couldn't restore {0}"
+#~ msgid "Couldn't restore {0}"
+#~ msgstr ""
+
+#: src/features/project/work/WorkCommandFailureRow.tsx
+msgid "Couldn’t restore {name}"
 msgstr ""
 
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
@@ -2275,6 +2306,7 @@ msgid "Couldn't restore {name}. Try again."
 msgstr ""
 
 #: src/features/project/shell/sidebar/chat-deletes.ts
+#: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Couldn't restore {title}"
 msgstr ""
 
@@ -2393,8 +2425,8 @@ msgid "Couldn't undo this Apply. Try again."
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't undo. Try again."
-msgstr ""
+#~ msgid "Couldn't undo. Try again."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Couldn’t unpin {title}"
@@ -2527,12 +2559,16 @@ msgstr ""
 
 #. placeholder {0}: notice.title
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-msgid "Deleted {0}"
-msgstr ""
+#~ msgid "Deleted {0}"
+#~ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted {name}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChatsBody.tsx
+msgid "Deleted {title}"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -2665,16 +2701,14 @@ msgstr ""
 msgid "Discarding"
 msgstr ""
 
+#: src/components/app/ActionNotice.tsx
 #: src/components/app/failure-toast.tsx
 #: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
-#: src/features/draft-review/CommandNotice.tsx
 #: src/features/draft-review/ReviewToast.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/SchemaNotices.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#: src/features/project/work/WorkCollection.tsx
 msgid "Dismiss"
 msgstr ""
 
@@ -2731,7 +2765,11 @@ msgstr ""
 
 #. placeholder {0}: subject.name
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Draft of {0} discarded."
+#~ msgid "Draft of {0} discarded."
+#~ msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Draft of {name} discarded."
 msgstr ""
 
 #: src/features/project/mobile/MobileReviewHeader.tsx

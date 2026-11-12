@@ -43,7 +43,7 @@ export function MobileReviewHeader({
     <section
       aria-label={t`Draft review`}
       data-phone-review-header
-      className="flex shrink-0 flex-col border-b border-border-subtle bg-review text-caption"
+      className="flex shrink-0 flex-col border-b border-border-subtle bg-review text-xs"
     >
       <div
         className="flex min-h-12 items-center gap-1"

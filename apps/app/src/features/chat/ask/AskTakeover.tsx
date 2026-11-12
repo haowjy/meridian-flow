@@ -258,7 +258,7 @@ function QuestionTakeover({
     <TakeoverFrame labelledBy={titleId}>
       {several ? (
         <div className="-mb-[var(--chat-space-inline)] flex items-baseline gap-[var(--chat-space-block)] px-[var(--chat-space-inline)]">
-          <p id={positionId} className="text-caption text-muted-foreground tabular-nums">
+          <p id={positionId} className="text-xs text-muted-foreground tabular-nums">
             {t`${position} of ${count}`}
           </p>
           {countdown}
@@ -284,9 +284,7 @@ function QuestionTakeover({
             <span className="min-w-0 flex-1">
               <span className="block text-compact font-medium text-foreground">{option.label}</span>
               {option.description ? (
-                <span className="block text-caption text-muted-foreground">
-                  {option.description}
-                </span>
+                <span className="block text-xs text-muted-foreground">{option.description}</span>
               ) : null}
             </span>
             {option.label === recommended ? (
@@ -398,7 +396,7 @@ function Countdown({ deadlineAt }: { deadlineAt: string }) {
           })
         : plural(seconds, { one: "Continues in # second", other: "Continues in # seconds" });
   return (
-    <p className="ml-auto text-caption text-muted-foreground tabular-nums" data-ask-countdown="">
+    <p className="ml-auto text-xs text-muted-foreground tabular-nums" data-ask-countdown="">
       {label}
     </p>
   );

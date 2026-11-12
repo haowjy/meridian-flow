@@ -75,7 +75,7 @@ export function PeerMarkPopover({
       // reading; only the keyboard door asks to be taken inside.
       focusOnOpen={target.activation === "pointer" ? "prose" : "content"}
       returnFocus={returnFocus}
-      className="w-80 text-caption"
+      className="w-80 text-xs"
     >
       <div className="space-y-3" data-peer-mark-popover>
         <div className="flex min-w-0 items-center gap-2">

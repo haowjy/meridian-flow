@@ -48,7 +48,7 @@ export function AskOnce({
   return (
     <span
       className={cn(
-        "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-caption text-muted-foreground",
+        "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground",
         className,
       )}
     >
