@@ -8,14 +8,13 @@ import { History, MessageSquare, PenLine } from "lucide-react";
 import type { ReactNode } from "react";
 import type { MainTab, MainTabKind } from "@/client/project-shell/main-tabs";
 import { role } from "@/components/ui/roles";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { RemovedDocumentChip, RemovedNoticeSlot } from "../context/RemovedDocumentNotice";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
+import { BandIconButton } from "./BandIconButton";
 import { MainTabMenu, MainTabStrip } from "./MainTabStrip";
 import { PaneHeader, type PaneHeaderRailToggle } from "./PaneHeader";
-import { tabChipClass } from "./tab-chip";
 
 export function MainHeader({
   projectId,
@@ -109,30 +108,19 @@ function ModeLabel({ kind }: { kind: MainTabKind }) {
  * landing is the page below (the page rises into it).
  */
 function RecentlyOpenedDoor({ active, onClick }: { active: boolean; onClick: () => void }) {
-  const label = t`Recently opened`;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={(event) => {
-            const focused = event.currentTarget === document.activeElement;
-            onClick();
-            // The landing is main's own page with its own header: the focus follows to its door.
-            if (focused)
-              holdFocus(() => document.querySelector("[data-recents-door][aria-current]"));
-          }}
-          data-recents-door
-          aria-label={label}
-          aria-current={active ? "page" : undefined}
-          className={cn("focus-ring shrink-0", tabChipClass(active))}
-        >
-          <History className="size-3.5" aria-hidden />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={4}>
-        {label}
-      </TooltipContent>
-    </Tooltip>
+    <BandIconButton
+      label={t`Recently opened`}
+      active={active}
+      data-recents-door
+      onClick={(event) => {
+        const focused = event.currentTarget === document.activeElement;
+        onClick();
+        // The landing is main's own page with its own header: the focus follows to its door.
+        if (focused) holdFocus(() => document.querySelector("[data-recents-door][aria-current]"));
+      }}
+    >
+      <History aria-hidden />
+    </BandIconButton>
   );
 }
