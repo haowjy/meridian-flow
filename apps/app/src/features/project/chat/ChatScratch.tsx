@@ -15,18 +15,18 @@ import { Trans } from "@lingui/react/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { Folder, FolderOpen } from "lucide-react";
-import { type RefObject, useMemo } from "react";
+import { useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
+import { ListSectionHeader } from "@/components/ui/list-section";
 import type { DeleteTarget } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
-import { schemeIcon, schemeLabel } from "../context/context-schemes";
+import { schemeLabel } from "../context/context-schemes";
 import type { MoveArea } from "../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { serverDocumentFromFile } from "../context/open-document-from-file";
-import { RailPaneHeader } from "../context/RailPaneHeader";
 import { AreaDropRegion } from "../context/tree-drop/AreaDropRegion";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useDeleteContextEntry } from "../context/use-delete-context-entry";
@@ -146,11 +146,10 @@ export function ScratchSource({
   );
 }
 
-/** The Chat list's Scratch, docked under the chat list; it collapses and trades height with the list. */
+/** The Chat list's Scratch, docked under the chat list; it collapses, and expanded takes up to 40% of the rail. */
 export function RailScratchSection({
   projectId,
   threadId,
-  resizeAgainst,
   onPicked,
 }: {
   projectId: string;
@@ -158,15 +157,13 @@ export function RailScratchSection({
   threadId: string | null;
   /** After a note opens elsewhere (the phone drawer closes). */
   onPicked?: () => void;
-  /** The pane above, which a handle on the divider trades height with when the section is expanded. */
-  resizeAgainst?: RefObject<HTMLElement | null>;
 }) {
   const scratch = useChatScratch(projectId, threadId);
   const list = useEntryList({ projectId, areas: scratch.areas });
   const { source } = scratch;
   if (!source) return null;
   return (
-    <DockedRailSection id="scratch" resizeAgainst={resizeAgainst}>
+    <DockedRailSection id="scratch">
       {({ expanded, setExpanded }) => (
         <EntryList list={list}>
           <AreaDropRegion
@@ -175,14 +172,11 @@ export function RailScratchSection({
             reveal={() => !expanded && setExpanded(true)}
             className="flex min-h-0 flex-col"
             header={(dropProps) => (
-              <RailPaneHeader
+              <ListSectionHeader
                 label={schemeLabel("scratch")}
-                icon={schemeIcon("scratch")}
                 title={source.heading}
-                ariaLabel={source.heading}
-                expanded={expanded}
-                onExpandedChange={setExpanded}
-                dropProps={dropProps}
+                fold={{ open: expanded, onToggle: setExpanded }}
+                headerProps={dropProps}
               />
             )}
           >

@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Layers, Plus, X } from "lucide-react";
+import { Layers, Plus, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { runFavoriteCommand, usePinnedChatIds } from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
@@ -15,15 +15,15 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DropdownMenuItem, useMenuActionDispatch } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
 import { ListRow } from "@/components/ui/list-row";
+import { ListSection } from "@/components/ui/list-section";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { role } from "@/components/ui/roles";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { displayThreadTitle } from "@/lib/thread-title";
-import { cn } from "@/lib/utils";
 import { RowIcon } from "../../context/ContextTreeRows";
-import { PaneHeaderActionButton } from "../../context/RailPaneHeader";
-import { useTreeExpansion } from "../../context/use-tree-expansion";
+import { PaneHeaderActionButton } from "../../context/pane-header-action";
+import { useSectionFold } from "../../context/use-tree-expansion";
 import { SettledSearchField } from "../../SearchField";
 import { TitleEditSlot } from "../TitleEditSlot";
 import { useChatDeleteState } from "./ChatDeleteProvider";
@@ -78,7 +78,6 @@ export function ChatsBody({
   const { threads } = useProjectThreads(projectId);
   const { works } = useWorks(projectId);
   const [search, setSearch] = useState<string | null>(null);
-  const [allOpen, setAllOpen] = useState(false);
   const { deletes, notice, refused } = useChatDeleteState();
   const touch = useCoarsePointer();
   const root = useRef<HTMLDivElement>(null);
@@ -88,9 +87,9 @@ export function ChatsBody({
     [favoriteFeed.items],
   );
   const pinnedIds = usePinnedChatIds(projectId, confirmedPins, favoriteFeed.dataUpdatedAt);
-  // Pinned is open unless folded; its fold is kept like a tree folder's.
-  const expansion = useTreeExpansion(projectId, "chats", null);
-  const pinnedOpen = !expansion.isExpanded("pinned-folded");
+  const pinnedFold = useSectionFold(projectId, "chats", "pinned");
+  // All chats loads only once opened.
+  const allFold = useSectionFold(projectId, "chats", "all", false);
   // Every pin loads, so no chat beyond the first page offers "Pin".
   const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = favoriteFeed;
   useEffect(() => {
@@ -194,56 +193,58 @@ export function ChatsBody({
           />
         ) : null}
         {search ? (
-          <Group label={t`Results`}>
+          <ListSection label={t`Results`}>
             <SearchResults search={search} rows={rows} />
-          </Group>
+          </ListSection>
         ) : threads === null ? (
           <SourceHint status>
             <Trans>Loading…</Trans>
           </SourceHint>
         ) : (
           <>
-            <Group
-              label={t`Pinned`}
-              hidden={groups.pinned.length === 0}
-              open={pinnedOpen}
-              onToggle={() => expansion.toggleEntry("pinned-folded")}
-              foldedMark={
-                groups.pinnedState === "idle" ? null : <StateMark state={groups.pinnedState} />
-              }
-            >
-              <div data-pinned-list>{groups.pinned.map(withHelpers)}</div>
-            </Group>
-            <Group label={workName(scopeId ?? "")} hidden={listed.length === 0}>
-              {listed.map(withHelpers)}
-            </Group>
+            {groups.pinned.length > 0 ? (
+              <ListSection
+                label={t`Pinned`}
+                fold={pinnedFold}
+                foldedMark={
+                  groups.pinnedState === "idle" ? null : <StateMark state={groups.pinnedState} />
+                }
+              >
+                <div data-pinned-list>{groups.pinned.map(withHelpers)}</div>
+              </ListSection>
+            ) : null}
+            {listed.length > 0 ? (
+              <ListSection label={workName(scopeId ?? "")}>{listed.map(withHelpers)}</ListSection>
+            ) : null}
             {scopeEmpty ? (
               <SourceHint>
                 <Trans>No chats here yet.</Trans>
               </SourceHint>
             ) : null}
-            <Group label={t`Other Works`} hidden={groups.otherWorks.length === 0}>
-              {groups.otherWorks.map((other) => (
-                <ListRow
-                  key={other.workId}
-                  onOpen={() => onShowWork(other.workId)}
-                  leading={<RowIcon icon={Layers} />}
-                  title={workName(other.workId)}
-                  meta={
-                    other.needsYou > 0 ? (
-                      <span className="text-jade-text">
-                        <Trans>{other.needsYou} waiting on you</Trans>
-                      </span>
-                    ) : (
-                      <Trans>{other.running} working</Trans>
-                    )
-                  }
-                />
-              ))}
-            </Group>
-            <Group label={t`All chats`} open={allOpen} onToggle={() => setAllOpen((open) => !open)}>
+            {groups.otherWorks.length > 0 ? (
+              <ListSection label={t`Other Works`}>
+                {groups.otherWorks.map((other) => (
+                  <ListRow
+                    key={other.workId}
+                    onOpen={() => onShowWork(other.workId)}
+                    leading={<RowIcon icon={Layers} />}
+                    title={workName(other.workId)}
+                    meta={
+                      other.needsYou > 0 ? (
+                        <span className="text-jade-text">
+                          <Trans>{other.needsYou} waiting on you</Trans>
+                        </span>
+                      ) : (
+                        <Trans>{other.running} working</Trans>
+                      )
+                    }
+                  />
+                ))}
+              </ListSection>
+            ) : null}
+            <ListSection label={t`All chats`} fold={allFold}>
               <AllChats rows={rows} />
-            </Group>
+            </ListSection>
           </>
         )}
       </SourcePane>
@@ -359,58 +360,6 @@ function DeletedLine({
         <X aria-hidden className="size-3" />
       </IconButton>
     </div>
-  );
-}
-
-function Group({
-  label,
-  hidden = false,
-  open,
-  onToggle,
-  foldedMark,
-  children,
-}: {
-  label: string;
-  hidden?: boolean;
-  /** Given with `onToggle`, the label folds the group. */
-  open?: boolean;
-  onToggle?: () => void;
-  /** Shown beside a folded group's label: what its hidden rows would say. */
-  foldedMark?: ReactNode;
-  children: ReactNode;
-}) {
-  if (hidden) return null;
-  const folds = open !== undefined && onToggle;
-  return (
-    <section aria-label={label || undefined} className="px-2 pt-2">
-      {label ? (
-        <h3 className={cn("flex min-h-7 items-center px-1.5", role.groupLabel)}>
-          {folds ? (
-            // -mx/px keep the label on the rows' text edge while the hover fill reaches past it.
-            <button
-              type="button"
-              aria-expanded={open}
-              onClick={onToggle}
-              className={cn(
-                "interactive -mx-1.5 flex items-center self-stretch gap-1 rounded-sm px-1.5 coarse:min-h-11",
-                // Preflight resets a button's text-transform; the label's case needs restating.
-                role.groupLabel,
-              )}
-            >
-              {label}
-              <ChevronRight
-                aria-hidden
-                className={cn("size-3 transition-transform", open && "rotate-90")}
-              />
-              {open ? null : foldedMark}
-            </button>
-          ) : (
-            label
-          )}
-        </h3>
-      ) : null}
-      {folds && !open ? null : children}
-    </section>
   );
 }
 

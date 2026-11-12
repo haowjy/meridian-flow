@@ -23,7 +23,7 @@ import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
 import { schemeAllowsCreation, schemeLabel } from "./context-schemes";
 import { ImportHeaderAction } from "./ImportHeaderAction";
-import { PaneHeaderActionButton } from "./RailPaneHeader";
+import { PaneHeaderActionButton } from "./pane-header-action";
 import { useOptionalTreeCreation } from "./TreeCreationProvider";
 import { treeFolderIds } from "./tree-expansion-state";
 import { subscribeFolderReveal } from "./tree-reveal";

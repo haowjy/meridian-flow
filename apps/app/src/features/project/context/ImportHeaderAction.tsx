@@ -10,7 +10,7 @@ import { ImportPanelBody, ImportSheet, importLabel } from "@/features/import/Imp
 import { type PickKind, useImportPanel } from "@/features/import/ImportProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
-import { PaneHeaderActionButton } from "./RailPaneHeader";
+import { PaneHeaderActionButton } from "./pane-header-action";
 
 export function ImportHeaderAction({
   scheme,

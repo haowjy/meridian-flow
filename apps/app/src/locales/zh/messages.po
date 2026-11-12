@@ -4660,8 +4660,8 @@ msgstr ""
 
 #. placeholder {0}: schemeLabel(id)
 #: src/features/project/shell/DockedRailSection.tsx
-msgid "Resize {0}"
-msgstr ""
+#~ msgid "Resize {0}"
+#~ msgstr ""
 
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize side panel"

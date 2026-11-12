@@ -1,9 +1,9 @@
 import { type HTMLAttributes, type ReactNode, useRef } from "react";
+import { ListSectionHeader } from "@/components/ui/list-section";
 import { role } from "@/components/ui/roles";
 import { dragPayloadKind } from "@/core/editor/landing/drag-payload";
 import { dragEdgeScroll } from "@/core/editor/landing/edge-scroll";
 import { cn } from "@/lib/utils";
-import { PaneHeaderActions } from "../../context/RailPaneHeader";
 import { DropRegion } from "../../context/tree-drop/DropRegion";
 import type { TreeDropState } from "../../context/tree-drop/tree-drop";
 
@@ -41,16 +41,7 @@ export function SourcePane({
   return (
     <DropRegion state={drop?.dropState ?? "idle"} className="flex min-h-0 flex-1 flex-col">
       <div {...drop?.dropProps} className="flex min-h-0 flex-1 flex-col">
-        <div data-rail-pane-header className="mx-2 flex h-7 shrink-0 items-center">
-          <h2
-            title={title}
-            aria-label={title}
-            className={cn("min-w-0 flex-1 truncate pr-1 pl-1.5", role.groupLabel)}
-          >
-            {label}
-          </h2>
-          <PaneHeaderActions actions={actions} />
-        </div>
+        <ListSectionHeader level={2} label={label} title={title} actions={actions} />
         {bar ? <div className="mx-2 flex shrink-0 items-center justify-end pb-1">{bar}</div> : null}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: scrolling at the edges while dragging. slop-lint: allow suppression the reason is stated in this comment */}
         <div
