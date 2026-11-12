@@ -1,7 +1,7 @@
 /** One namespace interaction model for tree, phone and Work Files rows. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { CatalogNode } from "@/client/query/context-catalog-projection";
 import type { OpenDocumentOwner } from "@/client/stores";
 import { type EntryAction, useEntryMenu } from "./ContextEntryActions";
@@ -68,6 +68,18 @@ export function useEntryInteraction({
   /** Sends a file whose import failed again; a failed file's menu leads with it. */
 }) {
   const [renaming, setRenaming] = useState(false);
+  // Set when the name field closes, so the row that replaces it takes focus back.
+  const refocus = useRef(false);
+  const controlRef = useCallback((control: HTMLElement | null) => {
+    if (!control || !refocus.current) return;
+    refocus.current = false;
+    // A field closed by a click elsewhere commits during its blur, before the click moves focus:
+    // wait a frame, and leave focus where the writer put it.
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active === null || active === document.body) control.focus();
+    });
+  }, []);
   // The picker is one component for both; which action opened it decides what a pick does.
   const [picking, setPicking] = useState<"move" | "copy" | null>(null);
   // Set while the picker moves a selection rather than this row alone.
@@ -126,6 +138,7 @@ export function useEntryInteraction({
     kind,
     onRenamed: remember,
     onDone: () => {
+      refocus.current = true;
       setRenaming(false);
       onRenameDone?.();
     },
@@ -133,6 +146,8 @@ export function useEntryInteraction({
   return {
     renaming: (renaming || Boolean(requestRename)) && actions.includes("rename"),
     rename,
+    /** The row's main control, which takes focus back when its name field closes. */
+    controlRef,
     operationId,
     actions,
     onAction,

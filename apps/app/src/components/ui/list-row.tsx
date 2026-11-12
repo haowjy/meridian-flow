@@ -64,8 +64,8 @@ type ListRowProps = {
   disabled?: boolean;
   /** Indent steps for a row nested under another, the file tree's step. */
   depth?: number;
-  /** The main control, when it is a button. */
-  ref?: Ref<HTMLButtonElement>;
+  /** The main control, a link or a button. */
+  ref?: Ref<HTMLElement>;
   /** The row's kind, in the one leading-icon slot every list shares. */
   icon?: LucideIcon;
   /** A mark before the title that is not the row's kind: a picker's glyph, a status. */
@@ -165,6 +165,7 @@ export function ListRow({
     href && !disabled ? (
       <a
         {...shared}
+        ref={ref as Ref<HTMLAnchorElement>}
         href={href}
         onClick={(event: MouseEvent<HTMLAnchorElement>) => {
           if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
@@ -176,7 +177,13 @@ export function ListRow({
         {content}
       </a>
     ) : (
-      <button {...shared} ref={ref} type="button" disabled={disabled} onClick={onOpen}>
+      <button
+        {...shared}
+        ref={ref as Ref<HTMLButtonElement>}
+        type="button"
+        disabled={disabled}
+        onClick={onOpen}
+      >
         {content}
       </button>
     );

@@ -224,6 +224,7 @@ function DirRow({
       <InsertionLine edge={drop.edge} inset={contentInset(depth)} />
       <EntryDestinationPicker {...interaction.picker}>
         <ListRow
+          ref={interaction.controlRef}
           depth={depth}
           // The open or closed folder is the twistie: rows need no chevron column.
           icon={isOpen ? FolderOpen : Folder}
@@ -347,6 +348,7 @@ function FileRow({
     <EntryDestinationPicker {...interaction.picker}>
       <InsertionLine edge={drop.edge} inset={contentInset(depth)} />
       <ListRow
+        ref={interaction.controlRef}
         depth={depth}
         icon={fileKindIcon(file)}
         title={file.name}
