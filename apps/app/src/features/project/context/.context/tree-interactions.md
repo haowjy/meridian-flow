@@ -204,8 +204,10 @@ and Copy to… follows Move…. They are one component:
 for a selection's Move N…, the `selection` it moves. A selection moves together, minus rows inside
 a selected folder, skipping rows already in the destination; it offers no position choices, reads
 "Already in <folder>" only when every row is already there, and keeps the moved rows selected with
-focus on the first in its new place (the row the picker opened from may have moved and unmounted it;
-of the selected rows that remount, only the first on screen takes focus back).
+focus on the first in its new place (the row the picker opened from may have moved and unmounted it).
+The rows arrive over several commits, and a keyed reorder blurs a focused row without remounting it,
+so for two seconds after a Move the list puts focus back on its first selected row whenever focus
+is lost or sits on another selected row (`settleFocus`).
 Both offer the same destinations, and a folder cannot go inside itself in either.
 They differ in what a pick does: Copy to… has no "Already in" refusal and no
 position choices (it always adds, and its copy takes the next free name in the
