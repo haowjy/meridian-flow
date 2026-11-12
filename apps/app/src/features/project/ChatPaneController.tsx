@@ -1,14 +1,14 @@
 /**
- * ChatPaneController — main's band while main holds a chat: main's tabs with the chat as the
- * active chip after them (one click returns to a document), and the chat's own controls.
+ * ChatPaneController — main's band while main holds a chat: the chat lane, and the chat's own
+ * controls.
  *
  * The persistent `ChatSurface` owns the live conversation instance; this renders only its chrome.
  */
 
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
-import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
+import { useChatNavigation } from "./routing/chat-navigation";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { MainHeader } from "./shell/MainHeader";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
@@ -30,6 +30,7 @@ export function ChatPaneController({
   sidebarToggle,
   contextToggle,
 }: ChatPaneControllerProps) {
+  const chat = useChatNavigation();
   const activity = useThreadActivity({
     threadId: threadId ?? "",
     seed: null,
@@ -38,11 +39,10 @@ export function ChatPaneController({
     <MainHeader
       projectId={projectId}
       open={open}
-      mainKey={null}
-      showsChat
-      // The centered chat body is page-sheet: the switcher wears the active-tab chip so the page
-      // continues up into the band.
-      current={<ChatThreadTitle projectId={projectId} threadId={threadId} variant="tab" />}
+      kind="chat"
+      mainTab={threadId ? { kind: "chat", chatId: threadId } : undefined}
+      keepMain={threadId === null}
+      onNew={() => void chat.openNewChat()}
       onShowRecents={onShowRecents}
       sidebarToggle={sidebarToggle}
       sideToggle={contextToggle}

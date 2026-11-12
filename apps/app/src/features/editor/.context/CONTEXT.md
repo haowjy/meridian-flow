@@ -121,7 +121,7 @@ Dormant: no server code sends `change_event`, so no mark renders
 The peer-mark surface reads the projection plugin's click/Enter/caret state.
 The editor feature holds no duplicate mark state. Review drafts without a
 projection naturally stand down. Receipt Undo/Redo is the sole reversal authority
-for AI changes. *Open conversation* routes through `requestConversationReveal`
+for AI changes. *Open conversation* routes through `useRequestConversationReveal`
 with the owning turn, so the chat side lands on that turn. Popover focus
 follows activation: a pointer open leaves the caret in the prose and a
 pointer close restores the held selection; keyboard activation moves focus into

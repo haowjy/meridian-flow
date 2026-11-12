@@ -6,7 +6,7 @@
 import { t } from "@lingui/core/macro";
 import { History } from "lucide-react";
 import type { ReactNode } from "react";
-import type { OpenDocument } from "@/client/stores";
+import type { MainTab, MainTabKind } from "@/client/project-shell/main-tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
@@ -19,32 +19,32 @@ import { tabChipClass } from "./tab-chip";
 export function MainHeader({
   projectId,
   open,
-  mainKey,
-  mainDocument,
+  kind,
+  mainTab,
   landing = false,
-  showsChat = false,
+  keepMain = false,
   current,
   onShowRecents,
-  onNewDocument,
+  onNew,
   sidebarToggle,
   sideToggle,
   actions,
 }: {
   projectId: string;
   open: OpenContextRoute;
-  /** The tab main shows; null while main holds no tab. */
-  mainKey: string | null;
-  /** The document main shows, if any. */
-  mainDocument?: OpenDocument;
+  /** The lane the band draws: documents in Write, chats in Chat. */
+  kind: MainTabKind;
+  /** The item main shows in that lane, if any. */
+  mainTab?: MainTab;
   /** Main is the Recently opened landing: the door is the current place. */
   landing?: boolean;
-  /** Main shows a chat: Close all leaves it there. */
-  showsChat?: boolean;
-  /** Main's item when it holds no tab (a chat, an address that names nothing). */
+  /** Main is on its lane's empty page (the new-chat composer): Close all leaves it there. */
+  keepMain?: boolean;
+  /** Main's item when it takes no tab (an address that names nothing, the Trash). */
   current?: ReactNode;
   onShowRecents: (options: { replace: boolean }) => Promise<void>;
   /** Absent while no Work is ready to hold an Untitled document. */
-  onNewDocument?: () => void;
+  onNew?: () => void;
   sidebarToggle: PaneHeaderRailToggle;
   sideToggle: PaneHeaderRailToggle;
   /** Main's item's own controls, before the side's. */
@@ -61,22 +61,22 @@ export function MainHeader({
         <div className="flex h-full min-w-0 flex-1 items-stretch">
           <MainTabStrip
             projectId={projectId}
+            kind={kind}
             open={open}
-            mainKey={mainKey}
-            mainDocument={mainDocument}
+            mainTab={mainTab}
             current={current}
             onShowRecents={onShowRecents}
-            onNewDocument={onNewDocument}
+            onNew={onNew}
           />
           <RemovedNoticeSlot>
             <RemovedDocumentChip projectId={projectId} />
           </RemovedNoticeSlot>
           <MainTabMenu
             projectId={projectId}
+            kind={kind}
             open={open}
-            mainKey={mainKey}
-            mainDocument={mainDocument}
-            keepMain={showsChat || landing}
+            mainTab={mainTab}
+            keepMain={keepMain || landing}
             onShowRecents={onShowRecents}
           />
         </div>

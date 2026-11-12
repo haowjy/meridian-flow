@@ -3,7 +3,7 @@ import { type RefObject, useEffect, useRef } from "react";
 import { announce } from "@/client/stores";
 
 import type { ComposerHandle } from "@/components/app/composer";
-import { useChatPlace } from "./chat-place";
+import { usePanePlace } from "@/features/project/pane-place";
 
 /**
  * Announce thread navigation and focus main's composer when {@link threadId} changes. The side's
@@ -19,7 +19,7 @@ export function useThreadNavigationAnnounce(
   const title = useRef(pageTitle);
   title.current = pageTitle;
   const main = useRef(false);
-  main.current = useChatPlace() === "main";
+  main.current = usePanePlace() === "main";
   useEffect(() => {
     announce(title.current);
     if (main.current) composerRef.current?.focus();

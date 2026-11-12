@@ -5,16 +5,16 @@ import { useThreadActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import type { CreationAgent, CreationChoices } from "@/features/agents/creation-agent";
 import { useAccountId } from "@/features/project/context/account-feature-context";
+import { usePanePlace } from "@/features/project/pane-place";
 import { useChatNavigation } from "@/features/project/routing/chat-navigation";
 import { sendProjectChat } from "@/lib/send-project-chat";
-import { useChatPlace } from "./chat-place";
 import { useComposerSessionDraft } from "./useComposerSessionDraft";
 
 export function useCreationComposer(projectId: string) {
   const { acceptCreatedChat } = useChatNavigation();
   const accountId = useAccountId();
   const draftScope = {
-    kind: useChatPlace() === "side" ? "side-new-chat" : "new-chat",
+    kind: usePanePlace() === "side" ? "side-new-chat" : "new-chat",
     id: projectId,
   } as const;
   const draft = useComposerSessionDraft(accountId, draftScope);

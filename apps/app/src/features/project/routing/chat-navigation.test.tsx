@@ -10,7 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { readCurrentChat } from "@/client/project-shell/store";
+import { readLastShownChat } from "@/client/project-shell/store";
 import { threadSnapshotQueryOptions } from "@/client/query/thread-snapshot-query";
 import { ThreadStoreProvider, useThreadActions } from "@/client/stores";
 import { type ChatNavigation, useProjectChatNavigation } from "./chat-navigation";
@@ -74,11 +74,10 @@ afterEach(() => {
   act(() => root.unmount());
 });
 
-it("shows a sent chat in main from the new-chat composer and keeps it beside a document as the current chat", () => {
+it("shows a sent chat in main from the new-chat composer and keeps it beside a document in the chat slot", () => {
   render({ kind: "new" });
   act(() => navigation.acceptCreatedChat("sent"));
   expect(go).toHaveBeenCalledWith({ kind: "chat", chatId: "sent" });
-  expect(readCurrentChat(ACCOUNT, PROJECT)).toBe("sent");
   // The route settles the URL onto the new chat; re-rendering with it reflects
   // the thread variant (the hook alone cannot observe the navigation completing).
   render({ kind: "thread", threadId: "sent" });
@@ -88,7 +87,7 @@ it("shows a sent chat in main from the new-chat composer and keeps it beside a d
   render(null);
   act(() => navigation.acceptCreatedChat("docked"));
   expect(go).not.toHaveBeenCalled();
-  expect(readCurrentChat(ACCOUNT, PROJECT)).toBe("docked");
+  expect(readLastShownChat(ACCOUNT, PROJECT)).toBe("docked");
 });
 
 it("keeps a first send whose pre-creation 404 is still cached once it is acknowledged", () => {

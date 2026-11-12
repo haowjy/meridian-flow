@@ -14,7 +14,7 @@ import { t } from "@lingui/core/macro";
 import type { QueryClient } from "@tanstack/react-query";
 import { beginOwnChatDelete, cleanDeletedChat } from "@/client/chat-submissions/deleted-chat";
 import { probeChatDestination } from "@/client/chat-submissions/thread-availability";
-import { readCurrentChat, writeCurrentChat } from "@/client/project-shell/store";
+import { readLastShownChat, writeLastShownChat } from "@/client/project-shell/store";
 import {
   type ChatCommandOutcome,
   deleteProjectChat,
@@ -210,7 +210,7 @@ export class ChatDeletes {
     const display = navigation.display;
     const taken: Taken = {
       main: display?.kind === "thread" && display.threadId === threadId,
-      current: readCurrentChat(accountId, projectId) === threadId,
+      current: readLastShownChat(accountId, projectId) === threadId,
     };
     navigation.forgetChat(threadId);
     // Focus stays with the notice's Undo, not the new chat's composer.
@@ -222,8 +222,8 @@ export class ChatDeletes {
   private putBack(threadId: string, taken: Taken) {
     const { accountId, projectId } = this.ports;
     const navigation = this.ports.navigation();
-    if (taken.current && readCurrentChat(accountId, projectId) === null)
-      writeCurrentChat(accountId, projectId, threadId);
+    if (taken.current && readLastShownChat(accountId, projectId) === null)
+      writeLastShownChat(accountId, projectId, threadId);
     if (taken.main && navigation.display?.kind === "new")
       void navigation.openChat(threadId, { replace: true });
   }

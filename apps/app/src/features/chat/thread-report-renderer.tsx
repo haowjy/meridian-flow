@@ -11,7 +11,7 @@ import type { JsonValue } from "@meridian/contracts/protocol";
 import { parseThreadReportResult, toReportContentValue } from "@meridian/contracts/spawn";
 import type { ToolView } from "@meridian/thread-client";
 import { stringInput, toolInputObject } from "@meridian/thread-client";
-import { requestConversationReveal } from "./conversation-reveal";
+import { useRequestConversationReveal } from "./conversation-reveal";
 import { ReportContent, type ReportContentValue } from "./ReportContent";
 import { useSubagentRun } from "./subagent/ActivityContext";
 import type { SubagentRun } from "./subagent/run-model";
@@ -23,6 +23,7 @@ import type { ToolExpand, ToolRenderer } from "./tool-renderers";
  * rows name it. The name is a door to the run's launch card when one exists.
  */
 export function SubagentRefLine({ handle }: { handle: string }) {
+  const requestConversationReveal = useRequestConversationReveal();
   const subagent = useSubagentRun({ ref: handle });
   const run = subagent ?? fallbackSubagentRun;
   const name = subagent?.name;

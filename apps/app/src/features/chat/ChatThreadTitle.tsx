@@ -29,8 +29,6 @@ type ChatThreadTitleProps = {
   projectId: string;
   /** `null` — the empty New chat: the switcher reads "New chat" and has no rename. */
   threadId: string | null;
-  /** Trigger presentation — see `ThreadSwitcherPopover`. */
-  variant?: "quiet" | "tab";
   /** Where a refused rename sits against the host header's positioned ancestor. */
   failureClassName?: string;
 };
@@ -42,7 +40,6 @@ export function ChatThreadTitle(props: ChatThreadTitleProps) {
         projectId={props.projectId}
         activeThreadId={null}
         title={t`New chat`}
-        variant={props.variant}
       />
     );
   // Keyed: a refusal that lands after a switch must not reopen on another chat.
@@ -52,21 +49,9 @@ export function ChatThreadTitle(props: ChatThreadTitleProps) {
 function ExistingThreadTitle({
   projectId,
   threadId,
-  variant = "quiet",
   failureClassName,
 }: ChatThreadTitleProps & { threadId: string }) {
-  const { threadById } = useProjectThreadGroups(projectId);
-  // A subagent's chat isn't in the project's chat list; the open chat's snapshot names it.
-  const opened = useQuery({
-    queryKey: threadQueryKeys.snapshot(threadId),
-    queryFn: skipToken,
-    select: (snapshot: DeserializedThreadSnapshot) => snapshot.thread,
-  }).data;
-  const title = displayThreadTitle(
-    threadById.get(threadId)?.title ??
-      opened?.title ??
-      (opened?.kind === "subagent" ? subagentMarkName(opened.agentName) : null),
-  );
+  const title = useChatTitle(projectId, threadId);
   const rename = useRenameThread(projectId, threadId, (confirmed) => {
     announce(t`Renamed to ${confirmed}`);
   });
@@ -78,7 +63,7 @@ function ExistingThreadTitle({
       rename={rename}
       maxLength={THREAD_TITLE_MAX_LENGTH}
       // The chip itself, with the switcher label's inset, so the words stay put.
-      fieldClassName={cn(titleChipClass(variant), "pane-title *:mx-1")}
+      fieldClassName={cn(titleChipClass("quiet"), "pane-title *:mx-1")}
       failureClassName={failureClassName}
     >
       {({ start, triggerRef }) => (
@@ -88,9 +73,23 @@ function ExistingThreadTitle({
           title={title}
           onRename={() => start(title)}
           triggerRef={triggerRef}
-          variant={variant}
         />
       )}
     </TitleEditSlot>
+  );
+}
+
+/** A chat's live title: its row in the project's chat list, else the open chat's snapshot (a subagent's chat has no row). */
+export function useChatTitle(projectId: string, threadId: string): string {
+  const { threadById } = useProjectThreadGroups(projectId);
+  const opened = useQuery({
+    queryKey: threadQueryKeys.snapshot(threadId),
+    queryFn: skipToken,
+    select: (snapshot: DeserializedThreadSnapshot) => snapshot.thread,
+  }).data;
+  return displayThreadTitle(
+    threadById.get(threadId)?.title ??
+      opened?.title ??
+      (opened?.kind === "subagent" ? subagentMarkName(opened.agentName) : null),
   );
 }

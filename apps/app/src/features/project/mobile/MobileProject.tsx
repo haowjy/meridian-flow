@@ -20,13 +20,14 @@ import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice"
 import { TrashedDocument } from "../context/TrashedDocument";
 import { useNewDocument } from "../context/use-new-document";
 import type { ReviewScopedProjectProps } from "../ProjectView";
+import { PanePlaceContext } from "../pane-place";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useTrashNavigation } from "../routing/ProjectNavigationContext";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
 import { useSideChatName } from "../side/SideHeader";
 import { SidePicker } from "../side/SidePicker";
-import { useChatOnScreen, useHostChatId, useSideItem } from "../side/SideView";
+import { useChatOnScreen, useHostChatId, useSideItem, useSideRevealed } from "../side/SideView";
 import { useMainItem } from "../views";
 import { ChatBreadcrumb } from "./ChatBreadcrumb";
 import { pathLeafName } from "./context-location";
@@ -46,7 +47,7 @@ export function MobileProject(props: MobileProjectProps) {
   // The sheet is the phone's side: never open on arrival, except for a first send still
   // recovering when the phone shell mounts, which needs its chat on screen.
   const [sheetOpen, setSheetOpen] = useState(
-    () => !onChat && isThreadAwaitingCreation(accountId, chat.currentChatId),
+    () => !onChat && isThreadAwaitingCreation(accountId, chat.lastShownChatId),
   );
   // Any open goes to main: the sheet closes rather than cover where the writer went. Arriving is
   // not an open, so a recovering first send keeps its sheet. The history position, not the
@@ -58,6 +59,15 @@ export function MobileProject(props: MobileProjectProps) {
     arrivedAt.current = position;
     setSheetOpen(false);
   }, [position]);
+  // An item placed in the side (a chat link in a document) shows the sheet, as it opens the side
+  // on the desktop.
+  const revealed = useSideRevealed();
+  const seenReveal = useRef(revealed);
+  useEffect(() => {
+    if (revealed === seenReveal.current) return;
+    seenReveal.current = revealed;
+    setSheetOpen(true);
+  }, [revealed]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const main = useMainItem();
   const trashedId = useTrashNavigation().shown;
@@ -143,7 +153,9 @@ export function MobileProject(props: MobileProjectProps) {
           removed={props.routeIssues?.main ? undefined : props.routeIssues?.removed}
           issue={props.routeIssues?.main ?? (onChat ? undefined : props.routeIssues?.editor)}
         >
-          {renderActiveView(props)}
+          <PanePlaceContext.Provider value="main">
+            {renderActiveView(props)}
+          </PanePlaceContext.Provider>
         </ProjectRouteBoundary>
       </main>
       <Sheet open={sheetVisible} onOpenChange={sheet.onOpenChange}>

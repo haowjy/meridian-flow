@@ -1,8 +1,11 @@
 /**
  * The project's stored shell state, per (account, project) in this browser tab and seeded once from
  * the device by `tab-first-remembered-id`, so two browser tabs on one project do not fight over it.
- * It holds the Work scope and the project's current chat and current document:
- * the last of each kind on screen, in main or beside. Main's mode decides which pane shows which.
+ * It holds the Work scope and one slot per kind of item, the last chat and the last document on
+ * screen in either pane (null: none, or the kind's empty page). Main's arrival writes the slot of
+ * its kind (`useMainArrival`), a pick or link into the side writes the other; the side shows the
+ * slot of the kind main is not. These are not the pane-state page's "current" items (what main
+ * showed last, which are each lane's `selected` in `main-tabs.ts`).
  */
 import { useMemo, useSyncExternalStore } from "react";
 import { readRememberedId, writeRememberedId } from "../tab-first-remembered-id";
@@ -11,16 +14,16 @@ import { readRememberedId, writeRememberedId } from "../tab-first-remembered-id"
 export type ProjectScope = string;
 export const NO_SCOPE = "none";
 
-/** The last document on screen, in main or beside. A document followed from a link keeps the link's Work. */
-export type CurrentDocument = { documentId: string; workId?: string };
+/** A document in a slot. One followed from a link keeps the link's Work. */
+export type ShownDocument = { documentId: string; workId?: string };
 
 const WORK = "?work=";
 
-function encodeDocument(document: CurrentDocument): string {
+function encodeDocument(document: ShownDocument): string {
   return `${document.documentId}${document.workId ? `${WORK}${document.workId}` : ""}`;
 }
 
-function decodeDocument(stored: string | null): CurrentDocument | null {
+function decodeDocument(stored: string | null): ShownDocument | null {
   if (!stored) return null;
   const [documentId, workId] = stored.split(WORK);
   if (!documentId) return null;
@@ -44,14 +47,14 @@ export function writeProjectScope(accountId: string, projectId: string, scope: P
   notify(accountId, projectId);
 }
 
-export function readCurrentDocument(accountId: string, projectId: string): CurrentDocument | null {
+export function readLastShownDocument(accountId: string, projectId: string): ShownDocument | null {
   return decodeDocument(readRememberedId("document", accountId, projectId));
 }
 
-export function writeCurrentDocument(
+export function writeLastShownDocument(
   accountId: string,
   projectId: string,
-  document: CurrentDocument | null,
+  document: ShownDocument | null,
 ): void {
   const next = document ? encodeDocument(document) : null;
   if (readRememberedId("document", accountId, projectId) === next) return;
@@ -59,17 +62,17 @@ export function writeCurrentDocument(
   notify(accountId, projectId);
 }
 
-/** The last chat on screen, in main or beside: the one the side shows beside a document. Null: a new chat. */
-export function readCurrentChat(accountId: string, projectId: string): string | null {
+/** The chat slot: the last chat on screen, in main or beside. Null: none, or a new chat's composer. */
+export function readLastShownChat(accountId: string, projectId: string): string | null {
   return readRememberedId("chat", accountId, projectId);
 }
 
-export function writeCurrentChat(
+export function writeLastShownChat(
   accountId: string,
   projectId: string,
   chatId: string | null,
 ): void {
-  if (readCurrentChat(accountId, projectId) === chatId) return;
+  if (readLastShownChat(accountId, projectId) === chatId) return;
   writeRememberedId("chat", accountId, projectId, chatId);
   notify(accountId, projectId);
 }
@@ -93,8 +96,8 @@ export function useProjectScope(accountId: string, projectId: string): ProjectSc
   );
 }
 
-/** The current document, re-read when it changes. Decoded from one stored string, so stable. */
-export function useCurrentDocument(accountId: string, projectId: string): CurrentDocument | null {
+/** The document slot, re-read when it changes. Decoded from one stored string, so stable. */
+export function useLastShownDocument(accountId: string, projectId: string): ShownDocument | null {
   const stored = useSyncExternalStore(
     (listener) => subscribe(accountId, projectId, listener),
     () => readRememberedId("document", accountId, projectId),
@@ -103,11 +106,11 @@ export function useCurrentDocument(accountId: string, projectId: string): Curren
   return useMemo(() => decodeDocument(stored), [stored]);
 }
 
-/** The current chat, re-read when it changes. */
-export function useCurrentChat(accountId: string, projectId: string): string | null {
+/** The chat slot, re-read when it changes. */
+export function useLastShownChat(accountId: string, projectId: string): string | null {
   return useSyncExternalStore(
     (listener) => subscribe(accountId, projectId, listener),
-    () => readCurrentChat(accountId, projectId),
+    () => readLastShownChat(accountId, projectId),
     () => null,
   );
 }

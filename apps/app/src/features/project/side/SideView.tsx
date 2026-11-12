@@ -2,11 +2,9 @@
  * The side's state for one project view: what it shows (`useSideItem`), which chat is on screen,
  * and the swap command (`useShellCommands`). Both shells read it: the phone's side is its sheet.
  *
- * The side shows the project's current item of the kind main is not (`resolveSide`). A swap writes
- * the current chat or document, stored per browser tab (`client/project-shell/store.ts`), never in
- * history; it lasts until main changes mode. The current document is cleared when its tab closes
- * (closed, Discarded or removed: `client/project-shell/main-tabs.ts`); one that no longer opens is
- * skipped.
+ * The side shows the slot of the kind main is not (`resolveSide`, `side-item.ts`). A pick or a link
+ * into the side writes its kind's slot, stored per browser tab (`client/project-shell/store.ts`),
+ * never in history; main's arrival writes the other (`useMainArrival`).
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -25,13 +23,11 @@ import {
   readDocumentView,
   setDocumentView,
 } from "@/client/project-shell/document-views";
-import { mainTabKey, useMainTabs } from "@/client/project-shell/main-tabs";
 import {
-  type CurrentDocument,
-  useCurrentChat,
-  useCurrentDocument,
-  writeCurrentChat,
-  writeCurrentDocument,
+  useLastShownChat,
+  useLastShownDocument,
+  writeLastShownChat,
+  writeLastShownDocument,
 } from "@/client/project-shell/store";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import type { OpenDocument } from "@/client/stores";
@@ -45,12 +41,15 @@ import { openDocumentFromDraftGroup } from "../context/open-document-from-draft"
 import { useDescribeProjectDocument } from "../context/open-project-document";
 import { recentOpening } from "../context/recent-opening";
 import { useRecordOpenedDocument } from "../context/use-record-opened-document";
+import { type PanePlace, useOptionalPanePlace } from "../pane-place";
+import { useChatNavigation } from "../routing/chat-navigation";
 import type { Item } from "../views";
 import {
   type Described,
   type Describing,
   fitsBeside,
   type MainForSide,
+  placeIn,
   resolveSide,
   type SettledSide,
   type SideFailure,
@@ -76,10 +75,9 @@ type SideView = {
   /** What the side's new-chat composer is about, as its draft stands. */
   newChatAbout: NewChatAbout;
   reportNewChatAbout: (about: NewChatAbout) => void;
-  /** Bumped by a document held beside from a link: the desktop opens the side so it is seen. */
+  /** Bumped by an item placed in the side: the desktop opens the side, the phone its sheet, so it is seen. */
   revealed: number;
-  /** With `draft`, the document shows that draft. */
-  showBeside: (document: CurrentDocument, draft?: DraftPin) => void;
+  place: Place;
   descriptions: Descriptions;
 };
 
@@ -222,27 +220,13 @@ export function SideViewProvider({
   children: ReactNode;
 }) {
   const accountId = useAccountId();
-  const currentChatId = useCurrentChat(accountId, projectId);
-  const currentDocument = useCurrentDocument(accountId, projectId);
-  const { tabs, selected } = useMainTabs(accountId, projectId);
-  // Beside a chat: the current document, else main's open tabs (the one main showed last, then
-  // from the right), else nothing. Not recents or the mounted documents: a document the writer
-  // closed must not come back, and a closed tab's host stays mounted, hidden, for its undo.
-  const documents = useMemo(() => {
-    const seen = new Set<string>();
-    const open = [...tabs]
-      .reverse()
-      .sort((a, b) => +(mainTabKey(b) === selected) - +(mainTabKey(a) === selected));
-    return [
-      ...(currentDocument ? [currentDocument] : []),
-      ...open.map((tab) => ({ documentId: tab.document.documentId })),
-    ].filter(({ documentId }) => !seen.has(documentId) && seen.add(documentId));
-  }, [currentDocument, tabs, selected]);
+  const lastShownChatId = useLastShownChat(accountId, projectId);
+  const documentSlot = useLastShownDocument(accountId, projectId);
   const descriptions = useDescriptions(projectId);
   const resolution = resolveSide({
     main,
-    currentChat: currentChatId,
-    documents,
+    chatSlot: lastShownChatId,
+    documentSlot,
     describe: descriptions.read,
   });
   const describing = resolution.kind === "pending" ? resolution.describing : null;
@@ -285,16 +269,26 @@ export function SideViewProvider({
   // screen, so a stream and the transcript stay warm behind the document the side shows.
   const showing: string | null | undefined =
     mainChat ?? (main.kind === "new-chat" ? null : sideChat ? sideChat.chatId : undefined);
-  const [hostChatId, setHostChatId] = useState<string | null>(showing ?? currentChatId);
+  const [hostChatId, setHostChatId] = useState<string | null>(showing ?? lastShownChatId);
   if (showing !== undefined && showing !== hostChatId) setHostChatId(showing);
 
   const [newChatAbout, reportNewChatAbout] = useState<NewChatAbout>("follows");
   const [revealed, setRevealed] = useState(0);
-  const showBeside = useCallback(
-    (document: CurrentDocument, draft?: DraftPin) => {
-      if (draft) setDocumentView(accountId, projectId, document.documentId, { pin: draft });
-      writeCurrentDocument(accountId, projectId, document);
+  const mainRef = useRef(main);
+  mainRef.current = main;
+  const place = useCallback<Place>(
+    (item, from, draft) => {
+      const pane = placeIn(item.kind, mainRef.current, from);
+      if (pane === "main") return pane;
+      if (item.kind === "document") {
+        if (draft) setDocumentView(accountId, projectId, item.documentId, { pin: draft });
+        writeLastShownDocument(accountId, projectId, {
+          documentId: item.documentId,
+          ...(item.workId ? { workId: item.workId } : {}),
+        });
+      } else writeLastShownChat(accountId, projectId, item.chatId);
       setRevealed((count) => count + 1);
+      return pane;
     },
     [accountId, projectId],
   );
@@ -308,7 +302,7 @@ export function SideViewProvider({
       newChatAbout,
       reportNewChatAbout,
       revealed,
-      showBeside,
+      place,
       descriptions,
     }),
     [
@@ -318,7 +312,7 @@ export function SideViewProvider({
       hostChatId,
       newChatAbout,
       revealed,
-      showBeside,
+      place,
       descriptions,
     ],
   );
@@ -391,12 +385,48 @@ export function useNewChatAbout(): {
   return { about: newChatAbout, report: reportNewChatAbout };
 }
 
-/** Holds a document beside from a link, and has the side seen; null outside the project view. */
-export function useOptionalShowBeside(): SideView["showBeside"] | null {
-  return useContext(SideViewContext)?.showBeside ?? null;
+/** What `place` opens: a link's target, with the Work a document link names. */
+export type PlacedItem =
+  | { kind: "document"; documentId: string; workId?: string }
+  | { kind: "chat"; chatId: string };
+
+/**
+ * The one placement command: where `item` opens, from a pane or the left sidebar (`placeIn`). It
+ * returns the pane. For the side it has already written the slot (and the draft the document shows)
+ * and had the side seen; for main the caller opens the item, since only it knows how (a live page, a
+ * draft, a chat).
+ */
+export type Place = (
+  item: PlacedItem,
+  from: PanePlace | "sidebar",
+  /** With a document, the draft it shows. */
+  draft?: DraftPin,
+) => PanePlace;
+
+/** `place` from the pane this surface is drawn in; null outside the project view. */
+export function useOptionalPlaceHere(): ((item: PlacedItem, draft?: DraftPin) => PanePlace) | null {
+  const place = useContext(SideViewContext)?.place;
+  const from = useOptionalPanePlace() ?? "sidebar";
+  return useMemo(() => (place ? (item, draft) => place(item, from, draft) : null), [place, from]);
 }
 
-/** Counts documents held beside from a link: the desktop opens the side on each. */
+/**
+ * Opens a chat from a pane (a link, a door, a reveal): in the side or in main. The one entrance for
+ * `ChatThreadNavigation` and the conversation reveal.
+ */
+export function usePlaceChat(): (threadId: string, from: PanePlace | undefined) => void {
+  const place = useSideView().place;
+  const { openChat } = useChatNavigation();
+  return useCallback(
+    (threadId, from) => {
+      if (place({ kind: "chat", chatId: threadId }, from ?? "sidebar") === "main")
+        void openChat(threadId);
+    },
+    [place, openChat],
+  );
+}
+
+/** Counts items placed in the side: the desktop opens the side on each. */
 export function useSideRevealed(): number {
   return useSideView().revealed;
 }
@@ -416,8 +446,8 @@ export function useShellCommands(projectId: string): {
     () => ({
       swapSide: (item) =>
         item.kind === "chat"
-          ? writeCurrentChat(accountId, projectId, item.chatId)
-          : writeCurrentDocument(accountId, projectId, { documentId: item.documentId }),
+          ? writeLastShownChat(accountId, projectId, item.chatId)
+          : writeLastShownDocument(accountId, projectId, { documentId: item.documentId }),
     }),
     [accountId, projectId],
   );
