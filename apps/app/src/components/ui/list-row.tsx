@@ -29,6 +29,7 @@ export function ListRow({
   href,
   onOpen,
   current = false,
+  selected = false,
   disabled,
   depth = 0,
   ref,
@@ -55,6 +56,8 @@ export function ListRow({
   onOpen: () => void;
   /** The value in effect, or with `"page"` the place the writer is on. */
   current?: boolean | "page";
+  /** Part of the list's selection (Ctrl/Cmd- or Shift-click): the current fill, not its weight. */
+  selected?: boolean;
   /** Disables the main control; the actions beside it stay live. */
   disabled?: boolean;
   /** Indent steps for a row nested under another, the file tree's step. */
@@ -150,7 +153,8 @@ export function ListRow({
         data-list-row
         className={cn(
           "group/row dropdown-focus-ring flex min-w-0 items-center rounded-md transition-colors has-[>[data-list-item]:focus-visible]:bg-ink-fill data-[selected=true]:bg-ink-fill-strong data-[selected=true]:font-medium motion-reduce:transition-none",
-          !current && !disabled && "hover:bg-ink-fill",
+          selected && !current && role.selected,
+          !current && !selected && !disabled && "hover:bg-ink-fill",
         )}
       >
         {wrapControl ? wrapControl(control) : control}

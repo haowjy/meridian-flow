@@ -256,7 +256,12 @@ and dialog serve all Scratch rows, retaining each target's owner. The actual own
 
 The Files list, the Chat list's Scratch and a Work's Files are each one list:
 `useEntryList` owns its selection, its entries route and, through `EntryList`,
-its drop scope. The Files list (also the phone drawer) is one list over every
+its drop scope. Recently opened (main's landing) is a list too, with its own
+`useEntrySelection` and no drop: its rows are `ListRow` links that drag as references, so Ctrl/Cmd-
+and Shift-click are taken in the capture phase (`useEntryRow().select`) before the link would open a
+browser tab, and the row's ⋯ and right-click give Move… and Delete for a filed document (the same
+`useEntryMenu`, `EntryDestinationPicker` and `useDeleteContextEntries` as the tree). An Untitled
+row, or a Scratch note (the list doesn't know its owner), grants nothing. The Files list (also the phone drawer) is one list over every
 source it can show: Manuscript, Knowledge, Your files, Unfiled and the chat's
 Scratch, each tree keeping its own expansion. Rows join through `EntrySelectionProvider`.
 Selection keys are `kind:id` and carry no scheme or place, so a moved row keeps
