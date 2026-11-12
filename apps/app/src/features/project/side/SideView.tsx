@@ -193,19 +193,21 @@ function useDescriptions(projectId: string): Descriptions {
     () => ({
       read: (document) => {
         const mounted = shown.find((tab) => tab.documentId === document.documentId);
-        if (mounted) {
-          // A document deleted or removed while it sits here no longer opens: the side is empty.
+        // A document deleted or removed while it sits here no longer opens: the side is empty.
+        const opens = (tab: OpenDocument | null): Described => {
+          if (!tab) return { status: "ready", document: null };
           const { kind } = projectResourceDocument(
-            mounted,
+            tab,
             records,
             placement,
-            isDraftOnly(mounted.documentId),
+            isDraftOnly(tab.documentId),
           );
           return {
             status: "ready",
-            document: kind === "terminal" || kind === "removed" ? null : mounted,
+            document: kind === "terminal" || kind === "removed" ? null : tab,
           };
-        }
+        };
+        if (mounted) return opens(mounted);
         const key = describeKey(document);
         const known = answers.get(key);
         if (known === undefined) return { status: "pending" };
@@ -217,7 +219,7 @@ function useDescriptions(projectId: string): Descriptions {
               store(key, undefined);
             },
           };
-        return { status: "ready", document: known };
+        return opens(known);
       },
       request,
     }),

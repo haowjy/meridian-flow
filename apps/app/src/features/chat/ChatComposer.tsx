@@ -12,7 +12,7 @@ import {
 } from "@/components/app/composer";
 import type { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { canOpenReference } from "@/features/project/context/open-project-document";
-import { usePanePlace } from "@/features/project/pane-place";
+import { mainTabStripHasFocus, usePanePlace } from "@/features/project/pane-place";
 import { useOpenPlacedDocument } from "@/features/project/review-launch";
 import { useAskTakeover } from "./ask/useAskTakeover";
 import { AnchoredCards } from "./ChatCards";
@@ -96,7 +96,7 @@ function ChatComposerComponent({
       <Composer
         cards={hasComposerCards ? <AnchoredCards anchor="composer" /> : undefined}
         key={draft.key}
-        autoFocus={place === "main"}
+        autoFocus={place === "main" && !mainTabStripHasFocus()}
         initialDraft={draft.initialDraft}
         onDraftChange={draft.updateDraft}
         onOpenReference={onOpenReference}

@@ -3,7 +3,7 @@ import { type RefObject, useEffect, useRef } from "react";
 import { announce } from "@/client/stores";
 
 import type { ComposerHandle } from "@/components/app/composer";
-import { usePanePlace } from "@/features/project/pane-place";
+import { mainTabStripHasFocus, usePanePlace } from "@/features/project/pane-place";
 
 /**
  * Announce thread navigation and focus main's composer when {@link threadId} changes, unless the writer is on main's tab strip. The side's
@@ -22,9 +22,6 @@ export function useThreadNavigationAnnounce(
   main.current = usePanePlace() === "main";
   useEffect(() => {
     announce(title.current);
-    // Focus on main's tab strip stays there, as in the document lane: a keyboard user moving
-    // along the tabs is not sent to the composer by each Enter.
-    if (main.current && !document.activeElement?.closest("[data-main-tab-strip]"))
-      composerRef.current?.focus();
+    if (main.current && !mainTabStripHasFocus()) composerRef.current?.focus();
   }, [threadId, composerRef]);
 }

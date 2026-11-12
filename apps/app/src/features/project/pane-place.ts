@@ -15,3 +15,10 @@ export const PanePlaceContext = createContext<PanePlace | null>(null);
 export const useOptionalPanePlace = () => useContext(PanePlaceContext);
 
 export const usePanePlace = (): PanePlace => useOptionalPanePlace() ?? "main";
+
+/**
+ * Main's tab strip has the focus: a chat arriving in main must not take it, so a keyboard user
+ * moving along the chat tabs stays on the strip, as in the document lane.
+ */
+export const mainTabStripHasFocus = () =>
+  !!document.activeElement?.closest("[data-main-tab-strip]");
