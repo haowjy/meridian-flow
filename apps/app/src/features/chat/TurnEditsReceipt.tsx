@@ -12,18 +12,17 @@ import type {
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isReversibleWorkReceipt } from "@meridian/contracts/works";
 import type { WorkReceipt } from "@meridian/thread-client";
-import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { type ReversalDirection, successfulWorkReversals } from "@/client/api/reverse-api";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
+import { DisclosureMark } from "@/components/ui/marks";
 import { followDisposition, MIDDLE_BUTTON } from "@/core/editor/links";
 import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
-import { cn } from "@/lib/utils";
 import {
   type CanOpenContextUri,
   type OpenContextUri,
@@ -215,13 +214,7 @@ export function TurnEditsReceipt({
           }}
           className="focus-ring -mx-1 flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] rounded-md px-1 text-left coarse:min-h-11"
         >
-          <ChevronDown
-            className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform",
-              expanded && "rotate-180",
-            )}
-            aria-hidden
-          />
+          <DisclosureMark open={expanded} />
           <span aria-hidden className="text-muted-foreground">
             ✎
           </span>

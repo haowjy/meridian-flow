@@ -8,13 +8,14 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
-import { ChevronsUpDown, Pencil, Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { type RefObject, useRef, useState } from "react";
 import { useThreadStore } from "@/client/stores";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { ListLine, ListRow } from "@/components/ui/list-row";
+import { ChooserMark } from "@/components/ui/marks";
 import { Picker, PickerResults, PickerSearch, PickerSection } from "@/components/ui/picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
@@ -137,7 +138,7 @@ export function ThreadSwitcherPopover({
           className={cn("focus-ring text-left", titleChipClass(variant))}
         >
           <PaneTitle className="min-w-0 flex-1">{title}</PaneTitle>
-          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <ChooserMark />
         </button>
       </PopoverTrigger>
       <PopoverContent
