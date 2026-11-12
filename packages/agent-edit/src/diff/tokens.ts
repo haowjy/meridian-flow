@@ -304,6 +304,21 @@ export function blockWords(node: PMNode): string[] {
   return w;
 }
 
+const containedWords = new WeakMap<PMNode, string[]>();
+/** The words a block holds: a container's are its descendant textblocks' in order (a leaf block holds none). */
+function contentWords(node: PMNode): string[] {
+  if (node.isTextblock) return blockWords(node);
+  let w = containedWords.get(node);
+  if (!w) {
+    w = [];
+    node.forEach((child) => {
+      w?.push(...contentWords(child));
+    });
+    containedWords.set(node, w);
+  }
+  return w;
+}
+
 const wordCounts = new WeakMap<PMNode, Map<string, number>>();
 /** Shared words ignoring order: an upper bound on the in-order count, and cheap. */
 function sharedBound(a: PMNode, b: PMNode): number {
@@ -311,7 +326,7 @@ function sharedBound(a: PMNode, b: PMNode): number {
     let m = wordCounts.get(n);
     if (!m) {
       m = new Map();
-      for (const w of blockWords(n)) m.set(w, (m.get(w) ?? 0) + 1);
+      for (const w of contentWords(n)) m.set(w, (m.get(w) ?? 0) + 1);
       wordCounts.set(n, m);
     }
     return m;
@@ -325,15 +340,15 @@ function sharedBound(a: PMNode, b: PMNode): number {
 
 /**
  * Share of words two blocks have in order, over the longer block's words (or the shorter's, for
- * `inPlace` pairs, where position already agrees). 1 for equal blocks, 0 for different kinds of block
- * or when it can't reach `floor`.
+ * `inPlace` pairs, where position already agrees). A container (a quote, a list) counts the words of
+ * its textblocks. 1 for equal blocks, 0 for different kinds of block or when it can't reach `floor`.
  */
 export function similarity(a: PMNode, b: PMNode, inPlace = false, floor = 0): number {
   if (a.type !== b.type && !(a.isTextblock && b.isTextblock)) return 0;
   if (blockKey(a) === blockKey(b)) return 1;
-  const x = blockWords(a);
-  const y = blockWords(b);
-  if (!x.length || !y.length || !a.isTextblock || !b.isTextblock) return 0;
+  const x = contentWords(a);
+  const y = contentWords(b);
+  if (!x.length || !y.length) return 0;
   const denom = inPlace ? Math.min(x.length, y.length) : Math.max(x.length, y.length);
   const bound = sharedBound(a, b);
   // Disjoint word sets cannot have an in-order match, even when no floor was requested.
