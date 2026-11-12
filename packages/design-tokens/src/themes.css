@@ -38,7 +38,6 @@
   --color-destructive-border: oklch(0.45 0.1 20);
   --color-warning-ink: oklch(0.85 0.1 70);
   --color-warning-tint: oklch(0.3 0.04 75);
-  --color-gold: oklch(0.78 0.13 84);
   --color-cinnabar: oklch(0.68 0.16 30);
 
   /* The light syntax inks are illegible here: same hues, lifted for >= 4.5:1. */

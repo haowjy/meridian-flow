@@ -55,7 +55,7 @@ yellow-green (85–140) read olive at that chroma; keep neutrals off them.
 - `page-edge` — `border-subtle` resolved onto the page, opaque, for the page sheet's edge and its folder tab's outline, whose strokes meet.
 - `focus` — the one keyboard focus colour, 3:1 or better on every surface.
 - `primary` / `jade-text` — jade fills and icons, and jade text; never a wall or routine selection.
-- `cinnabar` — the brand seal. `gold` — favourites only.
+- `cinnabar` — the brand seal.
 
 Contrast is part of the palette contract: every text ink (`foreground`,
 `muted-foreground`, `jade-text`, `destructive`, `warning-ink`) holds 4.5:1 on every

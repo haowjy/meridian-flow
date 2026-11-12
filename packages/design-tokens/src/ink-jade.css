@@ -11,7 +11,7 @@
  * https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/product/design-language-foundations.md
  *
  * Accents: jade = do/go and "changes waiting on you"; `primary` is for fills and icons,
- * `jade-text` for jade text. Cinnabar is the brand seal; gold is favourites only.
+ * `jade-text` for jade text. Cinnabar is the brand seal.
  * Destructive is its own crimson. Selected and current states are ink, never jade.
  */
 
@@ -57,9 +57,6 @@
   --color-warning: oklch(0.68 0.16 55);
   --color-warning-ink: oklch(0.46 0.1 55);
   --color-warning-tint: oklch(0.965 0.025 80);
-  /* Dark enough to hold 3:1 on chrome under a pressed button's and a current row's fills
-     (about 19% ink): a filled star carries state. */
-  --color-gold: oklch(0.545 0.108 80);
   --color-cinnabar: oklch(0.54 0.17 30);
 
   /* The login hero: a fixed ground, the same in both themes. */
