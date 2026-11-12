@@ -1,11 +1,9 @@
 import { Search } from "lucide-react";
-import type { ComponentProps, ReactNode, Ref } from "react";
+import type { ReactNode, Ref } from "react";
 
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { Input } from "@/components/ui/input";
 import { handleListKeys } from "@/components/ui/list-keys";
-import { ListRow } from "@/components/ui/list-row";
-import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 
 export function Picker({
@@ -99,11 +97,6 @@ export function PickerResults({
   );
 }
 
-/** The one-line state of a list or a section: loading, empty, no matches. */
-export function PickerLine({ children }: { children: ReactNode }) {
-  return <p className={cn("px-2", role.emptyLine)}>{children}</p>;
-}
-
 /** A run of rows. Without a label it is a plain list; state lines go above the rows. */
 export function PickerSection({
   label,
@@ -111,7 +104,7 @@ export function PickerSection({
   children,
 }: {
   label?: string;
-  /** A `PickerLine` or an error row for this section alone. */
+  /** A `ListLine` or an error row for this section alone. */
   state?: ReactNode;
   children?: ReactNode;
 }) {
@@ -123,35 +116,5 @@ export function PickerSection({
       {state}
       {list}
     </section>
-  );
-}
-
-/**
- * A picker's row: `ListRow` at menu density in the list's `<li>`. Kept under its own name
- * until every picker has landed; new code may use `ListRow` directly.
- */
-export function PickerRow({
-  onSelect,
-  buttonProps,
-  wrapButton,
-  ...row
-}: Omit<
-  ComponentProps<typeof ListRow>,
-  "density" | "href" | "onOpen" | "depth" | "revealActions" | "controlProps" | "wrapControl"
-> & {
-  onSelect: () => void;
-  buttonProps?: ComponentProps<typeof ListRow>["controlProps"];
-  wrapButton?: ComponentProps<typeof ListRow>["wrapControl"];
-}) {
-  return (
-    <li>
-      <ListRow
-        {...row}
-        density="menu"
-        onOpen={onSelect}
-        controlProps={buttonProps}
-        wrapControl={wrapButton}
-      />
-    </li>
   );
 }

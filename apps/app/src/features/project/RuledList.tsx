@@ -1,9 +1,7 @@
 /**
- * The project lists' shared row grammar: a list ruled between its rows, the
- * row's leading icon, and a group's label. Work lists, Work files, deleted
- * Works and the recency lists all build from these.
+ * The project lists' shared row grammar: a list ruled between its rows and a
+ * group's label. Work lists, deleted Works and the recency lists build from these.
  */
-import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
@@ -20,20 +18,6 @@ export function RuledList({ rows, className }: { rows: readonly RuledRow[]; clas
         </li>
       ))}
     </ul>
-  );
-}
-
-/** A row's leading icon, in the row's text rank. */
-export function RowIcon({ icon: Icon, className }: { icon: LucideIcon; className?: string }) {
-  return (
-    <span
-      className={cn(
-        "grid size-[18px] shrink-0 place-items-center text-muted-foreground",
-        className,
-      )}
-    >
-      <Icon className="size-4" aria-hidden />
-    </span>
   );
 }
 

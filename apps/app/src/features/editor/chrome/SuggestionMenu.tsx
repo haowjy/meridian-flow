@@ -68,6 +68,8 @@ export type SuggestionMenuProps = {
    * the caret, so its top edge is where the writer is already looking.
    */
   note?: ReactNode;
+  /** What stands in for the rows when there are none: a `ListLine` or an `InlineErrorRow`. */
+  empty?: ReactNode;
   className?: string;
   /** Composer sits on the phone keyboard; open above it. Manuscript stays below the caret. */
   side?: "top" | "bottom";
@@ -89,6 +91,7 @@ export function SuggestionMenu({
   onChoose,
   onDismiss,
   note,
+  empty,
   className,
   side = "bottom",
 }: SuggestionMenuProps) {
@@ -174,6 +177,7 @@ export function SuggestionMenu({
         role="listbox"
         aria-label={label}
         data-overflow={overflow}
+        hidden={rows.length === 0 && Boolean(empty)}
         className="meridian-suggestion-menu p-1.5"
       >
         {rows.map((row, index) => {
@@ -212,6 +216,7 @@ export function SuggestionMenu({
           );
         })}
       </div>
+      {rows.length === 0 && empty ? <div className="p-1.5">{empty}</div> : null}
     </EditorPopover>
   );
 }

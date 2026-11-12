@@ -16,12 +16,14 @@ client contracts, stores and server-owned runtime behavior.
   keep any deviation local. Product-specific density stays at the usage site
   until it recurs.
 - A new line the writer clicks in a list is a `ListRow` (`components/ui/list-row.tsx`): it
-  owns height, fills, focus ring and the current look, and its list owns the inset. The file
-  tree's rows are the exception (drag targets, rename in place). Not yet moved onto it:
-  `TrashRow` (`DocumentTrashDialog.tsx`, also Trash's sidebar source), `WorkspaceNavBody`'s
-  rows, `ProjectChatRow` and `WorkRow`.
+  owns height, fills, focus ring, the current look and the leading `icon` slot, and its list
+  owns the inset. The line that stands in for the rows (loading, empty, no matches) is
+  `ListLine` beside it, inside the same inset. The file tree's rows are the exception (drag
+  targets, rename in place). Not yet moved onto it: `TrashRow` (`DocumentTrashDialog.tsx`,
+  also Trash's sidebar source) and `WorkspaceNavBody`'s rows.
 - A new list the writer picks one thing from (a Work, an Agent, a chat) is built from
-  `components/ui/picker.tsx`, which owns its rows, keys and ARIA. A menu of actions
+  `components/ui/picker.tsx`, which owns its keys and ARIA; its rows are
+  `<li><ListRow density="menu" /></li>`. A menu of actions
   stays a Radix `DropdownMenu`. Not yet moved onto it: `WorkScopePicker` (a `DropdownMenu`),
   and `FileSuggestionList` and the editor's `SuggestionMenu`, which keep their own listbox
   (the first shares the pickers' keys through `list-keys.ts`).

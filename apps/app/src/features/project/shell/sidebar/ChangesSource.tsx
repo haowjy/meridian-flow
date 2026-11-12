@@ -5,7 +5,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } 
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { ListRow } from "@/components/ui/list-row";
+import { ListLine, ListRow } from "@/components/ui/list-row";
 import {
   ApplyAllQuestion,
   CommandNotice,
@@ -27,12 +27,11 @@ import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { useFocusSuccession } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
-import { RowIcon } from "../../context/ContextTreeRows";
 import { fileKindIcon } from "../../context/context-file-icon";
 import { useReferenceDrag } from "../../context/entry-drag/reference-source";
 import { useAiDraftLauncher } from "../../review-launch";
 import { useScopeDraftOwner } from "../../use-work-scope";
-import { SourceHint, SourcePane } from "./SourcePane";
+import { SourcePane } from "./SourcePane";
 
 /**
  * Whose changes the Changes tab lists: the Work picked in the sidebar, or under None the
@@ -253,14 +252,16 @@ export function ChangesSource({
           ) : null
         }
       >
-        {hasFiles && archived ? (
-          <SourceHint>
-            <Trans>This Work is archived. Unarchive it to apply or discard its changes.</Trans>
-          </SourceHint>
-        ) : hasFiles && controller.frozen ? (
-          <SourceHint>
-            <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>
-          </SourceHint>
+        {hasFiles && (archived || controller.frozen) ? (
+          <div className="px-2">
+            <ListLine iconSlot>
+              {archived ? (
+                <Trans>This Work is archived. Unarchive it to apply or discard its changes.</Trans>
+              ) : (
+                <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>
+              )}
+            </ListLine>
+          </div>
         ) : null}
         {hasFiles ? (
           <ul className="flex flex-col px-2">
@@ -300,12 +301,16 @@ export function ChangesSource({
             onRetry={drafts.refetch}
             actionLabel={t`Retry changes`}
           />
-        ) : drafts.status === "loading" ? (
-          <SourceHint status>
-            <Trans>Loading changes…</Trans>
-          </SourceHint>
         ) : (
-          <SourceHint>{scope.empty}</SourceHint>
+          <div className="px-2">
+            {drafts.status === "loading" ? (
+              <ListLine iconSlot status>
+                <Trans>Loading changes…</Trans>
+              </ListLine>
+            ) : (
+              <ListLine iconSlot>{scope.empty}</ListLine>
+            )}
+          </div>
         )}
         {notice && !inList && !inBar ? (
           <div className="mx-2">
@@ -375,7 +380,7 @@ function ChangeRow({
         current={active}
         disabled={!opens}
         controlProps={drag}
-        leading={<RowIcon icon={fileKindIcon(file.contextLocation?.path ?? name)} />}
+        icon={fileKindIcon(file.contextLocation?.path ?? name)}
         title={<span className={cn(deleted && "line-through")}>{name}</span>}
         detail={changeSummary(file, textChanges)}
         revealActions={!touch}

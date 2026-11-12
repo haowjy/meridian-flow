@@ -20,6 +20,7 @@ import type { CatalogContextView } from "@/client/query/context-catalog-projecti
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
+import { ListLine } from "@/components/ui/list-row";
 import { ListSectionHeader } from "@/components/ui/list-section";
 import type { DeleteTarget } from "../context/ContextEntryActions";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
@@ -36,7 +37,7 @@ import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { DockedRailSection } from "../shell/DockedRailSection";
 import { RailEmptyHint, RailFolderRow } from "../shell/RailSection";
-import { type SourceDrop, SourceHint, SourcePane } from "../shell/sidebar/SourcePane";
+import { type SourceDrop, SourcePane } from "../shell/sidebar/SourcePane";
 import { useOptionalMainItem } from "../views";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
@@ -127,20 +128,24 @@ export function ScratchSource({
       {scratch.source ? (
         <ChatScratchTree projectId={projectId} scratch={scratch} depth={0} onPicked={onPicked} />
       ) : null}
-      {!scratch.source ? (
-        <SourceHint>
-          <Trans>Open a chat to see its Scratch.</Trans>
-        </SourceHint>
-      ) : scratch.isError ? (
+      {scratch.source && scratch.isError ? (
         <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.retry} />
-      ) : !scratch.ready ? (
-        <SourceHint status>
-          <Trans>Loading…</Trans>
-        </SourceHint>
-      ) : !scratch.hasRows ? (
-        <SourceHint>
-          <Trans>No scratch notes yet.</Trans>
-        </SourceHint>
+      ) : !scratch.source || !scratch.ready || !scratch.hasRows ? (
+        <div className="px-2">
+          {!scratch.source ? (
+            <ListLine iconSlot>
+              <Trans>Open a chat to see its Scratch.</Trans>
+            </ListLine>
+          ) : !scratch.ready ? (
+            <ListLine iconSlot status>
+              <Trans>Loading…</Trans>
+            </ListLine>
+          ) : (
+            <ListLine iconSlot>
+              <Trans>No scratch notes yet.</Trans>
+            </ListLine>
+          )}
+        </div>
       ) : null}
     </SourcePane>
   );

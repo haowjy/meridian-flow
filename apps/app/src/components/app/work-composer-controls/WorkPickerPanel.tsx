@@ -11,14 +11,8 @@ import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { LoaderCircle } from "lucide-react";
 import type { RefObject } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import {
-  Picker,
-  PickerLine,
-  PickerResults,
-  PickerRow,
-  PickerSearch,
-  PickerSection,
-} from "@/components/ui/picker";
+import { ListLine, ListRow } from "@/components/ui/list-row";
+import { Picker, PickerResults, PickerSearch, PickerSection } from "@/components/ui/picker";
 
 export type WorkPickerFailure =
   | { kind: "thread_busy" }
@@ -117,6 +111,7 @@ export function WorkPickerPanel({
   };
 }) {
   const noneCurrent = view.status === "ready" && operation.currentWorkId === view.noWork.id;
+  const query = view.query.trim();
   return (
     <Picker
       label={purposeLabel}
@@ -132,19 +127,22 @@ export function WorkPickerPanel({
       <PickerResults>
         {view.status === "ready" ? (
           <PickerSection>
-            <PickerRow
-              ref={noneCurrent ? focusRefs?.selected : undefined}
-              current={noneCurrent}
-              disabled={!view.enabled}
-              onSelect={() => onChoose(view.noWork)}
-              title={<Trans>None</Trans>}
-            />
+            <li>
+              <ListRow
+                density="menu"
+                ref={noneCurrent ? focusRefs?.selected : undefined}
+                current={noneCurrent}
+                disabled={!view.enabled}
+                onOpen={() => onChoose(view.noWork)}
+                title={<Trans>None</Trans>}
+              />
+            </li>
           </PickerSection>
         ) : null}
         {view.status === "loading" ? (
-          <PickerLine>
+          <ListLine density="menu" status>
             <Trans>Loading Work…</Trans>
-          </PickerLine>
+          </ListLine>
         ) : null}
         {view.status === "error" ? (
           <InlineErrorRow
@@ -154,9 +152,9 @@ export function WorkPickerPanel({
           />
         ) : null}
         {view.status === "empty" ? (
-          <PickerLine>
+          <ListLine density="menu">
             <Trans>No Work yet.</Trans>
-          </PickerLine>
+          </ListLine>
         ) : null}
         {view.works.length ? (
           <PickerSection label={t`Active Work`}>
@@ -168,55 +166,57 @@ export function WorkPickerPanel({
               const helpId = `${work.id}-work-help`;
               const hasHelp = Boolean((changing && work.goal) || current);
               return (
-                <PickerRow
-                  key={work.id}
-                  ref={
-                    current
-                      ? focusRefs?.selected
-                      : work.id === view.works[0]?.id
-                        ? focusRefs?.first
-                        : undefined
-                  }
-                  current={current}
-                  disabled={!view.enabled}
-                  describedBy={
-                    [hasHelp ? helpId : null, error ? errorId : null].filter(Boolean).join(" ") ||
-                    undefined
-                  }
-                  onSelect={() => onChoose(work)}
-                  title={work.name}
-                  detail={changing ? <Trans>Changing work</Trans> : work.goal}
-                  trailing={
-                    <>
-                      {changing ? (
-                        <LoaderCircle className="size-4 animate-spin" aria-hidden />
-                      ) : null}
-                      {hasHelp ? (
-                        <span id={helpId} className="sr-only">
-                          {changing && work.goal ? t`Goal: ${work.goal}. ` : null}
-                          {current ? <Trans>Current Work for this chat.</Trans> : null}
-                        </span>
-                      ) : null}
-                    </>
-                  }
-                  below={
-                    error ? (
-                      <InlineErrorRow
-                        id={errorId}
-                        message={failureCopy(error)}
-                        className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-0"
-                      />
-                    ) : null
-                  }
-                />
+                <li key={work.id}>
+                  <ListRow
+                    density="menu"
+                    ref={
+                      current
+                        ? focusRefs?.selected
+                        : work.id === view.works[0]?.id
+                          ? focusRefs?.first
+                          : undefined
+                    }
+                    current={current}
+                    disabled={!view.enabled}
+                    describedBy={
+                      [hasHelp ? helpId : null, error ? errorId : null].filter(Boolean).join(" ") ||
+                      undefined
+                    }
+                    onOpen={() => onChoose(work)}
+                    title={work.name}
+                    detail={changing ? <Trans>Changing work</Trans> : work.goal}
+                    trailing={
+                      <>
+                        {changing ? (
+                          <LoaderCircle className="size-4 animate-spin" aria-hidden />
+                        ) : null}
+                        {hasHelp ? (
+                          <span id={helpId} className="sr-only">
+                            {changing && work.goal ? t`Goal: ${work.goal}. ` : null}
+                            {current ? <Trans>Current Work for this chat.</Trans> : null}
+                          </span>
+                        ) : null}
+                      </>
+                    }
+                    below={
+                      error ? (
+                        <InlineErrorRow
+                          id={errorId}
+                          message={failureCopy(error)}
+                          className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-0"
+                        />
+                      ) : null
+                    }
+                  />
+                </li>
               );
             })}
           </PickerSection>
         ) : null}
-        {view.status === "ready" && view.query.trim() !== "" && !view.works.length ? (
-          <PickerLine>
-            <Trans>No Work matches your search.</Trans>
-          </PickerLine>
+        {view.status === "ready" && query !== "" && !view.works.length ? (
+          <ListLine density="menu">
+            <Trans>No Works match “{query}”.</Trans>
+          </ListLine>
         ) : null}
       </PickerResults>
     </Picker>

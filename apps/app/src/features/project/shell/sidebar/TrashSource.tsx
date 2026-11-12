@@ -2,11 +2,12 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useDocumentTrash } from "@/client/query/useDocumentTrash";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { ListLine } from "@/components/ui/list-row";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { TrashRow } from "../../context/DocumentTrashDialog";
 import { useDocumentTrashRestore } from "../../context/DocumentTrashRestoreProvider";
 import { useProjectTrashNavigation } from "../../routing/ProjectNavigationContext";
-import { type SourceDrop, SourceHint, SourcePane } from "./SourcePane";
+import { type SourceDrop, SourcePane } from "./SourcePane";
 
 /**
  * Trash as a source: deleted documents, newest first. Rows dropped on it are
@@ -45,14 +46,18 @@ export function TrashSource({
       ))}
       {query.isError ? (
         <InlineErrorRow message={t`Couldn't load Trash.`} onRetry={() => void query.refetch()} />
-      ) : entries.length > 0 ? null : query.isPending ? (
-        <SourceHint status>
-          <Trans>Loading Trash…</Trans>
-        </SourceHint>
-      ) : (
-        <SourceHint>
-          <Trans>Nothing in the trash.</Trans>
-        </SourceHint>
+      ) : entries.length > 0 ? null : (
+        <div className="px-2">
+          {query.isPending ? (
+            <ListLine iconSlot status>
+              <Trans>Loading Trash…</Trans>
+            </ListLine>
+          ) : (
+            <ListLine iconSlot>
+              <Trans>Nothing in the trash.</Trans>
+            </ListLine>
+          )}
+        </div>
       )}
     </SourcePane>
   );

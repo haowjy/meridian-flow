@@ -1,6 +1,18 @@
+import type { LucideIcon } from "lucide-react";
 import type { HTMLAttributes, MouseEvent, ReactElement, ReactNode, Ref } from "react";
 
 import { cn } from "@/lib/utils";
+import { role } from "./roles";
+
+type Density = "list" | "menu";
+
+/** Where a row's content starts inside its control: the control's padding and the indent. */
+function contentInset(density: Density, depth: number): number {
+  return (density === "list" ? 6 : 8) + depth * 16;
+}
+
+/** The leading icon's slot (`w-4`) and the gap after it. */
+const ICON_SLOT_PX = 16 + 8;
 
 type ControlProps = Omit<
   HTMLAttributes<HTMLElement>,
@@ -20,6 +32,7 @@ export function ListRow({
   disabled,
   depth = 0,
   ref,
+  icon: Icon,
   leading,
   title,
   detail,
@@ -33,7 +46,7 @@ export function ListRow({
   wrapControl,
 }: {
   /** `list` rows are 28px, `menu` rows 32px; a `detail` adds the second line. 44px on touch. */
-  density?: "list" | "menu";
+  density?: Density;
   /**
    * Makes the control a link: a plain click calls `onOpen`, a modified click stays the
    * browser's. Ignored while `disabled`.
@@ -48,6 +61,9 @@ export function ListRow({
   depth?: number;
   /** The main control, when it is a button. */
   ref?: Ref<HTMLButtonElement>;
+  /** The row's kind, in the one leading-icon slot every list shares. */
+  icon?: LucideIcon;
+  /** A mark before the title that is not the row's kind: a picker's glyph, a status. */
   leading?: ReactNode;
   title: ReactNode;
   /** The second line. */
@@ -74,17 +90,22 @@ export function ListRow({
     "data-list-item": true,
     "aria-current": current || undefined,
     "aria-describedby": describedBy,
-    style: depth ? { paddingLeft: (density === "list" ? 6 : 8) + depth * 16 } : undefined,
+    style: { paddingLeft: contentInset(density, depth) },
     className: cn(
       "flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md text-left text-sm text-inherit no-underline outline-none select-none [&_svg]:pointer-events-none [&_svg]:shrink-0",
       density === "list"
-        ? "min-h-7 px-1.5 py-1 [@media(hover:none)]:min-h-11 coarse:min-h-11"
-        : "min-h-8 px-2 py-0.5 coarse:min-h-11 [&_svg]:size-4",
+        ? "min-h-7 py-1 pr-1.5 [@media(hover:none)]:min-h-11 coarse:min-h-11"
+        : "min-h-8 py-0.5 pr-2 coarse:min-h-11 [&_svg]:size-4",
       disabled && "pointer-events-none opacity-50",
     ),
   } as const;
   const content = (
     <>
+      {Icon ? (
+        <span className={cn("flex h-7 w-4 shrink-0 items-center justify-center", role.secondary)}>
+          <Icon aria-hidden className="size-3.5" />
+        </span>
+      ) : null}
       {leading}
       <span className="flex min-w-0 flex-1 flex-col justify-center">
         <span className="flex min-w-0 items-baseline justify-between gap-2">
@@ -147,5 +168,37 @@ export function ListRow({
       </div>
       {below}
     </>
+  );
+}
+
+/**
+ * The line that stands in for a list's rows: loading, empty, no matches. Put it where the
+ * rows go, inside the list's inset; its text starts where theirs would.
+ */
+export function ListLine({
+  children,
+  density = "list",
+  depth = 0,
+  iconSlot = false,
+  status = false,
+}: {
+  children: ReactNode;
+  /** The density of the rows it stands in for. */
+  density?: Density;
+  depth?: number;
+  /** The list's rows lead with an icon: start after its slot. */
+  iconSlot?: boolean;
+  /** A state that changes while the writer waits (loading): announced when it does. */
+  status?: boolean;
+}) {
+  return (
+    <p
+      role={status ? "status" : undefined}
+      aria-live={status ? "polite" : undefined}
+      className={cn("pr-2 leading-snug", role.emptyLine)}
+      style={{ paddingLeft: contentInset(density, depth) + (iconSlot ? ICON_SLOT_PX : 0) }}
+    >
+      {children}
+    </p>
   );
 }

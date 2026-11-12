@@ -6,13 +6,8 @@ import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { type RefObject, useRef, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import {
-  Picker,
-  PickerLine,
-  PickerResults,
-  PickerRow,
-  PickerSection,
-} from "@/components/ui/picker";
+import { ListLine, ListRow } from "@/components/ui/list-row";
+import { Picker, PickerResults, PickerSection } from "@/components/ui/picker";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { CreationAgent } from "./creation-agent";
 
@@ -49,9 +44,9 @@ export function AgentPickerPanel({
       <Picker>
         <PickerResults>
           {status.status === "loading" || status.status === "disabled" ? (
-            <PickerLine>
+            <ListLine density="menu" status>
               <Trans>Loading agents…</Trans>
-            </PickerLine>
+            </ListLine>
           ) : status.status === "error" ? (
             <InlineErrorRow
               message={t`Couldn't load agents.`}
@@ -59,9 +54,9 @@ export function AgentPickerPanel({
               retryRef={focusRefs?.retry}
             />
           ) : status.status === "empty" || agents.length === 0 ? (
-            <PickerLine>
+            <ListLine density="menu">
               <Trans>No agents available.</Trans>
-            </PickerLine>
+            </ListLine>
           ) : (
             // biome-ignore lint/a11y/noStaticElementInteractions: only notes that the writer has moved through the list. slop-lint: allow suppression the reason is stated in this comment
             <div onPointerMove={engage} onKeyDown={engage}>
@@ -73,54 +68,60 @@ export function AgentPickerPanel({
                     agent.selection.definitionRevisionId ===
                       selectedAgent?.selection.definitionRevisionId;
                   return (
-                    <PickerRow
-                      key={rowId}
-                      current={active}
-                      ref={
-                        active
-                          ? focusRefs?.selected
-                          : rowId === firstId
-                            ? focusRefs?.first
-                            : undefined
-                      }
-                      onSelect={() =>
-                        onSelect({ selection: agent.selection, slug: agent.slug, name: agent.name })
-                      }
-                      title={agent.name}
-                      meta={agent.model ?? t`No model`}
-                      detail={agent.description}
-                      wrapButton={(button) => (
-                        <Tooltip
-                          open={tooltipRowId === rowId}
-                          onOpenChange={(open) =>
-                            setTooltipRowId((current) =>
-                              open
-                                ? engaged.current
-                                  ? rowId
-                                  : current
-                                : current === rowId
-                                  ? null
-                                  : current,
-                            )
-                          }
-                        >
-                          <TooltipTrigger asChild>{button}</TooltipTrigger>
-                          {/* Below the row, kept inside the viewport: beside it has no room on a phone. */}
-                          <TooltipContent
-                            side="bottom"
-                            align="start"
-                            collisionPadding={8}
-                            className="max-w-xs space-y-1"
+                    <li key={rowId}>
+                      <ListRow
+                        density="menu"
+                        current={active}
+                        ref={
+                          active
+                            ? focusRefs?.selected
+                            : rowId === firstId
+                              ? focusRefs?.first
+                              : undefined
+                        }
+                        onOpen={() =>
+                          onSelect({
+                            selection: agent.selection,
+                            slug: agent.slug,
+                            name: agent.name,
+                          })
+                        }
+                        title={agent.name}
+                        meta={agent.model ?? t`No model`}
+                        detail={agent.description}
+                        wrapControl={(button) => (
+                          <Tooltip
+                            open={tooltipRowId === rowId}
+                            onOpenChange={(open) =>
+                              setTooltipRowId((current) =>
+                                open
+                                  ? engaged.current
+                                    ? rowId
+                                    : current
+                                  : current === rowId
+                                    ? null
+                                    : current,
+                              )
+                            }
                           >
-                            <p>
-                              {agent.name}
-                              {agent.model ? ` (${agent.model})` : ""}
-                            </p>
-                            {agent.description ? <p>{agent.description}</p> : null}
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                    />
+                            <TooltipTrigger asChild>{button}</TooltipTrigger>
+                            {/* Below the row, kept inside the viewport: beside it has no room on a phone. */}
+                            <TooltipContent
+                              side="bottom"
+                              align="start"
+                              collisionPadding={8}
+                              className="max-w-xs space-y-1"
+                            >
+                              <p>
+                                {agent.name}
+                                {agent.model ? ` (${agent.model})` : ""}
+                              </p>
+                              {agent.description ? <p>{agent.description}</p> : null}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      />
+                    </li>
                   );
                 })}
               </PickerSection>
