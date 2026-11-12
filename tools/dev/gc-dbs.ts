@@ -5,6 +5,7 @@ import { createInterface } from "node:readline/promises";
 import {
   dropDatabaseForUrl,
   isReservedDatabase,
+  listConnectedDatabasesForUrl,
   listWorktreeDatabasesForUrl,
   parseTargetDatabase,
 } from "./lib/dev-db";
@@ -70,13 +71,19 @@ async function main(): Promise<void> {
   }
 
   const found = await listWorktreeDatabasesForUrl(databaseUrl, mainDbNames);
-  const live = resolveLiveWorktreeDatabaseNames(repoRoot, mainDbNames);
+  // A worktree's name follows its branch, so a stack started before a branch switch holds a
+  // database no worktree name claims: a connection is what says it's in use.
+  const connected = await listConnectedDatabasesForUrl(databaseUrl);
+  const live = new Set([
+    ...resolveLiveWorktreeDatabaseNames(repoRoot, mainDbNames),
+    ...found.filter((dbName) => connected.has(dbName)),
+  ]);
   const { activeManaged, manual, orphaned } = classifyTestDatabaseCleanup(found, live, mainDbNames);
   const reserved = orphaned.filter((dbName) => isReservedDatabase(dbName, mainDbNames));
   const droppable = orphaned.filter((dbName) => !isReservedDatabase(dbName, mainDbNames));
 
   printList("Found project databases", found);
-  printList("Live worktree databases", [...live].sort());
+  printList("Live databases (a worktree's, or connected)", [...live].sort());
   printList("Active managed test databases", activeManaged);
   printList("Manual test databases (not dropped)", manual);
   printList("Orphaned databases", orphaned);
@@ -93,7 +100,13 @@ async function main(): Promise<void> {
   }
 
   const { adminConnString } = parseTargetDatabase(databaseUrl);
+  // The drop forces connections closed: one opened while the prompt waited keeps its database.
+  const connectedNow = await listConnectedDatabasesForUrl(databaseUrl);
   for (const dbName of droppable) {
+    if (connectedNow.has(dbName)) {
+      console.log(`Kept ${dbName}: connected since the list was read.`);
+      continue;
+    }
     const result = await dropDatabaseForUrl(
       databaseUrlForName(adminConnString, dbName),
       mainDbNames,

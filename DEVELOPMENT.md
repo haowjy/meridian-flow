@@ -110,7 +110,7 @@ Postgres comes from a Docker container built from `tools/postgres/Dockerfile`: `
 | `pnpm db:studio` | Drizzle Kit Studio |
 | `tools/dev/psql [args…]` | Run `psql` against this checkout's database |
 | `pnpm bootstrap` | Ensure DB + migrate + apply-functions |
-| `pnpm dev:gc-dbs -- --yes` | Drop stale worktree and stopped managed-test databases; preserve live worktrees, active tests, reserved manual-test names, and reserved databases |
+| `pnpm dev:gc-dbs -- --yes` | Drop stale worktree and stopped managed-test databases; preserve live worktrees, any database with a connection, active tests, reserved manual-test names, and reserved databases |
 
 ### Resetting a dev database
 
