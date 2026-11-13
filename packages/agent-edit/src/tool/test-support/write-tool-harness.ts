@@ -6,7 +6,7 @@ import {
   PROSEMIRROR_FRAGMENT_NAME,
   RESERVED_CLIENT_ID_MAX,
 } from "@meridian/prosemirror-schema";
-import { prosemirrorToYXmlFragment } from "y-prosemirror";
+import { prosemirrorToYXmlFragment } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import { createAgentEditCodecFactory } from "../../codec-adapter.js";
 import { createAgentEditCore } from "../../index.js";

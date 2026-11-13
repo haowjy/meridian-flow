@@ -231,7 +231,7 @@ describe("schema-aware serialization purity", () => {
     }
   });
 
-  it("preserves source client identity for identity-sensitive projection repairs", async () => {
+  it("reads adjacent texts as one run without repairing them", async () => {
     const subject = setup("md");
     const input = createCollabYDoc({ gc: false });
     const paragraph = new Y.XmlElement("paragraph");
@@ -244,7 +244,7 @@ describe("schema-aware serialization purity", () => {
     ).resolves.toBe("ab\n");
 
     expect(Y.encodeStateAsUpdate(input)).toEqual(beforeState);
-    expect(subject.eventSink.events).toHaveLength(1);
+    expect(subject.eventSink.events).toHaveLength(0);
     input.destroy();
   });
 });

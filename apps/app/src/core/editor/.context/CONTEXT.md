@@ -62,14 +62,24 @@ barrier that drains that open.
   attribute requires parity in both. Collaboration uses one
   `PROSEMIRROR_FRAGMENT_NAME` fragment and one sync path.
 - A block's adjacent `Y.XmlText` children are one run of text: peers typing into
-  an empty block at once create several. Our `@tiptap/y-tiptap` patch
-  (`patches/@tiptap__y-tiptap@3.0.5.patch`) diffs, compares and edits such a
-  run as one string and writes each change into the `XmlText` that owns the
-  offset, so a peer's concurrent insert and its byline survive. Stock
-  y-tiptap folds the run into its first text and deletes the rest, and
-  folds again on read. Drop that part of the patch when upstream stops doing
-  either (`updateYFragment` and `createNodeFromYElement` in
-  `src/lib/utils`).
+  an empty block at once create several. One rule reads and writes them
+  everywhere: diff the run as one string, send each change to the `XmlText`
+  that owns the offset (a boundary insert goes left), and empty a text, never
+  delete it, so a peer's concurrent insert and its byline survive. The browser
+  editor, the server and `packages/agent-edit` all bind through the one patched
+  `@tiptap/y-tiptap` (`patches/@tiptap__y-tiptap@3.0.5.patch`; `y-prosemirror`
+  is not a dependency); `agent-edit`'s own writers restate the rule in
+  `src/yjs-text-runs.ts`. Stock y-tiptap and y-prosemirror fold the run into
+  its first text, delete the rest, and fold again on read (a read that writes).
+  To drop the patch when upstream stops doing either, remove the grouping
+  changes (`updateYFragment`, `updateYText`, `equalYTextPText`,
+  `equalYTypePNode`, `computeChildEqualityFactor`, the `createNodeFromYElement`
+  read) and keep `refreshProseMirrorDoc`; then reduce `yjs-text-runs.ts` to what
+  the writers still need.
+- Known limits, left as they are until writers hit them: deleting a run beside
+  an inline atom deletes a peer's concurrent typing into it (a text is emptied
+  only when the whole block empties), and a concurrent split moves the bylines
+  of the text after the split to the splitting client.
 - `EditorMountIdentity` distinguishes live and stable draft review rooms
   and includes every construction fact. `editorMountKey()` becomes the React
   key; a reopened session adds its Y.Doc `guid` so a concrete room swap remounts

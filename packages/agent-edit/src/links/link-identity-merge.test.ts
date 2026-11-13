@@ -10,9 +10,9 @@
  */
 import { documentRef, storedHref } from "@meridian/contracts";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { updateYFragment } from "@tiptap/y-tiptap";
 import type { Node as PMNode } from "prosemirror-model";
 import { expect, it } from "vitest";
-import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { schema } from "../tool/test-support/write-tool-harness.js";
