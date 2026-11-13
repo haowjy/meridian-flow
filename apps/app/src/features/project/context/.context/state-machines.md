@@ -42,16 +42,20 @@ stateDiagram-v2
   candidate --> bound: the document is proved to be the one the address names
   candidate --> rejected: the document is gone, or no local owner exists
   bound --> candidate: the route names another document
+  rejected --> candidate: the route names a document again
+  rejected --> bound: a later proof binds the document
   bound --> none: the selection is cleared
   rejected --> none: the selection is cleared
   candidate --> none: the selection is cleared
 ```
 
-Three things prove a `candidate`: the navigation named the document, a lookup answered with
-it, or the address carries a review item for it. The last holds only for that address.
+Three things bind a selection: the navigation named the document, a lookup answered with
+it, or the address carries a review item for it. The last holds only for that address. A
+`bound` selection records which one bound it, and can change its proof and stay `bound`: a
+writer leaving a review keeps the document, as a navigation's.
 
-Every change increments `revision`, and work started for an earlier revision is dropped when it
-returns. A `candidate` carries the obligations still pending for it and a guard against
+Each new `candidate` gets the next `revision`; binding or rejecting it keeps that revision.
+Work started for an earlier revision is dropped when it returns. A `candidate` carries the obligations still pending for it and a guard against
 re-entering a document whose removal already finished: binding without checking that guard
 reopens a document the writer just deleted.
 
@@ -66,7 +70,7 @@ that carries the operation id.
 stateDiagram-v2
   [*] --> pending
   pending --> feedback: the intent settled with a successful move receipt
-  pending --> retired: cancelled, superseded, needs repair, settled locally, or a delete
+  pending --> retired: cancelled, superseded, needs repair, settled locally, a delete, or settled without a successful move
   feedback --> retired: the note's time runs out
   retired --> [*]
 ```
