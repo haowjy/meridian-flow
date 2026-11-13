@@ -38,7 +38,9 @@ export function useReadingPosition({
       initialized.current = editor;
       if (mayRestoreReadingPosition(editor, documentId, review, window.location.href)) {
         const place = store.load(documentId);
-        if (place) restoreReadingPosition(editor, scroller, place);
+        // A frame later, past the commit: React's development double mount remounts the editor
+        // content, which redraws the prose and drops any scroll set before it.
+        if (place) requestAnimationFrame(() => restoreReadingPosition(editor, scroller, place));
       }
     }
     let candidate: { place: ReadingPosition; at: number } | null = null;
