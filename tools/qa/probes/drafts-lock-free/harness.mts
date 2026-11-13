@@ -29,6 +29,7 @@ import { createTestDocumentRemoval } from "../../../../apps/server/server/test-s
 import {
   dropDatabaseForUrl,
   ensureDatabaseForUrl,
+  isCiRunnerPostgres,
   LOCAL_DEV_POSTGRES_PORT,
 } from "../../../dev/lib/dev-db.ts";
 import { resolveCurrentRepoRoot } from "../../../dev/lib/dev-env.ts";
@@ -52,16 +53,32 @@ export type Probe = {
 
 export type Harness = Awaited<ReturnType<typeof openHarness>>;
 
-/** A scratch database on the local dev Postgres: created, migrated, and dropped by `drop`. */
+/**
+ * A scratch database: created, migrated, and dropped by `drop`. It lives on a CI runner's own
+ * Postgres (`DATABASE_URL`) or else the local dev one, through the shared `dev-db` helpers, which
+ * refuse unsafe and reserved names and any other server.
+ */
 export async function createScratchDatabase(): Promise<{ url: string; drop(): Promise<void> }> {
-  const name = `${SCRATCH_PREFIX}${process.pid}_${Date.now().toString(36)}`;
-  const url = `postgresql://postgres:postgres@127.0.0.1:${LOCAL_DEV_POSTGRES_PORT}/${name}`;
+  const { DATABASE_URL } = process.env;
+  const server = new URL(
+    DATABASE_URL && isCiRunnerPostgres(DATABASE_URL)
+      ? DATABASE_URL
+      : `postgresql://postgres:postgres@127.0.0.1:${LOCAL_DEV_POSTGRES_PORT}/postgres`,
+  );
+  server.pathname = `/${SCRATCH_PREFIX}${process.pid}_${Date.now().toString(36)}`;
+  const url = server.href;
+  const drop = () => dropDatabaseForUrl(url, []).then(() => undefined);
   await ensureDatabaseForUrl(url);
-  await runMigrations({
-    databaseUrl: url,
-    migrationsDirectory: resolve(resolveCurrentRepoRoot(), "packages/database/src/migrations"),
-  });
-  return { url, drop: () => dropDatabaseForUrl(url, []).then(() => undefined) };
+  try {
+    await runMigrations({
+      databaseUrl: url,
+      migrationsDirectory: resolve(resolveCurrentRepoRoot(), "packages/database/src/migrations"),
+    });
+  } catch (error) {
+    await drop();
+    throw error;
+  }
+  return { url, drop };
 }
 
 /** The production adapters over `url`, with the project-level rows every probe shares. */
