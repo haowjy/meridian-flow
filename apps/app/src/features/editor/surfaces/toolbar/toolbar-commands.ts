@@ -213,7 +213,7 @@ function activeBlockTypeId(editor: Editor): BlockTypeId | null {
   for (const [id, level] of Object.entries(BLOCK_TYPE_HEADING_LEVELS)) {
     if (editor.isActive("paragraph", { level })) return id as BlockTypeId;
   }
-  return editor.isActive("paragraph") ? "paragraph" : null;
+  return editor.isActive("paragraph", { level: null }) ? "paragraph" : null;
 }
 
 function headingLevel(id: BlockTypeId): HeadingLevel | null {
