@@ -83,6 +83,9 @@ Drafts and edits.
   starts the exchange. The label says what moves ("streams the reply"). The main path's labels start
   `1. `, `2. `, … and must run in order on the page; side arrows have no number. An `import` arrow
   fails: imports are not drawn.
+- **A note** explains a box in a sentence or two: `note1["text"]:::note`, attached to the box with an
+  unlabelled dotted link, `note1 -.- runtime`. A note takes no `##` section, no `Paths` and no `Kind`;
+  it must link to a box. GitHub draws it as an ordinary box.
 - **A node's id is its section.** Every node has a `## <id>` section on the page and every `##`
   section is a node. A box that belongs to another level, shown for reference, has kind `context`
   and `- See: [label](other.md#id)`.
@@ -131,8 +134,9 @@ the items `Map` (links to `#<box id>` on a level page), `Machines` and later `Sh
 ## What `pnpm check:architecture` catches
 
 - A Mermaid line the format doesn't allow; a box without a section or a section without a box; a
-  `Kind` that isn't the box's class; an unknown node kind; an import arrow; numbered arrows out of
-  order; a group with no `Opens`; a level page nothing lists or opens.
+  `Kind` that isn't the box's class; an unknown node kind; an arrow with a kind prefix or an import
+  arrow; numbered arrows out of order; a group with no `Opens`; a level page nothing lists or opens;
+  a note that links to nothing, joins two notes or two boxes, or has a section.
 - A path that doesn't exist; a link whose file or `#id` doesn't resolve, in every page here and in
   the journeys and flows; a journey `Map` link that isn't a box.
 - A flow participant that isn't a box id; a flow that isn't in `flows/index.md` or has no numbered
@@ -158,6 +162,8 @@ the checker can't see in source text, such as a path built at run time.
 ## The viewer
 
 `index.html` needs the pages served from the repo: `pnpm dev` does that
-(`apps/app/dev/architecture-dev-plugin.ts`), opened from disk it says so. Mermaid and `marked`
-come from a CDN with pinned versions and integrity hashes. See [AGENTS.md](AGENTS.md) for how the
+(`apps/app/dev/architecture-dev-plugin.ts`), opened from disk it says so. A level page opens as Map
+(boxes you can drag; where you put them is remembered for that page on this computer, and "Reset
+layout" undoes it) or Read (the Markdown with its diagram); the header toggles. Scripts come from a
+CDN with pinned versions and integrity hashes. See [AGENTS.md](AGENTS.md) for how the
 viewer is built.

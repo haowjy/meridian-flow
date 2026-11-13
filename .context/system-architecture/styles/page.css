@@ -233,37 +233,29 @@ button {
 .diagram {
   position: relative;
   flex: 1;
-  overflow: hidden;
   min-width: 0;
   min-height: 0;
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
 }
 
-.diagram:active {
-  cursor: grabbing;
-}
-
-.stage {
+.flow {
   position: absolute;
-  top: 0;
-  left: 0;
-  transform-origin: 0 0;
+  inset: 0;
 }
 
-.stage svg {
-  display: block;
-  max-width: none;
+.marker-defs {
+  position: absolute;
+}
+
+.flow .react-flow {
+  --xy-background-color: transparent;
+  --xy-edge-stroke: var(--color-muted-foreground);
+  --xy-edge-stroke-width: 1.5;
+  font-family: inherit;
 }
 
 .diagram-tools {
-  position: absolute;
-  top: 12px;
-  left: 12px;
   display: flex;
   gap: 4px;
-  cursor: default;
 }
 
 .legend {
@@ -385,30 +377,6 @@ button {
   --dash: 3 3;
 }
 
-#map-diagram svg .node rect,
-#map-diagram svg .node polygon,
-#map-diagram svg .node circle {
-  fill: var(--fill, var(--color-card));
-  stroke: var(--stroke, var(--color-ink-subtle));
-  stroke-width: 1.5px;
-  stroke-dasharray: var(--dash, none);
-}
-
-#map-diagram svg .node {
-  cursor: pointer;
-}
-
-/* A group opens a page of its own: a stacked card. */
-#map-diagram svg .node.group {
-  filter: drop-shadow(5px 5px 0 var(--color-border)) drop-shadow(2px 2px 0 var(--stroke));
-}
-
-#map-diagram svg .node.is-selected rect {
-  stroke: var(--color-ring);
-  stroke-width: 3.5px;
-  stroke-dasharray: none;
-}
-
 .swatch {
   display: inline-block;
   width: 18px;
@@ -430,74 +398,129 @@ button {
   --border-style: dotted;
 }
 
-/* Numbered arrows are the main path; the rest are side trips. */
-.edge-step {
-  --edge: var(--color-jade-text);
-  --edge-width: 2.5px;
+/* ---- Boxes and arrows on the canvas ---- */
+
+.card {
+  min-width: 150px;
+  max-width: 260px;
+  padding: 9px 14px 10px;
+  border: 1.5px solid var(--stroke, var(--color-ink-subtle));
+  border-style: var(--border-style, solid);
+  border-radius: 8px;
+  background: var(--fill, var(--color-card));
+  color: var(--color-foreground);
+  text-align: center;
+  cursor: pointer;
 }
 
-#map-diagram svg path.flowchart-link {
-  stroke: var(--edge, var(--color-muted-foreground));
-  stroke-width: var(--edge-width, 1.5px);
-  stroke-dasharray: var(--edge-dash, none);
+.card-label {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.25;
 }
 
-#map-diagram svg marker path {
-  fill: var(--color-muted-foreground);
-  stroke: var(--color-muted-foreground);
+.card-sub {
+  margin-top: 3px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 1.3;
 }
 
-#map-diagram svg g.edgeLabel,
-#map-diagram svg g.edgeLabel span,
-#map-diagram svg g.edgeLabel p {
-  color: var(--edge, var(--color-muted-foreground));
+/* A group opens a page of its own: a stacked card. */
+.card.kind-group {
+  box-shadow: 5px 5px 0 -1px var(--color-card), 5px 5px 0 0 var(--stroke), 9px 9px 0 -1px var(--color-card), 9px 9px 0 0 var(--stroke);
 }
 
-#map-diagram svg path.edge-hit {
-  fill: none;
-  stroke: transparent;
-  stroke-width: 14px;
-  pointer-events: stroke;
+.card.is-selected {
+  border-color: var(--color-ring);
+  box-shadow: 0 0 0 3px var(--color-ring);
 }
 
-.stage.is-unlabelled g.edgeLabel {
-  display: none;
-}
-
-#map-diagram svg path.flowchart-link.is-linked,
-#map-diagram svg path.flowchart-link.is-hovered {
-  stroke-width: calc(var(--edge-width, 1.5px) + 1px);
-}
-
-.stage.has-selection path.flowchart-link:not(.is-linked),
-.stage.has-selection g.edgeLabel:not(.is-linked) {
-  opacity: 0.12;
-}
-
-.stage.has-selection g.node:not(.is-selected):not(.is-linked) {
+.card.is-dim,
+.note-card.is-dim {
   opacity: 0.35;
 }
 
-.edge-tags {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
+.note-card {
+  max-width: 220px;
+  padding: 7px 10px;
+  border: 1px dashed var(--color-warning-foreground);
+  border-radius: 4px;
+  background: var(--color-warning-bg);
+  color: var(--color-warning-foreground);
+  font-size: 12.5px;
+  line-height: 1.35;
+  cursor: grab;
 }
 
-.edge-tag {
-  position: absolute;
-  top: 0;
-  left: 0;
-  max-width: 220px;
-  padding: 1px 6px;
-  border: 1px solid var(--edge, var(--color-border));
-  border-radius: 4px;
-  background: var(--color-card);
-  color: var(--color-foreground);
-  font-size: 12px;
-  line-height: 1.35;
-  box-shadow: var(--shadow-card);
+.react-flow__node:hover .card:not(.is-selected) {
+  border-color: var(--color-ring);
+}
+
+.react-flow__handle {
+  opacity: 0;
+}
+
+/* Numbered arrows are the main path; the rest are side trips. */
+.react-flow__edge.edge .react-flow__edge-path {
+  stroke: var(--color-muted-foreground);
+  stroke-width: 1.5px;
+}
+
+.react-flow__edge.is-step .react-flow__edge-path {
+  stroke: var(--color-jade-text);
+  stroke-width: 2.75px;
+}
+
+.react-flow__edge.note-link .react-flow__edge-path {
+  stroke: var(--color-warning-foreground);
+  stroke-width: 1.25px;
+  stroke-dasharray: 3 4;
+}
+
+.react-flow__edge.is-faded {
+  opacity: 0.12;
+}
+
+.react-flow__edge-text {
+  fill: var(--color-muted-foreground);
+  font-size: 12.5px;
+}
+
+.react-flow__edge.is-step .react-flow__edge-text {
+  fill: var(--color-jade-text);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.is-far .react-flow__edge:not(.is-step):not(.is-lit) .react-flow__edge-text,
+.is-far .react-flow__edge:not(.is-step):not(.is-lit) .react-flow__edge-textbg {
+  display: none;
+}
+
+.react-flow__edge-textbg {
+  fill: var(--color-card);
+  fill-opacity: 0.92;
+}
+
+.arch-arrow {
+  fill: var(--color-muted-foreground);
+}
+
+.arch-arrow-step {
+  fill: var(--color-jade-text);
+}
+
+.react-flow__controls {
+  --xy-controls-button-background-color: var(--color-card);
+  --xy-controls-button-background-color-hover: var(--color-accent);
+  --xy-controls-button-color: var(--color-foreground);
+  --xy-controls-button-border-color: var(--color-border-subtle);
+  box-shadow: none;
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
 }
 
 /* ---- Side panel ---- */

@@ -84,6 +84,7 @@ onThemeChange(() => {
 
 let seq = 0;
 let baseKey = null;
+let baseHash = null;
 let base = null; // { update(route), dispose() }
 let docView = null;
 let docKey = null;
@@ -99,7 +100,9 @@ async function render() {
   syncChrome(r);
   const key = r.kind === "level" ? `level:${r.id}:${mode}` : r.kind === "read" ? `read:${r.key}` : "journeys";
   if (key === baseKey) {
-    base?.update(r);
+    // Closing a doc returns to the same hash: leave the page as the reader left it.
+    if (location.hash !== baseHash) base?.update(r);
+    baseHash = location.hash;
     return;
   }
   base?.dispose();
@@ -111,6 +114,7 @@ async function render() {
     if (mine !== seq) return mounted.dispose();
     base = mounted;
     baseKey = key;
+    baseHash = location.hash;
   } catch (error) {
     if (mine !== seq) return;
     host.replaceChildren(el("p", { class: "doc-note pad" }, `This page didn't load: ${error.message ?? error}`));
@@ -144,14 +148,15 @@ async function mount(r) {
 async function mountRead(path, target) {
   const article = el("article", { class: "md" });
   host.className = "view";
-  host.replaceChildren(el("div", { class: "read" }, article));
-  const scrollTo = (id) => id && article.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({ block: "start" });
+  const scroller = el("div", { class: "read" }, article);
+  host.replaceChildren(scroller);
+  const scrollTo = (id) => (id ? article.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({ block: "start" }) : scroller.scrollTo(0, 0));
   try {
     await paintMarkdown(article, await fetchRepoFile(path), path, (holder, source) => wireDiagram(holder, source, scrollTo));
   } catch (error) {
     article.replaceChildren(loadFailure(path, error));
   }
-  scrollTo(target);
+  if (target) scrollTo(target);
   return { update: (route) => scrollTo(route.box ?? route.fragment), dispose() {} };
 }
 

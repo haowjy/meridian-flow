@@ -104,8 +104,8 @@ globalThis.marked.use({
 const ZOOM_STEP = 1.25;
 
 /**
- * Zoom buttons for a diagram holder: it starts at natural size, where text reads and the holder
- * scrolls; "Fit" scales it to the holder's width.
+ * Zoom buttons for a diagram holder. Natural size is where text reads and the holder scrolls;
+ * "Fit" scales it to the holder's width.
  */
 function addZoom(holder) {
   const svg = holder.querySelector("svg");
@@ -130,8 +130,11 @@ function addZoom(holder) {
       button("Fit", "Fit to width", fit),
     ),
   );
-  // A flow fills the width (a little larger than natural at most); other diagrams start at natural size.
-  set(svg.getAttribute("aria-roledescription") === "sequence" ? Math.min(Math.max((holder.clientWidth - 26) / natural, 1), 1.6) : 1);
+  // A flow fills the width (never smaller than 0.6, never above 1.6), a flowchart is squeezed to fit it,
+  // and any other diagram (a state machine) starts at natural size.
+  const wide = (holder.clientWidth - 26) / natural;
+  const kind = svg.getAttribute("aria-roledescription") ?? "";
+  set(kind === "sequence" ? Math.min(Math.max(wide, 0.6), 1.6) : kind.startsWith("flowchart") ? Math.min(wide, 1) : 1);
 }
 
 const isContextPage = (path) => path.endsWith(".md") && path.split("/").includes(".context");

@@ -1,48 +1,258 @@
 /*
- * The map view of a level page: its Mermaid flowchart on a pan-and-zoom canvas under the page's
- * intro, and a side panel with the selected box's section. A box's own arrows stay lit and the
- * rest fade; a group opens its child page.
+ * The map view of a level page: its flowchart drawn with React Flow under the page's intro, and a
+ * side panel with the selected box's section. A box's own arrows stay lit and the rest fade; a
+ * group opens its child page. Boxes drag and the arrows follow; where they were put is remembered
+ * for this page on this computer.
  */
-import { drawDiagram, paintInline, route } from "./markdown.js";
+import { paintInline, route } from "./markdown.js";
+import { layoutFor } from "./layout.js";
 import { item, linksOf, NODE_KINDS, pathsOf, sourceUrl } from "./pages.js";
 import { el } from "./shell.js";
 
-/**
- * Mermaid sizes boxes and spacing from these. Boxes get a larger font than arrow labels so a
- * dense level still reads at Fit; when the arrow labels would not read at Fit, the diagram is
- * laid out without them and a box's labels show when it is selected, an arrow's when hovered.
- */
-const LOOK = { fontSize: 22, edgeFontSize: 16, flowchart: { nodeSpacing: 36, rankSpacing: 56, padding: 8, wrappingWidth: 260 } };
-const LEGIBLE_EDGE_LABEL = 6;
-/** Fit never draws box labels larger than 24px. */
-const MAX_SCALE = 24 / LOOK.fontSize;
-/** Fit keeps the diagram below the zoom buttons. */
-const TOOLS_HEIGHT = 44;
-/** Where along a line a tag may sit, in the order tried: the middle first. */
-const ALONG = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.12, 0.88];
+const React = globalThis.React;
+const h = React.createElement;
+const RF = globalThis.ReactFlow;
+const { createContext, useContext, useEffect, useMemo, useRef, useState } = React;
 
-const plain = (label) => label.replace(/<br\s*\/?>.*$/, "").replace(/<[^>]+>/g, "");
-const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+/** Below this scale box text is unreadable, so a big level opens at its top, readable, to pan. */
+const MIN_FIT_ZOOM = 0.4;
+const LAYOUT_KEY = "meridian-architecture-layout:";
+
+const parts = (label) => {
+  const [name, ...role] = label.split(/<br\s*\/?>/);
+  const text = (html) => html.replace(/<[^>]+>/g, "");
+  return { name: text(name), role: text(role.join(" ")) };
+};
+const plain = (label) => parts(label).name;
+
+/** Where the reader dragged this page's boxes: { id: { x, y } }, or {} (no storage, or nothing saved). */
+function savedLayout(path) {
+  try {
+    return JSON.parse(localStorage.getItem(LAYOUT_KEY + path) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveLayout(path, positions) {
+  try {
+    if (positions) localStorage.setItem(LAYOUT_KEY + path, JSON.stringify(positions));
+    else localStorage.removeItem(LAYOUT_KEY + path);
+  } catch {
+    // Not remembered; the boxes stay where they are for this visit.
+  }
+}
+
+/** What a box needs to draw itself that isn't in its node: the selection and what a click does. */
+const Selection = createContext({ selectedId: null, linked: new Set() });
+
+const SIDES = {
+  LR: { target: RF.Position.Left, source: RF.Position.Right },
+  TB: { target: RF.Position.Top, source: RF.Position.Bottom },
+};
+
+function Box({ data, id }) {
+  const { selectedId, linked } = useContext(Selection);
+  const { node, direction } = data;
+  const side = SIDES[direction];
+  const { name, role } = parts(node.label);
+  const state = selectedId === null ? "" : id === selectedId ? "is-selected" : linked.has(id) ? "is-linked" : "is-dim";
+  return h(
+    "div",
+    { className: `card kind-${node.kind} ${state}`, title: node.kind === "group" ? "Opens its own page" : undefined },
+    h(RF.Handle, { type: "target", position: side.target, isConnectable: false }),
+    h("div", { className: "card-label" }, name, node.kind === "group" ? " ▸" : ""),
+    role ? h("div", { className: "card-sub" }, role) : null,
+    h(RF.Handle, { type: "source", position: side.source, isConnectable: false }),
+  );
+}
+
+function Note({ data, id }) {
+  const { selectedId, linked } = useContext(Selection);
+  const side = SIDES[data.direction];
+  return h(
+    "div",
+    { className: `note-card ${selectedId !== null && !linked.has(id) ? "is-dim" : ""}` },
+    h(RF.Handle, { type: "target", position: side.target, isConnectable: false }),
+    parts(data.node.label).name,
+    h(RF.Handle, { type: "source", position: side.source, isConnectable: false }),
+  );
+}
+
+const nodeTypes = { box: Box, note: Note };
+
+/** The arrowheads every edge refers to by id, coloured from tokens by CSS. */
+function Markers() {
+  const arrow = (id) =>
+    h(
+      "marker",
+      { key: id, id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse", markerUnits: "strokeWidth" },
+      h("path", { d: "M0,0 L10,5 L0,10 Z", className: id }),
+    );
+  return h("svg", { className: "marker-defs", "aria-hidden": true, width: 0, height: 0 }, h("defs", null, arrow("arch-arrow"), arrow("arch-arrow-step")));
+}
+
+/** Fit the whole level when it stays readable; otherwise show its top at a readable size. */
+function fitLevel(flow, area) {
+  const bounds = flow.getNodesBounds(flow.getNodes());
+  const fit = Math.min(area.width / bounds.width, area.height / bounds.height) * 0.92;
+  if (fit >= MIN_FIT_ZOOM) {
+    flow.fitView({ padding: 0.08, maxZoom: 1.1 });
+    return;
+  }
+  const drawnWidth = bounds.width * MIN_FIT_ZOOM;
+  const x = drawnWidth < area.width ? (area.width - drawnWidth) / 2 : 16;
+  flow.setViewport({ x: x - bounds.x * MIN_FIT_ZOOM, y: 16 - bounds.y * MIN_FIT_ZOOM, zoom: MIN_FIT_ZOOM });
+}
+
+function Flow({ page, path, selectedId, onChoose }) {
+  const { nodes: sourceNodes, edges: sourceEdges, noteLinks } = page.mermaid;
+  const flow = RF.useReactFlow();
+  const initial = useMemo(
+    () =>
+      sourceNodes.map((node) => ({
+        id: node.id,
+        type: node.kind === "note" ? "note" : "box",
+        position: { x: 0, y: 0 },
+        data: { node, direction: "LR" },
+        style: { visibility: "hidden" },
+      })),
+    [sourceNodes],
+  );
+  const [nodes, setNodes, onNodesChange] = RF.useNodesState(initial);
+  const area = RF.useStore(
+    (state) => ({ width: state.width, height: state.height }),
+    (a, b) => a.width === b.width && a.height === b.height,
+  );
+  const measured = RF.useNodesInitialized();
+  // Laid out once per drawing area and per Reset; a drag only changes positions, never this key.
+  const [placement, setPlacement] = useState({ key: null, reset: 0 });
+  const areaKey = `${area.width}x${area.height}:${placement.reset}`;
+  const areaNow = useRef(area);
+  areaNow.current = area;
+
+  useEffect(() => {
+    if (!measured || placement.key === areaKey || !area.width) return;
+    const ids = sourceNodes.map((n) => n.id);
+    const sizes = new Map(flow.getNodes().map((n) => [n.id, n.measured]));
+    const links = [...sourceEdges, ...noteLinks];
+    const { direction, positions } = layoutFor(ids, links, sizes, area);
+    const saved = savedLayout(path);
+    const useSaved = ids.every((id) => saved[id]);
+    setNodes((current) =>
+      current.map((n) => ({ ...n, position: useSaved ? saved[n.id] : positions.get(n.id), data: { ...n.data, direction }, style: {} })),
+    );
+    setPlacement((p) => ({ ...p, key: areaKey }));
+  }, [measured, placement.key, areaKey, area, flow, sourceNodes, sourceEdges, noteLinks, path, setNodes]);
+
+  // The handles moved with the direction: React Flow must re-measure them before edges draw.
+  const updateInternals = RF.useUpdateNodeInternals();
+  useEffect(() => {
+    if (!placement.key) return;
+    updateInternals(sourceNodes.map((n) => n.id));
+    const frame = requestAnimationFrame(() => fitLevel(flow, areaNow.current));
+    return () => cancelAnimationFrame(frame);
+  }, [placement.key, flow, sourceNodes, updateInternals]);
+
+  const linked = useMemo(() => {
+    const ids = new Set();
+    for (const e of sourceEdges) if (e.from === selectedId || e.to === selectedId) ids.add(e.from).add(e.to);
+    for (const l of noteLinks) if (l.from === selectedId || l.to === selectedId) ids.add(l.from).add(l.to);
+    return ids;
+  }, [sourceEdges, noteLinks, selectedId]);
+
+  const edges = useMemo(
+    () => [
+      ...sourceEdges.map((edge, i) => {
+        const touches = selectedId !== null && (edge.from === selectedId || edge.to === selectedId);
+        const marker = edge.step !== null ? "arch-arrow-step" : "arch-arrow";
+        return {
+          id: `e${i}`,
+          source: edge.from,
+          target: edge.to,
+          label: edge.label,
+          labelBgPadding: [6, 3],
+          labelBgBorderRadius: 4,
+          className: ["edge", edge.step !== null ? "is-step" : "", touches ? "is-lit" : "", selectedId !== null && !touches ? "is-faded" : ""].join(" "),
+          markerEnd: marker,
+          markerStart: edge.both ? marker : undefined,
+          focusable: false,
+          selectable: false,
+        };
+      }),
+      ...noteLinks.map((l, i) => ({
+        id: `n${i}`,
+        source: l.from,
+        target: l.to,
+        className: `edge note-link ${selectedId !== null && !linked.has(l.from) && !linked.has(l.to) ? "is-faded" : ""}`,
+        focusable: false,
+        selectable: false,
+      })),
+    ],
+    [sourceEdges, noteLinks, selectedId, linked],
+  );
+
+  // Zoomed far out, a side arrow's label can't be read and only crowds the picture; its box's focus shows it.
+  const far = RF.useStore((state) => state.transform[2] < 0.62);
+
+  const reset = () => {
+    saveLayout(path, null);
+    setPlacement((p) => ({ key: null, reset: p.reset + 1 }));
+  };
+
+  return h(
+    Selection.Provider,
+    { value: { selectedId, linked } },
+    h(
+      RF.ReactFlow,
+      {
+        className: far ? "is-far" : "",
+        nodes,
+        edges,
+        nodeTypes,
+        onNodesChange,
+        onNodeClick: (_, node) => node.type === "box" && onChoose(node.id),
+        onNodeDragStop: () => saveLayout(path, Object.fromEntries(flow.getNodes().map((n) => [n.id, n.position]))),
+        onPaneClick: () => onChoose(null),
+        nodesDraggable: true,
+        nodesConnectable: false,
+        elementsSelectable: false,
+        minZoom: 0.15,
+        maxZoom: 2,
+        proOptions: { hideAttribution: true },
+        "aria-label": `${page.title} diagram`,
+      },
+      h(RF.Background, { variant: RF.BackgroundVariant.Dots, gap: 20, size: 1 }),
+      h(RF.Controls, { showInteractive: false, position: "bottom-right" }),
+      h(
+        RF.Panel,
+        { position: "top-left", className: "diagram-tools" },
+        h("button", { type: "button", className: "text-button", onClick: () => fitLevel(flow, areaNow.current) }, "Fit"),
+        h("button", { type: "button", className: "text-button", onClick: reset, title: "Put the boxes back where the layout places them" }, "Reset layout"),
+      ),
+    ),
+  );
+}
 
 /**
  * Mounts the map of `page` (parsed, at repo `path`) into `host`. `nav.go(hash)` opens another
  * route; `nav.replace(hash)` changes the address without a history entry. `parent` is the box
  * that opens this page, if any: { title, hash }. Returns { select(id), dispose() }.
  */
-export async function createMap(host, { page, path, parent, nav }) {
-  const zoom = { x: 0, y: 0, k: 1 };
+export function createMap(host, { page, path, parent, nav }) {
   let selected = null;
-  let hovered = null;
-  let stage = null;
-  let labelled = true;
-  let userZoomed = false;
-  const tags = el("div", { class: "edge-tags", "aria-hidden": "true" });
+  const canvas = el("div", { class: "canvas" });
   const diagram = el("div", { class: "diagram", id: "map-diagram" });
   const panel = el("aside", { class: "panel", "aria-label": "Selected box" });
-  const canvas = el("div", { class: "canvas" }, intro(), diagram);
+  canvas.append(intro(), diagram);
   host.replaceChildren(canvas, panel);
 
-  // ---- The canvas ----
+  const flowHost = el("div", { class: "flow" });
+  diagram.append(flowHost, legend());
+  const root = globalThis.ReactDOM.createRoot(flowHost);
+  const drawn = () => {
+    root.render(h(RF.ReactFlowProvider, null, h(Markers), h(Flow, { page, path, selectedId: selected, onChoose: choose })));
+  };
 
   function intro() {
     const text = el("p", { class: "intro-text is-clamped" });
@@ -58,168 +268,16 @@ export async function createMap(host, { page, path, parent, nav }) {
         "p",
         { class: "how-to" },
         el("strong", null, "How to read this: "),
-        "numbered arrows are the main path, in order; the rest are side trips. Click a box for detail; a box with a stacked edge is a group and opens its own page. Drag to pan, scroll to zoom.",
+        "numbered arrows are the main path, in order; the rest are side trips, and a dotted note explains the box it touches. Click a box for detail; a box marked ▸ is a group and opens its own page. Drag a box to move it (the layout is remembered on this computer), drag the background to pan, scroll to zoom.",
       ),
     );
   }
 
-  const viewBoxOf = (svg) => {
-    const [, , width, height] = /viewBox="([^"]+)"/.exec(svg)[1].split(/[\s,]+/).map(Number);
-    return { width, height };
-  };
 
-  function fitScale({ width, height }) {
-    const r = diagram.getBoundingClientRect();
-    return Math.min(r.width / width, (r.height - TOOLS_HEIGHT) / height, MAX_SCALE) * 0.96;
-  }
-
-  function applyZoom() {
-    stage.style.transform = `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.k})`;
-    placeTags();
-  }
-
-  function fit() {
-    if (!stage) return;
-    userZoomed = false;
-    const box = stage.querySelector("svg").viewBox.baseVal;
-    const { width, height } = diagram.getBoundingClientRect();
-    zoom.k = fitScale(box);
-    zoom.x = (width - box.width * zoom.k) / 2;
-    zoom.y = TOOLS_HEIGHT + (height - TOOLS_HEIGHT - box.height * zoom.k) / 2;
-    applyZoom();
-  }
-
-  function zoomBy(factor, cx, cy) {
-    userZoomed = true;
-    const k = Math.min(Math.max(zoom.k * factor, 0.1), 4);
-    zoom.x = cx - ((cx - zoom.x) * k) / zoom.k;
-    zoom.y = cy - ((cy - zoom.y) * k) / zoom.k;
-    zoom.k = k;
-    applyZoom();
-  }
-
-  function enablePanZoom() {
-    let drag = null;
-    diagram.addEventListener("wheel", (event) => {
-      event.preventDefault();
-      const r = diagram.getBoundingClientRect();
-      zoomBy(event.deltaY < 0 ? 1.15 : 1 / 1.15, event.clientX - r.left, event.clientY - r.top);
-    }, { passive: false });
-    diagram.addEventListener("pointerdown", (event) => {
-      if (event.button || event.target.closest(".diagram-tools, .legend")) return;
-      drag = { x: event.clientX, y: event.clientY, moved: false };
-    });
-    diagram.addEventListener("pointermove", (event) => {
-      if (!drag) return;
-      const dx = event.clientX - drag.x;
-      const dy = event.clientY - drag.y;
-      if (!drag.moved && Math.hypot(dx, dy) < 4) return;
-      if (!drag.moved) diagram.setPointerCapture(event.pointerId);
-      drag.moved = true;
-      userZoomed = true;
-      zoom.x += dx;
-      zoom.y += dy;
-      drag.x = event.clientX;
-      drag.y = event.clientY;
-      applyZoom();
-    });
-    const end = () => {
-      // The click that follows a drag must not select what the drag ended on.
-      if (drag?.moved) diagram.addEventListener("click", (e) => e.stopPropagation(), { capture: true, once: true });
-      drag = null;
-    };
-    diagram.addEventListener("pointerup", end);
-    diagram.addEventListener("pointercancel", end);
-    diagram.addEventListener("click", (event) => {
-      if (selected && !event.target.closest("g.node, .diagram-tools, .legend")) choose(null);
-    });
-  }
-
-  const tools = () => {
-    const center = () => [diagram.clientWidth / 2, diagram.clientHeight / 2];
-    return el(
-      "div",
-      { class: "diagram-tools" },
-      el("button", { type: "button", class: "text-button", "aria-label": "Zoom in", onclick: () => zoomBy(1.3, ...center()) }, "+"),
-      el("button", { type: "button", class: "text-button", "aria-label": "Zoom out", onclick: () => zoomBy(1 / 1.3, ...center()) }, "−"),
-      el("button", { type: "button", class: "text-button", onclick: fit }, "Fit"),
-    );
-  };
-
-  const legend = () => {
-    const kinds = NODE_KINDS.filter((kind) => page.mermaid.nodes.some((n) => n.kind === kind));
+  function legend() {
+    const kinds = NODE_KINDS.filter((kind) => page.mermaid?.nodes.some((n) => n.kind === kind));
     return el("details", { class: "legend" }, el("summary", null, "Legend"), el("ul", null, kinds.map((kind) => el("li", null, el("span", { class: `swatch kind-${kind}` }), kind))));
-  };
-
-  async function draw() {
-    const { mermaid } = page;
-    if (!mermaid) {
-      diagram.replaceChildren(el("p", { class: "doc-note" }, `${path} has no mermaid block.`));
-      return;
-    }
-    let svg;
-    try {
-      svg = await drawDiagram(mermaid.source, LOOK);
-      labelled = fitScale(viewBoxOf(svg)) * LOOK.edgeFontSize >= LEGIBLE_EDGE_LABEL;
-      if (!labelled) svg = await drawDiagram(mermaid.source.replace(/\|"[^"]*"\| /g, ""), LOOK);
-    } catch (error) {
-      diagram.replaceChildren(el("p", { class: "doc-note" }, `This diagram didn't draw: ${error.message ?? error}`));
-      return;
-    }
-    stage = el("div", { class: `stage${labelled ? "" : " is-unlabelled"}` });
-    stage.innerHTML = svg;
-    diagram.replaceChildren(stage, tags, tools(), legend());
-    annotate();
-    fit();
   }
-
-  /** Marks the arrows numbered or not and wires the boxes' clicks. Mermaid names an edge's elements `L_<from>_<to>_<n>`. */
-  function annotate() {
-    const { nodes, edges } = page.mermaid;
-    const byId = new Map(nodes.map((n) => [n.id, n]));
-    for (const g of stage.querySelectorAll("g.node")) {
-      const id = /flowchart-(.+)-\d+$/.exec(g.id)?.[1];
-      if (!byId.has(id)) continue;
-      g.dataset.id = id;
-      g.setAttribute("tabindex", "0");
-      g.setAttribute("role", "button");
-      g.setAttribute("aria-label", plain(byId.get(id).label));
-      g.addEventListener("click", () => choose(id));
-      g.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), choose(id)));
-    }
-    // The elements of each edge, by Mermaid's data-id. Several edges between one pair are numbered
-    // with gaps (_0, _2), so the k-th edge of a pair takes the k-th lowest number.
-    const lines = new Map();
-    for (const node of stage.querySelectorAll("path.flowchart-link[data-id], g.edgeLabel g.label[data-id]")) {
-      const holder = node.tagName === "path" ? node : node.closest("g.edgeLabel");
-      lines.set(node.dataset.id, [...(lines.get(node.dataset.id) ?? []), holder]);
-    }
-    const seen = new Map();
-    edges.forEach((edge, i) => {
-      const pair = `L_${edge.from}_${edge.to}_`;
-      const numbers = [...lines.keys()].filter((key) => key.startsWith(pair) && /^\d+$/.test(key.slice(pair.length))).map((key) => Number(key.slice(pair.length))).sort((x, y) => x - y);
-      const k = seen.get(pair) ?? 0;
-      seen.set(pair, k + 1);
-      const elements = lines.get(`${pair}${numbers[k]}`) ?? [];
-      const path = elements.find((e) => e.tagName === "path");
-      if (!path) return;
-      // A wide invisible copy of the line, so a thin edge is easy to hover.
-      const hit = path.cloneNode(false);
-      hit.removeAttribute("id");
-      hit.removeAttribute("marker-end");
-      hit.removeAttribute("marker-start");
-      hit.setAttribute("class", "edge-hit");
-      hit.addEventListener("pointerenter", () => hover(i));
-      hit.addEventListener("pointerleave", () => hover(null));
-      path.after(hit);
-      for (const node of elements) {
-        if (edge.step !== null) node.classList.add("edge-step");
-        node.dataset.i = i;
-      }
-    });
-  }
-
-  // ---- Selection ----
 
   /** A click on a box: a group opens its page, any other box is selected (and put in the address). */
   function choose(id) {
@@ -236,94 +294,11 @@ export async function createMap(host, { page, path, parent, nav }) {
     return link && route(path, link.href)?.href;
   }
 
-  const isLinked = (edge) => selected != null && (edge.from === selected || edge.to === selected);
-
-  function markSelected() {
-    if (!stage) return;
-    const { edges } = page.mermaid;
-    const neighbours = new Set(edges.filter(isLinked).flatMap((e) => [e.from, e.to]));
-    stage.classList.toggle("has-selection", selected != null);
-    for (const g of stage.querySelectorAll("g.node")) {
-      g.classList.toggle("is-selected", g.dataset.id === selected);
-      g.classList.toggle("is-linked", neighbours.has(g.dataset.id));
-    }
-    for (const e of stage.querySelectorAll("[data-i]")) e.classList.toggle("is-linked", isLinked(edges[e.dataset.i]));
-    showTags();
-  }
-
-  function hover(i) {
-    hovered = i;
-    for (const e of stage.querySelectorAll("[data-i]")) e.classList.toggle("is-hovered", Number(e.dataset.i) === i);
-    showTags();
-  }
-
-  /** Stage coordinates of a point given in screen coordinates. */
-  function toStage(point) {
-    const r = diagram.getBoundingClientRect();
-    return { x: (point.x - r.left - zoom.x) / zoom.k, y: (point.y - r.top - zoom.y) / zoom.k };
-  }
-
-  /** On an unlabelled diagram, the labels of the selected box's arrows and of the hovered arrow, each on its own line. */
-  function showTags() {
-    if (!stage) return;
-    const { edges } = page.mermaid;
-    const shown = labelled ? [] : edges.flatMap((edge, i) => (isLinked(edge) || i === hovered ? [i] : []));
-    tags.replaceChildren(
-      ...shown.map((i) => {
-        const tag = el("span", { class: `edge-tag${edges[i].step !== null ? " edge-step" : ""}` }, edges[i].label);
-        tag.i = i;
-        const line = stage.querySelector(`path.flowchart-link[data-i="${i}"]`);
-        const length = line?.getTotalLength();
-        if (length) tag.along = ALONG.map((t) => toStage(line.getPointAtLength(length * t).matrixTransform(line.getScreenCTM())));
-        return tag;
-      }),
-    );
-    placeTags();
-  }
-
-  /**
-   * Puts each tag on screen at the first point along its line, or just above or below it, where it
-   * covers neither a lit box nor another tag. A tag with no such spot stays hidden (the panel lists
-   * every connection), except the hovered arrow's, which goes first and shows wherever it covers least.
-   */
-  function placeTags() {
-    if (!stage) return;
-    const r = diagram.getBoundingClientRect();
-    const edge = page.mermaid.edges[hovered];
-    const lit = (g) => g.matches(".is-selected, .is-linked") || g.dataset.id === edge?.from || g.dataset.id === edge?.to;
-    const boxes = [...stage.querySelectorAll("g.node")].filter(lit).map((g) => {
-      const b = g.getBoundingClientRect();
-      return { x: b.left - r.left - 2, y: b.top - r.top - 2, w: b.width + 4, h: b.height + 4 };
-    });
-    const placed = [];
-    const list = [...tags.children].filter((t) => t.along).sort((a, b) => (b.i === hovered) - (a.i === hovered));
-    for (const tag of list) {
-      tag.hidden = false;
-      const w = tag.offsetWidth;
-      const h = tag.offsetHeight;
-      let best = null;
-      search: for (const p of tag.along) {
-        for (const dy of [0, -h / 2 - 3, h / 2 + 3, -h - 4, h + 4]) {
-          const box = { x: zoom.x + p.x * zoom.k - w / 2, y: zoom.y + p.y * zoom.k - h / 2 + dy, w, h };
-          const cost = 10 * boxes.filter((b) => overlaps(box, b)).length + placed.filter((b) => overlaps(box, b)).length;
-          if (!best || cost < best.cost) best = { box, cost };
-          if (!cost) break search;
-        }
-      }
-      if (best.cost && tag.i !== hovered) {
-        tag.hidden = true;
-        continue;
-      }
-      placed.push(best.box);
-      tag.style.transform = `translate(${best.box.x}px, ${best.box.y}px)`;
-    }
-  }
-
   // ---- The panel ----
 
   function select(id) {
     selected = id;
-    markSelected();
+    drawn();
     panel.replaceChildren(id ? boxPanel(id) : overview());
     panel.scrollTop = 0;
   }
@@ -343,7 +318,7 @@ export async function createMap(host, { page, path, parent, nav }) {
       el(
         "ul",
         { class: "box-list" },
-        page.mermaid.nodes.map((n) => {
+        page.mermaid.nodes.filter((n) => n.kind !== "note").map((n) => {
           const section = page.sections.find((s) => s.id === n.id);
           return el(
             "li",
@@ -413,10 +388,7 @@ export async function createMap(host, { page, path, parent, nav }) {
     return rows.length ? el("section", null, el("h3", null, "Arrows"), el("ul", { class: "edges" }, rows)) : null;
   }
 
-  const resizer = new ResizeObserver(() => stage && !userZoomed && fit());
-  resizer.observe(diagram);
-  enablePanZoom();
-  await draw();
+  drawn();
   select(null);
 
   return {
@@ -424,7 +396,7 @@ export async function createMap(host, { page, path, parent, nav }) {
       if (id !== selected) select(id);
     },
     dispose() {
-      resizer.disconnect();
+      root.unmount();
     },
   };
 }

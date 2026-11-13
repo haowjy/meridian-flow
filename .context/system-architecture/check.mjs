@@ -98,7 +98,16 @@ for (const { file, path, page } of levels) {
     sectionIds.add(s.id);
     if (!nodeIds.has(s.id)) fail(`${file}:${s.line}`, `section ## ${s.id} has no box in the diagram.`);
   }
-  for (const n of nodes) if (!sectionIds.has(n.id)) fail(`${file}:${n.line}`, `box ${n.id} has no ## ${n.id} section.`);
+  for (const n of nodes) if (n.kind !== "note" && !sectionIds.has(n.id)) fail(`${file}:${n.line}`, `box ${n.id} has no ## ${n.id} section.`);
+  const kindOf = new Map(nodes.map((n) => [n.id, n.kind]));
+  for (const s of page.sections) if (kindOf.get(s.id) === "note") fail(`${file}:${s.line}`, `note ${s.id} takes no ## section.`);
+  for (const l of page.mermaid.noteLinks) {
+    for (const end of [l.from, l.to]) if (!nodeIds.has(end)) fail(`${file}:${l.line}`, `note link ${l.from} -.- ${l.to} names ${end}, which isn't a box.`);
+    if (nodeIds.has(l.from) && nodeIds.has(l.to) && (kindOf.get(l.from) === "note") === (kindOf.get(l.to) === "note"))
+      fail(`${file}:${l.line}`, `note link ${l.from} -.- ${l.to} must join a note to a box.`);
+  }
+  for (const n of nodes)
+    if (n.kind === "note" && !page.mermaid.noteLinks.some((l) => l.from === n.id || l.to === n.id)) fail(`${file}:${n.line}`, `note ${n.id} links to nothing: add "${n.id} -.- <box>".`);
   for (const e of edges) {
     for (const end of [e.from, e.to]) if (!nodeIds.has(end)) fail(`${file}:${e.line}`, `arrow ${e.from} to ${e.to} names ${end}, which isn't a box.`);
     const kind = /^(http|ws|sql|model|files|call|port|import): /.exec(e.label);
@@ -111,7 +120,7 @@ for (const { file, path, page } of levels) {
 
   for (const s of page.sections) {
     const node = nodes.find((n) => n.id === s.id);
-    if (!node) continue;
+    if (!node || node.kind === "note") continue;
     const where = `${file}:${s.id}`;
     for (const it of s.items)
       if (!MAP_KEYS.includes(it.key)) fail(`${file}:${it.line}`, `${s.id} has a list item that isn't one of ${MAP_KEYS.join(", ")}: ${it.key ?? it.value}`);
@@ -284,8 +293,7 @@ for (const [from, targets] of graph)
     if (component.get(from) === component.get(to)) breaks.push({ what: `domain ${from} importing domain ${to} inside a cycle`, imp: sample.get(`${from}>${to}`) });
 
 /** The repo paths a table cell names: a path that exists, or a box id (a box with Paths). */
-const rootsOf = (cell) => {
-  const name = cell.replaceAll("`", "").trim();
+const rootsOf = (name) => {
   if (name && existsSync(join(repo, name))) return [name];
   return boxes.filter((b) => b.id === name && b.kind !== "context").flatMap((b) => b.paths);
 };
@@ -305,7 +313,7 @@ if (!rows.length) fail(DEPENDENCIES, "has no table of broken rules (| from | to 
 
 for (const row of rows) {
   const where = `${DEPENDENCIES}:${row.line}`;
-  const [from, to, rule, example] = row.cells;
+  const [from, to, rule, example] = row.cells.map((cell) => cell.replaceAll("`", "").trim());
   if (row.cells.length !== 4 || !rule) {
     fail(where, "a row has four cells: from, to, rule, example file.");
     continue;
@@ -315,7 +323,7 @@ for (const row of rows) {
   if (!fromRoots.length) fail(where, `${from} is neither a repo path nor a box id with Paths.`);
   if (!toRoots.length) fail(where, `${to} is neither a repo path nor a box id with Paths.`);
   if (!fromRoots.length || !toRoots.length) continue;
-  const file = example.replaceAll("`", "").trim();
+  const file = example;
   const real = imports.filter((i) => fromRoots.some((r) => under(i.from, r)) && toRoots.some((r) => reaches(i, r)));
   row.imports = real;
   if (!real.length) fail(where, `${from} to ${to}: nothing in ${from}'s paths imports ${to}'s.`);

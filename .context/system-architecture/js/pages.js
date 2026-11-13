@@ -19,6 +19,7 @@ export const NODE_KINDS = [
   "package",
   "context",
   "group",
+  "note",
 ];
 
 /** The section list items each kind of page may carry. */
@@ -32,6 +33,7 @@ const LINE = {
   header: /^flowchart (?:LR|RL|TB|TD|BT)$/,
   node: new RegExp(`^(${ID})\\["([^"]*)"\\]:::(\\w+)$`),
   edge: new RegExp(`^(${ID}) (-->|<-->)\\|"([^"]+)"\\| (${ID})$`),
+  noteLink: new RegExp(`^(${ID}) -\\.- (${ID})$`),
   subgraph: new RegExp(`^subgraph ${ID}(?:\\["[^"]*"\\])?$`),
   sequenceHeader: /^sequenceDiagram$/,
   participant: new RegExp(`^(?:participant|actor) (${SEQ_ID})(?: as .+)?$`),
@@ -50,6 +52,7 @@ const LABEL_TAGS = /<br\/>|<\/?small>/g;
  *   mermaid: null | {
  *     type: "flowchart" | "sequence" | null, source: string, line: number,
  *     nodes: {id, label, kind, line}[], edges: {from, to, both, label, step, line}[],
+ *     noteLinks: {from, to, line}[],
  *     participants: {id, line}[],
  *   },
  *   sections: { id: string, line: number, paragraphs: string[], items: { key: string | null, value: string, line: number }[] }[],
@@ -90,7 +93,7 @@ export function parsePage(text) {
       const kind = marker[2] === "mermaid" && !page.mermaid ? "mermaid" : "other";
       if (marker[2] === "mermaid") {
         if (page.mermaid) fail(n, "A second mermaid block: a page has one.");
-        else page.mermaid = { type: null, source: "", line: n, nodes: [], edges: [], participants: [] };
+        else page.mermaid = { type: null, source: "", line: n, nodes: [], edges: [], noteLinks: [], participants: [] };
       }
       fence = { length: marker[1].length, kind };
       return;
@@ -134,6 +137,11 @@ function parseMermaidLine(mermaid, line, n, fail) {
     const bad = m[2].replace(LABEL_TAGS, "").match(/[<>]/);
     if (bad) fail(n, `Box ${m[1]}'s label holds "${bad[0]}": only <br/> and <small>...</small> are allowed.`);
     mermaid.nodes.push({ id: m[1], label: m[2], kind: m[3], line: n });
+    return;
+  }
+  m = LINE.noteLink.exec(line);
+  if (m) {
+    mermaid.noteLinks.push({ from: m[1], to: m[2], line: n });
     return;
   }
   m = LINE.edge.exec(line);

@@ -15,7 +15,7 @@ editing a page. The check passing is not the test.
   the viewer read pages the same way: change the format there, in `check.mjs`, and in README.md
   together. `markdown.js` renders Markdown and Mermaid and turns every link into a `#` route;
   `app.js` is the router (nav, history, the Read | Map toggle, the full-window doc view);
-  `map.js` is the Map view of a level page; `journeys.js` is the journeys; `shell.js` is the DOM
+  `map.js` is the Map view of a level page (React Flow, with `layout.js` placing boxes by dagre); `journeys.js` is the journeys; `shell.js` is the DOM
   helper, theme and fetching.
 - **Routes** are the URL hash: `#<level>[/<box>]`, `#flows[/<flow>]`, `#machines`, `#dependencies`,
   `#journeys[/<journey>[/<step>]]`, `#doc/<encoded path>[/<heading>]`. A route is a history entry, except
@@ -25,11 +25,12 @@ editing a page. The check passing is not the test.
   Escape and × close them all.
 - **Read | Map** is a per-reader choice kept in `localStorage`. Read is the page as Markdown; a click
   on a diagram box scrolls to its `##` section. Map is `map.js`: the intro and a "How to read this" the
-  viewer supplies sit above the diagram; a group opens its child page. Map classes Mermaid's nodes by
-  kind and marks numbered arrows (it finds an arrow's elements by Mermaid's `data-id`,
-  `L_<from>_<to>_<n>`; n has gaps between one pair's arrows, so the k-th arrow takes the k-th lowest).
-  Where arrow labels would not read at Fit, it lays the diagram out without them and shows a box's
-  labels when the box is selected and an arrow's when it is hovered.
+  viewer supplies sit above the diagram; a group opens its child page. It does not draw the page's
+  Mermaid: it draws the parsed nodes, arrows and note links with React Flow, boxes sized by their
+  text and placed by dagre (left to right, top to bottom on a narrow screen; the numbered arrows weigh
+  most so the main path stays straight). Boxes drag and the arrows follow; positions go to
+  `localStorage` per page (`meridian-architecture-layout:<path>`), only when a drag ends, and a page
+  whose boxes aren't all saved is laid out afresh. Read view draws the Mermaid block itself.
 - A flow's participants are clickable: they open the box on the map (they set the view to Map).
 - `fetchRepoFile` checks the URL the browser will request, not the path string, and the doc route
   accepts only a `.context` `.md` path with no `..`, `.` or empty segment: both come from the address bar.
@@ -40,6 +41,8 @@ editing a page. The check passing is not the test.
   the page needs its own copy, and `check.mjs` keeps it equal to `design-tokens`. Nothing else here may
   hold a colour; `page.css` uses the variables. Don't copy the pattern. To use another token, add its name to `MIRRORED` in
   `tokens.mjs` and its value to `tokens.css`; `check.mjs` verifies the values.
-- Third-party scripts are pinned with integrity hashes: `marked` in `index.html`, Mermaid in
-  `js/markdown.js` (the same version as `apps/app`). To bump one, fetch the new file and recompute
-  its `sha384`.
+- Third-party scripts are pinned with integrity hashes: React, ReactDOM, `@xyflow/react`, dagre and
+  `marked` in `index.html`, Mermaid in `js/markdown.js` (the same version as `apps/app`). To bump one,
+  fetch the new file and recompute its `sha384`. React stays on 18 (19 has no UMD build);
+  `@xyflow/react`'s UMD build wants a `jsxRuntime` global, which `js/jsx-runtime.js` maps onto React;
+  `vendor/` holds its stylesheet.
