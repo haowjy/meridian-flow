@@ -19,6 +19,7 @@ import {
 } from "@/client/project-shell/main-tabs";
 import { writeLastShownChat, writeLastShownDocument } from "@/client/project-shell/store";
 import type { OpenDocument } from "@/client/stores";
+import { useChatNavigation } from "./routing/chat-navigation";
 import type { MainForSide } from "./side/side-item";
 
 export function useMainArrival({
@@ -35,7 +36,14 @@ export function useMainArrival({
   document: OpenDocument | null;
   locationKey: string | undefined;
 }) {
-  useDropGoneChatTabs(accountId, projectId, main.kind === "chat" ? main.chatId : null);
+  // A chat deleted elsewhere goes as one deleted here does: its tab and slot, and main to a new chat.
+  const navigation = useChatNavigation();
+  useDropGoneChatTabs(accountId, projectId, (chatId) => {
+    const { display } = navigation;
+    navigation.forgetChat(chatId);
+    if (display?.kind === "thread" && display.threadId === chatId)
+      void navigation.openNewChat({ replace: true, focus: false });
+  });
   // A document's arrival opens or selects its tab once per arrival at an address; after that its
   // descriptor only refreshes the tab while it is open.
   const arrivedAt = useRef<string | undefined>(undefined);
