@@ -24,7 +24,7 @@ import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import { DOMSerializer, type Node as ProseMirrorNode } from "@tiptap/pm/model";
-import { Plugin } from "@tiptap/pm/state";
+import { Plugin, Selection } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
 import { FigureNodeView } from "../FigureNodeView";
@@ -201,6 +201,33 @@ export const MeridianParagraph = Paragraph.extend({
   addKeyboardShortcuts() {
     return {
       ...this.parent?.(),
+      // TipTap's Backspace clears a first empty block's type only when its node
+      // is not named `paragraph`, which now includes headings. Same condition,
+      // and it still lets Backspace undo an autoformat rule first.
+      Backspace: ({ editor }) =>
+        editor.commands.first(({ commands }) => [
+          () => commands.undoInputRule(),
+          () =>
+            commands.command(({ state }) => {
+              const { selection, doc } = state;
+              const { $anchor } = selection;
+              const block = $anchor.parent;
+              if (
+                !selection.empty ||
+                block.type !== this.type ||
+                block.attrs.level === null ||
+                block.content.size > 0
+              ) {
+                return false;
+              }
+              // At the very start of the document, or the first block of an isolating
+              // container such as a table cell.
+              const atStart =
+                Selection.atStart(doc).from === $anchor.pos ||
+                (Boolean($anchor.node(-1).type.spec.isolating) && $anchor.index(-1) === 0);
+              return atStart && commands.updateAttributes(this.name, { level: null });
+            }),
+        ]),
       ...Object.fromEntries(
         HEADING_LEVELS.map((level) => [
           `Mod-Alt-${level}`,
