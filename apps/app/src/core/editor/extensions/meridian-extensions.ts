@@ -242,29 +242,33 @@ export const MeridianParagraph = Paragraph.extend({
     return [
       new Plugin({
         props: {
-          // Pasted into an empty paragraph, a heading's content joins the block
-          // that is already there: the same node name no longer replaces it, so
-          // the level has to move first.
+          // A heading pasted over a block's whole content takes the block's
+          // place on main; the same node name now merges into it instead, so
+          // the level moves with the paste, in one step.
           handlePaste(view, _event, slice) {
-            const { selection } = view.state;
-            const { $from } = selection;
+            const { $from, $to } = view.state.selection;
             const pasted = slice.content.firstChild;
             if (
-              !selection.empty ||
+              $from.parent !== $to.parent ||
               $from.parent.type !== type ||
-              $from.parent.content.size > 0 ||
+              $from.parentOffset > 0 ||
+              $to.parentOffset < $from.parent.content.size ||
               pasted?.type !== type ||
               pasted.attrs.level === null
             ) {
               return false;
             }
-            view.dispatch(
-              view.state.tr.setNodeMarkup($from.before(), undefined, {
+            const tr = view.state.tr
+              .setNodeMarkup($from.before(), undefined, {
                 ...$from.parent.attrs,
                 level: pasted.attrs.level,
-              }),
-            );
-            return false;
+              })
+              .replaceSelection(slice)
+              .scrollIntoView()
+              .setMeta("paste", true)
+              .setMeta("uiEvent", "paste");
+            view.dispatch(tr);
+            return true;
           },
         },
       }),
