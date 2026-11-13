@@ -889,6 +889,8 @@ button {
 
 .md-diagram {
   position: relative;
+  /* A diagram wider than the page scrolls sideways; capping the height keeps that scrollbar on screen. */
+  max-height: 80vh;
 }
 
 .md-diagram-tools {
