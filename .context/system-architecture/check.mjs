@@ -72,7 +72,7 @@ for (const path of pages.keys()) {
 // ---- Level pages ----
 
 const isLevelPath = (path) => levelFiles.some((f) => `${MAP_DIR}/${f}` === path);
-/** Every box on every page: { id, page, kind, paths }. A group's paths are its child page's boxes'. */
+/** Every box on every page: { id, page, kind, paths }. */
 const boxes = [];
 const opened = new Set();
 
