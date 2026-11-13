@@ -25,7 +25,9 @@ export function system(text: string): Message {
 }
 
 export function text(t: string, opts?: { providerOptions?: ProviderOptions }): TextPart {
-  return { type: "text", text: t, providerOptions: opts?.providerOptions };
+  return opts?.providerOptions
+    ? { type: "text", text: t, providerOptions: opts.providerOptions }
+    : { type: "text", text: t };
 }
 
 export function assistant(parts: ContentPart[]): Message {
