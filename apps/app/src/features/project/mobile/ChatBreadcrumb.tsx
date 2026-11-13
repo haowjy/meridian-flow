@@ -14,9 +14,11 @@ export function ChatBreadcrumb({
   display,
 }: {
   projectId: string;
-  /** Main's chat, or a new chat. */
+  /** Main's chat, a new chat, or Recent chats. */
   display: ChatDisplay;
 }) {
+  if (display.kind === "chat-recents")
+    return <MobileBreadcrumb segments={[{ label: t`Chat` }, { label: t`Recent chats` }]} />;
   const current = (
     <ChatThreadTitle
       projectId={projectId}

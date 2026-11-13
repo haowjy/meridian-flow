@@ -29,7 +29,7 @@ type LeftSidebarProps = {
   projectTitle: string;
   titleEdit: ProjectTitleEdit;
   editorWorkId: string | null;
-  /** The chat on screen: Scratch follows it, and its row reads as current. */
+  /** The chat on screen: its row reads as current. */
   chatThreadId: string | null;
   contextLive: boolean;
   /** The document whose row reads as current: main's, or beside a chat the side's. */
@@ -112,6 +112,7 @@ export function LeftSidebar({
         contextLive={contextLive}
         activeScheme={treeActiveScheme}
         activePath={treeActivePath}
+        activeWorkId={activeDocument?.kind === "new" ? null : (activeDocument?.workId ?? null)}
         onSelectFile={handleSelectFile}
         scopeWorkId={scope.workId}
       />

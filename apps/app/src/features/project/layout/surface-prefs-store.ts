@@ -58,7 +58,6 @@ export function normalizePanelPrefs(panels?: Partial<PanelPrefs> | null): PanelP
 type PersistedSurfacePrefsBlob = {
   widths?: Partial<SlotWidths> | null;
   panels?: Partial<PanelPrefs> | null;
-  railPrefs?: Partial<RailPrefs> | null;
   documentPrefs?: Partial<DocumentPrefs> | null;
 };
 
@@ -74,7 +73,6 @@ const record = (value: unknown): Saved =>
 function migrateSurfacePrefs(persisted: unknown, version: number): PersistedSurfacePrefsBlob {
   const blob = record(persisted);
   const kept = {
-    railPrefs: record(blob.railPrefs),
     documentPrefs: record(blob.documentPrefs),
   };
   const widths = (rail: unknown, side: unknown) => ({
@@ -128,27 +126,15 @@ export function normalizeDocumentPrefs(prefs?: Partial<DocumentPrefs> | null): D
   };
 }
 
-export type RailSectionId = "scratch";
-export type RailPrefs = { scratchExpanded: boolean };
-export const DEFAULT_RAIL_PREFS: RailPrefs = { scratchExpanded: false };
-
-export function normalizeRailPrefs(prefs?: Partial<RailPrefs> | null): RailPrefs {
-  return {
-    scratchExpanded: typeof prefs?.scratchExpanded === "boolean" ? prefs.scratchExpanded : false,
-  };
-}
-
 export type SurfacePrefsState = {
   widths: SlotWidths;
   panels: PanelPrefs;
-  railPrefs: RailPrefs;
   documentPrefs: DocumentPrefs;
 };
 
 export type SurfacePrefsActions = {
   setSlotWidth: (slot: PanelSlotId, widthPx: number) => void;
   setSlotOpen: (slot: PanelSlotId, open: boolean) => void;
-  setRailExpanded: (id: RailSectionId, expanded: boolean) => void;
   setPropertiesOpen: (open: boolean) => void;
   setHydrated: () => void;
 };
@@ -176,7 +162,6 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
       (set) => ({
         widths: DEFAULT_SLOT_WIDTHS,
         panels: DEFAULT_PANEL_PREFS,
-        railPrefs: DEFAULT_RAIL_PREFS,
         documentPrefs: DEFAULT_DOCUMENT_PREFS,
         _hydrated: false,
 
@@ -184,8 +169,6 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
           set((state) => ({ widths: { ...state.widths, [slot]: savedWidth(slot, width) } })),
         setSlotOpen: (slot, open) =>
           set((state) => ({ panels: { ...state.panels, [openKey(slot)]: open } })),
-        setRailExpanded: (id, expanded) =>
-          set((state) => ({ railPrefs: { ...state.railPrefs, [`${id}Expanded`]: expanded } })),
         setPropertiesOpen: (propertiesOpen) =>
           set((state) => ({ documentPrefs: { ...state.documentPrefs, propertiesOpen } })),
         setHydrated: () => set({ _hydrated: true }),
@@ -223,14 +206,12 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
             ...current,
             widths: normalizeSlotWidths(blob.widths),
             panels: normalizePanelPrefs(blob.panels),
-            railPrefs: normalizeRailPrefs(blob.railPrefs),
             documentPrefs: normalizeDocumentPrefs(blob.documentPrefs),
           };
         },
         partialize: (state) => ({
           widths: state.widths,
           panels: state.panels,
-          railPrefs: state.railPrefs,
           documentPrefs: state.documentPrefs,
         }),
         skipHydration: true,
@@ -246,7 +227,6 @@ export function useProjectSurfacePrefsActions(): SurfacePrefsActions {
     useShallow((state) => ({
       setSlotWidth: state.setSlotWidth,
       setSlotOpen: state.setSlotOpen,
-      setRailExpanded: state.setRailExpanded,
       setPropertiesOpen: state.setPropertiesOpen,
       setHydrated: state.setHydrated,
     })),

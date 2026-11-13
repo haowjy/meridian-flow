@@ -8,7 +8,7 @@ import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerResults, PickerSearch, PickerSection } from "@/components/ui/picker";
 import { fileKindIcon } from "../context/context-file-icon";
-import { matchFileSuggestions } from "../context/file-suggestions/file-suggestions";
+import { fileSuggestion, matchFileSuggestions } from "../context/file-suggestions/file-suggestions";
 import { SideExplorer } from "./SideExplorer";
 import { useSideItem } from "./SideView";
 
@@ -57,20 +57,7 @@ export function DocumentChoices({
   const search = query.trim();
   const found = search
     ? matchFileSuggestions(
-        files.flatMap(({ scheme, file }) =>
-          file.editable
-            ? [
-                {
-                  entryId: file.documentId,
-                  scheme,
-                  path: file.path,
-                  name: file.name,
-                  kind: "file" as const,
-                  parents: file.path.split("/").filter(Boolean).slice(0, -1),
-                },
-              ]
-            : [],
-        ),
+        files.flatMap(({ scheme, file }) => (file.editable ? [fileSuggestion(scheme, file)] : [])),
         query,
       ).slice(0, FIND_LIMIT)
     : [];

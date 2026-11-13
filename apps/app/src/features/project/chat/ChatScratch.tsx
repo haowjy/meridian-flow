@@ -5,9 +5,9 @@
  * the Editor. Rows offer Rename, Move… and Delete like any list's while the
  * owner can still be edited; the AI makes the notes, so there is no New note.
  *
- * Two surfaces show it: the Chat list's docked section (`RailScratchSection`) and a
- * chat's Files menu (`MenuScratchSection`). The wording "Scratch for this chat" / "Scratch for
- * <Work>" is the heading's tooltip and accessible name, not a line of text.
+ * A chat's Files menu shows it (`MenuScratchSection`), headed "Scratch for this chat" /
+ * "Scratch for <Work>". The sidebar's Scratch is another thing: the picked Work's catalog as one
+ * of its tree sources (`SourcesBody`).
  */
 import { t } from "@lingui/core/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
@@ -19,21 +19,17 @@ import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { ListLine, ListRow } from "@/components/ui/list-row";
-import { ListSectionHeader } from "@/components/ui/list-section";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
-import { schemeLabel } from "../context/context-schemes";
 import type { DragEntry } from "../context/entry-drag/entry";
 import type { MoveArea } from "../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
 import { serverDocumentFromFile } from "../context/open-document-from-file";
-import { AreaDropRegion } from "../context/tree-drop/AreaDropRegion";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { useDeleteContextEntries } from "../context/use-delete-context-entries";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
 import { useScratchCatalogs } from "../context/use-scratch-catalogs";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
-import { DockedRailSection } from "../shell/DockedRailSection";
 import { useOptionalMainItem } from "../views";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
@@ -44,7 +40,7 @@ function useOpenDocumentId(): string | undefined {
 }
 
 /** A chat's Scratch: its catalogs, the list areas they make, and the load state. */
-export function useChatScratch(projectId: string, threadId: string | null) {
+function useChatScratch(projectId: string, threadId: string | null) {
   const source = useChatScratchSource(projectId, threadId);
   const { primary, earlier } = useScratchCatalogs(projectId, source);
   const { works, noWork } = useWorks(projectId);
@@ -103,63 +99,6 @@ export function useChatScratch(projectId: string, threadId: string | null) {
 
 type ChatScratch = ReturnType<typeof useChatScratch>;
 
-/** The Chat list's Scratch, docked under the chat list; it collapses, and expanded takes up to 40% of the rail. */
-export function RailScratchSection({
-  projectId,
-  threadId,
-  onPicked,
-}: {
-  projectId: string;
-  /** The chat on screen. */
-  threadId: string | null;
-  /** After a note opens elsewhere (the phone drawer closes). */
-  onPicked?: () => void;
-}) {
-  const scratch = useChatScratch(projectId, threadId);
-  const list = useEntryList({ projectId, areas: scratch.areas });
-  const { source } = scratch;
-  if (!source) return null;
-  return (
-    <DockedRailSection id="scratch">
-      {({ expanded, setExpanded }) => (
-        <EntryList list={list}>
-          <AreaDropRegion
-            scheme="scratch"
-            catalogRootId={scratch.primary.catalog?.root.entryId ?? null}
-            reveal={() => !expanded && setExpanded(true)}
-            className="flex min-h-0 flex-col"
-            header={(dropProps) => (
-              <ListSectionHeader
-                level={2}
-                label={schemeLabel("scratch")}
-                title={source.heading}
-                fold={{ open: expanded, onToggle: setExpanded }}
-                headerProps={dropProps}
-              />
-            )}
-          >
-            {expanded ? (
-              <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
-                <div className="px-2">
-                  <TreeGroup depth={1}>
-                    <ChatScratchTree
-                      projectId={projectId}
-                      scratch={scratch}
-                      depth={1}
-                      onPicked={onPicked}
-                    />
-                  </TreeGroup>
-                </div>
-                <ChatScratchStatus scratch={scratch} />
-              </div>
-            ) : null}
-          </AreaDropRegion>
-        </EntryList>
-      )}
-    </DockedRailSection>
-  );
-}
-
 /**
  * A chat's Scratch in its Files menu: the same rows in their own list, so
  * Move… there ends like everywhere else (its notice shows at the menu's foot).
@@ -202,9 +141,9 @@ function ChatScratchStatus({ scratch }: { scratch: ChatScratch }) {
   if (scratch.hasRows) return null;
   if (!scratch.ready) return <div aria-busy className="min-h-8" />;
   return (
-    <div className="px-2">
-      <ListLine depth={1} iconSlot>{t`No scratch notes yet.`}</ListLine>
-    </div>
+    <ListLine depth={1} iconSlot>
+      {t`No scratch notes yet.`}
+    </ListLine>
   );
 }
 

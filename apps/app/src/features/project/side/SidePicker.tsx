@@ -29,6 +29,7 @@ import { useWorkScope } from "../use-work-scope";
 import { useMainItem } from "../views";
 import { DocumentChoices } from "./DocumentChoices";
 import { type PlacedItem, useMainForSide, usePlace, useSideItem } from "./SideView";
+import { mainMode } from "./side-item";
 
 /** Unpinned chats a list shows at first, and adds with each Show more (the sidebar's page). */
 const PAGE = 20;
@@ -105,9 +106,9 @@ function SidePickerLists({
     place(item);
     onDone();
   };
-  // Beside a chat or the new-chat composer, documents; otherwise (a document, the landing, a
-  // document still opening) chats.
-  return main.kind === "chat" || main.kind === "new-chat" ? (
+  // Beside the chat lane, documents; otherwise (a document, the landing, a document still
+  // opening) chats.
+  return mainMode(main) === "chat" ? (
     <DocumentChoices
       projectId={projectId}
       searchRef={searchRef}
