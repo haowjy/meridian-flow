@@ -27,7 +27,7 @@ const TMUX_ENV_NAMES = new Set([
  * which keeps its caller's environment as its global one and hands it to every
  * window opened later, from any checkout. A fixed allowlist makes that environment
  * the same whichever checkout started the server, with no caller overrides or loaded
- * secrets in it. Each stack's own env reaches its panes through the launch command.
+ * secrets in it. Each stack's own env reaches its panes through `createSession`.
  */
 function tmuxEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
@@ -41,12 +41,19 @@ function tmuxEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): CommandResult {
+function run(
+  command: string,
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  input?: string,
+): CommandResult {
   const result = spawnSync(command, args, {
     cwd,
     env,
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
+    input,
+    stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
   });
 
   return {
@@ -54,6 +61,15 @@ function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEn
     stdout: result.stdout ?? "",
     stderr: result.stderr ?? "",
   };
+}
+
+/** A double-quoted tmux command word: `$` would expand a variable, a raw newline would end the command. */
+function tmuxQuote(word: string): string {
+  const escaped = word
+    .replace(/[\\"$]/g, "\\$&")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r");
+  return `"${escaped}"`;
 }
 
 export class TmuxSessionStore {
@@ -71,10 +87,10 @@ export class TmuxSessionStore {
     return run(command, args, this.repoRoot, tmuxEnv());
   }
 
-  private tmux(args: string[]): CommandResult {
+  private tmux(args: string[], input?: string): CommandResult {
     // Run from $HOME: a tmux server keeps its first client's cwd, and a checkout
     // that cleanup later removes would leave the shared server with a deleted one.
-    return run("tmux", devTmuxArgs(args), os.homedir(), tmuxEnv());
+    return run("tmux", devTmuxArgs(args), os.homedir(), tmuxEnv(), input);
   }
 
   sessionExists(sessionName: string): boolean {
@@ -89,8 +105,18 @@ export class TmuxSessionStore {
     );
   }
 
-  createSession(sessionName: string): CommandResult {
-    return this.tmux(["new-session", "-d", "-s", sessionName, "-c", this.repoRoot]);
+  /**
+   * Starts the session with `env` in its panes. The `new-session` command goes in on
+   * stdin, not argv: `env` can hold secrets, and argv shows in `ps`.
+   * `start-server` first because `source-file` does not start a server.
+   */
+  createSession(sessionName: string, env: Record<string, string>): CommandResult {
+    const args = ["new-session", "-d", "-s", sessionName, "-c", this.repoRoot];
+    for (const [key, value] of Object.entries(env)) args.push("-e", `${key}=${value}`);
+    return this.tmux(
+      ["start-server", ";", "source-file", "-"],
+      `${args.map(tmuxQuote).join(" ")}\n`,
+    );
   }
 
   killSession(sessionName: string): CommandResult {

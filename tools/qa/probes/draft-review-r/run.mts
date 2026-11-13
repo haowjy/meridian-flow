@@ -29,7 +29,7 @@ import { createScratchDatabase, openHarness } from "../drafts-lock-free/harness.
 const schema = buildDocumentSchema();
 const paragraph = (text: string) =>
   schema.nodes.paragraph.create(null, text ? schema.text(text) : null);
-const heading = (text: string) => schema.nodes.heading.create({ level: 2 }, schema.text(text));
+const quote = (text: string) => schema.nodes.blockquote.create(null, paragraph(text));
 const scratch = await createScratchDatabase();
 const h = await openHarness(scratch.url);
 const docs: Y.Doc[] = [];
@@ -154,7 +154,7 @@ async function row(name: string, run: () => Promise<void>) {
   console.log(`PASS ${name}`);
 }
 try {
-  await row("two-writers-50k-low-similarity-and-heading", async () => {
+  await row("two-writers-50k-low-similarity-and-quote", async () => {
     const base = Array.from({ length: 100 }, (_, i) =>
       paragraph(Array.from({ length: 500 }, (_, j) => `old${i}word${j}`).join(" ")),
     );
@@ -165,7 +165,7 @@ try {
     const b = captured(second, () => textAt(second, 2).insert(7, " writerBeta "));
     const rewritten = base.map((node, i) =>
       i === 1
-        ? heading(node.textContent)
+        ? quote(node.textContent)
         : i === 2
           ? paragraph("A completely unrelated live replacement.")
           : node,
@@ -199,7 +199,7 @@ try {
     once(result, "writerBeta");
     console.log(JSON.stringify({ words: 50_000, lastAppends: h.appends.slice(-3) }));
   });
-  await row("pending-writer-agent-on-heading-once", async () => {
+  await row("pending-writer-agent-on-wrapped-block-once", async () => {
     const s = await seed("r-pending");
     const w = clone(s.room);
     const a = clone(s.room);
@@ -212,11 +212,10 @@ try {
       captured(a, () => textAt(a).insert(4, " agentPending")),
       a,
     );
-    await live(s, [heading("Base words.")]);
+    await live(s, [quote("Base words.")]);
     await pulls.flushLivePull(s.documentId);
     const result = await read(s);
     assert.equal(result.length, 1);
-    assert.equal(result[0].type.name, "heading");
     once(result, "writerPending");
     once(result, "agentPending");
   });
@@ -224,7 +223,7 @@ try {
     const s = await seed("r-late");
     const stale = clone(s.room);
     const first = captured(stale, () => textAt(stale).insert(4, "lateA"));
-    await live(s, [heading("Base words.")]);
+    await live(s, [quote("Base words.")]);
     await pulls.flushLivePull(s.documentId);
     assert.equal((await writer(s, first)).admitted, true);
     const second = captured(stale, () => textAt(stale).insert(9, "B"));
@@ -232,7 +231,7 @@ try {
     const result = await read(s);
     assert.equal(result.length, 2);
     once(result, "lateAB");
-    assert.equal(result.filter((node) => node.type.name === "heading").length, 1);
+    assert.equal(result.filter((node) => node.type.name === "blockquote").length, 1);
     assert.equal((await writer(s, Y.encodeStateAsUpdate(stale))).admitted, false);
   });
   await row("deletion-only-late-frame-advances-span-memory", async () => {
@@ -242,7 +241,7 @@ try {
       textAt(stale).insert(1, "X");
       textAt(stale).insert(3, "Y");
     });
-    await live(s, [heading("ab")]);
+    await live(s, [quote("ab")]);
     await pulls.flushLivePull(s.documentId);
     await writer(s, first);
     assert.equal((await read(s)).length, 3);
@@ -265,7 +264,7 @@ try {
       textAt(stale).insert(1, "X");
       textAt(stale).insert(3, "Y");
     });
-    await live(s, [heading("ab")]);
+    await live(s, [quote("ab")]);
     await pulls.flushLivePull(s.documentId);
     await writer(s, first);
     const next = captured(stale, () => textAt(stale).insert(2, "Z"));
@@ -307,7 +306,7 @@ try {
       textAt(stale).insert(1, "X");
       textAt(stale).insert(3, "Y");
     });
-    await live(s, [heading("ab")]);
+    await live(s, [quote("ab")]);
     await pulls.flushLivePull(s.documentId);
     await writer(s, first);
     const deletion = captured(stale, () => textAt(stale).delete(2, 1));
@@ -372,13 +371,13 @@ try {
   await row("reconnect-with-unsent-typing-after-base-tombstones", async () => {
     const s = await seed("r-reconnect");
     const old = clone(s.room);
-    await live(s, [heading("Base words.")]);
+    await live(s, [quote("Base words.")]);
     await pulls.flushLivePull(s.documentId);
     await coordinator.readDraft(s.draftId, async (doc) => {
       Y.applyUpdate(old, Y.encodeStateAsUpdate(doc));
     });
-    const paragraphAt = fragment(old).get(0) as Y.XmlElement;
-    const text = paragraphAt.get(0) as Y.XmlText;
+    const wrapped = (fragment(old).get(0) as Y.XmlElement).get(0) as Y.XmlElement;
+    const text = wrapped.get(0) as Y.XmlText;
     text.insert(text.length, " unsentReconnect");
     assert.equal((await writer(s, Y.encodeStateAsUpdate(old))).admitted, true);
     once(await read(s), "unsentReconnect");

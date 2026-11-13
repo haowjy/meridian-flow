@@ -44,6 +44,18 @@ const layoutAlignAttr = {
   },
 };
 
+const paragraphLevelAttr = {
+  default: null,
+  validate(value: unknown) {
+    if (
+      value !== null &&
+      !(Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 6)
+    ) {
+      throw new RangeError("level must be null or an integer from 1 to 6");
+    }
+  },
+};
+
 // ─── Nodes from prosemirror-schema-basic (used as-is) ───────────────
 const basicNodeDefaults = {
   doc: specOnly(basicNodes.doc),
@@ -63,14 +75,12 @@ const linkRefAttr = { default: null };
 
 // ─── Nodes from basic, customized ───────────────────────────────────
 const basicNodeOverrides = {
+  // A heading is a paragraph with a level (null is body text, 1..6 a heading).
+  // Retyping a block then edits its Yjs element in place, so concurrent typing,
+  // authorship and anchors in it survive; a separate node name would rebuild it.
   paragraph: {
     ...specOnly(basicNodes.paragraph),
-    attrs: { align: layoutAlignAttr },
-  },
-
-  heading: {
-    ...specOnly(basicNodes.heading),
-    attrs: { ...(basicNodes.heading.attrs ?? {}), align: layoutAlignAttr },
+    attrs: { align: layoutAlignAttr, level: paragraphLevelAttr },
   },
 
   // basic's code_block lacks language attr — spread and add it

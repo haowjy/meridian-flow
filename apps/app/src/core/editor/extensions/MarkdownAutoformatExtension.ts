@@ -7,9 +7,10 @@
  * only rename types those rules resolve the server-parity names (`strong`,
  * `em`, `bullet_list`, `code_block`). Reimplementing them here would be a
  * second set of rules competing for the same keystrokes. Inherited unchanged:
- * `# `…`###### ` headings, `**b**` / `*i*` / `~~s~~` / `` `c` `` marks, `> `
+ * `**b**` / `*i*` / `~~s~~` / `` `c` `` marks, `> `
  * blockquote, `- ` / `* ` / `+ ` bullets, `1. ` ordered lists, `---` divider,
- * and completion on Enter as well as on space.
+ * and completion on Enter as well as on space. The `# `…`###### ` heading rule is
+ * `MeridianParagraph`'s: a heading is a paragraph with a level.
  *
  * What this extension owns is the remaining autoformat behavior: the code
  * fence's info string, and Backspace. Typed `[[name]]` is text: `@` is how a

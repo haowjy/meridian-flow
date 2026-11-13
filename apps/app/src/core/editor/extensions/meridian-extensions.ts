@@ -6,13 +6,22 @@
  * Meridian ProseMirror schema and Warm Organic rendering. Owns the editor schema
  * surface; consumed by the editor `config`.
  */
-import { mergeAttributes, Node, wrappingInputRule } from "@tiptap/core";
+import {
+  type CommandProps,
+  InputRule,
+  isiOS,
+  isMacOS,
+  type KeyboardShortcutCommand,
+  mergeAttributes,
+  Node,
+  textblockTypeInputRule,
+  wrappingInputRule,
+} from "@tiptap/core";
 import Bold from "@tiptap/extension-bold";
 import BulletList from "@tiptap/extension-bullet-list";
 import Code from "@tiptap/extension-code";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import HardBreak from "@tiptap/extension-hard-break";
-import Heading from "@tiptap/extension-heading";
 import HorizontalRule from "@tiptap/extension-horizontal-rule";
 import Image, { type ImageOptions } from "@tiptap/extension-image";
 import Italic from "@tiptap/extension-italic";
@@ -24,7 +33,13 @@ import { Table, TableView } from "@tiptap/extension-table";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
-import { DOMSerializer, type Node as ProseMirrorNode } from "@tiptap/pm/model";
+import {
+  DOMSerializer,
+  type Node as ProseMirrorNode,
+  type ResolvedPos,
+  Slice,
+} from "@tiptap/pm/model";
+import { Plugin, Selection, type Transaction } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
 import { FigureNodeView } from "../FigureNodeView";
@@ -132,13 +147,159 @@ export const MeridianHorizontalRule = HorizontalRule.extend({
   name: "horizontal_rule",
 });
 
-export const MeridianParagraph = Paragraph.extend({
-  addAttributes: textLayoutAttributes,
-});
+export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
-export const MeridianHeading = Heading.extend({
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    heading: {
+      /** Sets the level of the blocks under the selection, keeping their elements. */
+      setHeading: (attributes: { level: HeadingLevel }) => ReturnType;
+      /** Sets the level, or returns the blocks to body text when they already have it. */
+      toggleHeading: (attributes: { level: HeadingLevel }) => ReturnType;
+    };
+  }
+}
+
+const HEADING_LEVELS: readonly HeadingLevel[] = [1, 2, 3, 4, 5, 6];
+
+const unclosed = new WeakMap<Slice, Slice>();
+
+/**
+ * ProseMirror lets a pasted node replace the block it lands in, instead of
+ * merging into it, when the pasted node type is `defining`. That is a flag on
+ * the type, and a heading is no longer a type: closing the slice's open start
+ * for a leveled paragraph gives replaceRange the same input a `defining`
+ * heading gave it. A destination with the same level and alignment still takes
+ * the content in place, as `defining` also lets it.
+ */
+function closeLeveledSlice(slice: Slice, $dest: ResolvedPos): Slice {
+  const first = slice.content.firstChild;
+  if (
+    slice.openStart !== 1 ||
+    first?.type.name !== "paragraph" ||
+    first.attrs.level === null ||
+    first.sameMarkup($dest.parent)
+  ) {
+    return slice;
+  }
+  return new Slice(slice.content, 0, slice.openEnd);
+}
+
+/** A slice shaped for the block it will land in, whatever shaping the paste hook already gave it. */
+export function sliceForDestination(slice: Slice, $dest: ResolvedPos): Slice {
+  return closeLeveledSlice(unclosed.get(slice) ?? slice, $dest);
+}
+
+/**
+ * A heading is a paragraph with a `level` (null is body text). One node name
+ * means retyping a block edits its Yjs element in place instead of rebuilding
+ * it, so a peer's concurrent typing, authorship and anchors in it survive.
+ */
+export const MeridianParagraph = Paragraph.extend({
   addAttributes() {
-    return { ...this.parent?.(), ...textLayoutAttributes() };
+    return {
+      ...textLayoutAttributes(),
+      level: {
+        default: null,
+        // Enter at the end of a heading starts body text.
+        keepOnSplit: false,
+        parseHTML: (element: HTMLElement) => {
+          const match = /^H([1-6])$/.exec(element.tagName);
+          return match ? Number(match[1]) : null;
+        },
+        renderHTML: () => ({}),
+      },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: "p" }, ...HEADING_LEVELS.map((level) => ({ tag: `h${level}` }))];
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const tag = node.attrs.level === null ? "p" : `h${node.attrs.level}`;
+    return [tag, mergeAttributes(this.options.HTMLAttributes, HTMLAttributes), 0];
+  },
+
+  addCommands() {
+    return {
+      // The stock command keeps the block's current attrs, level included.
+      setParagraph:
+        () =>
+        ({ commands }) =>
+          commands.setNode(this.name, { level: null }),
+      setHeading:
+        ({ level }) =>
+        ({ commands }) =>
+          commands.updateAttributes(this.name, { level }),
+      toggleHeading:
+        ({ level }) =>
+        ({ commands, editor }) =>
+          commands.updateAttributes(this.name, {
+            level: editor.isActive(this.name, { level }) ? null : level,
+          }),
+    };
+  },
+
+  addKeyboardShortcuts() {
+    // TipTap's Backspace clears a first empty block's type only when its node is
+    // not named `paragraph`, which now includes headings. The same condition, on
+    // every key TipTap's keymap routes to that one handler. Undoing the autoformat
+    // rule just applied comes first, and is not ours.
+    const clearFirstEmptyLevel: KeyboardShortcutCommand = ({ editor }) =>
+      editor.commands.command(({ tr, commands }) => {
+        if (editor.can().undoInputRule()) return false;
+        const { empty, $anchor } = tr.selection;
+        const { parent: block, pos } = $anchor;
+        if (!empty || block.type !== this.type || block.attrs.level === null || block.textContent) {
+          return false;
+        }
+        const $parentPos = pos > 0 ? tr.doc.resolve(pos - 1) : $anchor;
+        const isolated =
+          $parentPos.parent.type.spec.isolating && $parentPos.parent.childCount === 1;
+        const atStart = isolated
+          ? $anchor.pos - $anchor.parentOffset === pos
+          : Selection.atStart(tr.doc).from === pos;
+        return atStart && commands.updateAttributes(this.name, { level: null });
+      });
+    const backspaceKeys = ["Backspace", "Mod-Backspace", "Shift-Backspace"];
+    if (isMacOS() || isiOS()) backspaceKeys.push("Ctrl-h", "Alt-Backspace");
+    return {
+      ...this.parent?.(),
+      ...Object.fromEntries(backspaceKeys.map((key) => [key, clearFirstEmptyLevel])),
+      ...Object.fromEntries(
+        HEADING_LEVELS.map((level) => [
+          `Mod-Alt-${level}`,
+          () => this.editor.commands.toggleHeading({ level }),
+        ]),
+      ),
+    };
+  },
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          // A paste lands at the selection. A drop is shaped again where it lands
+          // (`slice-drop.ts`), from the slice as it was before this ran.
+          transformPasted: (slice, view) => {
+            const shaped = closeLeveledSlice(slice, view.state.selection.$from);
+            if (shaped !== slice) unclosed.set(shaped, slice);
+            return shaped;
+          },
+        },
+      }),
+    ];
+  },
+
+  addInputRules() {
+    return [
+      textblockTypeInputRule({
+        find: /^(#{1,6})\s$/,
+        type: this.type,
+        getAttributes: (match) => ({ level: match[1]?.length }),
+      }),
+    ];
   },
 });
 
@@ -465,10 +626,53 @@ export const MeridianLink = Link.extend({
 /** Markdown list tightness is a serialization fact, never a DOM attribute. */
 const tightAttribute = { default: false, renderHTML: () => ({}) };
 
+/** A list item holds body text: wrapping a heading in a list, by shortcut, toolbar or input rule, clears its level. */
+function clearSelectedLevels(tr: Transaction): void {
+  const { from, to } = tr.selection;
+  tr.doc.nodesBetween(from, to, (node, pos) => {
+    if (node.type.name === "paragraph" && node.attrs.level !== null) {
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, level: null });
+    }
+    return !node.isTextblock;
+  });
+}
+
+function bodyTextListRule(rule: InputRule): InputRule {
+  return new InputRule({
+    find: rule.find,
+    handler: (props) => {
+      const result = rule.handler(props);
+      if (result !== null) clearSelectedLevels(props.state.tr);
+      return result;
+    },
+  });
+}
+
+/** TipTap's toggleList wraps when the selection is outside the list type and unwraps inside it. */
+function toggleListWithBodyText(
+  { chain, editor }: CommandProps,
+  list: { name: string; itemTypeName: string; keepMarks: boolean },
+): boolean {
+  const run = chain();
+  if (!editor.isActive(list.name)) run.command(({ tr }) => (clearSelectedLevels(tr), true));
+  return run.toggleList(list.name, list.itemTypeName, list.keepMarks).run();
+}
+
 export const MeridianBulletList = BulletList.extend({
   name: "bullet_list",
   content: "list_item+",
   group: "block",
+
+  addCommands() {
+    return {
+      toggleBulletList: () => (props) =>
+        toggleListWithBodyText(props, { name: this.name, ...this.options }),
+    };
+  },
+
+  addInputRules() {
+    return (this.parent?.() ?? []).map(bodyTextListRule);
+  },
 
   addAttributes() {
     return {
@@ -501,14 +705,23 @@ export const MeridianOrderedList = OrderedList.extend({
     };
   },
 
+  addCommands() {
+    return {
+      toggleOrderedList: () => (props) =>
+        toggleListWithBodyText(props, { name: this.name, ...this.options }),
+    };
+  },
+
   addInputRules() {
     return [
-      wrappingInputRule({
-        find: /^(\d+)\.\s$/,
-        type: this.type,
-        getAttributes: (match) => ({ order: Number(match[1]) }),
-        joinPredicate: (match, node) => node.childCount + Number(node.attrs.order) === +match[1],
-      }),
+      bodyTextListRule(
+        wrappingInputRule({
+          find: /^(\d+)\.\s$/,
+          type: this.type,
+          getAttributes: (match) => ({ order: Number(match[1]) }),
+          joinPredicate: (match, node) => node.childCount + Number(node.attrs.order) === +match[1],
+        }),
+      ),
     ];
   },
 }).configure({ itemTypeName: "list_item" });

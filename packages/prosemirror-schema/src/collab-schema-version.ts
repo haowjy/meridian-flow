@@ -7,7 +7,7 @@ export type CollabSchemaVersion = {
 };
 
 export const COLLAB_SCHEMA_VERSION: CollabSchemaVersion = {
-  major: 1,
+  major: 2,
   minor: 0,
   patch: 0,
 };

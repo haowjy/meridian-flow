@@ -184,9 +184,9 @@ describe("resolveWrite", () => {
       resolve(doc, { command: "replace", content: "Replacement", in: "#my-scene" }),
     );
 
-    expect(edits.map((edit) => edit.kind)).toEqual(["insert", "delete", "delete"]);
-    expect(edits[1].kind === "delete" ? edits[1].block : null).toBe(heading);
-    expect(edits[2].kind === "delete" ? edits[2].block : null).toBe(body);
+    expect(edits.map((edit) => edit.kind)).toEqual(["ops", "delete"]);
+    expect(edits[0].kind === "ops" ? edits[0].block : null).toBe(heading);
+    expect(edits[1].kind === "delete" ? edits[1].block : null).toBe(body);
   });
 
   it("removes the blocks selected by `in` or a path fragment", () => {

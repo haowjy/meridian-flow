@@ -41,7 +41,7 @@ function setup() {
       catalogDocument(P, "manuscript://assets/map.png", { image: true }),
     ],
     blocks: [
-      schema.node("heading", { level: 1 }, [
+      schema.node("paragraph", { level: 1 }, [
         schema.text("Part "),
         schema.text("one", [
           schema.marks.link.create({ href: ch("c"), title: null, ref: documentRef(C) }),

@@ -33,7 +33,7 @@ export function parseDoc(schema: Schema, src: string): PMNode[] {
           ),
       );
     if (kind.startsWith("h"))
-      return schema.nodes.heading.create(
+      return schema.nodes.paragraph.create(
         { level: Number(kind.slice(1)) || 1 },
         inline(schema, text),
       );
@@ -78,7 +78,11 @@ export function render(blocks: readonly PMNode[]): string {
         t += st && em ? `***${s}***` : st ? `**${s}**` : em ? `*${s}*` : s;
       });
       const kind =
-        b.type.name === "heading" ? `h${b.attrs.level}` : b.attrs.align === "center" ? "pc" : "p";
+        b.attrs.level !== null && b.type.name === "paragraph"
+          ? `h${b.attrs.level}`
+          : b.attrs.align === "center"
+            ? "pc"
+            : "p";
       return `${kind}:${t}`;
     })
     .join(" | ");
@@ -467,7 +471,7 @@ export function toPM(schema: Schema, doc: GBlock[]): PMNode[] {
     });
     const content = joinAdjacent(inline);
     return b.type === "heading"
-      ? schema.nodes.heading.create({ level: b.level }, content)
+      ? schema.nodes.paragraph.create({ level: b.level }, content)
       : schema.nodes.paragraph.create(null, content);
   });
 }
@@ -504,7 +508,7 @@ export function wordsOf(blocks: readonly PMNode[]): {
   const info = new Map<string, WordInfo>();
   const count = new Map<string, number>();
   blocks.forEach((b, bi) => {
-    const type = b.type.name === "heading" ? `heading${b.attrs.level}` : b.type.name;
+    const type = b.attrs.level != null ? `heading${b.attrs.level}` : b.type.name;
     let first = true;
     const add = (w: string, em: boolean, strong: boolean) => {
       count.set(w, (count.get(w) ?? 0) + 1);
@@ -699,7 +703,7 @@ export const show = (bs: readonly PMNode[]) =>
   bs
     .map(
       (b) =>
-        `${b.type.name === "heading" ? `h${b.attrs.level}` : b.type.name === "paragraph" ? "p" : b.type.name}[${b.type.name === "figure" ? b.attrs.alt : b.textContent}]`,
+        `${b.attrs.level != null ? `h${b.attrs.level}` : b.type.name === "paragraph" ? "p" : b.type.name}[${b.type.name === "figure" ? b.attrs.alt : b.textContent}]`,
     )
     .join(" ");
 
