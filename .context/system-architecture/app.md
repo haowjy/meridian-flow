@@ -10,7 +10,7 @@ the editor shows it (8). No dependency rule is written for these layers, so read
 ```mermaid
 flowchart LR
   routes["routes<br/><small>pages: each URL mounts a screen</small>"]:::module
-  project["project<br/><small>the workspace: panes, tabs, Works</small>"]:::feature
+  project["project<br/><small>the workspace: main and side panes, tabs, Works</small>"]:::feature
   conversation["conversation<br/><small>chat and the Agent picker</small>"]:::group
   documents["documents<br/><small>the editor, draft review, links</small>"]:::group
   library["library<br/><small>project list, import, export, account</small>"]:::group
@@ -27,7 +27,7 @@ flowchart LR
   conversation -->|"6. draws the events from the thread store"| client
   server -->|"7. sends the draft edit over the Yjs socket"| core
   documents -->|"8. shows the change from the editor session"| core
-  project -->|"opens documents in tabs"| documents
+  project -->|"opens documents in main's tabs or beside a chat"| documents
   routes -->|"mounts the project list and the pages around it"| library
   conversation -->|"renders text and UI with"| shared
   routes -->|"mounts the debug overlay"| debug
@@ -47,15 +47,17 @@ The `_authenticated` layout mounts one provider tree for every route: do not gat
 
 ## project
 
-The workspace shell: panes, sidebar, tabs, Works and routing.
+The workspace shell: main and side panes, tabs, Works and routing.
 
-The largest feature: every other feature except `billing` imports it or is imported by it. It opens documents in tabs and mounts the chat beside them.
+Two panes always hold different kinds: main shows a document or a chat (the Write | Chat switch picks which), and the side shows the other kind. Main keeps one row of tabs per kind; the left sidebar lists Chats, Manuscript, Knowledge and, while a Work has drafts, Changes. `shell` draws the sidebar and main's band, `side` the other pane, `routing` turns a project address into what main shows, `context` hosts documents and the Manuscript tree, `work` manages Works, and `mobile` is the phone layout. The pane page says where an item opens.
+
+The largest feature: every other feature except `billing` imports it or is imported by it.
 
 - Kind: feature
 - Paths: `apps/app/src/features/project`
 - Docs: [CONTEXT](../../apps/app/src/features/project/.context/CONTEXT.md), [AGENTS](../../apps/app/src/features/project/AGENTS.md)
 - Machines: [panes](../../apps/app/src/features/project/.context/pane-state-machine.md), [project](../../apps/app/src/features/project/context/.context/state-machines.md)
-- Drift: Features import each other freely: `project` imports `draft-review` from 25 files, `project` imports `chat` from 20, `chat` imports `project` from 16, `editor` imports `draft-review` from 8 (tests left out). No rule forbids it.
+- Drift: Features import each other freely: `project` imports `draft-review` from 22 files, `project` imports `chat` from 14, `chat` imports `project` from 19, `editor` imports `draft-review` from 7 (tests left out). No rule forbids it.
 
 ## conversation
 
@@ -99,7 +101,7 @@ A pill shows transport health; inspectors open by alt-clicking the transcript or
 
 Talking to the server: HTTP clients, query hooks, the thread store, providers.
 
-HTTP clients, React Query hooks, the thread store and the transport provider. Also chat submissions and the project creation record, which let the app show a result before the server answers, and the working set and recents.
+HTTP clients, React Query hooks, the thread store and the transport provider. Also chat submissions and the project creation record, which let the app show a result before the server answers, the working set and recents, and `project-shell`: main's open tabs, the last item of each kind on screen (the pane slots) and each document's view, per browser tab.
 
 - Kind: module
 - Paths: `apps/app/src/client`
@@ -120,7 +122,7 @@ The editor core: document sessions, the socket to the server, the local replica.
 
 Shared UI, helpers and rich text.
 
-`components` (shadcn primitives and the composer), `hooks`, `lib` (utils, i18n, the optimistic send helper) and `rich-content` (Markdown through the markup codec).
+`components` (UI primitives and the composer), `hooks`, `lib` (utils, i18n, the optimistic send helper) and `rich-content` (Markdown through the markup codec).
 
 - Kind: group
 - Opens: [Shared](app-shared.md)

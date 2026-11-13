@@ -4,7 +4,7 @@ Small shared parts. Chat messages and reviewed drafts both render their text thr
 
 ```mermaid
 flowchart LR
-  components["components<br/><small>shadcn primitives and the composer</small>"]:::module
+  components["components<br/><small>UI primitives and the composer</small>"]:::module
   hooks["hooks<br/><small>small shared React hooks</small>"]:::module
   lib["lib<br/><small>utils, i18n, the optimistic send</small>"]:::module
   rich-content["rich-content<br/><small>Markdown through the markup codec</small>"]:::module
@@ -22,9 +22,9 @@ flowchart LR
 
 ## components
 
-Shared UI: shadcn primitives and the composer.
+Shared UI: primitives and the composer.
 
-`ui/` holds the primitives; `app/` holds the composer, link chips and banners. The composer toolbar has a state machine.
+`ui/` holds the primitives (buttons, menus, lists and rows, pickers, the phone shell); `app/` holds the composer, link chips and notices. The composer toolbar has a state machine.
 
 - Kind: module
 - Paths: `apps/app/src/components`
@@ -36,7 +36,7 @@ Shared UI: shadcn primitives and the composer.
 
 Small shared React hooks.
 
-Pointer type, the phone shell, text size, theme, a minute clock and a virtual list. No server state.
+Pointer type, the phone shell, text size, theme, a minute clock and scroll-edge detection. No server state.
 
 - Kind: module
 - Paths: `apps/app/src/hooks`

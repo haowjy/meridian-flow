@@ -15,7 +15,7 @@ sequenceDiagram
   participant file-policy
   participant collab
   participant postgres
-  project->>editor: 1. open the document in a tab
+  project->>editor: 1. open the document in a pane
   editor->>core-editor: 2. bind a document session
   core-resources-->>editor: 3. the local copy of the document
   core-editor->>core-transport: 4. connect the room
@@ -28,7 +28,7 @@ sequenceDiagram
   core-transport->>collab: 11. the writer's edits
 ```
 
-1. **Open.** [project](../app.md#project) opens the document in a tab (`features/project/context/open-project-document.ts`) and mounts `ContextDocumentHost`.
+1. **Open.** [project](../app.md#project) places the document: a click in the sidebar opens it in main, a pick from a chat's side pane opens it beside the chat ([pane rules](../../../apps/app/src/features/project/.context/pane-state-machine.md)). It describes it (`features/project/context/open-project-document.ts`) and mounts `ContextDocumentHost` through `DocumentHost`.
 2. **Bind.** [editor](../app-documents.md#editor) asks [core-editor](../app-core.md#core-editor) for a document session from the session registry.
 3. **Local first.** [core-resources](../app-core.md#core-resources) holds the writer's local replica of documents and folders, so the tab can show the document's identity and last known text before the socket is up. The replica gets ids from the server's catalog: it fetches a snapshot or changes through the project catalog API (`resource-catalog-transport.ts`) and installs each entry with the entry's id as the document id.
 4. **Connect.** The session asks [core-transport](../app-core.md#core-transport) to connect a Hocuspocus provider (`hocuspocus-document-transport.ts`).

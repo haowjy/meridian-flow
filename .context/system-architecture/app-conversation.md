@@ -46,7 +46,7 @@ A new chat records exactly which Agent, and which revision of it, the writer pic
 
 The workspace shell.
 
-Panes, sidebar, tabs, Works and routing.
+Main and side panes, sidebar, tabs, Works and routing.
 
 - Kind: context
 - See: [project](app.md#project)

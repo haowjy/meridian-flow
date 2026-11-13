@@ -9,7 +9,7 @@ mode the writes go straight to live. Either way the writer can undo them.
 
 Does: chooses a Work, the task this session belongs to, from the picker under the project name. "None" is the row for no Work.
 
-Sees: the picker keeps the choice, which decides which chats and drafts are shown; if it becomes unavailable the app says "Your selected Work is unavailable. Choose another Work, or None."
+Sees: the picker keeps the choice, which decides which chats and drafts the sidebar shows. A new chat's composer has its own Work control; if that Work becomes unavailable the composer says "Your selected Work is unavailable. Choose another Work, or None."
 
 - Map: [project](../app.md#project), [projects](../server-workspace.md#projects)
 - Machines: [Work archive and delete](../../../apps/server/server/domains/projects/.context/state-machines.md)
@@ -18,7 +18,7 @@ Sees: the picker keeps the choice, which decides which chats and drafts are show
 
 Does: opens a chapter from the project and switches to Write mode.
 
-Sees: the chapter in a tab in the main area, and a side view with the current chat or a new chat beside it.
+Sees: the chapter in a tab in the main area, and beside it the side pane with the last chat the writer had on screen, or a new chat about the chapter. Main and the side never hold the same kind: the Write | Chat switch swaps them.
 
 - Map: [project](../app.md#project), [editor](../app-documents.md#editor), [core-editor](../app-core.md#core-editor), [Opening a document](../flows/opening-a-document.md)
 - Machines: [Document session status](../../../apps/app/src/core/editor/.context/state-machines.md)
@@ -43,7 +43,7 @@ Sees: tool and helper (subagent) cards appear where the turn started them. A rep
 
 ## Find the changes
 
-Does: opens the Changes tab in the sidebar.
+Does: opens the Changes tab in the sidebar, which appears in the strip while there are drafts to review.
 
 Sees: the Work's drafted documents with a pending count, and "Apply all" and "Discard all", with the same two on each row. Under None it lists the drafts of the open chat only.
 

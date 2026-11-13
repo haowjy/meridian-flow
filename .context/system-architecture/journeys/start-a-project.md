@@ -30,7 +30,7 @@ Sees: the new project opens at once, before the server has answered. A pending n
 
 ## Open the import menu
 
-Does: opens the sidebar, which has Chats, Manuscript and Knowledge, and chooses "Import…" then "Folder…" or "Files…".
+Does: opens the Manuscript tab in the sidebar (its strip also has Chats and Knowledge) and chooses "Import…" then "Folder…" or "Files…".
 
 Sees: the operating system's picker opens at once.
 
@@ -49,7 +49,7 @@ Sees: upload progress. The server converts the files out of sight, and then ever
 
 Does: clicks a chapter in the Manuscript tree.
 
-Sees: it opens in a tab in the main area.
+Sees: it opens in a tab in the main area, with a chat beside it in the side pane.
 
 - Map: [project](../app.md#project), [core-resources](../app-core.md#core-resources), [context](../server-documents.md#context), [Opening a document](../flows/opening-a-document.md)
 - Machines: [Live document binding](../../../apps/app/src/features/project/context/.context/state-machines.md), [Resource lifecycle](../../../packages/resource-replica/.context/state-machines.md)
@@ -58,7 +58,7 @@ Sees: it opens in a tab in the main area.
 
 Does: types.
 
-Sees: the text, and a status pill that reads "Offline" when the connection drops. Text typed offline shows "Saved locally (offline)" and is sent when the connection returns ("Back online (all changes saved)"). The writer's edits and the model's edits to the same page both land.
+Sees: the text. When the connection drops the chat composer reads "Offline", and text typed offline shows "Saved locally (offline)" and is sent when the connection returns ("Back online (all changes saved)"). The writer's edits and the model's edits to the same page both land.
 
 - Map: [browser](../system.md#browser), [core-editor](../app-core.md#core-editor), [core-transport](../app-core.md#core-transport), [collab](../server-documents.md#collab)
 - Machines: [Document session status](../../../apps/app/src/core/editor/.context/state-machines.md), [Sync pill outage phase](../../../apps/app/src/features/editor/.context/state-machines.md)

@@ -1,6 +1,6 @@
 # App: documents
 
-The editing screens. A document opens in a tab from the workspace (1); the editor binds a document session from the core (2); the core connects the Yjs socket to the server (3) and the server's updates, the writer's and the model's, come back through it (4). A draft is shown through `draft-review`, which opens the draft's room (5) and derives Changes from the draft's text. Back to the [app](app.md).
+The editing screens. A document opens from the workspace in main's tab row, or beside a chat (1); the editor binds a document session from the core (2); the core connects the Yjs socket to the server (3) and the server's updates, the writer's and the model's, come back through it (4). A draft is shown through `draft-review`, which opens the draft's room (5) and derives Changes from the draft's text. Back to the [app](app.md).
 
 ```mermaid
 flowchart LR
@@ -12,7 +12,7 @@ flowchart LR
   shared["shared<br/><small>UI and rich text</small>"]:::context
   conversation["conversation<br/><small>chat</small>"]:::context
   server["server<br/><small>the Yjs socket</small>"]:::context
-  project -->|"1. opens a document in a tab"| editor
+  project -->|"1. opens a document in main or beside a chat"| editor
   editor -->|"2. binds the document session"| core
   core -->|"3. connects the Yjs socket"| server
   server -->|"4. sends live and draft updates"| core
@@ -61,7 +61,7 @@ Resolves links from the local project index first, then the server; a failed req
 
 The workspace shell.
 
-Panes, sidebar, tabs, Works and routing.
+Main and side panes, sidebar, tabs, Works and routing.
 
 - Kind: context
 - See: [project](app.md#project)

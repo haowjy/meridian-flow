@@ -94,7 +94,7 @@ Each URL mounts a screen.
 
 The workspace shell.
 
-Panes, sidebar, tabs, Works and routing.
+Main and side panes, sidebar, tabs, Works and routing.
 
 - Kind: context
 - See: [project](app.md#project)
