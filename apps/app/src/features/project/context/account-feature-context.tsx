@@ -10,6 +10,7 @@ import {
   resourcePlacementForSnapshot,
   resourceVisibleInProject,
 } from "@meridian/resource-replica";
+import type { QueryClient } from "@tanstack/react-query";
 import {
   createContext,
   useContext,
@@ -18,9 +19,11 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { scopeCreationRegistry } from "@/client/creation/creation-registry";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
+import type { OpenDocument } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { LinkSettlementsProvider } from "@/features/links/link-settlements";
 import { AccountFeatureLifetime } from "./account-feature-lifetime";
@@ -30,6 +33,8 @@ import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener
 import type { RemovedNoticeStore } from "./removed-notice-store";
 
 const DraftCommandsContext = createContext<AccountFeatureLifetime["draftCommands"] | null>(null);
+const DraftOnlyContext = createContext<AccountFeatureLifetime["draftOnly"] | null>(null);
+const PresentedContext = createContext<AccountFeatureLifetime["presented"] | null>(null);
 
 const AccountEpochContext = createContext<AbortSignal | null>(null);
 const AccountIdContext = createContext<string | null>(null);
@@ -45,22 +50,22 @@ const LiveDocumentRegistryAccountContext = createContext<AccountFeatureLifetime[
 
 export function AccountFeatureComposition({
   accountId,
-  repairProjectCatalog,
+  queryClient,
   children,
 }: {
   accountId: string;
-  repairProjectCatalog: (projectId: string) => Promise<void>;
+  queryClient: QueryClient;
   children: React.ReactNode;
 }) {
   const connectivityHints = useConnectivityHints();
-  const desired = useRef({ accountId, repairProjectCatalog });
-  desired.current = { accountId, repairProjectCatalog };
+  const desired = useRef({ accountId, queryClient });
+  desired.current = { accountId, queryClient };
   const invalidationHandler = useRef<(error: Error) => void>(() => undefined);
   const [lifetime, setLifetime] = useState(
     () =>
       new AccountFeatureLifetime(
         accountId,
-        repairProjectCatalog,
+        queryClient,
         (error) => invalidationHandler.current(error),
         connectivityHints,
       ),
@@ -84,7 +89,7 @@ export function AccountFeatureComposition({
         setLifetime(
           new AccountFeatureLifetime(
             next.accountId,
-            next.repairProjectCatalog,
+            next.queryClient,
             (error) => invalidationHandler.current(error),
             connectivityHints,
           ),
@@ -178,7 +183,11 @@ function AccountFeatureProviders({
                   <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
                     <LinkSettlementsProvider value={lifetime.linkSettlements}>
                       <DraftCommandsContext.Provider value={lifetime.draftCommands}>
-                        {children}
+                        <DraftOnlyContext.Provider value={lifetime.draftOnly}>
+                          <PresentedContext.Provider value={lifetime.presented}>
+                            {children}
+                          </PresentedContext.Provider>
+                        </DraftOnlyContext.Provider>
                       </DraftCommandsContext.Provider>
                     </LinkSettlementsProvider>
                   </ProjectDocumentLiveOpenerContext.Provider>
@@ -328,4 +337,40 @@ export function useDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] 
   const owner = useContext(DraftCommandsContext);
   if (!owner) throw new Error("AccountFeatureComposition is required");
   return owner;
+}
+
+/** The draft-only documents mounted hosts present; null outside the authenticated shell. */
+export function useOptionalDraftOnlyPresentations(): AccountFeatureLifetime["draftOnly"] | null {
+  return useContext(DraftOnlyContext);
+}
+
+/** The documents this browser tab's hosts mount and present; null outside the authenticated shell. */
+export function useOptionalPresentedDocuments(): AccountFeatureLifetime["presented"] | null {
+  return useContext(PresentedContext);
+}
+
+const NOTHING_PRESENTED: readonly OpenDocument[] = [];
+
+/** The documents this browser tab's hosts present in a project, main's first. */
+export function usePresentedDocuments(projectId: string): readonly OpenDocument[] {
+  const presented = useContext(PresentedContext);
+  return useSyncExternalStore(
+    presented?.subscribe ?? noSubscription,
+    () => presented?.documents(projectId) ?? NOTHING_PRESENTED,
+    () => NOTHING_PRESENTED,
+  );
+}
+
+/** The documents mounted in a project, newest on screen first (`PresentedDocuments.shown`). */
+export function useShownDocuments(projectId: string): readonly OpenDocument[] {
+  const presented = useContext(PresentedContext);
+  return useSyncExternalStore(
+    presented?.subscribe ?? noSubscription,
+    () => presented?.shown(projectId) ?? NOTHING_PRESENTED,
+    () => NOTHING_PRESENTED,
+  );
+}
+
+function noSubscription(): () => void {
+  return () => undefined;
 }

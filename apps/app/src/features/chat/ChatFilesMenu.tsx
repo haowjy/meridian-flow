@@ -1,27 +1,25 @@
 /** Chat Files combines existing shared Scratch with this chat's uploads and source-chat link. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { isHandoffSeed, readHandoffSeed } from "@meridian/contracts/threads";
-import { FileImage, FileText, FileType, PanelRightOpen, Paperclip, Trash2 } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { FileImage, FileText, FileType, Paperclip, Trash2 } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { deleteChatUpload } from "@/client/api/context-upload-api";
 import { type ChatUpload, useChatUploads } from "@/client/query/useChatUploads";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { topChatOf } from "@/client/query/useTopChat";
 import { useThreadStore } from "@/client/stores";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
-import {
-  dropdownResultsClass,
-  dropdownRowContainerClass,
-  dropdownRowVariants,
-  dropdownSurfaceVariants,
-} from "@/components/ui/dropdown-presentation";
+import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
+import { handleListKeys } from "@/components/ui/list-keys";
+import { ListLine, ListRow } from "@/components/ui/list-row";
+import { PickerResults, PickerSection } from "@/components/ui/picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MenuScratchSection } from "@/features/project/chat/ChatScratch";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
-import { useOpenChatResource } from "@/features/project/context/open-chat-document";
 import {
   type EntriesRoute,
   TreeDropScope,
@@ -73,7 +71,6 @@ function FilesDropdown({
 }) {
   const { uploads } = useChatUploads(projectId, chatId);
   const continuesFrom = useContinuesFrom(chatThread);
-  const openResource = useOpenChatResource(projectId);
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   const now = useThreadStore((state) => state.now);
   const [open, setOpen] = useState(false);
@@ -134,42 +131,6 @@ function FilesDropdown({
     );
   };
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const rowKeys = ["ArrowDown", "ArrowUp", "Home", "End"];
-    const target = event.target as HTMLElement;
-    if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
-      // Within a row: the file's own button, then its actions.
-      const row = target.closest<HTMLElement>("[data-upload-item]");
-      const stops = Array.from(row?.querySelectorAll<HTMLElement>("button:not([disabled])") ?? []);
-      const index = stops.indexOf(target);
-      if (index < 0) return;
-      const next = stops[index + (event.key === "ArrowRight" ? 1 : -1)];
-      if (!next) return;
-      event.preventDefault();
-      next.focus();
-      return;
-    }
-    if (!rowKeys.includes(event.key)) return;
-    const primaries = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>("[data-upload-row]"),
-    );
-    if (primaries.length === 0) return;
-    const current = primaries.indexOf(
-      target.closest<HTMLElement>("[data-upload-item]")?.querySelector("[data-upload-row]") ??
-        target,
-    );
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? primaries.length - 1
-          : event.key === "ArrowDown"
-            ? (current + 1) % primaries.length
-            : (current <= 0 ? primaries.length : current) - 1;
-    event.preventDefault();
-    primaries[next]?.focus();
-  };
-
   return (
     <Popover open={open} onOpenChange={(next) => (next ? setOpen(true) : close(false))}>
       <PopoverTrigger asChild>
@@ -178,7 +139,7 @@ function FilesDropdown({
           aria-label={t`Files`}
           aria-expanded={open}
           aria-haspopup="dialog"
-          className="focus-ring inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [@media(pointer:coarse)]:min-h-11"
+          className="focus-ring inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-ink-fill hover:text-foreground popup-open:bg-ink-fill-strong popup-open:text-foreground coarse:min-h-11"
         >
           <Paperclip className="size-3.5" aria-hidden />
           <span aria-hidden="true">
@@ -191,70 +152,58 @@ function FilesDropdown({
         ref={contentRef}
         align="end"
         className={cn(
-          dropdownSurfaceVariants({ measure: "catalog", page: null }),
-          "text-tier-chat w-[min(22rem,calc(100vw-1.5rem))] p-0",
+          dropdownSurfaceVariants({ measure: "catalog" }),
+          "text-tier-chat w-[min(22rem,calc(100vw-1.5rem))]",
         )}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
-          contentRef.current
-            ?.querySelector<HTMLElement>('[role="button"][tabindex="0"], [data-upload-row]')
-            ?.focus();
+          contentRef.current?.querySelector<HTMLElement>("[data-list-item]")?.focus();
         }}
         onCloseAutoFocus={(event) => {
           if (focusHandoff.current) event.preventDefault();
           focusHandoff.current = false;
         }}
-        onKeyDown={(event) => {
-          if ((event.target as HTMLElement).closest("[data-upload-item]")) handleKeyDown(event);
-        }}
+        onKeyDown={handleListKeys}
       >
         {continuesFrom ? (
-          <p className="px-3 pt-3 text-sm text-ink-muted" onClickCapture={() => close(false)}>
+          <p
+            className="px-2 py-1.5 text-sm text-muted-foreground"
+            onClickCapture={() => close(false)}
+          >
             <ContinuesFrom source={continuesFrom} />
           </p>
         ) : null}
-        <div className={cn(dropdownResultsClass, "max-h-72 px-1 py-2")}>
+        <PickerResults>
           <MenuScratchSection
             projectId={projectId}
             threadId={threadId}
             onPicked={() => close(false)}
           />
           <UploadsRefuseDrops>
-            <h3 className="px-3 py-2 text-xs font-medium text-muted-foreground">
-              <Trans>Uploads</Trans>
-            </h3>
-            {rows.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-muted-foreground">
-                <Trans>No files attached in this chat yet.</Trans>
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-[var(--chat-space-row)]">
-                {rows.map((upload) => (
-                  <UploadRow
-                    key={upload.documentId}
-                    upload={upload}
-                    now={now}
-                    canDelete={upload.deletion !== null && !used.has(upload.documentId)}
-                    failed={failed.has(upload.documentId)}
-                    onInsert={() => insert(upload)}
-                    onOpen={
-                      openResource
-                        ? () => {
-                            close(false);
-                            void openResource({
-                              documentId: upload.documentId,
-                              disposition: "current",
-                            });
-                          }
-                        : null
-                    }
-                    onDelete={() => remove(upload)}
-                  />
-                ))}
-              </ul>
-            )}
+            <PickerSection
+              label={t`Uploads`}
+              state={
+                rows.length === 0 ? (
+                  <ListLine density="menu" iconSlot>
+                    <Trans>No files attached in this chat yet.</Trans>
+                  </ListLine>
+                ) : null
+              }
+            >
+              {rows.map((upload) => (
+                <UploadRow
+                  key={upload.documentId}
+                  upload={upload}
+                  now={now}
+                  canDelete={upload.deletion !== null && !used.has(upload.documentId)}
+                  failed={failed.has(upload.documentId)}
+                  onInsert={() => insert(upload)}
+                  onDelete={() => remove(upload)}
+                />
+              ))}
+            </PickerSection>
           </UploadsRefuseDrops>
-        </div>
+        </PickerResults>
       </PopoverContent>
     </Popover>
   );
@@ -266,7 +215,6 @@ function UploadRow({
   canDelete,
   failed,
   onInsert,
-  onOpen,
   onDelete,
 }: {
   upload: ChatUpload;
@@ -274,8 +222,6 @@ function UploadRow({
   canDelete: boolean;
   failed: boolean;
   onInsert: () => void;
-  /** Null where this host has no viewer for an upload. */
-  onOpen: (() => void) | null;
   onDelete: () => void;
 }) {
   const Icon = iconFor(upload);
@@ -283,66 +229,37 @@ function UploadRow({
   const drag = useReferenceDrag({ ref: { kind: "file", id: upload.documentId }, name });
   const failure = failed ? t`Couldn’t delete this file. Try again.` : null;
   return (
-    <li data-upload-item className="relative flex flex-col">
-      <div
-        className={cn(
-          dropdownRowContainerClass,
-          "flex min-w-0 items-center transition-colors hover:bg-dropdown-hover",
-        )}
-      >
-        <button
-          data-upload-row
-          type="button"
-          {...drag}
-          onClick={onInsert}
-          aria-label={t`Add ${name} to your message`}
-          className={cn(
-            dropdownRowVariants({ kind: "descriptive", interactive: false }),
-            "h-auto min-h-10 flex-1 py-1.5",
-          )}
-        >
-          <Icon aria-hidden className="text-muted-foreground" />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate">{upload.name}</span>
-            {failure ? (
-              <span aria-hidden="true" className="truncate text-meta text-destructive">
-                {failure}
-              </span>
-            ) : (
-              <span className="flex min-w-0 justify-between gap-3 text-meta text-ink-subtle">
-                <span className="truncate">{uploadTypeLabel(upload.fileType)}</span>
-                <span className="shrink-0 tabular-nums">{attachedAgo(upload.attachedAt, now)}</span>
-              </span>
-            )}
+    <li>
+      <ListRow
+        density="menu"
+        onOpen={onInsert}
+        controlProps={{ ...drag, "aria-label": t`Add ${name} to your message` }}
+        leading={<Icon aria-hidden className="text-muted-foreground" />}
+        title={name}
+        detail={
+          failure ? (
+            <span aria-hidden="true" className="text-destructive">
+              {failure}
+            </span>
+          ) : (
+            uploadTypeLabel(upload.fileType)
+          )
+        }
+        meta={failure ? null : attachedAgo(upload.attachedAt, now)}
+        actions={
+          canDelete ? (
+            <IconButton size="xs" label={t`Delete ${name}`} onClick={onDelete} className="mr-1">
+              <Trash2 aria-hidden />
+            </IconButton>
+          ) : null
+        }
+        // The failure replaces the row's second line; this announces it without adding layout.
+        below={
+          <span role="status" className="sr-only">
+            {failure}
           </span>
-        </button>
-        {canDelete ? (
-          <IconButton
-            size="xs"
-            aria-label={t`Delete ${name}`}
-            title={t`Delete ${name}`}
-            onClick={onDelete}
-            className="[@media(pointer:coarse)]:size-11"
-          >
-            <Trash2 className="size-3.5" aria-hidden />
-          </IconButton>
-        ) : null}
-        {onOpen ? (
-          <IconButton
-            size="xs"
-            aria-label={t`Open ${name}`}
-            title={t`Open ${name}`}
-            onClick={onOpen}
-            className="mr-1 [@media(pointer:coarse)]:size-11"
-          >
-            <PanelRightOpen className="size-3.5" aria-hidden />
-          </IconButton>
-        ) : null}
-      </div>
-      {/* The failure replaces the row's second line; this announces it without adding layout. */}
-      <span role="status" className="sr-only">
-        {failure}
-      </span>
+        }
+      />
     </li>
   );
 }

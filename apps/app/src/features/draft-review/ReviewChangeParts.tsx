@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
-import { requestConversationReveal } from "@/features/chat/conversation-reveal";
+import { useRequestConversationReveal } from "@/features/chat/conversation-reveal";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import { writerIn } from "./review-attribution";
@@ -61,13 +61,15 @@ export function ChangeAuthor({
   touch?: boolean;
 }) {
   const openThread = useOpenChatThread();
+  const reveal = useRequestConversationReveal();
+  const open = openThread ? (chat: ChatRef) => openChat(chat, openThread, reveal) : null;
   const writer = writerIn(change);
-  const links = openThread ? change.chats : [];
+  const links = open ? change.chats : [];
   if (!writer && links.length === 0) return null;
   return (
     <span
       className={cn(
-        "flex items-center gap-1.5 text-caption text-muted-foreground",
+        "flex items-center gap-1.5 text-xs text-muted-foreground",
         // A row's byline with no chat is "You" alone and keeps its width.
         fit === "names" && "w-full min-w-0",
         className,
@@ -86,14 +88,14 @@ export function ChangeAuthor({
           <Trans>You</Trans>
         </span>
       ) : null}
-      {openThread && links.length > 0 ? (
-        <OverflowChats fit={fit} chats={links} openThread={openThread} touch={touch} />
+      {open && links.length > 0 ? (
+        <OverflowChats fit={fit} chats={links} open={open} touch={touch} />
       ) : null}
     </span>
   );
 }
 
-/** The row byline's narrowest width, in rem: the parts below, at text-caption, plus their 0.375rem gaps. */
+/** The row byline's narrowest width, in rem: the parts below, at text-xs, plus their 0.375rem gaps. */
 function bylineFloor(writer: boolean, chats: number, touch: boolean): string {
   const you = writer ? 2 : 0;
   const firstName = FIRST_NAME_MIN_REM + 0.875; // the name's floor, then its arrow and the gap before it
@@ -116,12 +118,12 @@ const chatLabel = (chat: ChatRef) =>
 function OverflowChats({
   fit,
   chats,
-  openThread,
+  open,
   touch,
 }: {
   fit: "names" | "first";
   chats: readonly ChatRef[];
-  openThread: (threadId: string) => void;
+  open: (chat: ChatRef) => void;
   touch: boolean;
 }) {
   const container = useRef<HTMLSpanElement>(null);
@@ -185,7 +187,7 @@ function OverflowChats({
         <ChatLink
           key={chatKey(chat)}
           chat={chat}
-          onOpenThread={openThread}
+          onOpen={open}
           touch={touch}
           truncate={index === 0}
         />
@@ -198,7 +200,7 @@ function OverflowChats({
               aria-label={t`More chats`}
               onClick={(event) => event.stopPropagation()}
               className={cn(
-                "focus-ring shrink-0 whitespace-nowrap rounded-sm px-1 text-primary",
+                "focus-ring shrink-0 whitespace-nowrap rounded-sm px-1 text-jade-text",
                 touch && "min-h-11 min-w-11",
               )}
             >
@@ -210,7 +212,7 @@ function OverflowChats({
               <DropdownMenuItem
                 key={chatKey(chat)}
                 title={chat.subagentTitle ? chatLabel(chat) : undefined}
-                onSelect={() => openChat(chat, openThread)}
+                onSelect={() => open(chat)}
               >
                 {chatName(chat)}
                 <ArrowUpRight aria-hidden className="size-3" />
@@ -227,12 +229,12 @@ const chatKey = (chat: ChatRef) => chat.chatId;
 
 function ChatLink({
   chat,
-  onOpenThread,
+  onOpen,
   touch,
   truncate,
 }: {
   chat: ChatRef;
-  onOpenThread: (threadId: string) => void;
+  onOpen: (chat: ChatRef) => void;
   touch: boolean;
   /** The first name: it truncates rather than leave the byline (a row's floor keeps a few letters). */
   truncate: boolean;
@@ -247,10 +249,10 @@ function ChatLink({
           aria-label={chat.subagentTitle ? chatLabel(chat) : undefined}
           onClick={(event) => {
             event.stopPropagation();
-            openChat(chat, onOpenThread);
+            onOpen(chat);
           }}
           className={cn(
-            "focus-ring inline-flex items-center gap-0.5 self-stretch whitespace-nowrap rounded-sm text-primary hover:underline",
+            "focus-ring inline-flex items-center gap-0.5 self-stretch whitespace-nowrap rounded-sm text-jade-text hover:underline",
             truncate ? "min-w-0 shrink" : "shrink-0",
             touch && "min-h-11 min-w-11",
           )}
@@ -268,17 +270,16 @@ function ChatLink({
  * Opens the chat at the write that made the change (KF14); a subagent's change opens the spawn row in the
  * conversation that launched it. With no write known (a list row), the chat.
  */
-function openChat(chat: ChatRef, openThread: (threadId: string) => void) {
-  openThread(chat.chatId);
+function openChat(
+  chat: ChatRef,
+  openThread: (threadId: string) => void,
+  reveal: ReturnType<typeof useRequestConversationReveal>,
+) {
   if (chat.reveal)
-    requestConversationReveal({
+    reveal({
       kind: "turn",
       ...chat.reveal,
       ...(chat.reveal.subagentThreadId ? { subagentBlock: "card" } : {}),
     });
-}
-
-/** The Discard button's name. */
-export function discardLabel(): string {
-  return t`Discard`;
+  else openThread(chat.chatId);
 }

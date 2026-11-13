@@ -29,6 +29,8 @@ export type DraftChangesView = DraftChangesData & {
   canApply?: boolean;
   apply: (change: ReviewChange) => Promise<void>;
   discard: (change: ReviewChange) => Promise<void>;
+  /** The change's Discard can't run here, so it carries no Undo and asks first. */
+  discardAsks: (change: ReviewChange) => boolean;
 };
 
 /** A ready new document is the file itself, not a header followed by a second named row. */

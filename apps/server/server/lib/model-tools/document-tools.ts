@@ -69,7 +69,6 @@ import {
   isToolError,
   type ResolvedDocumentAddress,
   type ResolvedModelContextPort,
-  recordTouchInBackground,
   resolveToolCall,
   type ToolWiringDeps,
   type WriteToolErrorOutput,
@@ -295,8 +294,6 @@ export async function readTrackedDocument(
   isError?: true;
   metadata?: ReturnType<typeof documentRevisionMetadata>;
   evidence?: ResultEvidence;
-  /** The document a successful read touched; the caller records it when its turn exists. */
-  touchedDocumentId?: string;
 }> {
   const { path, format, version, ...selection } = input;
   const call = await resolveToolCall(deps, ctx, version);
@@ -363,7 +360,6 @@ export async function readTrackedDocument(
     revision: outcome.revision,
     metadata: documentRevisionMetadata(address, outcome.revision),
     evidence: evidenceOf(address.documentId, outcome),
-    touchedDocumentId: address.documentId,
   };
 }
 
@@ -371,14 +367,9 @@ export function createReadHandler(deps: ToolWiringDeps) {
   return async (input: unknown, ctx: ToolHandlerContext) => {
     const parsed = input as ReadToolInput;
     if (isSkillsUri(parsed.path)) return readSkill(deps, ctx.threadId, parsed);
-    const {
-      revision: _revision,
-      touchedDocumentId,
-      ...result
-    } = await readTrackedDocument(deps, parsed, ctx, {
+    const { revision: _revision, ...result } = await readTrackedDocument(deps, parsed, ctx, {
       ...(ctx.frontiers ? { recordingFrontier: ctx.frontiers.recording } : {}),
     });
-    recordTouchInBackground(deps, touchedDocumentId, ctx);
     return result;
   };
 }
@@ -613,7 +604,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       });
     }
 
-    recordTouchInBackground(deps, address.documentId, ctx);
     // Settlement phase, not command names, decides who still owes admission.
     const unchanged = outcome.result.unchanged === true;
     const stagedWrite = outcome.status === "success" && outcome.phase === "staged";

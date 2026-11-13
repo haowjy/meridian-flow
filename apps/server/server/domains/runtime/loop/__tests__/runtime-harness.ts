@@ -18,7 +18,6 @@ import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.
 import { createInMemoryProjectRepository } from "../../../projects/index.js";
 import { readThreadActivity } from "../../../threads/domain/thread-activity.js";
 import {
-  createActiveDocumentResolver,
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
   createThreadEventHub,
@@ -92,7 +91,6 @@ export function createRuntimeHarness(
   // Repositories that are not in-memory (Drizzle) commit through the database transaction, not an owner.
   const transactionOwner =
     "transactionOwner" in repos ? repos.transactionOwner : noTransactionOwner;
-  const activeDocuments = createActiveDocumentResolver(repos);
 
   const creditLedger = suppliedLedger ?? createInMemoryCreditLedger();
   const gateway = overrides.gateway ?? createInertGateway();
@@ -218,7 +216,6 @@ export function createRuntimeHarness(
             wakes.push(task);
           }),
       }),
-    activeDocuments,
     imageAssets: overrides.imageAssets ?? {
       async resolve() {
         return null;
@@ -236,7 +233,6 @@ export function createRuntimeHarness(
       threads: repos.threads,
       turns: repos.turns,
     }),
-    documentTouches: repos.documentTouches,
     observationFrontiers: createInMemoryObservationFrontiers({
       transactionOwner:
         transactionOwner === noTransactionOwner ? new InMemoryTransactionOwner() : transactionOwner,

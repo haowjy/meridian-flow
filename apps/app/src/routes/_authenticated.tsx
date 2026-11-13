@@ -2,25 +2,19 @@ import type { AccountSettings } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
-import { lazy, Suspense, useCallback, useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { getAccountSettings, nextAccountSettingsGeneration } from "@/client/api/account-api";
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { bindChatSubmissions } from "@/client/chat-submissions";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
-import { readCurrentChat } from "@/client/current-chat";
 import { FailureLogProvider } from "@/client/failures/failure-log";
+import { readLastShownChat } from "@/client/project-shell/store";
 import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
 import { bindAccountRecents } from "@/client/recents";
-import {
-  loadProjectList,
-  ProjectStoreProvider,
-  rehydrateEditorWorkspace,
-  ThreadStoreProvider,
-} from "@/client/stores";
-import { ConnectionBanner } from "@/components/app/ConnectionBanner";
+import { loadProjectList, ProjectStoreProvider, ThreadStoreProvider } from "@/client/stores";
 import { FailureToaster } from "@/components/app/failure-toast";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
@@ -116,7 +110,7 @@ function AuthenticatedLayout() {
     const { projectId, destination } = route.address;
     return (
       (destination.kind === "chat" && destination.chatId === id) ||
-      readCurrentChat(user.userId, projectId) === id
+      readLastShownChat(user.userId, projectId) === id
     );
   });
 
@@ -146,15 +140,8 @@ function AuthenticatedAccountProviderTree({
   };
 }) {
   const queryClient = useQueryClient();
-  const repairProjectCatalog = useCallback(
-    (projectId: string) =>
-      queryClient.invalidateQueries({
-        queryKey: ["projects", projectId, "context-catalog"],
-      }),
-    [queryClient],
-  );
   return (
-    <AccountFeatureComposition accountId={user.userId} repairProjectCatalog={repairProjectCatalog}>
+    <AccountFeatureComposition accountId={user.userId} queryClient={queryClient}>
       <AccountSettingsProvider
         serverValue={user.accountSettings}
         serverReadGeneration={user.accountSettingsReadGeneration}
@@ -183,7 +170,6 @@ function AuthenticatedProviderTree({
   // exists. Constructing these services during SSR crashes the authenticated shell.
   useEffect(() => {
     resources?.start();
-    void rehydrateEditorWorkspace(user.userId);
     void useProjectSurfacePrefsStore.persist.rehydrate();
     useProjectSurfacePrefsStore.getState().setHydrated();
   }, [resources, user.userId]);
@@ -196,12 +182,9 @@ function AuthenticatedProviderTree({
             <MeridianCopilotProvider>
               <DensityPopoverCollisionProvider>
                 <ImportsProvider key={user.userId}>
-                  <div className="app-frame flex flex-col">
-                    <ConnectionBanner />
-                    <div className="min-h-0 flex-1 overflow-hidden">
-                      {/* Project parents key their shell by resolved identity; account fencing stays above. */}
-                      <Outlet />
-                    </div>
+                  <div className="app-frame">
+                    {/* Project parents key their shell by resolved identity; account fencing stays above. */}
+                    <Outlet />
                   </div>
                   <SettingsDialog />
                   <FailureToaster />

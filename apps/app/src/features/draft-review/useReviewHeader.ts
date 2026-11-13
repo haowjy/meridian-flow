@@ -6,11 +6,11 @@
  * The identity row's controls and the phone header are two layouts over this one
  * model, so Apply draft, Discard draft, "No changes left" and the refusal line
  * cannot drift between them. Work-wide Apply all and Discard all belong to the
- * Work page's Changes to review (`WorkChanges`), not here.
+ * sidebar's Changes tab (`ChangesSource`), not here.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { draftMetadataQueryOptions } from "@/client/query/useDraftMetadata";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
@@ -26,8 +26,13 @@ export type ReviewHeaderOptions = {
   itemKey: string;
   /** Set for a draft-only document: closes its tab instead of returning to live. */
   onCloseDraftOnly?: () => void;
-  /** Opens another draft of the Work in review (the presenting container's launcher). */
-  onOpenDraft: (row: ReviewFileTarget) => void;
+  /**
+   * Opens another draft of the Work in review (the presenting container's
+   * launcher). `takeFocus`: the writer's focus was in the controls that open it.
+   */
+  onOpenDraft: (row: ReviewFileTarget, takeFocus?: boolean) => void;
+  /** A command run with focus in the controls ended this draft's changes without opening another. */
+  onEndedWithFocus?: () => void;
 };
 
 export type ReviewHeaderModel = {
@@ -36,7 +41,7 @@ export type ReviewHeaderModel = {
   /** A draft-only document has no live version: its way out closes the tab. */
   draftOnly: boolean;
   /** Opens another draft of the Work in review (the presenting container's launcher). */
-  openDraft: (row: ReviewFileTarget) => void;
+  openDraft: (row: ReviewFileTarget, takeFocus?: boolean) => void;
   /** The next draft in the switcher, if the Work has one. */
   next: ReviewFileTarget | null;
   locked: boolean;
@@ -57,8 +62,14 @@ export type ReviewHeaderModel = {
    */
   failedElsewhere: { row: ReviewFileTarget; failure: BranchCommandFailure }[];
   showLive: () => void;
-  applyDraft: () => void;
-  discardDraft: () => void;
+  /** `takeFocus`: the writer's focus was in the controls, so it follows to what replaces them. */
+  applyDraft: (takeFocus?: boolean) => void;
+  /** Discard draft: at once when it carries an Undo, else it asks first (`asking`). */
+  discardDraft: (takeFocus?: boolean) => void;
+  /** Discard draft's question is open: it can't be undone. */
+  asking: boolean;
+  keepDraft: () => void;
+  confirmDiscard: (takeFocus?: boolean) => void;
 };
 
 /**
@@ -103,8 +114,9 @@ export function useReviewHeader({
   itemKey,
   onCloseDraftOnly,
   onOpenDraft,
+  onEndedWithFocus,
 }: ReviewHeaderOptions): ReviewHeaderModel {
-  const { controller, files, drafts } = useDraftReview();
+  const { controller, files, showLive: showDocumentLive } = useDraftReview();
   const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
 
   // Only a file with text has a review to move to: a move or delete alone has no draft room.
@@ -132,7 +144,7 @@ export function useReviewHeader({
   const locked = controller.dispositionLocked || view.status !== "ready";
   const { finished, completing } = view;
   const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey, view });
-  const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
+  const showLive = () => (onCloseDraftOnly ?? showDocumentLive)();
 
   // The item this header shows while it is mounted; null once the writer has left it.
   const shown = useRef<string | null>(itemKey);
@@ -144,12 +156,17 @@ export function useReviewHeader({
   }, [itemKey]);
   // Local Discard stays in this draft. Only an Apply that landed advances to another file: a
   // refusal shows on the draft the writer applied, so it must not move them first.
-  const dispose = (mode: "apply" | "discard") => {
+  const [askingFor, setAskingFor] = useState<string | null>(null);
+  const asking = askingFor === itemKey && Boolean(itemKey) && !locked;
+  const dispose = (mode: "apply" | "discard", takeFocus: boolean) => {
     if (locked) return;
     const start = controller.startDraft(mode, { documentId, itemKey });
-    if (mode !== "apply" || !next || !start.sent) return;
+    if (!start.sent) return;
     void start.outcome.then((outcome) => {
-      if (outcome.kind === "done" && shown.current === itemKey) onOpenDraft(next);
+      if (outcome.kind !== "done") return;
+      if (mode === "apply" && next) {
+        if (shown.current === itemKey) onOpenDraft(next, takeFocus);
+      } else if (takeFocus) onEndedWithFocus?.();
     });
   };
   return {
@@ -158,14 +175,23 @@ export function useReviewHeader({
     next,
     locked,
     // A trashed chat's drafts take no Apply; its notice says how to bring it back.
-    canApply: ready && view.items.length > 0 && !drafts.frozen,
+    canApply: ready && view.items.length > 0 && controller.canApply,
     finished,
     completing,
     commandError,
     failedElsewhere,
     showLive,
-    applyDraft: () => dispose("apply"),
-    discardDraft: () => dispose("discard"),
+    applyDraft: (takeFocus) => dispose("apply", takeFocus === true),
+    discardDraft: (takeFocus) =>
+      controller.discardAsks({ documentId, itemKey })
+        ? setAskingFor(itemKey)
+        : dispose("discard", takeFocus === true),
+    asking,
+    keepDraft: () => setAskingFor(null),
+    confirmDiscard: (takeFocus) => {
+      setAskingFor(null);
+      dispose("discard", takeFocus === true);
+    },
     draftOnly: Boolean(onCloseDraftOnly),
     openDraft: onOpenDraft,
   };

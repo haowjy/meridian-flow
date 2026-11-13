@@ -27,8 +27,8 @@
   color: var(--color-muted-foreground);
   cursor: grab;
   transition:
-    opacity 120ms ease-out,
-    background-color 120ms ease-out;
+    opacity var(--default-transition-duration) ease-out,
+    background-color var(--default-transition-duration) ease-out;
 }
 
 .meridian-block-handle[data-state="closed"] {
@@ -44,9 +44,9 @@
   opacity: 1;
   pointer-events: auto;
   transition:
-    opacity 120ms ease-out,
-    background-color 120ms ease-out,
-    pointer-events 120ms step-end allow-discrete;
+    opacity var(--default-transition-duration) ease-out,
+    background-color var(--default-transition-duration) ease-out,
+    pointer-events var(--default-transition-duration) step-end allow-discrete;
 }
 
 /* Held but not shown. The grip stays mounted for the whole gesture because it
@@ -58,12 +58,12 @@
 }
 
 .meridian-block-handle:hover {
-  background: var(--color-accent);
+  background: var(--color-ink-fill);
   color: var(--color-foreground);
 }
 
-.meridian-block-handle:focus-visible {
-  outline: 2px solid var(--color-ring);
+:root[data-focus-keys] .meridian-block-handle:focus-visible {
+  outline: 2px solid var(--color-focus);
   outline-offset: 1px;
 }
 
@@ -82,7 +82,7 @@
   position: absolute;
   z-index: 30;
   height: 2.5px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   background: var(--color-primary);
   pointer-events: none;
 }
@@ -94,7 +94,7 @@
   top: -2.75px;
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: calc(infinity * 1px);
   background: var(--color-primary);
 }
 

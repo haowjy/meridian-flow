@@ -22,6 +22,7 @@ import { Tooltip as TooltipPrimitive } from "radix-ui";
 import type * as React from "react";
 import { createContext, useContext } from "react";
 
+import { lastInputWasKeyboard } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 
 function TooltipProvider({
@@ -88,6 +89,10 @@ function TooltipTrigger({
       onFocus={(event) => {
         onFocus?.(event);
         preventWhilePopupOpen(event);
+        // Focus opens a label only for someone moving by keyboard, by the focus ring's rule:
+        // a dialog focusing its close button, or a menu handing focus back to its button
+        // after a click or Escape, shows none. `:focus-visible` guesses wrong after a menu.
+        if (!lastInputWasKeyboard()) event.preventDefault();
       }}
       {...props}
     />
@@ -99,6 +104,7 @@ function TooltipContent({
   // A small gap so the label never touches, or reads as part of, its trigger.
   sideOffset = 4,
   children,
+  onEscapeKeyDown,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Content>) {
   const hoverable = useContext(HoverableContext);
@@ -107,6 +113,20 @@ function TooltipContent({
       <TooltipPrimitive.Content
         data-slot="tooltip-content"
         sideOffset={sideOffset}
+        // Radix gives Escape to the topmost layer only, so an open label would take
+        // the press meant for the menu or dialog under it. Once the label is gone,
+        // the press is sent again for that surface.
+        onEscapeKeyDown={(event) => {
+          onEscapeKeyDown?.(event);
+          // Already handled by something else: sending it again would act twice.
+          if (event.defaultPrevented) return;
+          const target = event.target;
+          setTimeout(() => {
+            target?.dispatchEvent(
+              new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+            );
+          });
+        }}
         className={cn(
           !hoverable && "pointer-events-none",
           "z-50 w-fit origin-(--radix-tooltip-content-transform-origin) animate-in rounded-md bg-foreground px-3 py-1.5 text-xs text-balance text-background fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
@@ -115,7 +135,7 @@ function TooltipContent({
         {...props}
       >
         {children}
-        <TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px] bg-foreground fill-foreground" />
+        <TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-sm bg-foreground fill-foreground" />
       </TooltipPrimitive.Content>
     </TooltipPrimitive.Portal>
   );

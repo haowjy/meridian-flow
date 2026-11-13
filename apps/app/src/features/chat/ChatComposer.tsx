@@ -11,10 +11,9 @@ import {
   type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
 import type { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
-import {
-  useCanOpenChatReference,
-  useOpenChatDocument,
-} from "@/features/project/context/open-chat-document";
+import { canOpenReference } from "@/features/project/context/open-project-document";
+import { mainTabStripHasFocus, usePanePlace } from "@/features/project/pane-place";
+import { useOpenPlacedDocument } from "@/features/project/review-launch";
 import { useAskTakeover } from "./ask/useAskTakeover";
 import { AnchoredCards } from "./ChatCards";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
@@ -72,6 +71,7 @@ function ChatComposerComponent({
   onSubmit,
   onStop,
 }: ChatComposerProps) {
+  const place = usePanePlace();
   const draft = useComposerSessionDraft(accountId, { kind: "chat", id: threadId });
   const composer = useRef<ComposerHandle | null>(null);
   const composerRef = useCallback(
@@ -85,11 +85,10 @@ function ChatComposerComponent({
   // While an ask is open it takes the box's place; nothing runs, so Stop is not offered.
   const takeover = useAskTakeover(accountId, threadId, composer);
   const dock = useDraftDock({ threadId, generating, active });
-  const openReferenceDocument = useOpenChatDocument(projectId);
-  const canOpenReference = useCanOpenChatReference();
+  const openReferenceDocument = useOpenPlacedDocument(projectId);
   const onOpenReference = useCommittedEvent((reference: { uri: string; documentId: string }) => {
     if (!canOpenReference(reference.uri)) return;
-    void openReferenceDocument({ documentId: reference.documentId, disposition: "current" });
+    void openReferenceDocument(reference.documentId);
   });
 
   return (
@@ -97,17 +96,17 @@ function ChatComposerComponent({
       <Composer
         cards={hasComposerCards ? <AnchoredCards anchor="composer" /> : undefined}
         key={draft.key}
+        autoFocus={place === "main" && !mainTabStripHasFocus()}
         initialDraft={draft.initialDraft}
         onDraftChange={draft.updateDraft}
         onOpenReference={onOpenReference}
         ref={composerRef}
         takeover={takeover}
-        variant="pinned"
         fileDropActive={fileDropActive}
         attached={
           <>
             {composerStrip ? (
-              <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
+              <div className="mx-[var(--chat-space-block)] rounded-t-xl border border-b-0 border-border bg-card">
                 {composerStrip}
               </div>
             ) : null}

@@ -1,44 +1,17 @@
 /**
- * Flat-grid layout contracts for the project project.
- *
- * Purpose: name the fixed project surfaces, desktop slots, and the two layout
- * concerns that combine at render time. Key decision: persisted prefs are only
- * width/collapsed state, while slot placement is derived from the active screen;
- * each slot has at most one surface and surfaces never use portal identities.
- *
- * The file explorer renders inside the persistent `threads` sidebar surface,
- * not as another grid slot.
+ * The desktop project's three fixed slots: the sidebar, main and the side. Hosts are keyed by
+ * what they hold and placed in a slot by grid-area; a host in no slot stays mounted, parked.
  */
 import type { CSSProperties } from "react";
 
-export const PROJECT_SURFACE_IDS = ["threads", "chat", "context-viewer", "context-rail"] as const;
+/** Desktop slot topology: `rail-l` is the sidebar, `center` main, `dock` the side. */
+export type DesktopProjectSlotId = "rail-l" | "center" | "side";
 
-/** Stable logical identity for stateful project surfaces. */
-export type SurfaceId = (typeof PROJECT_SURFACE_IDS)[number];
+/** The slots a writer opens, closes and resizes. */
+export type PanelSlotId = Exclude<DesktopProjectSlotId, "center">;
 
-/** Desktop slot topology for the project project. */
-export type DesktopProjectSlotId = "rail-l" | "center" | "dock";
-
-/** Device-local surface prefs persisted across sessions. */
-export type SurfacePrefs = {
-  /** Last committed expanded width in CSS pixels. */
-  width: number;
-  /** Collapsed surfaces stay mounted in the grid parent but park offscreen. */
-  collapsed: boolean;
-};
-
-/** Pure route/screen-derived placement for one surface. */
-export type SurfacePlacement = {
-  /** Null means the active screen intentionally leaves the surface dormant. */
-  slot: DesktopProjectSlotId | null;
-};
-
-/** Merged render-time layout for one surface. */
-export type SurfaceLayout = SurfacePlacement & SurfacePrefs;
-
-export type SurfacePrefsMap = Record<SurfaceId, SurfacePrefs>;
-export type SurfacePlacementMap = Record<SurfaceId, SurfacePlacement>;
-export type SurfaceLayoutMap = Record<SurfaceId, SurfaceLayout>;
+/** Whether each panel is open and how wide it is, after a narrow window's hold. */
+export type DesktopPanels = Record<PanelSlotId, { open: boolean; width: number }>;
 
 export type SlotDefinition = {
   id: DesktopProjectSlotId;

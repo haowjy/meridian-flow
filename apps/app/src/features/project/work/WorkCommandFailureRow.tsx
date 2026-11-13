@@ -5,12 +5,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { DELETION_RETENTION_DAYS as WORK_DELETE_RETENTION_DAYS } from "@meridian/contracts/retention";
-import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { HttpResponseError } from "@/client/api/http-client";
 import type { WorkCommandFailure } from "@/client/query/work-command-selectors";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { IconButton } from "@/components/ui/icon-button";
 
 /** The commands whose failure stays on the Work until the writer acts on it. */
 export const WORK_ROW_OPERATIONS = ["archive", "unarchive", "delete", "restore"] as const;
@@ -32,36 +30,45 @@ export function WorkCommandFailureRow({
   /** Replaces the plain retry, to add what else Retry does there. */
   onRetry?: () => void;
 }) {
-  const refusal = failure.operation === "restore" ? restoreRefusal(failure.error) : null;
-  if (refusal)
-    return (
-      <div role="alert" className="flex items-start gap-2 pb-2">
-        <p className="min-w-0 flex-1 text-sm text-destructive">{refusal}</p>
-        <IconButton
-          className="shrink-0 [@media(pointer:coarse)]:size-11"
-          aria-label={t`Dismiss`}
-          onClick={failure.dismiss}
-        >
-          <X aria-hidden className="size-3.5" />
-        </IconButton>
-      </div>
-    );
-  return (
-    <InlineErrorRow
-      message={messages[failure.operation]()}
-      onRetry={onRetry ?? (() => void failure.retry())}
-      onDismiss={failure.dismiss}
-    />
-  );
+  const line = workFailureLine(failure, { onRetry });
+  return <InlineErrorRow {...line} className={line.onRetry ? undefined : "px-0 pt-0 pb-2"} />;
+}
+
+/**
+ * What the failure line says and offers: Retry only where it can help. `name` is for a line
+ * shown where the Work itself no longer is (the Work list's Undo line), so it names the Work.
+ */
+export function workFailureLine(
+  failure: WorkRowFailure,
+  { onRetry, name }: { onRetry?: () => void; name?: string } = {},
+) {
+  const refusal = failure.operation === "restore" ? restoreRefusal(failure.error, name) : null;
+  if (refusal) return { message: refusal, onDismiss: failure.dismiss };
+  return {
+    message:
+      name && failure.operation === "restore"
+        ? t`Couldn’t restore ${name}`
+        : messages[failure.operation](),
+    onRetry: onRetry ?? (() => void failure.retry()),
+    onDismiss: failure.dismiss,
+  };
 }
 
 /** A restore the server will refuse again as it is: Retry can't help. */
-function restoreRefusal(error: Error): ReactNode {
+function restoreRefusal(error: Error, name?: string): ReactNode {
   const status = error instanceof HttpResponseError ? error.status : null;
   if (status === 409)
-    return <Trans>Another Work now has this name. Rename that Work, then restore this one.</Trans>;
+    return name ? (
+      <Trans>Another Work is now named {name}. Rename that Work, then restore this one.</Trans>
+    ) : (
+      <Trans>Another Work now has this name. Rename that Work, then restore this one.</Trans>
+    );
   if (status === 410)
-    return (
+    return name ? (
+      <Trans>
+        {name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored.
+      </Trans>
+    ) : (
       <Trans>
         This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored.
       </Trans>

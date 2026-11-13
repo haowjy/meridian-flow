@@ -12,7 +12,7 @@ not change stored documents or commit the fixture. Use an open repair event with
 recovered prose, one without `removedText`, a second short one, and a
 `client-superseded` fence.
 
-Check at a wide Editor (1280px), the side dock, and a 390px phone width:
+Check at a wide Editor (1280px), the side panel, and a 390px phone width:
 
 - The fence is one error line, "Editing paused. This chapter needs a newer
   version of Meridian.", with Refresh; the editor is read-only. At phone width
@@ -20,7 +20,7 @@ Check at a wide Editor (1280px), the side dock, and a 390px phone width:
 - The repair is one line, "Some text was removed", with Details and no X.
   With both, the two lines stack above the toolbar, aligned with it.
 - Details opens a popover over the page and keeps the manuscript still. In the
-  side dock it stays inside the pane. It lists each rescued passage with Copy,
+  side it stays inside the pane. It lists each rescued passage with Copy,
   "This passage couldn't be recovered." in its own box in place of the missing
   one, then the cause line and Dismiss. On a short viewport the popover stays
   inside the viewport and scrolls.

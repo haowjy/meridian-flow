@@ -315,15 +315,6 @@ export function apiThreadControlWithdrawPath(threadId: string, controlId: string
   return `${API_THREADS_PATH}/${threadId}/controls/${encodeURIComponent(controlId)}/withdraw`;
 }
 
-export function apiThreadRecentDocumentsPath(threadId: string, opts?: { limit?: number }): string {
-  const search = new URLSearchParams();
-  if (opts?.limit != null) {
-    search.set("limit", String(opts.limit));
-  }
-  const query = search.toString();
-  return `${API_THREADS_PATH}/${threadId}/recent-documents${query ? `?${query}` : ""}`;
-}
-
 export function apiAccountRecentDocumentsPath(): string {
   return API_ACCOUNT_RECENT_DOCUMENTS_PATH;
 }

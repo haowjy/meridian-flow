@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   const { userId } = user;
   const threadId = getRouterParam(event, "threadId") ?? "";
 
-  await deleteOwnedThreadToTrash(
+  const thread = await deleteOwnedThreadToTrash(
     {
       repos: threadRepos,
       projects: projectRepo,
@@ -25,5 +25,10 @@ export default defineEventHandler(async (event) => {
     threadId,
     userId,
   );
+  app.contextCatalogWakeHub.publish({
+    type: "project-chats-hint",
+    projectId: thread.projectId,
+    removedChatIds: [thread.id],
+  });
   setResponseStatus(event, 204);
 });

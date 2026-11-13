@@ -9,8 +9,10 @@ import {
   toolCommand,
   toolInputObject,
 } from "@meridian/thread-client";
-import { ChevronRight, FileText, Folder } from "lucide-react";
+import { FileText, Folder } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { Chip } from "@/components/ui/chip";
+import { FoldToggle } from "@/components/ui/fold-toggle";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
@@ -99,10 +101,10 @@ function rowKey(row: ToolResultRow, index: number): string {
 function ResultRows({ results }: { results: GrepResultRows }) {
   const bound = boundLabel(results);
   return (
-    <div className="chat-card bg-result-card">
+    <div className="chat-card bg-ink-fill">
       <p
         className={cn(
-          "text-meta text-ink-subtle",
+          "text-xs text-muted-foreground",
           results.rows.length > 0 && "border-border-subtle border-b pb-2",
         )}
       >
@@ -134,7 +136,7 @@ function GrepHit({ row }: { row: GrepHitRow }) {
   const [best, ...rest] = row.passages;
   return (
     <>
-      <div className="flex min-w-0 items-baseline gap-[var(--chat-space-inline)] text-compact font-medium text-prose-foreground">
+      <div className="flex min-w-0 items-baseline gap-[var(--chat-space-inline)] text-compact font-medium text-foreground">
         <DocumentName path={row.uri} />
         {row.matchCount === undefined ? null : <MatchCount count={row.matchCount} />}
       </div>
@@ -145,28 +147,24 @@ function GrepHit({ row }: { row: GrepHitRow }) {
       ) : null}
       {rest.length > 0 ? (
         <>
-          <button
-            type="button"
-            aria-expanded={open}
-            onClick={(event) => {
+          <FoldToggle
+            open={open}
+            onToggle={(event) => {
               // The row behind this section is the expand toggle; growing a
               // document must not fold the whole search away.
               event.stopPropagation();
               setOpen((wasOpen) => !wasOpen);
             }}
-            className="focus-ring mt-[var(--chat-space-inline)] inline-flex items-center gap-[var(--chat-space-inline)] rounded-sm text-meta text-muted-foreground underline decoration-border decoration-1 underline-offset-[3px] transition-colors hover:text-jade-text hover:decoration-jade-text focus-visible:text-jade-text focus-visible:decoration-jade-text"
+            inline
+            className="mt-[var(--chat-space-inline)] text-xs"
           >
             {moreMatchesLabel(rest.length)}
-            <ChevronRight
-              aria-hidden
-              className={cn("size-2.5 transition-transform", open && "rotate-90")}
-            />
-          </button>
+          </FoldToggle>
           {open ? (
             // Indented against a rule so the extra passages read as belonging
             // to the document above them. It grows in place: the transcript is
             // the single scroll owner and no expand may own another.
-            <div className="mt-[var(--chat-space-inline)] ml-[var(--chat-tool-list-indent)] space-y-[var(--chat-space-row)] border-border-subtle border-l pl-2.5">
+            <div className="mt-[var(--chat-space-inline)] ml-[var(--chat-tool-list-indent)] space-y-[var(--chat-space-inline)] border-border-subtle border-l pl-2.5">
               {rest.map((passage, index) => (
                 <PassageDoor
                   key={`${index}:${passage.excerpt.match}${passage.excerpt.trail}`}
@@ -185,10 +183,10 @@ function GrepHit({ row }: { row: GrepHitRow }) {
 
 function MatchCount({ count }: { count: number }) {
   return (
-    <span className="ml-auto inline-grid min-w-5 shrink-0 place-items-center rounded-full border border-border bg-muted px-2 py-0.5 text-meta font-semibold text-ink-muted">
+    <Chip kind="count" className="ml-auto">
       <span aria-hidden>{count}</span>
       <span className="sr-only">{matchCountLabel(count)}</span>
-    </span>
+    </Chip>
   );
 }
 
@@ -204,14 +202,17 @@ function ListingRows({ results }: { results: ToolResultRows }) {
           <li key={rowKey(row, index)} className={LISTING_ROW}>
             {row.kind === "folder" ? (
               <>
-                <Folder className="size-3 shrink-0 self-center text-ink-subtle" aria-hidden />
-                <span className="min-w-0 truncate text-prose-foreground">
+                <Folder className="size-3 shrink-0 self-center text-muted-foreground" aria-hidden />
+                <span className="min-w-0 truncate text-foreground">
                   {folderDisplayName(row.uri)}
                 </span>
               </>
             ) : (
               <>
-                <FileText className="size-3 shrink-0 self-center text-ink-subtle" aria-hidden />
+                <FileText
+                  className="size-3 shrink-0 self-center text-muted-foreground"
+                  aria-hidden
+                />
                 <DocumentName path={row.uri} />
               </>
             )}
@@ -531,7 +532,7 @@ function submittedContent(tool: ToolView): ToolExpand | null {
   if (!content) return null;
   const path = readPath(tool);
   return () => (
-    <div className="chat-card [--chat-card-border:var(--color-border-subtle)] bg-muted">
+    <div className="chat-card [--chat-card-border:var(--color-border-subtle)] bg-ink-fill">
       <QuotedPreview markup={content} path={path} />
     </div>
   );
@@ -570,7 +571,7 @@ function QuotedPreview({ markup, path }: { markup: string; path?: string }) {
 
 function OpenDocumentDoor({ path }: { path: string }) {
   return (
-    <span className="flex min-w-0 text-meta">
+    <span className="flex min-w-0 text-xs">
       <DocumentName path={path} label="open" />
     </span>
   );
@@ -584,7 +585,7 @@ function OutlineRows({ outline }: { outline: CappedList<OutlineHeading> }) {
         {outline.rows.map((heading, index) => (
           <li
             key={`${index}:${heading.text}`}
-            className={cn(LISTING_ROW, "text-prose-foreground")}
+            className={cn(LISTING_ROW, "text-foreground")}
             style={{ paddingLeft: `${heading.level * 16}px` }}
           >
             <span className="min-w-0 truncate">{heading.text}</span>

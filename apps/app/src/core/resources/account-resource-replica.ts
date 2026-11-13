@@ -39,7 +39,6 @@ import {
   reserveResourceDocument,
   resolveRefusedCopy,
   resourcePlacementForSnapshot,
-  resourceVisibleInProject,
   sameOwner,
 } from "@meridian/resource-replica";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
@@ -258,38 +257,11 @@ export class AccountResourceReplica {
     content: ResourceContentOpenResult;
   }> {
     this.requireOpen();
-    return this.exclusive(
-      `reservation/${encodeURIComponent(this.accountId)}/${encodeURIComponent(projectId)}`,
-      () => this.reserveDocumentSerial(projectId, folderPath, destination),
-    );
-  }
-
-  private async reserveDocumentSerial(
-    projectId: string,
-    folderPath: string,
-    destination?: ResourceDestination,
-  ): Promise<{
-    key: ResourceKey;
-    name: string;
-    content: ResourceContentOpenResult;
-  }> {
     const key = { handle: crypto.randomUUID() };
     const documentId = crypto.randomUUID();
-    const projection = await this.metadata.readProjection(projectId);
-    const placement = resourcePlacementForSnapshot(projectId, projection);
-    const names = new Set(
-      projection.records.flatMap((record) => {
-        if (!resourceVisibleInProject(projectId, record, projection.catalogs)) return [];
-        const name = placement.resourceLocation(record)?.name;
-        return name ? [name] : [];
-      }),
-    );
-    let ordinal = 1;
-    let name = "Untitled";
-    while (names.has(name)) {
-      ordinal += 1;
-      name = `Untitled ${ordinal}`;
-    }
+    // The server numbers an untitled create when its first word sends it (`Untitled N`, by what
+    // its folder holds, hidden documents included); until then the document is plain Untitled.
+    const name = "Untitled";
     const reserve = (admission?: PlacementAdmission) =>
       reserveResourceDocument({
         projectId,
@@ -343,6 +315,20 @@ export class AccountResourceReplica {
     this.requireOpen();
     await this.commitPlan(key, (record) => markResourceCreateEligible(record, Date.now()));
     this.reconciler.schedule(key);
+  }
+
+  /**
+   * An Untitled document left without a word goes without a trace: it was never sent, so its
+   * deletion settles here. A first word, typed in any window, marks it eligible and keeps it.
+   */
+  async discardUntouched(projectId: string, key: ResourceKey): Promise<boolean> {
+    this.requireOpen();
+    return this.settleLocalDocumentDeletion(
+      projectId,
+      key.handle,
+      crypto.randomUUID(),
+      (record) => record.resource.obligations.createEligibility?.eligibleAt === null,
+    );
   }
 
   async openDocument(
@@ -519,6 +505,7 @@ export class AccountResourceReplica {
       lease,
       persistenceGeneration: incarnation,
       exactDatabaseName: databaseName,
+      setHosted: (hosted: boolean) => this.runtime.registry.setHosted(owner, hosted),
       release: () => {
         if (released) return;
         released = true;
@@ -1021,12 +1008,14 @@ export class AccountResourceReplica {
     projectId: string,
     handle: string,
     operationId: string,
+    only: (record: ResourceRecord) => boolean = () => true,
   ): Promise<boolean> {
     const key: ResourceKey = { handle };
     return this.withResourceLock(key, async () => {
       for (;;) {
         const current = await this.metadata.readResource(key);
-        if (!current || deleteNeedsServer(current.resource.serverHold)) return false;
+        if (!current || deleteNeedsServer(current.resource.serverHold) || !only(current))
+          return false;
         const write = planResourceDeletion(current, projectId, crypto.randomUUID(), operationId);
         const settled = write?.next.intents.some(
           (intent) =>

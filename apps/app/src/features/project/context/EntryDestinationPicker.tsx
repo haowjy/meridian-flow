@@ -2,7 +2,8 @@
  * Row-anchored folder placement using the same project tree as document paths. One picker for
  * Move… and Copy to…: both offer the same destinations (a folder cannot go inside itself), and
  * differ in what picking does. Move… offers the row's position among the folder's siblings; Copy
- * to… always adds.
+ * to… always adds. Given a selection, Move… moves all of it, each row inside a moved folder going
+ * with its folder, and offers no positions.
  */
 
 import { t } from "@lingui/core/macro";
@@ -22,17 +23,24 @@ import {
 } from "lucide-react";
 import { type ReactNode, type RefObject, useMemo, useRef, useState } from "react";
 import { useWorks } from "@/client/query/useWorks";
-import type { TabOwner } from "@/client/stores";
+import type { OpenDocumentOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { Button } from "@/components/ui/button";
 import { useAccountResourceProjection, useAccountResourceReplica } from "./account-feature-context";
 import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import { describeRenames } from "./entry-drag/drop-choice";
-import { LIVE_VIEW } from "./entry-drag/entry";
+import { type DragEntry, LIVE_VIEW } from "./entry-drag/entry";
 import { copyRows } from "./entry-drag/execute-copy";
 import { moveRows, renamesOnArrival } from "./entry-drag/execute-move";
-import { moveRefusal, parentOf, type ReadyCopy, sameParent } from "./entry-drag/move-plan";
+import {
+  type MoveRow,
+  moveRefusal,
+  outermost,
+  parentOf,
+  type ReadyCopy,
+  sameParent,
+} from "./entry-drag/move-plan";
 import { selectRows, useOptionalEntrySelection } from "./entry-drag/selection";
 import { destinationParent, type MoveDestination } from "./move-entry";
 import { moveRepairTrail } from "./move-repair-trail";
@@ -50,8 +58,11 @@ type EntryDestinationPickerProps = {
   projectId: string;
   action: "move" | "copy";
   /** The area the rows sit in, which the menu opens at; absent opens at the project's root. */
-  from?: { scheme: ProjectContextTreeScheme; owner: TabOwner };
+  from?: { scheme: ProjectContextTreeScheme; owner: OpenDocumentOwner };
+  /** The row the picker opened from: it opens beside it, at its folder. */
   entry: PickedEntry;
+  /** A selection the row's menu acted on, moved together in screen order; absent moves the row alone. */
+  selection?: readonly DragEntry[];
   open: boolean;
   repairMove?: ResourceDestination;
   onOpenChange: (open: boolean) => void;
@@ -74,6 +85,7 @@ function OpenPicker({
   action,
   from,
   entry,
+  selection: picked,
   open,
   repairMove,
   onOpenChange,
@@ -85,6 +97,8 @@ function OpenPicker({
   const { works, noWork } = useWorks(projectId);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // A moved selection keeps focus at its first row in its new place, not at the row it left.
+  const movedSeveral = useRef(false);
   const scheme = from?.scheme;
   const owner = from?.owner;
   const own = useMemo(
@@ -111,15 +125,19 @@ function OpenPicker({
   const unavailable = t`This location is unavailable. Refresh and try again.`;
 
   const ref = { kind: entry.kind, id: entry.id };
+  const several = picked !== undefined && picked.length > 1;
+  // A row inside a selected folder goes with that folder, never on its own.
+  const subjects = several ? outermost(view, picked) : [{ ref, name: entry.name, view: LIVE_VIEW }];
   const refusalAt = (destination: MoveDestination) => {
     const into = destinationParent(destination, works, noWork);
     if (!into) return null;
-    // Copy adds beside what is there, so only a folder inside itself refuses.
-    if (action === "copy")
-      return moveRefusal(view, ref, into) === "inside-itself" ? "inside-itself" : null;
     const position =
       repairMove && sameParent(repairMove.parent, into) ? repairMove.position : undefined;
-    return moveRefusal(view, ref, into, position);
+    const refusals = subjects.map((row) => moveRefusal(view, row.ref, into, position));
+    if (refusals.includes("inside-itself")) return "inside-itself";
+    // Copy adds beside what is there, so only a folder inside itself refuses.
+    if (action === "copy") return null;
+    return refusals.every((refusal) => refusal === "already-there") ? "already-there" : null;
   };
 
   /**
@@ -128,6 +146,7 @@ function OpenPicker({
    * place it already holds is not offered.
    */
   function positionChoices(folderName: string) {
+    if (several) return [];
     const parent = parentOf(view, ref);
     if (!parent) return [];
     const siblings = view.placement.childrenAt(parent, view.records);
@@ -178,33 +197,47 @@ function OpenPicker({
     setError(null);
     try {
       const after = destinationParent(destination, works, noWork);
-      const before = parentOf(view, ref);
-      if (!after || !before) throw new Error(unavailable);
-      const position =
-        chosen ??
-        (repairMove && sameParent(repairMove.parent, after) ? repairMove.position : undefined);
-      const result = await moveRows(
-        [
-          {
-            entry: ref,
-            name: entry.name,
-            typed: name,
-            before,
-            after,
-            ...(position ? { position } : {}),
-          },
-        ],
-        { resources, projectId },
-      );
+      const rows = after && moveRowsInto(after, chosen);
+      if (!rows) throw new Error(unavailable);
+      const result = await moveRows(rows, { resources, projectId });
       if (result.failed.length > 0) throw new Error(unavailable);
       selectRows(selection, result.moved);
       revealFolder(destination.entryId);
+      movedSeveral.current = several;
       onOpenChange(false);
+      // The row this picker opened from may have moved and unmounted it, so this can't wait for close.
+      if (several) selection?.focus();
     } catch {
       setError(unavailable);
     } finally {
       setPending(false);
     }
+  }
+
+  /**
+   * The rows a move into `after` places: the row (with its retried name and position), or each
+   * selected row not already there. Null when one of them is gone.
+   */
+  function moveRowsInto(after: ParentRef, chosen?: ContextSiblingPosition): MoveRow[] | null {
+    const placed = subjects.map((row) => ({ row, before: parentOf(view, row.ref) }));
+    if (placed.some(({ before }) => !before)) return null;
+    const position =
+      chosen ??
+      (repairMove && sameParent(repairMove.parent, after) ? repairMove.position : undefined);
+    return placed.flatMap(({ row, before }) =>
+      before && (!several || !sameParent(before, after))
+        ? [
+            {
+              entry: row.ref,
+              name: row.name,
+              before,
+              after,
+              ...(several ? {} : { typed: name }),
+              ...(position ? { position } : {}),
+            },
+          ]
+        : [],
+    );
   }
 
   /** Copies the row into the folder at the end of `trail`. */
@@ -240,7 +273,7 @@ function OpenPicker({
     destinationName,
     scheme,
     into,
-    copies: [{ entry: ref, name: entry.name, view: LIVE_VIEW }],
+    copies: subjects.map((row) => ({ entry: row.ref, name: row.name, view: row.view })),
   });
 
   return (
@@ -257,9 +290,8 @@ function OpenPicker({
       }}
       onCloseAutoFocus={(event) => {
         event.preventDefault();
-        rowRef.current
-          ?.querySelector<HTMLElement>('button[data-slot="icon-button"], [role="button"]')
-          ?.focus();
+        if (movedSeveral.current && selection) return selection.focus();
+        rowRef.current?.querySelector<HTMLElement>("[data-list-item]")?.focus();
       }}
       status={error ?? refusal}
       foldersOnly
@@ -307,16 +339,14 @@ function OpenPicker({
             },
           ];
         const after = destination && !already && destinationParent(destination, works, noWork);
-        const renamed = after
-          ? renamesOnArrival([{ entry: ref, name: entry.name, typed: name, after }], view)
-          : [];
+        const renamed = (after && moveRowsInto(after)) || [];
         return [
           {
             key: "move",
             icon: FolderInput,
             label: already ? t`Already in ${folder.name}` : t`Move here`,
             disabled: already || pending,
-            note: describeRenames(renamed),
+            note: describeRenames(renamesOnArrival(renamed, view)),
             onSelect: () => {
               void move(trail);
             },

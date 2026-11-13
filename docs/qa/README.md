@@ -35,6 +35,7 @@ stack.
 - [Failure cards](../../apps/app/src/features/chat/.context/qa/failure-cards.md): the failed reply, refused and lost Retry, failed compaction, handoff brief and live-region clearing, driven in the browser with injected faults.
 - [Queue controls](../../apps/app/src/features/chat/.context/qa/queue-controls.md): QC-01 to QC-08, the queued look, the x, Cancel queue, Send now and every failure card, driven in the browser with injected faults.
 - [Durable questions](../../apps/server/server/domains/runtime/.context/qa/ask.md): answer, own words, Skip, timeout, restart and crash recovery, claim races, the queue barrier, and fork refusal.
+- [Unsent edits hold a live session](../../apps/app/src/core/editor/.context/qa/unsent-edits-session-hold.md): offline edit, tab closed, reconnect without reopening, and the removal exit; plus the two-draft Apply and untitled-document probes.
 - [Browser state envelopes](../../apps/app/.context/qa/browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
 - [Settled chat Markdown](../../apps/app/src/features/chat/.context/qa/chat-markdown.md): manuscript parity, list rhythm, highlighting and code copy.
 - [Chat session](../../apps/app/src/features/chat/.context/qa/chat-session.md): compare a chat in the browser with `./mf thread view --json` by row identity, kind, item kinds and text, the `cN` ref steps, and SY-01 to SY-07, the live-sync recipes (join, reload, navigate, another client's message, Stop, a held write-mode switch, a network gap).
@@ -51,7 +52,7 @@ stack.
 - [Editor schema notices](../../apps/app/src/features/editor/.context/qa/editor-notices.md): one-line repair and fence bars, the Details popover, copy refusals and Dismiss focus.
 - [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
 - [Document adoption across a reload](../../apps/app/src/features/project/.context/qa/document-adoption-reload.md): New file reloaded inside the adoption commit window, desktop and the phone's three document branches.
-- [Document open: commit first](../../apps/app/src/features/project/.context/qa/document-open.md): immediate Editor, dock, and phone placement; one content open; transfer ownership; failures, removal, fencing, passages, projection readiness, streaming, and keystrokes.
+- [Document open: commit first](../../apps/app/src/features/project/.context/qa/document-open.md): immediate main, side, and phone placement; one content open; transfer ownership; failures, removal, fencing, passages, projection readiness, streaming, and keystrokes.
 - [Draft review](../../apps/app/src/features/draft-review/.context/qa/draft-review.md): visual editor and review workflows.
 - [Text-derived draft disposition](../../apps/server/server/domains/collab/.context/qa/draft-disposition.md): inverse policy, historical Apply evidence and whole-Work close, with an isolated PostgreSQL runner.
 - [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.
@@ -61,7 +62,7 @@ stack.
 - [Copy in the tree](../../apps/app/src/features/project/context/.context/qa/copy-browser.md): a drop across systems and Copy to… in the browser: the menu, predicted names, a refusal toast, a source with unsynced edits, a queued rename, a hidden draft at the target name, a selection another peer nested before the send and the phone, with `agent-browser`.
 - [The server Copy command](../../apps/server/server/domains/context/.context/qa/copy-server.md): rich folder, hidden occupants, draft sources, fifty documents, a failure on the last child, replay, a source not yet caught up, positions, refusals, other owners and the model's copy, driven with `./mf`.
 - [Desktop files dropped on a chat](../../apps/app/src/features/chat/.context/qa/chat-file-drop.md): files onto the composer and the transcript attach through the paperclip's intake; folders, a bad name, offline, the tree's own drops and the phone.
-- [Dragging from places that aren't tree rows](../../apps/app/src/features/project/context/.context/qa/drag-sources.md): tabs, path crumbs, Recent rows, mention chips (composer and transcript), selected Editor links, receipt and Work change rows and Uploads entries dragging out, always asking Move / Copy / Cancel, a draft tab copying its draft, Uploads refusing drops, same-system row drags still moving at once and the phone with no drag, with `agent-browser`.
+- [Dragging from places that aren't tree rows](../../apps/app/src/features/project/context/.context/qa/drag-sources.md): main's document title, path crumbs, Recent rows, mention chips (composer and transcript), selected Editor links, receipt and Work change rows and Uploads entries dragging out, always asking Move / Copy / Cancel, a draft title copying its draft, Uploads refusing drops, same-system row drags still moving at once and the phone with no drag, with `agent-browser`.
 - [Dragging a text selection](../../apps/app/src/core/editor/.context/qa/selection-drag.md): pressing a highlight and dragging it at once (letters, the space between lines, a double-click then press), no-travel clicks, move, copy, Escape, a selected link, the composer copying, a 5s pause, autoscroll and cells, with a real mouse.
 - [Saved file display](../../apps/app/src/features/project/.context/qa/file-display.md): a TIFF, HEIC or BMP draws from a server-made preview in the viewer, a DOCX's inline image and chat; any file the browser can't draw is a card with Download, never Retry.
 - [Mention drops](mention-drop.md): selected rows copied into the composer and manuscript as `@` references that land where the caret showed (word, gap, margin, past the end, bullets, inline code, diagram, empty document), with refusals and drop-regression checks.
@@ -205,7 +206,7 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    Move into a folder, Copy, Delete and Restore each kept file at the root and in a folder:
    each keeps its name and suffix and still opens as a card. With a document `binary` beside
    a kept `binary.md`, each opens its own content and a link `[x](binary.md)` binds the kept
-   file, `[x](binary)` the document. Rename the open kept file, and Move it to another area: its tab stays active and its card stays, also after closing the tab and clicking the row, and after a reload. In a
+   file, `[x](binary)` the document. Rename the open kept file, and Move it to another area: it stays in main and its card stays, also after leaving main and clicking the row, and after a reload. In a
    draft-mode chat an agent `write move` of a kept file keeps its suffix too.
 13. Reconcile a re-picked folder. To stop mid-upload at a known point, wrap
    `XMLHttpRequest.prototype.send` in the page so `POST …/imports/<id>/files` fails

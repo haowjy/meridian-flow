@@ -21,7 +21,6 @@ import {
   apiThreadMessagePath,
   apiThreadModelRequestsDebugPath,
   apiThreadPath,
-  apiThreadRecentDocumentsPath,
   apiThreadRestorePath,
   apiThreadSkillsPath,
   apiThreadSnapshotPath,
@@ -37,7 +36,6 @@ import {
   type ForkThreadRequest,
   type HandoffBriefRetryRequest,
   type HandoffThreadRequest,
-  type ListThreadRecentDocumentsResponse,
   type ListThreadsResponse,
   listThreadsResponseSchema,
   type ModelRequestDebugListResponse,
@@ -50,7 +48,6 @@ import {
   sendMessageResponseSchema,
   type Thread,
   type ThreadAvailableSkillsResponse,
-  type ThreadRecentDocumentItem,
   type ThreadSnapshotResponse,
   type TranscriptPagePathOptions,
   type TranscriptPageResponse,
@@ -316,20 +313,6 @@ export function deserializeThreadSnapshot(
       typeof value === "bigint" ? value.toString() : value,
     ),
   ) as ThreadSnapshotResponse;
-}
-
-/**
- * GET /api/threads/:threadId/recent-documents — documents the agent recently
- * read/touched in this thread (`turn_document_touches`, deduped by docId).
- */
-export async function getThreadRecentDocuments(
-  threadId: string,
-  opts?: { limit?: number },
-): Promise<ThreadRecentDocumentItem[]> {
-  const response = await getJson<ListThreadRecentDocumentsResponse>(
-    apiThreadRecentDocumentsPath(threadId, opts),
-  );
-  return response.documents;
 }
 
 /** GET /api/threads/:threadId/debug/model-requests — dev-only orchestrator capture. */

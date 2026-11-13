@@ -19,25 +19,25 @@ import { t } from "@lingui/core/macro";
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
-import type { ProjectViewProps } from "../ProjectView";
-import { screenLabel } from "../shell/screens";
 
-export type MobileTopBarProps = Pick<ProjectViewProps, "activeScreen"> & {
+export type MobileTopBarProps = {
+  /** Main shows a chat (or a new chat's composer), not a document. */
+  onChat: boolean;
   projectTitle: string;
   onOpenDrawer: () => void;
   /** Left-aligned location trail; replaces the centered title when set. */
   breadcrumb?: ReactNode;
   actions?: ReactNode;
-  /** Opens the chat sheet over Work or Editor. */
+  /** Opens the chat sheet over a document. */
   chatAction?: ReactNode;
   /** A failed command's row, under the bar. */
   notice?: ReactNode;
 };
 
 export function MobileTopBar({
-  activeScreen,
+  onChat,
   projectTitle,
   onOpenDrawer,
   breadcrumb,
@@ -60,13 +60,13 @@ export function MobileTopBar({
           paddingRight: "calc(0.5rem + env(safe-area-inset-right))",
         }}
       >
-        <PhoneIconButton onClick={onOpenDrawer} aria-label={t`Open navigation`}>
-          <Menu className="size-5" aria-hidden />
-        </PhoneIconButton>
+        <IconButton size="sm" onClick={onOpenDrawer} label={t`Open navigation`}>
+          <Menu aria-hidden />
+        </IconButton>
         {balance ? <div aria-hidden className="size-11 shrink-0" /> : null}
         <div className="flex min-w-0 flex-1 flex-col items-center justify-center px-1">
           <div
-            className="max-w-full truncate text-xs leading-4 text-ink-muted"
+            className="max-w-full truncate text-xs leading-4 text-muted-foreground"
             title={projectTitle}
           >
             {projectTitle}
@@ -77,7 +77,7 @@ export function MobileTopBar({
               breadcrumb ? "justify-start self-stretch" : "justify-center",
             )}
           >
-            {breadcrumb ?? <div className="truncate">{screenLabel(activeScreen)}</div>}
+            {breadcrumb ?? <div className="truncate">{onChat ? t`Chat` : t`Editor`}</div>}
           </div>
         </div>
         <div className="flex min-w-11 shrink-0 items-center justify-end">

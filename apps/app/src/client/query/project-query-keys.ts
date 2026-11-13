@@ -84,6 +84,7 @@ export const projectQueryKeys = {
   /** One owner's draft list; `owner` is `work:<id>` or `lineage:<root>`. */
   ownerDrafts: (projectId: string, owner: string) =>
     ["projects", projectId, "drafts", owner] as const,
+  ownerDraftsOf: (projectId: string) => ["projects", projectId, "drafts"] as const,
   /** The branches with changes to one document; invalidated with the Work draft lists. */
   documentDraftHints: (projectId: string, documentId: string) =>
     ["projects", projectId, "document-draft-hints", documentId] as const,

@@ -11,10 +11,10 @@ import { createRootRoute, HeadContent, Outlet, Scripts, useMatches } from "@tans
 import { AuthKitProvider, getAuthAction } from "@workos/authkit-tanstack-react-start/client";
 import type { ReactNode } from "react";
 import { useEffect, useSyncExternalStore } from "react";
-
 import { AnnouncementRegion } from "@/components/app/AnnouncementRegion";
 import { LINK_CHIP_ICON_CSS } from "@/components/app/link-chip/family-icons";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { trackInputModality } from "@/lib/focus-follow";
 import { activateLocale, DEFAULT_LOCALE, i18n, resolveLocale } from "@/lib/i18n";
 import { IOS_FOCUS_ZOOM_BOOT_SCRIPT } from "@/lib/ios-focus-zoom";
 import { TEXT_SIZE_BOOT_SCRIPT } from "@/lib/text-size";
@@ -81,6 +81,7 @@ function RootComponent() {
   useEffect(() => {
     const resolved = resolveLocale();
     activateLocale(resolved);
+    trackInputModality(document);
   }, []);
 
   return (
@@ -113,7 +114,7 @@ function RootDocument({
         <style dangerouslySetInnerHTML={{ __html: LINK_CHIP_ICON_CSS }} />
         <script dangerouslySetInnerHTML={{ __html: IOS_FOCUS_ZOOM_BOOT_SCRIPT }} />
       </head>
-      <body className="paper-grain">
+      <body>
         {children}
         <Scripts />
       </body>

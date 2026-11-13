@@ -1,5 +1,5 @@
 /**
- * The verbs behind the object row, the ⋮ menu, and the code chips.
+ * The verbs behind the object row, the ⋯ menu, and the code chips.
  *
  * Document operations dispatch through the editor; export operations touch the
  * clipboard and the filesystem. Both are here so the components stay about
@@ -174,7 +174,7 @@ export async function svgToPngBlob(svg: string): Promise<Blob> {
 /**
  * Put a rendered diagram on the clipboard as an image.
  *
- * The ⋮ verb, not the row's copy chip: image-copy is the clipboard API's
+ * The ⋯ verb, not the row's copy chip: image-copy is the clipboard API's
  * fussiest corner and the row's copy puts Mermaid source there instead —
  * source is the bridge into the chat loop where diagrams get revised, and it
  * works in every browser.

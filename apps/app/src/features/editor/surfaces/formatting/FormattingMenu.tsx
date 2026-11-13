@@ -35,7 +35,6 @@ import { openLinkForm } from "@/core/editor/links";
 import { cn } from "@/lib/utils";
 import {
   EditorMenu,
-  EditorMenuCheckboxItem,
   EditorMenuItem,
   EditorMenuSeparator,
   EditorMenuShortcut,
@@ -155,12 +154,12 @@ function MarkButton({
       aria-label={label}
       aria-pressed={state.active || undefined}
       blockedReason={formattingBlockedMessage("mark", state.blockedBy)}
-      className={cn("size-8 justify-center rounded-sm p-0", state.active && "bg-primary/10")}
+      className={cn("size-8 justify-center rounded-sm p-0", state.active && "bg-ink-fill-strong")}
       onSelect={() => toggleTextMark(editor, FORMATTING_MARKS[id])}
     >
       {/* An explicit text colour every time: the menu's own rule mutes any
           icon that has none, which would swallow the lit state. */}
-      <Icon className={cn("size-4", state.active ? "text-primary" : "text-foreground")} />
+      <Icon className="size-4 text-foreground" />
     </EditorMenuItem>
   );
 }
@@ -217,13 +216,13 @@ function TurnIntoItem({
   editor: Editor;
 }) {
   return (
-    <EditorMenuCheckboxItem
-      checked={state.active}
+    <EditorMenuItem
+      selected={state.active}
       blockedReason={formattingBlockedMessage("block-type", state.blockedBy)}
       onSelect={() => turnIntoBlockType(editor, id)}
     >
       {blockTypeLabel(id)}
-    </EditorMenuCheckboxItem>
+    </EditorMenuItem>
   );
 }
 

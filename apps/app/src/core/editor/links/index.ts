@@ -56,7 +56,7 @@ export {
   canFollowLink,
   followLink,
   type InternalLinkNavigator,
-  type LinkFollowDisposition,
+  MIDDLE_BUTTON,
 } from "./link-navigation";
 export { createLinkRequester, type LinkRequester } from "./link-requester";
 export {

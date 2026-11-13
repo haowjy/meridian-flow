@@ -124,9 +124,14 @@ export function ComposerReferenceMenu({
         aria-disabled={!follow}
         aria-label={label}
         {...drag}
+        // A click on the chip follows it and leaves the caret beside it, never on it: a chip the
+        // click selected (or a focused chip holding the DOM selection) is replaced by the next keystroke.
         onClick={(event) => {
           event.preventDefault();
           follow?.();
+          const position = getPos();
+          if (position !== undefined && editor.isEditable)
+            editor.commands.focus(position + node.nodeSize, { scrollIntoView: false });
         }}
         onKeyDown={(event) => {
           if (event.key !== "Enter") return;
@@ -168,9 +173,7 @@ export function ComposerReferenceMenu({
             }}
           >
             <ContextMenuLabel>{label}</ContextMenuLabel>
-            <ContextMenuLabel className="max-w-80 break-all font-normal text-muted-foreground">
-              {reference.uri}
-            </ContextMenuLabel>
+            <ContextMenuLabel className="max-w-80 break-all pt-0">{reference.uri}</ContextMenuLabel>
             {follow ? <ContextMenuItem onSelect={follow}>{t`Open link`}</ContextMenuItem> : null}
             <ContextMenuItem
               onSelect={() => {
@@ -299,7 +302,7 @@ function ReferenceDisplayText({
           onSave({ ...reference, displayText: text === reference.label ? undefined : text });
       }}
     >
-      <label className="text-meta text-muted-foreground" htmlFor={id}>{t`Display text`}</label>
+      <label className="text-xs text-muted-foreground" htmlFor={id}>{t`Display text`}</label>
       <Input id={id} value={text} onChange={(event) => setText(event.target.value)} />
       <Button type="submit" disabled={!text.trim()}>{t`Save changes`}</Button>
     </form>

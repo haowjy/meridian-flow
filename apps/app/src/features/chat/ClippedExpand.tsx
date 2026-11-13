@@ -1,6 +1,8 @@
 /** ClippedExpand — the two honest ways an expand can be cut, and how it says so. */
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { Trans } from "@lingui/react/macro";
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -53,7 +55,37 @@ export function ClippedProse({ children, footer, className }: ClippedProseProps)
   );
 }
 
+/** Long prose clipped like `ClippedProse` until the writer asks for all of it with `more`. */
+export function ExpandableProse({ children, more }: { children: ReactNode; more: ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  const bodyId = useId();
+  const toggle = (
+    <Button
+      type="button"
+      variant="quiet"
+      size="meta"
+      aria-expanded={expanded}
+      aria-controls={bodyId}
+      onClick={() => setExpanded((value) => !value)}
+    >
+      {expanded ? <Trans>Show less</Trans> : more}
+    </Button>
+  );
+  return (
+    <div id={bodyId}>
+      {expanded ? (
+        <>
+          {children}
+          <div className="mt-[var(--chat-space-inline)]">{toggle}</div>
+        </>
+      ) : (
+        <ClippedProse footer={toggle}>{children}</ClippedProse>
+      )}
+    </div>
+  );
+}
+
 /** A fact about what a capped list left out. Never an invitation. */
 export function BoundLine({ children }: { children: ReactNode }) {
-  return <p className="mt-[var(--chat-space-inline)] text-meta text-ink-subtle">{children}</p>;
+  return <p className="mt-[var(--chat-space-inline)] text-xs text-muted-foreground">{children}</p>;
 }

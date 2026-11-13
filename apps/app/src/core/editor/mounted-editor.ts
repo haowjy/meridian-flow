@@ -18,7 +18,7 @@ import type { Transaction } from "@tiptap/pm/state";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { AgentNameStore } from "./agent-name-store";
-import { createEditorConfig } from "./config";
+import { createEditorConfig, type EditorUser } from "./config";
 import type { DocumentSession } from "./document-session";
 import type { AtReferenceCatalog } from "./extensions/at-reference";
 import type { ReferenceDropOptions } from "./extensions/reference-drop";
@@ -68,7 +68,7 @@ export type EditorSurfaceOptions = {
    */
   editorProps: NonNullable<EditorOptions["editorProps"]>;
   /**
-   * Whether this editor may publish the client's caret. A view kept warm
+   * Whether this editor may publish the client's caret. A view hidden
    * behind another one of the same session must not (see `gateCaretPresence`).
    */
   publishPresence: boolean;
@@ -96,6 +96,8 @@ export type MountedEditorInput = {
   session: DocumentSession;
   /** Subscribable name lookup; the projection repaints, the editor is not rebuilt. */
   agentNames: AgentNameStore;
+  /** The signed-in writer, published with the caret. Read once at mount. */
+  user: EditorUser;
   placeholder: string;
   /**
    * Reads the insertion catalog when the menu opens. Mounting the extension is
@@ -122,6 +124,7 @@ export function useMountedEditor({
   identity,
   session,
   agentNames,
+  user,
   placeholder,
   slashCommandCatalog,
   atReferenceCatalog,
@@ -150,6 +153,7 @@ export function useMountedEditor({
     const caretGate = gateCaretPresence(session.presence, () => publishPresenceRef.current);
     const editorConfig = createEditorConfig({
       document: session.document,
+      history: session.history,
       // The session owns whether this client is visible (inline review suspends
       // it), so it owns every local awareness field the editor publishes — the
       // caret's included. Its caret is arbitrated, because another view of
@@ -161,6 +165,7 @@ export function useMountedEditor({
       enableDraftInlineReview: identity.surface === "review",
       markerStore: identity.surface === "review" ? undefined : session.markerStore,
       agentNames,
+      user,
       placeholder,
       autofocus: false,
       slashCommands: { catalog: () => catalogRef.current?.() ?? null },

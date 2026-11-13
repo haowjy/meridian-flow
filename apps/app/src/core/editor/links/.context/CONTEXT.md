@@ -3,8 +3,8 @@
 ## Gestures
 
 Click follows (external in a new tab with `noopener,noreferrer`, internal in the
-same pane through the registered navigator). Middle or Ctrl/Cmd+click follows in a
-new tab. Alt+click, Shift+click, or a press that travelled 4px or more places the
+same pane through the registered navigator). Middle or Ctrl/Cmd+click follows the
+same way. Alt+click, Shift+click, or a press that travelled 4px or more places the
 caret. A click with no navigator, or on an unclassifiable href, places the caret.
 Enter or Alt+Enter on a followable link follows. Ctrl+K opens the form, and the
 context-menu key or Shift+F10 opens the link menu without navigating.

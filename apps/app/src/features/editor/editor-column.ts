@@ -16,7 +16,7 @@
  *   >= @3xl (48rem)    64                       64
  *
  * Every step answers to the PANE (EditorSurfaceFrame's `@container`), not the
- * viewport: the dock's document, a narrow Editor window and the phone all get
+ * viewport: the side's document, a narrow window and the phone all get
  * the narrow tiers because their pane is narrow, whatever the screen.
  *
  * Both gutters are load-bearing, because chrome drawn past the text edge lives
@@ -36,12 +36,12 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Chrome rows aligned to the prose edges (the document toolbar row). In a pane narrower than `@md` (the dock) the row stops aligning to the
+ * Chrome rows aligned to the prose edges (the document toolbar row). In a pane narrower than `@md` (the side) the row stops aligning to the
  * prose and takes the identity bar's 16px inset, which is all the width a
  * toolbar has.
  */
 export const editorColumnChrome =
-  "mx-auto w-full max-w-3xl px-4 @md:pr-8 @md:pl-12 @2xl:px-14 @3xl:px-16";
+  "mx-auto w-full max-w-4xl px-4 @md:pr-8 @md:pl-12 @2xl:px-14 @3xl:px-16";
 
 /**
  * Fill chain for `EditorContent`, so the ProseMirror
@@ -88,12 +88,14 @@ export function editorProseClass(toolbar: "docked" | "none"): string {
   return cn(
     "prose-tokens document-prose min-h-full shrink-0",
     // Padding percentages resolve against the parent's width: the pane. The
-    // trailing padding also holds the reading measure (68ch less the old 2.5rem
+    // trailing padding also holds the reading measure (76ch less the old 2.5rem
     // of padding either side) where the pane is wider than it.
     "[--prose-lead:3rem] [--prose-trail:2rem] @2xl:[--prose-lead:3.5rem] @2xl:[--prose-trail:3.5rem] @3xl:[--prose-lead:4rem] @3xl:[--prose-trail:4rem]",
-    "pl-[calc(max(0px,(100%-48rem)/2)+var(--prose-lead))]",
-    "pr-[max(calc(max(0px,(100%-48rem)/2)+var(--prose-trail)),calc(100%-max(0px,(100%-48rem)/2)-var(--prose-lead)-68ch+5rem))]",
+    "pl-[calc(max(0px,(100%-56rem)/2)+var(--prose-lead))]",
+    "pr-[max(calc(max(0px,(100%-56rem)/2)+var(--prose-trail)),calc(100%-max(0px,(100%-56rem)/2)-var(--prose-lead)-76ch+5rem))]",
     editorProseScrollPastEnd,
-    toolbar === "docked" ? "pt-4" : "pt-6 md:pt-8",
+    // pt-5 is the least that shows a hovered peer's name label whole above the first line: the
+    // scroll pane clips anything above it, and the toolbar sits outside that pane.
+    toolbar === "docked" ? "pt-5" : "pt-6 md:pt-8",
   );
 }

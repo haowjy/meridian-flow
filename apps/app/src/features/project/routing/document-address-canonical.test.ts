@@ -1,11 +1,7 @@
-/** Hidden reviews repair canonical locators while retaining their selected Work and draft.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - hidden-tab label refresh policy
- */
+/** Hidden reviews repair canonical locators while retaining their selected Work and draft. */
 import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { expect, it } from "vitest";
-import { canonicalDocumentAddress, canonicalReviewTabPatch } from "./document-address-canonical";
+import { canonicalDocumentAddress } from "./document-address-canonical";
 import type { ProjectAddress } from "./project-address";
 
 it("follows a reviewed identity through a rename or cross-source move", () => {
@@ -32,28 +28,8 @@ it("follows a reviewed identity through a rename or cross-source move", () => {
     path: ["Moved", "Withern"],
     scope: { kind: "project", projectId: "project" },
   } as CatalogFileEntry;
-  expect(
-    canonicalDocumentAddress(
-      address,
-      document,
-      "00000000-0000-4000-8000-000000000001",
-      "00000000-0000-4000-8000-000000000002",
-    ),
-  ).toEqual({
+  expect(canonicalDocumentAddress(address, document)).toEqual({
     ...address,
     destination: { kind: "document", scheme: "unfiled", path: "Moved/Withern" },
   });
-});
-
-it("refreshes a hidden tab's stale label without changing its review identity", () => {
-  const destination = { kind: "document" as const, scheme: "kb" as const, path: "Collision Note" };
-  const expected = { scheme: "kb", path: "/Collision Note", name: "Collision Note" };
-  expect(
-    canonicalReviewTabPatch(
-      { scheme: "user", path: "/Before", name: "Before" },
-      destination,
-      "Collision Note",
-    ),
-  ).toEqual(expected);
-  expect(canonicalReviewTabPatch(expected, destination, "Collision Note")).toBeNull();
 });

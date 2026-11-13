@@ -9,7 +9,7 @@
  * The viewer face is the dialog's whole job. Revision is not — writers revise
  * machine-authored diagrams through the normal chat (the ask-AI hook was ruled
  * out), so the only editing surface here is the demoted source escape hatch
- * behind ⋮, which opens the raw source beside the live preview.
+ * behind ⋯, which opens the raw source beside the live preview.
  *
  * Which diagram language that source is written in is the provider's business,
  * never this file's: the row names itself in the verbs and brings the renderer
@@ -18,7 +18,7 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { Code2, Copy, Download, MoreVertical } from "lucide-react";
+import { Code2, Copy, Download, Ellipsis } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
@@ -128,7 +128,7 @@ function LightboxHeader({
 }) {
   return (
     <div className="meridian-lightbox-header">
-      <span className="font-medium text-ink-muted text-sm">{title}</span>
+      <span className="font-medium text-muted-foreground text-sm">{title}</span>
       <span className="flex-1" />
       {/* Inside the dialog, because the page's own notices are behind the
           scrim and a writer who just pressed something is looking here. */}
@@ -193,8 +193,8 @@ function DiagramFace({
             onOpenChange={setMenuOpen}
             align="end"
             trigger={
-              <IconButton type="button" size="sm" variant="ghost" aria-label={t`More`}>
-                <MoreVertical aria-hidden />
+              <IconButton type="button" size="sm" variant="ghost" label={t`More`}>
+                <Ellipsis aria-hidden />
               </IconButton>
             }
           >
@@ -269,7 +269,7 @@ function SourcePane({
 
   // The writer asked for this pane and it exists to be typed in, so it takes
   // the caret — but it has to win an argument first. The dialog's focus scope
-  // and the ⋮ menu that opened the pane both restore focus asynchronously on
+  // and the ⋯ menu that opened the pane both restore focus asynchronously on
   // their way out, so a focus set now is taken back a moment later. Claiming
   // it once the churn has passed is the whole trick; measured in the browser.
   useEffect(() => {

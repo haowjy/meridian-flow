@@ -8,11 +8,8 @@
  * drags reliable over editors and other rich surfaces, and the assignment map
  * receives the committed width only on pointerup or keyboard commit.
  *
- * `orientation="vertical"` resizes a height along a horizontal divider (the
- * rail's Scratch section): the pointer axis is Y, Up/Down keys step it, and the
- * seam is a row-resize strip across the top of its parent. `measure` re-reads
- * the pane's live size and bounds when an interaction starts, for panes whose
- * default size is content-driven; `onReset` is the double-click default.
+ * `measure` re-reads the pane's live size and bounds when an interaction
+ * starts, for panes whose default size is content-driven.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -30,12 +27,8 @@ export type ResizeHandleProps = {
   minWidthPx: number;
   maxWidthPx: number;
   onCommit: (widthPx: number) => void;
-  /** Along which axis the pane resizes; defaults to width. */
-  orientation?: "horizontal" | "vertical";
   /** The pane's live size and bounds, read when a drag or key press begins. */
   measure?: () => { value: number; min: number; max: number };
-  /** Double-click: return to the default size. */
-  onReset?: () => void;
   ariaLabel: string;
   className?: string;
   keyboardStepPx?: number;
@@ -54,11 +47,8 @@ export function ResizeHandle({
   className,
   keyboardStepPx = 8,
   dragDirection = 1,
-  orientation = "horizontal",
   measure,
-  onReset,
 }: ResizeHandleProps) {
-  const vertical = orientation === "vertical";
   const [dragging, setDragging] = useState(false);
   const liveWidthRef = useRef(widthPx ?? minWidthPx);
   const boundsRef = useRef({ min: minWidthPx, max: maxWidthPx });
@@ -103,10 +93,9 @@ export function ResizeHandle({
     (event: React.PointerEvent | PointerEvent) => {
       const origin = dragOriginRef.current;
       if (!origin) return;
-      const pointer = vertical ? event.clientY : event.clientX;
-      writeWidth(origin.startWidth + (pointer - origin.pointer) * dragDirection);
+      writeWidth(origin.startWidth + (event.clientX - origin.pointer) * dragDirection);
     },
-    [dragDirection, vertical, writeWidth],
+    [dragDirection, writeWidth],
   );
 
   const endDrag = useCallback(() => {
@@ -134,37 +123,34 @@ export function ResizeHandle({
       activePointerIdRef.current = event.pointerId;
       beginMeasured();
       dragOriginRef.current = {
-        pointer: vertical ? event.clientY : event.clientX,
+        pointer: event.clientX,
         startWidth: liveWidthRef.current,
       };
       setDragging(true);
     },
-    [beginMeasured, vertical],
+    [beginMeasured],
   );
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       let nextWidth: number | null = null;
-      // A vertical handle sits above its pane: Up moves the seam up and grows the pane.
-      const shrinkKey = vertical ? "ArrowDown" : "ArrowLeft";
-      const growKey = vertical ? "ArrowUp" : "ArrowRight";
       if (
-        event.key !== shrinkKey &&
-        event.key !== growKey &&
+        event.key !== "ArrowLeft" &&
+        event.key !== "ArrowRight" &&
         event.key !== "Home" &&
         event.key !== "End"
       )
         return;
       beginMeasured();
-      if (event.key === shrinkKey) nextWidth = liveWidthRef.current - keyboardStepPx;
-      if (event.key === growKey) nextWidth = liveWidthRef.current + keyboardStepPx;
+      if (event.key === "ArrowLeft") nextWidth = liveWidthRef.current - keyboardStepPx;
+      if (event.key === "ArrowRight") nextWidth = liveWidthRef.current + keyboardStepPx;
       if (event.key === "Home") nextWidth = boundsRef.current.min;
       if (event.key === "End") nextWidth = boundsRef.current.max;
       if (nextWidth === null) return;
       event.preventDefault();
       onCommit(writeWidth(nextWidth));
     },
-    [beginMeasured, keyboardStepPx, onCommit, vertical, writeWidth],
+    [beginMeasured, keyboardStepPx, onCommit, writeWidth],
   );
 
   return (
@@ -175,7 +161,7 @@ export function ResizeHandle({
         role="separator"
         tabIndex={0}
         aria-label={ariaLabel}
-        aria-orientation={vertical ? "horizontal" : "vertical"}
+        aria-orientation="vertical"
         aria-valuemin={boundsRef.current.min}
         aria-valuemax={boundsRef.current.max}
         aria-valuenow={Math.round(liveWidthRef.current)}
@@ -185,12 +171,9 @@ export function ResizeHandle({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onKeyDown={onKeyDown}
-        onDoubleClick={onReset}
         className={cn(
           "group absolute z-20 flex touch-none select-none items-center justify-center focus-ring",
-          vertical
-            ? "top-0 left-0 h-3 w-full -translate-y-1/2 cursor-row-resize"
-            : "top-0 left-1/2 h-full w-3 -translate-x-1/2 cursor-col-resize",
+          "top-0 left-1/2 h-full w-3 -translate-x-1/2 cursor-col-resize",
           className,
         )}
         style={{ touchAction: "none" }}
@@ -210,7 +193,7 @@ export function ResizeHandle({
           style={{
             position: "fixed",
             inset: 0,
-            cursor: vertical ? "row-resize" : "col-resize",
+            cursor: "col-resize",
             pointerEvents: "auto",
             userSelect: "none",
           }}

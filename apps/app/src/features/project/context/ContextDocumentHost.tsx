@@ -2,11 +2,10 @@
  * ContextDocumentHost — one editable document in a view: its session, its
  * editor, and the review room the controller asks for.
  *
- * The Editor's warm tab set and the dock's single document both render
- * through this, so they are two views of the same editor and differ only in
- * what they pass: whether the editor is painted (`shown`), whether the surface
- * is on screen (`active`, which stands down chrome that portals to the body),
- * and whether the document is frozen (`readOnly`). The host fills its
+ * Main's document, the side's document, the kept one and the phone render
+ * through this, each inside its own review (`DocumentReviewProvider`), and differ only in
+ * what they pass: whether the surface is on screen (`active`, which stands down chrome that
+ * portals to the body), and whether the document is frozen (`readOnly`). The host fills its
  * `relative` parent.
  */
 
@@ -15,10 +14,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisition";
-import type { ContextTab } from "@/client/stores";
-import { isDraftOnly } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
-import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { PaintCapture } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
 import type {
   DocumentSession,
@@ -29,28 +28,25 @@ import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
-import { cn } from "@/lib/utils";
-import { useRequestedReview } from "../dock/editor-review-handoff";
+import { useHostDocumentPaint } from "../DocumentReview";
 import {
   useAccountResourceProjection,
+  useAccountResourceReplica,
   useContextRemovalCoordinator,
   useLiveDocumentSessionRegistry,
+  useOptionalPresentedDocuments,
 } from "./account-feature-context";
-import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./context-tab-session";
 import { DESKTOP_DOCUMENT_PRESENTATION, type DocumentPresentation } from "./document-presentation";
+import { OpenDocumentSessionBoundary, resourceAvailabilityRevision } from "./open-document-session";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
+import { useDraftOnlyPresentation } from "./use-draft-only-presentation";
 import type { LiveDocumentBindingState } from "./use-live-document-binding";
 
-export type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
+export type EditableOpenDocument = Extract<OpenDocument, { kind: "tracked" | "new" }>;
 
 export type ContextDocumentHostProps = {
   projectId: string;
-  container: "editor" | "dock";
-  tab: EditableContextTab;
-  /** False binds the session but paints no editor: a warm tab evicted from the mounted set. */
-  mountEditor?: boolean;
-  /** False keeps the editor mounted behind the front one, hidden. */
-  shown?: boolean;
+  document: EditableOpenDocument;
   /** Whether the surface is on screen; a hidden surface's chrome stands down. */
   active: boolean;
   /**
@@ -59,62 +55,76 @@ export type ContextDocumentHostProps = {
    */
   readOnly?: boolean;
   presentation?: DocumentPresentation;
-  onUntitledBecameNonEmpty?: (documentId: string) => Promise<void>;
-  /** Overrides the editor shell's own styling, e.g. to take the dock's material. */
-  editorClassName?: string;
   onCloseDraftOnly?: () => void;
+  /** Main's document: a page load puts the caret in it (`focusOnLoad`). */
+  loadFocus?: boolean;
 };
 
 export function ContextDocumentHost({
   projectId,
-  container,
-  tab,
-  mountEditor = true,
-  shown = true,
+  document,
   active,
   readOnly = false,
   presentation = DESKTOP_DOCUMENT_PRESENTATION,
-  onUntitledBecameNonEmpty,
-  editorClassName,
   onCloseDraftOnly,
+  loadFocus = false,
 }: ContextDocumentHostProps) {
   const removal = useContextRemovalCoordinator();
   const { controller, fileForDocument, reviewRoomNameForDraft } = useDraftReview();
   const { snapshot: resourceProjection } = useAccountResourceProjection(projectId);
   const bindingKeys = useRef(new WeakMap<object, string>());
-  const availabilityRevision = resourceAvailabilityRevision(resourceProjection, tab.documentId);
-  const requestedReview = useRequestedReview({
-    container,
-    editorWorkId: controller.ownerKey,
-    activeScheme: tab.kind === "tracked" ? tab.scheme : null,
-    documentId: shown ? tab.documentId : null,
-  });
-  const selectedReviewItemKey = shown ? requestedReview : null;
+  const availabilityRevision = resourceAvailabilityRevision(
+    resourceProjection,
+    document.documentId,
+  );
+  // The host's own review: the one it has open, else the draft its view paints. While the paint
+  // is held (the pinned owner's list is loading) the pin already names the item, so the live
+  // text stays covered rather than painting Live first.
+  const paint = useHostDocumentPaint();
+  const inline = controller.inlineReview;
+  const selectedReviewItemKey =
+    inline?.documentId === document.documentId
+      ? inline.itemKey
+      : paint?.showing === "pending"
+        ? (paint.view.pin?.itemKey ?? null)
+        : (paint?.draft?.itemKey ?? null);
   const reviewRoomName = selectedReviewItemKey
-    ? reviewRoomNameForDraft(tab.documentId, selectedReviewItemKey)
+    ? reviewRoomNameForDraft(document.documentId, selectedReviewItemKey)
     : null;
   const selectedReviewFile =
     selectedReviewItemKey && typeof fileForDocument === "function"
-      ? fileForDocument(tab.documentId)
+      ? fileForDocument(document.documentId)
       : null;
   const treeOnlyReview =
     selectedReviewFile?.draft.itemKey === selectedReviewItemKey &&
     reviewHasNoRoom(selectedReviewFile.draft);
   const reviewItemKey = reviewRoomName || treeOnlyReview ? selectedReviewItemKey : null;
-  // A draft-only document has no live room until Apply promotes it, and
-  // the server refuses one. Review hosts the draft room alone.
-  const draftOnly = isDraftOnly(tab);
+  // The pinned draft's list could not be read: say so here rather than paint Live under the pin.
+  const queryClient = useQueryClient();
+  const pinnedOwner = paint?.showing === "failed" ? (paint.view.pin?.ownerKey ?? null) : null;
+  const retryDraftList = pinnedOwner
+    ? () =>
+        void queryClient.refetchQueries({
+          queryKey: projectQueryKeys.ownerDrafts(projectId, pinnedOwner),
+        })
+    : null;
+  // A draft-only document has no live room until settlement promotes it, and the server refuses
+  // one: review hosts the draft room alone. While the pinned draft's row is unread, neither opens.
+  const liveness = useDraftOnlyPresentation(projectId, document);
+  const draftOnly = liveness === "draft-only";
   // `readOnly` is the owner's scope (archived or trashed freezes it); the presentation decides whether
   // this view ever types. Only the first is compared with the room's access.
   const editable = presentation.editable && !readOnly;
   const renderEditor = (
     session: DocumentSession | null,
-    failed = false,
+    sessionFailed = false,
     localContentReady = false,
-    retry?: () => void,
-    failureReason: Extract<LiveDocumentBindingState, { kind: "failed" }>["reason"] | null = null,
+    retrySession?: () => void,
+    sessionFailure: Extract<LiveDocumentBindingState, { kind: "failed" }>["reason"] | null = null,
   ): ReactNode => {
-    if (!mountEditor) return null;
+    const failed = sessionFailed || retryDraftList !== null;
+    const retry = retryDraftList ?? retrySession;
+    const failureReason = retryDraftList ? null : sessionFailure;
     const hosted = session !== null || draftOnly || Boolean(selectedReviewItemKey);
     const surface = failed ? "failed" : hosted ? "painted" : "pending";
     let bindingKey: string | undefined;
@@ -126,30 +136,28 @@ export function ContextDocumentHost({
       }
     }
     return (
-      <PaintScope active={shown}>
+      <>
         <PaintCapture surface={surface} state={surface} />
         <div
-          data-context-editor-document-id={tab.documentId}
-          className={cn(
-            // Each editor fills the host's frame; only the active one is
-            // visible. `hidden` keeps DOM/state alive without painting.
-            "absolute inset-0 flex min-h-0 flex-col",
-            shown ? "" : "hidden",
-          )}
-          // Defensive: aria-hidden hides background editors from AT.
-          aria-hidden={!shown}
+          data-context-editor-document-id={document.documentId}
+          className="absolute inset-0 flex min-h-0 flex-col"
           aria-busy={!failed && !hosted}
         >
           {failed ? (
             <div className="grid h-full place-items-center">
               <div className="space-y-3 text-center">
-                <p className="text-destructive text-sm">
-                  {failureReason === "not-visible" ? (
-                    <Trans>Access lost (not saving to the server)</Trans>
-                  ) : (
-                    <Trans>Couldn't open this document.</Trans>
-                  )}
-                </p>
+                <InlineErrorRow
+                  message={
+                    failureReason === "not-visible" ? (
+                      <Trans>Access lost (not saving to the server)</Trans>
+                    ) : retryDraftList ? (
+                      <Trans>Couldn't load this draft.</Trans>
+                    ) : (
+                      <Trans>Couldn't open this document.</Trans>
+                    )
+                  }
+                  className="justify-center p-0"
+                />
                 {retry && failureReason !== "not-visible" && failureReason !== "deleted" ? (
                   <Button type="button" size="sm" variant="secondary" onClick={retry}>
                     <Trans>Retry</Trans>
@@ -159,18 +167,14 @@ export function ContextDocumentHost({
             </div>
           ) : null}
           {!failed && !hosted ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
-          {tab.kind === "new" && session && onUntitledBecameNonEmpty ? (
-            <UntitledInputObserver
-              documentId={tab.documentId}
-              session={session}
-              onBecameNonEmpty={onUntitledBecameNonEmpty}
-            />
+          {document.kind === "new" && session ? (
+            <UntitledLifecycle projectId={projectId} document={document} session={session} />
           ) : null}
-          {/* Filename chrome is host-owned: the context tab strip names the
-                  active file, so EditorView renders no redundant header bar. */}
+          {/* Filename chrome is host-owned: the title chip names the
+                  file, so EditorView renders no redundant header bar. */}
           {failed || !hosted ? null : (
             <>
-              {active && shown ? (
+              {active ? (
                 <RoomScopeCatalogCheck
                   projectId={projectId}
                   session={session}
@@ -180,9 +184,9 @@ export function ContextDocumentHost({
                 />
               ) : null}
               <ActiveReviewBinding
-                documentId={tab.documentId}
+                documentId={document.documentId}
                 liveSession={session}
-                active={active && shown}
+                active={active}
                 inReview={Boolean(
                   presentation.presenceSuspendsOn === "requested-review"
                     ? selectedReviewItemKey
@@ -194,49 +198,47 @@ export function ContextDocumentHost({
                 onCloseDraftOnly={
                   onCloseDraftOnly ??
                   (() => {
-                    const closing = removal.writerClose(projectId, tab);
+                    const closing = removal.writerClose(projectId, document);
                     if (closing instanceof Promise) closing.catch(reportError);
                   })
                 }
-                className={editorClassName}
                 projectId={projectId}
-                documentId={tab.documentId}
-                focusKey={tab.tabInstanceId}
+                documentId={document.documentId}
+                focusKey={document.documentId}
+                loadFocus={loadFocus}
                 session={session ?? undefined}
                 bindingKey={bindingKey}
                 // A warm editor is hidden, not gone. Its chrome portals to
                 // the body, where `hidden` on an ancestor means nothing.
-                active={active && shown}
+                active={active}
                 editable={editable}
                 showToolbar={editable}
                 reviewReadOnly={presentation.reviewReadOnly}
-                detached={tab.kind === "new"}
+                detached={document.kind === "new"}
                 localContentReady={localContentReady}
-                schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
+                schemaType={document.kind === "tracked" ? document.schemaType : "document"}
                 showCollaborationDecorations={presentation.collaborationDecorations}
                 // The intent, not the resolved room: the live editor goes
                 // read-only from the click, while the room is still resolving.
                 reviewItemKey={selectedReviewItemKey}
-                container={container}
               />
             </>
           )}
         </div>
-      </PaintScope>
+      </>
     );
   };
   return (
-    <ContextTabSessionBoundary
+    <OpenDocumentSessionBoundary
       projectId={projectId}
-      documentId={tab.documentId}
-      resourceHandle={tab.resourceHandle}
-      tabInstanceId={tab.tabInstanceId}
+      documentId={document.documentId}
+      resourceHandle={document.resourceHandle}
       availabilityRevision={availabilityRevision}
-      liveRoom={!draftOnly}
+      liveRoom={liveness === "live"}
       bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}
-    </ContextTabSessionBoundary>
+    </OpenDocumentSessionBoundary>
   );
 }
 
@@ -292,15 +294,22 @@ function RoomScopeCatalogCheck({
   return null;
 }
 
-function UntitledInputObserver({
-  documentId,
+/**
+ * An Untitled document's first word makes its create eligible, which sends it to the server. A
+ * view that goes away while it holds no words lets it go (`discardUntouched`): it was never sent.
+ */
+function UntitledLifecycle({
+  projectId,
+  document,
   session,
-  onBecameNonEmpty,
 }: {
-  documentId: string;
-  session: import("@/core/editor/document-session").DocumentSession;
-  onBecameNonEmpty: (documentId: string) => Promise<void>;
+  projectId: string;
+  document: Extract<OpenDocument, { kind: "new" }>;
+  session: DocumentSession;
 }) {
+  const resources = useAccountResourceReplica();
+  const presented = useOptionalPresentedDocuments();
+  const { documentId, resourceHandle } = document;
   useEffect(() => {
     const fragment = session.document.getXmlFragment(session.fragmentName);
     let armed = true;
@@ -310,7 +319,7 @@ function UntitledInputObserver({
     const observe = () => {
       if (!armed || pending || resourceDocumentIsEmpty(fragment)) return;
       pending = true;
-      void onBecameNonEmpty(documentId).then(
+      void resources.markCreateEligible({ handle: resourceHandle }).then(
         () => {
           if (!armed) return;
           armed = false;
@@ -331,6 +340,19 @@ function UntitledInputObserver({
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       if (observing) fragment.unobserveDeep(observe);
     };
-  }, [documentId, onBecameNonEmpty, session]);
+  }, [resourceHandle, resources, session]);
+  useEffect(() => {
+    const fragment = session.document.getXmlFragment(session.fragmentName);
+    return () => {
+      // Only a replayed fragment that is empty means no words were written.
+      if (!session.getSnapshot().localPersistenceSynced || !resourceDocumentIsEmpty(fragment))
+        return;
+      // A move between main and the side, or a remount, mounts it again before this runs.
+      window.setTimeout(() => {
+        if (presented?.isMounted(projectId, documentId)) return;
+        void resources.discardUntouched(projectId, { handle: resourceHandle });
+      });
+    };
+  }, [documentId, presented, projectId, resourceHandle, resources, session]);
   return null;
 }

@@ -19,10 +19,10 @@
   overflow: hidden;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
-  background: var(--color-muted);
+  background: var(--color-ink-fill);
   padding: 0.625rem 0.75rem;
-  color: var(--color-ink-muted);
-  font-size: 0.8125rem;
+  color: var(--color-muted-foreground);
+  font-size: var(--text-sm);
 }
 
 /* The fallback box, and only for a slot with no measured frame. A file the
@@ -154,7 +154,7 @@
    honest end state when the site refuses. */
 .meridian-editor .ProseMirror .meridian-image-importing {
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  background: color-mix(in oklab, var(--color-primary) 12%, transparent);
 }
 
 /* The drop hint: the pane's own box, inset, while a drag carries files. Drawn
@@ -168,11 +168,11 @@
   place-items: center;
   align-content: center;
   gap: 0.75rem;
-  border: 0.125rem dashed var(--color-border-focus);
+  border: 0.125rem dashed var(--color-focus);
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--color-card) 88%, transparent);
-  color: var(--color-primary);
-  font-size: 0.875rem;
+  background: color-mix(in oklab, var(--color-card) 88%, transparent);
+  color: var(--color-jade-text);
+  font-size: var(--text-sm);
   font-weight: 650;
   pointer-events: none;
 }
@@ -181,7 +181,7 @@
    a class the shell would have to set: the drag belongs to this lane, and the
    shell sets no class for it. */
 .meridian-editor:has(> .meridian-editor-drop-overlay) .ProseMirror {
-  background: color-mix(in srgb, var(--color-card) 65%, transparent);
+  background: color-mix(in oklab, var(--color-card) 65%, transparent);
 }
 
 /* The refusal: one pill, over the manuscript, blocking nothing. Top-centre

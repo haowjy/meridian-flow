@@ -33,7 +33,7 @@ cell. The Draft chats use `workId` and `aiWriteMode: "draft"`. Read each
 document once on its chat to learn the hashes for heading, A, B, C, D, and E.
 Prime each Draft document with a write to paragraph A so its Work draft exists;
 get the `itemKey` from `GET /api/projects/$P/works/$W/branches` and open
-`/p/<P>/editor/manuscript/<document>?work=<W>&item=<itemKey>`.
+`/p/<P>/editor/manuscript/<document>?owner=work:<W>&item=<itemKey>`.
 
 ## Each cell
 

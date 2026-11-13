@@ -108,9 +108,7 @@ export function LinkMenu({
     >
       <EditorMenuLabel>{label}</EditorMenuLabel>
       {resolution?.state === "document" ? (
-        <EditorMenuLabel className="font-normal text-muted-foreground">
-          {resolution.document.path}
-        </EditorMenuLabel>
+        <EditorMenuLabel className="pt-0">{resolution.document.path}</EditorMenuLabel>
       ) : null}
       {resolution?.state === "missing" ? (
         <EditorMenuLabel>{t`Doesn't exist yet`}</EditorMenuLabel>
@@ -121,7 +119,7 @@ export function LinkMenu({
       {followable ? (
         <EditorMenuItem
           onSelect={() => {
-            followLinkFrom(editor, { ref: menu.ref, href: menu.href }, "current", menu.at);
+            followLinkFrom(editor, { ref: menu.ref, href: menu.href }, menu.at);
             close();
           }}
         >

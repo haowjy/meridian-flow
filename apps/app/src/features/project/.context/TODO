@@ -1,9 +1,25 @@
 # TODO — features/project
 
-- The dock document slot is synced by an effect (`dock/dock-document-store.ts`
-  `syncOccupantScope`). Derive the shown document from the route's Work instead. Deferred to the
-  side-panel work (#625), which also decides whether returning to a Work reopens its document.
 - Reloading a document's old address steps through its earlier names before settling: the removal
   coordinator replays the move history one repair at a time. Repair straight to the current locator.
-- `context/ContextTreePanel.tsx` and `mobile/MobileContextBrowser.tsx` still thread an `editorWorkId`
-  that only Scratch and Uploads used; it feeds no tree query. Drop it.
+- `context/ContextTreePanel.tsx` still threads an `editorWorkId` that only Scratch and Uploads
+  used; it feeds no tree query. Drop it.
+- A chat's upload has no viewer on desktop: the Files menu only inserts it. Showing it beside
+  needs the side's describe (`open-project-document.ts`) to accept the `uploads` scheme with its
+  chat, and a decision on what "Open in main" and Recently opened mean for a file with no editor
+  address.
+- At 390 px with a mouse, a panel opened by hand leaves main at its 360 px minimum, so the grid is
+  624 or 720 px wide and the panel runs off-screen (`useNarrowWindowHold` in `DesktopProject.tsx`).
+  Below a panel plus main's minimum, the panel should overlay main and close on a pick.
+- Manage Works opened from the phone drawer returns no focus on close: its opener was in the
+  drawer, which closed. Fall back to "Open navigation" when the dialog's opener is gone.
+- Phone: the side sheet closes when the history position changes (`MobileProject.tsx`), so an open
+  that replaces the entry instead of pushing leaves the sheet over main.
+- Tiles in the side: once there is a second thing to put there, the side could hold several items
+  as tiles (one at a time, tabs in the side's band, layout remembered per main mode), in the manner
+  of voluma's workflow tiles. Mock: https://claude.ai/artifact/Nfaxgs5Cm13GvLThxCUoJ1; design:
+  `/home/jimyao/.meridian/git/voluma-bio-docs/work/workflow-authoring/TILES.md`. Nothing built.
+  The side's rules carry over to any such UI: what each tile shows is browser-level (per tab)
+  state, independent of the panes; which tiles appear, and how they are arranged, follows what is
+  in main.
+- Trash in the sidebar has no search. Add "Find in Trash" (quiet SearchField above the heading, as the trees and Scratch do) when folder deletions land in Trash and the list grows. Owner, 2026-11-12.

@@ -14,8 +14,6 @@ import { t } from "@lingui/core/macro";
 import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
-
 import { collapseBreadcrumbSegments } from "./context-location";
 
 export type MobileBreadcrumbSegment = {
@@ -24,8 +22,6 @@ export type MobileBreadcrumbSegment = {
   onSelect?: () => void;
   /** Interactive control that stands for the current segment (the chat switcher). */
   current?: ReactNode;
-  /** A short fixed label ("Chats") that must never truncate. */
-  keep?: boolean;
 };
 
 /**
@@ -70,7 +66,7 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
         {items.map((item, index) => {
           const separator =
             index > 0 ? (
-              <ChevronRight aria-hidden className="size-3 shrink-0 text-ink-subtle" />
+              <ChevronRight aria-hidden className="size-3 shrink-0 text-muted-foreground" />
             ) : null;
           if (item.kind === "ellipsis") {
             return (
@@ -107,13 +103,7 @@ export function MobileBreadcrumb({ segments }: { segments: MobileBreadcrumbSegme
             );
           }
           return (
-            <li
-              key={item.key}
-              className={cn(
-                "flex items-center",
-                item.segment.keep ? "shrink-0" : "min-w-9 shrink-[3]",
-              )}
-            >
+            <li key={item.key} className="flex min-w-9 shrink-[3] items-center">
               {separator}
               {item.segment.onSelect ? (
                 // -my-3 keeps the 44px target without growing the 20px trail row

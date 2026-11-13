@@ -97,11 +97,11 @@ two tabs and on a 390px phone viewport.
   sits at the tail. Reload and open a second tab; both show it. Switch back
   before sending and confirm the notice disappears without a turn. Send first
   instead; the notice becomes the transcript line after that message.
-- During a reply, the queued notice sits at the tail with Stop. After the reply
+- During a reply, the queued notice sits at the tail with Undo. After the reply
   ends it becomes “Switched to …” and remains pending until the next reply;
-  Stop removes it. Switching and switching back leaves no control row.
+  Undo removes it. Switching and switching back leaves no control row.
 - Abort `**/controls`, switch, then send. The switch row shows “Couldn't
-  switch…” with Retry and no Stop while the message remains Sending. Restore
+  switch…” with Retry and no Undo while the message remains Sending. Restore
   the route and Retry; the switch queues and can be stopped. Reloading instead
   admits the switch before the message.
 - In two tabs, the other tab sees the queued mode and can Stop it. A hidden tab
@@ -118,14 +118,15 @@ two tabs and on a 390px phone viewport.
   message, and the toolbar does not revert. The live region announces a switch
   once, stays silent on reload and apply, and clears a failed-switch sentence
   on Retry or Stop. A delayed control response still leaves the applied mode
-  and transcript turn in place. Draft count reads “Drafts (2)” for two waiting
-  document drafts and “Draft” for none.
+  and transcript turn in place. The chip reads “Draft” whether or not drafts
+  wait.
 
 ### SY-07: the network drops mid-reply and returns
 
 With the first text visible, run `agent-browser set offline on` until the server
 has finished the delayed step. The browser keeps the dot and shows
-“Connection lost. Retrying…”. Run `agent-browser set offline off`; the bar goes,
+“Reconnecting…”, then “Offline” with Reconnect now, on a line inside the composer; nothing
+outside the composer moves. Run `agent-browser set offline off`; the line goes,
 the second text appears, and the settled chat matches `thread view`.
 
 ## Socket replay (SR-01)

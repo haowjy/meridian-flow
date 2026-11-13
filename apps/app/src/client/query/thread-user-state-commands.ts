@@ -1,6 +1,7 @@
 /** QueryClient-scoped normalized authority for Project-chat favorite state. */
 import type { ProjectChatItem, UpdateThreadUserStateResponse } from "@meridian/contracts/protocol";
-import type { QueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useSyncExternalStore } from "react";
 import { updateThreadUserState } from "@/client/api/threads-api";
 import { type ChatFeedData, flattenChatFeed, patchChatRow } from "./chat-projections";
 import { projectQueryKeys } from "./project-query-keys";
@@ -100,6 +101,45 @@ export function projectThreadUserState(
     ...item,
     isFavorite: record.favorite?.projectedValue ?? record.base.isFavorite,
   };
+}
+
+/**
+ * The chats pinned as the writer last set them: the server's pinned feed (which drops an unpinned
+ * row itself), plus chats pinned since that feed was fetched, so a pin shows before the refetch
+ * and doesn't drop out between the server's answer and the refetch. A record no newer than the
+ * feed is the feed's to judge: it may be a pin removed in another tab.
+ */
+export function usePinnedChatIds(
+  projectId: string,
+  confirmed: readonly string[],
+  confirmedAt: number,
+): Set<string> {
+  const client = useQueryClient();
+  const cache = client.getQueryCache();
+  const added = useSyncExternalStore(
+    (listener) =>
+      cache.subscribe((event) => {
+        const key = event.query.queryKey;
+        if (key[1] === projectId && key[2] === "thread-user-state") listener();
+      }),
+    () => {
+      const ids: string[] = [];
+      for (const query of cache.findAll({
+        queryKey: ["projects", projectId, "thread-user-state"],
+      })) {
+        const record = query.state.data as ThreadUserStateRecord | undefined;
+        if (!record || query.state.dataUpdatedAt <= confirmedAt) continue;
+        if (record.favorite?.projectedValue ?? record.base.isFavorite) {
+          ids.push(String(query.queryKey[3]));
+        }
+      }
+      return ids.sort().join(" ");
+    },
+  );
+  return useMemo(
+    () => new Set([...confirmed, ...(added ? added.split(" ") : [])]),
+    [confirmed, added],
+  );
 }
 
 export function getThreadUserStateRecord(

@@ -16,10 +16,15 @@ import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { Forward, GitFork } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
+import {
+  dropdownGroupLabelClass,
+  dropdownSurfaceVariants,
+} from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AgentPickerPanel } from "@/features/agents/AgentPicker";
 import type { CreationAgent } from "@/features/agents/creation-agent";
+import { cn } from "@/lib/utils";
 import { TURN_ACTION_TOOLTIP_SIDE } from "../turn-action-tooltip";
 
 export type TurnDerivation = {
@@ -85,7 +90,7 @@ export function ForkTurnAction({ turnId }: { turnId: string }) {
   return (
     <IconButton
       type="button"
-      tooltip={t`Fork from here`}
+      label={t`Fork from here`}
       tooltipSide={TURN_ACTION_TOOLTIP_SIDE}
       onClick={() => derivation.fork(turnId)}
     >
@@ -141,7 +146,7 @@ function HandoffPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <IconButton type="button" tooltip={label} tooltipSide={TURN_ACTION_TOOLTIP_SIDE}>
+        <IconButton type="button" label={label} tooltipSide={TURN_ACTION_TOOLTIP_SIDE}>
           <Forward aria-hidden />
         </IconButton>
       </PopoverTrigger>
@@ -150,22 +155,13 @@ function HandoffPicker({
         tabIndex={-1}
         align={align}
         aria-label={t`Hand off to an Agent`}
-        className="text-tier-chat w-72 p-1"
+        className={cn(dropdownSurfaceVariants({ measure: "identity" }), "text-tier-chat")}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           contentRef.current?.focus();
         }}
-        // A focused row shows its tooltip, the top dismissable layer, which
-        // would swallow the first Escape. One Escape closes the picker.
-        onKeyDown={(event) => {
-          if (event.key !== "Escape") return;
-          event.preventDefault();
-          setOpen(false);
-        }}
       >
-        <p className="px-2 pt-1 pb-1.5 text-xs font-medium text-muted-foreground">
-          {t`Hand off to`}
-        </p>
+        <p className={dropdownGroupLabelClass}>{t`Hand off to`}</p>
         <AgentPickerPanel
           status={catalog}
           agents={agents}

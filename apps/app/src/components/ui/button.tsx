@@ -13,35 +13,36 @@ const buttonVariants = cva(
   // focus-ring, not shadcn's 3px halo: buttons only show focus during
   // keyboard navigation (browser :focus-visible heuristic), and when they do
   // it speaks the app's one focus language.
-  "focus-ring inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "focus-ring inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-[color,background-color,transform] active:scale-[0.98] disabled:cursor-not-allowed disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default:
-          "bg-primary text-primary-foreground shadow-button hover:bg-primary/90 hover:brightness-105",
-        destructive: "bg-destructive text-white hover:bg-destructive/90 dark:bg-destructive/60",
-        outline:
-          "border bg-background shadow-xs hover:border-border-focus hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
-        secondary:
-          "bg-secondary text-secondary-foreground hover:border-border-focus hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
-        // Quiet chrome affordance: muted by default, presses into the rail on
-        // hover. The default tone for dense icon-only buttons (see IconButton).
-        quiet: "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+        // Every variant takes its hover, pressed and open states from `interactive`, an
+        // ink layer over whatever fill the variant paints.
+        default: "interactive bg-primary text-primary-foreground focus-ring-on-fill",
+        destructive: "interactive bg-destructive text-primary-foreground focus-ring-on-fill",
+        outline: "interactive border border-border bg-card shadow-raise",
+        secondary: "interactive bg-ink-fill text-foreground",
+        ghost: "interactive",
+        // Quiet chrome affordance: muted at rest. The default tone for dense icon-only
+        // buttons (see IconButton).
+        quiet: "interactive text-muted-foreground hover:text-foreground popup-open:text-foreground",
       },
+      // Under a coarse pointer every button reaches the 44px touch target, so callers
+      // never add touch sizing; a dense row that must not grow pulls it back with -my.
       size: {
-        default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
-        // Dense inline toolbar action (history/restore/meta actions) — text-meta,
+        default: "h-8 px-4 has-[>svg]:px-3 coarse:min-h-11",
+        xs: "h-(--control-dense) gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3 coarse:min-h-11",
+        // Dense inline toolbar action (history/restore/meta actions) — text-xs,
         // no fixed height so it hugs its label. Pair with variant="quiet".
-        meta: "gap-1 rounded-md px-2 py-1 text-meta [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5",
-        lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
-        icon: "size-9",
-        "icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm": "size-8",
-        "icon-lg": "size-10",
+        meta: "gap-1 rounded-md px-2 py-1 text-xs [&_svg:not([class*='size-'])]:size-3 coarse:min-h-11",
+        sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5 coarse:min-h-11",
+        lg: "h-10 rounded-md px-6 has-[>svg]:px-4 coarse:min-h-11",
+        // Icon-only sizes: use IconButton, which names the button. A dense one keeps
+        // its box and grows only its hit area (IconButton's `dense`).
+        "icon-xs":
+          "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3.5 coarse:not-data-[touch=dense]:size-11",
+        "icon-sm": "size-8 coarse:not-data-[touch=dense]:size-11",
       },
     },
     defaultVariants: {

@@ -5,11 +5,11 @@
  * context navigation, image arms as thumbnails in a responsive grid, and the
  * reserved `liveView` arm gets a full-width isolated iframe slot.
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import { FileText } from "lucide-react";
-
 import {
   Dialog,
   DialogClose,
@@ -17,6 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { role } from "@/components/ui/roles";
 import { DocumentName } from "./DocumentName";
 
 export function ArtifactGrid({ artifacts }: { artifacts: ArtifactRef[] }) {
@@ -74,12 +75,12 @@ function ImageArtifact({ image }: { image: Extract<ArtifactRef, { type: "image" 
       <DialogTrigger asChild>
         <button
           type="button"
-          className="focus-ring group block w-full overflow-hidden rounded-md border border-border-subtle bg-muted transition-all hover:border-border-focus"
+          className="focus-ring group block w-full overflow-hidden rounded-md border border-border-subtle bg-ink-fill"
         >
           <img
             src={image.url}
             alt={label}
-            className="aspect-square w-full object-cover transition-transform group-hover:scale-105"
+            className="aspect-square w-full object-cover transition-transform group-hover:scale-105 group-focus-visible:scale-none"
             loading="lazy"
           />
           {image.label ? (
@@ -117,9 +118,9 @@ function LiveViewSlot({ artifact }: { artifact: Extract<ArtifactRef, { type: "li
   // proxy's auth cookie usable. Nothing produces liveView arms today —
   // this slot is the contract landing zone.
   return (
-    <div className="overflow-hidden rounded-md border border-border-subtle bg-muted">
+    <div className="overflow-hidden rounded-md border border-border-subtle bg-ink-fill">
       <div className="flex items-center justify-between border-border-subtle border-b px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]">
-        <span className="font-medium text-foreground text-xs uppercase tracking-wide">
+        <span className={role.groupLabel}>
           <Trans>Live view</Trans>
         </span>
         {artifact.expiresAt ? (

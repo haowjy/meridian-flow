@@ -22,6 +22,12 @@
  * writes land in it, the transport publishes null, and resume publishes the map
  * as it now stands rather than as it was when the writer opened the review.
  *
+ * The session is the only writer of this client's local state. The transport's
+ * provider is patched never to write local state on an Awareness it did not
+ * create (no clear on destroy, none on page hide), so detaching a transport and
+ * hiding the page are suspensions the session takes itself. The server relays
+ * no explicit null, so peers drop a closed tab when its socket closes.
+ *
  * Upstream collaboration plugins know nothing about any of that: TipTap's
  * CollaborationCaret and y-prosemirror's cursor plugin write `user` and
  * `cursor` onto whatever Awareness their provider hands them. So they are
@@ -176,8 +182,8 @@ export function createLocalPresence(awareness: Awareness): LocalPresence {
 }
 
 /**
- * One session can be edited from two views at once: an Editor tab kept warm
- * behind the screen, and the dock's document. Both write the same `cursor`
+ * One session can be edited from two views at once: main and the side both
+ * showing it. Both write the same `cursor`
  * field, and the view that is not in front would clear the caret of the one
  * that is (y-prosemirror clears a caret it did not just place whenever its
  * own editor updates unfocused), so the two ping-pong awareness writes.

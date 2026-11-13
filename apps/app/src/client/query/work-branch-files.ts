@@ -52,8 +52,8 @@ export function projectWorkBranchFiles(
 }
 
 /**
- * The one order every list of draft files uses (the composer strip, the Work
- * page's Changes to review, and "Next draft"): by the
+ * The one order every list of draft files uses (the composer strip, the
+ * sidebar's Changes tab, and "Next draft"): by the
  * name each file is shown under, then by id. Draft list rows carry no creation time and
  * an update time would reshuffle the list as the AI keeps writing, so a file
  * keeps its place until its name changes.

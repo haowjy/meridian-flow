@@ -49,7 +49,7 @@ separate browser check covers rendering and native keyboard history.
 
 ## Review is a function of text
 
-1. Open a change from the chat dock and from Work Files. Counts, list, stepper,
+1. Open a change from the chat dock and from the Changes source. Counts, list, stepper,
    and paint agree. Removed text is red and struck; new text is green. Unknown
    authorship does not hide the change or invent a byline. An empty paragraph
    holding a red removal does not also show “Start writing…”.
@@ -86,17 +86,22 @@ separate browser check covers rendering and native keyboard history.
 | Action | Required result |
 |---|---|
 | Discard an editor change | Text reverts immediately; one Ctrl+Z restores it with restoration provenance and bylines. |
-| Discard the document draft | All pending changes revert, the draft id stays the same, and one Ctrl+Z restores them. |
-| Discard from the dock | The item leaves immediately; the notice says Discarded with Undo. Undo restores the same draft and bylines. |
-| Dock Discard, then type, then notice Undo | The sentence stays; editor Ctrl+Z undoes the sentence, not the dock Discard. |
-| Navigate away or reload | The notice and history end; discarded text persists. |
+| Discard the document draft (band) | All pending changes revert, the draft id stays, the page goes Live, and "Draft of ‹name› discarded." takes the review line above the toolbar. Undo returns the page to the draft with the same marks and bylines. |
+| Discard from the dock or the Changes list | The item leaves immediately; the notice takes its row's place (a dock: its footer). Undo restores the same draft and bylines. |
+| Discard, open another document, come back | The Changes or dock notice is still there; Undo restores the draft and main does not move. |
+| Discard, then type in that draft or let a reply write to it | The notice goes without a word; editor Ctrl+Z undoes the typing, never the Discard. |
+| A second Discard or an Apply by the same Work | It replaces the notice. |
+| Reload | The notice ends; discarded text persists. |
+| Discard all / the dock's Discard with only text drafts | No question; one notice "N drafts discarded."; one Undo restores every room. |
+| Discard a new document, a move or delete, or a trashed chat's draft | It asks once ("This can't be undone.") in place of its controls, and shows no notice. |
+| Discard the draft of a chapter another session deleted | Main goes back at once to the document opened before (never "This destination is unavailable"); the notice shows there; Undo returns main to the draft. |
 | AI A's removal discarded, then AI B removes the written-back words | No byline names A. |
 | A reply writes through Discard | It continues in the same draft; later edits are new changes. |
 | Discard several selected files | Every selected row leaves before write-back; the final notice paints once. |
 | Notice Undo before deferred write-back | The row returns and no Yjs update is emitted. |
 | Peer text arrives before deferred Discard | The stale Discard refuses with its item failure; intervening text survives and the row returns. |
 
-Repeat the notice cells in Work Files, including an opening room and Undo after
+Repeat the notice cells in the Changes source, including an opening room and Undo after
 the server pending list omitted the discarded item. A per-change Discard inside
 a hidden created text document is local; whole-created-document Discard is the
 removal case below.
@@ -118,10 +123,10 @@ Work Apply all sends one frozen click per text draft, never a Work-wide Apply.
 | Apply a deletion before the first answer | The base ends at the applied text; the deletion does not reappear. |
 | Room record before answer, then answer before record | No flicker or duplicate insertion; each head settles once. |
 | Refuse the middle click | Its change returns with an item failure, then the next frozen click sends. |
-| Refuse `{status:"refused",reason:"not_found"}` at desktop, narrow desktop, and coarse-pointer phone | The focused bar, identity row, Work Files status, and dock show the failure exactly once; paragraph and row tops do not move. |
+| Refuse `{status:"refused",reason:"not_found"}` at desktop, narrow desktop, and coarse-pointer phone | The focused bar, identity row, Changes source status, and dock show the failure exactly once; paragraph and row tops do not move. |
 | Drop the answer | The same body and id retry after 1, 2, and 4 seconds; then the item shows Retry and no successor sends. |
 | Slow ten clicks | Groups leave together; Applying uses reserved space after 500 ms and completion is FIFO. |
-| Navigate to Work Files during the head | The owner receives the answer and record and settles without a mounted editor. |
+| Navigate to the Changes source during the head | The owner receives the answer and record and settles without a mounted editor. |
 | Hold the final draft update, click Apply, archive the Work in another tab | The unsent click refuses silently, with no failure or Applying/Retry limbo. Unarchive and reopen: a fresh Apply works. |
 | Sent Apply loses its answer and the session rebuilds | The sent id remains pending until retry, lookup, or its room record; unsent successors refuse. |
 | Reload with queued clicks | The sent head may finish; unsent clicks return as draft work. |
@@ -130,8 +135,8 @@ Work Apply all sends one frozen click per text draft, never a Work-wide Apply.
 
 ## Removal and terminal closure
 
-- A hidden created-document Discard removes the item without Undo and closes its
-  tab to the Work. A later model write is refused; creating again gets a new id.
+- A hidden created-document Discard removes the item without Undo and ends its
+  presentation to the Work. A later model write is refused; creating again gets a new id.
   A per-change Discard never takes this route.
 - In a three-tab close race, Work Discard all removes `item` and `change` from
   the review URL and shows the exact live document. The pending list is empty,

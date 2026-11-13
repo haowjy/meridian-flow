@@ -8,14 +8,15 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  useMenuActionDispatch,
 } from "@/components/ui/dropdown-menu";
 import { initialsFromName } from "@/features/account/initials";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
-import { cn } from "@/lib/utils";
 
 export function AccountMenu() {
   const { user, loading } = useAuth();
   const { open } = useSettingsNavigation();
+  const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
 
   const email = user?.email ?? null;
   const label = email ?? t`Signed in`;
@@ -23,28 +24,28 @@ export function AccountMenu() {
 
   return (
     <DropdownMenu>
+      {/* One place for the account and Settings: the avatar, in every header that shows it. */}
       <DropdownMenuTrigger
         type="button"
-        className={cn(
-          "focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm",
-          "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
-        )}
-        aria-label={t`Account menu`}
+        className="focus-ring grid size-8 shrink-0 place-items-center rounded-md hover:bg-ink-fill popup-open:bg-ink-fill-strong coarse:size-11"
+        aria-label={t`Account: ${label}`}
+        title={label}
         disabled={loading}
       >
         <span
-          className="grid size-7 shrink-0 place-items-center rounded-full bg-sidebar-accent text-xs font-medium text-foreground"
+          className="grid size-6 place-items-center rounded-full bg-ink-fill-strong text-xs font-medium text-foreground"
           aria-hidden
         >
           {initials}
         </span>
-        <span className="min-w-0 flex-1 truncate">{label}</span>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-48">
+      <DropdownMenuContent align="end" className="w-56" onCloseAutoFocus={onCloseAutoFocus}>
         <DropdownMenuLabel className="truncate">{email ?? t`Signed in`}</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => open("profile")}>{t`Profile`}</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => open()}>{t`Settings`}</DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => dispatch(() => open("profile"))}
+        >{t`Profile`}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => dispatch(() => open())}>{t`Settings`}</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           {/* signOut() redirects to api.workos.com; a client-side <Link> would fetch it and fail CORS. */}

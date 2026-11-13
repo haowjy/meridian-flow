@@ -3,8 +3,8 @@
  * Unarchive: a bordered box on the Work page and over one of its files in the
  * Editor, and a strip on the top edge of a chat's composer (the chat supplies
  * the strip's frame; the composer below it stays live).
- * Unarchive shows at once; a refusal returns the Work and, off the Work page
- * where the band carries it, the failure appears here.
+ * Unarchive shows at once; a refusal returns the Work and, off the Work's own page
+ * (which shows its Archive and Unarchive failures under its title), the failure appears here.
  */
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
@@ -29,7 +29,7 @@ export function ArchivedWorkNotice({
   work: Work;
   /** `strip` sits inside the frame a chat puts on its composer's top edge. */
   variant?: "box" | "strip";
-  /** The Work page's band already carries a refused Unarchive. */
+  /** The Work's own page shows a refused Unarchive itself. */
   showFailure?: boolean;
   className?: string;
 }) {
@@ -41,7 +41,7 @@ export function ArchivedWorkNotice({
       {strip ? (
         <div
           role="status"
-          className="flex min-h-8 min-w-0 items-center gap-[var(--chat-space-inline)] py-0.5 pr-1 pl-[var(--chat-card-pad-x)] text-caption"
+          className="flex min-h-8 min-w-0 items-center gap-[var(--chat-space-inline)] py-0.5 pr-1 pl-[var(--chat-card-pad-x)] text-xs"
         >
           <Archive className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           <p className="min-w-0 flex-1 text-muted-foreground">
@@ -51,7 +51,7 @@ export function ArchivedWorkNotice({
             size="xs"
             variant="quiet"
             onClick={() => void toggleArchive(work)}
-            className="shrink-0 [@media(pointer:coarse)]:min-h-11"
+            className="shrink-0"
           >
             <Trans>Unarchive</Trans>
           </Button>
@@ -60,12 +60,7 @@ export function ArchivedWorkNotice({
         <DocumentNotice
           icon={<Archive className="size-4" aria-hidden />}
           action={
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void toggleArchive(work)}
-              className="[@media(pointer:coarse)]:min-h-11"
-            >
+            <Button size="sm" variant="outline" onClick={() => void toggleArchive(work)}>
               <Trans>Unarchive</Trans>
             </Button>
           }

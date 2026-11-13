@@ -5,7 +5,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { type Dispatch, useCallback, useMemo, useReducer, useRef } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { editorHistory } from "@/core/editor/editor-history";
 import {
   type DraftReviewSelection,
   draftReviewReducer,
@@ -65,7 +64,9 @@ export type DraftReviewController = {
    * another change's command are accepted and queued.
    */
   changesLocked: boolean;
-  /** The header's "Show changes". The editor paints from it (`useInlineReviewFocus`). */
+  /** Whether an Apply can be sent at all (`WorkBranchCommands.canApply`). */
+  canApply: boolean;
+  /** The presented tab's "Show changes" (`view.showChanges`). The editor paints from it (`useInlineReviewFocus`). */
   marksVisible: boolean;
   setMarksVisible: (visible: boolean) => void;
   /**
@@ -100,6 +101,8 @@ export type DraftReviewController = {
   registerInlineReviewRuntime: (runtime: InlineReviewRuntime) => void;
   releaseInlineReviewRuntime: (editor: Editor) => void;
   startDraft: (mode: "apply" | "discard", draft: DraftReviewSelection) => CommandStart;
+  /** Whether the draft's Discard asks first: it carries no Undo. */
+  discardAsks: WorkBranchCommands["discardAsks"];
   apply: (documentId: string, itemKey: string) => Promise<BranchCommandOutcome>;
   discard: (documentId: string, itemKey: string) => Promise<BranchCommandOutcome>;
   disposeDrafts: (
@@ -114,6 +117,7 @@ export function useDraftReviewController({
   ownerKey,
   threadId = null,
   stateOwner,
+  marks,
 }: {
   projectId: string;
   /** The Work whose archived state freezes these drafts; null scopes nothing. */
@@ -122,6 +126,8 @@ export function useDraftReviewController({
   ownerKey: string;
   threadId?: string | null;
   stateOwner: DraftReviewStateOwner;
+  /** Show changes, which belongs to the presented tab's view, not to this review. */
+  marks: { visible: boolean; set: (visible: boolean) => void };
 }): DraftReviewController {
   const queryClient = useQueryClient();
   const { state, dispatch } = stateOwner;
@@ -132,11 +138,11 @@ export function useDraftReviewController({
     work,
     ownerKey,
     threadId,
-    surface: "editor",
-    editorHistory: (draft) => {
+    surface: "band",
+    reviewEditor: (draft) => {
       const runtime = inlineRuntimeRef.current;
       return runtime?.documentId === draft.documentId && runtime.itemKey === draft.itemKey
-        ? editorHistory(runtime.editor)
+        ? runtime.editor
         : null;
     },
   });
@@ -237,15 +243,11 @@ export function useDraftReviewController({
     [reportFocusedChange],
   );
 
-  const setMarksVisible = useCallback((visible: boolean) => {
-    dispatch({ type: "marksVisible", visible });
-  }, []);
-
   const dismissToast = useCallback((id: number) => {
     dispatch({ type: "toastDismissed", id });
   }, []);
 
-  const { disposeDrafts, startDraft, apply, discard } = commands;
+  const { disposeDrafts, startDraft, apply, discard, discardAsks } = commands;
 
   return useMemo(
     () => ({
@@ -256,8 +258,9 @@ export function useDraftReviewController({
       commandChange: commands.commandChange,
       dispositionLocked,
       changesLocked,
-      marksVisible: state.marksVisible,
-      setMarksVisible,
+      canApply: commands.canApply,
+      marksVisible: marks.visible,
+      setMarksVisible: marks.set,
       focus: inlineReview?.focus ?? null,
       reportFocusedChange,
       focusReviewChange,
@@ -270,6 +273,7 @@ export function useDraftReviewController({
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
       startDraft,
+      discardAsks,
       apply,
       discard,
       disposeDrafts,
@@ -282,8 +286,9 @@ export function useDraftReviewController({
       inlineReview,
       dispositionLocked,
       changesLocked,
-      state.marksVisible,
-      setMarksVisible,
+      commands.canApply,
+      marks.visible,
+      marks.set,
       inlineReview?.focus,
       reportFocusedChange,
       focusReviewChange,
@@ -296,6 +301,7 @@ export function useDraftReviewController({
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
       startDraft,
+      discardAsks,
       apply,
       discard,
       disposeDrafts,

@@ -1,9 +1,8 @@
 /**
  * What the app says when documents it showed were deleted or discarded by
  * something other than this tab. The sentence owns the copy rules; the notice
- * sits in blank space the closed document left: the tab strip's free end, the
- * landing's top margin, the dock's header beside "Recent", or the phone's
- * notice row.
+ * sits in blank space the closed document left: main's header beside the title, the
+ * landing's top margin, or the phone's notice row.
  */
 import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
@@ -11,10 +10,11 @@ import { useLingui } from "@lingui/react";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { Info, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
+import { Chip } from "@/components/ui/chip";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { useOptionalRemovedNotices } from "./account-feature-context";
-import type { NoticeSurface, RemovedNoticeSnapshot, ShownRemoval } from "./removed-notice-store";
+import type { RemovedNoticeSnapshot, ShownRemoval } from "./removed-notice-store";
 
 /** One removed document as a sentence names it; a null title reads "this document". */
 export type Removal = Readonly<{ title: string | null; record: DocumentRemovalRecord | null }>;
@@ -198,12 +198,12 @@ export function RemovedDocumentSentence({ documents }: { documents: readonly Rem
 const EMPTY_NOTICE: RemovedNoticeSnapshot = { shown: [], waiting: [], version: 0 };
 const subscribeNothing = () => () => undefined;
 
-/** One surface's removed-documents notice. */
-export function useRemovedNotice(projectId: string, surface: NoticeSurface): RemovedNoticeSnapshot {
+/** The Editor's removed-documents notice. */
+export function useRemovedNotice(projectId: string): RemovedNoticeSnapshot {
   const notices = useOptionalRemovedNotices();
   return useSyncExternalStore(
     notices ? (listener) => notices.subscribe(listener) : subscribeNothing,
-    () => notices?.snapshot(projectId, surface) ?? EMPTY_NOTICE,
+    () => notices?.snapshot(projectId) ?? EMPTY_NOTICE,
     () => EMPTY_NOTICE,
   );
 }
@@ -211,108 +211,88 @@ export function useRemovedNotice(projectId: string, surface: NoticeSurface): Rem
 /**
  * The notice lasts until the writer's next navigation, counted from when its
  * placement is first on screen: a removal noticed while the writer is
- * elsewhere waits for them. It anchors once the place no longer shows a
- * removed document (the removal's own navigation is not the writer's), and a
- * later change of place clears it, documents still waiting included. A
- * removal that joins the notice re-anchors it.
+ * elsewhere waits for them. It anchors where it first shows, which for a
+ * removal of the shown document is that document's own address (a removal
+ * moves nothing), and a later change of place clears it, documents still
+ * waiting included. A removal that joins the notice re-anchors it.
  */
 export function useRemovedNoticeLifetime(
   projectId: string,
-  surface: NoticeSurface,
   place: Readonly<{
-    /** Changes with every navigation the writer makes on this surface. */
+    /** Changes with every navigation the writer makes in the Editor. */
     key: string;
     onScreen: boolean;
-    /** The document the place shows, by route (Editor) or id (dock). */
-    showing: Readonly<{ scheme: string | null; path: string | null }> | string | null;
   }>,
 ): void {
   const notices = useOptionalRemovedNotices();
-  const notice = useRemovedNotice(projectId, surface);
+  const notice = useRemovedNotice(projectId);
   const anchor = useRef<{ version: number; key: string } | null>(null);
   const { key, onScreen } = place;
-  const showing = JSON.stringify(place.showing);
   useEffect(() => {
     if (anchor.current?.version !== notice.version) anchor.current = null;
     if (notice.version === 0) return;
     if (anchor.current) {
       if (anchor.current.key === key) return;
       anchor.current = null;
-      notices?.dismiss(projectId, surface);
+      notices?.dismiss(projectId);
       return;
     }
-    const shows: Readonly<{ scheme: string | null; path: string | null }> | string | null =
-      JSON.parse(showing);
-    const onRemovedDocument = [...notice.shown, ...notice.waiting].some((document) =>
-      typeof shows === "string"
-        ? document.documentId === shows
-        : document.route.scheme === shows?.scheme &&
-          trimSlashes(document.route.path) === trimSlashes(shows?.path ?? ""),
-    );
-    if (onScreen && !onRemovedDocument) anchor.current = { version: notice.version, key };
-  }, [key, notice, notices, onScreen, projectId, showing, surface]);
+    if (onScreen) anchor.current = { version: notice.version, key };
+  }, [key, notice, notices, onScreen, projectId]);
 }
-
-const trimSlashes = (path: string) => path.replace(/^\/+|\/+$/g, "");
 
 /** The notice's dismiss control, shared by every placement. */
 function DismissNotice({
   projectId,
-  surface,
   className,
+  dense,
 }: {
   projectId: string;
-  surface: NoticeSurface;
   className?: string;
+  dense?: boolean;
 }) {
   const notices = useOptionalRemovedNotices();
   return (
     <IconButton
       className={className}
-      aria-label={t`Dismiss`}
-      onClick={() => notices?.dismiss(projectId, surface)}
+      dense={dense}
+      label={t`Dismiss`}
+      onClick={() => notices?.dismiss(projectId)}
     >
-      <X aria-hidden className="size-3" />
+      <X aria-hidden />
     </IconButton>
   );
 }
 
 /**
- * The strip placement: a ghost chip in a header's free end (the Editor's tab
- * strip, or the dock's header beside "Recent"), inside a `RemovedNoticeSlot`.
+ * The header placement: a ghost chip in main's header beside the title, inside a
+ * `RemovedNoticeSlot`.
  * The full sentence shows when the slot has room and the short one
  * ("1 document deleted") otherwise; the tooltip and accessible name always
  * carry the full sentence, every name included.
  */
-export function RemovedDocumentChip({
-  projectId,
-  surface,
-}: {
-  projectId: string;
-  surface: NoticeSurface;
-}) {
-  const { shown } = useRemovedNotice(projectId, surface);
+export function RemovedDocumentChip({ projectId }: { projectId: string }) {
+  const { shown } = useRemovedNotice(projectId);
   if (shown.length === 0) return null;
-  return <Chip projectId={projectId} surface={surface} documents={shown} />;
+  return <RemovedChip projectId={projectId} documents={shown} />;
 }
 
-function Chip({
+function RemovedChip({
   projectId,
-  surface,
   documents,
 }: {
   projectId: string;
-  surface: NoticeSurface;
   documents: readonly ShownRemoval[];
 }) {
   useLingui();
   const sentence = removalSentence(documents);
   return (
-    <div
+    <Chip
+      dashed
       role="status"
       title={sentence}
       data-removed-document-notice
-      className="my-1.5 ml-1 flex min-w-0 max-w-[28rem] items-center gap-1.5 rounded-md border border-border border-dashed pr-0.5 pl-2 text-muted-foreground text-xs"
+      className="my-1.5 ml-1 min-w-0 max-w-[28rem] shrink pr-px font-normal"
     >
       <Info aria-hidden className="size-3.5 shrink-0" />
       <span className="sr-only">{sentence}</span>
@@ -322,8 +302,8 @@ function Chip({
       <span aria-hidden className="hidden min-w-0 truncate @max-[13rem]:inline">
         {shortRemovalSentence(documents)}
       </span>
-      <DismissNotice projectId={projectId} surface={surface} className="size-5 shrink-0" />
-    </div>
+      <DismissNotice projectId={projectId} className="size-5 shrink-0" dense />
+    </Chip>
   );
 }
 
@@ -351,7 +331,7 @@ export function RemovedDocumentLandingNotice({
   projectId: string;
   className?: string;
 }) {
-  const { shown } = useRemovedNotice(projectId, "editor");
+  const { shown } = useRemovedNotice(projectId);
   if (shown.length === 0) return null;
   return <LandingNotice projectId={projectId} documents={shown} className={className} />;
 }
@@ -376,14 +356,14 @@ function LandingNotice({
       <p className="min-w-0 truncate" title={sentence}>
         {sentence}
       </p>
-      <DismissNotice projectId={projectId} surface="editor" className="size-6 shrink-0" />
+      <DismissNotice projectId={projectId} className="size-6 shrink-0" />
     </div>
   );
 }
 
 /** The phone's placement: its top bar's notice row, the slot a screen's own failures use. */
 export function useRemovedDocumentPhoneNotice(projectId: string) {
-  const { shown } = useRemovedNotice(projectId, "editor");
+  const { shown } = useRemovedNotice(projectId);
   return shown.length > 0 ? <PhoneNotice projectId={projectId} documents={shown} /> : null;
 }
 
@@ -398,11 +378,7 @@ function PhoneNotice({
   return (
     <div role="status" data-removed-document-notice className="flex items-start gap-2 py-1.5">
       <p className="min-w-0 flex-1 py-1 text-foreground text-sm">{removalSentence(documents)}</p>
-      <DismissNotice
-        projectId={projectId}
-        surface="editor"
-        className="shrink-0 [@media(pointer:coarse)]:size-11"
-      />
+      <DismissNotice projectId={projectId} className="shrink-0" />
     </div>
   );
 }

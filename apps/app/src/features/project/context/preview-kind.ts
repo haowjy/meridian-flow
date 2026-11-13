@@ -1,11 +1,11 @@
 /** Chooses the read-only preview surface from stored tab classification and read data. */
 import type { ContextReadResponse } from "@meridian/contracts/protocol";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 
 export type PreviewKind = "text" | "markdown" | "pdf" | "image" | "binary";
 
 export function previewKind(
-  tab: Extract<ContextTab, { kind: "viewer" }>,
+  tab: Extract<OpenDocument, { kind: "viewer" }>,
   read: ContextReadResponse,
 ): PreviewKind {
   // A name never says what a file is (`Chapter 13` has no suffix): the stored

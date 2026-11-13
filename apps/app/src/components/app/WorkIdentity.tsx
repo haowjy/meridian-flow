@@ -1,22 +1,30 @@
-/** Read-only Work identity shared by Composer controls and metadata surfaces. */
+import { Layers } from "lucide-react";
 import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
+import { type WorkNaming, workDisplayName } from "@/lib/work-name";
 
+/** How a Work reads wherever one is named: the Work glyph, then its name as the writer reads it. */
 export function WorkIdentity({
-  name,
+  work,
   unavailableLabel,
   className,
   ...props
 }: Omit<ComponentProps<"span">, "children"> & {
-  name: string | null | undefined;
+  work: WorkNaming | null | undefined;
   unavailableLabel: string;
 }) {
   return (
     <span
-      className={cn("min-w-0 truncate text-xs font-medium text-foreground", className)}
+      className={cn(
+        "flex min-w-0 items-center gap-1.5 text-xs font-medium text-foreground",
+        className,
+      )}
       {...props}
     >
-      {name || unavailableLabel}
+      <Layers aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 truncate">
+        {(work && workDisplayName(work)) || unavailableLabel}
+      </span>
     </span>
   );
 }

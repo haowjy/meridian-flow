@@ -1,6 +1,7 @@
-import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
 import type * as React from "react";
+import { useCallback, useRef } from "react";
 
 import { cn } from "@/lib/utils";
 import {
@@ -8,7 +9,7 @@ import {
   dropdownMenuContentClass,
   dropdownMenuItemClass,
   dropdownMenuSeparatorClass,
-  dropdownNavigationPageClass,
+  dropdownPageClass,
   dropdownPanelClass,
   dropdownRowVariants,
 } from "./dropdown-presentation";
@@ -46,7 +47,7 @@ function DropdownMenuContent({
           if (event.button !== 0) event.preventDefault();
         }}
         className={cn(
-          dropdownNavigationPageClass,
+          dropdownPageClass,
           dropdownMenuContentClass,
           "origin-(--radix-dropdown-menu-content-transform-origin) [--radix-menu-content-available-height:var(--radix-dropdown-menu-content-available-height)]",
           className,
@@ -65,22 +66,27 @@ function DropdownMenuItem({
   className,
   inset,
   variant = "default",
+  selected = false,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
   inset?: boolean;
   variant?: "default" | "destructive";
+  /** The picker's current value: it wears the hover fill, with no check. */
+  selected?: boolean;
 }) {
   return (
     <DropdownMenuPrimitive.Item
       data-slot="dropdown-menu-item"
       data-inset={inset}
       data-variant={variant}
-      className={cn(dropdownRowVariants(), dropdownMenuItemClass, className)}
+      aria-current={selected || undefined}
+      className={cn(dropdownRowVariants({ selected }), dropdownMenuItemClass, className)}
       {...props}
     />
   );
 }
 
+/** Only for toggles where several rows can be on at once; a single value uses `selected`. */
 function DropdownMenuCheckboxItem({
   className,
   children,
@@ -90,16 +96,16 @@ function DropdownMenuCheckboxItem({
   return (
     <DropdownMenuPrimitive.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
-      className={cn(dropdownRowVariants(), "relative cursor-default pr-2 pl-8", className)}
+      className={cn(dropdownRowVariants(), dropdownMenuItemClass, "pr-8", className)}
       checked={checked}
       {...props}
     >
-      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
+      {children}
+      <span className="pointer-events-none absolute right-2 flex size-4 items-center justify-center">
         <DropdownMenuPrimitive.ItemIndicator>
           <CheckIcon className="size-4" />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
-      {children}
     </DropdownMenuPrimitive.CheckboxItem>
   );
 }
@@ -110,24 +116,22 @@ function DropdownMenuRadioGroup({
   return <DropdownMenuPrimitive.RadioGroup data-slot="dropdown-menu-radio-group" {...props} />;
 }
 
+/** A single-value pick: the checked row wears the hover fill, with no dot. */
 function DropdownMenuRadioItem({
   className,
-  children,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
   return (
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
-      className={cn(dropdownRowVariants(), "relative cursor-default pr-2 pl-8", className)}
+      className={cn(
+        dropdownRowVariants(),
+        dropdownMenuItemClass,
+        "data-[state=checked]:bg-ink-fill-strong",
+        className,
+      )}
       {...props}
-    >
-      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
-        <DropdownMenuPrimitive.ItemIndicator>
-          <CircleIcon className="size-2 fill-current" />
-        </DropdownMenuPrimitive.ItemIndicator>
-      </span>
-      {children}
-    </DropdownMenuPrimitive.RadioItem>
+    />
   );
 }
 
@@ -165,7 +169,7 @@ function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<"spa
   return (
     <span
       data-slot="dropdown-menu-shortcut"
-      className={cn("ml-auto text-xs tracking-widest text-muted-foreground", className)}
+      className={cn("ml-auto text-xs text-muted-foreground", className)}
       {...props}
     />
   );
@@ -189,7 +193,7 @@ function DropdownMenuSubTrigger({
       data-inset={inset}
       className={cn(
         dropdownRowVariants(),
-        "cursor-default data-[inset]:pl-8 data-[state=open]:bg-sidebar-accent [&_svg:not([class*='text-'])]:text-muted-foreground",
+        "cursor-default data-[inset]:pl-8 data-[state=open]:bg-ink-fill-strong [&_svg:not([class*='text-'])]:text-muted-foreground",
         className,
       )}
       {...props}
@@ -208,7 +212,7 @@ function DropdownMenuSubContent({
     <DropdownMenuPrimitive.SubContent
       data-slot="dropdown-menu-sub-content"
       className={cn(
-        dropdownNavigationPageClass,
+        dropdownPageClass,
         dropdownPanelClass,
         "z-50 min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
         className,
@@ -216,6 +220,26 @@ function DropdownMenuSubContent({
       {...props}
     />
   );
+}
+
+/**
+ * Runs a menu item's action after the menu has closed and put focus back on its
+ * trigger. A dialog the action opens then returns focus to that trigger when it
+ * closes; run from the item itself, it would return to an item that is gone.
+ */
+function useMenuActionDispatch() {
+  const pending = useRef<(() => void) | null>(null);
+  const dispatch = useCallback((action: () => void) => {
+    pending.current = action;
+  }, []);
+  const onCloseAutoFocus = useCallback(() => {
+    const action = pending.current;
+    if (!action) return;
+    pending.current = null;
+    // Radix focuses the trigger after this handler, in the same dispatch.
+    queueMicrotask(action);
+  }, []);
+  return { dispatch, onCloseAutoFocus };
 }
 
 export {
@@ -234,4 +258,5 @@ export {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
+  useMenuActionDispatch,
 };

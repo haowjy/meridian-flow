@@ -28,6 +28,9 @@ export function useTurnLiveLineage(
   const query = useQuery<ListTurnLiveLineageResponse>({
     queryKey: threadQueryKeys.liveLineage(threadId ?? "", turnId ?? ""),
     queryFn: () => listTurnLiveLineage(threadId as string, turnId as string),
+    // The receipt chip is computed from the documents as they are now, so any edit to them (the
+    // writer's, a peer's, another chat's turn) changes it and nothing pushes that change. A switch
+    // inside the window refetches nothing; a later mount or a window focus reads again.
     staleTime: 15_000,
     enabled,
   });

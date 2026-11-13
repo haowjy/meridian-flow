@@ -20,10 +20,10 @@ index c1f9468c4c77434a1ad9f49227fb1274f5ae1915..a4d6d5c8dde7f2175e595db6aeffef85
 -export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc } from "./lib.js";
 +export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc, refreshProseMirrorDoc } from "./lib.js";
 diff --git a/dist/y-tiptap.cjs b/dist/y-tiptap.cjs
-index 12c31808278a80ad6b9708b1449ac646bbeea82b..568381782750eba14ace2093ccf626ad3fcf4583 100644
+index 12c31808278a80ad6b9708b1449ac646bbeea82b..82153dd0361d571071649071b5f0ac62548ab81b 100644
 --- a/dist/y-tiptap.cjs
 +++ b/dist/y-tiptap.cjs
-@@ -753,35 +755,14 @@ class ProsemirrorBinding {
+@@ -753,35 +753,14 @@ class ProsemirrorBinding {
        return
      }
      this.mux(() => {
@@ -62,7 +62,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..568381782750eba14ace2093ccf626ad
        );
        restoreRelativeSelection(tr, this.beforeTransactionSelection, this);
        tr = tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, isUndoRedoOperation: transaction.origin instanceof Y__namespace.UndoManager });
-@@ -1797,6 +1780,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1797,6 +1776,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
    return { doc, meta, mapping: meta.mapping }
  };
  
@@ -106,7 +106,57 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..568381782750eba14ace2093ccf626ad
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2388,6 +2408,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
+@@ -2351,28 +2367,40 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+   view: view => {
+     const ystate = ySyncPluginKey.getState(view.state);
+     const undoManager = yUndoPluginKey.getState(view.state).undoManager;
+-    undoManager.on('stack-item-added', ({ stackItem }) => {
++    // meridian patch: this view's listeners leave with it, because a manager passed in
++    // outlives every editor mounted on it.
++    const onAdded = ({ stackItem }) => {
+       const binding = ystate.binding;
+       if (binding) {
+         stackItem.meta.set(binding, yUndoPluginKey.getState(view.state).prevSel);
+       }
+-    });
+-    undoManager.on('stack-item-popped', ({ stackItem }) => {
++    };
++    const onPopped = ({ stackItem }) => {
+       const binding = ystate.binding;
+       if (binding) {
+         binding.beforeTransactionSelection = stackItem.meta.get(binding) || binding.beforeTransactionSelection;
+       }
+-    });
++    };
++    undoManager.on('stack-item-added', onAdded);
++    undoManager.on('stack-item-popped', onPopped);
+     return {
+       destroy: () => {
+-        undoManager.destroy();
+-        // Remove the doc 'destroy' listener Y.UndoManager fails to clean up
+-        // (only for managers we created — see state.init above).
++        undoManager.off('stack-item-added', onAdded);
++        undoManager.off('stack-item-popped', onPopped);
++        // meridian patch: a stack item outlives this editor and must not keep its binding alive.
++        if (ystate.binding) {
++          undoManager.undoStack.forEach(item => item.meta.delete(ystate.binding));
++          undoManager.redoStack.forEach(item => item.meta.delete(ystate.binding));
++        }
++        // meridian patch: only a manager this plugin created (see state.init) is its to destroy.
+         const leakedDestroyListeners = undoManager._yTiptapDocDestroyListeners;
+-        if (leakedDestroyListeners && undoManager.doc) {
++        if (!leakedDestroyListeners) return;
++        undoManager.destroy();
++        // Remove the doc 'destroy' listener Y.UndoManager fails to clean up.
++        if (undoManager.doc) {
+           leakedDestroyListeners.forEach(listener => undoManager.doc.off('destroy', listener));
+-          undoManager._yTiptapDocDestroyListeners = null;
+         }
++        undoManager._yTiptapDocDestroyListeners = null;
+       }
+     }
+   }
+@@ -2388,6 +2416,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
  exports.defaultSelectionBuilder = defaultSelectionBuilder;
  exports.getRelativeSelection = getRelativeSelection;
  exports.initProseMirrorDoc = initProseMirrorDoc;
@@ -115,10 +165,10 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..568381782750eba14ace2093ccf626ad
  exports.prosemirrorJSONToYDoc = prosemirrorJSONToYDoc;
  exports.prosemirrorJSONToYXmlFragment = prosemirrorJSONToYXmlFragment;
 diff --git a/dist/y-tiptap.js b/dist/y-tiptap.js
-index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..3ae133b16a2ff5185cb46aa9c9e768adf91ff775 100644
+index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..e80037e5de66a27531a1e336c70c982a5aa269a4 100644
 --- a/dist/y-tiptap.js
 +++ b/dist/y-tiptap.js
-@@ -719,35 +721,14 @@ class ProsemirrorBinding {
+@@ -719,35 +719,14 @@ class ProsemirrorBinding {
        return
      }
      this.mux(() => {
@@ -157,7 +207,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..3ae133b16a2ff5185cb46aa9c9e768ad
        );
        restoreRelativeSelection(tr, this.beforeTransactionSelection, this);
        tr = tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, isUndoRedoOperation: transaction.origin instanceof Y.UndoManager });
-@@ -1763,6 +1746,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1763,6 +1742,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
    return { doc, meta, mapping: meta.mapping }
  };
  
@@ -201,7 +251,55 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..3ae133b16a2ff5185cb46aa9c9e768ad
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2344,5 +2364,5 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2317,32 +2333,44 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+   view: view => {
+     const ystate = ySyncPluginKey.getState(view.state);
+     const undoManager = yUndoPluginKey.getState(view.state).undoManager;
+-    undoManager.on('stack-item-added', ({ stackItem }) => {
++    // meridian patch: this view's listeners leave with it, because a manager passed in
++    // outlives every editor mounted on it.
++    const onAdded = ({ stackItem }) => {
+       const binding = ystate.binding;
+       if (binding) {
+         stackItem.meta.set(binding, yUndoPluginKey.getState(view.state).prevSel);
+       }
+-    });
+-    undoManager.on('stack-item-popped', ({ stackItem }) => {
++    };
++    const onPopped = ({ stackItem }) => {
+       const binding = ystate.binding;
+       if (binding) {
+         binding.beforeTransactionSelection = stackItem.meta.get(binding) || binding.beforeTransactionSelection;
+       }
+-    });
++    };
++    undoManager.on('stack-item-added', onAdded);
++    undoManager.on('stack-item-popped', onPopped);
+     return {
+       destroy: () => {
+-        undoManager.destroy();
+-        // Remove the doc 'destroy' listener Y.UndoManager fails to clean up
+-        // (only for managers we created — see state.init above).
++        undoManager.off('stack-item-added', onAdded);
++        undoManager.off('stack-item-popped', onPopped);
++        // meridian patch: a stack item outlives this editor and must not keep its binding alive.
++        if (ystate.binding) {
++          undoManager.undoStack.forEach(item => item.meta.delete(ystate.binding));
++          undoManager.redoStack.forEach(item => item.meta.delete(ystate.binding));
++        }
++        // meridian patch: only a manager this plugin created (see state.init) is its to destroy.
+         const leakedDestroyListeners = undoManager._yTiptapDocDestroyListeners;
+-        if (leakedDestroyListeners && undoManager.doc) {
++        if (!leakedDestroyListeners) return;
++        undoManager.destroy();
++        // Remove the doc 'destroy' listener Y.UndoManager fails to clean up.
++        if (undoManager.doc) {
+           leakedDestroyListeners.forEach(listener => undoManager.doc.off('destroy', listener));
+-          undoManager._yTiptapDocDestroyListeners = null;
+         }
++        undoManager._yTiptapDocDestroyListeners = null;
+       }
+     }
    }
  });
  

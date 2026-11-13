@@ -31,7 +31,7 @@ describe("useIdentityCommit", () => {
       rename = useIdentityCommit({
         projectId: "project",
         editorWorkId: NO_WORK,
-        tab: {
+        document: {
           kind: "tracked",
           documentId: "doc-1",
           resourceHandle: "resource",
@@ -61,10 +61,10 @@ describe("useIdentityCommit", () => {
       );
       expect(committed).toHaveBeenCalledWith(
         "doc-1",
-        expect.objectContaining({ routeWorkId: NO_WORK, path: `/${canonical}`, name: canonical }),
+        expect.objectContaining({ workId: NO_WORK, path: `/${canonical}`, name: canonical }),
         expect.objectContaining({
           isLatest: true,
-          tab: expect.objectContaining({ documentId: "doc-1" }),
+          document: expect.objectContaining({ documentId: "doc-1" }),
         }),
       );
     });

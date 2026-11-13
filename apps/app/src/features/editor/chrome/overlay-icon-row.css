@@ -23,6 +23,6 @@
   background: var(--color-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-float);
   color: var(--color-foreground);
 }

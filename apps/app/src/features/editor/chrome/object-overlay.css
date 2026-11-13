@@ -12,7 +12,7 @@
 
 .meridian-object-overlay {
   z-index: 30;
-  transition: opacity 120ms ease-out;
+  transition: opacity var(--default-transition-duration) ease-out;
   /* The overlay is a control, not prose: a sweep through the object must not
      drag its labels into the writer's selection. */
   user-select: none;
@@ -50,6 +50,6 @@
   opacity: 1;
   pointer-events: auto;
   transition:
-    opacity 120ms ease-out,
-    pointer-events 120ms step-end allow-discrete;
+    opacity var(--default-transition-duration) ease-out,
+    pointer-events var(--default-transition-duration) step-end allow-discrete;
 }

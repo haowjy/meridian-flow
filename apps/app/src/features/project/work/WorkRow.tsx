@@ -5,14 +5,13 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
-import type { MouseEvent, ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import type { ReactNode } from "react";
+import { ListRow } from "@/components/ui/list-row";
 import { relativeTime } from "../relative-time";
 import { WorkTitleLine } from "./WorkTitleLine";
 
 export function WorkRow({
   work,
-  href,
   now,
   onOpen,
   actions,
@@ -20,7 +19,6 @@ export function WorkRow({
 }: {
   /** A Work still being created has no status yet. */
   work: Pick<Work, "name" | "goal" | "lastActivityAt"> & Partial<Pick<Work, "status">>;
-  href: string;
   now: number;
   onOpen: () => void;
   /** Trailing menu; absent while the Work has no server identity yet. */
@@ -29,43 +27,33 @@ export function WorkRow({
   liveState?: ReactNode;
 }) {
   return (
-    <div className="group relative flex min-h-12 min-w-0 items-center gap-3 rounded-md px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-dropdown-hover">
-      <a
-        href={href}
-        onClick={(event: MouseEvent<HTMLAnchorElement>) => {
-          if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
-            return;
-          event.preventDefault();
-          onOpen();
+    // The row's inset hangs in the list's gutter, so names stay on the page's edge.
+    <div className="px-0.5">
+      <ListRow
+        onOpen={onOpen}
+        controlProps={{
+          "aria-label": work.status ? t`Open ${work.name} (${work.status})` : t`Open ${work.name}`,
         }}
-        className="focus-ring min-w-0 flex-1 rounded-sm after:absolute after:inset-0"
-      >
-        <span className="sr-only">
-          {work.status ? t`Open ${work.name} (${work.status})` : t`Open ${work.name}`}
-        </span>
-        <div aria-hidden>
+        title={
           <WorkTitleLine
-            title={
-              <span className="truncate text-sm font-medium text-foreground">{work.name}</span>
-            }
+            title={<span className="truncate">{work.name}</span>}
             status={work.status}
           />
-        </div>
-        {work.goal ? (
-          <span aria-hidden className="block truncate text-xs text-muted-foreground">
-            {work.goal.split("\n").find((line) => line.trim()) ?? ""}
-          </span>
-        ) : null}
-      </a>
-      <span
-        className={cn(
-          "shrink-0 text-xs tabular-nums",
-          liveState ? "text-muted-foreground" : "text-ink-subtle",
-        )}
-      >
-        {liveState ?? relativeTime(work.lastActivityAt, now)}
-      </span>
-      {actions ? <div className="relative z-10 -my-1 shrink-0">{actions}</div> : null}
+        }
+        detail={work.goal ? (work.goal.split("\n").find((line) => line.trim()) ?? "") : null}
+        meta={liveState ? null : relativeTime(work.lastActivityAt, now)}
+        // A live state is announced, so it sits beside the control, not inside its name.
+        actions={
+          liveState || actions ? (
+            <>
+              {liveState ? (
+                <span className="px-1.5 text-xs text-muted-foreground">{liveState}</span>
+              ) : null}
+              {actions}
+            </>
+          ) : null
+        }
+      />
     </div>
   );
 }

@@ -22,7 +22,7 @@
  * route keeps the current Editor Work. Having the Editor
  * adopt the chat's Work is a decision for all of chat's doors at once (#625).
  *
- * Visibility: `active` is the chat's visibility, so hiding the dock or opening
+ * Visibility: `active` is the chat's visibility, so hiding the side or opening
  * Settings aborts a follow and dismisses its dialog. ChatView remounts per
  * thread, so switching threads aborts too.
  *
@@ -51,8 +51,10 @@ import { lookupProjectContextAvailability } from "@/client/query/project-context
 import { useTopChat } from "@/client/query/useTopChat";
 import { useWorks } from "@/client/query/useWorks";
 import { createLinkAnswerCache, createLinkRequester } from "@/core/editor/links";
+import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import {
   type LinkDestination,
+  type LinkDocumentRef,
   type LinkFollowDialog,
   type LinkResolutionScope,
   useFollowOutcomeState,
@@ -60,8 +62,8 @@ import {
   useLinkFollower,
 } from "@/features/links";
 import type { FolderMenuHost } from "@/features/project/context/FolderMenu";
-import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
-import { useReviewingLinkDestination } from "@/features/project/dock/useAiDraftLauncher";
+import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useLinkPlacement } from "@/features/project/review-launch";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
 import { type ChatDoors, type ContextPassageAnchor, useChatDoors } from "./ChatContextNavigation";
 import { createReferenceAvailability, type ReferenceAvailability } from "./reference-availability";
@@ -149,20 +151,28 @@ export function useChatLinkFollowing({
     scope === "pending" ? { projectId: null, workId: null } : scope,
   );
 
-  const openReferenceDocument = useOpenChatDocument(projectId);
-  const openLive = useCallback<LinkDestination>(
-    (document, gesture) =>
+  const openReferenceDocument = useOpenProjectDocument(projectId);
+  const openLive = useCallback(
+    (document: LinkDocumentRef) =>
       openReferenceDocument({
         documentId: document.documentId,
         ...(document.trashed ? { trashed: true as const } : {}),
         ...(document.focus ? { focus: true as const } : {}),
-        disposition: gesture === "new-tab" ? "background" : "current",
       }),
     [openReferenceDocument],
   );
-  const open = useReviewingLinkDestination(openLive);
+  // A page this chat drafted opens on its draft.
+  const place = useLinkPlacement(
+    projectId,
+    chatOwnerKey(activeWork, activeThread?.rootThreadId ?? null) || null,
+  );
+  const linkWorkId = activeWork?.id ?? null;
+  const open = useCallback<LinkDestination>(
+    (document) => place(document, openLive, linkWorkId),
+    [place, openLive, linkWorkId],
+  );
   const folders = useMemo<FolderMenuHost>(
-    () => ({ projectId, openDocument: (documentId) => void open({ documentId }, "current") }),
+    () => ({ projectId, openDocument: (documentId) => void open({ documentId }) }),
     [open, projectId],
   );
 
@@ -212,7 +222,7 @@ export function useChatLinkFollowing({
             canOpen: shellDoors.canOpen,
             open: (uri: string, passage?: ContextPassageAnchor) => {
               const door = shellDoors.prepare(uri, passage);
-              if (door) follower.follow(door.link, "current", null, door.policy);
+              if (door) follower.follow(door.link, null, door.policy);
             },
           }
         : null,
@@ -243,7 +253,7 @@ export function useChatLinkFollowing({
       scratchRootThreadId: scope === "pending" ? null : (scope.rootThreadId ?? null),
       onClose: follower.dismiss,
       onRetry: follower.retry,
-      onOpen: (document) => open(document, "current"),
+      onOpen: (document) => open(document),
     },
   };
 }

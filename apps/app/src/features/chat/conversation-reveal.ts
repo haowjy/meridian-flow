@@ -1,5 +1,6 @@
 /** Editor-to-conversation reveal: one request, one owner per stage. */
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { type PanePlace, useOptionalPanePlace } from "@/features/project/pane-place";
 
 import {
   type ConversationRevealTarget,
@@ -10,8 +11,17 @@ import {
 
 export type { ConversationRevealTarget, TurnRevealRequest };
 
-export function requestConversationReveal(target: ConversationRevealTarget): void {
-  conversationRevealController.request(target);
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/** Asks to reveal a conversation; it opens where the pane this is called in places it. */
+export function useRequestConversationReveal(): (
+  target: DistributiveOmit<ConversationRevealTarget, "from">,
+) => void {
+  const from = useOptionalPanePlace();
+  return useCallback(
+    (target) => conversationRevealController.request(from ? { ...target, from } : target),
+    [from],
+  );
 }
 
 function useRevealStage<T>(select: (view: ConversationRevealView) => T | null): T | null {
@@ -23,14 +33,16 @@ function useRevealStage<T>(select: (view: ConversationRevealView) => T | null): 
 }
 
 /** Binds the thread stage to the shell that owns conversation surfaces. */
-export function useConversationRevealRouting(revealConversation: (threadId: string) => void): void {
+export function useConversationRevealRouting(
+  revealConversation: (threadId: string, from: PanePlace | undefined) => void,
+): void {
   const request = useRevealStage((current) => current.thread);
   const reveal = useRef(revealConversation);
   reveal.current = revealConversation;
 
   useEffect(() => {
     if (!request) return;
-    reveal.current(request.threadId);
+    reveal.current(request.threadId, request.from);
     request.landed();
   }, [request]);
 }

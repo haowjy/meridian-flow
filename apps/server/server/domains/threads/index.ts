@@ -11,10 +11,6 @@ export {
   createInMemoryRepositories,
   type InMemoryRepositories,
 } from "./adapters/in-memory/index.js";
-export {
-  type ActiveDocumentResolver,
-  createActiveDocumentResolver,
-} from "./domain/active-document-resolver.js";
 export { askToolResult, threadAsk } from "./domain/ask.js";
 export { createBoundConversation } from "./domain/bound-conversation.js";
 export { ForkCutoffOwnerNotFoundError, findCutoffOwnerThreadId } from "./domain/cutoff-owner.js";

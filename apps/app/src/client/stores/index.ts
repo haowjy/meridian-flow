@@ -1,45 +1,18 @@
 /**
- * Barrel: the public store surface for features — re-exports editor-workspace,
- * project, and thread stores plus announcements. Features
+ * Barrel: the public store surface for features — re-exports the open-document
+ * descriptor, the project and thread stores plus announcements. Features
  * import from `@/client/stores` only, never store internals.
  */
 
 export {
-  type ContextTab,
-  commitContextAvailability,
-  commitDraftApplyMetadata,
-  commitDraftHold,
-  commitPlannedContextRemoval,
-  type DraftWorkspaceSettlementReceipt,
-  durableContextTab,
-  editorHasReview,
-  editorTabsForWork,
-  getContextTabs,
-  isDraftOnly,
-  isEditorContextTab,
+  documentContextOwner,
+  isEditorOpenDocument,
   isEditorScheme,
-  isEditorTab,
-  matchesReviewItem,
-  matchesTabInstance,
-  type OpenEditorTabResult,
-  type ProjectTabsSlice,
-  parseContextTab,
-  type ReviewEntries,
-  type ReviewItemTabIdentity,
-  reconcileEditorWorkspaceBootstrap,
-  rehydrateEditorWorkspace,
+  type OpenDocument,
+  type OpenDocumentOwner,
   replaceOwner,
-  reviewEntriesOf,
-  reviewEntryOf,
-  reviewOwnerOfTab,
-  type ServerContextTab,
-  type TabOwner,
-  tabContextOwner,
-  useContextTabs,
-  useContextTabsActions,
-  useContextTabsStore,
-  withoutReviewEntry,
-} from "./context-tabs-store";
+  type ServerOpenDocument,
+} from "./open-document";
 export type { ProjectStoreActions, ProjectStoreState } from "./project-store";
 export {
   loadProjectList,

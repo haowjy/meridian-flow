@@ -1,23 +1,22 @@
 /**
- * ChatPaneController — desktop controller for the centered Chat destination.
+ * ChatPaneController — main's band while main holds a chat: the chat lane, and the chat's own
+ * controls.
  *
- * The persistent `ChatSurface` owns the live conversation instance outside the
- * screen switch. This controller renders only the destination chrome that keeps
- * sidebar/context rail reopen controls reachable above that surface.
+ * The persistent `ChatSurface` owns the live conversation instance; this renders only its chrome.
  */
 
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
-import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
-import { ChatIndexChip } from "./chat-index/ChatIndexButton";
 import { useChatNavigation } from "./routing/chat-navigation";
-
-import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
+import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
+import { MainHeader } from "./shell/MainHeader";
+import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ChatPaneControllerProps = {
   projectId: string;
   threadId: string | null;
+  open: OpenContextRoute;
   sidebarToggle: PaneHeaderRailToggle;
   contextToggle: PaneHeaderRailToggle;
 };
@@ -25,28 +24,26 @@ export type ChatPaneControllerProps = {
 export function ChatPaneController({
   projectId,
   threadId,
+  open,
   sidebarToggle,
   contextToggle,
 }: ChatPaneControllerProps) {
-  const { openChatIndex } = useChatNavigation();
+  const chat = useChatNavigation();
   const activity = useThreadActivity({
     threadId: threadId ?? "",
     seed: null,
   });
   return (
-    <PaneHeader
-      leading={<ChatIndexChip active={false} onClick={() => void openChatIndex()} />}
-      title={
-        <ChatThreadTitle
-          projectId={projectId}
-          threadId={threadId}
-          // The centered chat body is page-sheet: the switcher wears the
-          // active-tab chip so the page continues up into the band.
-          variant="tab"
-        />
-      }
-      left={sidebarToggle}
-      right={contextToggle}
+    <MainHeader
+      projectId={projectId}
+      open={open}
+      kind="chat"
+      mainTab={threadId ? { kind: "chat", chatId: threadId } : undefined}
+      keepMain={threadId === null}
+      onNew={() => void chat.openNewChat()}
+      onShowRecents={() => void chat.openChatRecents()}
+      sidebarToggle={sidebarToggle}
+      sideToggle={contextToggle}
       actions={
         threadId ? (
           <>

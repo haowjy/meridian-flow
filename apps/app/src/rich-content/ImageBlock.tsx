@@ -48,21 +48,17 @@ export function ImageBlock({ content, variant = "inline", className }: ImageBloc
       <figure
         className={cn(
           "surface-card flex items-center gap-3 rounded-lg bg-card px-3 py-3 text-muted-foreground",
-          isThumb && "max-w-[220px] gap-2 px-2 py-2 text-[12px]",
+          isThumb && "max-w-[220px] gap-2 px-2 py-2 text-xs",
           className,
         )}
         aria-label={alt}
       >
         <ImageOff className={cn("shrink-0", isThumb ? "size-4" : "size-5")} aria-hidden />
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className={cn("font-medium", isThumb ? "text-caption" : "text-compact")}>
+          <span className={cn("font-medium", isThumb ? "text-xs" : "text-compact")}>
             {t`Failed to load image`}
           </span>
-          <span
-            className={cn("truncate text-muted-foreground", isThumb ? "text-xs" : "text-caption")}
-          >
-            {alt}
-          </span>
+          <span className="truncate text-xs text-muted-foreground">{alt}</span>
         </div>
       </figure>
     );
@@ -71,7 +67,7 @@ export function ImageBlock({ content, variant = "inline", className }: ImageBloc
   return (
     <figure
       className={cn(
-        "my-4 overflow-hidden rounded-lg border border-border-subtle bg-card shadow-card",
+        "my-4 overflow-hidden rounded-lg border border-border-subtle bg-card shadow-float",
         isThumb && "my-2 max-w-[220px] rounded-md shadow-none",
         className,
       )}
@@ -98,12 +94,7 @@ export function ImageBlock({ content, variant = "inline", className }: ImageBloc
         />
       </div>
       {content.caption ? (
-        <figcaption
-          className={cn(
-            "border-t border-border-subtle bg-card px-3 py-2 text-muted-foreground",
-            isThumb ? "text-xs" : "text-caption",
-          )}
-        >
+        <figcaption className="border-t border-border-subtle bg-card px-3 py-2 text-xs text-muted-foreground">
           {content.caption}
         </figcaption>
       ) : null}

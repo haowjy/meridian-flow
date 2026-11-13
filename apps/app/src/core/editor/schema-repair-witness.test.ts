@@ -14,6 +14,7 @@ import * as Y from "yjs";
 
 import { createEditorConfig } from "./config";
 import { DocumentSession } from "./document-session";
+import { DocumentHistory } from "./editor-history";
 import { createLocalPresence } from "./local-presence";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
@@ -83,6 +84,7 @@ function constructEditor(
       element: document.createElement("div"),
       ...createEditorConfig({
         document: doc,
+        history: DocumentHistory.forDocument(doc),
         presence: createLocalPresence(new Awareness(doc)),
         showCollaborationDecorations: false,
       }),
@@ -312,6 +314,7 @@ describe("shared session repair observation", () => {
           element: document.createElement("div"),
           ...createEditorConfig({
             document: session.document,
+            history: session.history,
             presence: session.presence,
             showCollaborationDecorations: false,
           }),

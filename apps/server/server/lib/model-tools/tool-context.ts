@@ -37,11 +37,7 @@ import type { DocumentTrash } from "../../domains/context/ports/document-trash.j
 import type { UnifiedContextPortFactory } from "../../domains/context/unified-context-port-factory.js";
 import type { AgentChain, FileAccess, Principal } from "../../domains/file-policy/index.js";
 import type { NoticePort } from "../../domains/notices/index.js";
-import {
-  type EventSink,
-  emitEvent,
-  unknownToEventPayload,
-} from "../../domains/observability/index.js";
+import type { EventSink } from "../../domains/observability/index.js";
 import type {
   ProjectWorkAuthorityResolver,
   WorkContextNotices,
@@ -52,17 +48,11 @@ import {
   type ShownLinkStore,
   SKILLS_URI_ROOT,
   type SkillFilesDeps,
-  type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
 import type { ThreadControls } from "../../domains/runtime/loop/runtime-delivery.js";
 import type { ObjectRelease, ObjectStorePort } from "../../domains/storage/index.js";
-import type {
-  ThreadRepository,
-  ThreadWorksRepository,
-  TurnDocumentTouchRepository,
-} from "../../domains/threads/index.js";
+import type { ThreadRepository, ThreadWorksRepository } from "../../domains/threads/index.js";
 import { threadExecutionContext } from "../../domains/threads/index.js";
-import { runAfterDrizzleCommit } from "../../shared/drizzle-transaction.js";
 import { agentPrincipal } from "./file-access.js";
 import type { AgentEditResponseWriteLifecycle } from "./response-write-lifecycle.js";
 
@@ -82,7 +72,6 @@ export interface ToolWiringDeps {
   /** `threadIds` must be parents first (`parentsFirst`). */
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   branches: Pick<CollabBranches, "draftReview">;
-  documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
   /** Binary copies duplicate the stored object. */
   objectStore: ObjectStorePort;
@@ -235,35 +224,6 @@ export function contextErrorMessage(error: ContextError): string {
   if (error.code === "not_found") return `No file or folder at ${error.uri}.`;
   if ("message" in error && typeof error.message === "string") return error.message;
   return `${error.code}: ${error.uri}`;
-}
-
-export function recordTouchInBackground(
-  deps: Pick<ToolWiringDeps, "documentTouches" | "eventSink">,
-  documentId: string | undefined,
-  ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
-): void {
-  if (!deps.documentTouches || !documentId) return;
-  const { documentTouches, eventSink } = deps;
-  // Not part of the caller's write: it runs once that commits, or now outside one.
-  runAfterDrizzleCommit(() =>
-    documentTouches.recordTouch(ctx.turnId, documentId).then(
-      () => undefined,
-      (error) => {
-        emitEvent(eventSink, {
-          level: "warn",
-          source: "lib.model-tools",
-          name: "document_touch.failed",
-          correlation: { threadId: ctx.threadId, turnId: ctx.turnId, runId: ctx.turnId },
-          payload: {
-            threadId: ctx.threadId,
-            turnId: ctx.turnId,
-            documentId,
-            ...unknownToEventPayload(error),
-          },
-        });
-      },
-    ),
-  );
 }
 
 /** Host evidence for the document a `read` or `write` call touched. */

@@ -5,6 +5,7 @@ import { parseContextUri } from "@meridian/contracts";
 import type { UploadIntakeResult } from "@meridian/contracts/protocol";
 import { imageCapable } from "@meridian/thread-client";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
+import { TextSelection } from "@tiptap/pm/state";
 import { type Editor, EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ArrowUp, Paperclip } from "lucide-react";
@@ -20,7 +21,7 @@ import {
   useState,
 } from "react";
 import { FailureCard } from "@/components/app/FailureCard";
-import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import type {
   DocumentReference,
   ReferenceTerminalRow,
@@ -38,6 +39,7 @@ import { referenceDropOptions } from "@/features/project/context/entry-drag/refe
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
 import { ComposerSkillAtom } from "./ComposerSkillAtom";
+import { ConnectionLine } from "./ConnectionLine";
 import {
   type ComposerAvailableSkill,
   type ComposerChatCommand,
@@ -149,8 +151,8 @@ export type ComposerProps = {
    */
   stopStatus?: "idle" | "pending" | "stopping" | "failed";
   placeholder?: string;
+  /** Focus the box when it mounts, at the restored selection. */
   autoFocus?: boolean;
-  variant?: "hero" | "pinned";
   toolbarLeft?: ReactNode;
   submitDisabled?: boolean;
   busy?: boolean;
@@ -169,7 +171,9 @@ export type ComposerProps = {
   fileDropActive?: boolean;
   /**
    * Drawn in the box's place (an open ask). The editor stays mounted and hidden, so the draft,
-   * its atoms and its uploads come back as they were when this clears.
+   * its atoms and its uploads come back as they were when this clears. A box that has the focus
+   * is only hidden from sight, so typing goes on into the draft until the takeover takes the
+   * focus; it sends nothing meanwhile.
    */
   takeover?: ReactNode;
 };
@@ -177,6 +181,16 @@ export type ComposerHandle = {
   focus: () => void;
   /** Adds a file the writer picked outside the `@` menu (the chat's uploads list) at the caret. */
   insertReference: (reference: DocumentReference, fileKind: "document" | "asset") => void;
+  /**
+   * Makes the draft this one file's chip alone, without taking focus (a new chat about a page),
+   * when the draft is empty or exactly the chip of `replaces` (the one the caller put there last);
+   * anything else is the writer's and stays. Returns whether the draft is now that chip alone.
+   */
+  startWith: (
+    reference: DocumentReference,
+    fileKind: "document" | "asset",
+    replaces: string | null,
+  ) => boolean;
   /** Attaches files to this chat's Uploads, as the paperclip does: one chip each at the caret. */
   attachFiles: (entries: readonly DroppedEntry[]) => void;
   /** Drops every chip that references the document (a file the writer deleted elsewhere). */
@@ -202,8 +216,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     running = false,
     stopStatus = "idle",
     placeholder,
-    autoFocus,
-    variant = "hero",
+    autoFocus = true,
     toolbarLeft,
     submitDisabled = false,
     busy = false,
@@ -238,6 +251,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   /** This Composer, as the upload store's holder of its chips. */
   const [holder] = useState(() => crypto.randomUUID());
   const [submitFailure, setSubmitFailure] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
   const [hasContent, setHasContent] = useState(() => {
     if (!initialDraft) return false;
     const projection = serializeComposerDraft(initialDraft.doc);
@@ -318,7 +332,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       }),
     ],
     content: initialDraft?.doc ?? { type: "doc", content: [{ type: "paragraph" }] },
-    autofocus: autoFocus,
+    // Tiptap focuses on mount unless told `false`; undefined keeps the restored selection.
+    autofocus: autoFocus ? undefined : false,
     editorProps: {
       handleDOMEvents: {
         keydown: (_view, event) => {
@@ -427,6 +442,41 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           .insertContent(composerReferenceContent(pickedReferenceAttrs(reference, fileKind)))
           .run();
       },
+      startWith: (reference, fileKind, replaces) => {
+        if (!editor || editor.isDestroyed) return false;
+        const doc = editor.state.doc;
+        const only = doc.childCount === 1 ? doc.firstChild : null;
+        const chip =
+          only?.type.name === "paragraph" &&
+          only.childCount === 1 &&
+          only.firstChild?.type.name === "composerReference"
+            ? (only.firstChild.attrs.reference as ComposerReferenceAttrs)
+            : null;
+        const chipOf = chip?.kind === "document" && !chip.upload ? chip.documentId : null;
+        if (chipOf === reference.documentId) return true;
+        // Not `editor.isEmpty`: it counts a paragraph holding only an upload in flight as empty.
+        const empty = only?.type.name === "paragraph" && only.childCount === 0;
+        if (!empty && (chipOf === null || chipOf !== replaces)) return false;
+        // `setContent` leaves the whole draft selected, so the next keystroke would replace the
+        // chip; the caret goes after it instead.
+        editor
+          .chain()
+          .setContent({
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [composerReferenceContent(pickedReferenceAttrs(reference, fileKind))],
+              },
+            ],
+          })
+          .command(({ tr }) => {
+            tr.setSelection(TextSelection.atEnd(tr.doc));
+            return true;
+          })
+          .run();
+        return true;
+      },
       attachFiles: (entries) => attachFilesRef.current(entries),
       removeReferences: (documentId) => {
         if (!editor || editor.isDestroyed) return;
@@ -498,7 +548,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }, []);
 
   async function submit() {
-    if (!editor || submitDisabled || uploadsHeld || inFlight.current || !hasContent) return;
+    if (!editor || takeover || submitDisabled || uploadsHeld || inFlight.current || !hasContent)
+      return;
     const envelope = serializeComposerDraft(
       editor.getJSON(),
       revision.current,
@@ -648,11 +699,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       <div
         data-composer=""
         {...fileDrop.dropProps}
-        hidden={takeover ? true : undefined}
+        hidden={takeover && !focusWithin ? true : undefined}
+        onFocusCapture={() => setFocusWithin(true)}
+        onBlurCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) setFocusWithin(false);
+        }}
         className={cn(
-          "border border-composer-border bg-composer-surface px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-card-pad-y)] focus-within:border-border-focus",
-          variant === "hero" ? "rounded-composer" : "rounded-composer-pinned",
-          (fileDrop.over || fileDropActive) && "border-border-focus bg-sidebar-accent",
+          "border border-border bg-card px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-[var(--chat-card-pad-y)] focus-within:border-focus",
+          "rounded-xl",
+          (fileDrop.over || fileDropActive) && "border-focus bg-ink-fill-strong",
+          takeover && "sr-only",
         )}
         aria-busy={busy || uploadsHeld === "sending" || undefined}
       >
@@ -663,14 +719,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         />
         {editor ? <AtReferenceMenu editor={editor} /> : null}
         {editor ? <ComposerCommandMenu editor={editor} /> : null}
+        <ConnectionLine />
         <div className="mt-[var(--chat-space-inline)] flex items-center gap-[var(--chat-space-inline)]">
           <div className="min-w-0 flex-1">{toolbarLeft}</div>
           {resolvedUploadPort ? (
             <>
               <input
                 ref={fileRef}
-                className="sr-only"
                 type="file"
+                hidden
                 multiple
                 onChange={(event) => {
                   attachFiles(
@@ -679,26 +736,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   event.target.value = "";
                 }}
               />
-              <Button
+              <IconButton
                 type="button"
                 variant="ghost"
-                size="icon-sm"
-                aria-label={t`Attach file`}
+                size="sm"
+                label={t`Attach file`}
                 onClick={() => fileRef.current?.click()}
               >
-                <Paperclip className="size-4" />
-              </Button>
+                <Paperclip />
+              </IconButton>
             </>
           ) : null}
 
           {showStop ? (
-            <Button
+            <IconButton
               type="button"
-              size="icon-sm"
+              variant="default"
+              size="sm"
               data-composer-stop=""
               onClick={() => onStop?.()}
               disabled={stopInProgress}
-              aria-label={
+              label={
                 stopInProgress
                   ? t`Stopping`
                   : stopStatus === "failed"
@@ -707,33 +765,34 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               }
               className="relative rounded-full"
             >
-              <span className="size-2.5 rounded-[3px] bg-primary-foreground" />
+              <span className="size-2.5 rounded-sm bg-primary-foreground" />
               {stopInProgress ? (
                 <span
                   aria-hidden="true"
-                  className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
+                  className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/40 border-t-primary motion-safe:animate-spin"
                 />
               ) : null}
-            </Button>
+            </IconButton>
           ) : null}
           {!showStop ? (
-            <Button
+            <IconButton
               type="button"
-              size="icon-sm"
+              variant="default"
+              size="sm"
               onClick={() => void submit()}
               disabled={!hasContent || submitDisabled || uploadsHeld !== null}
-              aria-label={t`Send message`}
+              label={t`Send message`}
               aria-describedby={submitDisabledReason ? disabledReasonId : undefined}
-              className={running ? "relative rounded-full" : "rounded-field"}
+              className={running ? "relative rounded-full" : "rounded-lg"}
             >
-              <ArrowUp className="size-4" />
+              <ArrowUp />
               {running ? (
                 <span
                   aria-hidden="true"
-                  className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
+                  className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/40 border-t-primary motion-safe:animate-spin"
                 />
               ) : null}
-            </Button>
+            </IconButton>
           ) : null}
           {submitDisabledReason ? (
             <span id={disabledReasonId} className="sr-only">

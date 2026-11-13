@@ -13,6 +13,7 @@ import {
   type UIEventHandler,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -23,10 +24,7 @@ import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/doc
 import { editorReferenceNode } from "@/core/editor/extensions/at-reference";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
-import {
-  type LiveEditorContainer,
-  registerLiveRangeEditor,
-} from "@/core/editor/live-range-navigation-runtime";
+import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import { type EditorMountIdentity, useMountedEditor } from "@/core/editor/mounted-editor";
 import { holdPictureCapThroughKeyboard } from "@/core/editor/objects";
 import { useReadingPosition } from "@/core/editor/use-reading-position";
@@ -39,13 +37,14 @@ import {
 import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
-import { cn } from "@/lib/utils";
+import { focusIsFree } from "@/lib/focus-follow";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
+import { DocumentStateSlotHost } from "./document-state-slot";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
-import { claimEditorFocus, focusIsFree } from "./focus-on-open";
+import { claimEditorFocus, focusOnLoad } from "./focus-on-open";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaNotices } from "./SchemaNotices";
 import { SyncStatus } from "./SyncStatus";
@@ -59,7 +58,6 @@ import { WordCount } from "./WordCount";
 import "./editor.css";
 
 export type EditorSurfaceOptions = {
-  className?: string;
   editable?: boolean;
   showToolbar?: boolean;
   active?: boolean;
@@ -77,11 +75,12 @@ type SessionEditorProps = {
   holderUri?: string | null;
   /** An addressed construction receipt; null withdraws this editor's receipt. */
   onConstructed?: (editor: Editor | null) => void;
-  /** The tab instance this editor serves; it claims that instance's focus-on-open intent. */
+  /** The document this editor serves; it claims that document's focus-on-open intent. */
   focusKey?: string;
+  /** Main's document: the page load's caret goes here (`focusOnLoad`), never to a side or a sheet. */
+  loadFocus?: boolean;
   /** Reopens the room after the server refused its updates (draft review only). */
   onReopen?: () => void;
-  container: LiveEditorContainer;
 };
 
 /** The Work an owner key names; a lineage names none. */
@@ -146,14 +145,13 @@ function ActiveSessionEditorView({
   session,
   onConstructed,
   focusKey,
+  loadFocus = false,
   onReopen,
   holderUri: reviewHolderUri,
   snapshot,
   evidenceDegraded,
-  container,
 }: ActiveSessionEditorViewProps) {
   const {
-    className,
     editable = true,
     showToolbar = true,
     active: hostActive = true,
@@ -300,20 +298,23 @@ function ActiveSessionEditorView({
   // Surface config: applied to the running editor, never a reason to rebuild it.
   // Only the prose node's own attributes live here; a lane that answers a press
   // does it in its own extension, where the state it reads already is.
+  const leaveHintId = useId();
   const editorProps = useMemo<NonNullable<EditorOptions["editorProps"]>>(
     () => ({
       attributes: {
         class: editorProseClass(showToolbar ? "docked" : "none"),
         "aria-label": ariaLabel ?? t`Collaborative document editor`,
+        "aria-describedby": leaveHintId,
       },
     }),
-    [ariaLabel, showToolbar],
+    [ariaLabel, showToolbar, leaveHintId],
   );
 
   const editor = useMountedEditor({
     identity,
     session,
     agentNames,
+    user: { accountId },
     placeholder: t`Start writing…`,
     slashCommandCatalog,
     atReferenceCatalog,
@@ -332,6 +333,8 @@ function ActiveSessionEditorView({
   const afterPaintRelease = useAfterPaintRelease();
   // The paint cover that stands in while this document's surface changes parks focus on its
   // status line. The caret was the writer's, so it goes back to the editor when the cover lifts.
+  // The cover can lift after the editor is gone (the work outlives the effect), so the deferred
+  // work checks `isDestroyed`.
   useEffect(() => {
     if (!editor || inReview) return;
     const dom = editor.view.dom;
@@ -352,16 +355,26 @@ function ActiveSessionEditorView({
     return () => dom.removeEventListener("focusout", onFocusOut);
   }, [afterPaintRelease, editor, inReview]);
 
-  // A document the writer just made takes the caret at its start, unless something else
+  // A document the writer just made takes the caret at its start, and main's first
+  // document after a page load takes it where the editor keeps it, unless something else
   // (a dialog that stays open, a field) already holds focus.
   useEffect(() => {
-    if (!editor || editor.isDestroyed || inReview || !active || !effectiveEditable) return;
-    if (!claimEditorFocus(focusKey)) return;
+    if (!editor || !active || !effectiveEditable) return;
+    const made = !inReview && claimEditorFocus(focusKey);
+    if (!made && !loadFocus) return;
+    let release: (() => void) | null = null;
+    let mounted = true;
     afterPaintRelease(() => {
-      if (!editor.isDestroyed && focusIsFree())
+      if (!mounted) return;
+      if (!made) release = focusOnLoad(editor);
+      else if (!editor.isDestroyed && focusIsFree())
         editor.commands.focus("start", { scrollIntoView: false });
     });
-  }, [afterPaintRelease, active, editor, effectiveEditable, focusKey, inReview]);
+    return () => {
+      mounted = false;
+      release?.();
+    };
+  }, [afterPaintRelease, active, loadFocus, editor, effectiveEditable, focusKey, inReview]);
 
   useEffect(() => {
     if (!editor || inReview || !active) return;
@@ -369,9 +382,8 @@ function ActiveSessionEditorView({
       editor,
       session,
       localContentReady: surfaceOptions.localContentReady === true,
-      container,
     });
-  }, [active, container, documentId, editor, inReview, session, surfaceOptions.localContentReady]);
+  }, [active, documentId, editor, inReview, session, surfaceOptions.localContentReady]);
 
   const constructionCallback = useRef(onConstructed);
   constructionCallback.current = onConstructed;
@@ -404,20 +416,16 @@ function ActiveSessionEditorView({
       workId={scope.workId}
       rootThreadId={scope.rootThreadId}
     >
-      <section
-        className={cn(
-          "meridian-editor-shell relative flex h-full min-h-0 flex-col bg-background",
-          className,
-        )}
-      >
-        {/* Sync is assumed-healthy, so it floats quietly and only appears when
-          there is something to act on (offline / closed) — see SyncStatus. */}
-        <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex items-center gap-2">
+      <section className="meridian-editor-shell relative flex h-full min-h-0 flex-col">
+        {/* One status pill: the word count, and sync only when there is something
+          to act on (offline / closed), see SyncStatus. Hidden while both are empty. */}
+        <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex items-center gap-3 rounded-full border border-border-subtle bg-card px-2.5 py-1 text-xs text-muted-foreground shadow-float empty:hidden">
           <SyncStatus session={session} onReopen={onReopen} removal={removal} />
           {!evidenceDegraded && editor ? <WordCount editor={editor} /> : null}
         </div>
         <EditorCanvas
           editor={editor}
+          active={active}
           notices={
             <SchemaNotices
               fence={snapshot.schemaFence}
@@ -441,6 +449,9 @@ function ActiveSessionEditorView({
         {/* The one chrome mount host. Every surface registers in
           `chrome/chrome-surfaces.tsx`; nothing new is added to this file. */}
         <EditorChromeHost editor={editor} active={active} />
+        <span id={leaveHintId} hidden>
+          <Trans>Tab types a tab. To leave the document, press Escape, then Tab.</Trans>
+        </span>
         {/* Where an internal link goes, and where a picture's bytes go. Ports, not
           surfaces: each renders nothing, and what a writer sees from either lane
           mounts through the host above. */}
@@ -458,19 +469,19 @@ function ActiveSessionEditorView({
   );
 }
 
-export function PendingEditorShell({ className, showToolbar = true }: EditorSurfaceOptions) {
+export function PendingEditorShell({
+  showToolbar = true,
+  active = true,
+  held = false,
+}: EditorSurfaceOptions) {
   usePaintPending();
   return (
-    <section
-      className={cn(
-        "meridian-editor-shell relative flex h-full min-h-0 flex-col bg-background",
-        className,
-      )}
-    >
+    <section className="meridian-editor-shell relative flex h-full min-h-0 flex-col">
       {/* The toolbar is persistent chrome: it holds its place while the
           document opens, greyed and saying so, rather than popping in. */}
       <EditorCanvas
         editor={null}
+        active={active && !held}
         toolbar={showToolbar ? <DocumentToolbar editor={null} /> : undefined}
       />
     </section>
@@ -479,12 +490,14 @@ export function PendingEditorShell({ className, showToolbar = true }: EditorSurf
 
 function EditorCanvas({
   editor,
+  active,
   notices,
   toolbar,
   scrollRef,
   onScroll,
 }: {
   editor: Editor | null;
+  active: boolean;
   notices?: ReactNode;
   toolbar?: ReactNode;
   scrollRef?: RefObject<HTMLDivElement | null>;
@@ -503,6 +516,7 @@ function EditorCanvas({
     <EditorSurfaceFrame
       notices={notices}
       toolbar={toolbar}
+      toolbarTrailing={active ? <DocumentStateSlotHost /> : null}
       textCursor={editor !== null}
       scrollRef={scrollRef}
       scrollClassName="meridian-editor main-pane"

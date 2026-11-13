@@ -18,11 +18,11 @@ import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { readHandoffSeed } from "@meridian/contracts/threads";
 import { Forward } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { useId, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/rich-content/Markdown";
 import { AnchoredCards, useCardsAt } from "../ChatCards";
-import { ClippedProse } from "../ClippedExpand";
+import { ExpandableProse } from "../ClippedExpand";
 import { useFocusWithinRow } from "../compaction/useFocusWithinRow";
 import { type BriefCardView, briefCardView } from "./handoff-seed";
 import { SourceChatLink, useSourceThread } from "./SourceChatLink";
@@ -86,10 +86,10 @@ export function HandoffBriefCard({
       aria-label={title}
       data-handoff-brief
       data-handoff-brief-state={view.state}
-      className="surface-card chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] shadow-xs outline-none"
+      className="surface-card chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] shadow-raise outline-none"
     >
       <div className="flex items-start gap-[var(--chat-space-inline)]">
-        <div className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground">
+        <div className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-ink-fill text-muted-foreground">
           <Forward className="size-3.5" aria-hidden />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-[var(--chat-space-inline)]">
@@ -123,7 +123,7 @@ export function HandoffBriefCard({
                 // keyboard focus follows it there even while the chat is busy,
                 // where the wait note it is described by is read with it.
                 aria-disabled={destinationBusy || undefined}
-                className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted-foreground"
+                className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:text-muted-foreground"
                 aria-describedby={destinationBusy ? retryWaitId : undefined}
                 data-focus-landing
                 onClick={() => {
@@ -150,12 +150,12 @@ export function HandoffBriefCard({
           ) : null}
           <AnchoredCards anchor={{ turn: turn.id }} />
           {view.state === "stopped" && !view.superseded ? (
-            <p className="text-caption text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               <Trans>This chat continues without a brief.</Trans>
             </p>
           ) : null}
           {canRetry && onRetry && destinationBusy ? (
-            <p id={retryWaitId} className="text-caption text-muted-foreground">
+            <p id={retryWaitId} className="text-xs text-muted-foreground">
               <Trans>You can retry when this chat is free.</Trans>
             </p>
           ) : null}
@@ -168,32 +168,11 @@ export function HandoffBriefCard({
 
 /** The brief, clipped to the card's height until the writer asks for all of it. */
 function BriefText({ brief }: { brief: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const bodyId = useId();
-  const toggle = (
-    <Button
-      type="button"
-      variant="quiet"
-      size="meta"
-      aria-expanded={expanded}
-      aria-controls={bodyId}
-      onClick={() => setExpanded((value) => !value)}
-    >
-      {expanded ? <Trans>Show less</Trans> : <Trans>Show the whole brief</Trans>}
-    </Button>
-  );
   return (
-    <div id={bodyId} className="mt-[var(--chat-space-inline)]" data-handoff-brief-text>
-      {expanded ? (
-        <>
-          <Markdown variant="compact">{brief}</Markdown>
-          <div className="mt-[var(--chat-space-inline)]">{toggle}</div>
-        </>
-      ) : (
-        <ClippedProse footer={toggle}>
-          <Markdown variant="compact">{brief}</Markdown>
-        </ClippedProse>
-      )}
+    <div className="mt-[var(--chat-space-inline)]" data-handoff-brief-text>
+      <ExpandableProse more={<Trans>Show the whole brief</Trans>}>
+        <Markdown variant="compact">{brief}</Markdown>
+      </ExpandableProse>
     </div>
   );
 }

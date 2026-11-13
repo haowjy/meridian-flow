@@ -25,8 +25,7 @@
  * and failure states instead of running a second follower beside it.
  *
  * **What aborts a follow.** A newer `current` follow aborts the previous one:
- * the pane can only go one place. A `new-tab` follow is never aborted by a
- * newer follow and aborts nothing, because each is its own tab. Dismissing a
+ * the pane can only go one place. Dismissing a
  * follow's checking dialog aborts that follow. Unmounting, a different cache,
  * a project or Work change, and the surface hiding abort everything in flight;
  * hiding also dismisses what is shown. An abort only stops a follow before it
@@ -39,7 +38,6 @@ import {
   createLinkAnswerCache,
   isInternalLinkTarget,
   type LinkAnswerCache,
-  type LinkFollowDisposition,
   type LinkTarget,
 } from "@/core/editor/links";
 
@@ -55,12 +53,7 @@ import type { LinkableDocumentIndex } from "./useLinkableDocuments";
 
 export type LinkFollower = {
   /** `ref` is the stored link's ref; a link written as syntax (chat) has none. */
-  follow(
-    target: LinkTarget,
-    gesture?: LinkFollowDisposition,
-    ref?: string | null,
-    policy?: FollowPolicy,
-  ): void;
+  follow(target: LinkTarget, ref?: string | null, policy?: FollowPolicy): void;
   /** Close what is shown; if its follow is still asking, stop that follow. */
   dismiss(): void;
   /** Follow the shown outcome's link again, as the new owner of the dialog. */
@@ -76,7 +69,6 @@ type Shown = {
   owner: AbortController;
   target: LinkTarget;
   ref: string | null;
-  gesture: LinkFollowDisposition;
   policy: FollowPolicy | undefined;
 };
 
@@ -245,23 +237,15 @@ export function useLinkFollower({
   const start = useCallback(
     // `retrying`: Try again. It owns the shown outcome from the start, so a
     // fast answer can clear the failure it replaces.
-    (
-      target: LinkTarget,
-      ref: string | null,
-      gesture: LinkFollowDisposition,
-      retrying: boolean,
-      policy?: FollowPolicy,
-    ) => {
+    (target: LinkTarget, ref: string | null, retrying: boolean, policy?: FollowPolicy) => {
       // Without a scope no resolver is registered, and asking anyway would
       // report "could not be checked" about a question nobody could ask.
       if (!resolution || !active || (!projectId && !pending)) return;
       const controller = new AbortController();
-      if (gesture === "current") {
-        if (currentFollow.current) abortFollow(currentFollow.current);
-        currentFollow.current = controller;
-      }
+      if (currentFollow.current) abortFollow(currentFollow.current);
+      currentFollow.current = controller;
       inFlight.current.add(controller);
-      if (retrying) shown.current = { owner: controller, target, ref, gesture, policy };
+      if (retrying) shown.current = { owner: controller, target, ref, policy };
       const owned: FollowReporter = {
         report(outcome) {
           if (policy?.missing && outcome.state === "missing") {
@@ -270,7 +254,7 @@ export function useLinkFollower({
             policy.missing();
             return;
           }
-          shown.current = { owner: controller, target, ref, gesture, policy };
+          shown.current = { owner: controller, target, ref, policy };
           latest.current.reporter.report(outcome);
         },
         clear() {
@@ -293,9 +277,8 @@ export function useLinkFollower({
       void followProjectLink({
         target,
         ref,
-        gesture,
         resolution,
-        open: (document, how) => (policy?.open ?? latest.current.open)(document, how),
+        open: (document) => (policy?.open ?? latest.current.open)(document),
         reporter: owned,
         signal: controller.signal,
         scopeReady,
@@ -308,12 +291,8 @@ export function useLinkFollower({
   );
 
   const follow = useCallback(
-    (
-      target: LinkTarget,
-      gesture: LinkFollowDisposition = "current",
-      ref: string | null = null,
-      policy?: FollowPolicy,
-    ) => start(target, ref, gesture, false, policy),
+    (target: LinkTarget, ref: string | null = null, policy?: FollowPolicy) =>
+      start(target, ref, false, policy),
     [start],
   );
 
@@ -329,7 +308,7 @@ export function useLinkFollower({
 
   const retry = useCallback(() => {
     const again = shown.current;
-    if (again) start(again.target, again.ref, again.gesture, true, again.policy);
+    if (again) start(again.target, again.ref, true, again.policy);
   }, [start]);
 
   const followable = scope !== null;

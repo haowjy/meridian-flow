@@ -2,9 +2,8 @@
 /** Navigate first: an explicit review launch commits its destination without waiting on a live-identity lookup. */
 import "fake-indexeddb/auto";
 import { createMemoryHistory } from "@tanstack/react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useContextTabsStore } from "@/client/stores";
-import { applyContextRemovalSearchUpdate } from "./context-removal-route-repair";
+import { describe, expect, it, vi } from "vitest";
+import { setDocumentView } from "@/client/project-shell/document-views";
 import { createEditorDocumentCommand } from "./editor-document-command";
 import { parseProjectAddress } from "./project-address";
 import { createProjectNavigation } from "./project-navigation";
@@ -12,14 +11,12 @@ import { createProjectNavigation } from "./project-navigation";
 const projectId = "550e8400-e29b-41d4-a716-446655440000";
 const workId = "700db898-57fb-4ffa-8366-46ad6a3880be";
 
-beforeEach(() => {
-  useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: true });
-});
-
 function setup(
   lookup: () => Promise<{ kind: "failed" }>,
   path = `/p/${projectId}/chats`,
   addressDocumentId?: string,
+  draftOnly: readonly string[] = [],
+  presented: readonly never[] = [],
 ) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const navigation = createProjectNavigation(
@@ -38,7 +35,7 @@ function setup(
         else history.push(href, options.state);
       },
     },
-    () => ({ work: { kind: "none" } }),
+    () => ({}),
   );
   const cut = path.indexOf("?");
   const parsed =
@@ -51,11 +48,12 @@ function setup(
       navigation,
       address: parsed.address,
       editorWorkId: workId,
-      noWorkId: null,
       documentCatalog: null,
       addressDocumentId,
     }),
+    presented: () => presented,
     lookup,
+    isDraftOnly: (documentId) => draftOnly.includes(documentId),
     admitDraftReview: () => undefined,
     enterRoute: () => undefined,
   });
@@ -67,7 +65,7 @@ describe("review launch navigation", () => {
     const lookup = vi.fn(async () => ({ kind: "failed" as const }));
     const { open, history } = setup(lookup);
     const result = await open(
-      { scheme: "manuscript", path: "/chapters/new.md", documentId: "doc-1", workId },
+      { scheme: "manuscript", path: "/chapters/new.md", documentId: "doc-1" },
       { replaceIfSameDocument: true, itemKey: "branch-1:doc-1" },
     );
     expect(result.kind).toBe("applied");
@@ -86,26 +84,32 @@ describe("review launch navigation", () => {
       editable: true,
       filetype: "markdown" as const,
       schemaType: "document" as const,
-      reviews: {
-        [`work:${workId}`]: { itemKey: "branch-hidden:doc-hidden", tabInstanceToken: "token" },
-      },
     } as never;
-    useContextTabsStore.getState().openTab(projectId, hidden, undefined, workId);
     const { open, history } = setup(
       vi.fn(async () => ({ kind: "failed" as const })),
-      `/p/${projectId}/editor/manuscript/Scene.md?work=${workId}&item=branch-hidden:doc-hidden`,
+      `/p/${projectId}/editor/manuscript/Scene.md?owner=work:${workId}&item=branch-hidden:doc-hidden`,
       "doc-hidden",
+      ["doc-hidden"],
+      [hidden],
     );
-    const live = { ...(hidden as object), documentId: "doc-live", reviews: undefined } as never;
+    const live = { ...(hidden as object), documentId: "doc-live" } as never;
     await open(
-      { scheme: "manuscript", path: "/Scene.md", documentId: "doc-live", workId },
-      { tab: live },
+      { scheme: "manuscript", path: "/Scene.md", documentId: "doc-live" },
+      { document: live },
     );
     expect(history.location.href).not.toContain("item=");
   });
 
-  it("re-selecting a draft-only tab keeps its review identity (item=), since no live document exists", async () => {
-    const { open, history } = setup(vi.fn(async () => ({ kind: "failed" as const })));
+  it("reopening a draft-only document keeps its review identity (item=), since no live document exists", async () => {
+    const { open, history } = setup(
+      vi.fn(async () => ({ kind: "failed" as const })),
+      undefined,
+      undefined,
+      ["doc-1"],
+    );
+    setDocumentView("writer", projectId, "doc-1", {
+      pin: { ownerKey: `work:${workId}`, itemKey: "branch-1:doc-1" },
+    });
     const tab = {
       kind: "tracked" as const,
       documentId: "doc-1",
@@ -115,65 +119,12 @@ describe("review launch navigation", () => {
       editable: true,
       filetype: "markdown" as const,
       schemaType: "document" as const,
-      reviews: { [`work:${workId}`]: { itemKey: "branch-1:doc-1", tabInstanceToken: "token" } },
-      tabInstanceId: "tab-1",
     } as never;
     const result = await open(
-      { scheme: "manuscript", path: "Scene", documentId: "doc-1", workId },
-      { tab },
+      { scheme: "manuscript", path: "Scene", documentId: "doc-1" },
+      { document: tab },
     );
     expect(result.kind).toBe("applied");
     expect(history.location.href).toContain("item=branch-1");
-  });
-
-  describe("Editor address repair", () => {
-    const itemUrl = (path: string) =>
-      `/p/${projectId}/editor/manuscript/${path}?work=${workId}&item=draft-1&change=c1`;
-    const repair = (
-      path: string,
-      next: string,
-      relocated: { documentId: string } | undefined,
-      addressDocumentId?: string,
-    ) => {
-      const { open, history } = setup(
-        vi.fn(async () => ({ kind: "failed" as const })),
-        itemUrl(path),
-        addressDocumentId,
-      );
-      applyContextRemovalSearchUpdate({
-        search: { screen: "context", scheme: "manuscript", path, work: workId },
-        update: (latest) => ({ ...latest, path: next }),
-        relocated,
-        openContext: open,
-        goWorks: () => undefined,
-        goEditor: () => undefined,
-      });
-      return history;
-    };
-
-    it("a fallback document opens without the item, even one the draft list still holds", async () => {
-      const history = repair("gone.md", "fallback.md", undefined, "doc-1");
-      await vi.waitFor(() => expect(history.location.href).toContain("fallback.md"));
-      expect(history.location.href).not.toContain("item=");
-    });
-
-    it("a fallback to a draft-only tab opens that tab's own review item, not the removed one's", async () => {
-      const tab = {
-        kind: "tracked" as const,
-        documentId: "doc-c",
-        scheme: "manuscript" as const,
-        path: "fallback.md",
-        name: "fallback.md",
-        editable: true,
-        filetype: "markdown" as const,
-        schemaType: "document" as const,
-        reviews: { [`work:${workId}`]: { itemKey: "branch-c:doc-c", tabInstanceToken: "token" } },
-      } as never;
-      useContextTabsStore.getState().openTab(projectId, tab, undefined, workId);
-      const history = repair("gone.md", "fallback.md", undefined);
-      await vi.waitFor(() => expect(history.location.href).toContain("fallback.md"));
-      expect(history.location.href).toContain("item=branch-c");
-      expect(history.location.href).not.toContain("item=branch-1");
-    });
   });
 });

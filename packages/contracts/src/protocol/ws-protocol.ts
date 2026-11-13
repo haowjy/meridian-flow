@@ -262,6 +262,7 @@ export type WsServerMessage =
       headRevision: string;
     }
   | import("./context-catalog.js").DraftOwnerHint
+  | import("./context-catalog.js").ProjectChatsHint
   | AskAnswerReply
   | {
       type: "error";
@@ -330,6 +331,12 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
       }),
     ]),
     headRevision: wsEventSeqSchema,
+  }),
+  z.object({
+    type: z.literal("project-chats-hint"),
+    projectId: z.string().min(1),
+    removedChatIds: z.array(z.string().min(1)).optional(),
+    recheckTabs: z.literal(true).optional(),
   }),
   z.object({
     type: z.literal("draft-owner-hint"),

@@ -21,7 +21,7 @@ import { collaborationColorFor } from "@/core/editor/collaboration-colors";
 import { peerMarkRect } from "@/core/editor/extensions/PeerMarkerExtension";
 import type { PeerMarkPress } from "@/core/editor/extensions/peer-mark-press";
 import type { SessionMarker } from "@/core/editor/session-marker-store";
-import { requestConversationReveal } from "@/features/chat/conversation-reveal";
+import { useRequestConversationReveal } from "@/features/chat/conversation-reveal";
 import { formatRelativeTime } from "@/lib/date-groups";
 import { EditorPopover } from "../../chrome";
 
@@ -40,6 +40,7 @@ export function PeerMarkPopover({
   /** Where focus goes on close, when nothing took this popover's place. */
   returnFocus?: () => void;
 }) {
+  const requestConversationReveal = useRequestConversationReveal();
   const marker = target?.marker ?? null;
   const agentAuthor = marker?.author.kind === "agent" ? marker.author : null;
   const changeId = target?.changeId ?? null;
@@ -75,7 +76,7 @@ export function PeerMarkPopover({
       // reading; only the keyboard door asks to be taken inside.
       focusOnOpen={target.activation === "pointer" ? "prose" : "content"}
       returnFocus={returnFocus}
-      className="w-80 text-caption"
+      className="w-80 text-xs"
     >
       <div className="space-y-3" data-peer-mark-popover>
         <div className="flex min-w-0 items-center gap-2">
@@ -84,9 +85,9 @@ export function PeerMarkPopover({
             style={{ background: collaborationColorFor(colorIdentity) }}
             aria-hidden
           />
-          <p className="min-w-0 flex-1 truncate font-medium text-prose-foreground">{title}</p>
+          <p className="min-w-0 flex-1 truncate font-medium text-foreground">{title}</p>
           <time
-            className="shrink-0 text-ink-muted"
+            className="shrink-0 text-muted-foreground"
             role="timer"
             aria-label={t`Changed ${relativeTime}`}
             dateTime={new Date(marker.receivedAt).toISOString()}

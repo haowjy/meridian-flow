@@ -68,7 +68,7 @@ export function ImageViewer({
             refreshUsed.current = false;
           }}
           onError={onError}
-          className="max-h-full max-w-full rounded-md border border-border bg-background object-contain shadow-sm"
+          className="max-h-full max-w-full rounded-md border border-border bg-background object-contain shadow-float"
         />
       )}
     </div>
@@ -85,7 +85,7 @@ export function imageViewerFooter({ url, name }: ImageViewerFooterProps): ReactN
         href={url}
         target="_blank"
         rel="noreferrer"
-        className="text-button text-meta"
+        className="text-button text-xs"
         download={name}
       >
         <Trans>Open original</Trans>

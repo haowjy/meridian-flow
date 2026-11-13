@@ -32,9 +32,7 @@ export function FolderLinkMenu({
   const open = useEditorLinkDestination();
   const host = useMemo<FolderMenuHost | null>(
     () =>
-      projectId
-        ? { projectId, openDocument: (documentId) => void open({ documentId }, "current") }
-        : null,
+      projectId ? { projectId, openDocument: (documentId) => void open({ documentId }) } : null,
     [open, projectId],
   );
   const layer = useChromeLayer(editor, {

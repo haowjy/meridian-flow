@@ -2,10 +2,15 @@
  * Dialog — shadcn/Radix modal primitive. Upstream-managed wrapper; customize at
  * call sites. Added for proto command palette; promote via shadcn CLI for prod.
  */
+
+import { t } from "@lingui/core/macro";
 import { XIcon } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import type * as React from "react";
-
+import { useRef } from "react";
+import { IconButton } from "@/components/ui/icon-button";
+import { role } from "@/components/ui/roles";
+import { focusIsFree } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -44,31 +49,100 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
 }) {
+  const focus = useOpenerFocus(onOpenAutoFocus, onCloseAutoFocus);
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:rounded-lg",
+          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-modal data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:rounded-lg",
           className,
         )}
+        {...focus}
         {...props}
       >
         {children}
         {showCloseButton ? (
-          <DialogPrimitive.Close className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent">
-            <XIcon className="size-4" />
-            <span className="sr-only">Close</span>
+          <DialogPrimitive.Close asChild>
+            <IconButton size="sm" label={t`Close`} className="absolute top-3 right-3">
+              <XIcon aria-hidden />
+            </IconButton>
           </DialogPrimitive.Close>
         ) : null}
       </DialogPrimitive.Content>
     </DialogPortal>
   );
+}
+
+type AutoFocusHandler = (event: Event) => void;
+
+/**
+ * Focus handlers for a dialog's content. Radix returns focus only to a `Dialog.Trigger`;
+ * most dialogs here open from a menu or a command, so on close focus goes back to whatever
+ * held it when the dialog opened, unless `onCloseAutoFocus` prevents it.
+ */
+function useOpenerFocus(onOpenAutoFocus?: AutoFocusHandler, onCloseAutoFocus?: AutoFocusHandler) {
+  const opener = useRef<HTMLElement | null>(null);
+  return {
+    onOpenAutoFocus: (event: Event) => {
+      const active = document.activeElement;
+      opener.current = active instanceof HTMLElement && active !== document.body ? active : null;
+      onOpenAutoFocus?.(event);
+    },
+    onCloseAutoFocus: (event: Event) => {
+      onCloseAutoFocus?.(event);
+      const to = opener.current;
+      opener.current = null;
+      if (event.defaultPrevented || !to?.isConnected) return;
+      event.preventDefault();
+      to.focus();
+    },
+  };
+}
+
+/**
+ * For a phone overlay whose picks hand the focus on (the drawer, the side sheet): the focus
+ * goes back to the opener only after a dismissal (Escape, a tap outside, the returned
+ * `onOpenChange(false)`) and only when nothing else has taken it.
+ */
+function useDismissalFocus(
+  onOpenChange: (open: boolean) => void,
+  onOpenAutoFocus?: AutoFocusHandler,
+) {
+  const dismissed = useRef(false);
+  const content = useOpenerFocus(
+    (event) => {
+      dismissed.current = false;
+      onOpenAutoFocus?.(event);
+    },
+    (event) => {
+      if (!dismissed.current || !focusIsFree()) event.preventDefault();
+    },
+  );
+  return {
+    onOpenChange: (open: boolean) => {
+      dismissed.current = !open;
+      onOpenChange(open);
+    },
+    content,
+  };
+}
+
+/**
+ * For `onOpenAutoFocus` on a phone overlay: Radix would focus the first control and paint
+ * its ring, so the content takes focus instead. It must take it: without a focused element
+ * inside, the focus trap never engages and Tab escapes behind the overlay.
+ */
+function focusContentOnOpen(event: Event) {
+  event.preventDefault();
+  (event.target as HTMLElement | null)?.focus({ preventScroll: true });
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
@@ -95,7 +169,7 @@ function DialogTitle({ className, ...props }: React.ComponentProps<typeof Dialog
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("text-lg leading-none font-semibold", className)}
+      className={cn(role.sectionHeading, className)}
       {...props}
     />
   );
@@ -129,4 +203,7 @@ export {
   DialogPortal,
   DialogTitle,
   DialogTrigger,
+  focusContentOnOpen,
+  useDismissalFocus,
+  useOpenerFocus,
 };

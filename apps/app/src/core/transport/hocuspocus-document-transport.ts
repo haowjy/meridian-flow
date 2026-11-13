@@ -2,8 +2,11 @@
  * hocuspocus-document-transport — binds HocuspocusProvider to DocumentSession.
  *
  * DocumentSession remains the owner of the Y.Doc, Awareness, and IndexedDB
- * cache. This adapter owns one socket per room because WebSocket closes are
- * connection-wide, while schema refusals are room-specific. It maps those
+ * cache. The patched provider (`patches/@hocuspocus__provider@4.3.0.patch`)
+ * destroys only an Awareness it created, so `provider.destroy()` here removes
+ * its listeners and leaves presence to the session. This adapter owns one
+ * socket per room because WebSocket closes are connection-wide, while schema
+ * refusals are room-specific. It maps those
  * provider/socket events back to the unchanged DocumentSessionTransportProvider
  * seam.
  *

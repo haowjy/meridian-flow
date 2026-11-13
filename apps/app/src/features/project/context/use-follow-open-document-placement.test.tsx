@@ -2,20 +2,24 @@
 /**
  * The route follows an open document's placement only while the selection is bound to it.
  *
- * Pins implementation decisions: `projectResourceTab` is mocked to place the document at a new
+ * Pins implementation decisions: `projectResourceDocument` is mocked to place the document at a new
  * path, since building a resource replica snapshot adds nothing to these cases.
  */
 import "fake-indexeddb/auto";
 
-import { beforeEach, expect, it, vi } from "vitest";
-import { type ContextTab, useContextTabsStore } from "@/client/stores";
-import { AccountFeatureTestProvider } from "@/test-support/account-feature-provider";
+import { useLayoutEffect } from "react";
+import { expect, it, vi } from "vitest";
+import type { OpenDocument } from "@/client/stores";
+import {
+  AccountFeatureTestProvider,
+  useOptionalPresentedDocuments,
+} from "@/test-support/account-feature-provider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import type { ContextRouteSelection } from "./context-removal-protocol";
 import { useFollowOpenDocumentPlacement } from "./use-follow-open-document-placement";
 
-const tab: ContextTab = {
+const tab: OpenDocument = {
   kind: "tracked",
   documentId: "doc-a",
   scheme: "manuscript",
@@ -24,16 +28,19 @@ const tab: ContextTab = {
   editable: true,
   filetype: "markdown",
   schemaType: "document",
-  tabInstanceId: "instance-a",
 };
 const moved = { ...tab, path: "/new.md", name: "new.md" };
 
-vi.mock("./context-tab-from-file", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./context-tab-from-file")>()),
-  projectResourceTab: () => ({ kind: "projected", resourceHandle: "handle-a", tab: moved }),
+vi.mock("./open-document-from-file", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./open-document-from-file")>()),
+  projectResourceDocument: () => ({
+    kind: "projected",
+    resourceHandle: "handle-a",
+    document: moved,
+  }),
 }));
 
-const locator = { scheme: "manuscript" as const, path: "/old.md", workId: "work-a" };
+const locator = { scheme: "manuscript" as const, path: "/old.md" };
 const bound: ContextRouteSelection = {
   status: "bound",
   revision: 1,
@@ -49,15 +56,13 @@ const candidate: ContextRouteSelection = {
   reentryGuard: null,
 };
 
-beforeEach(() => {
-  useContextTabsStore.setState({
-    byProject: { project: { tabs: [tab], selectedTabIdByWork: {} } },
-    _workspaceHydrated: true,
-  });
-});
-
 async function follows(selection: ContextRouteSelection) {
   const open = vi.fn<OpenContextRoute>(async () => ({ kind: "applied" as const }));
+  function Present() {
+    const presented = useOptionalPresentedDocuments();
+    useLayoutEffect(() => presented?.mount("main", "project", tab, "main"), [presented]);
+    return null;
+  }
   function Host() {
     useFollowOpenDocumentPlacement({
       projectId: "project",
@@ -65,13 +70,13 @@ async function follows(selection: ContextRouteSelection) {
       selection,
       activeContextScheme: "manuscript",
       activeContextPath: "/old.md",
-      routeDisplayed: true,
       onOpenContextTarget: open,
     });
     return null;
   }
   await withReactRoot(
     <AccountFeatureTestProvider accountId="follow-account">
+      <Present />
       <Host />
     </AccountFeatureTestProvider>,
     async () => undefined,

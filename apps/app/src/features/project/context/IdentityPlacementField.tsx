@@ -13,7 +13,7 @@ import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts
 import { Check, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { dropdownPanelClass } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
@@ -54,7 +54,7 @@ type IdentityNote = { kind: "error"; message: string } | null;
 export function IdentityPlacementField({
   projectId,
   editorWorkId,
-  tab,
+  document,
   location,
   failure,
   commit,
@@ -63,7 +63,7 @@ export function IdentityPlacementField({
 }: {
   projectId: string;
   editorWorkId: string | null;
-  tab: ContextTab;
+  document: OpenDocument;
   location: TabLocation;
   failure: QueuedIdentityFailure | null;
   commit: (target: IdentityCommitTarget) => Promise<IdentityCommitOutcome>;
@@ -113,15 +113,15 @@ export function IdentityPlacementField({
   }, []);
 
   useEffect(() => {
-    if (!provisionalPlacement || tab.kind !== "new") return;
+    if (!provisionalPlacement || document.kind !== "new") return;
     const abort = new AbortController();
     let release: (() => void) | null = null;
     let unobserve: (() => void) | null = null;
     void resources
       .openDocument(
         projectId,
-        { handle: tab.resourceHandle },
-        `identity-field:${tab.tabInstanceId ?? tab.resourceHandle}`,
+        { handle: document.resourceHandle },
+        `identity-field:${document.resourceHandle}`,
         abort.signal,
       )
       .then((result) => {
@@ -134,7 +134,7 @@ export function IdentityPlacementField({
           if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
           suggestionTimer.current = window.setTimeout(() => {
             suggestionTimer.current = null;
-            setGhost(suggestionForSession(tab, session));
+            setGhost(suggestionForSession(document, session));
           }, 300);
         };
         fragment.observeDeep(refresh);
@@ -147,7 +147,7 @@ export function IdentityPlacementField({
       release?.();
       if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
     };
-  }, [projectId, provisionalPlacement, resources, tab]);
+  }, [projectId, provisionalPlacement, resources, document]);
 
   // The document's own owner scopes its Scratch suggestions, collisions and "Open
   // existing"; the Editor's selected Work does not (a chat's Scratch has none).
@@ -235,7 +235,7 @@ export function IdentityPlacementField({
             destination?.scheme ?? location.scheme,
             destination?.folderPath ?? location.parentPath,
           )
-            .filter((entry) => entry.entryId !== tab.documentId)
+            .filter((entry) => entry.entryId !== document.documentId)
             .map((entry) => entry.name),
         ),
         "file",
@@ -275,13 +275,13 @@ export function IdentityPlacementField({
           )}
         >
           {destination ? (
-            <span aria-hidden className="shrink-0 select-none whitespace-pre text-ink-subtle">
+            <span aria-hidden className="shrink-0 select-none whitespace-pre text-muted-foreground">
               {prefix}
             </span>
           ) : null}
           <input
             ref={inputRef}
-            className="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-ink-subtle/70"
+            className="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
             aria-label={t`Document name and location`}
             value={value}
             placeholder={ghost || location.leaf}
@@ -328,8 +328,7 @@ export function IdentityPlacementField({
         </div>
       </PopoverAnchor>
       <IconButton
-        aria-label={t`Save name and location`}
-        className="size-5.5"
+        label={t`Save name and location`}
         disabled={saving}
         onPointerDown={(event) => event.preventDefault()}
         onClick={() => void submit()}
@@ -337,8 +336,7 @@ export function IdentityPlacementField({
         <Check aria-hidden />
       </IconButton>
       <IconButton
-        aria-label={t`Cancel editing`}
-        className="size-5.5"
+        label={t`Cancel editing`}
         disabled={saving}
         onPointerDown={(event) => event.preventDefault()}
         onClick={() => onExit("escape")}
@@ -409,7 +407,7 @@ function treeSegments(path: string): string[] {
 }
 
 function suggestionForSession(
-  tab: ContextTab,
+  tab: OpenDocument,
   session: import("@/core/editor/document-session").DocumentSession,
 ): string {
   const suggestion = suggestedNameFromFragment(

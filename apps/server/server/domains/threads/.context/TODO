@@ -1,1 +1,2 @@
 - Extend the thread usage aggregate and Info popover with a compaction count (`modelResponses.sumUsageByThread`, read by `thread-snapshot.ts`).
+- Drop the `turn_document_touches` table (`packages/database/src/schema/provenance.ts`, plus its cleanup in `apps/app/e2e/support/e2e-db.ts` and the purge delete in `apps/server/server/domains/context/tree/node-rows.ts`, kept so a permanent purge leaves no touch rows). Nothing writes or reads it any more; keep the table until no deployed server still inserts into it, then drop it in a migration.

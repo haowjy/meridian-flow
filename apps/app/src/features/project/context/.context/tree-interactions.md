@@ -5,7 +5,7 @@ for feature-level contracts first.
 
 ## Shared nested rows
 
-Work Files, the context sidebar, and the phone browser render ordinary nested
+The sidebar's sources, on desktop and in the phone's drawer, render ordinary nested
 folders through `TreeChildren`. Search supplies visible ids
 with ancestor closure, not a filtered catalog: rename and move free-name predictions
 always see all siblings. Search disclosure is temporary; it never overwrites
@@ -13,7 +13,7 @@ the normal expansion state. A newly created Work note stays visible for naming
 even when its name does not match the search.
 
 Indentation counts visible expandable parents, not catalog depth: standalone
-Work Files and phone lists start at zero; rail sections start at one. The shared
+lists start at zero; rail sections start at one. The shared
 `TreeGroup` spans all visible children, including Earlier notes and the current
 Work’s separate catalog. It paints its parent guide above row highlights without taking pointer
 input. Section headers and folder rows use the same disclosure-center geometry.
@@ -62,25 +62,35 @@ name once. A canonical name is never fed back into extension inheritance.
 
 ## Dual-trigger caveat
 
-Desktop right-click context and visible ellipsis overflow map one ordered action
-specification through thin renderers for Radix `ContextMenu.Item` and
-`DropdownMenu.Item`. They remain separate trigger primitives. The visible path
-uses the neutral `OverflowMenu` and canonical trigger shared with Project chat
-rows and Composer; context-specific `EntryAction` types do not cross that UI
-boundary. The raw ContextMenu renderer consumes the canonical declarations from
-`components/ui/dropdown-presentation.ts` directly for surface, row, separator,
-destructive, density, focus, and animation paint. Do not copy those recipes or
-introduce a shallow ContextMenu wrapper family merely to adapt Radix. The
-visible target is 32 px for fine pointers and 44 px for coarse/no-hover input,
-and it remains visible while its portaled menu is open. Mobile uses the same
-context adapter with a 44 px target. Labels, icons, grouping, destructive
-metadata, order, presentation, and dispatch actions therefore cannot drift.
-The ellipsis stops propagation so it doesn't trigger the row's click handler.
-`EntryAction` is five actions in fixed order — New file, New folder,
-separator, Rename, Move…, Delete (creation first, destructive last) —
-identical in both triggers. Each list declares which of them it supports. Actions dispatch from `onCloseAutoFocus`, after the menu has
-fully closed with its focus return suppressed: menu teardown otherwise blurs
-a freshly mounted inline row, and blur commits/cancels it.
+A row's right-click menu and its ⋯ are one `RowMenu` (`components/ui/row-menu.tsx`): plain data
+(groups of items, an Import… submenu, the `empty` line) that `ListRow`'s `menu` renders through
+both Radix primitives, `ContextMenu` on the whole row and `DropdownMenu` on the ⋯. `useEntryMenu`
+turns the row's `EntryAction`s into a `RowMenu`; context types don't cross into `components/ui`.
+The ⋯ is a dense `IconButton` (24 px box, 44 px hit area under a coarse pointer), so rows with and
+without one stay the same height, and it is named "Actions for {name}". It stays visible while its
+menu is open. Labels, icons, grouping, destructive metadata, order and dispatch can't drift between
+the two triggers.
+`EntryAction` is one ordered list: New file, New folder, Import…, separator, Rename, Move…,
+Copy to…, Delete, Restore (creation first; Restore is a Trash row's only action), identical in
+both triggers. Each row declares which of them it supports. `useEntryMenu` builds a row's menu for
+both triggers. Opened on a row inside a selection of two or more rows, the menu is the selection's,
+a second ordered spec through the same renderers: Move N…, Delete N, Restore N, each only when every
+selected row grants it, named by the selection's kind ("Move 3 files…", "Delete 2 folders", "Move 4
+items…" for a mix). A row's grants (`SelectionGrant`) are its own menu actions: `useEntryMenu`
+registers them with the selection, so a row passes its actions once and the selection's menu can't
+disagree with the row's. A selection whose rows share no action shows one disabled line in its list's
+verb ("Can't move or delete all of these"; in Trash "Can't restore all of these") rather than an
+empty menu.
+Opened on a row outside the selection (or alone in it), the menu selects that row alone, as
+Finder and VS Code do, and is the row's own. The selection is read once, as the menu opens, so the
+action acts on what the label counted. The context-menu key and Shift+F10 fire the same
+`contextmenu` on the focused row; there is no Delete-key shortcut for rows. Escape inside an open
+menu closes only the menu: the list's Escape clears the selection only for keys pressed in the
+list itself, since a portaled menu's key events still bubble to it. Actions dispatch through `useMenuActionDispatch`
+(`components/ui/dropdown-menu.tsx`): they run once the menu has closed and put
+focus back on its trigger. Run from the item, menu teardown would blur a freshly
+mounted inline row (blur commits or cancels it), and a dialog the action opens
+would return focus to an item that is gone.
 
 ## Creation targeting
 
@@ -110,6 +120,9 @@ settles the folder and exact descendant identities atomically. Pending deletion
 hides the subtree; refusal restores rows with a failure mark. Tree absence never
 proves document removal.
 
+A row's Delete, a selection's Delete N and a drop onto Trash are each one `runDelete`: one own
+removal covers every document they take away, and an entry inside another entry's folder goes
+with that folder, never on its own. Each refused entry toasts and keeps its documents.
 Writer deletion has no confirmation step and no Undo: the row leaves the tree, and the document
 waits in Trash. Delete progress is derived from the namespace journal. A document the server never
 accepted has no Trash entry; its deletion settles on this device. Its content is cleaned up after ten
@@ -124,11 +137,11 @@ minutes (`LOCAL_DELETION_UNDO_MS`, `cleanup.notBefore`), and nothing brings it b
 Every rename is local first. File rename (any area, any Work) and the identity bar
 share the durable resource-location command; folder rename admits a folder
 namespace intent through `AccountResourceReplica.setFolderLocation`. The folder
-and its descendants show their new place at once in the tree, open tabs and
+and its descendants show their new place at once in the tree, headers and
 routes, and so does the phone. One placement source, the projected catalog, serves
 every surface, and a route resolves its open document by identity: the document the
 route is bound to (a navigation that named it, or an address answer, both proof; a
-cached tab's guess never binds) is found by id, so a
+cached path's guess never binds) is found by id, so a
 move of it or a folder above it, that move's rollback after a refusal, or another
 document taking the path it holds or left never strands it. `resolveLocalDocumentAddress`
 returns it as `bound` and it outranks the server's answer for that path; admission
@@ -137,8 +150,8 @@ phone host finds the same document by identity meanwhile. Desktop and phone also
 follow the replica's placement (`useFollowOpenDocumentPlacement`): a move or delete
 of the open document changes the URL at once. The route follows only while the selection is
 bound to that document at the current route and its projected locator or owner differs, so a
-pasted or traversed URL is never pulled back to an open tab. A review address owns its path and
-is never followed; its tab still reconciles. A document under a pending
+pasted or traversed URL is never pulled back to a presented document. A review address owns its path and
+is never followed; its document still reconciles. A document under a pending
 move carries `placementPending` for the same reason: a server alias for the path the
 writer just gave it cannot pull the route back.
 
@@ -159,7 +172,7 @@ Create) is listed at its name, not under a folder of the refused destination.
 The move's receipt carries `linkUpdate.links`. `setLocation` and `setFolderLocation`
 return the operation id issued at admission; the account-owned lifecycle watches
 its journal receipt and `LinkUpdateNote` shows "Updated N links" on its own line
-under the name in tree, drawer and Work Files rows, inline in the phone listing,
+under the name in tree and drawer rows, inline in the phone listing,
 or after the open document's identity path. Selection is keyed by stable resource
 handle (folder handles for folders). Presentation document IDs resolve through
 the replica's canonical identity/alias policy, so feedback follows remint and
@@ -171,7 +184,7 @@ A move that updated no links shows nothing: the writer just did it and can see
 where the row went (owner, 2026-10-14). Refused moves show nothing.
 Refused row moves retain the journal destination in the catalog projection. Comparing that destination with the projected parent and owner distinguishes them from name-only refusals: the failure mark stays on the row, and reopening Move shows the failed destination with retry guidance, never an automatic rename field. Retry validation and submission use the retained
 destination name, including a cancelled rename/move chain; fresh moves use the
-entry's current name. Work Files uses the same picker and repair decision.
+entry's current name.
 The remembered operation follows the entry's identity across row remounts. Inline
 operations keep stable entry identity. Work selection is attached only to
 Scratch/Uploads, never project-owned Manuscript/KB/User paths.
@@ -181,8 +194,14 @@ Scratch/Uploads, never project-owned Manuscript/KB/User paths.
 
 Move… follows Rename in the shared action specification, including phone actions,
 and Copy to… follows Move…. They are one component:
-`EntryDestinationPicker` takes an `action` ("move" or "copy") and the row to pick
-for (one row, from the row menu).
+`EntryDestinationPicker` takes an `action` ("move" or "copy"), the row it opened from, and,
+for a selection's Move N…, the `selection` it moves. A selection moves together, minus rows inside
+a selected folder, skipping rows already in the destination; it offers no position choices, reads
+"Already in <folder>" only when every row is already there, and keeps the moved rows selected with
+focus on the first in its new place (the row the picker opened from may have moved and unmounted it).
+The rows arrive over several commits, and a keyed reorder blurs a focused row without remounting it,
+so for two seconds after a Move the list puts focus back on its first selected row whenever focus
+is lost or sits on another selected row (`settleFocus`).
 Both offer the same destinations, and a folder cannot go inside itself in either.
 They differ in what a pick does: Copy to… has no "Already in" refusal and no
 position choices (it always adds, and its copy takes the next free name in the
@@ -229,23 +248,30 @@ and dialog serve all Scratch rows, retaining each target's owner. The actual own
 
 ## Selecting and dragging rows
 
-The Files tree, the chat's Scratch and a Work's Files are each one list:
+The sidebar's sources, a chat's Files-menu Scratch and a Work's Files are each one list:
 `useEntryList` owns its selection, its entries route and, through `EntryList`,
-its drop scope (the Files tree is one list over the project's three areas,
-with each section keeping its own expansion). User is its own list and system,
-docked above Scratch (`UserRailSection` over the shared `DockedRailSection`),
-so a drag between it and the tree stays quiet. Rows join through `EntrySelectionProvider`.
+its drop scope. Recently opened (main's landing) is a list too, with its own
+`useEntrySelection` and no drop: its rows are `ListRow` links whose drag carries the selection as
+references (`useEntryRow` with `source: "reference"`), so Ctrl/Cmd-
+and Shift-click are taken in the capture phase (`useEntryRow().select`) before the link would open a
+browser tab, and the row's ⋯ and right-click give Move… and Delete for a filed document (the same
+`useEntryMenu`, `EntryDestinationPicker` and `useDeleteContextEntries` as the tree). An Untitled
+row, or a Scratch note (the list doesn't know its owner), grants nothing. The sidebar's sources (also the phone drawer) are one list over every
+tree they can show: Manuscript, Knowledge, Your files and Unfiled, each tree keeping its own
+expansion. Rows join through `EntrySelectionProvider`.
 Selection keys are `kind:id` and carry no scheme or place, so a moved row keeps
-its key and stays selected. A plain click opens or toggles the row as before and leaves no
+its key and stays selected. Rows a delete or restore takes out of their list leave every list's
+selection (`leaveSelections`, run by `runDelete` and both Trash restores), with the documents and
+folders inside a deleted folder: Trash rows share the `file:<documentId>` key, so a row deleted while
+selected would otherwise arrive selected in Trash, and a restored one back in the tree. A plain click opens or toggles the row as before and leaves no
 selection of its own: until the writer Ctrl/Cmd- or Shift-clicks, the selection
 is just the open row, shown by the open row's own highlight. Ctrl/Cmd-click
 starts an explicit selection from the open row and adds or removes rows;
 Shift-click selects the on-screen range from the last clicked row, read from the
 DOM (`data-entry-key`) so it always matches what is visible; Escape returns to
-the open row. Only explicit selections get the selection fill
-(`sidebar-selected`, the row fill with a little jade), which reads apart from
-hover and from the open row's fill, so the open row stays findable inside a
-selection. Adjacent selected rows join into one block rounded only at its ends:
+the open row. Explicit selections and the open row share the selected fill
+(`role.selected`, ink, never jade); the open row stays findable inside a
+selection by its weight. Adjacent selected rows join into one block rounded only at its ends:
 after each commit the selection marks each row's place in its run
 (`data-selection-run`) in one pass over screen order. The same
 modifiers with Enter or Space select from the keyboard, and a selected row
@@ -298,15 +324,30 @@ selection of one), not the open row.
 
 ### Dropping across systems, and dropping references
 
+In the sidebar the sources sit behind icon tabs, with Scratch (under a named Work), Unfiled and
+Trash as rows at its foot
+(`shell/sidebar/SourcesBody.tsx`). Each source in its `SOURCES` table has one root drop, used
+by its tab or foot row and by its pane (`SourcePane`), and the strip, the foot and the pane
+share the sidebar's one drop scope. Dropping on a source's tab lands at that source's root
+("Move to Knowledge"), and so does its heading or the space below its last row; the usual
+crossing-system rules apply, so Your files still asks. A drag that rests on a tab for 600 ms
+opens it, as on a closed folder, for a drop into a folder inside. Scratch's foot row and pane are
+the picked Work's Scratch root, a system of its own, so a drop there asks Move or Copy. Trash is a source too,
+not a scheme: rows dropped on its row or its pane are deleted at once, with no menu, through
+`useDeleteContextEntries`, and its rows drag out to be restored where
+they land.
+
 A list row dropped within one system moves at once. A drop that crosses systems (the
 project's areas are one system; User and each Scratch owner and each chat's Uploads
 are their own, `entrySystem` in `entry.ts`) changes ownership, so the list asks first.
 So does every drag that is not a list row (a `reference`, below), even within one
-system: a mention chip, an Editor tab, a path crumb, a Recent row, a receipt or Work
+system: a mention chip, main's document title, a path crumb, a Recent row, a receipt or Work
 change entry, an Uploads entry, a selected Editor link. The
 hover accepts with the first thing the menu would offer and an ellipsis ("Move to
 Act 2…", or "Copy to Act 2…" when Move is disabled); the drop opens a compact menu
-at the pointer, no heading: "Move to Act 2", "Copy to Act 2", then Cancel. A
+at the pointer, no heading: "Move to Act 2", "Copy to Act 2", then Cancel. A drop
+into Your files (the `user` scheme) from outside offers Copy only: what lives in a
+project stays there. A
 disabled item says why, tied to it with `aria-describedby` ("Can't move these from
 here" for a surface that grants Copy only, "Already there", "Some of these items
 are no longer there", "Can't go inside itself"). Escape, Cancel and a click outside
@@ -324,7 +365,7 @@ is a new item there and a branch in the list's `choose`. The contract:
 
 - `EntryDrag` (`entry.ts`, held by `drag-session.ts`): `{ entries, source }`. An entry is
   identity (`ref`), the name the preview shows, and the `view` a Copy of it reads (the live
-  document, or the draft a tab or receipt row shows). `source` is `list-row` or `reference`.
+  document, or the draft a title or receipt row shows). `source` is `list-row` or `reference`.
   A drag carries no placement and no grant.
 - `ResolvedDrop` (`move-plan.ts`, from `resolveDrop(view, drag, target)`):
   what a drop is now, before any action decides what to do with it. `sources` are
@@ -364,12 +405,11 @@ document drags as itself and a gone one answers "Some of these items are no long
 
 | Source | Names | View |
 |---|---|---|
-| Editor tab (`ContextTabBar`) | the tab's document | the draft of the Work under review while the tab is under review (`draftCopyView`, owned by draft review); local and draft-only tabs don't drag |
-| Path crumb (`DocumentPath`) | the document (filename) or the folder (read up the placement graph, so no catalog is acquired); the area crumb navigates | the filename follows its tab (the draft while under review); folders live |
-| Recent row | the document by id, never the path it was opened at | live |
+| Main's document title (`MainHeader`) | the document | the draft of the Work under review while the document is under review (`draftCopyView`, owned by draft review); local and draft-only documents don't drag |
+| Recent row (`useEntryRow`, not this adapter: it carries the selection) | each selected document by id, never the path it was opened at | live |
 | Transcript chip (`TranscriptReference`) | an exact reference the host still resolves; syntax links name no entry | live |
 | Composer chip (`ComposerReferenceMenu`) | its document or folder | live |
-| Receipt row (`TurnEditsReceipt`), Work change row (`WorkChangeFile`) | the document the row represents | `draft` for a draft row: the Work the turn wrote in (the receipt's lineage names it) or the Work the row lists (`draftCopyView`); a row the turn deleted, or a change with no draft text, doesn't drag |
+| Receipt row (`TurnEditsReceipt`), Changes row (`ChangesSource`) | the document the row represents | `draft` for a draft row: the Work the turn wrote in (the receipt's lineage names it) or the Work the row lists (`draftCopyView`); a row the turn deleted, or a change with no draft text, doesn't drag |
 | Uploads entry (`ChatFilesMenu`) | the upload's document | live; the section is a drop target that refuses |
 | Editor link (`LinkSurfaceExtension`) | the entry a link names, once the link's text is the selection | live |
 
@@ -391,7 +431,7 @@ Copy duplicates the carried rows into the destination and leaves the sources whe
 they are (`planCopy`, `copyRows` in `execute-copy.ts`). Every carried row is
 copied, the one already in the destination's parent included (its copy takes the
 next free name), and an edge drop may anchor on a carried row. Each entry's `view` goes to the
-server with its root: a tree row copies the live document, a draft tab or receipt row the draft it
+server with its root: a tree row copies the live document, a draft title or receipt row the draft it
 shows. A draft view names its Work and no chat; the server reads that Work's active branch's draft
 of the document, and a Work with no draft of it refuses the Copy (it never reads live text). The copies are
 listed at once under predicted names (`arrivals`, as for Move): the replica holds
@@ -406,7 +446,7 @@ destination is no longer there.", with Retry while every source and the destinat
 The journal keeps the refusal until that toast closes or Retry lands (`copy-refusal.ts`).
 
 Targets: a folder row is its folder; a file row hands its drop to its folder (or
-the area); an area header, and in Work Files the whole Scratch group, is the
+the area); an area header is the
 catalog's top level. A row's top and bottom bands are sibling edges, before or
 after that row in its actual parent (`RowEdges` in `tree-drop.tsx`): a third of a
 file row, a quarter of a folder row, whose centre keeps moving rows into it. An
@@ -437,3 +477,23 @@ file drag skips `targetAt`, so a drop on a row's edge or centre alike imports in
 and lands at the end of that folder (a batch in name order), never
 at the edge's position. Import can't place an arbitrary position for a batch, and an edge that
 appeared to accept but landed elsewhere would mislead.
+
+## Trash rows dragged onto the tree
+
+A Trash row starts its drag as source `trash` (`useEntryRow(entry, { active, source: "trash" })`), carrying
+the document's id. The entries route recognises it before `resolveDrop`: `planRestore`
+(`entry-drag/restore-drop.ts`) judges the same targets (folder, area root, row edge) and a drop calls
+`restoreInto` on `DocumentTrashRestoreProvider`, which posts one restore request with the destination.
+A restore never crosses systems (it has no Copy): a project document onto Your files, or the reverse,
+refuses with the hint. The rows leave Trash and appear in the destination at once through
+`client/trash-restore/pending-restores.ts`, an in-memory overlay on the catalog view (not a replica
+journal entry: a reload shows the server). A refused item goes back to Trash with its reason; the
+notice offers Undo, which deletes the restored documents through the normal delete path. Trash's own
+list never takes a trash drag (the rows are already deleted).
+
+Trash rows are `ListRow`s with the trees' menu and select like tree rows, through the sidebar's
+selection. Right-click and ⋯ share the tree's menu: Restore on one row,
+Restore N on a selection. `restore(entries)` on `DocumentTrashRestoreProvider` sends one request
+for all of them; each entry shows its own outcome on its row (a blocked one keeps "Couldn't restore
+… A file is in the way."), and one notice counts the ones that came back ("Restored 3 files.").
+There is no Delete forever: permanent removal is only the scheduled purge.

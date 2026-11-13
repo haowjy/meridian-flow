@@ -1,34 +1,10 @@
 /**
- * Purpose: Defines JSON-natural recent-document and live-lineage DTOs.
+ * Purpose: Defines JSON-natural thread-document and live-lineage DTOs.
  * Why independent: Chat rail data is shared by server routes and frontend query consumers.
  */
 import type { DraftOwnerKey } from "../branches/owner.js";
-import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
-import type { DocumentFileType } from "./http-types.js";
 
 export type ThreadDocumentRelationship = "editing" | "reading" | "created";
-
-export type ThreadDocumentKind = "tracked" | "binary";
-
-export interface ThreadRecentDocumentItem {
-  threadId: string;
-  documentId: string;
-  name: string;
-  extension: string;
-  sizeBytes: number | null;
-  editable: boolean;
-  filetype: Filetype | null;
-  schemaType: YjsTrackedSchemaType | null;
-  fileType: DocumentFileType | null;
-  mimeType: string | null;
-  kind: ThreadDocumentKind;
-  touchedAt: string;
-  updatedAt: string;
-}
-
-export interface ListThreadRecentDocumentsResponse {
-  documents: ThreadRecentDocumentItem[];
-}
 
 /**
  * What a turn did to where a document is, net of its own moves: deleted it, moved it, or

@@ -87,8 +87,9 @@ still refuse or skip until tree reverts are implemented.
 
 Review disposition is not otherwise inverse eligibility: an effective Undo that restores the
 review base has no shown change and can read discarded. In an active draft the kernel decides
-Undo/Redo, Revert and failed-scope rollback eligibility; discarded disposition chooses the copy
-only when the kernel skips a part. Effective action consumption follows immutable receipts,
+Undo/Redo, Revert and failed-scope rollback eligibility; a discarded or applied disposition
+chooses the copy only when the kernel skips a part, ahead of the edited-since reading, so an
+applied part never reads as the writer's edit. Effective action consumption follows immutable receipts,
 regardless of whether those receipts currently contribute to review. Closed drafts are never
 writable. History derives its offered command from the same captured origin-resolved plan as the
 write command; an archived origin shows no action even when the chat's current destination is

@@ -299,16 +299,6 @@
       },
       {
         "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
-        "line": "void fetchCurrentDraftMetadata(queryClient, draft)",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
-        "line": "void openReview?.({",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/draft-review/DraftOnlySettlement.tsx",
         "line": "void resources",
         "count": 1
       },
@@ -338,13 +328,13 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/features/project/context/context-tab-session.tsx",
-        "line": "void resources",
+        "path": "apps/app/src/features/project/context/ContextDocumentHost.tsx",
+        "line": "void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);",
         "count": 1
       },
       {
-        "path": "apps/app/src/features/project/context/ContextDocumentHost.tsx",
-        "line": "void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);",
+        "path": "apps/app/src/features/project/context/open-document-session.tsx",
+        "line": "void resources",
         "count": 1
       },
       {
@@ -580,21 +570,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/components/app/work-composer-controls/WorkPickerPanel.tsx",
-        "line": "// biome-ignore lint/a11y/useSemanticElements: fieldset intrinsic sizing breaks the bounded results scrollport.",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/chat/DraftDock.tsx",
-        "line": "{/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/chat/DraftDock.tsx",
-        "line": "{/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/features/chat/DraftDock.tsx",
         "line": "// biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own.",
         "count": 1
@@ -617,11 +592,6 @@
       {
         "path": "apps/app/src/features/editor/surfaces/objects/CodeBlockChips.tsx",
         "line": "// biome-ignore lint/a11y/noStaticElementInteractions: the mousedown only keeps the caret where it was; every control inside is a button",
-        "count": 1
-      },
-      {
-        "path": "apps/app/src/features/project/context/ContextTreeRows.tsx",
-        "line": "{/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}",
         "count": 1
       },
       {

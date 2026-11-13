@@ -255,8 +255,6 @@ import { createDrizzleRepositories } from "../domains/threads/adapters/drizzle/i
 import { createInMemoryRepositories } from "../domains/threads/adapters/in-memory/index.js";
 import { readThreadActivity } from "../domains/threads/domain/thread-activity.js";
 import {
-  type ActiveDocumentResolver,
-  createActiveDocumentResolver,
   createDrizzleTopPrimaryChatResolver,
   createInMemoryEventJournalWriter,
   requireThreadOwner,
@@ -443,7 +441,6 @@ export type ProductionAppPorts = {
   documentProperties: DocumentPropertiesReader;
   promotionService: PromotionService;
   notices: NoticePort;
-  activeDocuments: ActiveDocumentResolver;
   runClaim: RunClaim;
   statusReader: ThreadStatusReader;
   /** Links shown to the model per thread and document (contract §7). */
@@ -536,7 +533,6 @@ export async function createProductionAppPorts(input: {
     lineageScratch,
     statusReader,
   );
-  const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
@@ -776,7 +772,6 @@ export async function createProductionAppPorts(input: {
     documentProperties: createDrizzleDocumentPropertiesReader(db),
     promotionService,
     notices,
-    activeDocuments,
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
     shownLinks: createDrizzleShownLinkStore(db),
@@ -809,6 +804,29 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     eventSink: ports.eventSink,
     scheduleAfterCommit: runAfterDrizzleCommit,
+    // A hint is lossy: a missed one leaves a list stale until its next read, never wrong.
+    onLifecycleCommitted: (threadId) =>
+      backgroundTasks.track(
+        ports.threadRepos.threads
+          .findById(threadId)
+          .then((thread) => {
+            if (thread)
+              ports.contextCatalogWakeHub.publish({
+                type: "project-chats-hint",
+                projectId: thread.projectId,
+              });
+          })
+          .catch((error) =>
+            emitEvent(ports.eventSink, {
+              level: "warn",
+              source: "threads.event_hub",
+              name: "project_chats_hint.failed",
+              correlation: { threadId },
+              payload: unknownToEventPayload(error),
+            }),
+          ),
+        "project chats hint",
+      ),
   });
   const importOrganizer = createProductionImportOrganizer({
     db: ports.db,
@@ -890,7 +908,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     controls: delivery,
     transaction: ports.threadRepos.transaction,
     stopThreads,
-    documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
     objectStore: ports.objectStore,
     release: ports.objectRelease,
@@ -1135,7 +1152,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
     shownLinks: ports.shownLinks,
-    documentTouches: ports.threadRepos.documentTouches,
     observationFrontiers: ports.observationFrontiers,
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
@@ -1162,7 +1178,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     delivery,
     runClaim: runClaim,
     handoffBriefs: handoffBriefStopper,
-    activeDocuments: ports.activeDocuments,
     imageAssets,
   };
   const orchestrator = createOrchestrator(orchestratorDeps);

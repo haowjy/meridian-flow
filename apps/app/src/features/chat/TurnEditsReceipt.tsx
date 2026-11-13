@@ -12,17 +12,23 @@ import type {
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isReversibleWorkReceipt } from "@meridian/contracts/works";
 import type { WorkReceipt } from "@meridian/thread-client";
-import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { type ReversalDirection, successfulWorkReversals } from "@/client/api/reverse-api";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { FoldToggle } from "@/components/ui/fold-toggle";
+import { MIDDLE_BUTTON } from "@/core/editor/links";
 import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
-import { cn } from "@/lib/utils";
-import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
+import {
+  type CanOpenContextUri,
+  type OpenContextUri,
+  useChatContextNavigation,
+  useChatContextRoutability,
+} from "./ChatContextNavigation";
 import { DocumentName } from "./DocumentName";
 import {
   describeModelMove,
@@ -99,11 +105,6 @@ export function TurnEditsReceipt({
   // lines list as rows, and their presence is what keeps a Work-only turn's
   // Undo on screen.
   const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkReceipt);
-  // Chrome counts, never names. A document name here would sit inside the
-  // disclosure toggle, competing for the click at the moment the writer is
-  // reaching to open it — and the names it would compete with are the ones in
-  // the expanded rows below, which already navigate.
-  const headerDocumentCount = new Set(documents.map((document) => document.documentId)).size;
   const undoUnavailable = receipt == null || receipt.control === "view_change";
 
   useEffect(() => {
@@ -192,55 +193,40 @@ export function TurnEditsReceipt({
   }
   return (
     <div
-      className="overflow-hidden rounded-lg border border-border bg-chat-interactive text-caption text-ink-muted"
+      className="overflow-hidden rounded-lg border border-border bg-card text-xs text-muted-foreground"
       data-turn-receipt
     >
-      {/* The WHOLE header row is the expand/collapse target — hover washes the
-            full width, wrapping around the Undo chip, which fences its own click. */}
+      {/* The WHOLE header row is the expand/collapse target, around the Undo chip, which
+            fences its own click. No hover fill, as on every fold. A strip row with the box's
+            border, whether Undo or "Can't undo" shows. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the inner button is the keyboard-accessible toggle; the row onClick is a mouse convenience. slop-lint: allow suppression the reason is stated in this comment */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. slop-lint: allow suppression the reason is stated in this comment */}
       <div
         onClick={() => setExpanded((value) => !value)}
-        className="flex cursor-pointer items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] transition-colors hover:bg-muted"
+        className="flex min-h-[calc(var(--strip-row)-2px)] cursor-pointer items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] py-1"
       >
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-controls={panelId}
-          onClick={(event) => {
+        <FoldToggle
+          open={expanded}
+          onToggle={(event) => {
             event.stopPropagation();
             setExpanded((value) => !value);
           }}
-          className="focus-ring -mx-1 flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] rounded-md px-1 text-left"
+          aria-controls={panelId}
+          inline
+          className="-mx-1 flex-1 px-1 coarse:min-h-11"
         >
-          <ChevronDown
-            className={cn(
-              "size-3.5 shrink-0 text-ink-subtle transition-transform",
-              expanded && "rotate-180",
-            )}
-            aria-hidden
-          />
-          <span aria-hidden className="text-ink-subtle">
-            ✎
-          </span>
           <span className="flex min-w-0 flex-1 items-baseline">
-            <span className="min-w-0 truncate font-medium text-prose-foreground">
-              {headerDocumentCount > 0
-                ? documentCountLabel(
-                    headerDocumentCount,
-                    documents.some((document) => document.tree),
-                  )
+            <span className="min-w-0 truncate font-medium text-foreground">
+              {hasEditedDocuments
+                ? documentCountLabel(documents)
                 : workCountLabel(reversibleWorkReceipts.length)}
             </span>
           </span>
-        </button>
+        </FoldToggle>
         {undoUnavailable ? (
-          <span
-            className="shrink-0 rounded-full border border-border-subtle px-[var(--chat-space-block)] py-0.5 font-medium text-ink-muted"
-            data-undo-unavailable
-          >
+          <Chip kind="label" className="shrink-0" data-undo-unavailable>
             <Trans>Can't undo</Trans>
-          </span>
+          </Chip>
         ) : (
           <Button
             type="button"
@@ -289,7 +275,7 @@ export function TurnEditsReceipt({
           {outcomeNotices?.map((notice) => (
             <p
               key={notice}
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-foreground"
               data-reversal-outcome
               role="status"
             >
@@ -298,7 +284,7 @@ export function TurnEditsReceipt({
           ))}
           {guardCopy ? (
             <p
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-ink-muted"
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-muted-foreground"
               data-undo-unavailable-reason
               role="status"
             >
@@ -322,7 +308,7 @@ export function TurnEditsReceipt({
             <ul className="flex flex-col">
               {reversibleWorkReceipts.map((workRow, index) => (
                 <li key={`${index}:${workRow.operation}:${workRow.workId}`}>
-                  <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
+                  <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground">
                     {workReceiptLine(workRow)}
                   </span>
                 </li>
@@ -359,8 +345,8 @@ function DocumentRow({
   canOpenContextUri,
 }: {
   document: TurnEditDocument;
-  onOpenContextUri: ((uri: string) => void) | null;
-  canOpenContextUri: ((uri: string) => boolean) | null;
+  onOpenContextUri: OpenContextUri | null;
+  canOpenContextUri: CanOpenContextUri | null;
 }) {
   const drag = useDocumentRowDrag(document);
   const openable =
@@ -369,7 +355,7 @@ function DocumentRow({
     return (
       <span
         {...drag}
-        className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
+        className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground"
       >
         <DocumentRowLabel document={document} />
       </span>
@@ -380,7 +366,10 @@ function DocumentRow({
       type="button"
       {...drag}
       onClick={() => onOpenContextUri(document.uri)}
-      className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-muted"
+      onAuxClick={(event) => {
+        if (event.button === MIDDLE_BUTTON) onOpenContextUri(document.uri);
+      }}
+      className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-ink-fill"
     >
       <DocumentRowLabel document={document} />
     </button>
@@ -416,12 +405,12 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
     const { kind, place } = describeModelMove(tree.from, tree.to, names);
     if (kind === "reorder")
       return (
-        <span className="min-w-0 truncate text-prose-foreground" data-turn-tree-line="move">
+        <span className="min-w-0 truncate text-foreground" data-turn-tree-line="move">
           <Trans>Changed the position of {source}</Trans>
         </span>
       );
     return (
-      <span className="min-w-0 truncate text-prose-foreground" data-turn-tree-line="move">
+      <span className="min-w-0 truncate text-foreground" data-turn-tree-line="move">
         <Trans>
           Moved {source} to {place}
         </Trans>
@@ -432,7 +421,7 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
     const source = documentDisplayName(tree.from);
     const { place } = describeModelMove(tree.from, tree.to, names);
     return (
-      <span className="min-w-0 truncate text-prose-foreground" data-turn-tree-line="copy">
+      <span className="min-w-0 truncate text-foreground" data-turn-tree-line="copy">
         <Trans>
           Copied {source} to {place}
         </Trans>
@@ -442,7 +431,7 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
   if (tree?.op === "delete") {
     const name = documentDisplayName(tree.from);
     return (
-      <span className="min-w-0 truncate text-prose-foreground" data-turn-tree-line="delete">
+      <span className="min-w-0 truncate text-foreground" data-turn-tree-line="delete">
         <Trans>Deleted {name}</Trans>
       </span>
     );
@@ -451,9 +440,23 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
   return <DocumentName path={document.uri} insideDoor />;
 }
 
-/** "Edited" while the turn only changed text; "Changed" once it moved or deleted a document. */
-function documentCountLabel(count: number, tree: boolean) {
-  if (tree)
+/**
+ * "Drafted" when every change went into a draft, so the manuscript is as it was until the writer
+ * applies it; else "Edited" while the turn only changed text, "Changed" once it moved or deleted
+ * a document or wrote both drafts and the manuscript. The part lines say what became of each.
+ * It counts, never names: a name inside the toggle would compete for the click with the
+ * expanded rows, which already open each document.
+ */
+function documentCountLabel(documents: readonly TurnEditDocument[]) {
+  const count = new Set(documents.map((document) => document.documentId)).size;
+  const drafted = documents.filter((document) => document.scope === "draft").length;
+  if (drafted === documents.length)
+    return count === 1 ? (
+      <Trans>Drafted 1 document</Trans>
+    ) : (
+      <Trans>Drafted {count} documents</Trans>
+    );
+  if (drafted > 0 || documents.some((document) => document.tree))
     return count === 1 ? (
       <Trans>Changed 1 document</Trans>
     ) : (

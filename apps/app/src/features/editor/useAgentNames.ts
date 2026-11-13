@@ -22,7 +22,7 @@ export function useAgentNames(
 
   useEffect(() => {
     // Untitled threads contribute nothing: the mark label falls back to "AI",
-    // which reads better than the thread list's "New chat" placeholder.
+    // which reads better than the thread list's "Untitled chat" placeholder.
     const names = new Map<string, string>();
     for (const thread of threads ?? []) {
       const title = thread.title?.trim();

@@ -1,6 +1,6 @@
 /**
- * DraftChip — the version chip of a document with a pending draft, in its
- * states. Pending: "Live" on the live document. Reviewing: "Draft". Both are
+ * DraftChip — the version chip of a document, in its states. Green means a
+ * draft exists. Live: a document no Work has drafted. Pending: "Live" on the live document. Reviewing: "Draft". Both are
  * the trigger of the same version menu (`DraftSwitcher`). Same jade pill, dot,
  * chevron and box in every state, so the control the writer clicked to get in is
  * still where they look to get out.
@@ -9,19 +9,26 @@
  * button or menu trigger that owns the click, focus ring and hit area (the
  * wrapper carries `group/chip` so the face can answer hover and open).
  */
-import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
-
-import { IDENTITY_BAR_BOX_CLASS } from "@/features/project/context/identity-bar-geometry";
+import { Chip } from "@/components/ui/chip";
+import { ChooserMark } from "@/components/ui/marks";
 import { cn } from "@/lib/utils";
 
-export type DraftChipState = "pending" | "reviewing" | "failed";
+export type DraftChipState = "live" | "pending" | "reviewing" | "failed";
 
-const TONE: Record<DraftChipState, string> = {
-  pending: "border-primary/30 bg-primary/10 text-jade-text group-hover/chip:bg-primary/15",
-  reviewing:
-    "border-primary/40 bg-primary/15 text-jade-text group-hover/chip:bg-primary/20 group-data-[state=open]/chip:bg-primary/25",
-  failed: "border-destructive/40 bg-destructive/10 text-destructive",
+const TONE = {
+  live: "neutral",
+  pending: "jade",
+  reviewing: "jade",
+  failed: "destructive",
+} as const satisfies Record<DraftChipState, string>;
+
+/** The chip answers its wrapper's hover and open menu. */
+const RESPONSE: Record<DraftChipState, string> = {
+  live: "group-hover/chip:bg-ink-fill group-hover/chip:text-foreground group-popup-open/chip:bg-ink-fill-strong group-popup-open/chip:text-foreground",
+  pending: "group-hover/chip:bg-primary/22",
+  reviewing: "group-hover/chip:bg-primary/22 group-popup-open/chip:bg-primary/22",
+  failed: "",
 };
 
 /** The wrapper's hit area: the pill itself on desktop, a 44px target around it on a phone. */
@@ -46,22 +53,18 @@ export function DraftChipFace({
   children: ReactNode;
 }) {
   return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border px-1.5 font-medium font-sans text-xs transition-colors",
-        touch ? "h-8 px-2.5 text-sm" : IDENTITY_BAR_BOX_CLASS,
-        TONE[state],
+    <Chip tone={TONE[state]} className={cn(RESPONSE[state], touch && "h-8 px-2.5 text-sm")}>
+      {state === "live" ? null : (
+        <span
+          aria-hidden
+          className={cn(
+            "size-1.5 rounded-full",
+            state === "failed" ? "bg-destructive" : "bg-primary",
+          )}
+        />
       )}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "size-1.5 rounded-full",
-          state === "failed" ? "bg-destructive" : "bg-primary",
-        )}
-      />
       <span>{children}</span>
-      {menu ? <ChevronDown aria-hidden className="-mr-0.5 size-3 shrink-0 opacity-70" /> : null}
-    </span>
+      {menu ? <ChooserMark className="-mr-0.5" /> : null}
+    </Chip>
   );
 }

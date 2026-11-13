@@ -4,7 +4,7 @@
  * One component owns every verb a diagram, an image, or a code block offers in
  * the page, because all three answer the same question — what is the writer
  * approaching — and a second answer is how two surfaces end up on screen at
- * once. Hover reveals, selection makes persistent, and the ⋮ holds what the row
+ * once. Hover reveals, selection makes persistent, and the ⋯ holds what the row
  * has no room for.
  *
  * Diagram and image rows are `OverlayIconRow`s. A code block gets the chip
@@ -12,14 +12,14 @@
  * because its language is a labeled control.
  *
  * **Nothing here names an object type.** Which objects this surface serves, what
- * their ⋮ offers, and which keys they answer are all reads of
+ * their ⋯ offers, and which keys they answer are all reads of
  * `EDITOR_OBJECT_TYPES`: the surfaces are registered per registration id, the
- * verbs come from `object-menu-items.tsx`, and the fields a ⋮ can edit come from
+ * verbs come from `object-menu-items.tsx`, and the fields a ⋯ can edit come from
  * the row's `surfaceFields`. A new object kind — a new diagram provider included
  * — reaches this file as data.
  *
  * Two of the claim ladder's rungs land here. `object` is a right-click on a
- * diagram or an image, which opens the ⋮ it already has. `caret` is a
+ * diagram or an image, which opens the ⋯ it already has. `caret` is a
  * right-click INSIDE a plain fence, which used to reach the browser and now
  * opens the fence's own verbs as one list.
  *
@@ -153,7 +153,7 @@ export function ObjectControls({ editor }: { editor: Editor }) {
     };
   }, [editor, openLightbox]);
 
-  // Right-click on an object opens the same ⋮ menu (§5.2). The kernel routes
+  // Right-click on an object opens the same ⋯ menu (§5.2). The kernel routes
   // the event; deciding is synchronous, opening may be a state update.
   useEffect(() => {
     if (!chrome) return;

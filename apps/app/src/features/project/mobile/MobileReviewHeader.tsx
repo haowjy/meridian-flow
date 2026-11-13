@@ -1,24 +1,38 @@
-/** Phone review chrome: version, stepper and list control in one row. Completion replaces stepping in that same row; whole commands live in the version menu. */
+/**
+ * Phone review chrome: version, stepper and list control in one row. Completion replaces stepping
+ * in that same row; whole commands live in the version menu. A Discard's notice takes a row of
+ * its own under it, where its verb and Undo always fit.
+ */
 import { t } from "@lingui/core/macro";
 import { List } from "lucide-react";
+import type { OpenDocument } from "@/client/stores";
+import { DraftNoticeLine } from "@/features/draft-review/CommandNotice";
 import { changeListLabel } from "@/features/draft-review/DocumentChanges";
-import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
+import type { DraftNotice } from "@/features/draft-review/draft-notices";
+import { DiscardQuestion } from "@/features/draft-review/ReviewActions";
 import {
   ReviewFailureNotices,
   ReviewStateInline,
 } from "@/features/draft-review/ReviewHeaderNotices";
 import { ReviewStepper } from "@/features/draft-review/ReviewStepper";
 import type { ReviewHeaderModel } from "@/features/draft-review/useReviewHeader";
+import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
 import { type ManuscriptState, ManuscriptStateSlot } from "@/features/editor/ManuscriptStateNotice";
 
 export function MobileReviewHeader({
+  projectId,
+  document,
   header,
   manuscriptState,
+  notice,
   onOpenList,
 }: {
+  projectId: string;
+  document: OpenDocument;
   header: ReviewHeaderModel;
   /** What live did to this document; it takes the row's free end. */
   manuscriptState: ManuscriptState | null;
+  notice: DraftNotice | null;
   onOpenList: () => void;
 }) {
   const { controller, view, finished } = header;
@@ -29,7 +43,7 @@ export function MobileReviewHeader({
     <section
       aria-label={t`Draft review`}
       data-phone-review-header
-      className="flex shrink-0 flex-col border-b border-border-subtle bg-dock-surface text-caption"
+      className="flex shrink-0 flex-col border-b border-border-subtle bg-review text-xs"
     >
       <div
         className="flex min-h-12 items-center gap-1"
@@ -39,25 +53,37 @@ export function MobileReviewHeader({
         }}
       >
         <div className="min-w-0">
-          <DraftSwitcher
-            draftOnly={header.draftOnly}
-            disabled={header.locked}
-            onShowLive={header.showLive}
+          <DocumentVersionMenu
+            projectId={projectId}
+            document={document}
             touch
-            draftCommands={
-              finished
+            review={{
+              draftOnly: header.draftOnly,
+              disabled: header.locked,
+              onShowLive: header.showLive,
+              draftCommands: finished
                 ? undefined
                 : {
                     canApply: header.canApply,
                     applying: header.completing === "apply",
                     onApply: header.applyDraft,
                     onDiscard: header.discardDraft,
-                  }
-            }
-            marks={{ visible: controller.marksVisible, onChange: controller.setMarksVisible }}
+                  },
+              marks: { visible: controller.marksVisible, onChange: controller.setMarksVisible },
+            }}
           />
         </div>
-        <ManuscriptStateSlot state={manuscriptState} touch />
+        {header.asking ? (
+          <DiscardQuestion
+            touch
+            scope="document"
+            className="flex-1"
+            onKeep={header.keepDraft}
+            onConfirm={header.confirmDiscard}
+          />
+        ) : (
+          <ManuscriptStateSlot state={manuscriptState} touch />
+        )}
         <ReviewStateInline
           touch
           finished={finished}
@@ -87,8 +113,10 @@ export function MobileReviewHeader({
           <List className="size-5" aria-hidden />
         </button>
       </div>
+      {notice ? (
+        <DraftNoticeLine notice={notice} className="border-t border-border-subtle" />
+      ) : null}
       <ReviewFailureNotices
-        touch
         itemKey={view.itemKey ?? ""}
         commandError={header.commandError}
         failedElsewhere={header.failedElsewhere}

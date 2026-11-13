@@ -1,4 +1,5 @@
 /** Review composition over a warm live editor and the scope owner's addressed branch binding. */
+
 import { Trans } from "@lingui/react/macro";
 import { canonicalContextUri } from "@meridian/contracts";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
@@ -7,11 +8,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
-import type { LiveEditorContainer } from "@/core/editor/live-range-navigation-runtime";
 import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-editor";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { InlineDraftReview } from "@/features/draft-review/draft-review-session";
-import type { ReviewSurface } from "@/features/draft-review/review-runtime";
+import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { type EditorSurfaceOptions, PendingEditorShell, SessionEditor } from "./SessionEditor";
 import { useInlineReviewFocus } from "./useInlineReviewFocus";
@@ -31,11 +31,10 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   showCollaborationDecorations?: boolean;
   /** Requested destination, including while the canonical room is still resolving. */
   reviewItemKey?: string | null;
-  /** The hosting tab instance, whose focus-on-open intent the live editor claims. */
+  /** The hosted document, whose focus-on-open intent the live editor claims. */
   focusKey?: string;
-  /** Which host mounts this editor; the dock's is "dock". */
-  reviewSurface?: ReviewSurface;
-  container?: LiveEditorContainer;
+  /** Main's document: the page load's caret goes to it, not to a side's or a sheet's. */
+  loadFocus?: boolean;
 };
 
 const REVIEW_MARKS_WAIT_MS = 1500;
@@ -88,7 +87,6 @@ export function EditorView(props: EditorViewProps) {
         }
       : null;
   const surfaceOptions: EditorSurfaceOptions = {
-    className: props.className,
     editable: props.editable,
     showToolbar: props.showToolbar,
     active: props.active,
@@ -192,7 +190,7 @@ export function EditorView(props: EditorViewProps) {
               }}
               session={liveSession}
               focusKey={props.focusKey}
-              container={props.container ?? "editor"}
+              loadFocus={props.loadFocus}
             />
           </div>
         </PaintScope>
@@ -207,7 +205,6 @@ export function EditorView(props: EditorViewProps) {
             <SessionEditor
               identity={identity}
               session={reviewSession}
-              container={props.container ?? "editor"}
               holderUri={reviewHolderUri}
               surfaceOptions={{
                 ...surfaceOptions,
@@ -229,7 +226,6 @@ export function EditorView(props: EditorViewProps) {
               review={review}
               session={reviewSession}
               editor={reviewEditor}
-              surface={props.reviewSurface}
               onModelAvailable={() => {
                 setConstructed((current) =>
                   current?.key === reviewKey && !current.modelReady
@@ -246,13 +242,13 @@ export function EditorView(props: EditorViewProps) {
 }
 
 function ReviewError({ props }: { props: EditorViewProps }) {
-  const { controller, roomOwner } = useDraftReview();
+  const { controller, roomOwner, showLive } = useDraftReview();
   // Desktop draft-only failures retain review until Close. Phone server documents
   // can return to live; phone draft-only destinations reuse the desktop close policy.
-  const closeUnavailable = props.draftOnly ? props.onCloseDraftOnly : controller.exitInlineReview;
+  const closeUnavailable = props.draftOnly ? props.onCloseDraftOnly : showLive;
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-      <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
+      <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-float">
         <p className="font-medium text-foreground text-sm">
           <Trans>Couldn't open review mode.</Trans>
         </p>
@@ -263,11 +259,11 @@ function ReviewError({ props }: { props: EditorViewProps }) {
             <Trans>Try again, or return to the live document.</Trans>
           )}
         </p>
-        <div className="flex justify-center gap-2">
+        <div className="flex items-center justify-center gap-1.5">
           {props.reviewItemKey ? (
             <Button
               type="button"
-              size="sm"
+              size="xs"
               variant="secondary"
               onClick={() => {
                 roomOwner.reopen();
@@ -277,23 +273,24 @@ function ReviewError({ props }: { props: EditorViewProps }) {
               <Trans>Retry</Trans>
             </Button>
           ) : null}
-          {/* A text draft is discarded in its editor (Ctrl+Z undoes it); with none open only a whole item can be. */}
+          {/* With no review read, the Discard goes to the server and has no Undo: it asks first. */}
           {props.reviewItemKey &&
           controller.inlineReview?.documentId === props.documentId &&
           controller.inlineReview.itemKey === props.reviewItemKey ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
+            <ReviewActions
+              scope="document"
+              named
               disabled={controller.dispositionLocked}
-              onClick={() =>
+              discardAsks={controller.discardAsks({
+                documentId: props.documentId,
+                itemKey: props.reviewItemKey,
+              })}
+              onDiscard={() =>
                 void controller.discard(props.documentId, props.reviewItemKey as string)
               }
-            >
-              <Trans>Discard draft</Trans>
-            </Button>
+            />
           ) : null}
-          <Button type="button" size="sm" variant="ghost" onClick={closeUnavailable}>
+          <Button type="button" size="xs" variant="ghost" onClick={closeUnavailable}>
             {props.draftOnly ? <Trans>Close</Trans> : <Trans>Back to live</Trans>}
           </Button>
         </div>
@@ -307,19 +304,16 @@ function ReviewRuntime({
   review,
   session,
   editor,
-  surface,
   onModelAvailable,
 }: {
   review: InlineDraftReview;
   session: DocumentSession;
   editor: Editor | null;
-  surface?: ReviewSurface;
   onModelAvailable: () => void;
 }) {
   useInlineReviewSync({
     editor,
     session,
-    surface,
     onInlineModelAvailable: onModelAvailable,
   });
   useInlineReviewFocus({

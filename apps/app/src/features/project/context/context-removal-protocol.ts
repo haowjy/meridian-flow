@@ -1,21 +1,20 @@
 /** Pure selection and represented-removal obligation protocol. */
 
-import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
-import type { ContextTab } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { canonicalDocumentPath } from "../routing/local-document-address";
-import { type ContextRouteTarget, sameContextTarget } from "../routing/project-route";
+import { type ContextRouteRequest, sameContextTarget } from "../routing/project-route";
 import {
   type ContextRemovalIntent,
   type ContextRouteIdentity,
-  contextTabEligibleForRemoval,
   type ExactRouteCleanup,
+  openDocumentEligibleForRemoval,
   type RouteContinuityVerdict,
   routeTargetForTab,
 } from "./context-removal-planner";
-import { contextTabMatchesRoute } from "./context-tab-identity";
+import { openDocumentMatchesRoute } from "./open-document-identity";
 
 export type RouteRemovalProof = {
-  locator: ContextRouteTarget;
+  locator: ContextRouteRequest;
   identity: ContextRouteIdentity;
   witnessedRevision: number;
   intent: ContextRemovalIntent;
@@ -42,21 +41,21 @@ export type ContextRouteSelection =
   | {
       status: "candidate";
       revision: number;
-      locator: ContextRouteTarget;
+      locator: ContextRouteRequest;
       obligations: readonly PendingRouteObligation[];
       reentryGuard: TerminalRouteRemoval | null;
     }
   | {
       status: "bound";
       revision: number;
-      locator: ContextRouteTarget;
+      locator: ContextRouteRequest;
       identity: ContextRouteIdentity;
       by: RouteBindingProof;
     }
   | {
       status: "rejected";
       revision: number;
-      locator: ContextRouteTarget;
+      locator: ContextRouteRequest;
       reason: "fulfilled-absence" | "missing-local-owner";
     };
 
@@ -64,7 +63,6 @@ export type RemovalPlanningEffect = {
   intent: ContextRemovalIntent;
   cleanup: ExactRouteCleanup | null;
   current: RouteContinuityVerdict;
-  repair: "allow" | "never";
 };
 
 export type SelectionTransition = {
@@ -76,7 +74,7 @@ export type SelectionTransition = {
 
 export const sameLocator = sameContextTarget;
 
-export type RouteOwner = Pick<ContextRouteTarget, "scheme" | "path" | "workId" | "rootThreadId">;
+export type RouteOwner = Pick<ContextRouteRequest, "scheme" | "path" | "workId" | "rootThreadId">;
 
 /** Whether the selection is about exactly this route (paths compare without the leading slash). */
 export function selectionAtRoute(
@@ -143,13 +141,12 @@ function settleObligations(
             identity: observed ?? proof.identity,
           }
         : current,
-    repair,
   }));
 }
 
 export function beginSelection(
   selection: ContextRouteSelection,
-  locator: ContextRouteTarget,
+  locator: ContextRouteRequest,
   reentryGuard: TerminalRouteRemoval | null = null,
 ): SelectionTransition {
   // A navigation that named its document, or an answer, already bound this locator. A review's
@@ -179,29 +176,6 @@ export function beginSelection(
   return {
     selection: next,
     planning: settleObligations(selection, null, { kind: "none" }, "never"),
-    rejection: null,
-    retireReentryGuard: false,
-  };
-}
-
-/** Supersedes old-Work continuity without ever offering it for promotion. */
-export function supersedeSelectionForWorkChange(
-  selection: ContextRouteSelection,
-  locator: ContextRouteTarget | null,
-  reentryGuard: TerminalRouteRemoval | null = null,
-): SelectionTransition {
-  if (selection.status === "bound" && locator && sameLocator(selection.locator, locator))
-    return { selection, planning: [], rejection: null, retireReentryGuard: false };
-  const revision = selection.revision + 1;
-  const next: ContextRouteSelection = locator
-    ? { status: "candidate", revision, locator, obligations: [], reentryGuard }
-    : { status: "none", revision };
-  return {
-    selection: next,
-    planning:
-      selection.status === "candidate"
-        ? settleObligations(selection, null, { kind: "none" }, "never")
-        : [],
     rejection: null,
     retireReentryGuard: false,
   };
@@ -240,7 +214,6 @@ export function bindSelection(
                   locator: selection.locator,
                   identity,
                 },
-                repair: "allow" as const,
               },
             ]
           : []),
@@ -325,9 +298,7 @@ export function rejectSelection(
     selection: next,
     planning: [
       ...settleObligations(selection, null, current, "allow"),
-      ...(guard
-        ? [{ intent: guard.intent, cleanup: guard.cleanup, current, repair: "allow" as const }]
-        : []),
+      ...(guard ? [{ intent: guard.intent, cleanup: guard.cleanup, current }] : []),
     ],
     rejection: guard || selection.obligations.length > 0 ? null : next,
     retireReentryGuard: false,
@@ -348,29 +319,29 @@ export function leaveSelection(selection: ContextRouteSelection): SelectionTrans
 }
 
 function representedTab(
-  tabs: readonly ContextTab[],
+  tabs: readonly OpenDocument[],
   intent: ContextRemovalIntent,
   selection: ContextRouteSelection,
-): ContextTab | null {
+): OpenDocument | null {
   if (selection.status === "none") {
-    return tabs.find((tab) => contextTabEligibleForRemoval(tab, intent)) ?? null;
+    return tabs.find((tab) => openDocumentEligibleForRemoval(tab, intent)) ?? null;
   }
   return (
     tabs.find((tab) => {
-      if (!contextTabEligibleForRemoval(tab, intent)) return false;
+      if (!openDocumentEligibleForRemoval(tab, intent)) return false;
       if (tab.kind === "new") {
         return selection.locator.scheme === "unfiled" && selection.locator.path === "";
       }
-      return contextTabMatchesRoute(tab, selection.locator);
+      return openDocumentMatchesRoute(tab, selection.locator);
     }) ??
-    tabs.find((tab) => contextTabEligibleForRemoval(tab, intent)) ??
+    tabs.find((tab) => openDocumentEligibleForRemoval(tab, intent)) ??
     null
   );
 }
 
 export function reduceRepresentedRemoval(
   selection: ContextRouteSelection,
-  tabs: readonly ContextTab[],
+  tabs: readonly OpenDocument[],
   intent: ContextRemovalIntent,
   exactBoundIdentity = false,
 ): { selection: ContextRouteSelection; planning: RemovalPlanningEffect } {
@@ -393,7 +364,6 @@ export function reduceRepresentedRemoval(
           intent,
           cleanup,
           current: { kind: "proven-removed", ...cleanup },
-          repair: "allow",
         },
       };
     }
@@ -403,15 +373,10 @@ export function reduceRepresentedRemoval(
         intent,
         cleanup: null,
         current: continuityForSelection(selection),
-        repair: "allow",
       },
     };
   }
-  // A review removal addresses its own Work's route, not whichever Work is routed now.
-  const locator = routeTargetForTab(
-    represented,
-    (intent.reviewOwner && workIdOfDraftOwnerKey(intent.reviewOwner)) || selection.locator.workId,
-  );
+  const locator = routeTargetForTab(represented);
   const identity: ContextRouteIdentity = {
     kind: represented.kind === "new" ? "local" : "server",
     documentId: represented.documentId,
@@ -425,7 +390,6 @@ export function reduceRepresentedRemoval(
   const cleanup = cleanupForProof(proof);
   let nextSelection = selection;
   let current = continuityForSelection(selection);
-  let repair: "allow" | "never" = "allow";
   if (selection.status === "candidate" && sameLocator(selection.locator, locator)) {
     nextSelection = {
       ...selection,
@@ -440,8 +404,6 @@ export function reduceRepresentedRemoval(
     current = { kind: "proven-removed", revision: selection.revision, locator, identity };
   } else if (selection.status === "rejected" && sameLocator(selection.locator, locator)) {
     current = { kind: "proven-removed", revision: selection.revision, locator, identity };
-  } else if (!sameLocator(selection.locator, locator)) {
-    repair = "never";
   }
-  return { selection: nextSelection, planning: { intent, cleanup, current, repair } };
+  return { selection: nextSelection, planning: { intent, cleanup, current } };
 }

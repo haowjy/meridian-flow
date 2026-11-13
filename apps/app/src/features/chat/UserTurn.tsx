@@ -5,11 +5,12 @@ import { Loader2, X } from "lucide-react";
 import { memo, useMemo } from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import {
-  useCanOpenChatReference,
-  useOpenChatDocument,
-} from "@/features/project/context/open-chat-document";
-import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
+  canOpenReference,
+  useProjectDocumentNavigationProjectId,
+} from "@/features/project/context/open-project-document";
+import { useOpenPlacedDocument } from "@/features/project/review-launch";
 import { Markdown } from "@/rich-content/Markdown";
 import { referenceKey } from "@/rich-content/TranscriptReference";
 import { AnchoredCards } from "./ChatCards";
@@ -48,8 +49,7 @@ function UserTurnComponent({
   // cutoff the server would use, so it offers none.
   const handoff = useTurnDerivation() !== null && !queued && turn.status === "complete";
   const projectId = useProjectDocumentNavigationProjectId();
-  const openDocument = useOpenChatDocument(projectId ?? undefined);
-  const canOpenReference = useCanOpenChatReference();
+  const openDocument = useOpenPlacedDocument(projectId ?? undefined);
   const resolutions = useReferenceAvailability(
     useMemo(
       () => [
@@ -74,7 +74,7 @@ function UserTurnComponent({
       referenceResolutions={resolutions}
       canOpenReference={canOpenReference}
       uploadsChat={uploadsChat}
-      onOpenReference={(documentId) => void openDocument({ documentId, disposition: "current" })}
+      onOpenReference={(documentId) => void openDocument(documentId)}
     >
       {projected.text}
     </Markdown>
@@ -92,17 +92,15 @@ function UserTurnComponent({
         // The x sits beside the bubble, centred on it; the bubble gives up width for it.
         <div className="flex items-center justify-end gap-[var(--chat-space-inline)]">
           <div className="user-message-bubble min-w-0">{content}</div>
-          <Button
+          <IconButton
             type="button"
-            variant="quiet"
-            size="icon-xs"
             data-queue-control="move-to-box"
-            aria-label={t`Move to the message box`}
-            className="shrink-0 [@media(pointer:coarse)]:size-11"
+            label={t`Move to the message box`}
+            className="shrink-0"
             onClick={() => queueControls.remove(turn.id)}
           >
             <X aria-hidden />
-          </Button>
+          </IconButton>
         </div>
       ) : (
         <div className="user-message-bubble">{content}</div>
@@ -128,7 +126,6 @@ function UserTurnComponent({
               variant="quiet"
               size="meta"
               data-queue-control="cancel-queue"
-              className="[@media(pointer:coarse)]:min-h-11"
               onClick={queueControls.cancelQueue}
             >
               {t`Cancel queue`}
@@ -143,7 +140,6 @@ function UserTurnComponent({
               data-busy={queueControls.sendNow.busy ? "" : undefined}
               disabled={queueControls.sendNow.busy}
               aria-label={t`Stop the reply and send now`}
-              className="[@media(pointer:coarse)]:min-h-11"
               onClick={queueControls.sendNow.send}
             >
               {queueControls.sendNow.busy ? (

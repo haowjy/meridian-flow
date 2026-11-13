@@ -2,10 +2,13 @@
  * Sheet — shadcn/Radix dialog-based slide-over primitive (used for mobile
  * drawers via the Sidebar). Upstream-managed wrapper; customize at call sites.
  */
+
+import { t } from "@lingui/core/macro";
 import { XIcon } from "lucide-react";
 import { Dialog as SheetPrimitive } from "radix-ui";
 import type * as React from "react";
-
+import { IconButton } from "@/components/ui/icon-button";
+import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
@@ -39,7 +42,7 @@ function SheetOverlay({
       // from the upstream-managed rule: the overlay is rendered internally by
       // SheetContent, so call sites can't reach it.
       className={cn(
-        "fixed inset-0 z-50 bg-black/50 ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-500 data-[state=open]:fade-in-0",
+        "fixed inset-0 z-50 bg-black/50 ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-(--motion-duration-panel) data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-(--motion-duration-panel) data-[state=open]:fade-in-0",
         className,
       )}
       {...props}
@@ -63,7 +66,7 @@ function SheetContent({
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          "fixed z-50 flex flex-col gap-4 bg-background shadow-lg transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500",
+          "fixed z-50 flex flex-col gap-4 bg-background shadow-modal transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-(--motion-duration-panel) data-[state=open]:animate-in data-[state=open]:duration-(--motion-duration-panel)",
           side === "right" &&
             "inset-y-0 right-0 h-full w-3/4 border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm",
           side === "left" &&
@@ -78,9 +81,10 @@ function SheetContent({
       >
         {children}
         {showCloseButton && (
-          <SheetPrimitive.Close className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary">
-            <XIcon className="size-4" />
-            <span className="sr-only">Close</span>
+          <SheetPrimitive.Close asChild>
+            <IconButton size="sm" label={t`Close`} className="absolute top-3 right-3">
+              <XIcon aria-hidden />
+            </IconButton>
           </SheetPrimitive.Close>
         )}
       </SheetPrimitive.Content>
@@ -112,7 +116,7 @@ function SheetTitle({ className, ...props }: React.ComponentProps<typeof SheetPr
   return (
     <SheetPrimitive.Title
       data-slot="sheet-title"
-      className={cn("font-semibold text-foreground", className)}
+      className={cn(role.sectionHeading, className)}
       {...props}
     />
   );

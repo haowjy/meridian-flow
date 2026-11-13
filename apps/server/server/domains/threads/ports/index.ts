@@ -40,8 +40,6 @@ export type {
   TranscriptItemRow,
   TranscriptKey,
   TranscriptSpan,
-  TurnDocumentTouch,
-  TurnDocumentTouchRepository,
   TurnRepository,
   UpdateTurnStatusInput,
   WorkThreadSummary,

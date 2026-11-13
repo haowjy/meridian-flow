@@ -1,6 +1,7 @@
 /**
- * Writer-facing subagent launch card. Running, it shows the live tool call;
- * finished, the row expands to the report. Only the chat icon opens the child.
+ * Writer-facing subagent card, one per run from launch to finish. Running, it shows the live tool
+ * call and, for a background run, Stop; finished, the row expands to the report. Only the chat
+ * icon opens the child.
  */
 
 import { t } from "@lingui/core/macro";
@@ -10,11 +11,15 @@ import type { DirectInvocationResult } from "@meridian/thread-client";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { getThreadExecutionReport } from "@/client/api/execution-reports-api";
+import { cn } from "@/lib/utils";
+import { ExpandableProse } from "./ClippedExpand";
 import { SourceChatLink, useSourceThread } from "./derivation/SourceChatLink";
 import { ReportContent } from "./ReportContent";
 import { useSubagentDisclosure } from "./subagent/DisclosureStore";
+import { subagentMarkName } from "./subagent/display";
 import type { SubagentRun } from "./subagent/run-model";
-import { SubagentRow, SubagentToolLine } from "./subagent/SubagentRow";
+import { SubagentRow, SubagentToolLine, subagentBodyIndent } from "./subagent/SubagentRow";
+import { SubagentStop, useSubagentStopScope } from "./subagent/SubagentStop";
 
 /** Where a background run's saved report lives; read only once the writer expands the card. */
 export type SavedReportSource = { threadId: string; childThreadId: string; execution: string };
@@ -102,10 +107,11 @@ export function SpawnReportCard({
   };
   const foreground = deliveryMode === "direct";
   const expandable = !running && (foreground ? directResult != null : savedReport != null);
+  const stopScope = useSubagentStopScope();
 
-  return (
+  const card = (stop?: { button: ReactNode; failures: ReactNode }) => (
     <div
-      className="min-w-0 chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] bg-background shadow-xs"
+      className="min-w-0 chat-card [--chat-card-radius:var(--radius-xl)] [--chat-card-border:var(--color-border-subtle)] bg-background shadow-raise"
       data-subagent-card
       data-subagent-thread-id={childThreadId ?? undefined}
       data-delivery-mode={deliveryMode}
@@ -116,9 +122,13 @@ export function SpawnReportCard({
         expanded={expanded}
         onToggle={() => setExpanded((value) => !value)}
         expandable={expandable}
+        trailing={stop?.button}
         detail={
           running ? (
-            <SubagentToolLine run={run} fallback={<Trans>Working</Trans>} />
+            <div className="space-y-[var(--chat-space-inline)]">
+              <SubagentToolLine run={run} fallback={<Trans>Working</Trans>} />
+              {stop?.failures}
+            </div>
           ) : statusText ? (
             <p className="text-xs text-muted-foreground">{statusText}</p>
           ) : undefined
@@ -126,7 +136,7 @@ export function SpawnReportCard({
       />
       {from ? <SpawnSourceLine source={from} /> : null}
       {expanded && expandable ? (
-        <div className="mt-[var(--chat-space-block)] pl-[calc(1.5rem+var(--chat-space-row))] text-sm">
+        <div className={cn("mt-[var(--chat-space-block)] text-sm", subagentBodyIndent)}>
           {foreground && directResult ? (
             <ReportBody report={directResult} message={directResult.message} />
           ) : savedReport ? (
@@ -136,6 +146,19 @@ export function SpawnReportCard({
       ) : null}
     </div>
   );
+  // A background child outlives the reply that started it, so the composer's Stop can't reach it.
+  if (running && !foreground && childThreadId && stopScope) {
+    return (
+      <SubagentStop
+        threadId={childThreadId}
+        name={run.name ?? subagentMarkName(run.agentName)}
+        stopScope={stopScope}
+      >
+        {card}
+      </SubagentStop>
+    );
+  }
+  return card();
 }
 
 function ReportBody({
@@ -146,13 +169,15 @@ function ReportBody({
   message?: string | null;
 }) {
   return (
-    <ReportContent
-      report={report}
-      empty={<Trans>No report text was returned.</Trans>}
-      message={message}
-      showStopMetadata={false}
-      className="space-y-[var(--chat-space-block)]"
-    />
+    <ExpandableProse more={<Trans>Show the whole report</Trans>}>
+      <ReportContent
+        report={report}
+        empty={<Trans>No report text was returned.</Trans>}
+        message={message}
+        showStopMetadata={false}
+        className="space-y-[var(--chat-space-block)]"
+      />
+    </ExpandableProse>
   );
 }
 
@@ -176,7 +201,10 @@ function SpawnSourceLine({ source: { threadId, title } }: { source: SpawnSource 
   return (
     <p
       data-spawn-source={threadId}
-      className="mt-[var(--chat-space-inline)] flex min-w-0 items-baseline gap-1 pl-[calc(1.5rem+var(--chat-space-row))] text-xs text-muted-foreground"
+      className={cn(
+        "mt-[var(--chat-space-inline)] flex min-w-0 items-baseline gap-1 text-xs text-muted-foreground",
+        subagentBodyIndent,
+      )}
     >
       {/* One message, so a translation can put the source's name first. */}
       <Trans>

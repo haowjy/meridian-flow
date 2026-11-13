@@ -6,17 +6,21 @@
  * breadcrumb call the same `onSelectThread`, so there is one chat router and
  * three entrances onto it.
  */
-import { createContext, type ReactNode, useContext } from "react";
+import { createContext, type ReactNode, useContext, useMemo } from "react";
+import { type PanePlace, useOptionalPanePlace } from "@/features/project/pane-place";
 
 export type OpenChatThread = (threadId: string) => void;
 
-const ChatThreadNavigationContext = createContext<OpenChatThread | null>(null);
+/** The shell's router: it opens the chat where the pane the door is in places it. */
+type RouteChatThread = (threadId: string, from: PanePlace | undefined) => void;
+
+const ChatThreadNavigationContext = createContext<RouteChatThread | null>(null);
 
 export function ChatThreadNavigationProvider({
   onOpenThread,
   children,
 }: {
-  onOpenThread?: OpenChatThread | null;
+  onOpenThread?: RouteChatThread | null;
   children: ReactNode;
 }) {
   return (
@@ -27,5 +31,7 @@ export function ChatThreadNavigationProvider({
 }
 
 export function useOpenChatThread(): OpenChatThread | null {
-  return useContext(ChatThreadNavigationContext);
+  const route = useContext(ChatThreadNavigationContext);
+  const from = useOptionalPanePlace() ?? undefined;
+  return useMemo(() => (route ? (threadId) => route(threadId, from) : null), [route, from]);
 }

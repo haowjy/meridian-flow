@@ -11,13 +11,23 @@ import type {
 } from "@meridian/thread-client";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
-import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
+import { readChatViewRecord, writeChatViewRecord } from "./chat-view-record";
 import { CompactionDivider } from "./compaction/CompactionDivider";
 import { HandoffBriefCard } from "./derivation/HandoffBriefCard";
 import { ForkPointRule, InheritedSourceHeader } from "./derivation/InheritedMarks";
@@ -178,6 +188,8 @@ export function TurnList({
     (listIdx: number) => listIdx - rowOffset - (noticeAt >= 0 && listIdx > noticeAt ? 1 : 0),
     [rowOffset, noticeAt],
   );
+  // The chat as the writer last left it: row sizes, offset and follow mode.
+  const [restored] = useState(() => readChatViewRecord(threadId));
   const virtualizer = useVirtualizer({
     count: listRows.length,
     getScrollElement: () => viewportRef.current,
@@ -192,6 +204,8 @@ export function TurnList({
     paddingStart: TOP_INSET,
     // Clear the pinned composer AND align the true scroll end with the last turn.
     paddingEnd: bottomInset,
+    initialMeasurementsCache: restored?.measurements,
+    initialOffset: restored?.offset,
   });
 
   // Preserve the reader's place when a row ENTIRELY above the viewport changes
@@ -215,10 +229,26 @@ export function TurnList({
   // height (not a bare counter) lets the pin compute the bottom without reading
   // `scrollHeight`, which would force a layout on every revision.
   // The thread opens in `follow`, so the very first pin anchors to the newest turn.
-  const { mode, enterFollow, releaseFollow } = useChatFollowScroll({
+  const { mode, currentMode, enterFollow, releaseFollow } = useChatFollowScroll({
     scrollRef: viewportRef,
     contentHeight: virtualizer.getTotalSize(),
+    initialMode: restored?.mode,
   });
+
+  // Leaving the chat records where it was. A chat that never measured a row (left before its
+  // history arrived) keeps the record it has.
+  useLayoutEffect(
+    () => () => {
+      const measurements = virtualizer.takeSnapshot();
+      if (measurements.length === 0) return;
+      writeChatViewRecord(threadId, {
+        measurements,
+        offset: virtualizer.scrollOffset ?? 0,
+        mode: currentMode(),
+      });
+    },
+    [currentMode, threadId, virtualizer],
+  );
 
   // Turn stage of a conversation reveal. The transcript owns the landing (and
   // the verdict when the turn isn't here); the scroll capability stays here.
@@ -263,10 +293,10 @@ export function TurnList({
         return (
           <QueuedControlRows
             controls={row.controls}
-            onStop={
+            onWithdraw={
               withdraw
                 ? (control) => {
-                    // Stop removes the row at once. The last one takes the
+                    // Withdrawing removes the row at once. The last one takes the
                     // whole tail with it, so keep focus in the transcript.
                     if (row.controls.length === 1)
                       viewportRef.current?.focus({ preventScroll: true });
@@ -339,13 +369,14 @@ export function TurnList({
   );
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div className="focus-ring-frame relative flex min-h-0 flex-1 flex-col">
       <div
         ref={viewportRef}
         role="log"
         aria-label={ariaLabel}
         // biome-ignore lint/a11y/noNoninteractiveTabindex: transcript is a scroll region — focusable so keyboard users can scroll it (arrows/PageUp/Down).
         tabIndex={0}
+        data-ring-on-frame=""
         // overflow-x-hidden: `overflow-y:auto` forces the x-axis from `visible` to
         // `auto` (CSS spec), giving an implicit horizontal scroll/rubber-band range we
         // never want — code blocks scroll internally. min-w-0 keeps children from
@@ -354,7 +385,7 @@ export function TurnList({
         // its own scrollTop compensation for above-viewport resizes; browser native
         // scroll anchoring would be a competing second owner, double-correcting and
         // leaving the reader's place off. Disable it so TanStack alone drives scroll.
-        className="chat-scroll-fade-bottom size-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none]"
+        className="chat-scroll-fade-bottom outline-none size-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain [overflow-anchor:none]"
       >
         <ChatColumn>
           <ol
@@ -418,7 +449,7 @@ function JumpToLatestButton({
 }) {
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 flex justify-center transition-[opacity,translate] duration-200 data-[hidden=true]:translate-y-full data-[hidden=true]:opacity-0"
+      className="pointer-events-none absolute inset-x-0 flex justify-center transition-[opacity,translate] data-[hidden=true]:translate-y-full data-[hidden=true]:opacity-0"
       data-hidden={hidden}
       // `inert` makes the faded-out pill genuinely gone — unclickable, unfocusable,
       // and out of the accessibility tree — while CSS keeps animating the exit.
@@ -426,16 +457,16 @@ function JumpToLatestButton({
       inert={hidden}
       style={{ bottom: bottomInset + 12 }}
     >
-      <Button
+      <IconButton
         type="button"
         variant="secondary"
-        size="icon-sm"
+        size="sm"
+        label={t`Scroll to latest`}
         onClick={onClick}
-        className="pointer-events-auto rounded-full border border-border shadow-button"
+        className="pointer-events-auto rounded-full border border-border"
       >
         <ArrowDownIcon />
-        <span className="sr-only">Scroll to latest</span>
-      </Button>
+      </IconButton>
     </div>
   );
 }

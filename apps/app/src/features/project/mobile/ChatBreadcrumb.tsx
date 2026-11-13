@@ -1,22 +1,12 @@
 /**
- * ChatBreadcrumb — the phone's up-level trail for chat: `Chats › <chat>`.
- *
- * The index is the chat's ancestor, so it is reached the phone way (an
- * ancestor crumb, never a back chevron). The current segment stays the chat
- * switcher so switching and New chat remain one tap away. On the index itself
- * the trail is a lone, non-interactive "Chats". The Chat screen's top bar only:
- * the chat sheet over Work or Editor has no index to climb to. A refused
- * rename spans the width under the top bar (its positioned ancestor), not the
- * narrow trail.
+ * ChatBreadcrumb — the phone's title for main's chat: the chat switcher, so switching and New
+ * chat stay one tap away, and renaming. A refused rename spans the width under the top bar (its
+ * positioned ancestor), not the narrow trail.
  */
 import { t } from "@lingui/core/macro";
 
 import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
-import {
-  type ChatDisplay,
-  displayedChatThreadId,
-  useChatNavigation,
-} from "../routing/chat-navigation";
+import type { ChatDisplay } from "../routing/chat-navigation";
 import { MobileBreadcrumb } from "./MobileBreadcrumb";
 
 export function ChatBreadcrumb({
@@ -24,25 +14,17 @@ export function ChatBreadcrumb({
   display,
 }: {
   projectId: string;
-  /** Only meaningful on the Chat screen. */
+  /** Main's chat, a new chat, or Recent chats. */
   display: ChatDisplay;
 }) {
-  const { openChatIndex } = useChatNavigation();
-  const chats = t`Chats`;
-  if (display.kind === "index") return <MobileBreadcrumb segments={[{ label: chats }]} />;
+  if (display.kind === "chat-recents")
+    return <MobileBreadcrumb segments={[{ label: t`Chat` }, { label: t`Recent chats` }]} />;
   const current = (
     <ChatThreadTitle
       projectId={projectId}
-      threadId={displayedChatThreadId(display)}
+      threadId={display.kind === "thread" ? display.threadId : null}
       failureClassName="inset-x-2"
     />
   );
-  return (
-    <MobileBreadcrumb
-      segments={[
-        { label: chats, onSelect: () => void openChatIndex(), keep: true },
-        { label: t`Chat`, current },
-      ]}
-    />
-  );
+  return <MobileBreadcrumb segments={[{ label: t`Chat`, current }]} />;
 }

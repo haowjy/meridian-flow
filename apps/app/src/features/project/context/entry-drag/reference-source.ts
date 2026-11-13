@@ -1,6 +1,6 @@
 /**
- * The one adapter every drag source that is not a list row uses: a mention chip, an Editor tab, a
- * path crumb, a Recent row, a receipt entry, an Uploads entry, a selected link. A source supplies what it names (a
+ * The one adapter every drag source that is not a list row uses: a mention chip, a document title chip, a
+ * path crumb, a receipt entry, an Uploads entry, a selected link. A source supplies what it names (a
  * document or folder by identity, the name to show, and the view a Copy reads) and gets back the DOM
  * props that make it a drag. It never decides what a drop does: the drop target resolves the
  * identity against the replica and always asks Move, Copy or Cancel (`DragSource` "reference").

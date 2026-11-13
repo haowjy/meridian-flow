@@ -1,51 +1,28 @@
 /**
- * Desktop project slot topology and grid structure for stable surfaces.
- *
- * Purpose: define the real project project slots as data instead of baking
- * desktop geometry into the registry/grid/shell. Key decision: this file
- * co-locates the static grid template with the slot list while runtime width
- * CSS variable values remain owned by the shell. Slot className fully owns
- * the visual chrome, and region separation is purely TONAL (no borders, no
- * shadows): the grey-gold shelf (`rail-l`), the brighter chrome that the tab
- * band and the whole dock share (`--color-sidebar`), and the lit page rising
- * out of it. SlotGrid never branches on slot kind.
- *
- * History: the optional `context-header` row and the `files` column are gone
- * — the Editor destination absorbs its sidebar/dock expand toggles into the
- * tab strip, while the persistent left sidebar owns the file explorer. The
- * grid is a single body row across every screen with no files column.
- * Chat landing, Work, and Settings render their route pane in `center` (no
- * center surface present); Chat/Context render only the center surface.
+ * The desktop's three fixed slots as data: the sidebar (`rail-l`), main (`center`) and the side
+ * (`dock`), with the one grid template they sit in. Slot className owns the visual chrome, and
+ * region separation is tonal: one chrome for the sidebar, main's band and the side
+ * (`--color-chrome`), and the lit page rising out of it.
  */
-import type { DesktopProjectSlotId, SlotDefinition } from "./types";
-
-export type { DesktopProjectSlotId } from "./types";
+import type { SlotDefinition } from "./types";
 
 export const DESKTOP_PROJECT_SLOTS: SlotDefinition[] = [
-  // Shelf: flat darker grey-gold + scoped role remaps (globals.css).
-  { id: "rail-l", className: "relative shelf-surface" },
-  // Center: chrome, not paper — every pane's h-10 band sits directly on it
-  // (continuous with the dock) and the pane body rises as a `page-sheet`.
+  // The side panels and the centre's band are one chrome surface with no lines between
+  // them; the page is the `page-sheet` set into it.
+  { id: "rail-l", className: "relative bg-chrome" },
   { id: "center", className: "chrome-field" },
-  // Dock: the chrome material (≡ the tab band) with airlight pooling at its
-  // floor.
-  { id: "dock", className: "relative dock-surface" },
+  { id: "side", className: "relative bg-chrome" },
 ];
 
-/**
- * Single grid template across every screen. The file tree lives in `rail-l`,
- * not as its own grid track.
- */
+/** One grid template; the file tree lives in `rail-l`, not as its own track. */
 export function getDesktopGridTemplate(): {
   areas: string;
   columns: string;
   rows?: string;
 } {
   return {
-    areas: '"rail-l left-resize center dock-resize dock"',
+    areas: '"rail-l left-resize center side-resize side"',
     columns:
-      "var(--project-left-width) var(--project-left-handle-width) minmax(var(--project-main-min-width), 1fr) var(--project-dock-handle-width) var(--project-dock-width)",
+      "var(--project-left-width) var(--project-left-handle-width) minmax(var(--project-main-min-width), 1fr) var(--project-side-handle-width) min(var(--project-side-width), calc((100% - var(--project-left-width)) / 2))",
   };
 }
-
-export type DesktopProjectSlots = readonly DesktopProjectSlotId[];

@@ -4,23 +4,20 @@ Reference depth. Read the [AGENTS.md](../AGENTS.md) first.
 
 ## Link navigation versus editor admission
 
-The ready Editor Work and Work-scoped tabs carry their Work row id, including
+The ready Editor Work and Work-scoped documents carry their Work row id, including
 No Work. Viewer reads and route matching use that ownership, never the host
 Chat Work. Unresolved Editor Work cannot bootstrap Context or register a
-removal host. The selected-tab map is keyed by Work row id; project-scoped
-files retain the Editor's Work context.
+removal host. Project-scoped files retain the Editor's Work context.
 
-`ProjectDocumentNavigationAdapter` turns a known file identity into an Editor,
-dock, or background destination before content opens. An ID absent from the
-in-memory resource projection waits for one availability lookup; its available
-answer is consumed once by the installed tab instance. The destination alone
-opens local content, admits the live room, and presents Retry. Read-only Context
-files still open viewer tabs without live Yjs admission. Background tabs do not
-carry lookup answers because they acquire content only when shown. Closing or
-replacing a destination discards its unconsumed answer.
-Scratch documents open Editor tabs owned by their resolved Work, or by their lineage
+`ProjectDocumentNavigationAdapter` turns a known file identity into main's address before
+content opens: every door opens in main. An ID absent from the in-memory resource projection
+waits for one availability lookup; its available answer is consumed once by the destination.
+The destination alone opens local content, admits the live room, and presents Retry. Read-only
+Context files still open a viewer without live Yjs admission. Closing or replacing a
+destination discards its unconsumed answer.
+Scratch documents open in main owned by their resolved Work, or by their lineage
 (`rootThreadId` and the handle its URI spells) when they are a No Work chat's notes.
-Uploads route to the deferred-viewing notice without opening a tab. The resolved file's
+Uploads have no editor address and open nowhere. The resolved file's
 Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
 
@@ -67,72 +64,42 @@ local-origin documents retaining their lineage; all other durable deletions requ
 
 ## Visible Editor ownership
 
-`DesktopProjectController` owns the displayed Editor value for `DesktopProject`.
-It selects the retained same-Work pane and boundary visibility once, then resolves
-its tab identity through `resolveVisibleEditorTab` (local pointer, persisted tab
-selection, and removal binding) and applies the current resource projection.
-The pane consumes that resolved result; the rail captures the same visible tab at
-the click. A retained pane carries itself; hidden error, unavailable, recovery and
-chooser presentations carry nothing. No route-shaped Editor props travel back to
-the route, and no separate active-document pointer is stored.
+The address owns what main shows: `resolveMainDocument` finds its document by identity, then by
+path, the same on desktop and phone. Main's tabs (`client/project-shell/main-tabs.ts`) follow the
+address, never lead it: arriving at a document opens or selects its tab. Hosts mount their
+documents in `PresentedDocuments` (`presented-documents.ts`: places main, side and kept). Its
+`documents` are main's and the side's only (main first): the removal coordinator, availability
+and removed notices read them to know what is on screen. Its `shown` list, every mounted document
+newest on screen first, is where the desktop picks the kept host (an open tab only); the coordinator's close, Discard and removal paths `forget` a document there, which also
+closes its tab, so its host unmounts. One document has at most one host, keyed `document:<id>` (`DocumentHost.tsx`), so a move
+between main and the side doesn't remount it.
 
 ## Architecture
 
 ```text
-ContextTreePanel (desktop)          MobileContextBrowser (mobile)
-       │                                     │
-       ├─ useContextCatalogViews (batched projection) ┤
-       ├─ useCreateEntryForm ────────────────┤
-       ├─ useEntryInteraction ───────────────┤
-       │     └─ rename forms + move picker   │
-       ├─ useDeleteContextEntry ─────────────┤
-       └─ ContextEntryActions (menus) ───────┘
+ContextTreePanel (desktop sidebar and the phone's drawer)
+       ├─ useContextCatalogViews (batched projection)
+       ├─ useCreateEntryForm
+       ├─ useEntryInteraction
+       │     └─ rename forms + move picker
+       ├─ useDeleteContextEntries
+       └─ ContextEntryActions (menus)
                      │
       useInlineEdit (components/ui, shared core)
                      │
           validateContextEntryName (pure)
-
-A move, copy or delete that works shows only its result in the tree. One that fails toasts
-(`notifyFailure`, `components/app/failure-toast.tsx`) until the writer closes the toast, what it
-reports stops being refused, or the writer leaves the project. `entry-drag/entry-failure.ts` is
-the one path: a failure is data (`EntryFailure`) with its own key, `failureTitle` words it,
-`showFailure` shows it, and one retry runs it again. `runMove`, `runCopy` and `runDelete` do the
-work, and a Retry re-reads the replica, so a row the writer changed since is left alone.
-`RefusalToasts`, mounted once per project in `ProjectView`, watches the replica for what the
-server refused later. Each failure has its own toast, so a newer one never hides an older one;
-`visibleToasts={3}` caps the stack and the rest wait behind it. Rows refused together are one
-failure. A refused Move or delete keeps its mark on the row; a row refused before this project
-opened shows only the mark. A refused Copy has no row left, so it stays in the journal until the
-toast is closed or Retry lands: it survives a reload, and closing it in one tab closes it in the
-others.
-
-ContextPaneController
-       ├─ route ↔ server-tab reconciliation
-       ├─ in-memory ContextTab[] (tracked, viewer, and new)
-       └─ ContextViewer
-              ├─ ContextTabBar (reviewing tab surfaces dock tone)
-              ├─ DocumentPaneChrome (shared with the dock's document)
-              │     ├─ PassageNotice, DocumentFreezeNotice (archived Work or trashed chat)
-              │     ├─ DocumentIdentityBar (DocumentPath crumbs + chips and painted DraftReviewBand)
-              │     └─ DocumentProperties (read-only frontmatter; mounts when the catalog entry
-              │        has `hasProperties`, then fetches by document id; open/closed is one
-              │        device preference in the surface-prefs store)
-              ├─ ContextEditorMountHost (warm-set LRU)
-              │     └─ ContextDocumentHost per tab (session boundary + EditorView;
-              │        the dock's document renders the same host)
-              ├─ ContextViewerHost (active read-only viewer)
-              └─ RecentDocumentsLanding (empty workspace only)
 ```
 
 Document trash is a server snapshot separate from the live catalog projection.
-The tree doesn't read it: the Trash row is a fixed navigation row below Scratch
-(`WorkspaceNavBody`), always shown. The routed `DocumentTrashDialog` owns the
-newest-first list and the selected read-only record in one popup. Desktop keeps
-the list and record side by side; phone shows the list or record, with Back to
-return to the list. The detail reads the server's Markdown, serialized from the document's frozen Yjs, and composes
-`ReadOnlyViewerFrame` with `TextViewer`; it never uses the live path-based read.
-Stable-ID navigation confirms a deleted document through that endpoint before
-opening the detail. List and detail restore through one command using the exact
+The tree doesn't read it: Trash is a sidebar source (`shell/sidebar/TrashSource.tsx`)
+listing it newest first on `ListRow`s that select and drag like the trees'. A deleted document has its own address,
+`/p/<id>/trash/<documentId>`, and opens like any document: the sidebar shows Trash with its
+row current, and main shows `TrashedDocument`, the text read-only under a notice with Restore.
+It takes no tab; the strip shows it as an untabbed chip, as it does an address that names nothing. Main follows the document out of Trash, whichever
+Restore brought it back, by opening it in place. The record reads the server's Markdown,
+serialized from the document's frozen Yjs, and composes `ReadOnlyViewerFrame` with `TextViewer`;
+it never uses the live path-based read. Stable-ID navigation confirms a deleted document through
+that endpoint before opening it. Every restore goes through one command using the exact
 serialized removal identity. Committed catalog wake hints invalidate the
 snapshot after deletes and restores, while the catalog stream remains the owner
 of a restored document's return to the live tree.
@@ -146,28 +113,27 @@ query is keyed by the same id: a rename or move elsewhere leaves the bytes on sc
 cannot make the read open another file. The server answers from the row's live text or
 stored bytes; a draft view is never read here.
 
-`RecentDocumentsLanding` is the empty pane. It lists this project's recently-opened
-documents and navigates on click. It does not open a tab on mount. The tab
-strip's leading control (`showEditorRecents`) reaches it without closing a tab.
+`RecentDocumentsLanding` is main when the address names no document. It lists this project's
+recently-opened documents and navigates on click. Main's header "Recently opened"
+(`showEditorRecents`) reaches it.
 The address requests a document; the displayed-props seam above decides what is visible
 while admission is pending or blocked. The address includes a local-document history
 pointer on `/editor`. Clearing that pointer leaves the working set intact, and
 Back returns to the document that was showing. Already on the chooser is a no-op.
 Recording
 is not the navigation adapter's job: the document row materializes after the
-open intent, so a write there races persistence and is lost. The active editor
-tab records once it is in front of the writer, including a local draft. That
+open intent, so a write there races persistence and is lost. Main's host
+records once the document is in front of the writer, including a local draft. That
 write lands in the account recents continuity record before the POST. A filed
 document navigates by its readable address. A local draft reopens through the
 empty-path local address (the same history pointer a new document uses), not a
-fabricated path. Scratch documents participate in Editor recents; Uploads do not
-open Editor tabs and are not recorded.
+fabricated path. Scratch documents participate in Editor recents; Uploads have no
+editor address and are not recorded.
 
 ## Reference pages
 
 - [Resource catalog and Editor lifecycle](resource-catalog-and-editor-lifecycle.md) —
-  replica acquisition, local resource admission, Editor tabs, recovery, and
-  browser-local workspace membership.
+  replica acquisition, local resource admission, hosts, and recovery.
 - [Document identity bar](document-identity-bar.md) — identity chrome and the
   placement, rename, and repair contract.
 - [Tree interactions](tree-interactions.md) — inline forms, entry actions,
@@ -201,7 +167,7 @@ host from the editor scope and link destination. Deleted, not visible or
 unreachable folders say "This folder is no longer available."
 `DocumentIdentityBar` wraps first: the path and chip stay on line one, and the
 review controls drop to a second line when they don't fit beside them (flex-wrap,
-no breakpoint). The dock's trailing Collapse is pinned to line one and precedes
+no breakpoint). The side header's trailing control is pinned to line one and precedes
 the controls in DOM order, so Tab goes line one, then line two. Only a line too
 narrow for the controls even alone gives up labels, in order (stepper count, then
 Apply label), and the path drops its parent crumbs only when the leaf would be
@@ -209,7 +175,7 @@ cut. A link-update note is a direct sibling of the path, so an absent note
 occupies neither a flex item nor a gap. Under a coarse pointer every control
 owns a 44px box (the row grows to 44px; the paired collapse/expand toggles share
 one size), except the filename, whose width yields so line one fits the 280px
-dock. Horizontal hit areas are exactly the visible box; gaps stay unclaimed.
+side. Horizontal hit areas are exactly the visible box; gaps stay unclaimed.
 
 
 Link-update feedback derives its destination from the matched move receipt, not

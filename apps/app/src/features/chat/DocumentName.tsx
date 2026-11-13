@@ -1,5 +1,6 @@
 /** Renders transcript document names and their navigation affordance. */
 import { t } from "@lingui/core/macro";
+import { MIDDLE_BUTTON } from "@/core/editor/links";
 
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
@@ -37,7 +38,7 @@ export function DocumentName({
   const name = <span className="min-w-0 truncate">{label === "open" ? openLabel : title}</span>;
 
   if (!isDoor) {
-    return <span className="flex min-w-0 items-baseline text-prose-foreground">{name}</span>;
+    return <span className="flex min-w-0 items-baseline text-foreground">{name}</span>;
   }
 
   return (
@@ -47,6 +48,11 @@ export function DocumentName({
       // The row behind this name is the expand toggle; navigating must not also
       // fold the row open.
       onClick={(event) => {
+        event.stopPropagation();
+        openContextUri(uri, undefined);
+      }}
+      onAuxClick={(event) => {
+        if (event.button !== MIDDLE_BUTTON) return;
         event.stopPropagation();
         openContextUri(uri);
       }}
