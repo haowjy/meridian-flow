@@ -4,19 +4,22 @@
  * group opens its child page. Boxes drag and the arrows follow; where they were put is remembered
  * for this page on this computer.
  */
+import { layoutLevel, READABLE_ZOOM, fitZoom } from "./layout.js";
 import { paintInline, route } from "./markdown.js";
-import { layoutFor } from "./layout.js";
 import { item, linksOf, NODE_KINDS, pathsOf, sourceUrl } from "./pages.js";
+import { routeLevel } from "./routes.js";
 import { el } from "./shell.js";
 
 const React = globalThis.React;
 const h = React.createElement;
 const RF = globalThis.ReactFlow;
-const { createContext, useContext, useEffect, useMemo, useRef, useState } = React;
+const { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState } = React;
 
-/** Below this scale box text is unreadable, so a big level opens at its top, readable, to pan. */
-const MIN_FIT_ZOOM = 0.4;
-const LAYOUT_KEY = "meridian-architecture-layout:";
+/** A small level is drawn no larger than this at Fit. */
+const MAX_FIT_ZOOM = 1.1;
+/** Text width at which an arrow's label wraps. */
+const LABEL_WRAP = 124;
+const LAYOUT_KEY = "meridian-architecture-layout-v2:";
 
 const parts = (label) => {
   const [name, ...role] = label.split(/<br\s*\/?>/);
@@ -43,43 +46,95 @@ function saveLayout(path, positions) {
   }
 }
 
-/** What a box needs to draw itself that isn't in its node: the selection and what a click does. */
+/**
+ * The drawn size of an arrow's label, { width, height }, before it is drawn: layout and routing
+ * need it to keep labels clear. The font and padding come from the label's own CSS.
+ */
+function labelMeasurer() {
+  const context = document.createElement("canvas").getContext("2d");
+  const styleOf = (className) => {
+    const probe = el("div", { class: className, style: "position:absolute;visibility:hidden" }, "x");
+    document.body.append(probe);
+    const s = getComputedStyle(probe);
+    const px = (v) => Number.parseFloat(v) || 0;
+    const style = {
+      font: `${s.fontWeight} ${s.fontSize} ${s.fontFamily}`,
+      line: px(s.lineHeight),
+      padX: px(s.paddingLeft) + px(s.paddingRight) + px(s.borderLeftWidth) + px(s.borderRightWidth),
+      padY: px(s.paddingTop) + px(s.paddingBottom) + px(s.borderTopWidth) + px(s.borderBottomWidth),
+    };
+    probe.remove();
+    return style;
+  };
+  const styles = { step: styleOf("arrow-label is-step"), side: styleOf("arrow-label") };
+  const cache = new Map();
+  return (edge) => {
+    const key = `${edge.step !== null}:${edge.label}`;
+    if (cache.has(key)) return cache.get(key);
+    const style = edge.step !== null ? styles.step : styles.side;
+    context.font = style.font;
+    const lines = [];
+    for (const word of edge.label.split(/\s+/)) {
+      const tried = lines.length ? `${lines.at(-1)} ${word}` : word;
+      if (lines.length && context.measureText(tried).width <= LABEL_WRAP) lines[lines.length - 1] = tried;
+      else lines.push(word);
+    }
+    const text = Math.max(...lines.map((l) => context.measureText(l).width));
+    // Two pixels spare, so the browser's own wrapping never breaks a line the canvas kept whole.
+    const size = { width: Math.ceil(text) + 2 + style.padX, height: Math.ceil(lines.length * style.line + style.padY) };
+    cache.set(key, size);
+    return size;
+  };
+}
+
+/** What a box needs to draw itself that isn't in its node: the selection. */
 const Selection = createContext({ selectedId: null, linked: new Set() });
 
-const SIDES = {
-  LR: { target: RF.Position.Left, source: RF.Position.Right },
-  TB: { target: RF.Position.Top, source: RF.Position.Bottom },
-};
+// Arrows draw their own paths (routes.js); a box keeps one handle each way only because React Flow
+// draws no edge without them.
+const handles = () => [
+  h(RF.Handle, { key: "in", type: "target", position: RF.Position.Top, isConnectable: false }),
+  h(RF.Handle, { key: "out", type: "source", position: RF.Position.Bottom, isConnectable: false }),
+];
 
 function Box({ data, id }) {
   const { selectedId, linked } = useContext(Selection);
-  const { node, direction } = data;
-  const side = SIDES[direction];
+  const { node } = data;
   const { name, role } = parts(node.label);
   const state = selectedId === null ? "" : id === selectedId ? "is-selected" : linked.has(id) ? "is-linked" : "is-dim";
   return h(
     "div",
     { className: `card kind-${node.kind} ${state}`, title: node.kind === "group" ? "Opens its own page" : undefined },
-    h(RF.Handle, { type: "target", position: side.target, isConnectable: false }),
+    ...handles(),
     h("div", { className: "card-label" }, name, node.kind === "group" ? " ▸" : ""),
     role ? h("div", { className: "card-sub" }, role) : null,
-    h(RF.Handle, { type: "source", position: side.source, isConnectable: false }),
   );
 }
 
 function Note({ data, id }) {
   const { selectedId, linked } = useContext(Selection);
-  const side = SIDES[data.direction];
-  return h(
-    "div",
-    { className: `note-card ${selectedId !== null && !linked.has(id) ? "is-dim" : ""}` },
-    h(RF.Handle, { type: "target", position: side.target, isConnectable: false }),
-    parts(data.node.label).name,
-    h(RF.Handle, { type: "source", position: side.source, isConnectable: false }),
-  );
+  return h("div", { className: `note-card ${selectedId !== null && !linked.has(id) ? "is-dim" : ""}` }, ...handles(), parts(data.node.label).name);
 }
 
 const nodeTypes = { box: Box, note: Note };
+
+function Arrow({ data, markerEnd, markerStart }) {
+  if (!data.route) return null;
+  const { d, label } = data.route;
+  return h(
+    Fragment,
+    null,
+    h(RF.BaseEdge, { path: d, markerEnd, markerStart, interactionWidth: 0 }),
+    label &&
+      h(
+        RF.EdgeLabelRenderer,
+        null,
+        h("div", { className: data.labelClass, style: { transform: `translate(${label.x}px, ${label.y}px)`, width: label.w, height: label.h } }, data.text),
+      ),
+  );
+}
+
+const edgeTypes = { arrow: Arrow };
 
 /** The arrowheads every edge refers to by id, coloured from tokens by CSS. */
 function Markers() {
@@ -92,20 +147,18 @@ function Markers() {
   return h("svg", { className: "marker-defs", "aria-hidden": true, width: 0, height: 0 }, h("defs", null, arrow("arch-arrow"), arrow("arch-arrow-step")));
 }
 
-/** Fit the whole level when it stays readable; otherwise show its top at a readable size. */
-function fitLevel(flow, area) {
-  const bounds = flow.getNodesBounds(flow.getNodes());
-  const fit = Math.min(area.width / bounds.width, area.height / bounds.height) * 0.92;
-  if (fit >= MIN_FIT_ZOOM) {
-    flow.fitView({ padding: 0.08, maxZoom: 1.1 });
-    return;
-  }
-  const drawnWidth = bounds.width * MIN_FIT_ZOOM;
-  const x = drawnWidth < area.width ? (area.width - drawnWidth) / 2 : 16;
-  flow.setViewport({ x: x - bounds.x * MIN_FIT_ZOOM, y: 16 - bounds.y * MIN_FIT_ZOOM, zoom: MIN_FIT_ZOOM });
+/** Fit the whole level when its text stays readable; otherwise show its start at a readable size, to pan. */
+function fitLevel(flow, bounds, area) {
+  if (!bounds || !area.width) return;
+  const fit = Math.min(fitZoom(bounds, area), MAX_FIT_ZOOM);
+  const zoom = Math.max(fit, READABLE_ZOOM);
+  const [w, hgt] = [(bounds.x1 - bounds.x0) * zoom, (bounds.y1 - bounds.y0) * zoom];
+  const x = w <= area.width ? (area.width - w) / 2 : 16;
+  const y = hgt <= area.height ? (area.height - hgt) / 2 : 16;
+  flow.setViewport({ x: x - bounds.x0 * zoom, y: y - bounds.y0 * zoom, zoom });
 }
 
-function Flow({ page, path, selectedId, onChoose }) {
+function Flow({ page, path, selectedId, onChoose, labelSize }) {
   const { nodes: sourceNodes, edges: sourceEdges, noteLinks } = page.mermaid;
   const flow = RF.useReactFlow();
   const initial = useMemo(
@@ -114,7 +167,7 @@ function Flow({ page, path, selectedId, onChoose }) {
         id: node.id,
         type: node.kind === "note" ? "note" : "box",
         position: { x: 0, y: 0 },
-        data: { node, direction: "LR" },
+        data: { node },
         style: { visibility: "hidden" },
       })),
     [sourceNodes],
@@ -126,33 +179,20 @@ function Flow({ page, path, selectedId, onChoose }) {
   );
   const measured = RF.useNodesInitialized();
   // Laid out once per drawing area and per Reset; a drag only changes positions, never this key.
-  const [placement, setPlacement] = useState({ key: null, reset: 0 });
+  const [placement, setPlacement] = useState({ key: null, reset: 0, hints: new Map() });
   const areaKey = `${area.width}x${area.height}:${placement.reset}`;
   const areaNow = useRef(area);
   areaNow.current = area;
 
   useEffect(() => {
     if (!measured || placement.key === areaKey || !area.width) return;
-    const ids = sourceNodes.map((n) => n.id);
     const sizes = new Map(flow.getNodes().map((n) => [n.id, n.measured]));
-    const links = [...sourceEdges, ...noteLinks];
-    const { direction, positions } = layoutFor(ids, links, sizes, area);
+    const { positions, hints } = layoutLevel({ nodes: sourceNodes, edges: sourceEdges, noteLinks, sizes, labelSize }, area);
     const saved = savedLayout(path);
-    const useSaved = ids.every((id) => saved[id]);
-    setNodes((current) =>
-      current.map((n) => ({ ...n, position: useSaved ? saved[n.id] : positions.get(n.id), data: { ...n.data, direction }, style: {} })),
-    );
-    setPlacement((p) => ({ ...p, key: areaKey }));
-  }, [measured, placement.key, areaKey, area, flow, sourceNodes, sourceEdges, noteLinks, path, setNodes]);
-
-  // The handles moved with the direction: React Flow must re-measure them before edges draw.
-  const updateInternals = RF.useUpdateNodeInternals();
-  useEffect(() => {
-    if (!placement.key) return;
-    updateInternals(sourceNodes.map((n) => n.id));
-    const frame = requestAnimationFrame(() => fitLevel(flow, areaNow.current));
-    return () => cancelAnimationFrame(frame);
-  }, [placement.key, flow, sourceNodes, updateInternals]);
+    const useSaved = sourceNodes.every((n) => saved[n.id]);
+    setNodes((current) => current.map((n) => ({ ...n, position: useSaved ? saved[n.id] : positions.get(n.id), style: {} })));
+    setPlacement((p) => ({ ...p, key: areaKey, hints }));
+  }, [measured, placement.key, areaKey, area, flow, sourceNodes, sourceEdges, noteLinks, path, setNodes, labelSize]);
 
   const linked = useMemo(() => {
     const ids = new Set();
@@ -161,19 +201,37 @@ function Flow({ page, path, selectedId, onChoose }) {
     return ids;
   }, [sourceEdges, noteLinks, selectedId]);
 
+  const touches = (e) => selectedId !== null && (e.from === selectedId || e.to === selectedId);
+  const rects = useMemo(
+    () => placement.key && new Map(nodes.map((n) => [n.id, { x: n.position.x, y: n.position.y, w: n.measured.width, h: n.measured.height }])),
+    [placement.key, nodes],
+  );
+  const route = (labelled) => routeLevel({ rects, edges: sourceEdges, noteLinks, hints: placement.hints, labelSize, labelled });
+  // Fit frames the level with every label, whichever box is chosen.
+  const whole = useMemo(() => rects && route(() => true), [rects, placement.hints, sourceEdges, noteLinks, labelSize]);
+  // With a box chosen, its own arrows' labels are the ones shown.
+  const routes = useMemo(() => (selectedId === null ? whole : rects && route((i) => touches(sourceEdges[i]))), [whole, rects, selectedId]);
+  const bounds = useRef(null);
+  bounds.current = whole?.bounds;
+
+  useEffect(() => {
+    if (!placement.key) return;
+    const frame = requestAnimationFrame(() => fitLevel(flow, bounds.current, areaNow.current));
+    return () => cancelAnimationFrame(frame);
+  }, [placement.key, flow]);
+
   const edges = useMemo(
     () => [
       ...sourceEdges.map((edge, i) => {
-        const touches = selectedId !== null && (edge.from === selectedId || edge.to === selectedId);
-        const marker = edge.step !== null ? "arch-arrow-step" : "arch-arrow";
+        const step = edge.step !== null;
+        const marker = step ? "arch-arrow-step" : "arch-arrow";
         return {
           id: `e${i}`,
+          type: "arrow",
           source: edge.from,
           target: edge.to,
-          label: edge.label,
-          labelBgPadding: [6, 3],
-          labelBgBorderRadius: 4,
-          className: ["edge", edge.step !== null ? "is-step" : "", touches ? "is-lit" : "", selectedId !== null && !touches ? "is-faded" : ""].join(" "),
+          data: { route: routes?.arrows[i], text: edge.label, labelClass: `arrow-label ${step ? "is-step" : ""}` },
+          className: ["edge", step ? "is-step" : "", touches(edge) ? "is-lit" : "", selectedId !== null && !touches(edge) ? "is-faded" : ""].join(" "),
           markerEnd: marker,
           markerStart: edge.both ? marker : undefined,
           focusable: false,
@@ -182,22 +240,21 @@ function Flow({ page, path, selectedId, onChoose }) {
       }),
       ...noteLinks.map((l, i) => ({
         id: `n${i}`,
+        type: "arrow",
         source: l.from,
         target: l.to,
+        data: { route: routes && { d: routes.links[i].d, label: null } },
         className: `edge note-link ${selectedId !== null && !linked.has(l.from) && !linked.has(l.to) ? "is-faded" : ""}`,
         focusable: false,
         selectable: false,
       })),
     ],
-    [sourceEdges, noteLinks, selectedId, linked],
+    [sourceEdges, noteLinks, selectedId, linked, routes],
   );
-
-  // Zoomed far out, a side arrow's label can't be read and only crowds the picture; its box's focus shows it.
-  const far = RF.useStore((state) => state.transform[2] < 0.62);
 
   const reset = () => {
     saveLayout(path, null);
-    setPlacement((p) => ({ key: null, reset: p.reset + 1 }));
+    setPlacement((p) => ({ ...p, key: null, reset: p.reset + 1 }));
   };
 
   return h(
@@ -206,10 +263,10 @@ function Flow({ page, path, selectedId, onChoose }) {
     h(
       RF.ReactFlow,
       {
-        className: far ? "is-far" : "",
         nodes,
         edges,
         nodeTypes,
+        edgeTypes,
         onNodesChange,
         onNodeClick: (_, node) => node.type === "box" && onChoose(node.id),
         onNodeDragStop: () => saveLayout(path, Object.fromEntries(flow.getNodes().map((n) => [n.id, n.position]))),
@@ -223,11 +280,11 @@ function Flow({ page, path, selectedId, onChoose }) {
         "aria-label": `${page.title} diagram`,
       },
       h(RF.Background, { variant: RF.BackgroundVariant.Dots, gap: 20, size: 1 }),
-      h(RF.Controls, { showInteractive: false, position: "bottom-right" }),
+      h(RF.Controls, { showInteractive: false, showFitView: false, position: "bottom-right" }),
       h(
         RF.Panel,
         { position: "top-left", className: "diagram-tools" },
-        h("button", { type: "button", className: "text-button", onClick: () => fitLevel(flow, areaNow.current) }, "Fit"),
+        h("button", { type: "button", className: "text-button", onClick: () => fitLevel(flow, bounds.current, areaNow.current) }, "Fit"),
         h("button", { type: "button", className: "text-button", onClick: reset, title: "Put the boxes back where the layout places them" }, "Reset layout"),
       ),
     ),
@@ -250,8 +307,9 @@ export function createMap(host, { page, path, parent, nav }) {
   const flowHost = el("div", { class: "flow" });
   diagram.append(flowHost, legend());
   const root = globalThis.ReactDOM.createRoot(flowHost);
+  const labelSize = labelMeasurer();
   const drawn = () => {
-    root.render(h(RF.ReactFlowProvider, null, h(Markers), h(Flow, { page, path, selectedId: selected, onChoose: choose })));
+    root.render(h(RF.ReactFlowProvider, null, h(Markers), h(Flow, { page, path, selectedId: selected, onChoose: choose, labelSize })));
   };
 
   function intro() {
@@ -268,7 +326,7 @@ export function createMap(host, { page, path, parent, nav }) {
         "p",
         { class: "how-to" },
         el("strong", null, "How to read this: "),
-        "numbered arrows are the main path, in order; the rest are side trips, and a dotted note explains the box it touches. Click a box for detail; a box marked ▸ is a group and opens its own page. Drag a box to move it (the layout is remembered on this computer), drag the background to pan, scroll to zoom.",
+        "follow the numbered arrows, left to right. Click a box for its detail; a box marked ▸ opens its own page. Drag boxes to rearrange them.",
       ),
     );
   }

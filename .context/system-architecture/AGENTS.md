@@ -15,8 +15,9 @@ editing a page. The check passing is not the test.
   the viewer read pages the same way: change the format there, in `check.mjs`, and in README.md
   together. `markdown.js` renders Markdown and Mermaid and turns every link into a `#` route;
   `app.js` is the router (nav, history, the Read | Map toggle, the full-window doc view);
-  `map.js` is the Map view of a level page (React Flow, with `layout.js` placing boxes by dagre); `journeys.js` is the journeys; `shell.js` is the DOM
-  helper, theme and fetching.
+  `map.js` is the Map view of a level page (React Flow; `layout.js` places the boxes and `routes.js`
+  draws the arrows and places their labels, both without DOM); `journeys.js` is the journeys;
+  `shell.js` is the DOM helper, theme and fetching.
 - **Routes** are the URL hash: `#<level>[/<box>]`, `#flows[/<flow>]`, `#machines`, `#dependencies`,
   `#journeys[/<journey>[/<step>]]`, `#doc/<encoded path>[/<heading>]`. A route is a history entry, except
   choosing a box or a journey step. Opening a doc layers it over the page, so Back (the button or
@@ -27,9 +28,15 @@ editing a page. The check passing is not the test.
   on a diagram box scrolls to its `##` section. Map is `map.js`: the intro and a "How to read this" the
   viewer supplies sit above the diagram; a group opens its child page. It does not draw the page's
   Mermaid: it draws the parsed nodes, arrows and note links with React Flow, boxes sized by their
-  text and placed by dagre (left to right, top to bottom on a narrow screen; the numbered arrows weigh
-  most so the main path stays straight). Boxes drag and the arrows follow; positions go to
-  `localStorage` per page (`meridian-architecture-layout:<path>`), only when a drag ends, and a page
+  text. `layout.js` puts the numbered path on one row in step order, left to right (a box the path
+  leaves and doesn't go on from, or comes straight back from, is a spur beside it), wraps the row
+  only when it can't be drawn at `READABLE_ZOOM`, and puts every other box and note in bands above
+  and below, near what it connects to. Arrows along the row run straight, skip forward over it and
+  back under it. A label never covers a box or another label: a side arrow's label is left out
+  where there's no room (the panel lists every arrow), and choosing a box shows its own. Fit never
+  zooms below `READABLE_ZOOM` (box text 13px and 11px on screen); a level that doesn't fit, as on a
+  phone, opens at its start to pan. Boxes drag and the arrows follow; positions go to
+  `localStorage` per page (`meridian-architecture-layout-v2:<path>`), only when a drag ends, and a page
   whose boxes aren't all saved is laid out afresh. Read view draws the Mermaid block itself.
 - A flow's participants are clickable: they open the box on the map (they set the view to Map).
 - `fetchRepoFile` checks the URL the browser will request, not the path string, and the doc route
@@ -41,7 +48,7 @@ editing a page. The check passing is not the test.
   the page needs its own copy, and `check.mjs` keeps it equal to `design-tokens`. Nothing else here may
   hold a colour; `page.css` uses the variables. Don't copy the pattern. To use another token, add its name to `MIRRORED` in
   `tokens.mjs` and its value to `tokens.css`; `check.mjs` verifies the values.
-- Third-party scripts are pinned with integrity hashes: React, ReactDOM, `@xyflow/react`, dagre and
+- Third-party scripts are pinned with integrity hashes: React, ReactDOM, `@xyflow/react` and
   `marked` in `index.html`, Mermaid in `js/markdown.js` (the same version as `apps/app`). To bump one,
   fetch the new file and recompute its `sha384`. React stays on 18 (19 has no UMD build);
   `@xyflow/react`'s UMD build wants a `jsxRuntime` global, which `js/jsx-runtime.js` maps onto React;
