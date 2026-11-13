@@ -11,18 +11,12 @@ import { devAuthIdentity } from "@meridian/contracts/dev-auth";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createDb, projects } from "@meridian/database";
 import { eq } from "drizzle-orm";
-import { createDrizzleWorkBranchPendingStore } from "../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
-import { createDrizzleContextCatalog } from "../../apps/server/server/domains/context/adapters/context-catalog.ts";
 import { createDrizzleLineageScratchLifecycle } from "../../apps/server/server/domains/context/adapters/lineage-scratch-lifecycle.ts";
-import { createDrizzleProjectContextAvailability } from "../../apps/server/server/domains/context/adapters/project-context-availability.ts";
-import { createContextCatalogWakeHub } from "../../apps/server/server/domains/context/context-catalog-wake-hub.ts";
 import { createLocalFileAccessChanges } from "../../apps/server/server/domains/file-policy/adapters/file-access-changes.ts";
-import { createNoopEventSink } from "../../apps/server/server/domains/observability/adapters/noop/noop-event-sink.ts";
 import { createDrizzleProjectRepository } from "../../apps/server/server/domains/projects/adapters/project-repository/drizzle.ts";
-import { createWorkProjectionMutation } from "../../apps/server/server/domains/projects/adapters/work-projection-mutation.ts";
 import { createDrizzleWorkRepository } from "../../apps/server/server/domains/projects/adapters/work-repository/drizzle.ts";
 import { createDrizzleRepositories } from "../../apps/server/server/domains/threads/adapters/drizzle/repositories.ts";
-import { createTestRemovalDeps } from "../../apps/server/server/test-support/document-removal.js";
+import { createTestWorkProjectionMutation } from "../../apps/server/server/test-support/work-projection.ts";
 import { applyDevEnvToProcess } from "./lib/dev-env";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
@@ -77,27 +71,13 @@ async function main(): Promise<void> {
   const databaseUrl = requireEnv("DATABASE_URL");
   const userId = await resolveSmokeUserId();
   const db = createDb(databaseUrl, { max: 1 });
-  const projectContextAvailability = createDrizzleProjectContextAvailability(
-    db,
-    createNoopEventSink(),
-  );
-  const contextCatalog = createDrizzleContextCatalog(db, createContextCatalogWakeHub(), {
-    availabilityMutations: projectContextAvailability,
-  });
-  const workProjectionMutation = createWorkProjectionMutation({
-    db,
-    availability: projectContextAvailability,
-    catalog: contextCatalog,
-    pendingCounts: createDrizzleWorkBranchPendingStore(db),
-  });
-
-  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog);
+  const workProjectionMutation = createTestWorkProjectionMutation(db);
+  const lineageScratch = createDrizzleLineageScratchLifecycle(db);
 
   try {
     await cleanupSmokeRows(db);
 
     const workRepository = createDrizzleWorkRepository({
-      removal: createTestRemovalDeps(db, workProjectionMutation).documentRemoval,
       lineageScratch,
       db,
       projectionMutation: workProjectionMutation,
@@ -106,7 +86,6 @@ async function main(): Promise<void> {
     const repos = {
       projects: createDrizzleProjectRepository({
         db,
-        catalogLifecycle: contextCatalog,
         ensureNoWork: (projectId) => workRepository.ensureNoWork(projectId),
       }),
       works: workRepository,

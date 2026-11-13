@@ -14,7 +14,7 @@ import { createDrizzleTurnInverseService } from "../../../../apps/server/server/
 import { createDraftDispositionReader } from "../../../../apps/server/server/domains/collab/domain/draft-disposition.ts";
 import { createAllowAllFileAccess } from "../../../../apps/server/server/domains/file-policy/index.ts";
 import { runWithEditConfirmation } from "../../../../apps/server/server/shared/edit-confirmation.ts";
-import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.ts";
+import { createTestRemovalDeps } from "../../../../apps/server/server/test-support/document-removal.ts";
 import {
   appendApplyRecord,
   applyRecordOf,
@@ -54,8 +54,7 @@ try {
     async flushLivePull() {},
     notices: { async record() {} },
     workProjection: h.projection,
-    removal: createTestDocumentRemoval(h.db),
-    catalog: { refreshSources: async () => "" },
+    removals: createTestRemovalDeps(h.db).removals,
     onDraftCommitted: () => {},
   });
 
@@ -187,12 +186,7 @@ try {
     close,
     branches: h.branches,
     workProjection: h.projection,
-    removal: createTestDocumentRemoval(h.db),
-    catalog: {
-      async refreshSources() {
-        return "0";
-      },
-    },
+    treeLists: createTestRemovalDeps(h.db).treeLists,
   });
   await discard.discardLocked({
     kernel: { branchId: work.branchId, selection: { kind: "whole" } },

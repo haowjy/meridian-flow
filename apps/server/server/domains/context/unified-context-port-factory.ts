@@ -126,7 +126,7 @@ interface AdapterAssembly {
  */
 function placementFor(assembly: AdapterAssembly, scheme: ContextScheme): ContextPlacement {
   const { thread, branches } = assembly;
-  if (!thread || !thread.branchOwner) return { kind: "live" };
+  if (!thread?.branchOwner) return { kind: "live" };
   const destination = sourceDestination(scheme, thread.branchOwner);
   const branch = {
     owner: thread.branchOwner.owner,

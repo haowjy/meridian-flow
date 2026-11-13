@@ -11,7 +11,7 @@ import { createDraftClose } from "../../../../apps/server/server/domains/collab/
 import { createDraftRetirement } from "../../../../apps/server/server/domains/collab/domain/draft-retirement.ts";
 import { closeDraftRooms } from "../../../../apps/server/server/domains/collab/hocuspocus-rooms.ts";
 import { runInDrizzleTransaction } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
-import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.ts";
+import { createTestRemovalDeps } from "../../../../apps/server/server/test-support/document-removal.ts";
 import {
   appendToFirstParagraph,
   createScratchDatabase,
@@ -124,8 +124,7 @@ try {
     close,
     branches: h.branches,
     workProjection: h.projection,
-    removal: createTestDocumentRemoval(h.db),
-    catalog: { refreshSources: async () => "0" },
+    treeLists: createTestRemovalDeps(h.db).treeLists,
   });
   await runInDrizzleTransaction(h.db, async () => {
     await discard.discardLocked({

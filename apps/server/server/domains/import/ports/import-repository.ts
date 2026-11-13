@@ -8,8 +8,8 @@ import type {
   ImportState,
   ImportSummary,
   ImportUnreadableReason,
+  StoredDocumentProperties,
 } from "@meridian/contracts";
-import type { StoredDocumentProperties } from "@meridian/contracts";
 import type { ImportMaintenanceCutoffs } from "../domain/maintenance-policy.js";
 import type { ImportPlacement } from "../domain/placement.js";
 import type { FileReceipt } from "../domain/receipt.js";

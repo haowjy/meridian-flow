@@ -359,7 +359,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await writer.item(CH2)).toBeUndefined();
       expect((await placement(CH2))?.deletedAt).not.toBeNull();
 
-      // Discard of a move keeps the text change; 
+      // Discard of a move keeps the text change;
       await draft({ command: "replace", path: "part1/ch1-moved", find: "one", content: "ONE" });
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-final" });
       expect(await writer.discard(CH1)).toMatchObject({

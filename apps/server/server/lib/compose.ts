@@ -20,14 +20,9 @@ import {
   createDrizzleCreditLedger,
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
-import { createDrizzleDocumentRemovalCollab } from "../domains/collab/adapters/drizzle-document-removal.js";
 import { createDraftClose } from "../domains/collab/adapters/drizzle-draft-close.js";
 import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
-import { createTrashRemovals } from "../domains/context/adapters/trash-removals.js";
-import { createDrizzleContextImportReveal } from "../domains/context/adapters/drizzle-import-reveal.js";
-import type { TreeListStore } from "../domains/context/ports/tree-list-store.js";
-import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
   type CollabDomain,
@@ -36,6 +31,9 @@ import {
   createLinkScopeObserver,
   type DocumentLinkScopes,
 } from "../domains/collab/index.js";
+import { createDrizzleContextImportReveal } from "../domains/context/adapters/drizzle-import-reveal.js";
+import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
+import { createTrashRemovals } from "../domains/context/adapters/trash-removals.js";
 import {
   type ContextCatalog,
   type ContextCatalogWakeHub,
@@ -67,11 +65,11 @@ import {
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentArrivals,
-  type DraftOwnerHintPort,
   type DocumentLinkResolver,
   type DocumentPropertiesReader,
   type DocumentRemovals,
   type DocumentTrash,
+  type DraftOwnerHintPort,
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
@@ -82,6 +80,7 @@ import {
   type UploadIntake,
 } from "../domains/context/index.js";
 import { emptyOwnerLookup } from "../domains/context/owner-lookup.js";
+import type { TreeListStore } from "../domains/context/ports/tree-list-store.js";
 import { createTreeReader, type TreeReader } from "../domains/context/tree/tree-view.js";
 import { createDrizzleExportSnapshotStore } from "../domains/export/adapters/drizzle-export-snapshot.js";
 import {

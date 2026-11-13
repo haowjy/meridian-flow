@@ -8,13 +8,13 @@ import type {
 } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { projects, works } from "@meridian/database";
+import { LIVE, sourceRoot } from "@meridian/project-tree";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type { DocumentCreationAggregate, MarkdownDocumentStore } from "../collab/index.js";
-import { LIVE, sourceRoot } from "@meridian/project-tree";
 import { treeListOfSource } from "../context/adapters/tree-list-facts.js";
-import type { TreeListStore } from "../context/ports/tree-list-store.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
+import type { TreeListStore } from "../context/ports/tree-list-store.js";
 import { LIVE_TREE, visibleDocuments } from "../context/tree/tree-view.js";
 import { ensureManuscriptSource, nextProjectSlug } from "./adapters/project-repository/shared.js";
 import { NO_WORK_NAME } from "./adapters/work-repository/shared.js";
@@ -241,7 +241,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       const tx = currentDrizzleDb(db) as BootstrapDb;
       await lockBootstrap(tx, userId);
       const projectId = await ensureProject(tx, userId);
-      const noWorkId = await ensureLockedNoWork(tx, projectId, userId);
+      const _noWorkId = await ensureLockedNoWork(tx, projectId, userId);
       const manuscriptSourceId = await ensureManuscriptSource(db, projectId);
       const documentId = await ensureDocument(tx, manuscriptSourceId);
 

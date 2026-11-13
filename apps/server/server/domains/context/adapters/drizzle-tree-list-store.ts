@@ -1,12 +1,5 @@
 import type { Database } from "@meridian/database";
-import {
-  admit,
-  type Connection,
-  recordsOf,
-  settleLogOf,
-  type TreeRecord,
-  TreeWriter,
-} from "@meridian/project-tree";
+import { admit, type Connection, type TreeRecord, TreeWriter } from "@meridian/project-tree";
 import { sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";

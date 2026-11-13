@@ -2,33 +2,11 @@
  * Work branches: the `branches` row a Work's drafted writes share, what one branch says
  * about the document tree is `branch_tree_nodes` (tree-nodes.ts).
  */
-import type {
-  BranchId,
-  ContextSourceId,
-  DocumentId,
-  FolderId,
-  ProjectId,
-  ThreadId,
-  TurnId,
-  UserId,
-  WorkId,
-} from "@meridian/contracts";
+import type { BranchId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
-import {
-  bigint,
-  boolean,
-  check,
-  index,
-  integer,
-  pgSequence,
-  pgTable,
-  primaryKey,
-  text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
-import { createdAt, idColumn, updatedAt } from "./_shared";
-import { threads, turns } from "./agent-threads";
+import { check, index, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { createdAt, idColumn } from "./_shared";
+import { threads } from "./agent-threads";
 import { projects, works } from "./content";
 import { users } from "./users";
 

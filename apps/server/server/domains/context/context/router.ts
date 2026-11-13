@@ -27,8 +27,6 @@ import type { ContextCommandTransaction } from "../ports/context-command-transac
 import type {
   ContextBinaryWriteResult,
   ContextCreateTrackedDocumentResult,
-  ContextDeleted,
-  ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextListing,

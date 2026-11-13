@@ -16,10 +16,8 @@ import type {
   ContextMoveResult,
   ContextSiblingPosition,
   CopyContextEntriesResult,
-  DeleteContextEntryResult,
   DocumentFileType,
   Filetype,
-  MoveContextEntryRequest,
   RetractionCause,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
