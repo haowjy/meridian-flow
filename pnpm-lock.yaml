@@ -828,6 +828,22 @@ importers:
         specifier: 'catalog:'
         version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/project-tree:
+    dependencies:
+      fractional-indexing:
+        specifier: ^4.0.0
+        version: 4.0.0
+      yjs:
+        specifier: 13.6.31
+        version: 13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e)
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/prosemirror-schema:
     dependencies:
       lib0:
