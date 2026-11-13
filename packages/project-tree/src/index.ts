@@ -3,6 +3,7 @@ export {
   admit,
   type Connection,
   type KeptCreate,
+  MAX_RECORDS,
 } from "./admission.js";
 export {
   type ApplyResult,

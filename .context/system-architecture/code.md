@@ -35,7 +35,6 @@ flowchart TB
   www -->|"takes colours from"| design-tokens
   app -->|"debug overlay reads sync with"| yjs-inspect
   app -->|"syncs the tree's list with"| tree-list-sync
-  server -->|"cuts what the list's room sends with"| tree-list-sync
   tree-list-sync -->|"reads the list's records with"| project-tree
   note1["markup turns text into a document and back. The app uses it for the writer's text, and agent-edit uses it for the model's reads and writes."]:::note
   note1 -.- markup
@@ -179,7 +178,7 @@ No React and no browser or Node globals. `createThreadSync` never fetches, and t
 
 ## tree-list-sync
 
-How a client keeps its copy of the project tree's list the server's: the connection to the list's room, sending in parts of a few hundred records, and the rebuild after a whole refusal.
+How a client keeps its copy of the project tree's list the server's: the connection to the list's room, sending in parts of at most an eighth of an admission, and the rebuild after a whole refusal.
 
 Owns no storage and no tabs: the browser's copy comes in through `ListCopy`. The server's room cuts what it sends with the same function.
 

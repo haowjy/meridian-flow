@@ -32,7 +32,10 @@ import {
   createLinkScopeObserver,
   type DocumentLinkScopes,
 } from "../domains/collab/index.js";
-import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
+import {
+  createDrizzleTreeListStore,
+  type PgTreeListStore,
+} from "../domains/context/adapters/drizzle-tree-list-store.js";
 import {
   type ContextCatalog,
   type ContextCatalogFileMutationPort,
@@ -403,7 +406,7 @@ export type ProductionAppPorts = {
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
   /** The project tree's lists: the one function that admits records, and the room's reads. */
-  treeLists: TreeListStore;
+  treeLists: PgTreeListStore;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog &
     ContextCatalogMutationPort &
@@ -551,6 +554,7 @@ export async function createProductionAppPorts(input: {
   const projectRepo = createDrizzleProjectRepository({
     db,
     catalogLifecycle: contextCatalog,
+    fileAccessChanges,
     ensureNoWork: (projectId) => workRepo.ensureNoWork(projectId),
   });
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
@@ -1573,6 +1577,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("Tree lists are unavailable in memory");
       },
       onCommitted: () => () => {},
+      onJournalAdvanced: () => () => {},
     },
     liveDocuments: {
       async findById() {

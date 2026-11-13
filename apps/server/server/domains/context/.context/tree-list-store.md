@@ -105,12 +105,10 @@ What a change must keep:
   store first, and a refusal throws before Hocuspocus applies anything; what reaches the
   document is `onCommitted`'s update, so a refused update is in no copy.
 - **`seq` is a journal row id, global across lists**, so a room cannot tell a gap from the next
-  row. A commit applies its update at once and then runs a catch-up, which reads the rows past
-  `seq`, whichever process wrote them.
-- **The room reads the journal at a connection's SyncStep1 and at each admission, not on a
-  timer.** A browser on one process sees another process's record when its room next has an
-  exchange: the same as a text room. Closing the gap is one `LISTEN` or timer away; nobody has
-  asked for it.
-- **Outgoing frames are cut in parts by wrapping the connection's `send`** on its first
-  `beforeSync`, which runs before the first reply.
+  row. A commit applies its update to the process's own room at once; the `NOTIFY` it sent in
+  its transaction then reaches every process (this one too), whose room reads the rows past
+  `seq`. `listen()` on the store starts hearing it (`app.ts`); the catalog this list replaces
+  gave every tab cross-process freshness, so the tree must too. Measured across two processes
+  in the room's test: about 20 ms from a tab's record to an idle tab on the other.
+- **Nothing is cut on the way to a browser.** Only the client's sends are split in parts.
 

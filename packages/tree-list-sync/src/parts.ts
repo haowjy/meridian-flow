@@ -8,6 +8,8 @@
  * update comes back whole. A part holds whole runs of one client's items cut at a clock, so a
  * single merged run of thousands of records is cut too.
  */
+
+import { MAX_RECORDS } from "@meridian/project-tree";
 import { createDecoder, readVarString, readVarUint, readVarUint8Array } from "lib0/decoding";
 import {
   createEncoder,
@@ -20,8 +22,8 @@ import * as Y from "yjs";
 
 type Run = { item: Y.Item; client: number; clock: number; length: number; content: unknown[] };
 
-/** What one part holds at most: a few hundred records, far under the admission's cap of 2,000. */
-export const PART_RECORDS = 300;
+/** What one part holds at most: an eighth of what one admission accepts. */
+export const PART_RECORDS = Math.floor(MAX_RECORDS / 8);
 
 /** The Hocuspocus message type of a sync frame and its reply, and y-protocols' inner types. */
 const OUTER_SYNC = 0;

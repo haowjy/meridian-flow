@@ -61,7 +61,7 @@ export type Admission =
     };
 
 /** Keeps the whole-refusal check cheap: no honest update holds this many records. */
-const MAX_RECORDS = 2000;
+export const MAX_RECORDS = 2000;
 /** Yjs client ids below this are the server's, as they are for text. */
 const SERVER_CLIENT_IDS = 1000;
 

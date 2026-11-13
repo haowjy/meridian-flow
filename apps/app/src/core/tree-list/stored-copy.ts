@@ -3,7 +3,12 @@
  * in `y-indexeddb`, and a channel that carries each tab's records to the others. Every tab gets
  * a Yjs client id of its own (a fresh `Y.Doc`), so two tabs never fork one id; the stored copy
  * holds every id that ever wrote to it.
+ *
+ * A rebuild after a whole refusal starts the next generation of the stored database. The records
+ * the rejected copy held are written into it (the `carried` key) before the old generation goes,
+ * so they survive whichever tab owns the connection next, until the rebuilt copy holds them.
  */
+import { recordsOf, type TreeRecord } from "@meridian/project-tree";
 import type { ListCopy } from "@meridian/tree-list-sync";
 import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
@@ -12,12 +17,23 @@ import * as Y from "yjs";
 const FIRST_CLIENT_ID = 1000;
 const RELAY = Symbol("tree-list-relay");
 
-type Message =
+/** `y-indexeddb`'s object stores: the Yjs updates, and the key-value store for the rest. */
+const UPDATES_STORE = "updates";
+const CUSTOM_STORE = "custom";
+const CARRIED_KEY = "carried";
+
+/**
+ * Every message names the generation it is about, and a tab hears only its own: a write made
+ * against a generation that has been retired is the sender's to carry over (`reset`).
+ */
+type Body =
   | { kind: "update"; update: Uint8Array }
   | { kind: "hello"; stateVector: Uint8Array; reply: boolean }
-  /** The owner's copy was rebuilt: every tab throws its own away and asks the owner for the new one. */
-  | { kind: "reset"; generation: number }
+  /** The owner rebuilt the copy: every tab starts over on this generation, keeping what the owner did not carry. */
+  | { kind: "reset"; carriedIds: string[] }
+  | { kind: "settled" }
   | { kind: "status"; status: string };
+type Message = Body & { generation: number };
 
 function newDoc(): Y.Doc {
   const doc = new Y.Doc({ gc: false });
@@ -33,11 +49,8 @@ export class StoredListCopy implements ListCopy {
   private readonly channel: BroadcastChannel;
   private readonly listeners = new Set<() => void>();
   private closed = false;
-  /**
-   * Which stored database is the copy: a rebuild opens the next one and the old one is deleted
-   * once every tab has let go of it, so a tab never waits on another's connection to delete.
-   */
   private generation: number;
+  private carriedRecords: readonly TreeRecord[] = [];
 
   constructor(
     private readonly name: string,
@@ -47,8 +60,8 @@ export class StoredListCopy implements ListCopy {
   ) {
     this.generation = Number(localStorage.getItem(this.generationKey) ?? 0);
     this.channel = new BroadcastChannel(`meridian:tree-list:v1:${name}`);
-    this.channel.onmessage = ({ data }: MessageEvent<Message>) => void this.receive(data);
-    this.attach(this.doc);
+    this.channel.onmessage = ({ data }: MessageEvent<Message>) => this.receive(data);
+    this.open(this.doc, this.generation);
   }
 
   private get generationKey() {
@@ -59,24 +72,50 @@ export class StoredListCopy implements ListCopy {
     return generation === 0 ? this.name : `${this.name}:${generation}`;
   }
 
-  private attach(doc: Y.Doc) {
+  /**
+   * Makes `doc` the copy and stores it in `generation`'s database. `carried` is what a rebuild
+   * carries into it, stored before the copy is said to be loaded; a tab joining one reads it.
+   */
+  private open(doc: Y.Doc, generation: number, carried?: readonly TreeRecord[]) {
     this.doc = doc;
-    this.persistence = new IndexeddbPersistence(this.databaseName(this.generation), doc);
+    this.generation = generation;
+    const persistence = new IndexeddbPersistence(this.databaseName(generation), doc);
+    this.persistence = persistence;
     doc.on("update", (update: Uint8Array, origin: unknown) => {
-      if (origin !== RELAY) this.post({ kind: "update", update });
+      if (origin !== RELAY && this.doc === doc) this.post({ kind: "update", update });
     });
-    this.loaded = this.persistence.whenSynced.then(() => {
+    this.loaded = persistence.whenSynced.then(async () => {
+      if (carried) await this.commit([CUSTOM_STORE], (custom) => custom.put(carried, CARRIED_KEY));
+      else this.carriedRecords = ((await persistence.get(CARRIED_KEY)) as TreeRecord[]) ?? [];
       this.post({ kind: "hello", stateVector: Y.encodeStateVector(doc), reply: false });
     });
     for (const listener of this.listeners) listener();
   }
 
-  private post(message: Message) {
-    if (!this.closed) this.channel.postMessage(message);
+  /** Runs a write on the open database and settles once the browser has committed it. */
+  private commit(stores: string[], write: (store: IDBObjectStore) => void) {
+    const db = this.persistence.db;
+    if (!db) throw new Error("The stored tree list is not open");
+    const transaction = db.transaction(stores, "readwrite");
+    // Both stores in one transaction, so it commits after every write already queued on either.
+    write(transaction.objectStore(stores.at(-1) as string));
+    return new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
   }
 
-  private async receive(message: Message) {
+  private post(message: Body) {
+    if (!this.closed) this.channel.postMessage({ generation: this.generation, ...message });
+  }
+
+  private receive(message: Message) {
     if (this.closed) return;
+    if (message.kind === "reset") {
+      if (message.generation > this.generation) this.followReset(message);
+      return;
+    }
+    if (message.generation !== this.generation) return;
     switch (message.kind) {
       case "update":
         Y.applyUpdate(this.doc, message.update, RELAY);
@@ -99,10 +138,8 @@ export class StoredListCopy implements ListCopy {
       case "status":
         this.onPeerStatus(message.status);
         return;
-      case "reset":
-        await this.persistence.destroy();
-        this.generation = message.generation;
-        this.attach(newDoc());
+      case "settled":
+        this.carriedRecords = [];
         return;
     }
   }
@@ -112,16 +149,48 @@ export class StoredListCopy implements ListCopy {
     this.post({ kind: "status", status });
   }
 
-  /** The rebuild after a whole refusal: the stored copy goes, and every tab starts over. */
+  carried(): readonly TreeRecord[] {
+    return this.carriedRecords;
+  }
+
+  async settleCarried() {
+    this.carriedRecords = [];
+    this.post({ kind: "settled" });
+    // After the records appended again are in the stored copy: one transaction over both stores.
+    await this.commit([UPDATES_STORE, CUSTOM_STORE], (custom) => custom.delete(CARRIED_KEY));
+  }
+
+  /**
+   * The rebuild after a whole refusal: the next generation holds what the rejected copy held,
+   * and only then is the old one retired. The swap itself is immediate, so a record written
+   * meanwhile goes into the copy that survives.
+   */
   async replace() {
-    const old = this.databaseName(this.generation);
-    await this.persistence.destroy();
-    this.generation += 1;
+    const carried = recordsOf(this.doc).toArray();
+    const old = { persistence: this.persistence, generation: this.generation };
+    this.carriedRecords = carried;
+    this.open(newDoc(), old.generation + 1, carried);
+    await this.loaded;
     localStorage.setItem(this.generationKey, String(this.generation));
-    this.attach(newDoc());
-    this.post({ kind: "reset", generation: this.generation });
+    this.post({ kind: "reset", carriedIds: carried.map((record) => record.id) });
+    await old.persistence.destroy();
     // Blocked until every tab has let go of the old copy, then done.
-    indexedDB.deleteDatabase(old);
+    indexedDB.deleteDatabase(this.databaseName(old.generation));
+  }
+
+  /**
+   * The owner rebuilt the copy. This tab starts over on the new generation at once, and writes
+   * again what it made that the owner had not yet carried.
+   */
+  private followReset(message: Message & { kind: "reset" }) {
+    const carried = new Set(message.carriedIds);
+    const late = recordsOf(this.doc)
+      .toArray()
+      .filter((record) => !carried.has(record.id));
+    const retired = this.persistence;
+    this.open(newDoc(), message.generation);
+    if (late.length > 0) this.doc.transact(() => recordsOf(this.doc).push(late));
+    void retired.destroy();
   }
 
   /** Called when `doc` is replaced. */

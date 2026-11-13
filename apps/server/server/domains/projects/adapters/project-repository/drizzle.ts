@@ -9,6 +9,7 @@ import {
 } from "../../../../shared/drizzle-transaction.js";
 import { lockProjectLifecycleExclusive } from "../../../../shared/project-lifecycle-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
+import type { FileAccessChanges } from "../../../file-policy/index.js";
 import type { ContextCatalogLifecyclePort } from "../../ports/context-catalog-lifecycle.js";
 import type {
   CreateProjectInput,
@@ -37,6 +38,8 @@ function mapProject(row: ProjectRow): Project {
 export interface DrizzleProjectRepositoryDeps {
   db: Database;
   catalogLifecycle: ContextCatalogLifecyclePort;
+  /** A deleted project closes the live connections to its tree list. */
+  fileAccessChanges: Pick<FileAccessChanges, "publish">;
   ensureNoWork: (projectId: ProjectId) => Promise<unknown>;
 }
 export function createDrizzleProjectRepository(
@@ -152,6 +155,7 @@ export function createDrizzleProjectRepository(
           .returning();
         if (!row) throw new Error(`Project not found: ${id}`);
         await deps.catalogLifecycle.refreshProject(row.id);
+        await deps.fileAccessChanges.publish({ projectId: row.id });
         return mapProject(row);
       });
     },

@@ -3,9 +3,9 @@
  * gateway and store, on postgres, joined by a socket that carries frames in memory.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - a whole refusal closes the connection with `list-rebuild`, and the client rebuilds
- * - a long history travels in parts of a few hundred records, both ways
- * - a room learns of another process's commit at its next exchange, not before
+ * - a refusal closes the socket with its own code, and the client reconnects or rebuilds by it
+ * - a long history travels to the server in parts of a few hundred records
+ * - a commit on one process reaches the rooms of every other through Postgres NOTIFY
  */
 
 import { WS_CLOSE } from "@meridian/contracts/protocol";
@@ -55,6 +55,7 @@ const until = (condition: () => boolean | Promise<boolean>, what: string, ms = 1
 
 /** What the browser sees of its copy: a fresh Yjs client id each time it is replaced. */
 function memoryCopy(): ListCopy & { doc: Y.Doc } {
+  let carried: readonly TreeRecord[] = [];
   const make = () => {
     const doc = new Y.Doc({ gc: false });
     doc.clientID = 1000 + Math.floor(Math.random() * 1e9);
@@ -63,7 +64,12 @@ function memoryCopy(): ListCopy & { doc: Y.Doc } {
   const copy = {
     doc: make(),
     async replace() {
+      carried = recordsOf(copy.doc).toArray();
       copy.doc = make();
+    },
+    carried: () => carried,
+    async settleCarried() {
+      carried = [];
     },
   };
   return copy;
@@ -74,14 +80,17 @@ describe("a tree list's room (postgres)", () => {
   const journal = createDrizzleJournal(db);
   const gateways: YjsGateway[] = [];
   const connections: Array<{ destroy(): void }> = [];
+  const unlisten: Array<Promise<{ unlisten(): Promise<void> }>> = [];
 
   /** A server process: its own store (so its own copy of the list) and its own gateway. */
   function serverProcess() {
     const store = createDrizzleTreeListStore({ db, journal });
+    unlisten.push(store.listen());
+    const changes = createLocalFileAccessChanges();
     const gateway = createYjsGateway({
       liveDocuments: { findById: async () => ({ kind: "not_found" }) },
       fileAccess: {},
-      fileAccessChanges: createLocalFileAccessChanges(),
+      fileAccessChanges: changes,
       documentSync: {
         bindHocuspocus: () => undefined,
         getPersistenceQueueMetrics: () => ({}),
@@ -91,7 +100,7 @@ describe("a tree list's room (postgres)", () => {
       treeLists: store,
     } as never);
     gateways.push(gateway);
-    return { store, gateway };
+    return { store, gateway, changes };
   }
 
   /** Frames from the server to a client, by what they carry, for the tests that count parts. */
@@ -210,6 +219,7 @@ describe("a tree list's room (postgres)", () => {
   afterEach(async () => {
     for (const connection of connections.splice(0)) connection.destroy();
     for (const gateway of gateways.splice(0)) await gateway.drain();
+    for (const listening of unlisten.splice(0)) await (await listening).unlisten();
   });
   afterAll(() => closeDatabase(db));
 
@@ -295,7 +305,7 @@ describe("a tree list's room (postgres)", () => {
     expect(tab.states).toContain("rebuilding");
   }, 60_000);
 
-  it("catches a client up in parts after a long offline session, and a new client the same way", async () => {
+  it("sends a long offline session up in parts, and a new client takes the whole history", async () => {
     const server = serverProcess();
     const admissions: number[] = [];
     const admit = server.store.admit.bind(server.store);
@@ -325,39 +335,55 @@ describe("a tree list's room (postgres)", () => {
     expect((await db.select().from(treeNodes))[0]?.name).toBe("draft 699");
     expect(tab.state).not.toBe("denied");
 
-    // A new tab takes the whole history, and gets it as several frames.
+    // A new tab takes the whole history.
     const fresh = browser(server);
     await until(
       () => fresh.ids().length === 700 && fresh.state === "synced",
       "700 in the new tab",
       30_000,
     );
-    expect(fresh.wire.toClient.filter((bytes) => bytes > 1_000).length).toBeGreaterThanOrEqual(2);
   }, 120_000);
 
-  it("shows one server process's records to another's room at that room's next exchange", async () => {
+  it("shows one server process's records to an idle tab on another, with no exchange from that tab", async () => {
     const one = serverProcess();
     const other = serverProcess();
     const tabOne = browser(one);
     const tabOther = browser(other);
     await until(() => tabOne.state === "synced" && tabOther.state === "synced", "both synced");
 
+    const committedAt = Date.now();
     createDocument(tabOne.copy, "from process one");
-    await until(async () => (await journalRecords(one)).length === 1, "admitted by process one");
-    // The other room has had no exchange since: it has not heard.
-    expect(tabOther.ids()).toHaveLength(0);
-
-    // Its next exchange reads the journal, and the tab hears the record with its own.
-    createDocument(tabOther.copy, "from process two");
-    await until(() => tabOther.ids().length === 2, "the record from process one");
-    // Process one's room has had no exchange since either: its tab has not heard process two.
-    expect(tabOne.ids()).toHaveLength(1);
-    // A new connection's handshake reads the journal there, and every tab of that room hears.
-    const joined = browser(one);
-    await until(() => joined.ids().length === 2, "the new tab on process one");
-    await until(() => tabOne.ids().length === 2, "the old tab on process one");
+    await until(() => tabOther.ids().length === 1, "the record on the other process");
     const rows = await db.select().from(treeNodes).where(eq(treeNodes.contextSourceId, MANUSCRIPT));
-    expect(rows.map((row) => row.name).sort()).toEqual(["from process one", "from process two"]);
+    expect(rows.map((row) => row.name)).toEqual(["from process one"]);
+  });
+
+  it("reconnects a client whose admission failed, and loses nothing", async () => {
+    const server = serverProcess();
+    const tab = browser(server);
+    await until(() => tab.state === "synced", "synced");
+    const admit = server.store.admit.bind(server.store);
+    let failures = 1;
+    server.store.admit = async (input) => {
+      if (failures-- > 0) throw new Error("the database dropped the connection");
+      return admit(input);
+    };
+    createDocument(tab.copy, "after a fault");
+    await until(() => tab.states.includes("offline"), "the socket closed with a real code");
+    await until(
+      async () => (await journalRecords(server)).length === 1 && tab.state === "synced",
+      "reconnected and the record admitted",
+    );
+  });
+
+  it("closes the connections of a project that is deleted", async () => {
+    const server = serverProcess();
+    const reader = browser(server);
+    await until(() => reader.state === "synced", "synced");
+    await db.update(projects).set({ deletedAt: new Date() }).where(eq(projects.id, PROJECT));
+    // The deletion publishes this change in the application; the gateway closes by the room's key.
+    await server.changes.publish({ projectId: PROJECT });
+    await until(() => reader.state === "denied", "denied after the project went");
   });
 
   it("keeps a read-only connection's updates out of the store", async () => {
@@ -369,7 +395,7 @@ describe("a tree list's room (postgres)", () => {
     const server = serverProcess();
     const admit = vi.spyOn(server.store, "admit");
     const tab = browser(server, { room: `tree:project:${READ_ONLY}` });
-    await until(() => tab.state === "synced", "synced");
+    await until(() => tab.state === "read-only", "synced, read-only");
     const framesBefore = tab.wire.toClient.length;
     createDocument(tab.copy, "never admitted", sourceRoot(UNFILED));
     // The room answers the dropped frame with its SyncStatus(false): nothing was admitted or stored.

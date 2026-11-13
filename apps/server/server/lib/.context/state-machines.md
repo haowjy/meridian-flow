@@ -58,24 +58,34 @@ One connection to a project's (or an account's) tree list room (`yjs-tree-room.t
 ```mermaid
 stateDiagram-v2
   [*] --> open: the account owns the list (edit or read)
-  [*] --> refused: not the list's account (4403)
+  [*] --> closed: not the list's account (4403)
   open --> open: SyncStep1 catches the room up to the journal, an update is admitted
-  open --> closed: a whole refusal (4210 list-rebuild), access lost (4409), rate wait over ten seconds (1013)
+  open --> closed: a whole refusal (4210), access lost (4409), the project deleted (4409), rate wait over ten seconds (1013), any server error (1013)
   closed --> [*]
-  refused --> [*]
 ```
 
 - **A client's update never reaches the room's document.** It goes to `TreeListStore.admit`;
   the room's document gains what the store committed (the client's items with the verdicts the
   server appended), delivered from `onCommitted`, so every connection hears the verdicts.
-- **A whole refusal closes the connection** (`4210 list-rebuild`) and applies nothing; the
-  client rebuilds from the server's copy. An account that lost write access since it connected
-  gets `4409` instead, and a limit an honest client can reach is never a whole refusal.
+- **Every close is a close of the socket, with its code**, through the gateway's one close path
+  (`withTreeRefusal`, as `withRemovalRefusal` is for documents): Hocuspocus's own close message
+  reaches a provider as 1000 and leaves the socket open, so a refusal that relied on it would
+  leave the client offline for good. A whole refusal is `4210 list-rebuild` and applies nothing;
+  the client rebuilds from the server's copy. An account that lost write access since it
+  connected gets `4409`, and a server error `1013`: the client reconnects on both. A refused
+  connection is marked, and the messages Hocuspocus has queued behind the refusal are refused
+  without reaching the store.
+- **Access has a lifecycle.** The connection registers under the room's name with the gateway's
+  access index; a project's deletion publishes a file-access change that closes it with `4409`,
+  and the reconnect is refused (`4403`). A change between the first check and the registration
+  is caught by asking again.
 - **A read-only connection's updates are dropped before the check** (`level: "read"`).
-- **Admissions are rate limited per connection** (a burst of 60, 30 a second): the connection
-  waits, and is closed only when the wait would pass ten seconds.
-- **Everything the connection sends and receives is in parts** of 300 records
-  (`splitSyncFrame`), whatever its size.
-- **A room learns of another process's commit at its next exchange** (a connection's SyncStep1,
-  an admission), as a text room does: there is no periodic read of the journal.
+- **Admissions are rate limited per connection** (a burst of 60, 30 a second). Each admission
+  spends one token at once and the balance may go below zero; the debt is the wait, and the
+  connection is closed only when it would pass ten seconds.
+- **What the client sends comes in parts** (`splitSyncFrame`, in the client); what the server
+  sends is not cut, since the browser has no limit on an update's size.
+- **A room learns of any process's commit from Postgres `NOTIFY`** (`tree_list_advanced`, the
+  list's id), and catches up from the journal; a SyncStep1 does the same, which heals a
+  notification missed while the listener reconnected.
 

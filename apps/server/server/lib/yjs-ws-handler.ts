@@ -43,7 +43,13 @@ import {
   type YjsRoomAccessIndex,
   type YjsRoomRegistration,
 } from "./yjs-room-access.js";
-import { createTreeRooms, type TreeRoomConnection, type TreeRooms } from "./yjs-tree-room.js";
+import {
+  createTreeRooms,
+  SERVER_ERROR_CLOSE,
+  type TreeRoomConnection,
+  TreeRoomRefusal,
+  type TreeRooms,
+} from "./yjs-tree-room.js";
 export type DraftHandshakeState = "pending" | "passed" | "rejected";
 
 type HocuspocusConnection = ReturnType<Hocuspocus["handleConnection"]>;
@@ -222,6 +228,31 @@ async function removedForReader(
     (await services.fileAccess.historyAccess({ accountId: userId }, removed.documentId)) ===
       "deleted"
   );
+}
+
+/**
+ * The tree room's one close path: a refusal closes the socket with its own code, any other error
+ * with the code the client reconnects on, and both reach Hocuspocus as a refused hook.
+ */
+async function withTreeRefusal<T>(
+  services: Pick<YjsGatewayServices, "eventSink">,
+  context: { closeTransport?(close: RoomClose): void },
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (cause) {
+    if (!(cause instanceof TreeRoomRefusal))
+      emitEvent(services.eventSink, {
+        level: "error",
+        source: "collab.tree_list",
+        name: "room.failed",
+        payload: unknownToEventPayload(cause),
+      });
+    const close = cause instanceof TreeRoomRefusal ? cause.close : SERVER_ERROR_CLOSE;
+    context.closeTransport?.(close);
+    throw permissionDenied(close.reason, close.code);
+  }
 }
 
 function refuseSchemaAdmission(input: {
@@ -541,11 +572,14 @@ export function createHocuspocus(
 
         const anyRoom = parseAnyRoomOrDeny(documentName);
         if (anyRoom.kind === "tree") {
-          context.tree = await treeRooms.connect({
-            list: anyRoom.list,
-            accountId: userId,
-            connectionConfig,
-          });
+          context.tree = await withTreeRefusal(services, context, () =>
+            treeRooms.connect({
+              list: anyRoom.list,
+              accountId: userId,
+              connectionConfig,
+              register: (key) => rooms.register(context.registration, [key]),
+            }),
+          );
           return;
         }
         const room = anyRoom;
@@ -599,14 +633,17 @@ export function createHocuspocus(
         if (!userId) throw permissionDenied("permission-denied");
       });
     },
-    async beforeSync({ documentName, document, type, payload, context, connection }) {
+    async beforeSync({ documentName, document, type, payload, context }) {
       return runWithEventCorrelation({ traceId: context.traceId }, async () => {
         const userId = context.userId;
         if (!userId) throw permissionDenied("permission-denied");
         const anyRoom = parseAnyRoomOrDeny(documentName);
         if (anyRoom.kind === "tree") {
           if (!context.tree) throw permissionDenied("permission-denied");
-          return treeRooms.beforeSync({ connection, tree: context.tree, type, payload });
+          const tree = context.tree;
+          return withTreeRefusal(services, context, () =>
+            treeRooms.beforeSync({ tree, type, payload }),
+          );
         }
         const room = anyRoom;
         await withRemovalRefusal(services, room, userId, context, async () => {
@@ -647,7 +684,10 @@ export function createHocuspocus(
         const anyRoom = parseAnyRoomOrDeny(documentName);
         if (anyRoom.kind === "tree") {
           if (!context.tree) throw permissionDenied("permission-denied");
-          return treeRooms.load({ documentName, document, tree: context.tree });
+          const tree = context.tree;
+          return withTreeRefusal(services, context, () =>
+            treeRooms.load({ documentName, document, tree }),
+          );
         }
         const room = anyRoom;
         await withRemovalRefusal(services, room, context.userId, context, async () => {

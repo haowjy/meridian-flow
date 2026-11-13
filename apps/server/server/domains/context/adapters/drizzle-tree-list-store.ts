@@ -60,16 +60,25 @@ function applyHistory(doc: Y.Doc, updates: readonly Uint8Array[]) {
   }
 }
 
+/** Every instance hears this at the commit of a journal row; the payload is the list's id. */
+const CHANNEL = "tree_list_advanced";
+
 const sameBytes = (a: Uint8Array, b: Uint8Array) =>
   a.length === b.length && a.every((byte, at) => byte === b[at]);
+
+export type PgTreeListStore = TreeListStore & {
+  /** Starts hearing every instance's commits (this one's too) for `onJournalAdvanced`. */
+  listen(): Promise<{ unlisten: () => Promise<void> }>;
+};
 
 export function createDrizzleTreeListStore(deps: {
   db: Database;
   journal: CollabJournal;
-}): TreeListStore {
+}): PgTreeListStore {
   const { db, journal } = deps;
   const copies = new Map<string, Copy>();
   const listeners = new Set<(committed: CommittedTreeUpdate) => void>();
+  const advancedListeners = new Set<(listId: string) => void>();
 
   /** The journal's newest row, and the newest row it may have folded into a checkpoint. */
   async function journalBounds(tx: DrizzleDb, listId: string) {
@@ -161,6 +170,8 @@ export function createDrizzleTreeListStore(deps: {
     // edit, and a list's receipt is the record itself.
     const seq = await journal.append(listId, update, { origin: "system", seq: 0 });
     copy.seq = seq;
+    // Delivered at the commit, to every instance: a room on another process catches up from it.
+    await tx.execute(sql`select pg_notify(${CHANNEL}, ${listId})`);
     await testHook("treeList.afterAppend");
     await syncRows(tx, list, listId, copy.doc, added);
     await testHook("treeList.afterRows");
@@ -251,5 +262,15 @@ export function createDrizzleTreeListStore(deps: {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+
+    onJournalAdvanced(listener) {
+      advancedListeners.add(listener);
+      return () => advancedListeners.delete(listener);
+    },
+
+    listen: () =>
+      db.listen(CHANNEL, (listId) => {
+        for (const listener of advancedListeners) listener(listId);
+      }),
   };
 }

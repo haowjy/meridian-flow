@@ -13,13 +13,16 @@ nothing is replayed.
 stateDiagram-v2
   [*] --> waiting: the session opens
   waiting --> synced: the server's list has arrived and ours has gone
-  synced --> offline: the connection drops
+  waiting --> readOnly: the same, for an account that may not write
+  synced --> offline: the socket closes
+  readOnly --> offline: the socket closes
   offline --> synced: it reconnects and levels
-  synced --> rebuilding: the server refused the copy whole (list-rebuild)
+  synced --> rebuilding: the server closed with 4210 (list-rebuild)
   offline --> rebuilding: the same, on reconnecting
   rebuilding --> synced: the rebuilt copy has the server's list and our records again
-  waiting --> denied: no access to the list
-  synced --> denied: no access
+  waiting --> denied: the socket closed with 4401 or 4403
+  synced --> denied: the same, after an access change (4409) and the reconnect it forces
+  offline --> denied: the same
   denied --> [*]
 ```
 
@@ -27,8 +30,16 @@ stateDiagram-v2
   copy that has not caught up is not proof that a node is absent.
 - `rebuilding` throws the copy away: the snapshot's `doc` becomes a new document under a new Yjs
   client id. The records the old copy held that the server had not admitted are appended again.
-- A close that is not a refusal (a drop, a server restart) is `offline`, and the provider's own
-  reconnect does the rest. `denied` is final.
+- `readOnly` is `read-only` in the code: synced, and the account may not write, so the copy's own
+  records stay on the device.
+- The state follows the code of the socket's close, which the server sends itself. `4210` rebuilds;
+  `4401` and `4403` are `denied` and final; any other close (a drop, a restart, `4409` after
+  an access change, `1013` after a server error) is `offline`, and the provider reconnects.
+  Access that ended is then refused on the reconnect.
+- A rebuild stores the records it carries in the next stored database before the old one goes,
+  so an owner that closes mid-rebuild leaves them to the next owner, which appends again
+  whatever the server lacks. After a second rebuild in a minute the records go one admission each,
+  to find the one the server refuses; the one given up on is in the snapshot's `rejected`.
 
 ## Connection owner
 

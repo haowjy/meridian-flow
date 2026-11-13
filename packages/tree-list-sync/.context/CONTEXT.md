@@ -19,8 +19,11 @@ bookkeeping happens once. Frames under 16 KB are not decoded.
 
 ## Rebuild (`connect.ts`)
 
-After `list-rebuild` the copy's records are carried, `copy.replace()` gives an empty document under a
-new client id, and once the server's state has arrived (`onSynced`) the records the new copy
-lacks (by record id) are appended again. Rebuilds are counted over a minute: past three, the first
-of the carried records is given up on each time, so one hostile record cannot starve the honest
-ones behind it.
+After a close with `4210` the copy's `replace()` keeps the records the copy held (`carried()`) and
+gives an empty document under a new client id, and once the server's state has arrived
+(`onSynced`) the records the new copy lacks (by record id) are appended again, then
+`settleCarried()`. The first rebuild appends them in one update (an honest client's rebuild is one
+admission, never a stream that meets the rate limit). A second rebuild within a minute appends one
+record per transaction, so the server's refusal falls on the one record it refuses; past three,
+the first of the carried records is given up on each time, so one hostile record cannot starve
+the honest ones behind it.

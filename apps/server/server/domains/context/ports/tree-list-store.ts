@@ -67,4 +67,9 @@ export interface TreeListStore {
   submit(input: { list: TreeList; entries: ServerEntries }): Promise<CommittedTreeUpdate | null>;
   /** Called after each commit that added to a list, for whoever sends it to the other clients. */
   onCommitted(listener: (committed: CommittedTreeUpdate) => void): () => void;
+  /**
+   * Called with the list's id once any server process has committed a journal row to it: a room
+   * that holds the list reads the rows it lacks. Only commits are announced, never a rollback.
+   */
+  onJournalAdvanced(listener: (listId: string) => void): () => void;
 }

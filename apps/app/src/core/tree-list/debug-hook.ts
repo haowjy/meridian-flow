@@ -50,7 +50,7 @@ export function installTreeListDebugHook(
   };
   const read = (kind: "project" | "account", id: string) => {
     const { session } = handleOf(kind, id);
-    const { doc, status, role } = session.getSnapshot();
+    const { doc, status, role, rejected } = session.getSnapshot();
     const rows = [...projectedRows(replayView(doc, LIVE)).values()].map((row) => ({
       id: row.id,
       name: row.name,
@@ -60,6 +60,7 @@ export function installTreeListDebugHook(
     return {
       status,
       role,
+      rejected: rejected.length,
       clientId: doc.clientID,
       records: listRecords(doc).length,
       rows,

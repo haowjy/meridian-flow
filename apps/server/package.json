@@ -23,7 +23,6 @@
     "@meridian/database": "workspace:*",
     "@meridian/markup": "workspace:*",
     "@meridian/project-tree": "workspace:*",
-    "@meridian/tree-list-sync": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
     "@meridian/resource-replica": "workspace:*",
     "@meridian/thread-client": "workspace:*",
@@ -64,8 +63,9 @@
   },
   "devDependencies": {
     "@hocuspocus/provider": "4.3.0",
-    "@types/busboy": "^1.5.5",
     "@meridian/resource-replica": "workspace:*",
+    "@meridian/tree-list-sync": "workspace:*",
+    "@types/busboy": "^1.5.5",
     "@types/picomatch": "^4.0.3",
     "@types/proper-lockfile": "^4.1.4",
     "@types/semver": "^7.7.1",

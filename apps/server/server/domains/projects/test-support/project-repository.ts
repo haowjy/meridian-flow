@@ -1,4 +1,5 @@
 import type { Database } from "@meridian/database";
+import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import {
   createDrizzleProjectRepository,
   type DrizzleProjectRepositoryDeps,
@@ -16,13 +17,19 @@ export const noOpProjectCatalogLifecycle: ContextCatalogLifecyclePort = {
 };
 
 export function createProjectRepositoryForTest(
-  deps: Omit<DrizzleProjectRepositoryDeps, "catalogLifecycle" | "ensureNoWork"> &
-    Partial<Pick<DrizzleProjectRepositoryDeps, "catalogLifecycle" | "ensureNoWork">>,
+  deps: Omit<
+    DrizzleProjectRepositoryDeps,
+    "catalogLifecycle" | "ensureNoWork" | "fileAccessChanges"
+  > &
+    Partial<
+      Pick<DrizzleProjectRepositoryDeps, "catalogLifecycle" | "ensureNoWork" | "fileAccessChanges">
+    >,
 ) {
   return createDrizzleProjectRepository({
     db: deps.db as Database,
     catalogLifecycle: deps.catalogLifecycle ?? noOpProjectCatalogLifecycle,
     ensureNoWork: deps.ensureNoWork ?? (async () => undefined),
+    fileAccessChanges: deps.fileAccessChanges ?? createLocalFileAccessChanges(),
   });
 }
 

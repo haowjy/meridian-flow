@@ -5,6 +5,7 @@
  * immutable snapshot.
  */
 import { type TreeListRef, treeRoomName, yjsWsPath } from "@meridian/contracts/protocol";
+import type { TreeRecord } from "@meridian/project-tree";
 import { connectTreeList, type ListSyncState } from "@meridian/tree-list-sync";
 import type * as Y from "yjs";
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
@@ -19,9 +20,17 @@ import { StoredListCopy } from "./stored-copy";
  * - `offline`: the connection dropped after a sync; the copy still shows what it had and takes
  *   records, which the next connection sends
  * - `rebuilding`: the server refused the copy whole; it is being rebuilt from the server's
+ * - `read-only`: synced, but the account may not write the list: the server keeps none of the
+ *   copy's records
  * - `denied`: this account has no access to the list
  */
-export type TreeListStatus = "waiting" | "synced" | "offline" | "rebuilding" | "denied";
+export type TreeListStatus =
+  | "waiting"
+  | "synced"
+  | "read-only"
+  | "offline"
+  | "rebuilding"
+  | "denied";
 
 export type TreeListSnapshot = {
   /** The copy. A rebuild replaces it with a new document: read it from the snapshot each time. */
@@ -29,6 +38,8 @@ export type TreeListSnapshot = {
   readonly status: TreeListStatus;
   /** Whether this tab holds the list's connection or follows the tab that does. */
   readonly role: "owner" | "follower";
+  /** Records the server kept refusing after rebuilds, dropped from the copy's sends: the writer's work it never kept. */
+  readonly rejected: readonly TreeRecord[];
 };
 
 const statusOf = (state: ListSyncState): TreeListStatus =>
@@ -39,8 +50,8 @@ export class TreeListSession {
   private current: TreeListSnapshot;
   private readonly listeners = new Set<() => void>();
   private readonly closed = deferred<void>();
+  private readonly cancelLockRequest = new AbortController();
   private isClosed = false;
-  private connection: { destroy(): void } | null = null;
   private ownStatus: TreeListStatus | null = null;
 
   constructor(
@@ -56,7 +67,7 @@ export class TreeListSession {
       },
       () => this.ownStatus,
     );
-    this.current = { doc: this.copy.doc, status: "waiting", role: "follower" };
+    this.current = { doc: this.copy.doc, status: "waiting", role: "follower", rejected: [] };
     this.copy.subscribe(() => this.publish({ doc: this.copy.doc }));
     void this.copy.loaded.then(() => this.becomeOwnerWhenFree(key, locks));
   }
@@ -64,8 +75,10 @@ export class TreeListSession {
   private becomeOwnerWhenFree(key: string, locks: CrossContextLockManager | null) {
     if (this.isClosed) return;
     const own = async () => {
+      // A request granted after the session closed is a lock nobody asked for any more.
+      if (this.isClosed) return;
       this.publish({ role: "owner" });
-      this.connection = connectTreeList({
+      const connection = connectTreeList({
         roomName: treeRoomName(this.list),
         url: buildSameOriginWsUrl(yjsWsPath()),
         WebSocketPolyfill: CollabSchemaWebSocket,
@@ -75,11 +88,24 @@ export class TreeListSession {
           this.copy.announceStatus(this.ownStatus);
           this.publish({ status: this.ownStatus });
         },
+        onRejected: (records) => this.publish({ rejected: [...this.current.rejected, ...records] }),
       });
+      // The connection lives as long as the lock: the lock is released when the session closes.
       await this.closed.promise;
+      connection.destroy();
     };
     // One tab holds the connection; the others wait on the lock and take it when it goes.
-    if (locks) void locks.request(`meridian:tree-list:v1:${key}`, { mode: "exclusive" }, own);
+    if (locks)
+      void locks
+        .request(
+          `meridian:tree-list:v1:${key}`,
+          { mode: "exclusive", signal: this.cancelLockRequest.signal },
+          own,
+        )
+        .catch((cause: unknown) => {
+          // Closing the session cancels a request still waiting: that is the request ending, not a fault.
+          if (!(cause instanceof DOMException && cause.name === "AbortError")) throw cause;
+        });
     else void own();
   }
 
@@ -89,7 +115,8 @@ export class TreeListSession {
     if (
       next.doc === this.current.doc &&
       next.status === this.current.status &&
-      next.role === this.current.role
+      next.role === this.current.role &&
+      next.rejected === this.current.rejected
     )
       return;
     this.current = next;
@@ -106,7 +133,7 @@ export class TreeListSession {
   close() {
     if (this.isClosed) return;
     this.isClosed = true;
-    this.connection?.destroy();
+    this.cancelLockRequest.abort();
     this.closed.resolve();
     this.listeners.clear();
     this.copy.close();

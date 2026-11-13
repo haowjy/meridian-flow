@@ -108,6 +108,7 @@ async function main(): Promise<void> {
         db,
         catalogLifecycle: contextCatalog,
         ensureNoWork: (projectId) => workRepository.ensureNoWork(projectId),
+        fileAccessChanges: createLocalFileAccessChanges(),
       }),
       works: workRepository,
       ...createDrizzleRepositories(db, workProjectionMutation, lineageScratch),

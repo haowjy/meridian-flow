@@ -43,7 +43,7 @@ function services(stale: boolean) {
       findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
     },
     eventSink: {} as never,
-    treeLists: { onCommitted: () => () => {} } as never,
+    treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
     documentSync: {
       roomRemoval: vi.fn(async () => null),
       ensureDocumentAuthority: vi.fn(async () => {}),
@@ -61,7 +61,7 @@ function gatewayServices() {
       findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
     },
     eventSink: {} as never,
-    treeLists: { onCommitted: () => () => {} } as never,
+    treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
     documentSync: {
       bindHocuspocus: () => undefined,
       roomRemoval: async () => null,
@@ -148,7 +148,7 @@ describe("Yjs draft handshake route guard", () => {
           }),
         },
         eventSink: { emit() {} } as never,
-        treeLists: { onCommitted: () => () => {} } as never,
+        treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
       },
       createYjsRoomAccessIndex(),
     );
@@ -281,7 +281,7 @@ describe("Yjs draft handshake route guard", () => {
         findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
       },
       eventSink: { emit: vi.fn() } as never,
-      treeLists: { onCommitted: () => () => {} } as never,
+      treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
       documentSync: {
         roomRemoval: vi.fn(async () => null),
         ensureDocumentAuthority: vi.fn(async () => {}),
@@ -476,7 +476,7 @@ describe("Yjs room access", () => {
         findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
       },
       eventSink: { emit() {} } as never,
-      treeLists: { onCommitted: () => () => {} } as never,
+      treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
       admitLiveWriterUpdate: documentSync.admitLiveWriterUpdate,
     };
   }
