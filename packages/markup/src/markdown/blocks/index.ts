@@ -5,6 +5,5 @@ export { codeBlockCodec } from "./code-block.js";
 export { hardBreakCodec } from "./hard-break.js";
 export { horizontalRuleCodec } from "./horizontal-rule.js";
 export { imageCodec } from "./image.js";
-export { bulletListCodec, listItemCodec, orderedListCodec } from "./lists.js";
 export { paragraphCodec } from "./paragraph.js";
 export { tableCodec } from "./table.js";

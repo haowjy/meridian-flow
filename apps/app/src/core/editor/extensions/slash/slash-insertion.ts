@@ -1,5 +1,6 @@
 /** Inserts a selected slash-command result into the document. */
 
+import { nestNodes } from "@meridian/prosemirror-schema";
 import type { Editor, JSONContent, Range } from "@tiptap/core";
 import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
@@ -30,8 +31,6 @@ type SlashInsertion =
 
 const emptyParagraph: JSONContent = { type: "paragraph" };
 
-const listItem: JSONContent = { type: "list_item", content: [emptyParagraph] };
-
 function tableRow(cell: "table_header" | "table_cell"): JSONContent {
   return {
     type: "table_row",
@@ -55,8 +54,11 @@ const SLASH_INSERTIONS: Record<SlashCommandId, SlashInsertion> = {
   "heading-1": heading(1),
   "heading-2": heading(2),
   "heading-3": heading(3),
-  "bullet-list": block({ type: "bullet_list", content: [listItem] }),
-  "numbered-list": block({ type: "ordered_list", content: [listItem] }),
+  "bullet-list": block({ type: "paragraph", attrs: { path: "-", marker: "item" } }),
+  "numbered-list": block({
+    type: "paragraph",
+    attrs: { path: "-", marker: "item", kind: "ordered" },
+  }),
   quote: block({ type: "blockquote", content: [emptyParagraph] }),
   divider: block({ type: "horizontal_rule" }, "after"),
   table: block({
@@ -104,12 +106,24 @@ function inlineImageTarget(doc: PMNode, pos: number): SlashTarget | null {
   return acceptsInlineImage(doc, pos) ? { mode: "inline", pos } : null;
 }
 
-/** Nodes whose parts are not free-standing blocks: a list item exists only as part of its list, so a block asked for from inside a bullet belongs after the whole list rather than wedged into the bullet. */
-const OWNING_STRUCTURES: ReadonlySet<string> = new Set([
-  "bullet_list",
-  "ordered_list",
-  "list_item",
-]);
+/** Where the list the caret's block sits in ends: the position after its last block, and that block's index among its siblings. Null when the block is in no list. */
+function listRunEnd($pos: ResolvedPos): { index: number; pos: number } | null {
+  const depth = $pos.depth;
+  if (depth === 0) return null;
+  const parent = $pos.node(depth - 1);
+  const siblings: PMNode[] = [];
+  parent.forEach((child) => {
+    siblings.push(child);
+  });
+  const facts = nestNodes(siblings);
+  const index = $pos.index(depth - 1);
+  if (facts[index]?.steps[0]?.type !== "list") return null;
+  let end = index;
+  while (facts[end + 1]?.steps[0]?.type === "list" && !facts[end + 1].steps[0].opens) end += 1;
+  let pos = $pos.start(depth - 1);
+  for (let i = 0; i <= end; i += 1) pos += siblings[i].nodeSize;
+  return { index: end, pos };
+}
 
 /** Where the chosen node goes, decided from the document AFTER the `/` and its filter text are gone — so "is this block empty" is a plain question about the block rather than arithmetic on the trigger's range. */
 function blockTarget(doc: PMNode, pos: number, block: SlashBlock): SlashTarget | null {
@@ -127,15 +141,17 @@ function blockTarget(doc: PMNode, pos: number, block: SlashBlock): SlashTarget |
     return { mode: "convert", from: $pos.before(depth), to: $pos.after(depth), block };
   }
 
-  // Start outside every owning structure the caret is in — the outermost one,
-  // so a nested list is escaped whole — then take the first level that will
-  // hold the node, stopping inside the cell when there is one.
+  // Land after the whole list the block sits in, so a block asked for from inside a
+  // bullet does not split the list, then take the first level that will hold the node,
+  // stopping inside the cell when there is one.
   const floor = cellFloor($pos);
-  for (let level = escapedDepth($pos, floor); level > floor; level -= 1) {
+  const list = listRunEnd($pos);
+  for (let level = $pos.depth; level > floor; level -= 1) {
     const parent = $pos.node(level - 1);
-    const insertIndex = $pos.indexAfter(level - 1);
+    const atBlock = level === $pos.depth && list !== null;
+    const insertIndex = atBlock ? list.index + 1 : $pos.indexAfter(level - 1);
     if (parent.canReplaceWith(insertIndex, insertIndex, type)) {
-      return { mode: "insert-after", pos: $pos.after(level), block };
+      return { mode: "insert-after", pos: atBlock ? list.pos : $pos.after(level), block };
     }
   }
   return null;
@@ -148,14 +164,6 @@ function cellFloor($pos: ResolvedPos): number {
     if (role === "cell" || role === "header_cell") return level;
   }
   return 0;
-}
-
-/** The depth whose node the insertion goes after: the outermost owning structure above the floor, else the block itself. */
-function escapedDepth($pos: ResolvedPos, floor: number): number {
-  for (let level = floor + 1; level <= $pos.depth; level += 1) {
-    if (OWNING_STRUCTURES.has($pos.node(level).type.name)) return level;
-  }
-  return $pos.depth;
 }
 
 /** Runs the writer's choice: consume the trigger text, make the node, land the caret. */
@@ -199,11 +207,12 @@ export function applySlashCommand(
       if (target.mode === "convert") {
         const current = tr.doc.nodeAt(target.from);
         // Same node name: retype in place, so the block keeps its Yjs element
-        // and its alignment; only the level is the writer's choice.
+        // and its alignment; only the attributes the entry names (a heading's level,
+        // a list's nesting) are the writer's choice.
         if (current?.type === node.type) {
           tr.setNodeMarkup(target.from, undefined, {
             ...current.attrs,
-            level: node.attrs.level,
+            ...target.block.node.attrs,
           });
         } else {
           tr.replaceWith(target.from, target.to, node);

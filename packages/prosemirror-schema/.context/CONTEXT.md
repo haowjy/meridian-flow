@@ -17,6 +17,13 @@ one side and fail on the other, so this package follows the editor's structural 
 
 ## Surface decisions
 
+- Lists are not nodes. Every block in the `block` group carries `path`, `kind`, `marker`,
+  `start` and `loose` (all default `null`, none validated: the binding deletes an element
+  the schema cannot build, so any value must read as something). `nesting.ts` is the one
+  reader, `nest`, and is total: it never throws and nothing writes an attribute to repair a
+  document. `numberOf` is the one ordered-number rule (0 to 999,999,999, held at the last
+  number Markdown can write).
+
 - `align` is `null`, `"center"` or `"right"`. There is no `"left"`: unaligned is the default,
   and a second spelling would be a ghost state the markup codec must reject. Markup carries it
   as a `Layout` wrapper, so an alignable node gains no markup until a writer aligns it.

@@ -1,6 +1,8 @@
 /** Canonical HTML spelling for every table, including block-capable cells. */
 
+import { type NestedNode, nestNodes, nestTree } from "@meridian/prosemirror-schema";
 import type { Mark, Node as PMNode } from "prosemirror-model";
+import { type FlatBlock, flattenSources, type Source, withNesting } from "../../flatten.js";
 import { inlineContentToMdast, type MdastInline, rawTextForAst } from "../../helpers.js";
 import { getRuntime } from "../../runtime.js";
 import type { ParseContext, SerializeContext } from "../../types.js";
@@ -23,12 +25,18 @@ const DELEGATED_BLOCK_KIND_ATTRIBUTE = "kind";
 const DELEGATED_BLOCK_SOURCE_ATTRIBUTE = "source";
 const NATIVE_CELL_BLOCK_KINDS = new Set([
   "paragraph",
-  "bullet_list",
-  "ordered_list",
   "blockquote",
   "code_block",
   "horizontal_rule",
 ]);
+const NOT_NESTED: FlatBlock<null> = {
+  value: null,
+  path: null,
+  marker: null,
+  kind: null,
+  start: null,
+  loose: null,
+};
 const BLOCK_ELEMENTS = new Set([
   DELEGATED_BLOCK_ELEMENT,
   "p",
@@ -88,13 +96,41 @@ function serializeRow(row: PMNode, ctx: SerializeContext, indent: string): strin
     const tag = cell.type.name === "table_header" ? "th" : "td";
     const cellIndent = `${indent}  `;
     lines.push(`${cellIndent}<${tag}${serializeCellAttrs(cell)}>`);
-    cell.forEach((block) => {
-      lines.push(...serializeCellBlock(block, ctx, `${cellIndent}  `));
-    });
+    lines.push(...serializeCellBlocks(cell, ctx, `${cellIndent}  `));
     lines.push(`${cellIndent}</${tag}>`);
   });
   lines.push(`${indent}</tr>`);
   return lines;
+}
+
+/** A cell's (or quote's) blocks, grouped back into `ul`, `ol` and `li` by where each sits. */
+function serializeCellBlocks(parent: PMNode, ctx: SerializeContext, indent: string): string[] {
+  const blocks: PMNode[] = [];
+  parent.forEach((block) => {
+    blocks.push(block);
+  });
+  const render = (nodes: readonly NestedNode[], at: string): string[] =>
+    nodes.flatMap((node): string[] => {
+      if (node.type === "block") return serializeCellBlock(blocks[node.index], ctx, at);
+      if (node.type === "quote") {
+        return [`${at}<blockquote>`, ...render(node.children, `${at}  `), `${at}</blockquote>`];
+      }
+      const tag = node.list.kind === "ordered" ? "ol" : "ul";
+      const attrs = [`data-tight="${String(!node.list.loose)}"`];
+      if (tag === "ol" && node.list.start !== 1) attrs.unshift(`start="${node.list.start}"`);
+      return [
+        `${at}<${tag} ${attrs.join(" ")}>`,
+        ...node.items.flatMap((item) => {
+          const checked =
+            item.marker === "todo" || item.marker === "done"
+              ? ` data-checked="${String(item.marker === "done")}"`
+              : "";
+          return [`${at}  <li${checked}>`, ...render(item.children, `${at}    `), `${at}  </li>`];
+        }),
+        `${at}</${tag}>`,
+      ];
+    });
+  return render(nestTree(nestNodes(blocks)), indent);
 }
 
 function serializeCellBlock(block: PMNode, ctx: SerializeContext, indent: string): string[] {
@@ -111,18 +147,12 @@ function serializeCellBlock(block: PMNode, ctx: SerializeContext, indent: string
         )}</${tag}>`,
       ];
     }
-    case "bullet_list":
-      return serializeList(block, ctx, indent, "ul");
-    case "ordered_list":
-      return serializeList(block, ctx, indent, "ol");
-    case "blockquote": {
-      const lines = [`${indent}<blockquote>`];
-      block.forEach((child) => {
-        lines.push(...serializeCellBlock(child, ctx, `${indent}  `));
-      });
-      lines.push(`${indent}</blockquote>`);
-      return lines;
-    }
+    case "blockquote":
+      return [
+        `${indent}<blockquote>`,
+        ...serializeCellBlocks(block, ctx, `${indent}  `),
+        `${indent}</blockquote>`,
+      ];
     case "code_block": {
       const language = block.attrs.language;
       if (language !== null && typeof language !== "string") {
@@ -149,7 +179,9 @@ function serializeDelegatedCellBlock(
   ctx: SerializeContext,
   indent: string,
 ): string[] {
-  const source = getRuntime(ctx).serializeBlock(block, ctx).replace(/\n+$/, "");
+  const source = getRuntime(ctx)
+    .serializeBlock(withNesting(block, NOT_NESTED), ctx)
+    .replace(/\n+$/, "");
   const kind = escapeHtmlAttribute(block.type.name);
   if (block.type.name !== "table") {
     return [
@@ -161,42 +193,6 @@ function serializeDelegatedCellBlock(
     source,
     `${indent}</${DELEGATED_BLOCK_ELEMENT}>`,
   ];
-}
-
-function serializeList(
-  list: PMNode,
-  ctx: SerializeContext,
-  indent: string,
-  tag: "ul" | "ol",
-): string[] {
-  const tight = list.attrs.tight;
-  if (typeof tight !== "boolean") {
-    throw new Error("pm->html: table-cell list tight must be a boolean");
-  }
-  const attrs = [`data-tight="${String(tight)}"`];
-  if (tag === "ol") {
-    const order = list.attrs.order;
-    if (!Number.isSafeInteger(order) || order < 1) {
-      throw new Error("pm->html: table-cell ordered-list order must be a positive integer");
-    }
-    if (order !== 1) attrs.unshift(`start="${order}"`);
-  }
-
-  const lines = [`${indent}<${tag} ${attrs.join(" ")}>`];
-  list.forEach((item) => {
-    const checked = item.attrs.checked;
-    if (checked !== null && typeof checked !== "boolean") {
-      throw new Error("pm->html: table-cell list-item checked must be a boolean or null");
-    }
-    const checkedAttr = typeof checked === "boolean" ? ` data-checked="${String(checked)}"` : "";
-    lines.push(`${indent}  <li${checkedAttr}>`);
-    item.forEach((child) => {
-      lines.push(...serializeCellBlock(child, ctx, `${indent}    `));
-    });
-    lines.push(`${indent}  </li>`);
-  });
-  lines.push(`${indent}</${tag}>`);
-  return lines;
 }
 
 function serializeBlockAlignment(block: PMNode): string {
@@ -227,7 +223,7 @@ function parseTableElement(table: HtmlElement, ctx: ParseContext): PMNode | null
     const cells: PMNode[] = [];
     for (const cellElement of cellElements) {
       const attrs = cellAttrs(cellElement);
-      const blocks = parseCellBlocks(cellElement, ctx);
+      const blocks = parseBlockContainer(cellElement, ctx);
       if (!attrs || !blocks) return null;
       cells.push(
         ctx.schema.node(cellElement.name === "th" ? "table_header" : "table_cell", attrs, blocks),
@@ -239,24 +235,10 @@ function parseTableElement(table: HtmlElement, ctx: ParseContext): PMNode | null
   return ctx.schema.node("table", null, rows);
 }
 
-function parseCellBlocks(cell: HtmlElement, ctx: ParseContext): PMNode[] | null {
-  const hasBlock = cell.children.some(
-    (child) => child.type === "element" && BLOCK_ELEMENTS.has(child.name),
-  );
-  if (!hasBlock) {
-    const inline = parseInlineNodes(cell.children, ctx, []);
-    return inline ? [ctx.schema.node("paragraph", null, inline)] : null;
-  }
-
-  const elements = elementChildren(cell);
-  if (!elements) return null;
-  const blocks: PMNode[] = [];
-  for (const element of elements) {
-    const block = parseCellBlock(element, ctx);
-    if (!block) return null;
-    blocks.push(block);
-  }
-  return blocks.length > 0 ? blocks : null;
+function parseCellSource(element: HtmlElement, ctx: ParseContext): Source<PMNode> | null {
+  if (element.name === "ul" || element.name === "ol") return parseList(element, ctx);
+  const block = parseCellBlock(element, ctx);
+  return block && { type: "leaf", value: block };
 }
 
 function parseCellBlock(element: HtmlElement, ctx: ParseContext): PMNode | null {
@@ -267,7 +249,6 @@ function parseCellBlock(element: HtmlElement, ctx: ParseContext): PMNode | null 
     const level = element.name === "p" ? null : Number(element.name[1]);
     return inline ? ctx.schema.node("paragraph", { align, level }, inline) : null;
   }
-  if (element.name === "ul" || element.name === "ol") return parseList(element, ctx);
   if (element.name === "blockquote") {
     if (element.attributes.size !== 0) return null;
     const children = parseBlockContainer(element, ctx);
@@ -309,33 +290,47 @@ function parseDelegatedCellBlock(element: HtmlElement, ctx: ParseContext): PMNod
   return block?.isBlock && block.type.name === kind ? block : null;
 }
 
+/** The blocks of a cell, quote or item, with any lists inside flattened onto the blocks. */
 function parseBlockContainer(element: HtmlElement, ctx: ParseContext): PMNode[] | null {
+  const sources = parseContainerSources(element, ctx);
+  return sources && flattenBlocks(sources, ctx);
+}
+
+function flattenBlocks(sources: Array<Source<PMNode>>, ctx: ParseContext): PMNode[] {
+  return flattenSources(sources).map((block) =>
+    withNesting(block.value ?? ctx.schema.node("paragraph"), block),
+  );
+}
+
+function parseContainerSources(
+  element: HtmlElement,
+  ctx: ParseContext,
+): Array<Source<PMNode>> | null {
   const hasBlock = element.children.some(
     (child) => child.type === "element" && BLOCK_ELEMENTS.has(child.name),
   );
   if (!hasBlock) {
     const inline = parseInlineNodes(element.children, ctx, []);
-    return inline ? [ctx.schema.node("paragraph", null, inline)] : null;
+    return inline ? [{ type: "leaf", value: ctx.schema.node("paragraph", null, inline) }] : null;
   }
   const elements = elementChildren(element);
   if (!elements) return null;
-  const blocks = elements.map((child) => parseCellBlock(child, ctx));
-  return blocks.every((block): block is PMNode => block !== null) ? blocks : null;
+  const sources = elements.map((child) => parseCellSource(child, ctx));
+  return sources.every((source): source is Source<PMNode> => source !== null) ? sources : null;
 }
 
-function parseList(element: HtmlElement, ctx: ParseContext): PMNode | null {
+function parseList(element: HtmlElement, ctx: ParseContext): Source<PMNode> | null {
   const ordered = element.name === "ol";
   const allowed = new Set(ordered ? ["start", "data-tight"] : ["data-tight"]);
   if ([...element.attributes.keys()].some((name) => !allowed.has(name))) return null;
   const tight = booleanAttribute(element.attributes.get("data-tight"), false);
   if (tight === null) return null;
 
-  let order = 1;
+  let start: number | null = null;
   if (ordered && element.attributes.has("start")) {
     const raw = element.attributes.get("start");
-    if (typeof raw !== "string" || !/^\d+$/.test(raw)) return null;
-    order = Number(raw);
-    if (!Number.isSafeInteger(order) || order < 1) return null;
+    if (typeof raw !== "string" || !/^\d{1,9}$/.test(raw)) return null;
+    start = Number(raw);
   }
 
   const itemElements = elementChildren(element);
@@ -346,18 +341,14 @@ function parseList(element: HtmlElement, ctx: ParseContext): PMNode | null {
   ) {
     return null;
   }
-  const items: PMNode[] = [];
+  const items: Array<{ checked: boolean | null; children: Array<Source<PMNode>> }> = [];
   for (const itemElement of itemElements) {
     const checked = checkedAttribute(itemElement);
-    const children = checked === undefined ? null : parseBlockContainer(itemElement, ctx);
-    if (!children) return null;
-    const content =
-      children[0]?.type.name === "paragraph"
-        ? children
-        : [ctx.schema.node("paragraph"), ...children];
-    items.push(ctx.schema.node("list_item", { checked }, content));
+    const children = checked === undefined ? null : parseContainerSources(itemElement, ctx);
+    if (checked === undefined || !children) return null;
+    items.push({ checked, children });
   }
-  return ctx.schema.node(ordered ? "ordered_list" : "bullet_list", { order, tight }, items);
+  return { type: "list", ordered, start, spread: !tight, items };
 }
 
 function checkedAttribute(element: HtmlElement): boolean | null | undefined {

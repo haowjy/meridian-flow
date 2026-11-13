@@ -14,6 +14,7 @@ import {
   docFrom,
   expectStable,
   firstParsedBlock,
+  listItem,
   m,
   paragraph,
   parsedDoc,
@@ -139,14 +140,10 @@ describe("mdx prose and component round-trip corpus", () => {
       paragraph(t("nested "), t("bold-italic", [m("strong"), m("em")]), t(" word.")),
       paragraph(t("line one"), schema.node("hard_break"), t("line two")),
       schema.node("blockquote", null, [paragraph(t("A quoted line."))]),
-      schema.node("bullet_list", { tight: true }, [
-        schema.node("list_item", null, [paragraph(t("first"))]),
-        schema.node("list_item", null, [paragraph(t("second"))]),
-      ]),
-      schema.node("ordered_list", { order: 3, tight: false }, [
-        schema.node("list_item", null, [paragraph(t("three"))]),
-        schema.node("list_item", null, [paragraph(t("four"))]),
-      ]),
+      listItem({}, t("first")),
+      listItem({}, t("second")),
+      listItem({ kind: "ordered", start: 3, loose: true }, t("three")),
+      listItem({ kind: "ordered", loose: true }, t("four")),
       schema.node("code_block", { language: "math" }, [t("E = mc^2")]),
       paragraph(
         t("inline image "),

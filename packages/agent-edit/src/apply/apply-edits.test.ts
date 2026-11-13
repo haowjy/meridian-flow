@@ -19,6 +19,7 @@ import { createAgentEditCodecFactory } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";
 import { toRef } from "../handles.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
+import { joinEntries } from "../resolver/find.js";
 import { applyEdits } from "./apply-edits.js";
 import { computeEcho, snapshotBlocks } from "./echo.js";
 import type { AgentOrigin, ApplyResult, ResolvedEdit } from "./types.js";
@@ -94,9 +95,9 @@ describe("applyEdits update fidelity", () => {
     Y.applyUpdate(fresh, update);
     expect(documentJson(fresh)).toEqual(documentJson(doc));
     expect(
-      codec
-        .serializeBlockBodies(baseModel.projectBlocks(doc).map((block) => block.node))
-        .join("\n\n"),
+      joinEntries(
+        codec.serializeBlockBodies(baseModel.projectBlocks(doc).map((block) => block.node)),
+      ),
     ).toBe(expected);
     expectNoOrphanedElements(doc);
   });

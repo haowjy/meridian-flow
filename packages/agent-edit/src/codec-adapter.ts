@@ -5,6 +5,7 @@ import type {
   ParsedContent,
   ParsedContentWithSpans,
   PMNode,
+  SerializedBlock,
 } from "@meridian/markup";
 import { createShownLinkLedger, type ShownLinkLedger } from "./links/shown.js";
 import { toHashline } from "./model/hashline.js";
@@ -18,7 +19,8 @@ export interface AgentEditCodec {
   /** Parse with each link occurrence's source span (pure syntax, like `parse`). */
   parseWithSpans(content: string): ParsedContentWithSpans;
   serialize(blocks: PMNode[]): string;
-  serializeBlockBodies(blocks: readonly PMNode[]): string[];
+  /** Each block as it sits in the document, with the gap that separates it from the one before. */
+  serializeBlockBodies(blocks: readonly PMNode[]): SerializedBlock[];
 
   /** Serialize a single block with the hash prefix used by agent-edit echoes. */
   serializeBlock(block: PMNode, hash: string): string;
@@ -73,7 +75,7 @@ function agentEditCodecForScope(markup: MarkupCodec, links: DocumentLinkScope): 
     },
 
     serializeBlocks(blocks, hashes) {
-      const bodies = markup.serializeBlocks(blocks, links);
+      const bodies = markup.serializeBlocks(blocks, links).map((entry) => entry.body);
       ledger.record(blocks, hashes, bodies);
       return bodies;
     },

@@ -56,10 +56,23 @@ const paragraphLevelAttr = {
   },
 };
 
+/**
+ * Where a block sits in its quotes and lists (`nest`, in `nesting.ts`, reads them). No
+ * `validate`: the binding deletes an element the schema cannot build, so a bad value must
+ * read as something instead of failing.
+ */
+const nestingAttrs = {
+  path: { default: null },
+  kind: { default: null },
+  marker: { default: null },
+  start: { default: null },
+  loose: { default: null },
+};
+
 // ─── Nodes from prosemirror-schema-basic (used as-is) ───────────────
 const basicNodeDefaults = {
   doc: specOnly(basicNodes.doc),
-  blockquote: specOnly(basicNodes.blockquote),
+  blockquote: { ...specOnly(basicNodes.blockquote), attrs: nestingAttrs },
   text: specOnly(basicNodes.text),
   hard_break: specOnly(basicNodes.hard_break),
 } satisfies Record<string, NodeSpec>;
@@ -80,13 +93,13 @@ const basicNodeOverrides = {
   // authorship and anchors in it survive; a separate node name would rebuild it.
   paragraph: {
     ...specOnly(basicNodes.paragraph),
-    attrs: { align: layoutAlignAttr, level: paragraphLevelAttr },
+    attrs: { align: layoutAlignAttr, level: paragraphLevelAttr, ...nestingAttrs },
   },
 
   // basic's code_block lacks language attr — spread and add it
   code_block: {
     ...specOnly(basicNodes.code_block),
-    attrs: { language: { default: null } },
+    attrs: { language: { default: null }, ...nestingAttrs },
   },
 
   // basic's image uses `validate: "string"` on src — we need `default: ""`.
@@ -113,35 +126,17 @@ const basicNodeOverrides = {
   },
 
   // Scene breaks / thematic breaks — round-trip as markdown `---`
-  horizontal_rule: specOnly(basicNodes.horizontal_rule),
+  horizontal_rule: { ...specOnly(basicNodes.horizontal_rule), attrs: nestingAttrs },
 } satisfies Record<string, NodeSpec>;
 
 // ─── Nodes NOT in basic (defined from scratch) ──────────────────────
 
 const customNodes = {
-  bullet_list: {
-    attrs: { tight: { default: false } },
-    content: "list_item+",
-    group: "block",
-  },
-
-  ordered_list: {
-    attrs: { order: { default: 1 }, tight: { default: false } },
-    content: "list_item+",
-    group: "block",
-  },
-
-  list_item: {
-    content: "paragraph block*",
-    defining: true,
-    attrs: { checked: { default: null } },
-  },
-
   // Cells are isolating mini-documents: any block that belongs in the manuscript
   // can also belong in a cell. colspan/rowspan/colwidth stay because
   // prosemirror-tables editing commands use them internally.
   table: {
-    attrs: { align: layoutAlignAttr },
+    attrs: { align: layoutAlignAttr, ...nestingAttrs },
     content: "table_row+",
     group: "block",
     tableRole: "table",
@@ -178,14 +173,14 @@ const customNodes = {
   },
 
   jsx_leaf: {
-    attrs: { name: {}, props: { default: {} } },
+    attrs: { name: {}, props: { default: {} }, ...nestingAttrs },
     content: "text*",
     group: "block",
     code: true,
   },
 
   jsx_container: {
-    attrs: { name: {}, props: { default: {} } },
+    attrs: { name: {}, props: { default: {} }, ...nestingAttrs },
     content: "block+",
     group: "block",
   },
@@ -201,6 +196,7 @@ const customNodes = {
       // in-flight slot identity as an `image`.
       uploadToken: { default: null },
       ref: linkRefAttr,
+      ...nestingAttrs,
     },
     atom: true,
     defining: true,
@@ -242,6 +238,7 @@ const customMarks = {
 
 // ─── Exports ────────────────────────────────────────────────────────
 
+export * from "./nesting.js";
 export { PROSEMIRROR_FRAGMENT_NAME } from "./protocol.js";
 
 /**

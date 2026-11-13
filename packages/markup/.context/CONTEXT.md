@@ -260,7 +260,8 @@ malformed. `layout` is therefore excluded from `mdxRequiredBlockNames`.
 Tables serialize as canonical raw HTML unconditionally. GFM pipes remain
 liberal ingress and normalize to HTML in one parse-serialize pass, including
 the backslash-newline hard-break spelling. HTML cells carry paragraphs,
-headings, lists, blockquotes, fenced-code content, horizontal rules, and nested
+headings, lists (`ul`, `ol`, `li` regrouped from the cell's blocks by `nest`, and flattened back
+on parse), blockquotes, fenced-code content, horizontal rules, and nested
 tables; inline marks, links, images, and `<br>` remain legal inside their text
 blocks. Block kinds without a native cell HTML spelling use one
 `<meridian-block>` envelope carrying their ordinary top-level wire form. A
@@ -289,8 +290,27 @@ sub-pixel widths; the wire carries whole pixels and serialization rounds, which
 converges the document on the next load. `Layout` keeps an HTML-spelled table
 as raw text inside the wrapper instead of parsing and re-stringifying it as
 MDX, which preserves entity-encoded literal newlines and braces. `Layout`
-wrapping is applied by the runtime block hook even through list and blockquote
-child serializers, so alignment on nested paragraphs round-trips.
+wrapping is applied by the runtime block hook before a block's list or quote prefixes, so
+alignment on a list item round-trips.
+
+## Lists as attributes
+
+A list is a run of blocks whose `path`, `kind`, `marker`, `start` and `loose` attributes say
+which lists they sit in; `nest` in `@meridian/prosemirror-schema` is the one reader. The
+codec rules that are not obvious from the code:
+
+- A block's marker speaks for its innermost list only. An item that begins with a deeper
+  list (`- - x`, `1. > - x`) or has no children gets an empty paragraph to carry its own
+  marker, kind, start and looseness.
+- Markers and gaps follow `mdast-util-to-markdown`: `-`/`N.`, `*`/`N)` for a list directly
+  after a list of the same marker or with a rule as an item's first block, a blank line
+  between items only when the list is loose.
+- Two blocks of one item are joined without a blank line only when the second can start on
+  the next line and read the same (`joinsDirectly`): after a code block, heading or rule, or
+  before a code block, heading, raw `<table>`, quote, or a list opening at a bullet or `1.`.
+  Anything else gets a blank line, so a paragraph after a nested list does not join it.
+- `blockquote` is still a node whose children are a sequence of their own; its Markdown
+  comes from `mdast-util-to-markdown` over the sequence's Markdown.
 
 ## Preprocessed source
 

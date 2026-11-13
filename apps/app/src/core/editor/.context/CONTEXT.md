@@ -368,14 +368,13 @@ keyboard, pointer, drop, or draft-recovery answer.
   keeps its unselected text and type, with adjacent prose whitespace trimmed so
   the remainder does not start or end with the moved line's space. Code keeps
   its whitespace. A block the range covers whole goes, and so do the containers
-  that would be left empty. A block its parent can't lose (a list item's first
-  paragraph, the last block, or the last paragraph in a table cell) stays,
+  that would be left empty. A block its parent can't lose (the last block, or the last paragraph in a table cell) stays,
   emptied; a fully covered table leaves as one block. A move inside one
   textblock, a node move and a `CellSelection` still use `deleteSelection`.
   Several carried lines land at a gap: before the landing textblock at its start,
   after it at its end, or at a split inside it. The slice closes into blocks and
-  ProseMirror fits those blocks where the schema requires it. Lists keep their
-  container and order. A whole top-level textblock keeps its type; a top-level
+  ProseMirror fits those blocks where the schema requires it. List items are sibling
+  blocks and keep their nesting attributes and order; a partly dropped item stays an item. A whole top-level textblock keeps its type; a top-level
   textblock cut by the source selection takes the landing's type, and a cut last
   block joins the landing's tail. This applies to copies because the door reads
   their source selection too. A slice from outside has no source selection and

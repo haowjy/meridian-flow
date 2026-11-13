@@ -27,7 +27,7 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
 - A write is planned on the model's view and never reads the room. `lowerBlock`
   (`resolver/lower-block.ts`) lowers the rewrite of a block into operations (`EditOp`):
   per textblock at any depth (a paragraph or heading, code block, or a paragraph in a
-  quote, list item or table cell), text splices with format ranges; per node at any depth,
+  quote or table cell; a list item is a paragraph with nesting attributes), text splices with format ranges; per node at any depth,
   attribute sets (a paragraph's heading level, a task item's `checked`, a code block's language);
   and for an inline atom the model kept (an image, a line break), attribute sets
   addressed by its unit. A unit is one UTF-16 code unit of text, or one inline atom. The
@@ -52,8 +52,8 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   shows of the node it saw (a round trip of the top-level block), so a model edit to a
   paragraph leaves an image whose upload is in flight alone.
 - Shapes `lowerBlock` does not keep return null and the block is rewritten whole, as if
-  there were no room: a node added, removed or retyped inside the block (a list item, a
-  table row, a quote paragraph), and an inline atom put into
+  there were no room: a node added, removed or retyped inside the block (a table
+  row, a quote paragraph), and an inline atom put into
   the middle of a run of text (a verse line broken in two). An atom added or removed at
   the edge of a run of text is an operation. Deleting an atom between two runs leaves
   them as two adjacent `Y.XmlText` children, which the editor's binding never writes;

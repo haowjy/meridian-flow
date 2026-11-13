@@ -13,6 +13,7 @@ import { alignBlocks } from "./block-alignment.js";
 import {
   cutTextWindows,
   findTextMatches,
+  joinEntries,
   type SplicedGroup,
   spliceFindMatches,
   type TextFindMatch,
@@ -499,11 +500,11 @@ function planFindMatches(
   // Structural groups can replace their predecessor block. Lower from the end
   // so every insert anchor remains live until its group executes.
   for (const group of groupFindMatches(matches).reverse()) {
-    const groupSource = ctx.codec
-      .serializeBlockBodies(
+    const groupSource = joinEntries(
+      ctx.codec.serializeBlockBodies(
         ctx.projected.slice(group.startIndex, group.endIndex + 1).map((block) => block.node),
-      )
-      .join("\n\n");
+      ),
+    );
     const spliced = spliceFindMatches(
       groupSource,
       group.matches,
