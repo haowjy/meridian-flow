@@ -258,15 +258,12 @@ first-match lookup rather than changing admission.
 awaited receipt I/O: it keeps the append's new spans and drops stale backspaces against
 remembered typing.
 
-## Merge correspondence
+## What the merge returns
 
-`rebase` returns `correspondence`, naming each output block's original base, live and draft
-block indices (`output: null` records removed inputs), and `overrode`, the live words actually
-replaced in contested text. No caller should rediff the result to recover the merge's pairing.
-
-`composeHunks` optionally reports each selected hunk's block support in the final composed
-side, for joining host ownership. A whole-block deletion has empty output support, so callers
-keep its removed base support separately.
+`rebase` returns the merged `blocks`, the `conflicts` (where both sides changed the same text or
+blocks; the draft's version is in `blocks`), `overrode` (the live words the draft actually
+replaced in contested text) and `orderConflict`. `diffBlocks` returns its `correspondence`, which
+blocks of the draft are which base blocks, so no caller rediffs to recover review's pairing.
 
 [review]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-review.md#what-review-shows
 [authors]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-review.md#who-wrote-a-change

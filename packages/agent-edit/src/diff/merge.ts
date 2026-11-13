@@ -225,7 +225,7 @@ function mergeContainers(
   return out;
 }
 
-/** A correspondence carried onto reordered sides; pairs that no longer run in order are dropped. */
+/** A correspondence carried onto reordered sides. Pairs that no longer run in order stay; `align` skips them. */
 function relaid(c: Correspondence, baseOrder: number[], sideOrder: number[]): Correspondence {
   const baseAt = new Int32Array(c.partner.length).fill(-1);
   baseOrder.forEach((o, n) => {

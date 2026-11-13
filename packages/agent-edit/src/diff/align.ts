@@ -10,7 +10,7 @@
  */
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import { equalOrderedMatches } from "../ordered-matching.js";
-import { type Correspondence, correspond } from "./correspond.js";
+import type { Correspondence } from "./correspond.js";
 import { type Hunk, posMap } from "./hunks.js";
 import {
   blockKey,
@@ -28,12 +28,7 @@ export interface Alignment {
   pos: Int32Array; // base token -> side token outside hunks, else -1
 }
 
-/** `corr` defaults to a guess: the pairing a two-way diff wants, where a wrong pair costs only a coarser picture. */
-export function align(
-  B: Side,
-  S: Side,
-  corr: Correspondence = correspond(B.blocks, S.blocks, { guess: true }),
-): Alignment {
+export function align(B: Side, S: Side, corr: Correspondence): Alignment {
   const baseToSide = new Int32Array(B.blocks.length).fill(-1);
   const hunks: Hunk[] = [];
   let pb = 0;
