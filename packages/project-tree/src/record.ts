@@ -45,8 +45,12 @@ type RecordBase = {
   actor: Actor;
   /** Null for live; the Work's branch id for a drafted record. */
   draft: DraftId | null;
-  /** On a live copy made by Apply: the drafted record it carries. */
-  appliedFrom?: string;
+  /**
+   * On a record that stands for an earlier one (an Apply's live copy, a restored Discard's
+   * pending copy): the id of the root original, flattened, so a copy of a copy names the same
+   * one. An Undo or Trash entry that names the original finds the copy through it. Server only.
+   */
+  carries?: string;
   /** On a live copy made by Apply: who applied it. `actor` stays who drafted it. */
   appliedBy?: Actor;
   /** On a live copy made by Apply: the Work it came from. */

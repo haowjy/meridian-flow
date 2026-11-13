@@ -8,8 +8,8 @@ const TYPE = /^[0-9a-zA-Z_.+-]{1,64}$/;
 const MAX_CASCADE = 100_000;
 const MAX_ALIASES = 1_000;
 const BASE = ["id", "node", "actor", "draft", "type", "undoes"];
-/** What only the server writes, on any kind: an applied copy's three fields, and a restored copy's source. */
-const SERVER_BASE = ["appliedFrom", "appliedBy", "fromDraft", "restores", "restoredBy"];
+/** What only the server writes, on any kind: a copy's `carries`, an applied copy's other two fields, and a restored copy's source. */
+const SERVER_BASE = ["carries", "appliedBy", "fromDraft", "restores", "restoredBy"];
 /** The five kinds a client may write, with every field a client may set on each. */
 const FIELDS = new Map<string, readonly string[]>([
   ["create", [...BASE, "kind", "name", "parent", "source", "rank", "filetype", "provisional"]],
@@ -84,10 +84,10 @@ function read(value: unknown, client: Actor | null): ReadRecord {
   if (client !== null ? actor !== client : typeof actor !== "string" || actor.length === 0)
     return fail("actor");
   if (draft !== null && !id(draft)) return fail("draft");
-  const { undoes, appliedFrom, appliedBy, fromDraft, restores, restoredBy } = value;
+  const { undoes, carries, appliedBy, fromDraft, restores, restoredBy } = value;
   if (!optional(undoes, id)) return fail("undoes");
   if (
-    !optional(appliedFrom, id) ||
+    !optional(carries, id) ||
     !optional(fromDraft, id) ||
     !optional(restores, id) ||
     !optional(appliedBy, who) ||
@@ -100,7 +100,7 @@ function read(value: unknown, client: Actor | null): ReadRecord {
     actor: actor as Actor,
     draft,
     ...(undoes === undefined ? {} : { undoes }),
-    ...(appliedFrom === undefined ? {} : { appliedFrom }),
+    ...(carries === undefined ? {} : { carries }),
     ...(appliedBy === undefined ? {} : { appliedBy }),
     ...(fromDraft === undefined ? {} : { fromDraft }),
     ...(restores === undefined ? {} : { restores }),

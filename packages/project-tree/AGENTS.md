@@ -12,7 +12,7 @@ it may write, whether a node id is in use) comes in as plain inputs.
   anything, each beside the Yjs default it replaces. A ninth rule goes there, in `replay.ts`,
   and in a casebook test that fails without it.
 - A client may write five record kinds with its own account as the actor. Everything else
-  (applied copies, files, `purge`, settlements, `replaces`) is the server's, and
+  (copies, which carry `carries`; files, `purge`, settlements, `replaces`) is the server's, and
   `readRecord` refuses a client's update that carries it. Nothing reads a decoded record's
   fields directly: `replay`, `listRecords` and the list index read through `readStored`.
 - Record ids are uuids, so any number of writers may share a copy. The server's Yjs client id is
@@ -20,7 +20,7 @@ it may write, whether a node id is in use) comes in as plain inputs.
 - What a document is (type, provisional name, aliases, properties mark) rides on its `create`
   and `rename`. Which types a client may state, and whether a type change stays in one Yjs
   schema, are the server's facts: they come in through `Connection`.
-- A Discard is final: `restoreDiscard` appends new pending copies (`restores` names the Discard,
+- A Discard is final: `restoreDiscard` appends new pending copies on the branch it is given (`carries` names the original, `restores` the Discard,
   `restoredBy` who restored it); the discarded records stay discarded.
 - Every record the package writes goes through `writable`, the reader that will read it back, and
   throws if that would drop it. A document's `create` states its `filetype`.

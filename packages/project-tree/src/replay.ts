@@ -59,7 +59,7 @@ export type SkipReason =
 
 /** One delete still in force: a Trash entry, with what it still takes. */
 export type TrashEntry = {
-  /** The delete record's id (an applied copy answers to its drafted record's id too, in `from`). */
+  /** The delete record's id (a record that carries another names it in `from`). */
   id: string;
   from?: string;
   node: string;
@@ -74,8 +74,8 @@ export type TrashEntry = {
  */
 export type Setter<Before> = {
   id: string;
-  /** For a live copy made by Apply: the drafted record it carries, which Undo may also name. */
-  appliedFrom?: string;
+  /** The root original this record carries, which an Undo's `undoes` names. */
+  carries?: string;
   before: Before;
   /** The node's arrival before it, which the opposite record puts back. */
   arrivedBefore: number;
@@ -153,7 +153,7 @@ export function replay(
     if (record.draft === null) return;
     const on = pendingOn.get(record.node) ?? new Set<string>();
     if (record.undoes !== undefined && on.has(record.undoes)) on.delete(record.undoes);
-    else on.add(record.id);
+    else on.add(record.carries ?? record.id);
     pendingOn.set(record.node, on);
   };
 
@@ -185,7 +185,7 @@ export function replay(
     if (
       record.undoes !== undefined &&
       top &&
-      (top.id === record.undoes || top.appliedFrom === record.undoes)
+      (top.id === record.undoes || top.carries === record.undoes)
     ) {
       stack.pop();
       node.arrivedAt = top.arrivedBefore;
@@ -193,7 +193,7 @@ export function replay(
     }
     stack.push({
       id: record.id,
-      ...(record.appliedFrom ? { appliedFrom: record.appliedFrom } : {}),
+      ...(record.carries ? { carries: record.carries } : {}),
       before,
       arrivedBefore: node.arrivedAt,
     });
@@ -307,7 +307,7 @@ export function replay(
         // Two deletes of one node both count: each takes what its author saw.
         deletes.push({
           id: record.id,
-          ...(record.appliedFrom ? { from: record.appliedFrom } : {}),
+          ...(record.carries ? { from: record.carries } : {}),
           node: record.node,
           cascade: new Set(record.cascade),
           own: ownDelete(record),
@@ -319,14 +319,9 @@ export function replay(
         // every delete of the node. Out of a deleted folder either brings back only the node
         // and what is inside it: they leave that folder's delete, and the folder stands holding
         // them (rule 3) with the rest in Trash.
-        const undone = record.undoes;
-        deletes = deletes.filter((entry) =>
-          undone === undefined
-            ? entry.node !== record.node
-            : !(entry.node === record.node && (entry.id === undone || entry.from === undone)),
-        );
+        deletes = deletes.filter((entry) => !lifts(record, entry));
         node.arrivedAt = index;
-        if (undone === undefined)
+        if (record.undoes === undefined)
           for (const entry of deletes) {
             if (!isAncestor(entry.node, record.node)) continue;
             for (const member of [...entry.cascade])
@@ -343,6 +338,14 @@ export function replay(
 
   return derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued);
 }
+
+/** Whether a restore lifts a delete: the one it `undoes`, or every delete of the node if it undoes none. */
+export const lifts = (
+  restore: { node: string; undoes?: string },
+  entry: { id: string; node: string; from?: string },
+) =>
+  entry.node === restore.node &&
+  (restore.undoes === undefined || entry.id === restore.undoes || entry.from === restore.undoes);
 
 /**
  * A node something may be placed under or done to: its create is in force in the view (the node
