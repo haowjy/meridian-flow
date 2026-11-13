@@ -1,6 +1,8 @@
 # thread-client state machines
 
-The socket, the per-thread subscription on it, and the commands a tab sends beside it. What each
+The client for a thread (a chat), shared by the app and the `./mf` command-line tool, which
+are its hosts. These are the socket, the per-thread subscription on it, and the commands a
+tab sends beside it. What each
 owns is in [CONTEXT.md](CONTEXT.md); these are the states.
 
 ## Thread socket
@@ -79,14 +81,16 @@ stateDiagram-v2
 
 ## Hand-back and Stop commands
 
-One "take my queued messages back" or Stop press (`HandBackOutcome`, `UnresolvedStatus` in
+Messages sent while a reply is running wait in a queue on the server. A hand-back takes
+them back, so their words return to the message box; Stop ends the run and does the same.
+This machine is one such command (`HandBackOutcome`, `UnresolvedStatus` in
 `src/hand-back/operation.ts`). The command is saved to the host's store before it is posted.
 
 ```mermaid
 stateDiagram-v2
   [*] --> posting: the command is saved, then posted
   [*] --> unsaved: the store refused it, nothing was sent
-  posting --> confirmed: the server answered, and the returned messages were written
+  posting --> confirmed: the server answered, and the returned messages were written to the host's store
   posting --> unwritten: the server answered, and the local write failed
   posting --> refused: a definite 4xx
   posting --> ambiguous: no answer, the server may have acted
@@ -115,5 +119,5 @@ The pattern:
 
 `RunStateView` (`src/run-state/run-state-view.ts`) has no status of its own. It holds the newest
 server record and the local intents not yet covered by it: a record replaces the held one only
-when its version is newer, and an intent is retired when a record's version reaches the
-intent's answer.
+when its version is newer. The server's answer to an intent names a version, and the intent
+is retired when a record arrives at that version or later.

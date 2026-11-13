@@ -1,6 +1,8 @@
 # Import state machines (app)
 
-The server's import job is the truth:
+An import brings a folder or files into a project. The browser uploads the bytes, and the
+server converts them out of sight and then reveals the result: every imported folder and
+document appears in the project's tree at once. The server's import job is the truth:
 [server import](../../../../../server/server/domains/import/.context/state-machines.md). This
 tab adds two things in memory, in `import-coordinator.ts`: whether its create request landed,
 and what its own upload is doing. `importState` in `import-presentation.ts` combines both with
@@ -58,7 +60,7 @@ still current before writing, so a late answer from a superseded attempt is drop
 | `reading` | Local phase `reading` or `creating` |
 | `expired` | Server `cancelled` |
 | `done`, `needs-look` | Server `finished`, by whether any entry needs a look |
-| `adding` | A Stop lost the race with the reveal, or every file is prepared |
+| `adding` | Stop was asked after the server had already revealed the import, or every file is converted and waiting for the reveal |
 | `failed` | Server `failed` |
 | `waiting`, `organizing` | Server `organizing` |
 | `missing`, `wrong-root`, `stalled`, `uploading` | Server `uploading`, by local phase |

@@ -1,7 +1,11 @@
 # Collab state machines
 
-The status columns collab owns. Each is small; what matters is that none of them runs backwards.
-The model they belong to is in [draft-model-and-records.md](draft-model-and-records.md).
+The status columns collab owns. A draft is a pending version of one document. A branch is the
+set of drafts one Work holds, or, for chats outside any Work, one chat and the chats derived
+from it. The model writes into drafts; the writer lands a draft's changes on the live document
+with Apply, or drops them with Discard. Each machine is small; what matters is that none of
+them runs backwards. The model they belong to is in
+[draft-model-and-records.md](draft-model-and-records.md).
 
 ## Draft and branch
 
@@ -34,7 +38,8 @@ stateDiagram-v2
 
 ## Branch command
 
-`branch_commands.state`: one idempotent review command (Apply, Discard).
+`branch_commands.state`: one Apply or Discard, which takes effect once however many times its
+request is sent.
 
 ```mermaid
 stateDiagram-v2
@@ -49,7 +54,7 @@ running the effect again (`adapters/drizzle-branch-commands.ts`). `done` and a n
 
 ## Draft write journal row
 
-`draft_write_journal.status`.
+`draft_write_journal.status`: one part of a recorded write, kept so that the write can be undone.
 
 ```mermaid
 stateDiagram-v2

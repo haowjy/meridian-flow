@@ -3,14 +3,17 @@
 ## Live document binding
 
 One host's hold on an open document (`LiveDocumentBindingState` in
-`use-live-document-binding.ts`).
+`use-live-document-binding.ts`). A host is a pane that shows a document, on desktop or on a
+phone. It asks the opener (`ProjectDocumentLiveOpener`) to find the document and admit it,
+then binds the admission. The binding is the live document session plus a `release()`, and
+it is what keeps the document's room open.
 
 ```mermaid
 stateDiagram-v2
   [*] --> absent: no document id
   [*] --> opening: a document id
   absent --> opening: a document id arrives
-  opening --> opened: the opener opens it and the admission binds
+  opening --> opened: the document is admitted and this host binds it
   opening --> failed: unavailable, or the open threw
   failed --> opening: retry
   opened --> opening: the document id changes
@@ -37,13 +40,18 @@ Which document the route is trying to show while documents are being removed
 stateDiagram-v2
   [*] --> none
   none --> candidate: the route names a document
-  candidate --> bound: its identity is proved by navigation, an answer, or review
+  candidate --> bound: the document is proved to be the one the address names
   candidate --> rejected: the document is gone, or no local owner exists
   bound --> candidate: the route names another document
   bound --> none: the selection is cleared
   rejected --> none: the selection is cleared
   candidate --> none: the selection is cleared
 ```
+
+A `candidate` becomes `bound` on one of three proofs: the navigation that led here named the
+document; a lookup answered with exactly that document; or the address carries a review item
+for it. The last holds only for that review address, so the same path without the item
+starts again as a `candidate`.
 
 Every change increments `revision`, and work started for an earlier revision is dropped when it
 returns. A `candidate` carries the obligations still pending for it and a guard against
@@ -52,7 +60,7 @@ reopens a document the writer just deleted.
 
 ## Rename and move feedback
 
-What to show for one rename or move the writer made (`operationLifecycle` in
+What to show for one rename or move of a document or folder the writer made (`operationLifecycle` in
 `rename-operation-lifecycle.ts`). It is computed from the newest
 [namespace intent](../../../../../../../packages/resource-replica/.context/state-machines.md)
 that carries the operation id.

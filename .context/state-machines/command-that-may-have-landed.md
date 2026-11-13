@@ -18,10 +18,10 @@ stateDiagram-v2
   refused --> [*]: dismissed
 ```
 
-What every instance does, and why:
+The rules, and why:
 
-- **The identity is minted on the client and saved before the first send.** A replay then
-  carries the same id and the server deduplicates. A command that is sent before it is saved
+- **The command's id is made on the client and saved before the first send.** A replay then
+  carries the same id, and the server recognises it and does not act twice. A command that is sent before it is saved
   can be lost by a reload while the server keeps its effect.
 - **Only a structured refusal counts as refused.** Anything else is `uncertain`. Calling an
   unanswered request a failure lets the writer redo something the server already did: a
@@ -29,13 +29,12 @@ What every instance does, and why:
 - **`uncertain` is resolved by asking again**, by replaying the same request or by looking the
   identity up, never by guessing. Until it resolves, the command stays and whatever is queued
   behind it waits.
-- **A retry of an unanswered command keeps its identity**, so the server deduplicates.
+- **A retry of an unanswered command keeps its id**, so the server does not act twice.
 - **The server stores the answer** so a replay gets the same one.
 
 ## Where the instances differ
 
-The instances agree on the rules above and on little else. Before copying one, check which
-of these it does:
+No instance follows every rule. Before copying one, check what it does:
 
 | Instance | Survives a reload | Retries by itself | Retry after a refusal |
 |---|---|---|---|
@@ -47,14 +46,15 @@ of these it does:
 | Hand-back and Stop | Yes, in the host's command store | No; Retry or resume | None: a refusal drops the command |
 | Server hold | Yes, in the replica | Yes, by the namespace runner | Same id after a refused create; a new id once `spent` |
 
-Two of these are weaker than the pattern. A creation record that gets no answer and whose
-one lookup finds nothing becomes `failed`, although the create may still land. A queued
-control does not tell a refusal from no answer; both are `failed`, and Retry resends under
-the same id.
+Four keep the command in memory only, so a reload forgets it while the server may keep its
+effect. Two also break the second rule. A creation record that gets no answer and whose one
+lookup finds nothing becomes `failed`, although the create may still land. A queued control
+does not tell a refusal from no answer; both are `failed`, and Retry resends under the same
+id.
 
 ## Instances
 
-| Machine | Where | What it calls the uncertain state |
+| Machine | Where | What it calls the unanswered state |
 |---|---|---|
 | [Chat submission](../../apps/app/src/client/chat-submissions/.context/state-machines.md) | App | `posted`, with no answer |
 | [Creation record](../../apps/app/src/client/creation/.context/state-machines.md) | App | resolved inside the request by `createWithRecovery` |

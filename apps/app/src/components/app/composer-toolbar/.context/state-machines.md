@@ -1,6 +1,7 @@
 # Composer toolbar state machine
 
-Which toolbar surface is open (`NavigationSurface` in `composer-toolbar-navigation.ts`): none,
+The toolbar of the composer, the chat's message box. The machine is which toolbar surface is
+open (`NavigationSurface` in `composer-toolbar-navigation.ts`): none,
 the overflow list (`root`), or one control's panel. A panel is either dismissible or locked
 while it does work that must not be interrupted.
 

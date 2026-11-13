@@ -31,7 +31,10 @@ stateDiagram-v2
 ## Draft room handshake
 
 Whether one connection may send edits to one draft room (`DraftHandshakeState` in
-`yjs-ws-handler.ts`, keyed by draft id in the connection's context).
+`yjs-ws-handler.ts`, keyed by draft id in the connection's context). A Yjs sync opens with two
+messages: in step 1 a client says what it already has, and step 2 carries the content the
+other side is missing. The server checks that the draft is still active when the client's
+step 1 arrives.
 
 ```mermaid
 stateDiagram-v2
@@ -42,7 +45,8 @@ stateDiagram-v2
   rejected --> [*]
 ```
 
-`enforceDraftHandshake` refuses every sync step 2 and update until the room is `passed`, and
+An update before step 1 is refused because the connection has not yet shown that the draft
+is open. `enforceDraftHandshake` refuses every sync step 2 and update until the room is `passed`, and
 closes the socket with a typed close code (`DRAFT_CLOSED`, `DRAFT_PREFIX_MISSING`). `rejected`
 is final for that connection: the client reconnects, or reads the close code and gives the room
 up. Authorization happens at the upgrade; no frame can grant it later.

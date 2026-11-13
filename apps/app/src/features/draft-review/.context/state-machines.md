@@ -3,7 +3,8 @@
 ## Apply click command
 
 One Apply or Undo click on a draft change, from the click to the server's answer
-(`ApplyClickQueue` in `apply-click-queue.ts`). Commands for one item run strictly in order:
+(`ApplyClickQueue` in `apply-click-queue.ts`). Apply lands a change from a draft, a pending
+version of a document, on the live document; Undo here takes an Apply back. Commands for one item run strictly in order:
 only the head is ever sent. How the queue fits review is in [draft-review.md](draft-review.md).
 
 ```mermaid
@@ -26,11 +27,13 @@ stateDiagram-v2
 - **No answer is not a refusal.** A thrown request, or an answer for another command id, keeps
   the head where it is. A stalled head holds every later command behind it, because sending
   them around it would apply changes out of order.
-- **An Apply settles when the server's record shows it**, not merely on the answer: for a
-  draft, the answer `applied` is kept and the command settles once the recorded rows include
-  it. An Undo settles when the rows it reversed are gone.
-- **`landed`** is the outcome when the record proves the Apply happened but the result could
-  not be read back. It is a success for the writer.
+- **An Apply settles when the server's record shows it**, not merely on the answer. The server
+  keeps a row for each applied command on a draft, and the app reads those rows along with
+  the draft. An `applied` answer is kept, and the command settles once its id is among the
+  rows. An Undo settles when the rows it reversed are gone.
+- **`landed`** is the outcome when the rows show the Apply happened but its answer, which
+  carries what changed, was never read. A command still waiting on its rows when the queue is
+  destroyed ends `landed` too. The writer sees a success.
 - A closed queue stops sending and only looks up what its sent head became.
 
 The pattern:

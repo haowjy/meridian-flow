@@ -16,10 +16,10 @@ stateDiagram-v2
   done --> [*]
 ```
 
-What every instance does, and why:
+The rules, and why:
 
 - **Liveness is the lease, and only the lease.** There is no "running" flag to clear, so a
-  crash cannot leave one set. Anything that shows "running" derives it from a live lease.
+  crash cannot leave one set. Anything that shows the job being worked reads a live lease.
 - **Every write a worker makes checks that it still holds the lease**: the token matches and
   the expiry has not passed, in the same statement or transaction as the write. A worker that
   stalled past its expiry and woke up would otherwise write over its successor.
@@ -27,12 +27,14 @@ What every instance does, and why:
   for "the work is done but the job does not say so".
 - **Expiry is judged by the database's clock**, so two servers with different clocks agree on
   who holds the lease.
-- **Attempts are counted on the job, not the worker**, so a job that kills every worker that
-  touches it eventually stops being claimed.
+- **A job that kills every worker that touches it must stop being claimed.** The import counts
+  claims that made no progress on the import row, not on the worker, and fails after five.
+  The run lease keeps no such count: recovery settles an expired run before anything claims
+  the thread again.
 
 ## Instances
 
 | Machine | Lease lives on | Recovery |
 |---|---|---|
-| [Run lease and phase](../../apps/server/server/domains/runtime/.context/state-machines.md) | `thread_run_leases` | An expired run is settled before a new claim |
+| [Run lease and phase](../../apps/server/server/domains/runtime/.context/state-machines.md) | `thread_run_leases` | An expired run is settled before a new claim; no attempt count |
 | [Import](../../apps/server/server/domains/import/.context/state-machines.md) | the `imports` row, while `organizing` | Five claims without progress fail the import |

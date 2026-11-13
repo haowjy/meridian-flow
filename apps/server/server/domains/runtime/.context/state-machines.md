@@ -1,6 +1,9 @@
 # Runtime state machines
 
-The durable states a run moves through, and what each transition depends on. Thread filing
+The durable states a run moves through, and what each transition depends on. A thread is a
+chat and a turn is one entry in it. A run is one stretch of the server working a thread: it
+claims the thread, calls the model and its tools, writes turns and releases the thread. Other
+product words are in [product words](../../../../../../.context/glossary.md). Thread filing
 (archive, trash) is in [threads](../../threads/.context/state-machines.md); every machine in the
 repository is indexed in [the root index](../../../../../../.context/state-machines/index.md).
 
@@ -33,15 +36,18 @@ stateDiagram-v2
   (success → `complete`, asked → `awaiting_answer`, cancelled → `cancelled`, anything else →
   `error`) and returns without writing when the turn is already terminal. A later turn never
   rewrites an earlier one, so an old failed reply stays `error`.
-- **`awaiting_answer` counts as terminal** in `isTerminalTurnStatus`, although the ask later
-  moves the turn to `complete` or `cancelled` (`asks/ask-service.ts`). Liveness, recovery and
-  "is a model call owed" all read that predicate: treating `awaiting_answer` as live makes
-  recovery try to resume a run that is waiting on the writer.
+- **`isTerminalTurnStatus` is true for `awaiting_answer`**, although the ask later moves the
+  turn to `complete` or `cancelled` (`asks/ask-service.ts`). In that predicate "terminal"
+  means no run is working the turn, not that its status is final. Liveness, recovery and "is
+  a model call owed" all read it: treating `awaiting_answer` as live makes recovery try to
+  resume a run that is waiting on the writer.
 - **An ask on an unavailable thread becomes a cancel.** When the cause is "asked" but the thread
   is deleted or archived, the finalizer settles the turn `cancelled` and cancels the ask instead
   of opening it.
-- `pending` is not only "not started": a compaction turn is created `pending` and stays there
-  while it runs (`loop/local-turn.ts`), and a handoff seed is `pending` while its brief is
+- **`pending` covers three kinds of turn.** A reserved reply is the assistant turn created
+  before the model starts generating. A compaction turn, which replaces older history with a
+  summary, is created `pending` and stays there while it runs (`loop/local-turn.ts`). A
+  handoff seed, the first turn of a chat made by handoff, is `pending` while its brief is
   written.
 
 ## Run lease and phase
@@ -75,7 +81,7 @@ held until the run settles and releases it.
 
 ## Ask
 
-One question or permission request (`thread_asks`). The lifecycle shape is `askLifecycleSchema`
+One question or permission request from the model to the writer (`thread_asks`). The lifecycle shape is `askLifecycleSchema`
 in `packages/contracts/src/threads/asks.ts`.
 
 ```mermaid
@@ -129,7 +135,8 @@ This is the server half of [a command that may have landed](../../../../../../.c
 
 ## Spawn status
 
-What became of one subagent run, as its parent sees it (`threads.spawn_status`). It is the
+What became of one subagent, a child thread a run starts to do part of its work, as its
+parent sees it (`threads.spawn_status`). It is the
 outcome of the spawn, not whether the child thread is running now: see [spawn](spawn.md).
 
 ```mermaid

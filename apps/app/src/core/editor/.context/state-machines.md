@@ -44,8 +44,9 @@ stateDiagram-v2
 - **`reconnecting` is `syncing`, not `offline`.** `offline` means edits are only being kept
   locally; the pill the writer sees is built on that difference
   ([sync status](../../../features/editor/.context/state-machines.md)).
-- **`synced` does not mean the server has every local edit.** That is the snapshot's
-  `serverHasLocalChanges`, true only when the transport has acknowledged them.
+- **`synced` does not mean the server has every local edit.** The snapshot's
+  `serverHasLocalChanges` says that: it is true once the server has acknowledged every local
+  update sent on this connection, and false again on the next local edit or a disconnect.
 - `destroyed` is the one stored state: once set, `recomputeStatus` returns without deriving.
 - The transport states are `ConnectionState` from
   [thread-client](../../../../../../packages/thread-client/.context/state-machines.md); the
@@ -54,13 +55,15 @@ stateDiagram-v2
 ## Draft room read
 
 Whether a draft's room can be shown and acted on (`DraftRoomState` in `draft-room-read.ts`).
+A draft is a pending version of one document, and its room is the Yjs room `draft:<draftId>`
+that the review screens open instead of the live document's.
 
 ```mermaid
 stateDiagram-v2
   [*] --> rebuilding
   rebuilding --> usable: the room is rebuilt and bound
   rebuilding --> error: the rebuild threw
-  usable --> fenced: reset for a schema change
+  usable --> fenced: this tab's document schema no longer fits the room
   usable --> rebuilding: reset because the room was refused
   usable --> unavailable: the room is gone, terminal, unauthorized or destroyed
   fenced --> usable: the session reports usable again
@@ -68,10 +71,12 @@ stateDiagram-v2
   unavailable --> rebuilding: retry
 ```
 
-- **Commands act only on `usable`** (`usable()`); the editor may still paint a `fenced`
-  session, which carries the schema notice. Acting on a fenced room writes with a schema the
-  server has refused.
+- **Commands act only on `usable`** (`usable()`). A `fenced` room is one whose document schema
+  this tab's code no longer matches: the editor may still show it, with a notice, but a
+  command on it would write with a schema the server has refused.
 - **A refused room is rebuilt once per session.** The pool retires the session in the same
   notification, and the `refused` latch stops later snapshots from the retired session from
   starting a second rebuild.
+- **Retry from `unavailable` works only when the room can be opened again.** A room the pool
+  closed for good stays unavailable.
 - A rebuild result is used only if it is still the newest attempt and the read is not disposed.

@@ -1,6 +1,6 @@
 # Thread filing state machines
 
-A thread has two independent filing states, both changed in `domain/thread-trash-lifecycle.ts`.
+A thread (a chat) has two independent filing states, both changed in `domain/thread-trash-lifecycle.ts`.
 Neither says whether a run is live: that is the
 [run lease](../../runtime/.context/state-machines.md), and turn status is documented there too.
 
@@ -32,6 +32,8 @@ stateDiagram-v2
 - **Stop first, then lock.** Archive and delete end the thread's run and its subagent subtree
   (`stopThreads`) before taking the thread row lock, because stopping takes thread locks
   parents first, each after its ask rows.
-- **Restore is refused** when the thread was deleted by a Work delete (`deletedByWorkId`) or its
-  root's primary Work is deleted: those come back only with the Work. When the thread's own
-  Work is unavailable, restore rebinds it to the project's No Work.
+- **Restore is refused** when the thread was deleted by a Work delete (`deletedByWorkId`), or
+  when the Work of its root is deleted; the root is the chat at the top of the chain of forks
+  and subagents the thread came from. Those threads come back only with the Work. When the
+  thread's own Work is unavailable, restore moves it to No Work, the Work every project has
+  for chats outside any task.
