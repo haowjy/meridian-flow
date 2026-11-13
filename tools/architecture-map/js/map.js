@@ -601,11 +601,11 @@ export function createMap(host, { page, path, nav }) {
             ),
           )
         : null,
+      links("Machines", value("Machines")),
+      links("Docs", value("Docs")),
       connections(id),
       links("See", value("See")),
       links("Opens", value("Opens")),
-      links("Machines", value("Machines")),
-      links("Docs", value("Docs")),
     ]);
   }
 

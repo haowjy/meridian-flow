@@ -370,8 +370,11 @@ function setMode(next) {
 /** The nav's current entry, and the Read | Map toggle on level pages. */
 function syncChrome(r) {
   const level = r.kind === "level" ? levels.get(r.id) : null;
+  // A level in the nav is its own entry (Server, even opened from System); a child is its nearest such ancestor's.
   const section = level
-    ? (level.trail[0]?.hash.slice(1).split("/")[0] ?? r.id)
+    ? [r.id, ...level.trail.map((t) => t.hash.slice(1)).reverse()].find((id) =>
+        chrome.links.has(id),
+      )
     : r.kind === "journeys"
       ? "journeys"
       : r.section;

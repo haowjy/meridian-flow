@@ -320,38 +320,38 @@ export function levelLinks(readme) {
 
 /**
  * Every level page, the one set the viewer and check.mjs both use: the README's top levels, then
- * the page each box's `Opens` names, all in `mapDir`. `read(path)` returns a repo file's text. A page opened from
- * two places keeps the first parent in breadth-first order, so System wins over Code.
+ * the page each box's `Opens` names, all in `mapDir`. `read(path)` returns a repo file's text. Each
+ * top level is walked breadth-first before the next, so a page opened from two places keeps the
+ * first parent found, System before Code, and a top level another one opens (Server, from System's
+ * box) takes that parent too: its trail is where the reader drills in from.
  * Returns { roots: [{ id, title }], levels: Map id → { id, title, path, page, trail } } where
- * `title` is the name the nav and breadcrumb show (a root's README label; a child's page title,
+ * `title` is the name the nav and breadcrumb show (a top level's README label; a child's page title,
  * which loses its parent's "Server: " prefix here, as the heading the viewer shows does) and `trail` is the ancestors, root first: [{ title, hash }].
  */
 export async function loadLevelPages(read, mapDir) {
   const roots = levelLinks(await read(`${mapDir}/README.md`));
+  const labels = new Map(roots.map((r) => [r.id, r.title]));
   const levels = new Map();
-  const queue = roots.map((r) => ({
-    id: r.id,
-    path: `${mapDir}/${r.href}`,
-    trail: [],
-    label: r.title,
-  }));
-  while (queue.length) {
-    const { id, path, trail, label } = queue.shift();
-    if (levels.has(id)) continue;
-    const page = parsePage(await read(path));
-    // The breadcrumb names the parent, so a child's shown title drops the "Server: " the .md heading keeps for GitHub readers.
-    if (!label) page.title = page.title.replace(`${trail.at(-1).page}: `, "");
-    const title = label ?? page.title;
-    levels.set(id, { id, title, path, page, trail });
-    for (const s of page.sections) {
-      const opens = linksOf(item(s, "Opens")?.value ?? "")[0];
-      const target = opens && resolveHref(path, opens.href).path;
-      if (!target?.startsWith(`${mapDir}/`) || !target.endsWith(".md")) continue;
-      queue.push({
-        id: target.slice(mapDir.length + 1, -3),
-        path: target,
-        trail: [...trail, { title, page: page.title, hash: `#${id}` }],
-      });
+  for (const r of roots) {
+    const queue = [{ id: r.id, path: `${mapDir}/${r.href}`, trail: [] }];
+    while (queue.length) {
+      const { id, path, trail } = queue.shift();
+      if (levels.has(id)) continue;
+      const page = parsePage(await read(path));
+      // The breadcrumb names the parent, so a child's shown title drops the "Server: " the .md heading keeps for GitHub readers.
+      if (trail.length) page.title = page.title.replace(`${trail.at(-1).page}: `, "");
+      const title = labels.get(id) ?? page.title;
+      levels.set(id, { id, title, path, page, trail });
+      for (const s of page.sections) {
+        const opens = linksOf(item(s, "Opens")?.value ?? "")[0];
+        const target = opens && resolveHref(path, opens.href).path;
+        if (!target?.startsWith(`${mapDir}/`) || !target.endsWith(".md")) continue;
+        queue.push({
+          id: target.slice(mapDir.length + 1, -3),
+          path: target,
+          trail: [...trail, { title, page: page.title, hash: `#${id}` }],
+        });
+      }
     }
   }
   return { roots: roots.map((r) => ({ id: r.id, title: r.title })), levels };

@@ -212,6 +212,17 @@ button {
   font-size: 15px;
 }
 
+/* display: flex drops the summary's own marker; the collapsed intro on a phone needs one. */
+.intro summary::before {
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  content: "▶";
+}
+
+.intro[open] summary::before {
+  content: "▼";
+}
+
 .crumbs {
   display: flex;
   flex-wrap: wrap;
@@ -697,6 +708,8 @@ button {
   gap: 12px;
   padding: 4px 2px 14px;
   overflow-x: auto;
+  /* Room for the selected card's ring when it is scrolled to an edge. */
+  scroll-padding-inline: 2px;
   cursor: grab;
 }
 
@@ -918,8 +931,6 @@ button {
 
   .levels {
     flex: 1 1 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
   }
 
   .workspace {
@@ -939,8 +950,17 @@ button {
   }
 
   .intro {
-    max-height: 30%;
+    max-height: none;
     padding: 8px 12px;
+  }
+
+  /* No room for both: the how-to comes with "Read more", and only the opened intro scrolls. */
+  .intro:has(.is-clamped) .how-to {
+    display: none;
+  }
+
+  .intro:not(:has(.is-clamped)) {
+    max-height: 50%;
   }
 
   .journeys {

@@ -146,17 +146,12 @@ function addZoom(holder) {
       button("Fit", "Fit to width", fit),
     ),
   );
-  // A flow fills the width (never smaller than 0.6, never above 1.6), a flowchart is squeezed to fit it,
-  // and any other diagram (a state machine) starts at natural size.
+  // Nothing opens wider than its holder: the scrollbar is a diagram-height away, so a reader sees a
+  // diagram cut at the edge. A flow also grows to fill the width (up to 1.6); below 0.6 text stops
+  // reading, so a diagram that wide starts there and scrolls.
   const wide = (holder.clientWidth - 26) / natural;
-  const kind = svg.getAttribute("aria-roledescription") ?? "";
-  set(
-    kind === "sequence"
-      ? Math.min(Math.max(wide, 0.6), 1.6)
-      : kind.startsWith("flowchart")
-        ? Math.min(wide, 1)
-        : 1,
-  );
+  const grow = svg.getAttribute("aria-roledescription") === "sequence" ? 1.6 : 1;
+  set(Math.max(Math.min(wide, grow), 0.6));
 }
 
 /** What the doc view can open: a repo path with no `..`, `.` or empty segment. The dev server decides which of them it serves. */

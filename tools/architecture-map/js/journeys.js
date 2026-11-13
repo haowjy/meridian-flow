@@ -132,7 +132,7 @@ export async function createJourneys(host, { nav }) {
     }
     content
       .querySelector(`[data-step="${id}/${n}"]`)
-      ?.scrollIntoView({ inline: "center", block: "nearest" });
+      ?.scrollIntoView({ inline: "nearest", block: "nearest" });
     const groups = JOURNEY_KEYS.flatMap((key) => {
       const links = linksOf(item(section, key)?.value ?? "");
       if (key === "Shot") return [];
