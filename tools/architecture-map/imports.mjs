@@ -32,7 +32,7 @@ const STATEMENTS = [
   // import "x"
   /\bimport\s*["']([^"']+)["']/g,
   // import("x"), require("x")
-  /\b(?:import|require)\s*\(\s*["']([^"']+)["']\s*\)/g,
+  /\b(?:import|require)\s*\(\s*["'`]([^"'`]+)["'`]\s*\)/g,
 ];
 // @import "x" in a stylesheet
 const CSS_IMPORT = /@import\s+["']([^"']+)["']/g;
@@ -81,7 +81,7 @@ function sourceFiles(repo, path, out) {
 }
 
 /** Package name → directory, for the workspace directories that hold a package.json. */
-function workspacePackages(repo, workspaceDirs) {
+export function workspacePackages(repo, workspaceDirs) {
   return new Map(
     workspaceDirs.map((dir) => [
       JSON.parse(readFileSync(join(repo, dir, "package.json"), "utf8")).name,

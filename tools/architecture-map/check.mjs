@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { readImports, under } from "./imports.mjs";
+import { readImports, under, workspacePackages } from "./imports.mjs";
 import {
   item,
   JOURNEY_KEYS,
@@ -466,8 +466,15 @@ if (DEPENDENCIES) {
   const workspaceDirs = (config.imports?.workspaces ?? [])
     .flatMap(directoriesMatching)
     .filter((d) => existsSync(join(repo, d, "package.json")));
-  imports = readImports(repo, [...roots, ...FILE_RULES.map((r) => r.files)], {
-    workspaceDirs, aliases: config.imports?.aliases ?? [] });
+  const importOptions = { workspaceDirs, aliases: config.imports?.aliases ?? [] };
+  imports = readImports(repo, roots, importOptions);
+  // Read apart from `imports`: a `files` directory outside every box must not feed the unit rules.
+  const fileImports = readImports(
+    repo,
+    FILE_RULES.map((r) => r.files),
+    importOptions,
+  );
+  const packages = workspacePackages(repo, workspaceDirs);
 
   const addBreak = (rule, from, to, file) => {
     const key = `${rule}|${from}|${to}`;
@@ -475,10 +482,36 @@ if (DEPENDENCIES) {
     breaks.get(key).files.add(file);
   };
   const nameOf = (unit) => unit.split("/").at(-1);
-  // A file rule's target is a package or a package subpath (matched on the specifier as written) or a repo path
-  // (matched on where the import resolves to).
-  const reaches = (i, target) =>
-    i.spec === target || i.spec.startsWith(`${target}/`) || under(i.to, target);
+  /**
+   * A file rule's `to` entries as { name, reaches }: a workspace package (also reached by a path into its directory), a
+   * package subpath (matched on the specifier as written) or a tracked repo path (matched on where the import resolves
+   * to, named by its last segment). An entry that is none of these would pin nothing.
+   */
+  const fileTargets = (rule) => {
+    const targets = [];
+    for (const entry of rule.to) {
+      if (packages.has(entry))
+        targets.push({ name: entry, reaches: (i) => under(i.to, packages.get(entry)) });
+      else if ([...packages.keys()].some((name) => entry.startsWith(`${name}/`)))
+        targets.push({
+          name: entry,
+          reaches: (i) => i.spec === entry || i.spec.startsWith(`${entry}/`),
+        });
+      else if (gitFiles.some((f) => under(f, entry)))
+        targets.push({ name: nameOf(entry), reaches: (i) => under(i.to, entry) });
+      else
+        fail(
+          "config dependencies.rules",
+          `"${rule.rule}": to ${entry} is no workspace package, package subpath or tracked path.`,
+        );
+    }
+    if (new Set(targets.map((t) => t.name)).size < targets.length)
+      fail(
+        "config dependencies.rules",
+        `"${rule.rule}": two "to" entries share a last segment, which would merge their rows.`,
+      );
+    return targets;
+  };
   // Breaks name a unit by its last path segment, so two units of one glob with the same one would merge their rows.
   const unitRules = rules.filter((r) => !r.files);
   for (const glob of new Set(unitRules.flatMap((r) => [r.cycle, r.from, r.to].filter(Boolean)))) {
@@ -496,18 +529,22 @@ if (DEPENDENCIES) {
     }
   }
   /** How a break of each rule reads in a failure. */
-  const describe = (b) =>
-    rules.find((r) => r.rule === b.rule).cycle
+  const describe = (b) => {
+    const rule = rules.find((r) => r.rule === b.rule);
+    if (rule.files) return `${rule.files}/${b.from} importing ${b.to}`;
+    return rule.cycle
       ? `${b.from} importing ${b.to} inside a cycle`
       : `${b.from} importing ${b.to}`;
+  };
   for (const rule of rules) {
     if (rule.files) {
       if (!existsSync(join(repo, rule.files)))
         fail("config dependencies.rules", `"${rule.rule}": files ${rule.files} doesn't exist.`);
-      for (const i of imports) {
+      const targets = fileTargets(rule);
+      for (const i of fileImports) {
         if (!under(i.from, rule.files)) continue;
-        for (const target of rule.to)
-          if (reaches(i, target)) addBreak(rule.rule, i.from, target, i.from);
+        const file = i.from.slice(rule.files.length + 1);
+        for (const t of targets) if (t.reaches(i)) addBreak(rule.rule, file, t.name, file);
       }
     } else if (rule.cycle) {
       const graph = new Map();
@@ -538,7 +575,16 @@ if (DEPENDENCIES) {
 
   const TABLES = [
     { name: "unit", header: ["from", "to", "rule", "example file"], needed: true },
-    { name: "file", header: ["file", "imports", "rule"], needed: FILE_RULES.length > 0 },
+    // With several file rules the third column says which one a row is of; with one, the section heading does.
+    ...(FILE_RULES.length
+      ? [
+          {
+            name: "file",
+            header: FILE_RULES.length > 1 ? ["file", "imports", "rule"] : ["file", "imports"],
+            needed: true,
+          },
+        ]
+      : []),
   ];
   const seen = new Set();
   let table = null;
@@ -572,13 +618,17 @@ if (DEPENDENCIES) {
   const matched = new Set();
   for (const row of rows) {
     const where = `${DEPENDENCIES}:${row.line}`;
-    const isFile = row.table?.name === "file";
-    const known = rules.filter((r) => Boolean(r.files) === isFile).map((r) => r.rule);
-    if (row.cells.length !== row.table?.header.length) {
-      fail(where, `a row has ${row.table?.header.length ?? 0} cells: ${row.table?.header.join(", ")}.`);
+    if (!row.table) {
+      fail(where, "a table row above any table header.");
       continue;
     }
-    const [from, to, rule, example = from] = isFile ? [row.cells[0], row.cells[1], row.cells[2]] : row.cells;
+    const isFile = row.table.name === "file";
+    const known = rules.filter((r) => Boolean(r.files) === isFile).map((r) => r.rule);
+    if (row.cells.length !== row.table.header.length) {
+      fail(where, `a row has ${row.table.header.length} cells: ${row.table.header.join(", ")}.`);
+      continue;
+    }
+    const [from, to, rule = FILE_RULES[0].rule, example = from] = row.cells;
     if (!known.includes(rule)) {
       fail(where, `rule "${rule}" isn't one of: ${known.join("; ")}.`);
       continue;
