@@ -61,11 +61,17 @@ machine is drawn in a `state-machines.md` beside its code, listed in
 the map names (a package, a domain, a feature directory, a boundary or a dependency direction),
 changes a writer journey, or changes a machine's states or transitions updates its diagram in
 the same commit. `pnpm check:architecture` catches a path that disappeared, not a picture that
-went wrong: passing it is not the test. Keep machines simple: before adding a state, check
-whether an existing one already covers the case. The map opens at the `map` URL `pnpm dev`
+went wrong: passing it is not the test. The map opens at the `map` URL `pnpm dev`
 prints. The pages and `map.config.mjs` (everything Meridian-specific: the coverage globs, dependency
 rules, nav) live in `.context/system-architecture/`; the viewer, the check and the dev server are the
 reusable engine in [tools/architecture-map](tools/architecture-map/README.md), which names no project.
+
+**One way to do one thing, so the app feels consistent.** The same situation behaves and
+looks the same wherever the writer meets it: an action waiting on the server, a failure, an
+Undo, a list, a picker. A state machine takes one of the shapes in the index's patterns, and a
+screen uses the shared component where one exists. Before adding a state or a component, check
+whether an existing one already covers the case; a second way to do the same thing is
+structural debt, fixed by moving the cases onto one.
 
 **Tooling.** `pnpm`, Biome and Nx, never npm. No raw colors outside
 `packages/design-tokens`.
