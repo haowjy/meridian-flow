@@ -18,19 +18,25 @@ export function parseDoc(schema: Schema, src: string): PMNode[] {
     if (kind === "quote")
       return schema.nodes.blockquote.create(
         null,
-        schema.nodes.paragraph.create(null, inline(schema, text)),
+        splitTop(text, ";").map((t) => schema.nodes.paragraph.create(null, inline(schema, t))),
       );
-    if (kind === "list")
-      return schema.nodes.bullet_list.create(
+    if (kind === "list") return list(schema, text);
+    if (kind === "table")
+      return schema.nodes.table.create(
         null,
-        text
-          .split(";")
-          .map((t) =>
-            schema.nodes.list_item.create(
-              null,
-              schema.nodes.paragraph.create(null, inline(schema, t)),
-            ),
+        splitTop(text, ";").map((row) =>
+          schema.nodes.table_row.create(
+            null,
+            row
+              .split(",")
+              .map((cell) =>
+                schema.nodes.table_cell.create(
+                  null,
+                  schema.nodes.paragraph.create(null, inline(schema, cell)),
+                ),
+              ),
           ),
+        ),
       );
     if (kind.startsWith("h"))
       return schema.nodes.paragraph.create(
@@ -42,6 +48,43 @@ export function parseDoc(schema: Schema, src: string): PMNode[] {
       return schema.nodes.paragraph.create({ align: "center" }, inline(schema, text));
     throw new Error(`bad block ${part}`);
   });
+}
+
+/** Splits at `sep` outside `{...}`, so an item can hold a nested list: `outer{inner a;inner b}`. */
+function splitTop(text: string, sep: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "{") depth++;
+    else if (text[i] === "}") depth--;
+    else if (text[i] === sep && depth === 0) {
+      out.push(text.slice(from, i));
+      from = i + 1;
+    }
+  }
+  out.push(text.slice(from));
+  return out;
+}
+
+function list(schema: Schema, text: string): PMNode {
+  return schema.nodes.bullet_list.create(
+    null,
+    splitTop(text, ";").map((item) => {
+      const nested = /^([^{]*)\{(.*)\}$/.exec(item);
+      const para = schema.nodes.paragraph.create(null, inline(schema, nested ? nested[1] : item));
+      return schema.nodes.list_item.create(null, nested ? [para, list(schema, nested[2])] : para);
+    }),
+  );
+}
+
+function renderList(b: PMNode): string {
+  const items: string[] = [];
+  b.forEach((li) => {
+    const nested = li.childCount > 1 ? `{${renderList(li.child(1))}}` : "";
+    items.push(`${li.firstChild?.textContent ?? ""}${nested}`);
+  });
+  return items.join(";");
 }
 
 function inline(schema: Schema, text: string): PMNode[] {
@@ -60,13 +103,24 @@ export function render(blocks: readonly PMNode[]): string {
     .map((b) => {
       if (b.type.name === "horizontal_rule") return "hr";
       if (b.type.name === "figure") return `fig:${b.attrs.alt}`;
-      if (b.type.name === "blockquote") return `quote:${b.textContent}`;
-      if (b.type.name === "bullet_list") {
-        const items: string[] = [];
-        b.forEach((li) => {
-          items.push(li.textContent);
+      if (b.type.name === "blockquote") {
+        const paras: string[] = [];
+        b.forEach((p) => {
+          paras.push(p.textContent);
         });
-        return `list:${items.join(";")}`;
+        return `quote:${paras.join(";")}`;
+      }
+      if (b.type.name === "bullet_list") return `list:${renderList(b)}`;
+      if (b.type.name === "table") {
+        const rows: string[] = [];
+        b.forEach((row) => {
+          const cells: string[] = [];
+          row.forEach((cell) => {
+            cells.push(cell.textContent);
+          });
+          rows.push(cells.join(","));
+        });
+        return `table:${rows.join(";")}`;
       }
       let t = "";
       b.forEach((n) => {
@@ -116,7 +170,15 @@ export type Word = { t: string; em: boolean; strong: boolean; dot: boolean };
 export type GBlock =
   | { kind: "text"; type: "paragraph" | "heading"; level: number; words: Word[]; origins: number[] }
   | { kind: "figure"; alt: string; origins: number[] }
-  | { kind: "rule"; origins: number[] };
+  | { kind: "rule"; origins: number[] }
+  // A list's items, a quote's paragraphs, or a table's cells in row order (`cols` per row).
+  | {
+      kind: "container";
+      type: "list" | "quote" | "table";
+      units: Word[][];
+      cols: number;
+      origins: number[];
+    };
 
 export type OpName =
   | "replaceWord"
@@ -131,6 +193,9 @@ export type OpName =
   | "setType"
   | "insertFigure"
   | "insertRule"
+  | "editUnit"
+  | "addUnit"
+  | "dropUnit"
   | "repeatBlock";
 
 export interface Script {
@@ -188,13 +253,37 @@ function textBlock(rng: Rng, n: number, origins: number[]): GBlock {
   };
 }
 
+function container(rng: Rng, origins: number[]): GBlock {
+  const type = rng.pick(["list", "quote", "table"] as const);
+  const cols = type === "table" ? 2 + rng.int(2) : 1;
+  const rows = 1 + rng.int(3);
+  const units = Array.from({ length: rows * cols }, () => unit(rng));
+  return { kind: "container", type, units, cols, origins };
+}
+
+const unit = (rng: Rng): Word[] =>
+  Array.from({ length: 1 + rng.int(4) }, () => {
+    const w = fresh();
+    w.dot = rng.chance(0.2);
+    return w;
+  });
+
 export function genBase(rng: Rng, nBlocks: number): GBlock[] {
   const out: GBlock[] = [];
   for (let i = 0; i < nBlocks; i++) {
     const r = rng.next();
     if (r < 0.06) out.push({ kind: "figure", alt: `fig${++counter}`, origins: [i] });
     else if (r < 0.1) out.push({ kind: "rule", origins: [i] });
+    else if (r < 0.2) out.push(container(rng, [i]));
     else out.push(textBlock(rng, 2 + rng.int(7), [i]));
+    // A paragraph with a figure or container right after it: a side that deletes the paragraph and
+    // changes what follows puts the two in one replaced run.
+    if (out.at(-1)?.kind === "text" && rng.chance(0.15))
+      out.push(
+        rng.chance(0.4)
+          ? { kind: "figure", alt: `fig${++counter}`, origins: [i] }
+          : container(rng, [i]),
+      );
   }
   return out;
 }
@@ -203,7 +292,9 @@ const clone = (bs: GBlock[]): GBlock[] =>
   bs.map((b) =>
     b.kind === "text"
       ? { ...b, words: b.words.map((w) => ({ ...w })), origins: [...b.origins] }
-      : { ...b, origins: [...b.origins] },
+      : b.kind === "container"
+        ? { ...b, units: b.units.map((u) => u.map((w) => ({ ...w }))), origins: [...b.origins] }
+        : { ...b, origins: [...b.origins] },
   );
 
 const ALL_OPS: OpName[] = [
@@ -219,6 +310,9 @@ const ALL_OPS: OpName[] = [
   "setType",
   "insertFigure",
   "insertRule",
+  "editUnit",
+  "addUnit",
+  "dropUnit",
 ];
 
 /** Applies one random op in place; returns the op name or null if it didn't apply. */
@@ -259,6 +353,9 @@ function applyOpInner(
     setType: 0.8,
     insertFigure: 0.3,
     insertRule: 0.3,
+    editUnit: 1.5,
+    addUnit: 0.6,
+    dropUnit: 0.6,
     repeatBlock: 1,
   };
   const total = mix.reduce((s, o) => s + (weights[o] ?? 1), 0);
@@ -277,6 +374,9 @@ function applyOpInner(
   const texts = doc.map((b, i) => [b, i] as const).filter(([b]) => b.kind === "text") as Array<
     readonly [Extract<GBlock, { kind: "text" }>, number]
   >;
+  const containers = doc.filter(
+    (b): b is Extract<GBlock, { kind: "container" }> => b.kind === "container",
+  );
   const withWords = texts.filter(([b]) => b.words.length > 0);
   switch (op) {
     case "replaceWord": {
@@ -390,6 +490,42 @@ function applyOpInner(
       touch(b);
       return op;
     }
+    case "editUnit": {
+      if (!containers.length) return null;
+      const b = rng.pick(containers);
+      const u = rng.pick(b.units);
+      if (rng.chance(0.5) && u.length) u[rng.int(u.length)] = fresh();
+      else u.splice(rng.int(u.length + 1), 0, fresh());
+      touch(b);
+      return op;
+    }
+    case "addUnit": {
+      if (!containers.length) return null;
+      const b = rng.pick(containers);
+      // A table grows by a row or a column, so live adding one and the draft the other is generated.
+      if (b.type === "table" && rng.chance(0.4)) {
+        const rows = b.units.length / b.cols;
+        const units: Word[][] = [];
+        for (let r = 0; r < rows; r++) {
+          units.push(...b.units.slice(r * b.cols, (r + 1) * b.cols), unit(rng));
+        }
+        b.units = units;
+        b.cols++;
+      } else {
+        const at = rng.int(b.units.length / b.cols + 1) * b.cols;
+        b.units.splice(at, 0, ...Array.from({ length: b.cols }, () => unit(rng)));
+      }
+      touch(b);
+      return op;
+    }
+    case "dropUnit": {
+      const cands = containers.filter((b) => b.units.length > b.cols);
+      if (!cands.length) return null;
+      const b = rng.pick(cands);
+      b.units.splice(rng.int(b.units.length / b.cols) * b.cols, b.cols);
+      touch(b);
+      return op;
+    }
     case "insertFigure": {
       doc.splice(rng.int(doc.length + 1), 0, {
         kind: "figure",
@@ -459,21 +595,44 @@ export function toPM(schema: Schema, doc: GBlock[]): PMNode[] {
     if (b.kind === "figure")
       return schema.nodes.figure.create({ src: `asset:${b.alt}`, alt: b.alt });
     if (b.kind === "rule") return schema.nodes.horizontal_rule.create();
-    const inline: PMNode[] = [];
-    b.words.forEach((w, i) => {
-      if (i > 0) inline.push(schema.text(" "));
-      const marks = [
-        ...(w.em ? [schema.marks.em.create()] : []),
-        ...(w.strong ? [schema.marks.strong.create()] : []),
-      ];
-      inline.push(schema.text(w.t, marks));
-      if (w.dot) inline.push(schema.text("."));
-    });
-    const content = joinAdjacent(inline);
+    if (b.kind === "container") {
+      const { nodes } = schema;
+      const para = (u: Word[]) => nodes.paragraph.create(null, wordNodes(schema, u));
+      if (b.type === "quote") return nodes.blockquote.create(null, b.units.map(para));
+      if (b.type === "list")
+        return nodes.bullet_list.create(
+          null,
+          b.units.map((u) => nodes.list_item.create(null, para(u))),
+        );
+      const rows: PMNode[] = [];
+      for (let r = 0; r < b.units.length; r += b.cols)
+        rows.push(
+          nodes.table_row.create(
+            null,
+            b.units.slice(r, r + b.cols).map((u) => nodes.table_cell.create(null, para(u))),
+          ),
+        );
+      return nodes.table.create(null, rows);
+    }
+    const content = wordNodes(schema, b.words);
     return b.type === "heading"
       ? schema.nodes.paragraph.create({ level: b.level }, content)
       : schema.nodes.paragraph.create(null, content);
   });
+}
+
+function wordNodes(schema: Schema, words: readonly Word[]): PMNode[] {
+  const inline: PMNode[] = [];
+  words.forEach((w, i) => {
+    if (i > 0) inline.push(schema.text(" "));
+    const marks = [
+      ...(w.em ? [schema.marks.em.create()] : []),
+      ...(w.strong ? [schema.marks.strong.create()] : []),
+    ];
+    inline.push(schema.text(w.t, marks));
+    if (w.dot) inline.push(schema.text("."));
+  });
+  return joinAdjacent(inline);
 }
 
 function joinAdjacent(nodes: PMNode[]): PMNode[] {
@@ -509,20 +668,27 @@ export function wordsOf(blocks: readonly PMNode[]): {
   const count = new Map<string, number>();
   blocks.forEach((b, bi) => {
     const type = b.attrs.level != null ? `heading${b.attrs.level}` : b.type.name;
-    let first = true;
+    let first = b.isTextblock;
     const add = (w: string, em: boolean, strong: boolean) => {
       count.set(w, (count.get(w) ?? 0) + 1);
       info.set(w, { pos: list.length, block: bi, em, strong, type, first });
       list.push(w);
       first = false;
     };
-    if (b.type.name === "figure") add(`fig:${b.attrs.alt}`, false, false);
-    b.forEach((n) => {
-      if (!n.isText) return;
-      const em = n.marks.some((m) => m.type.name === "em");
-      const strong = n.marks.some((m) => m.type.name === "strong");
-      for (const m of (n.text ?? "").matchAll(WORD)) add(m[0], em, strong);
-    });
+    // Words inside a list, quote or table count, with the container's block index.
+    const walk = (node: PMNode) => {
+      if (node.type.name === "figure") add(`fig:${node.attrs.alt}`, false, false);
+      node.forEach((n) => {
+        if (!n.isText) {
+          walk(n);
+          return;
+        }
+        const em = n.marks.some((m) => m.type.name === "em");
+        const strong = n.marks.some((m) => m.type.name === "strong");
+        for (const m of (n.text ?? "").matchAll(WORD)) add(m[0], em, strong);
+      });
+    };
+    walk(b);
   });
   return { list, info, count };
 }
@@ -531,8 +697,16 @@ export function tokWords(toks: readonly Tok[]): string[] {
   const out: string[] = [];
   for (const t of toks) {
     if (t.kind === "text") for (const m of t.core.matchAll(WORD)) out.push(m[0]);
-    else if (t.kind === "atom" && t.node.type.name === "figure")
-      out.push(`fig:${t.node.attrs.alt}`);
+    else if (t.kind === "atom") {
+      const visit = (n: PMNode) => {
+        if (n.type.name === "figure") out.push(`fig:${n.attrs.alt}`);
+        else if (n.isText) for (const m of (n.text ?? "").matchAll(WORD)) out.push(m[0]);
+      };
+      visit(t.node);
+      t.node.descendants((n) => {
+        visit(n);
+      });
+    }
   }
   return out;
 }
@@ -1089,7 +1263,79 @@ export const CASES: Case[] = [
     base: "list:one;two;three",
     live: "list:ONE;two;three",
     draft: "list:one;two;THREE",
-    merged: "list:one;two;THREE",
+    merged: "list:ONE;two;THREE",
+    conflicts: 0,
+  },
+  {
+    row: "edits in one container (list, quote, table)",
+    name: "list-item-added",
+    base: "list:one;two",
+    live: "list:one;two;three",
+    draft: "list:ONE;two",
+    merged: "list:ONE;two;three",
+    conflicts: 0,
+  },
+  {
+    row: "edits in one container (list, quote, table)",
+    name: "list-same-item",
+    base: "list:the cat sat;two",
+    live: "list:the dog sat;two",
+    draft: "list:the bird sat;two",
+    merged: "list:the bird sat;two",
+    conflicts: 1,
+  },
+  {
+    row: "edits in one container (list, quote, table)",
+    name: "quote-paragraphs",
+    base: "quote:She said hi.;He left.",
+    live: "quote:She said hi.;He left.;Rain fell.",
+    draft: "quote:She said hello.;He left.",
+    merged: "quote:She said hello.;He left.;Rain fell.",
+    conflicts: 0,
+  },
+  {
+    row: "edits in one container (list, quote, table)",
+    name: "nested-list",
+    base: "list:outer text{inner one;inner two};next",
+    live: "list:OUTER text{inner one;inner two};next",
+    draft: "list:outer text{inner one;inner TWO};next",
+    merged: "list:OUTER text{inner one;inner TWO};next",
+    conflicts: 0,
+  },
+  {
+    row: "edits in one container (list, quote, table)",
+    name: "table-cells",
+    base: "table:a b,c d;e f,g h",
+    live: "table:a B,c d;e f,g h",
+    draft: "table:a b,c d;e f,g H",
+    merged: "table:a B,c d;e f,g H",
+    conflicts: 0,
+  },
+  {
+    row: "edits in a run of containers",
+    name: "two-lists-in-a-row",
+    base: "list:one;two | list:three;four",
+    live: "list:ONE;two | list:three;FOUR",
+    draft: "list:one;TWO | list:THREE;four",
+    merged: "list:ONE;TWO | list:THREE;FOUR",
+    conflicts: 0,
+  },
+  {
+    row: "edits in one container, merged table not rectangular",
+    name: "table-column-vs-row",
+    base: "table:a,b",
+    live: "table:a,b,x",
+    draft: "table:a,b;c,d",
+    merged: "table:a,b;c,d",
+    conflicts: 1,
+  },
+  {
+    row: "a container changed on one side, another type on the other",
+    name: "list-vs-quote",
+    base: "list:one;two",
+    live: "quote:one;two",
+    draft: "list:one;TWO",
+    merged: "list:one;TWO",
     conflicts: 1,
   },
   {

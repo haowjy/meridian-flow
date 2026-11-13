@@ -10,7 +10,7 @@
  * It works on `align`'s uncleaned hunks for word precision. No Yjs here: the minimal Yjs writer is
  * `writer.ts`.
  */
-import type { Node as PMNode, Schema } from "prosemirror-model";
+import { Mark, type Node as PMNode, type Schema } from "prosemirror-model";
 import { align } from "./align.js";
 import type { Hunk } from "./hunks.js";
 import { posMap } from "./hunks.js";
@@ -32,6 +32,7 @@ import {
 import { mergeOrder } from "./merge-order.js";
 import { settleWhitespace, unionInsertions } from "./merge-settle.js";
 import {
+  blockKey,
   buildBlocks,
   buildSide,
   isWordTok,
@@ -115,6 +116,77 @@ function coalesce(first: Cluster, second: Cluster, baseToks: Tok[]): MergedTok[]
   return draftAbsorbsLive(liveVersion, draftVersion, liveHunks, baseToks);
 }
 
+interface ContainerMerge {
+  merged: MergedTok[];
+  overrode: number;
+  conflicts: Conflict[];
+  orderConflict: boolean;
+}
+
+/**
+ * Both sides changed a run of containers (lists, quotes, tables) that each side kept as the same
+ * number of the same types, so the run merges pairwise by the containers' children instead of
+ * as whole-block tokens. Null when the run does not have that shape, or when a merged node would
+ * not be a valid container: the caller then keeps today's whole-block clash.
+ */
+function mergeContainers(
+  schema: Schema,
+  base: Tok[],
+  live: MergedTok[],
+  draft: MergedTok[],
+  baseIds: number[],
+): ContainerMerge | null {
+  if (live.length !== base.length || draft.length !== base.length) return null;
+  const out: ContainerMerge = { merged: [], overrode: 0, conflicts: [], orderConflict: false };
+  const kids = (n: PMNode) => {
+    const nodes: PMNode[] = [];
+    n.forEach((c) => {
+      nodes.push(c);
+    });
+    return nodes;
+  };
+  for (let i = 0; i < base.length; i++) {
+    const [b, l, d] = [base[i], live[i].tok, draft[i].tok];
+    if (b.kind !== "atom" || l.kind !== "atom" || d.kind !== "atom") return null;
+    const [bn, ln, dn] = [b.node, l.node, d.node];
+    if (bn.type !== ln.type || bn.type !== dn.type || !bn.firstChild?.isBlock) return null;
+    if (l.key === b.key || l.key === d.key) {
+      out.merged.push(draft[i]);
+      continue;
+    }
+    if (d.key === b.key) {
+      out.merged.push(live[i]);
+      continue;
+    }
+    const inner = rebase(schema, kids(bn), kids(ln), kids(dn));
+    const changed = (n: PMNode, key: string) =>
+      JSON.stringify(n.attrs[key]) !== JSON.stringify(bn.attrs[key]);
+    const attrs = Object.fromEntries(
+      Object.keys(dn.attrs).map((key) => [key, changed(dn, key) ? dn.attrs[key] : ln.attrs[key]]),
+    );
+    const marks = Mark.sameSet(dn.marks, bn.marks) ? ln.marks : dn.marks;
+    let node: PMNode;
+    try {
+      node = bn.type.create(attrs, inner.blocks, marks);
+      node.check();
+    } catch {
+      return null;
+    }
+    // A table whose rows end with different cell counts is a table with a hole in it.
+    if (bn.type.name === "table" && new Set(kids(node).map((row) => row.childCount)).size > 1)
+      return null;
+    out.merged.push({
+      tok: { kind: "atom", key: `A${blockKey(node)}`, node },
+      origin: DRAFT,
+      index: draft[i].index,
+    });
+    out.overrode += inner.overrode;
+    out.conflicts.push(...inner.conflicts.map((c) => ({ ...c, baseIds })));
+    out.orderConflict ||= inner.orderConflict;
+  }
+  return out;
+}
+
 export function rebase(
   schema: Schema,
   base: readonly PMNode[],
@@ -161,6 +233,7 @@ export function rebase(
   const toks = (v: MergedTok[]) => v.map((o) => o.tok);
 
   let overrode = 0;
+  let orderConflict = order.cyclic;
   const replacedWords = (live: MergedTok[], kept: MergedTok[]) => {
     const remaining = new Map<string, number>();
     for (const { tok } of kept)
@@ -252,6 +325,17 @@ export function rebase(
       merged.push(...draftVersion);
       continue;
     }
+    const nested =
+      lo === hi
+        ? null
+        : mergeContainers(schema, baseToks.slice(lo, hi), liveVersion, draftVersion, idsIn(lo, hi));
+    if (nested) {
+      merged.push(...nested.merged);
+      overrode += nested.overrode;
+      conflicts.push(...nested.conflicts);
+      orderConflict ||= nested.orderConflict;
+      continue;
+    }
     if (lo === hi) {
       const union = unionInsertions(liveVersion, draftVersion);
       if (union.chose) {
@@ -298,5 +382,5 @@ export function rebase(
     draftAlignment.pos,
   );
   const { blocks } = buildBlocks(schema, settled);
-  return { blocks, overrode, conflicts, orderConflict: order.cyclic };
+  return { blocks, overrode, conflicts, orderConflict };
 }
