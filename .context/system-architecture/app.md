@@ -54,7 +54,7 @@ The largest feature: every other feature except `billing` imports it or is impor
 - Kind: feature
 - Paths: `apps/app/src/features/project`
 - Docs: [CONTEXT](../../apps/app/src/features/project/.context/CONTEXT.md), [AGENTS](../../apps/app/src/features/project/AGENTS.md)
-- Machines: [project](../../apps/app/src/features/project/context/.context/state-machines.md)
+- Machines: [panes](../../apps/app/src/features/project/.context/pane-state-machine.md), [project](../../apps/app/src/features/project/context/.context/state-machines.md)
 - Drift: Features import each other freely: `project` imports `draft-review` from 25 files, `project` imports `chat` from 20, `chat` imports `project` from 16, `editor` imports `draft-review` from 8 (tests left out). No rule forbids it.
 
 ## conversation
