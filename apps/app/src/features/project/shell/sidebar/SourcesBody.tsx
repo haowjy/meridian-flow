@@ -34,8 +34,7 @@ import {
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { cn } from "@/lib/utils";
-import { ScratchSource } from "../../chat/ChatScratch";
-import { useChatScratchSource } from "../../chat/use-chat-scratch-source";
+import { WorkScratchSource } from "../../chat/ChatScratch";
 import { type CatalogState, ContextTreePanel } from "../../context/ContextTreePanel";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../../context/context-schemes";
 import type { MoveArea } from "../../context/entry-drag/move-plan";
@@ -56,7 +55,7 @@ type TreeKey = (typeof EDITOR_CONTEXT_SCHEMES)[number];
 
 /**
  * Every pane the sidebar can show: the strip's Chat, tree tabs and Changes, and the quiet rows
- * at its foot, Scratch (while a chat is on screen), Unfiled and Trash.
+ * at its foot, Scratch (under a named Work), Unfiled and Trash.
  */
 type SourceKey = "chat" | TreeTab | "scratch" | "unfiled" | "trash" | "changes";
 const FOOT_SOURCES = ["scratch", "unfiled", "trash"] as const satisfies readonly SourceKey[];
@@ -65,8 +64,10 @@ type WriteSources = {
   projectId: string;
   /** The Work picker's scope, whose chats the Chat list shows first. */
   scopeWorkId: string | null;
-  /** The chat on screen: its row reads as current, Scratch follows it, Changes asks of it. */
+  /** The chat on screen: its row reads as current, Changes asks of it. */
   chatThreadId: string | null;
+  /** The picked Work when it is a named one: whose Scratch the foot offers. */
+  scratchWorkId: string | null;
   /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
   editorWorkId: string | null;
   activeScheme: ProjectContextTreeScheme | null;
@@ -170,8 +171,10 @@ const SOURCES: Record<SourceKey, Source> = {
     icon: schemeIcon("scratch"),
     useDrop: () => IDLE_DROP,
     Body: () => {
-      const { projectId, chatThreadId, onPicked } = useWriteSources();
-      return <ScratchSource projectId={projectId} threadId={chatThreadId} onPicked={onPicked} />;
+      const { projectId, scratchWorkId, onPicked } = useWriteSources();
+      return scratchWorkId ? (
+        <WorkScratchSource projectId={projectId} workId={scratchWorkId} onPicked={onPicked} />
+      ) : null;
     },
   },
   unfiled: treeSource("unfiled"),
@@ -222,7 +225,7 @@ function isTreeTab(key: string): key is TreeTab {
 /** Where a document of this scheme is listed: its tree's tab, Unfiled, or Scratch under its chat. */
 function sourceOfScheme(scheme: ProjectContextTreeScheme): SourceKey | null {
   if (isTreeTab(scheme) || scheme === "unfiled") return scheme;
-  return scheme === "scratch" ? "chat" : null;
+  return scheme === "scratch" ? "scratch" : null;
 }
 
 /**
@@ -245,7 +248,7 @@ export function SourcesBody({
   activePath,
   onSelectFile,
   onPicked,
-}: Omit<WriteSources, "catalogs" | "changes" | "changesCommands"> & {
+}: Omit<WriteSources, "catalogs" | "changes" | "changesCommands" | "scratchWorkId"> & {
   contextLive: boolean;
 }) {
   const chosen = useSidebarTabs((state) => state.shown);
@@ -300,9 +303,11 @@ export function SourcesBody({
     : (tabs.find((key) => activeScheme !== null && key === sourceOfScheme(activeScheme)) ??
       chosen[0] ??
       "chat");
-  // Scratch belongs to the chat on screen: with none, its row goes and its pane can't stay.
-  const hasScratch = useChatScratchSource(projectId, chatThreadId) !== null;
-  const foot = FOOT_SOURCES.filter((key) => key !== "scratch" || hasScratch);
+  // Scratch is the picked Work's: under No Work its row goes and its pane can't stay. A chat
+  // on No Work keeps its notes in its Files menu.
+  const { noWork } = useWorks(projectId);
+  const scratchWorkId = scopeWorkId && scopeWorkId !== noWork?.id ? scopeWorkId : null;
+  const foot = FOOT_SOURCES.filter((key) => key !== "scratch" || scratchWorkId);
   const source =
     tabs.includes(picked) || (foot as readonly SourceKey[]).includes(picked) ? picked : fallback;
   if (source !== picked) setPicked(source);
@@ -345,6 +350,7 @@ export function SourcesBody({
       projectId,
       scopeWorkId,
       chatThreadId,
+      scratchWorkId,
       editorWorkId,
       activeScheme,
       activePath,

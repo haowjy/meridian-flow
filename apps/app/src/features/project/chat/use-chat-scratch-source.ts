@@ -11,7 +11,6 @@ import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useWorks } from "@/client/query/useWorks";
 import { workFromSnapshot } from "@/client/query/works-projection-acquisition";
 import { chatScratchOwner } from "@/features/chat/chat-scratch-owner";
-import { displayThreadTitle } from "@/lib/thread-title";
 import type { ScratchSource } from "../context/use-scratch-catalogs";
 import { useOptionalChatOnScreen } from "../side/SideView";
 
@@ -30,14 +29,12 @@ export function useChatScratchSource(
   const workId = owner?.kind === "work" ? owner.workId : null;
   const earlierRootThreadId = owner?.kind === "work" ? (thread?.rootThreadId ?? null) : null;
   const workName = owner?.kind === "work" ? work?.name : undefined;
-  const ownerName = workName ?? displayThreadTitle(thread?.title);
   return useMemo(() => {
     if (!owner || !thread) return null;
     return {
       owner: rootThreadId !== null ? { rootThreadId } : { workId },
       // A chat rebound onto a Work keeps its lineage's notes findable.
       earlierRootThreadId,
-      ownerName,
       // The rail always means the chat on screen, so a chat's own notes need no name.
       heading: workName
         ? t`Scratch for ${workName}`
@@ -45,15 +42,7 @@ export function useChatScratchSource(
           ? t`Scratch for this chat`
           : t`Scratch`,
     };
-  }, [
-    Boolean(owner),
-    Boolean(thread),
-    rootThreadId,
-    workId,
-    earlierRootThreadId,
-    workName,
-    ownerName,
-  ]);
+  }, [Boolean(owner), Boolean(thread), rootThreadId, workId, earlierRootThreadId, workName]);
 }
 
 /**

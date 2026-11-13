@@ -1513,7 +1513,6 @@ msgstr "chart"
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/ChatView.tsx
-#: src/features/project/chat/ChatScratch.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/mobile/MobileTopBar.tsx
 #: src/features/project/shell/MainHeader.tsx
@@ -4117,11 +4116,6 @@ msgstr "Open a document from the project tree, or start a new one."
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "Open a Work to create an Untitled document"
 msgstr "Open a Work to create an Untitled document"
-
-#. placeholder {0}: source.ownerName ?? ""
-#: src/features/project/chat/ChatScratch.tsx
-msgid "Open chat {0}"
-msgstr "Open chat {0}"
 
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "Open chats"
