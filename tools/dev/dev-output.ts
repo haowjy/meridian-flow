@@ -14,6 +14,17 @@ function tmuxAttachCommand(sessionName: string): string {
   return `tmux -L ${DEV_TMUX_SOCKET} attach -t ${sessionName}`;
 }
 
+/** The architecture map is served by the dev client from the app's origin; a built client has none. */
+function architectureLines(context: DevOutputContext): string[] {
+  if (context.clientBuild !== "development") return [];
+  return context.routeLines
+    .filter((line) => line.startsWith("app "))
+    .map((line) => {
+      const [, kind, url] = line.split(/\s+/);
+      return `map  ${kind.padEnd(6)} ${new URL("/architecture/", url).href}`;
+    });
+}
+
 export function printSessionInfo(context: DevOutputContext): void {
   console.log(
     `${context.headline}: ${context.mode}, ${context.clientBuild} client, ${context.sessionName}`,
@@ -23,7 +34,7 @@ export function printSessionInfo(context: DevOutputContext): void {
   if (context.routeLines.length === 0) {
     console.log("urls pending — pnpm portless:list");
   } else {
-    for (const line of context.routeLines) {
+    for (const line of [...context.routeLines, ...architectureLines(context)]) {
       console.log(line);
     }
   }

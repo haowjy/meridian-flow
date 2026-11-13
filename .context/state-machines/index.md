@@ -67,6 +67,7 @@ have it:
 | Fork and handoff creation | A chat created from another, before the server has it | [features/chat](../../apps/app/src/features/chat/.context/state-machines.md) |
 | Import creation, local upload phase | This tab's part in an import | [features/import](../../apps/app/src/features/import/.context/state-machines.md) |
 | Apply click command | One Apply or Undo click on a draft change | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
+| Panes | What main and the side show, and where an opened item lands | [features/project](../../apps/app/src/features/project/.context/pane-state-machine.md) |
 | Live document binding | One editor pane's hold on an open document | [features/project/context](../../apps/app/src/features/project/context/.context/state-machines.md) |
 | Route selection during removal | Which document the route is trying to show | [features/project/context](../../apps/app/src/features/project/context/.context/state-machines.md) |
 | Rename and move feedback | What to show for one rename or move | [features/project/context](../../apps/app/src/features/project/context/.context/state-machines.md) |

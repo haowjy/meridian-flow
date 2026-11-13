@@ -49,11 +49,18 @@ context. See [Work][work].
 adapters. Use package public exports. Architecture:
 [.context/CONTEXT.md](.context/CONTEXT.md).
 
-**State machines.** Each one is drawn in a `state-machines.md` in the `.context/`
-beside its code, indexed in
-[.context/state-machines](.context/state-machines/index.md). When you change a
-machine's states or transitions, update its diagram in the same commit. Keep machines
-simple: before adding a state, check whether an existing one already covers the case.
+**Diagrams stay current.** The [architecture map](.context/system-architecture/README.md)
+draws the system, the code's boxes, the writer journeys and the broken dependency rules (a table); each state
+machine is drawn in a `state-machines.md` beside its code, listed in
+[the index](.context/state-machines/index.md). A change that adds, removes or moves something
+the map names (a package, a domain, a feature directory, a boundary or a dependency direction),
+changes a writer journey, or changes a machine's states or transitions updates its diagram in
+the same commit. `pnpm check:architecture` catches a path that disappeared, not a picture that
+went wrong: passing it is not the test. Keep machines simple: before adding a state, check
+whether an existing one already covers the case. The map opens at the `map` URL `pnpm dev`
+prints. The pages and `map.config.mjs` (everything Meridian-specific: the coverage globs, dependency
+rules, nav) live in `.context/system-architecture/`; the viewer, the check and the dev server are the
+reusable engine in [tools/architecture-map](tools/architecture-map/README.md), which names no project.
 
 **Tooling.** `pnpm`, Biome and Nx, never npm. No raw colors outside
 `packages/design-tokens`.
