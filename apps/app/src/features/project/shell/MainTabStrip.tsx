@@ -76,7 +76,7 @@ export function useMainTabCommands({
   const accountId = useAccountId();
   const openInMain = useOpenInMain(projectId, open);
   const chat = useChatNavigation();
-  const { lanes } = useLiveTabs(projectId);
+  const { lanes } = useLiveTabs();
   const lane = lanes[kind];
   const select = useCallback(
     (tab: MainTab, options?: { replace: boolean }) => {
@@ -138,7 +138,7 @@ export function MainTabStrip({
   onNew?: () => void;
 }) {
   const mainKey = mainTab ? mainTabKey(mainTab) : null;
-  const { tabs, unrecorded } = useDrawnTabs(projectId, kind, mainTab);
+  const { tabs, unrecorded } = useDrawnTabs(kind, mainTab);
   const commands = useMainTabCommands({ projectId, kind, open, mainKey, onShowRecents });
   const stripRef = useRef<HTMLDivElement>(null);
   const more = useScrollEdges(stripRef);
@@ -249,7 +249,7 @@ export function MainTabMenu({
   onShowRecents: ProjectRouteCommands["showEditorRecents"];
 }) {
   const mainKey = mainTab ? mainTabKey(mainTab) : null;
-  const { tabs, unrecorded } = useDrawnTabs(projectId, kind, mainTab);
+  const { tabs, unrecorded } = useDrawnTabs(kind, mainTab);
   const commands = useMainTabCommands({ projectId, kind, open, mainKey, onShowRecents });
   // Each document's page has its own band, so the trigger Radix would refocus is gone.
   const focusAfter = useRef<(() => HTMLElement | null) | null>(null);
@@ -345,8 +345,8 @@ function ChatMenuItem({
 }
 
 /** The lane's tabs the strip draws: the live record, then main's item when it lacks one. */
-function useDrawnTabs(projectId: string, kind: MainTabKind, mainTab?: MainTab) {
-  const { lanes, project } = useLiveTabs(projectId);
+function useDrawnTabs(kind: MainTabKind, mainTab?: MainTab) {
+  const { lanes, project } = useLiveTabs();
   const lane = lanes[kind].tabs;
   const mainKey = mainTab ? mainTabKey(mainTab) : null;
   const unrecorded =

@@ -1,5 +1,5 @@
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
-import { useCallback, useMemo } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
 import {
   useAccountId,
   useAccountResourceProjection,
@@ -21,10 +21,35 @@ const PROJECT_SCOPED_SCHEMES: ReadonlySet<string> = new Set(PROJECT_SCOPED_CONTE
  * document's current descriptor (a rename or move made anywhere); `project` does the same for a
  * document that has no tab.
  */
-export function useLiveTabs(projectId: string): {
+export type LiveTabs = {
   lanes: MainTabs;
   project: (document: OpenDocument) => OpenDocument;
-} {
+};
+
+const LiveTabsContext = createContext<LiveTabs | null>(null);
+
+/** The one projection every reader of the tabs shares: it re-projects once per change, not per reader. */
+export function LiveTabsProvider({
+  projectId,
+  children,
+}: {
+  projectId: string;
+  children: ReactNode;
+}) {
+  return (
+    <LiveTabsContext.Provider value={useProjectLiveTabs(projectId)}>
+      {children}
+    </LiveTabsContext.Provider>
+  );
+}
+
+export function useLiveTabs(): LiveTabs {
+  const live = useContext(LiveTabsContext);
+  if (!live) throw new Error("useLiveTabs needs the project's LiveTabsProvider");
+  return live;
+}
+
+function useProjectLiveTabs(projectId: string): LiveTabs {
   const lanes = useMainTabs(useAccountId(), projectId);
   const recorded = lanes.document.tabs;
   const { records, placement } = useAccountResourceProjection(projectId);
@@ -71,5 +96,6 @@ export function useLiveTabs(projectId: string): {
     }),
     [tabs, selected],
   );
-  return { lanes: { document: live, chat: lanes.chat }, project };
+  const chat = lanes.chat;
+  return useMemo(() => ({ lanes: { document: live, chat }, project }), [live, chat, project]);
 }

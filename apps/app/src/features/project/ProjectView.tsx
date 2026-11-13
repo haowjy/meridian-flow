@@ -13,6 +13,7 @@ import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protoco
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type DraftPin, returnDraftsToLive } from "@/client/project-shell/document-views";
+import { LiveTabsProvider } from "@/client/project-shell/live-tabs";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -564,7 +565,9 @@ function HydratedReviewControllers({
     <ChatThreadNavigationProvider onOpenThread={openThread}>
       <MainReviewAddressContext.Provider value={main ? mainAddress : null}>
         <DraftOnlySettlement projectId={props.projectId} />
-        {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
+        <LiveTabsProvider projectId={props.projectId}>
+          {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
+        </LiveTabsProvider>
       </MainReviewAddressContext.Provider>
     </ChatThreadNavigationProvider>
   );

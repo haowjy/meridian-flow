@@ -110,7 +110,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // editor go. A document moving
   // between main and the side passes through here while main's address loads, so it never
   // remounts. A tab the strip leaves out (its document is gone) keeps no host.
-  const { tabs } = useLiveTabs(projectId).lanes.document;
+  const { tabs } = useLiveTabs().lanes.document;
   const keptTab =
     shown.find(
       (tab) =>

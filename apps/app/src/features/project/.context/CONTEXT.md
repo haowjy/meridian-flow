@@ -60,7 +60,7 @@ own band, so the focus follows to the new one. The band's far right holds the ta
 sends main to the lane's empty page unless it is there already. Every control in the band shares the
 chips' centre line. Stored tabs of documents deleted while the window was closed, and of chats the
 project's list no longer holds, are not drawn once the replica or the list has loaded, and a tab
-shows its item's current name and place (`useLiveTabs` in `client/project-shell/live-tabs.ts`, read
+shows its item's current name and place (`useLiveTabs` in `client/project-shell/live-tabs.tsx`, one projection a `LiveTabsProvider` shares, read
 by the strip, the tab list and the side's document list; the record is left alone, so a document
 that comes back has its tab). A tab's Live or Draft view is its document's view, so it is per tab
 already. The phone draws no strip; it records arrivals the same way.

@@ -35,7 +35,7 @@ export function MainModeSwitch({
   if (!open) throw new Error("The Write | Chat switch needs a project route");
   const openInMain = useOpenInMain(projectId, open);
   const { showEditorRecents } = useProjectRouteCommands();
-  const { lanes } = useLiveTabs(projectId);
+  const { lanes } = useLiveTabs();
   const side = useSideItem();
   const beside = side.item;
   const mode: MainMode = chat.display ? "chat" : "write";
