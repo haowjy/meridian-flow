@@ -148,7 +148,7 @@ describe("an update the server refuses whole, storing nothing", () => {
   });
   it("a record with a field only the server writes", () => {
     for (const extra of [
-      { appliedFrom: "x" },
+      { carries: "x" },
       { appliedBy: ME },
       { fromDraft: "my-work" },
       { replaces: "x" },

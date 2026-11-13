@@ -10,11 +10,14 @@ import {
   applyDraft,
   childrenOf,
   discardDraft,
+  discardedBy,
   fingerprint,
   LIVE,
   moveBetweenLists,
+  pendingRecords,
   recordsOf,
   replayView,
+  restoreDiscard,
   sourceRoot,
   type TreeProjection,
   type TreeRecord,
@@ -356,7 +359,7 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
   it("18. applies the second of two renames: the first comes with it", () => {
     const t = reorganisation();
     const { copies } = applyDraft(t.w, "work-1", WRITER, cmd(), [t.renamed2.id]);
-    expect(copies.map((op) => op.appliedFrom)).toEqual([t.renamed1.id, t.renamed2.id]);
+    expect(copies.map((op) => op.carries)).toEqual([t.renamed1.id, t.renamed2.id]);
     expect(t.at(t.ch2)?.displayName).toBe("Third");
   });
 
@@ -371,7 +374,7 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
     void c;
     const before = fingerprint(t.w.view(D));
     const { copies } = applyDraft(t.w, "work-1", WRITER, cmd(), [second.id]);
-    expect(copies.map((op) => op.appliedFrom)).toEqual([first.id, second.id]);
+    expect(copies.map((op) => op.carries)).toEqual([first.id, second.id]);
     expect(fingerprint(t.w.view(D))).toBe(before);
     expect(t.at(a)?.parent).toBe(b);
     t.valid();
@@ -404,9 +407,9 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
     const t = reorganisation();
     const before = fingerprint(t.w.view(LIVE));
     const { copies } = applyDraft(t.w, "work-1", WRITER, cmd(), [t.moved.id]);
-    const applied = copies.find((op) => op.appliedFrom === t.moved.id) as TreeRecord;
+    const applied = copies.find((op) => op.carries === t.moved.id) as TreeRecord;
     const inverse = undoChange(t.w, LIVE, WRITER, applied.id);
-    expect(inverse).toMatchObject({ type: "move", undoes: applied.id });
+    expect(inverse).toMatchObject({ type: "move", undoes: t.moved.id });
     expect(t.at(t.ch1)?.parent).toBe(ROOT);
     // The Arc folder came with the move; undoing the move leaves the folder (undo is per record).
     expect(fingerprint(t.w.view(LIVE))).not.toBe(before);
@@ -479,7 +482,7 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
     // The writer fixes the cause in live, and the same drafted move now lands.
     t.w.move(LIVE, WRITER, b, ROOT);
     expect(t.w.view(D).skipped).toEqual([]);
-    expect(applyDraft(t.w, "work-1", WRITER, cmd()).copies.map((op) => op.appliedFrom)).toEqual([
+    expect(applyDraft(t.w, "work-1", WRITER, cmd()).copies.map((op) => op.carries)).toEqual([
       loop.id,
     ]);
     expect(t.at(a)?.parent).toBe(b);
@@ -496,7 +499,7 @@ describe("found in review", () => {
     const out = t.w.move(D, CHAT, b, ROOT);
     expect(t.w.view(D).skipped).toEqual([{ record: loop.id, reason: "cycle" }]);
     const first = applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(first.copies.map((op) => op.appliedFrom)).toEqual([out.id]);
+    expect(first.copies.map((op) => op.carries)).toEqual([out.id]);
     expect(first.left.map((op) => op.id)).toEqual([loop.id]);
     expect(first.blocked).toBe(false);
     expect(t.at(b)?.parent).toBe(ROOT);
@@ -505,7 +508,7 @@ describe("found in review", () => {
     expect(t.w.view(D).skipped).toEqual([]);
     expect(t.at(a, D)?.parent).toBe(b);
     const second = applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(second.copies.map((op) => op.appliedFrom)).toEqual([loop.id]);
+    expect(second.copies.map((op) => op.carries)).toEqual([loop.id]);
     expect(t.at(a)?.parent).toBe(b);
     t.valid();
   });
@@ -1007,5 +1010,118 @@ describe("part 5: what a document is, and a move between two lists", () => {
     expect(here.w.view(LIVE).trash).toEqual([]);
     expect(there.w.view(LIVE).trash).toEqual([]);
     here.valid();
+  });
+
+  it("32. undoes a drafted create after Discard then restore: takes back the pending copy", () => {
+    const t = start();
+    const ch = t.chapter("Chapter 1", ROOT, D, CHAT);
+    const created = recordsOf(t.doc).toArray()[0] as TreeRecord;
+    const command = cmd();
+    discardDraft(t.w, "work-1", WRITER, command);
+    expect(undoChange(t.w, D, CHAT, created.id)).toBe("superseded");
+    const restored = restoreDiscard(t.w, command, WRITER, "work-1", cmd());
+    if (restored === "superseded") throw new Error("expected copies");
+    const [copy] = restored.copies;
+    expect(copy).toMatchObject({ carries: created.id });
+    const inverse = undoChange(t.w, D, CHAT, created.id);
+    expect(inverse).toMatchObject({ type: "delete", node: ch, undoes: created.id });
+    expect(t.at(ch, D)?.trashed).toBe(true);
+    expect(t.at(ch)).toBeUndefined();
+  });
+
+  it("33. undoes by a drafted record's id after Apply: takes back the live copy", () => {
+    const t = start();
+    const ch = t.chapter("Chapter 1");
+    const renamed = t.w.rename(D, CHAT, ch, "Draft name");
+    const { copies } = applyDraft(t.w, "work-1", WRITER, cmd());
+    expect(copies[0]).toMatchObject({ carries: renamed.id });
+    expect(undoChange(t.w, LIVE, WRITER, renamed.id)).toMatchObject({
+      type: "rename",
+      undoes: renamed.id,
+    });
+    expect(t.at(ch)?.displayName).toBe("Chapter 1");
+    expect(undoChange(t.w, LIVE, WRITER, renamed.id)).toBe("superseded");
+  });
+
+  it("34. restores a Discard into another branch: the copies are pending there", () => {
+    const t = start();
+    const ch = t.chapter("Chapter 1");
+    t.w.rename(D, CHAT, ch, "Draft name");
+    const command = cmd();
+    discardDraft(t.w, "work-1", WRITER, command);
+    const restored = restoreDiscard(t.w, command, WRITER, "work-2", cmd());
+    if (restored === "superseded") throw new Error("expected copies");
+    expect(restored.copies.map((copy) => copy.draft)).toEqual(["work-2"]);
+    expect(t.at(ch, { draft: "work-2" })?.displayName).toBe("Draft name");
+    expect(t.at(ch, D)?.displayName).toBe("Chapter 1");
+  });
+
+  it("35. restores a Discard over a newer draft: the newer record is discarded under the restore, and restoring that brings it back", () => {
+    const t = start();
+    const ch = t.chapter("Chapter 1");
+    t.w.rename(D, CHAT, ch, "Old");
+    const first = cmd();
+    discardDraft(t.w, "work-1", WRITER, first);
+    t.w.rename(D, CHAT, ch, "New");
+    expect(t.at(ch, D)?.displayName).toBe("New");
+    const restore = cmd();
+    expect(restoreDiscard(t.w, first, WRITER, "work-1", restore)).not.toBe("superseded");
+    expect(t.at(ch, D)?.displayName).toBe("Old");
+    expect(pendingRecords(t.doc, "work-1").map((op) => op.type === "rename" && op.name)).toEqual([
+      "Old",
+    ]);
+    const second = discardedBy(t.doc, restore);
+    expect(second.records.map((op) => op.type === "rename" && op.name)).toEqual(["New"]);
+    expect(restoreDiscard(t.w, restore, WRITER, "work-1", cmd())).not.toBe("superseded");
+    expect(t.at(ch, D)?.displayName).toBe("New");
+  });
+
+  it("36. restores a discarded selective Undo: it lifts the delete it undid, not another actor's pending delete", () => {
+    const t = start();
+    const ch = t.chapter("Chapter 1");
+    const mine = t.w.delete(D, CHAT, ch);
+    t.w.author(D, CHAT, { type: "restore", node: ch }, { undoes: mine.id });
+    const second = cmd();
+    discardDraft(t.w, "work-1", WRITER, second);
+    const theirs = t.w.delete(D, CHAT2, ch);
+    const restored = restoreDiscard(t.w, second, WRITER, "work-1", cmd());
+    expect(restored).not.toBe("superseded");
+    expect(pendingRecords(t.doc, "work-1").map((op) => op.id)).toContain(theirs.id);
+    expect(t.at(ch, D)?.trashed).toBe(true);
+  });
+
+  it("37. an intermediate copy's id resolves to the record in force: Undo and Trash restore take it", () => {
+    const t = start();
+    const ch = t.chapter("Chapter 1");
+    const gone = t.chapter("Chapter 2");
+    t.w.rename(D, CHAT, ch, "Draft name");
+    t.w.delete(D, CHAT, gone);
+    const ids: string[][] = [];
+    for (let round = 0; round < 2; round += 1) {
+      const command = cmd();
+      discardDraft(t.w, "work-1", WRITER, command);
+      const restored = restoreDiscard(t.w, command, WRITER, "work-1", cmd());
+      if (restored === "superseded") throw new Error("expected copies");
+      ids.push(restored.copies.map((copy) => copy.id));
+    }
+    const { copies } = applyDraft(t.w, "work-1", WRITER, cmd());
+    expect(copies).toHaveLength(2);
+    // The first round's copies are in no view now: only the second round's copies were applied.
+    expect(undoChange(t.w, LIVE, WRITER, ids[0][0])).toMatchObject({ type: "rename" });
+    expect(t.at(ch)?.displayName).toBe("Chapter 1");
+    expect(t.w.restoreEntry(LIVE, WRITER, ids[0][1])).toMatchObject({ type: "restore" });
+    expect(t.at(gone)?.trashed).toBe(false);
+  });
+
+  it("38. a drafted change that was taken back and Applied leaves the earlier one undoable", () => {
+    const t = start();
+    const ch = t.chapter("Original");
+    const first = t.w.rename(D, CHAT, ch, "First");
+    const second = t.w.rename(D, CHAT, ch, "Second");
+    expect(undoChange(t.w, D, CHAT, second.id)).toMatchObject({ type: "rename" });
+    applyDraft(t.w, "work-1", WRITER, cmd());
+    expect(t.at(ch)?.displayName).toBe("First");
+    expect(undoChange(t.w, LIVE, WRITER, first.id)).toMatchObject({ type: "rename" });
+    expect(t.at(ch)?.displayName).toBe("Original");
   });
 });

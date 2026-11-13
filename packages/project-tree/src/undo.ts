@@ -1,14 +1,12 @@
 import { type Actor, isSourceRoot, type TreeRecord } from "./record.js";
 import { placeIn, type Setter } from "./replay.js";
 import { descendantsOf } from "./shape.js";
-import { listRecords, type View, viewRecords } from "./view.js";
+import { inForce, type View, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
-/** Whether the record is the one that last set the fact `setter` stands for (a live copy answers to its drafted record's id too). */
+/** Whether the record is the one that last set the fact `setter` stands for. */
 const lastSetBy = <Before>(setter: Setter<Before> | undefined, record: TreeRecord) =>
-  setter !== undefined && (setter.id === record.id || setter.appliedFrom === record.id)
-    ? setter
-    : undefined;
+  setter?.id === record.id ? setter : undefined;
 
 /**
  * Undo of one change in the view it belongs to: appends the opposite record (move back, rename
@@ -25,12 +23,13 @@ export function undoChange(
   actor: Actor,
   recordId: string,
 ): TreeRecord | "superseded" | "unknown" {
-  const record = listRecords(writer.doc).find((candidate) => candidate.id === recordId);
-  if (!record) return "unknown";
+  const record = inForce(writer.doc, view, recordId);
+  if (record === "unknown") return record;
+  if (!record) return "superseded";
   const projection = writer.view(view);
   const node = placeIn(projection.nodes, record.node);
   if (!node) return "superseded";
-  const extra = { undoes: record.id };
+  const extra = { undoes: record.carries ?? record.id };
   switch (record.type) {
     case "create":
       if (node.trashed) return "superseded";
@@ -80,18 +79,16 @@ export function undoChange(
     case "delete": {
       // Already lifted, by a restore of the node or by an earlier Undo of this delete.
       const records = viewRecords(writer.doc, view);
-      const at = records.findIndex(
-        (other) => other.id === record.id || other.appliedFrom === record.id,
-      );
+      const at = records.findIndex((other) => other.id === record.id);
       const lifted = records
         .slice(at + 1)
         .some(
           (other) =>
             other.type === "restore" &&
             other.node === record.node &&
-            (other.undoes === undefined || other.undoes === record.id),
+            (other.undoes === undefined || other.undoes === extra.undoes),
         );
-      if (at < 0 || lifted) return "superseded";
+      if (lifted) return "superseded";
       return writer.author(view, actor, { type: "restore", node: record.node }, extra);
     }
     case "restore":

@@ -465,7 +465,7 @@ describe("file tree log: cases found in review", () => {
     discardDraft(a, "w", W, "cmd-1");
     a.rename({ draft: "w" }, A, ch, "Newer name");
     expect(names(a, ROOT, "w")).toEqual(["Newer name"]);
-    const result = restoreDiscard(a, "cmd-1", A);
+    const result = restoreDiscard(a, "cmd-1", A, "w", "restore-1");
     if (result === "superseded") throw new Error("expected copies");
     expect(result.copies).toHaveLength(1);
     expect(result.copies[0]).toMatchObject({
@@ -483,7 +483,7 @@ describe("file tree log: cases found in review", () => {
       records: [{ id: renamed.id }],
       restored: true,
     });
-    expect(restoreDiscard(a, "cmd-1", A)).toBe("superseded");
+    expect(restoreDiscard(a, "cmd-1", A, "w", "restore-2")).toBe("superseded");
   });
 
   it("restoring a Discard leaves out a record whose node was purged, and reports it", () => {
@@ -492,7 +492,7 @@ describe("file tree log: cases found in review", () => {
     const renamed = a.rename({ draft: "w" }, A, arc, "Act 1");
     discardDraft(a, "w", W, "cmd-1");
     a.purge("system", a.delete(LIVE, A, arc));
-    const result = restoreDiscard(a, "cmd-1", A);
+    const result = restoreDiscard(a, "cmd-1", A, "w", "restore-3");
     expect(result).toEqual({ copies: [], leftOut: [renamed] });
   });
 
