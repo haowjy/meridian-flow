@@ -249,3 +249,31 @@ export function levelLinks(readme) {
   }
   return out;
 }
+
+/**
+ * Every level page, the one set the viewer and check.mjs both use: the README's top levels, then
+ * the page each box's `Opens` names. `read(path)` returns a repo file's text. A page opened from
+ * two places keeps the first parent in breadth-first order, so System wins over Code.
+ * Returns { roots: [{ id, title }], levels: Map id → { id, title, path, page, trail } } where
+ * `title` is the name the nav and breadcrumb show (a root's README label; a child's page title
+ * without its parent's "Server: " prefix) and `trail` is the ancestors, root first: [{ title, hash }].
+ */
+export async function loadLevelPages(read) {
+  const roots = levelLinks(await read(`${MAP_DIR}/README.md`));
+  const levels = new Map();
+  const queue = roots.map((r) => ({ id: r.id, path: `${MAP_DIR}/${r.href}`, trail: [], label: r.title }));
+  while (queue.length) {
+    const { id, path, trail, label } = queue.shift();
+    if (levels.has(id)) continue;
+    const page = parsePage(await read(path));
+    const title = label ?? page.title.replace(`${trail.at(-1).page}: `, "");
+    levels.set(id, { id, title, path, page, trail });
+    for (const s of page.sections) {
+      const opens = linksOf(item(s, "Opens")?.value ?? "")[0];
+      const target = opens && resolveHref(path, opens.href).path;
+      if (!target?.startsWith(`${MAP_DIR}/`) || !target.endsWith(".md")) continue;
+      queue.push({ id: target.slice(MAP_DIR.length + 1, -3), path: target, trail: [...trail, { title, page: page.title, hash: `#${id}` }] });
+    }
+  }
+  return { roots: roots.map((r) => ({ id: r.id, title: r.title })), levels };
+}

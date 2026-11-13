@@ -2,19 +2,22 @@
  * The journeys view: journeys/index.md lists the journeys, each journey page is a row of
  * step cards (title, a place for the step's screenshot when it has one, Does, Sees). A card
  * opens its links in the panel: map links go to the map at that box, machine links open in the
- * doc view. The route is `#journeys[/<journey>[/<step number>]]`.
+ * doc view; a link to a flow page opens the flow. Under the journeys, "What happens underneath"
+ * lists the flows (the list items of flows/index.md). The route is `#journeys[/<journey>[/<step number>]]`.
  */
 import { paintInline, route } from "./markdown.js";
 import { item, JOURNEY_KEYS, linksOf, MAP_DIR } from "./pages.js";
 import { el, fetchPage, fetchRepoFile } from "./shell.js";
 
 const JOURNEYS = `${MAP_DIR}/journeys`;
+const FLOWS_INDEX = `${MAP_DIR}/flows/index.md`;
 
 /** Mounts the journeys into `host`; `nav.replace(hash)` changes the address without a history entry. Returns { select(id, step), dispose() }. */
 export async function createJourneys(host, { nav }) {
   const content = el("div", { class: "journeys" });
   const panel = el("aside", { class: "panel", "aria-label": "Selected step" });
   host.replaceChildren(content, panel);
+  const flowLines = (await fetchRepoFile(FLOWS_INDEX)).split("\n").filter((l) => l.startsWith("- "));
   const hrefs = [...new Set(linksOf(await fetchRepoFile(`${JOURNEYS}/index.md`)).map((l) => l.href))];
   const journeys = await Promise.all(
     hrefs.filter((h) => /^[\w-]+\.md$/.test(h) && h !== "index.md").map(async (href) => ({ id: href.slice(0, -3), path: `${JOURNEYS}/${href}`, page: await fetchPage(`${JOURNEYS}/${href}`) })),
@@ -28,6 +31,14 @@ export async function createJourneys(host, { nav }) {
         paragraph(j.page.intro, j.path),
         el("div", { class: "steps", tabindex: "0" }, j.page.sections.map((s, i) => card(j, s, i))),
       ),
+    ),
+  );
+  content.append(
+    el(
+      "section",
+      { class: "journey underneath" },
+      el("h2", null, "What happens underneath"),
+      el("ul", null, flowLines.map((l) => { const li = el("li"); paintInline(li, l.slice(2), FLOWS_INDEX); return li; })),
     ),
   );
   enablePan();
@@ -72,16 +83,13 @@ export async function createJourneys(host, { nav }) {
     }
     content.querySelector(`[data-step="${id}/${n}"]`)?.scrollIntoView({ inline: "center", block: "nearest" });
     const groups = JOURNEY_KEYS.flatMap((key) => {
-      const value = item(section, key)?.value;
-      if (!value || key === "Shot") return [];
-      return [
-        el(
-          "section",
-          null,
-          el("h3", null, key === "Map" ? "On the map" : "State machines"),
-          el("ul", null, linksOf(value).map((l) => el("li", null, el("a", { href: route(journey.path, l.href)?.href ?? l.href }, l.label)))),
-        ),
-      ];
+      const links = linksOf(item(section, key)?.value ?? "");
+      if (key === "Shot") return [];
+      const isFlow = (l) => l.href.includes("flows/");
+      const lists = key === "Map" ? [["On the map", links.filter((l) => !isFlow(l))], ["What happens underneath", links.filter(isFlow)]] : [["State machines", links]];
+      return lists
+        .filter(([, ls]) => ls.length)
+        .map(([title, ls]) => el("section", null, el("h3", null, title), el("ul", null, ls.map((l) => el("li", null, el("a", { href: route(journey.path, l.href)?.href ?? l.href }, l.label))))));
     });
     panel.replaceChildren(el("div", { class: "panel-body" }, el("h2", null, section.id), el("p", { class: "sub" }, journey.page.title), ...groups));
   }

@@ -294,10 +294,9 @@ function Flow({ page, path, selectedId, onChoose, labelSize }) {
 
 /**
  * Mounts the map of `page` (parsed, at repo `path`) into `host`. `nav.go(hash)` opens another
- * route; `nav.replace(hash)` changes the address without a history entry. `parent` is the box
- * that opens this page, if any: { title, hash }. Returns { select(id), dispose() }.
+ * route; `nav.replace(hash)` changes the address without a history entry. Returns { select(id), dispose() }.
  */
-export function createMap(host, { page, path, parent, nav }) {
+export function createMap(host, { page, path, nav }) {
   let selected = null;
   const canvas = el("div", { class: "canvas" });
   const diagram = el("div", { class: "diagram", id: "map-diagram" });
@@ -320,7 +319,7 @@ export function createMap(host, { page, path, parent, nav }) {
     return el(
       "details",
       { class: "intro", open: !matchMedia("(max-width: 719px)").matches },
-      el("summary", null, el("strong", null, page.title), parent && el("a", { class: "up", href: parent.hash }, `↑ ${parent.title}`)),
+      el("summary", null, el("strong", null, page.title)),
       text,
       more,
       el(

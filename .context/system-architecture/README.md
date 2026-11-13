@@ -11,18 +11,21 @@ holds no content.
 ## The pages
 
 Each level is a picture of **parts and the flow between them**, not of imports: at most about 12
-boxes, arrows that say what moves, the main path numbered. A box that stands for several parts is a
+boxes, arrows that say what moves. Where there is one main path it is numbered (System, Server, App, www); on Code an arrow means "uses", so nothing is. A box that stands for several parts is a
 group and opens a page of its own.
 
 - [System](system.md): what runs when a writer uses it, and what happens when they send a message.
 - [Code](code.md): the apps and packages as layers.
-- [Server](server.md): `apps/server/server`, in groups of domains by the writer work they serve.
-- [App](app.md): `apps/app/src`: routes, `core`, `client`, `components` and the features.
 
-Child pages (a group's members) are opened from their group and sit beside these as
-`server-<group>.md` and `app-<group>.md`.
+Everything below those two is reached by drilling in. The `server` and `app` boxes on System and on
+Code open [Server](server.md) (`apps/server/server`, in groups of domains by the writer work they
+serve) and [App](app.md) (`apps/app/src`: routes, `core`, `client`, `components` and the features);
+their groups open the child pages `server-<group>.md` and `app-<group>.md`. Any box with an `Opens`
+line opens a level page. A page's parent is the page whose box opens it, System before Code, and the
+viewer shows the trail (`System › Server › conversation`) under the nav.
 
-[Flows](flows/index.md): end-to-end sequences, one page each. [Dependencies](dependencies.md): the
+[Flows](flows/index.md): end-to-end sequences, one page each, linked from the journey step each one
+traces and listed under the journeys as "What happens underneath". [Dependencies](dependencies.md): the
 rules the code is meant to keep and the places it breaks them. [Journeys](journeys/index.md): what a
 writer does and sees, one step per card, linked to the boxes and state machines behind it. State
 machine pages sit in `.context/` beside the code they describe and are listed in the
@@ -33,6 +36,10 @@ machine pages sit in `.context/` beside the code they describe and are listed in
 - **A change that adds, removes or moves something the map names** (a package, a domain, a feature
   directory, or a boundary between them) **updates the map in the same commit.** So does a change
   that adds a state machine page: list it in the index, then on a box.
+- **Adding a service** (a new directory under `apps/`) takes one box on `system.md` with an `Opens`
+  line, and one page named after the app (`apps/worker` → `worker.md`) whose boxes cover its code;
+  its groups' pages are `worker-<group>.md`. `pnpm check:architecture` fails until both exist.
+  `tools/` holds no services and is outside this rule.
 - **A change that changes a writer journey updates that journey in the same commit.**
 - **A change that adds an import breaking a rule in `dependencies.md` adds a row there**, and one
   that removes the last such import deletes the row.
@@ -135,10 +142,10 @@ the items `Map` (links to `#<box id>` on a level page), `Machines` and later `Sh
 
 - A Mermaid line the format doesn't allow; a box without a section or a section without a box; a
   `Kind` that isn't the box's class; an unknown node kind; an arrow with a kind prefix or an import
-  arrow; numbered arrows out of order; a group with no `Opens`; a level page nothing lists or opens;
+  arrow; numbered arrows out of order (a page may have none); a group with no `Opens`; a level page nothing lists or opens; an `apps/*` directory with no System box that covers it and opens its page;
   a note that links to nothing, joins two notes or two boxes, or has a section.
 - A path that doesn't exist; a `Paths` line on a group; a link whose file or `#id` doesn't resolve, in every page here and in
-  the journeys and flows; a journey `Map` link that isn't a box.
+  the journeys and flows; a journey `Map` link that isn't a box or a flow; a flow no journey step links.
 - A flow participant that isn't one box (an id on two pages needs `<page>-<id>`); a flow that isn't in `flows/index.md` or has no numbered
   steps.
 - An app, package (with a `package.json`), server domain or app feature directory that no box's

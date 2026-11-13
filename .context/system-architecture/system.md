@@ -82,6 +82,7 @@ One process serves `/api/*`, the thread socket at `/api/threads/ws` and the Yjs 
 - Paths: `apps/www/src/router.tsx`, `apps/www/src/routes/index.tsx`
 - Docs: [www AGENTS](../../apps/www/AGENTS.md)
 - Machines: [landing](../../apps/www/src/features/landing/.context/state-machines.md)
+- Opens: [www](www.md)
 
 ## postgres
 

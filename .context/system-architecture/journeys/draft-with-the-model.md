@@ -20,7 +20,7 @@ Does: opens a chapter from the project and switches to Write mode.
 
 Sees: the chapter in a tab in the main area, and a side view with the current chat or a new chat beside it.
 
-- Map: [project](../app.md#project), [editor](../app-documents.md#editor), [core-editor](../app-core.md#core-editor)
+- Map: [project](../app.md#project), [editor](../app-documents.md#editor), [core-editor](../app-core.md#core-editor), [Opening a document](../flows/opening-a-document.md)
 - Machines: [Document session status](../../../apps/app/src/core/editor/.context/state-machines.md)
 
 ## Ask for an edit
@@ -29,7 +29,7 @@ Does: types the request in the message box and sends it. A chip beside the box r
 
 Sees: the chat opens at once with the message. The send does not wait for the server, and a failure shows on the chat.
 
-- Map: [browser](../system.md#browser), [chat](../app-conversation.md#chat), [client](../app.md#client), [runtime](../server-conversation.md#runtime)
+- Map: [browser](../system.md#browser), [chat](../app-conversation.md#chat), [client](../app.md#client), [runtime](../server-conversation.md#runtime), [A message becomes an edit](../flows/message-becomes-edit.md)
 - Machines: [Chat submissions](../../../apps/app/src/client/chat-submissions/.context/state-machines.md), [User-turn admission](../../../apps/server/server/domains/runtime/.context/state-machines.md)
 
 ## Watch the reply

@@ -52,7 +52,7 @@ button {
 
 .app {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   height: 100dvh;
 }
 
@@ -204,8 +204,32 @@ button {
   font-size: 15px;
 }
 
-.intro .up {
-  font-size: 12px;
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-size: 13px;
+  color: var(--color-muted-foreground);
+}
+
+.crumbs[hidden] {
+  display: none;
+}
+
+.crumbs a {
+  color: var(--color-muted-foreground);
+}
+
+.crumbs a:hover {
+  color: var(--color-foreground);
+}
+
+.crumbs [aria-current] {
+  color: var(--color-foreground);
+  font-weight: 600;
 }
 
 .intro p {
@@ -874,6 +898,10 @@ button {
   .topbar {
     flex-wrap: wrap;
     padding: 8px 12px;
+  }
+
+  .crumbs {
+    padding: 6px 12px;
   }
 
   .levels {

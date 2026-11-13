@@ -18,7 +18,7 @@ editing a page. The check passing is not the test.
   `map.js` is the Map view of a level page (React Flow; `layout.js` places the boxes and `routes.js`
   draws the arrows and places their labels, both without DOM); `journeys.js` is the journeys;
   `shell.js` is the DOM helper, theme and fetching.
-- **Routes** are the URL hash: `#<level>[/<box>]`, `#flows[/<flow>]`, `#machines`, `#dependencies`,
+- **Routes** are the URL hash: `#<level>[/<box>]`, `#flows/<flow>` (a flow, under Journeys), `#machines`, `#dependencies`,
   `#journeys[/<journey>[/<step>]]`, `#doc/<encoded path>[/<heading>]`. A route is a history entry, except
   choosing a box or a journey step. Opening a doc layers it over the page, so Back (the button or
   the browser's) steps back through the docs and ends on the page and box the reader came from, with the
@@ -41,8 +41,9 @@ editing a page. The check passing is not the test.
 - A flow's participants are clickable (`resolveParticipant` in `pages.js`, shared with the check): they open the box on the map (they set the view to Map).
 - `fetchRepoFile` checks the URL the browser will request, not the path string, and the doc route
   accepts only a `.context` `.md` path with no `..`, `.` or empty segment: both come from the address bar.
-- The nav is the `## The pages` list in README.md (`levelLinks` in `pages.js`) plus Flows, State
-  machines, Journeys and Dependencies.
+- The nav is the `## The pages` list in README.md (System, Code) plus Journeys, State machines and
+  Dependencies. Every other level page is reached by a box's `Opens`; `loadLevelPages` in `pages.js`
+  builds the set and each page's breadcrumb trail, and the viewer and `check.mjs` both call it.
 - `styles/tokens.css` holds literal colour values, an exception to "no raw colors outside
   `packages/design-tokens`": the light palette sits in a Tailwind `@theme` block a browser ignores, so
   the page needs its own copy, and `check.mjs` keeps it equal to `design-tokens`. Nothing else here may

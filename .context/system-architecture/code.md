@@ -1,8 +1,7 @@
 # Code
 
-The apps, and the packages under them. An arrow means "calls code from". The numbers follow a chat
-message: the app follows the chat (1), and the server applies the model's edits (2) and saves them
-(3). No package imports an app, and `contracts`, `prosemirror-schema`, `yjs-inspect` and
+The apps, and the packages under them. An arrow means "calls code from" (it is not a flow, so
+nothing is numbered). No package imports an app, and `contracts`, `prosemirror-schema`, `yjs-inspect` and
 `design-tokens` import no workspace code. Where the code breaks its written rules is on
 [dependencies](dependencies.md). `./mf` lives in `tools/`, outside these layers: see
 [system](system.md#mf).
@@ -21,10 +20,10 @@ flowchart TB
   contracts["contracts<br/><small>the shapes that cross the wire</small>"]:::package
   design-tokens["design-tokens<br/><small>the one place for colours</small>"]:::package
   yjs-inspect["yjs-inspect<br/><small>safe summaries of sync traffic</small>"]:::package
-  app -->|"1. follows a chat with"| thread-client
+  app -->|"follows a chat with"| thread-client
   app -->|"keeps documents locally with"| resource-replica
-  server -->|"2. applies the model's edits with"| agent-edit
-  server -->|"3. saves everything with"| database
+  server -->|"applies the model's edits with"| agent-edit
+  server -->|"saves everything with"| database
   agent-edit -->|"reads and writes text with"| markup
   markup -->|"builds documents from"| prosemirror-schema
   database -->|"types its columns with"| contracts
@@ -66,6 +65,7 @@ Imports only `design-tokens`.
 - Paths: `apps/www/src`
 - Docs: [www AGENTS](../../apps/www/AGENTS.md)
 - Machines: [landing](../../apps/www/src/features/landing/.context/state-machines.md)
+- Opens: [www](www.md)
 
 ## contracts
 

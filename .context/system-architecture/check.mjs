@@ -9,7 +9,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readImports, under } from "./imports.mjs";
-import { item, JOURNEY_KEYS, levelLinks, linksOf, MAP_DIR, MAP_KEYS, NODE_KINDS, parsePage, pathsOf, resolveHref, resolveParticipant, slug, STATE_MACHINES_INDEX, withoutFences } from "./js/pages.js";
+import { item, JOURNEY_KEYS, linksOf, loadLevelPages, MAP_DIR, MAP_KEYS, NODE_KINDS, parsePage, pathsOf, resolveHref, resolveParticipant, slug, STATE_MACHINES_INDEX, withoutFences } from "./js/pages.js";
 import { blocks, expectedTokens, MIRRORED } from "./tokens.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -74,7 +74,6 @@ for (const path of pages.keys()) {
 const isLevelPath = (path) => levelFiles.some((f) => `${MAP_DIR}/${f}` === path);
 /** Every box on every page: { id, page, kind, paths }. */
 const boxes = [];
-const opened = new Set();
 
 for (const { file, path, page } of levels) {
   if (!page.mermaid) {
@@ -130,6 +129,7 @@ for (const { file, path, page } of levels) {
     else if (NODE_KINDS.includes(node.kind) && kind.value !== node.kind) fail(`${file}:${kind.line}`, `${s.id} says Kind: ${kind.value} but the diagram's class is ${node.kind}.`);
     if (!s.paragraphs.length) fail(where, "no sub line (the first paragraph).");
     const paths = [];
+    const opens = [];
     for (const it of s.items) {
       if (it.key === "Paths" && node.kind === "group") fail(`${file}:${it.line}`, `${s.id} is a group: it takes no Paths; its child page's boxes cover the code.`);
       else if (it.key === "Paths") {
@@ -142,13 +142,13 @@ for (const { file, path, page } of levels) {
         for (const l of linksOf(it.value)) {
           const target = resolveHref(path, l.href).path;
           if (target && !isLevelPath(target)) fail(`${file}:${it.line}`, `${s.id} Opens ${l.href}, which isn't a level page.`);
-          else if (target) opened.add(target);
+          else if (target) opens.push(target);
         }
       }
     }
     if (node.kind === "group" && !item(s, "Opens")) fail(where, `a group box needs "Opens: [label](child.md)".`);
     if (node.kind === "context" && !item(s, "See")) fail(where, `a context box needs "See: [label](page.md#id)".`);
-    boxes.push({ id: s.id, page: file, path, kind: node.kind, paths });
+    boxes.push({ id: s.id, page: file, path, kind: node.kind, paths, opens });
   }
 }
 const levelNodes = levels.map((l) => ({ id: l.file.slice(0, -3), nodes: l.page.mermaid?.nodes ?? [] }));
@@ -158,12 +158,14 @@ const levelNodes = levels.map((l) => ({ id: l.file.slice(0, -3), nodes: l.page.m
 const indexLinks = linksOf(read(`${MAP_DIR}/journeys/index.md`)).map((l) => resolveHref(`${MAP_DIR}/journeys/index.md`, l.href).path);
 for (const j of journeys) if (!indexLinks.includes(j.path)) fail("journeys/index.md", `doesn't link ${j.file}.`);
 const readme = read(`${MAP_DIR}/README.md`);
-const listed = levelLinks(readme).map((l) => l.href);
+// The viewer's own loader, so both agree on which level pages exist and what opens them.
+const reachable = (await loadLevelPages(async (p) => (existsSync(join(repo, p)) ? read(p) : ""))).levels;
 for (const l of levels)
-  if (!listed.includes(l.file) && !opened.has(l.path)) fail(l.file, "is neither listed in README.md's pages nor opened by a group box.");
+  if (![...reachable.values()].some((r) => r.path === l.path)) fail(l.file, "is neither listed in README.md's pages nor opened by a box's Opens.");
 for (const target of ["flows/index.md", "dependencies.md", "journeys/index.md"])
   if (!linksOf(readme).some((l) => l.href === target)) fail("README.md", `doesn't link ${target}.`);
 
+const traced = new Set();
 for (const { file, path, page } of journeys) {
   if (!page.sections.length) fail(file, "has no steps (## sections).");
   for (const s of page.sections) {
@@ -174,8 +176,13 @@ for (const { file, path, page } of journeys) {
       if (it.key !== "Map") continue;
       for (const l of linksOf(it.value)) {
         const target = resolveHref(path, l.href);
+        const flow = flows.find((f) => f.path === target.path);
+        if (flow) {
+          traced.add(flow.path);
+          continue;
+        }
         const level = levels.find((lv) => lv.path === target.path);
-        if (!level) fail(`${file}:${it.line}`, `step "${s.id}" Map link ${l.href} isn't a level page.`);
+        if (!level) fail(`${file}:${it.line}`, `step "${s.id}" Map link ${l.href} isn't a level page or a flow.`);
         else if (!target.fragment || !level.page.mermaid?.nodes.some((n) => n.id === target.fragment))
           fail(`${file}:${it.line}`, `step "${s.id}" Map link ${l.href} must end in #<box id>.`);
       }
@@ -188,6 +195,7 @@ for (const { file, path, page } of journeys) {
 const flowIndexLinks = linksOf(read(`${MAP_DIR}/flows/index.md`)).map((l) => resolveHref(`${MAP_DIR}/flows/index.md`, l.href).path);
 for (const f of flows) {
   if (!flowIndexLinks.includes(f.path)) fail("flows/index.md", `doesn't link ${f.file}.`);
+  if (!traced.has(f.path)) fail(f.file, "is not linked from any journey step's Map line, so the viewer can't reach it from Journeys.");
   const m = f.page.mermaid;
   if (m?.type !== "sequence") fail(f.file, "has no sequenceDiagram.");
   for (const p of m?.participants ?? []) {
@@ -250,6 +258,14 @@ const subdirectories = (path) => [
   ),
 ];
 const hasManifest = (path) => existsSync(join(repo, path, "package.json"));
+// A service is an app directory: system.md has a box whose Paths are inside it and whose Opens is the
+// page named after it (apps/www → www.md). tools/ holds no services and is outside this rule.
+for (const directory of subdirectories("apps")) {
+  const name = directory.slice("apps/".length);
+  const page = `${MAP_DIR}/${name}.md`;
+  if (!boxes.some((b) => b.page === "system.md" && b.opens.includes(page) && b.paths.some((p) => p.startsWith(`${directory}/`) || p === directory)))
+    fail("system.md", `${directory} needs a box on system.md whose Paths are inside it and whose "Opens" is ${name}.md, a page of its own boxes (README.md says how to add a service).`);
+}
 for (const directory of [
   ...subdirectories("apps"),
   ...subdirectories("packages").filter(hasManifest),

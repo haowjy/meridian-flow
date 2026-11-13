@@ -42,7 +42,7 @@ Does: waits, or keeps working. Navigating away does not stop it.
 
 Sees: upload progress. The server converts the files out of sight, and then every imported folder and document appears in the project's tree at once. The ends are "Import another" and "Import didn't finish".
 
-- Map: [import (app)](../app-library.md#import), [import (server)](../server-files.md#import), [context](../server-documents.md#context), [objectstore](../system.md#objectstore)
+- Map: [import (app)](../app-library.md#import), [import (server)](../server-files.md#import), [context](../server-documents.md#context), [objectstore](../system.md#objectstore), [An import](../flows/an-import.md)
 - Machines: [Import and import entry](../../../apps/server/server/domains/import/.context/state-machines.md), [Import creation and upload phase](../../../apps/app/src/features/import/.context/state-machines.md)
 
 ## Open a chapter
@@ -51,7 +51,7 @@ Does: clicks a chapter in the Manuscript tree.
 
 Sees: it opens in a tab in the main area.
 
-- Map: [project](../app.md#project), [core-resources](../app-core.md#core-resources), [context](../server-documents.md#context)
+- Map: [project](../app.md#project), [core-resources](../app-core.md#core-resources), [context](../server-documents.md#context), [Opening a document](../flows/opening-a-document.md)
 - Machines: [Live document binding](../../../apps/app/src/features/project/context/.context/state-machines.md), [Resource lifecycle](../../../packages/resource-replica/.context/state-machines.md)
 
 ## Write

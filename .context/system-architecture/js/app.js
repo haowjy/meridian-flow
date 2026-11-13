@@ -1,8 +1,8 @@
 /*
- * The viewer: one page, one nav (System, Code, Server, App, Flows, State machines, Journeys,
- * Dependencies). The route is the URL hash:
+ * The viewer: one page, one nav (System, Code, Journeys, State machines, Dependencies) and a
+ * breadcrumb under it on every page below the top. The route is the URL hash:
  *   #<level>[/<box>]        a level page, as a Map or as Read (Markdown); the header toggles
- *   #flows[/<flow>]         #machines   #dependencies   #journeys[/<journey>[/<step>]]
+ *   #flows/<flow>           #machines   #dependencies   #journeys[/<journey>[/<step>]]
  *   #doc/<path>[/<heading>] any .context page, full window over whatever was open
  * Every route is a history entry except choosing a box or step, so the browser's Back and the
  * Back button walk the same trail.
@@ -10,20 +10,19 @@
 import { createJourneys } from "./journeys.js";
 import { createMap } from "./map.js";
 import { isDocPath, loadFailure, paintMarkdown } from "./markdown.js";
-import { item, linksOf, MAP_DIR, STATE_MACHINES_INDEX, resolveHref, resolveParticipant, sourceUrl } from "./pages.js";
-import { currentTheme, el, fetchPage, fetchRepoFile, loadLevels, onThemeChange, pinTheme } from "./shell.js";
+import { loadLevelPages, MAP_DIR, STATE_MACHINES_INDEX, resolveParticipant, sourceUrl } from "./pages.js";
+import { currentTheme, el, fetchPage, fetchRepoFile, onThemeChange, pinTheme } from "./shell.js";
 
 const root = document.getElementById("root");
 const host = el("main", { class: "view" });
 const MODE_KEY = "meridian-architecture-view";
 const READ_PAGES = {
-  flows: `${MAP_DIR}/flows/index.md`,
   machines: STATE_MACHINES_INDEX,
   dependencies: `${MAP_DIR}/dependencies.md`,
 };
 
-/** Level id → { id, title, path, page, parent }: the README's pages and the child pages their groups open. */
-const levels = new Map();
+/** Level id → { id, title, path, page, trail }: every level page (see loadLevelPages). */
+let levels = new Map();
 let navLevels = [];
 let mode = "map";
 try {
@@ -37,7 +36,7 @@ try {
 function parseHash() {
   const [head, a, b] = location.hash.slice(1).split("/").map(decodeURIComponent);
   if (head === "doc") return { kind: "doc", path: a ?? "", fragment: b };
-  if (head === "flows" && a) return { kind: "read", key: `flows/${a}`, path: `${MAP_DIR}/flows/${a}.md`, section: "flows" };
+  if (head === "flows") return a ? { kind: "read", key: `flows/${a}`, path: `${MAP_DIR}/flows/${a}.md`, section: "journeys", flow: true } : { kind: "journeys" };
   if (head in READ_PAGES) return { kind: "read", key: head, path: READ_PAGES[head], section: head, fragment: a };
   if (head === "journeys") return { kind: "journeys", journey: a, step: b };
   const id = head || navLevels[0].id;
@@ -134,7 +133,7 @@ async function mount(r) {
     if (!level) throw new Error(`No map page called "${r.id}".`);
     if (mode === "map") {
       host.className = "view workspace";
-      const map = await createMap(host, { page: level.page, path: level.path, parent: level.parent, nav });
+      const map = await createMap(host, { page: level.page, path: level.path, nav });
       const update = (route) => map.select(route.box);
       update(r);
       return { update, dispose: map.dispose };
@@ -259,9 +258,8 @@ const chrome = {};
 function buildChrome() {
   const links = [
     ...navLevels.map((l) => ({ section: l.id, href: `#${l.id}`, label: l.title })),
-    { section: "flows", href: "#flows", label: "Flows" },
-    { section: "machines", href: "#machines", label: "State machines" },
     { section: "journeys", href: "#journeys", label: "Journeys" },
+    { section: "machines", href: "#machines", label: "State machines" },
     { section: "dependencies", href: "#dependencies", label: "Dependencies" },
   ];
   chrome.links = new Map(links.map((l) => [l.section, el("a", { href: l.href }, l.label)]));
@@ -272,7 +270,8 @@ function buildChrome() {
   theme.addEventListener("click", () => pinTheme(currentTheme() === "dark" ? "light" : "dark"));
   onThemeChange(sync);
   sync();
-  return el("header", { class: "topbar" }, el("nav", { class: "levels", "aria-label": "Sections" }, [...chrome.links.values()]), chrome.toggle, theme);
+  chrome.crumbs = el("nav", { class: "crumbs", "aria-label": "Breadcrumb", hidden: true });
+  return [el("header", { class: "topbar" }, el("nav", { class: "levels", "aria-label": "Sections" }, [...chrome.links.values()]), chrome.toggle, theme), chrome.crumbs];
 }
 
 function setMode(next) {
@@ -284,42 +283,39 @@ function setMode(next) {
 
 /** The nav's current entry, and the Read | Map toggle on level pages. */
 function syncChrome(r) {
-  const section = r.kind === "level" ? (levels.get(r.id)?.parent?.section ?? r.id) : r.kind === "journeys" ? "journeys" : r.section;
+  const level = r.kind === "level" ? levels.get(r.id) : null;
+  const section = level ? (level.trail[0]?.hash.slice(1).split("/")[0] ?? r.id) : r.kind === "journeys" ? "journeys" : r.section;
   for (const [id, a] of chrome.links) {
     if (id === section) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   }
   chrome.toggle.hidden = r.kind !== "level";
   for (const b of chrome.modes) b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
-  document.title = `${r.kind === "level" ? (levels.get(r.id)?.page.title ?? r.id) : "Architecture"} · Meridian architecture`;
+  document.title = `${level?.page.title ?? "Architecture"} · Meridian architecture`;
+  syncCrumbs(r, level);
+}
+
+/** `System › Server › conversation` for a level below the top; `Journeys › <flow>` for a flow. */
+function syncCrumbs(r, level) {
+  const mine = seq;
+  const show = (trail, current) => {
+    chrome.crumbs.hidden = !trail.length;
+    chrome.crumbs.replaceChildren(...trail.flatMap((t) => [el("a", { href: t.hash }, t.title), "›"]), el("span", { "aria-current": "page" }, current));
+  };
+  chrome.crumbs.hidden = true;
+  if (level?.trail.length) show(level.trail, level.title);
+  else if (r.flow)
+    fetchPage(r.path)
+      .then((page) => mine === seq && show([{ title: "Journeys", hash: "#journeys" }], page.title))
+      .catch(() => {});
 }
 
 // ---- Start ----
 
-/** Loads the README's pages and, through their groups' Opens, the child pages. */
-async function loadLevelPages() {
-  navLevels = await loadLevels();
-  const queue = navLevels.map((l) => ({ ...l, parent: null }));
-  while (queue.length) {
-    const level = queue.shift();
-    if (levels.has(level.id)) continue;
-    level.page = await fetchPage(level.path);
-    level.title = level.page.title;
-    levels.set(level.id, level);
-    for (const s of level.page.sections) {
-      const opens = linksOf(item(s, "Opens")?.value ?? "")[0];
-      const target = opens && resolveHref(level.path, opens.href).path;
-      if (!target?.startsWith(`${MAP_DIR}/`) || !target.endsWith(".md")) continue;
-      const id = target.slice(MAP_DIR.length + 1, -3);
-      queue.push({ id, title: id, path: target, parent: { title: level.page.title, hash: `#${level.id}/${encodeURIComponent(s.id)}`, section: level.parent?.section ?? level.id } });
-    }
-  }
-}
-
 async function main() {
-  await loadLevelPages();
+  ({ roots: navLevels, levels } = await loadLevelPages(fetchRepoFile));
   if (location.hash.startsWith("#doc/") && !history.state) history.replaceState(stateNow(), "");
-  root.replaceChildren(buildChrome(), host);
+  root.replaceChildren(...buildChrome(), host);
   await render();
 }
 

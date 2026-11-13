@@ -145,14 +145,14 @@ export const isDocPath = (path) => isContextPage(path) && !path.includes("\\") &
 /** The hash that opens a repo page in the doc view. */
 export const docHash = (path, fragment) => `#doc/${encodeURIComponent(path)}${fragment ? `/${encodeURIComponent(fragment)}` : ""}`;
 
-/** Where a link in the page at `path` goes: { href, external? }, or null to leave it. Map pages are `#<page>[/<box>]`, `#flows/<id>`, `#journeys/<id>`, `#machines`; other .context pages open in the doc view. */
+/** Where a link in the page at `path` goes: { href, external? }, or null to leave it. Map pages are `#<page>[/<box>]`, `#flows/<id>` (a flow, under Journeys), `#journeys/<id>`, `#machines`; other .context pages open in the doc view. */
 export function route(path, href) {
   const { path: target, fragment, url } = resolveHref(path, href);
   if (url) return { href: url, external: true };
   if (target === null) return null;
   const inMap = target.startsWith(`${MAP_DIR}/`) ? target.slice(MAP_DIR.length + 1) : null;
   const id = (name) => /^([\w-]+)\.md$/.exec(name)?.[1];
-  if (inMap === "flows/index.md") return { href: "#flows" };
+  if (inMap === "flows/index.md") return { href: "#journeys" };
   if (inMap === "journeys/index.md") return { href: "#journeys" };
   if (inMap?.startsWith("flows/") && id(inMap.slice(6))) return { href: `#flows/${id(inMap.slice(6))}` };
   if (inMap?.startsWith("journeys/") && id(inMap.slice(9))) return { href: `#journeys/${id(inMap.slice(9))}` };

@@ -1,5 +1,5 @@
 /* What both viewers share: DOM helper, theme, page fetching, and the top bar. */
-import { levelLinks, MAP_DIR, parsePage } from "./pages.js";
+import { parsePage } from "./pages.js";
 
 /** Where the repo root is, from the map's directory (`.context/system-architecture/`). */
 export const REPO_ROOT = "../../";
@@ -34,12 +34,6 @@ export async function fetchRepoFile(path) {
 }
 
 export const fetchPage = async (path) => parsePage(await fetchRepoFile(path));
-
-/** The map's main level pages, from the links in README.md: [{ id, title, path }]. */
-export async function loadLevels() {
-  const links = levelLinks(await fetchRepoFile(`${MAP_DIR}/README.md`));
-  return links.map(({ id, title, href }) => ({ id, title, path: `${MAP_DIR}/${href}` }));
-}
 
 // ---- Theme: follows the system until the reader pins one ----
 
