@@ -4,8 +4,9 @@
  * group opens its child page. Boxes drag and the arrows follow; where they were put is remembered
  * for this page on this computer.
  */
-import { layoutLevel, READABLE_ZOOM, fitZoom } from "./layout.js";
+
 import { storageKey } from "./config.js";
+import { fitZoom, layoutLevel, READABLE_ZOOM } from "./layout.js";
 import { paintInline, pathLink, route } from "./markdown.js";
 import { item, linksOf, NODE_KINDS, pathsOf } from "./pages.js";
 import { routeLevel } from "./routes.js";
@@ -55,7 +56,11 @@ function saveLayout(path, positions) {
 function labelMeasurer() {
   const context = document.createElement("canvas").getContext("2d");
   const styleOf = (className) => {
-    const probe = el("div", { class: className, style: "position:absolute;visibility:hidden" }, "x");
+    const probe = el(
+      "div",
+      { class: className, style: "position:absolute;visibility:hidden" },
+      "x",
+    );
     document.body.append(probe);
     const s = getComputedStyle(probe);
     const px = (v) => Number.parseFloat(v) || 0;
@@ -78,12 +83,16 @@ function labelMeasurer() {
     const lines = [];
     for (const word of edge.label.split(/\s+/)) {
       const tried = lines.length ? `${lines.at(-1)} ${word}` : word;
-      if (lines.length && context.measureText(tried).width <= LABEL_WRAP) lines[lines.length - 1] = tried;
+      if (lines.length && context.measureText(tried).width <= LABEL_WRAP)
+        lines[lines.length - 1] = tried;
       else lines.push(word);
     }
     const text = Math.max(...lines.map((l) => context.measureText(l).width));
     // Two pixels spare, so the browser's own wrapping never breaks a line the canvas kept whole.
-    const size = { width: Math.ceil(text) + 2 + style.padX, height: Math.ceil(lines.length * style.line + style.padY) };
+    const size = {
+      width: Math.ceil(text) + 2 + style.padX,
+      height: Math.ceil(lines.length * style.line + style.padY),
+    };
     cache.set(key, size);
     return size;
   };
@@ -103,10 +112,20 @@ function Box({ data, id }) {
   const { selectedId, linked } = useContext(Selection);
   const { node } = data;
   const { name, role } = parts(node.label);
-  const state = selectedId === null ? "" : id === selectedId ? "is-selected" : linked.has(id) ? "is-linked" : "is-dim";
+  const state =
+    selectedId === null
+      ? ""
+      : id === selectedId
+        ? "is-selected"
+        : linked.has(id)
+          ? "is-linked"
+          : "is-dim";
   return h(
     "div",
-    { className: `card kind-${node.kind} ${state}`, title: data.opens ? "Opens its own page" : undefined },
+    {
+      className: `card kind-${node.kind} ${state}`,
+      title: data.opens ? "Opens its own page" : undefined,
+    },
     ...handles(),
     h("div", { className: "card-label" }, name, data.opens ? " ▸" : ""),
     role ? h("div", { className: "card-sub" }, role) : null,
@@ -115,7 +134,12 @@ function Box({ data, id }) {
 
 function Note({ data, id }) {
   const { selectedId, linked } = useContext(Selection);
-  return h("div", { className: `note-card ${selectedId !== null && !linked.has(id) ? "is-dim" : ""}` }, ...handles(), parts(data.node.label).name);
+  return h(
+    "div",
+    { className: `note-card ${selectedId !== null && !linked.has(id) ? "is-dim" : ""}` },
+    ...handles(),
+    parts(data.node.label).name,
+  );
 }
 
 const nodeTypes = { box: Box, note: Note };
@@ -131,7 +155,18 @@ function Arrow({ data, markerEnd, markerStart }) {
       h(
         RF.EdgeLabelRenderer,
         null,
-        h("div", { className: data.labelClass, style: { transform: `translate(${label.x}px, ${label.y}px)`, width: label.w, height: label.h } }, data.text),
+        h(
+          "div",
+          {
+            className: data.labelClass,
+            style: {
+              transform: `translate(${label.x}px, ${label.y}px)`,
+              width: label.w,
+              height: label.h,
+            },
+          },
+          data.text,
+        ),
       ),
   );
 }
@@ -143,10 +178,24 @@ function Markers() {
   const arrow = (id) =>
     h(
       "marker",
-      { key: id, id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse", markerUnits: "strokeWidth" },
+      {
+        key: id,
+        id,
+        viewBox: "0 0 10 10",
+        refX: 9,
+        refY: 5,
+        markerWidth: 7,
+        markerHeight: 7,
+        orient: "auto-start-reverse",
+        markerUnits: "strokeWidth",
+      },
       h("path", { d: "M0,0 L10,5 L0,10 Z", className: id }),
     );
-  return h("svg", { className: "marker-defs", "aria-hidden": true, width: 0, height: 0 }, h("defs", null, arrow("arch-arrow"), arrow("arch-arrow-step")));
+  return h(
+    "svg",
+    { className: "marker-defs", "aria-hidden": true, width: 0, height: 0 },
+    h("defs", null, arrow("arch-arrow"), arrow("arch-arrow-step")),
+  );
 }
 
 /** Fit the whole level when its text stays readable; otherwise show its start at a readable size, to pan. */
@@ -169,7 +218,12 @@ function Flow({ page, path, selectedId, onChoose, labelSize }) {
         id: node.id,
         type: node.kind === "note" ? "note" : "box",
         position: { x: 0, y: 0 },
-        data: { node, opens: Boolean(page.sections.find((s) => s.id === node.id)?.items.some((it) => it.key === "Opens")) },
+        data: {
+          node,
+          opens: Boolean(
+            page.sections.find((s) => s.id === node.id)?.items.some((it) => it.key === "Opens"),
+          ),
+        },
         style: { visibility: "hidden" },
       })),
     [sourceNodes],
@@ -189,30 +243,76 @@ function Flow({ page, path, selectedId, onChoose, labelSize }) {
   useEffect(() => {
     if (!measured || placement.key === areaKey || !area.width) return;
     const sizes = new Map(flow.getNodes().map((n) => [n.id, n.measured]));
-    const { positions, hints } = layoutLevel({ nodes: sourceNodes, edges: sourceEdges, noteLinks, sizes, labelSize }, area);
+    const { positions, hints } = layoutLevel(
+      { nodes: sourceNodes, edges: sourceEdges, noteLinks, sizes, labelSize },
+      area,
+    );
     const saved = savedLayout(path);
-    const useSaved = sourceNodes.every((n) => Number.isFinite(saved[n.id]?.x) && Number.isFinite(saved[n.id]?.y));
-    setNodes((current) => current.map((n) => ({ ...n, position: useSaved ? saved[n.id] : positions.get(n.id), style: {} })));
+    const useSaved = sourceNodes.every(
+      (n) => Number.isFinite(saved[n.id]?.x) && Number.isFinite(saved[n.id]?.y),
+    );
+    setNodes((current) =>
+      current.map((n) => ({
+        ...n,
+        position: useSaved ? saved[n.id] : positions.get(n.id),
+        style: {},
+      })),
+    );
     setPlacement((p) => ({ ...p, key: areaKey, hints }));
-  }, [measured, placement.key, areaKey, area, flow, sourceNodes, sourceEdges, noteLinks, path, setNodes, labelSize]);
+  }, [
+    measured,
+    placement.key,
+    areaKey,
+    area,
+    flow,
+    sourceNodes,
+    sourceEdges,
+    noteLinks,
+    path,
+    setNodes,
+    labelSize,
+  ]);
 
   const linked = useMemo(() => {
     const ids = new Set();
-    for (const e of sourceEdges) if (e.from === selectedId || e.to === selectedId) ids.add(e.from).add(e.to);
-    for (const l of noteLinks) if (l.from === selectedId || l.to === selectedId) ids.add(l.from).add(l.to);
+    for (const e of sourceEdges)
+      if (e.from === selectedId || e.to === selectedId) ids.add(e.from).add(e.to);
+    for (const l of noteLinks)
+      if (l.from === selectedId || l.to === selectedId) ids.add(l.from).add(l.to);
     return ids;
   }, [sourceEdges, noteLinks, selectedId]);
 
   const touches = (e) => selectedId !== null && (e.from === selectedId || e.to === selectedId);
   const rects = useMemo(
-    () => placement.key && new Map(nodes.map((n) => [n.id, { x: n.position.x, y: n.position.y, w: n.measured.width, h: n.measured.height }])),
+    () =>
+      placement.key &&
+      new Map(
+        nodes.map((n) => [
+          n.id,
+          { x: n.position.x, y: n.position.y, w: n.measured.width, h: n.measured.height },
+        ]),
+      ),
     [placement.key, nodes],
   );
-  const route = (labelled) => routeLevel({ rects, edges: sourceEdges, noteLinks, hints: placement.hints, labelSize, labelled });
+  const route = (labelled) =>
+    routeLevel({
+      rects,
+      edges: sourceEdges,
+      noteLinks,
+      hints: placement.hints,
+      labelSize,
+      labelled,
+    });
   // Fit frames the level with every label, whichever box is chosen.
-  const whole = useMemo(() => rects && route(() => true), [rects, placement.hints, sourceEdges, noteLinks, labelSize]);
+  const whole = useMemo(
+    () => rects && route(() => true),
+    [rects, placement.hints, sourceEdges, noteLinks, labelSize],
+  );
   // With a box chosen, its own arrows' labels are the ones shown.
-  const routes = useMemo(() => (selectedId === null ? whole : rects && route((i) => touches(sourceEdges[i]))), [whole, rects, selectedId]);
+  const routes = useMemo(
+    () => (selectedId === null ? whole : rects && route((i) => touches(sourceEdges[i]))),
+    [whole, rects, selectedId],
+  );
   const bounds = useRef(null);
   bounds.current = whole?.bounds;
 
@@ -232,8 +332,17 @@ function Flow({ page, path, selectedId, onChoose, labelSize }) {
           type: "arrow",
           source: edge.from,
           target: edge.to,
-          data: { route: routes?.arrows[i], text: edge.label, labelClass: `arrow-label ${step ? "is-step" : ""}` },
-          className: ["edge", step ? "is-step" : "", touches(edge) ? "is-lit" : "", selectedId !== null && !touches(edge) ? "is-faded" : ""].join(" "),
+          data: {
+            route: routes?.arrows[i],
+            text: edge.label,
+            labelClass: `arrow-label ${step ? "is-step" : ""}`,
+          },
+          className: [
+            "edge",
+            step ? "is-step" : "",
+            touches(edge) ? "is-lit" : "",
+            selectedId !== null && !touches(edge) ? "is-faded" : "",
+          ].join(" "),
           markerEnd: marker,
           markerStart: edge.both ? marker : undefined,
           focusable: false,
@@ -271,7 +380,8 @@ function Flow({ page, path, selectedId, onChoose, labelSize }) {
         edgeTypes,
         onNodesChange,
         onNodeClick: (_, node) => node.type === "box" && onChoose(node.id),
-        onNodeDragStop: () => saveLayout(path, Object.fromEntries(flow.getNodes().map((n) => [n.id, n.position]))),
+        onNodeDragStop: () =>
+          saveLayout(path, Object.fromEntries(flow.getNodes().map((n) => [n.id, n.position]))),
         onPaneClick: () => onChoose(null),
         nodesDraggable: true,
         nodesConnectable: false,
@@ -286,8 +396,25 @@ function Flow({ page, path, selectedId, onChoose, labelSize }) {
       h(
         RF.Panel,
         { position: "top-left", className: "diagram-tools" },
-        h("button", { type: "button", className: "text-button", onClick: () => fitLevel(flow, bounds.current, areaNow.current) }, "Fit"),
-        h("button", { type: "button", className: "text-button", onClick: reset, title: "Put the boxes back where the layout places them" }, "Reset layout"),
+        h(
+          "button",
+          {
+            type: "button",
+            className: "text-button",
+            onClick: () => fitLevel(flow, bounds.current, areaNow.current),
+          },
+          "Fit",
+        ),
+        h(
+          "button",
+          {
+            type: "button",
+            className: "text-button",
+            onClick: reset,
+            title: "Put the boxes back where the layout places them",
+          },
+          "Reset layout",
+        ),
       ),
     ),
   );
@@ -310,13 +437,29 @@ export function createMap(host, { page, path, nav }) {
   const root = globalThis.ReactDOM.createRoot(flowHost);
   const labelSize = labelMeasurer();
   const drawn = () => {
-    root.render(h(RF.ReactFlowProvider, null, h(Markers), h(Flow, { page, path, selectedId: selected, onChoose: choose, labelSize })));
+    root.render(
+      h(
+        RF.ReactFlowProvider,
+        null,
+        h(Markers),
+        h(Flow, { page, path, selectedId: selected, onChoose: choose, labelSize }),
+      ),
+    );
   };
 
   function intro() {
     const text = el("p", { class: "intro-text is-clamped" });
     paintInline(text, page.intro, path);
-    const more = el("button", { type: "button", class: "link-button more", onclick: () => more.textContent = text.classList.toggle("is-clamped") ? "Read more" : "Show less" }, "Read more");
+    const more = el(
+      "button",
+      {
+        type: "button",
+        class: "link-button more",
+        onclick: () =>
+          (more.textContent = text.classList.toggle("is-clamped") ? "Read more" : "Show less"),
+      },
+      "Read more",
+    );
     return el(
       "details",
       { class: "intro", open: !matchMedia("(max-width: 719px)").matches },
@@ -332,17 +475,27 @@ export function createMap(host, { page, path, nav }) {
     );
   }
 
-
   function legend() {
     const kinds = NODE_KINDS.filter((kind) => page.mermaid?.nodes.some((n) => n.kind === kind));
-    return el("details", { class: "legend" }, el("summary", null, "Legend"), el("ul", null, kinds.map((kind) => el("li", null, el("span", { class: `swatch kind-${kind}` }), kind))));
+    return el(
+      "details",
+      { class: "legend" },
+      el("summary", null, "Legend"),
+      el(
+        "ul",
+        null,
+        kinds.map((kind) => el("li", null, el("span", { class: `swatch kind-${kind}` }), kind)),
+      ),
+    );
   }
 
   /** A click on a box: a box with Opens goes to that page, any other box is selected (and put in the address). */
   function choose(id) {
     const opens = id && opensOf(id);
     if (opens) return nav.go(opens);
-    nav.replace(id ? `${location.hash.split("/")[0]}/${encodeURIComponent(id)}` : location.hash.split("/")[0]);
+    nav.replace(
+      id ? `${location.hash.split("/")[0]}/${encodeURIComponent(id)}` : location.hash.split("/")[0],
+    );
     select(id);
   }
 
@@ -376,15 +529,22 @@ export function createMap(host, { page, path, nav }) {
       el(
         "ul",
         { class: "box-list" },
-        page.mermaid.nodes.filter((n) => n.kind !== "note").map((n) => {
-          const section = page.sections.find((s) => s.id === n.id);
-          return el(
-            "li",
-            null,
-            el("button", { type: "button", class: "link-button", onclick: () => choose(n.id) }, plain(n.label), opensOf(n.id) ? " ▸" : ""),
-            section?.paragraphs[0] && paragraph(section.paragraphs[0], "sub-line"),
-          );
-        }),
+        page.mermaid.nodes
+          .filter((n) => n.kind !== "note")
+          .map((n) => {
+            const section = page.sections.find((s) => s.id === n.id);
+            return el(
+              "li",
+              null,
+              el(
+                "button",
+                { type: "button", class: "link-button", onclick: () => choose(n.id) },
+                plain(n.label),
+                opensOf(n.id) ? " ▸" : "",
+              ),
+              section?.paragraphs[0] && paragraph(section.paragraphs[0], "sub-line"),
+            );
+          }),
       ),
     );
   }
@@ -392,19 +552,55 @@ export function createMap(host, { page, path, nav }) {
   function boxPanel(id) {
     const section = page.sections.find((s) => s.id === id);
     const node = page.mermaid.nodes.find((n) => n.id === id);
-    if (!section || !node) return el("div", { class: "panel-body" }, el("p", { class: "doc-note" }, `No box "${id}" on this page.`));
+    if (!section || !node)
+      return el(
+        "div",
+        { class: "panel-body" },
+        el("p", { class: "doc-note" }, `No box "${id}" on this page.`),
+      );
     const [sub, ...about] = section.paragraphs;
     const value = (key) => item(section, key)?.value;
     const paths = pathsOf(value("Paths") ?? "");
     return el("div", { class: "panel-body" }, [
-      el("button", { type: "button", class: "link-button back", onclick: () => choose(null) }, "← All boxes"),
-      el("div", { class: "panel-head" }, el("h2", null, plain(node.label)), el("span", { class: `chip kind-${node.kind}` }, node.kind)),
+      el(
+        "button",
+        { type: "button", class: "link-button back", onclick: () => choose(null) },
+        "← All boxes",
+      ),
+      el(
+        "div",
+        { class: "panel-head" },
+        el("h2", null, plain(node.label)),
+        el("span", { class: `chip kind-${node.kind}` }, node.kind),
+      ),
       sub && paragraph(sub, "sub"),
       ...about.map((text) => paragraph(text)),
       ...section.items
         .filter((it) => it.key === "Breaks" || it.key === "Drift")
-        .map((it) => el("div", { class: `callout is-${it.key.toLowerCase()}` }, el("strong", null, it.key === "Breaks" ? "Breaks a rule: " : "Docs and code disagree: "), inline(it.value))),
-      paths.length ? el("section", null, el("h3", null, "Paths"), el("ul", { class: "paths" }, paths.map((p) => el("li", null, pathLink(p))))) : null,
+        .map((it) =>
+          el(
+            "div",
+            { class: `callout is-${it.key.toLowerCase()}` },
+            el(
+              "strong",
+              null,
+              it.key === "Breaks" ? "Breaks a rule: " : "Docs and code disagree: ",
+            ),
+            inline(it.value),
+          ),
+        ),
+      paths.length
+        ? el(
+            "section",
+            null,
+            el("h3", null, "Paths"),
+            el(
+              "ul",
+              { class: "paths" },
+              paths.map((p) => el("li", null, pathLink(p))),
+            ),
+          )
+        : null,
       connections(id),
       links("See", value("See")),
       links("Opens", value("Opens")),
@@ -426,10 +622,26 @@ export function createMap(host, { page, path, nav }) {
       "section",
       null,
       el("h3", null, heading),
-      el("ul", null, list.map((l) => {
-        const to = route(path, l.href);
-        return el("li", null, el("a", { href: to?.href ?? l.href, target: to?.external ? "_blank" : null, rel: to?.external ? "noreferrer" : null }, l.label));
-      })),
+      el(
+        "ul",
+        null,
+        list.map((l) => {
+          const to = route(path, l.href);
+          return el(
+            "li",
+            null,
+            el(
+              "a",
+              {
+                href: to?.href ?? l.href,
+                target: to?.external ? "_blank" : null,
+                rel: to?.external ? "noreferrer" : null,
+              },
+              l.label,
+            ),
+          );
+        }),
+      ),
     );
   }
 
@@ -441,9 +653,23 @@ export function createMap(host, { page, path, nav }) {
       if (e.from !== id && e.to !== id) continue;
       const other = e.from === id ? e.to : e.from;
       const arrow = e.both ? "↔" : e.from === id ? "→" : "←";
-      rows.push(el("li", null, `${arrow} `, el("button", { type: "button", class: "link-button", onclick: () => choose(other) }, label(other)), el("div", { class: "edge-label" }, e.label)));
+      rows.push(
+        el(
+          "li",
+          null,
+          `${arrow} `,
+          el(
+            "button",
+            { type: "button", class: "link-button", onclick: () => choose(other) },
+            label(other),
+          ),
+          el("div", { class: "edge-label" }, e.label),
+        ),
+      );
     }
-    return rows.length ? el("section", null, el("h3", null, "Arrows"), el("ul", { class: "edges" }, rows)) : null;
+    return rows.length
+      ? el("section", null, el("h3", null, "Arrows"), el("ul", { class: "edges" }, rows))
+      : null;
   }
 
   drawn();

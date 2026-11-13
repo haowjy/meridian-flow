@@ -3,9 +3,9 @@
  * A page is fetched at its repo path, so there is no copy of it. Every link in a rendered page
  * becomes a `#` route that app.js handles (`route` below), or a GitHub URL.
  */
-import { MAP_DIR, opensLocally, sourceUrl, STATE_MACHINES_INDEX } from "./config.js";
+import { MAP_DIR, opensLocally, STATE_MACHINES_INDEX, sourceUrl } from "./config.js";
 import { resolveHref, slug } from "./pages.js";
-import { el, fetchRepoFile } from "./shell.js";
+import { el } from "./shell.js";
 
 // Pinned like the other scripts: marked in the HTML, Mermaid here because it is 3.5 MB and
 // loads when the first diagram is drawn.
@@ -18,7 +18,11 @@ let mermaidLoad = null;
 function loadMermaid() {
   mermaidLoad ??= new Promise((resolve, reject) => {
     if (globalThis.mermaid) return resolve(globalThis.mermaid);
-    const script = el("script", { src: MERMAID.src, integrity: MERMAID.integrity, crossorigin: "anonymous" });
+    const script = el("script", {
+      src: MERMAID.src,
+      integrity: MERMAID.integrity,
+      crossorigin: "anonymous",
+    });
     script.onload = () => resolve(globalThis.mermaid);
     script.onerror = () => {
       mermaidLoad = null;
@@ -126,7 +130,12 @@ function addZoom(holder) {
     svg.style.height = "auto";
   };
   const fit = () => set((holder.clientWidth - 26) / natural);
-  const button = (label, name, onclick) => el("button", { type: "button", class: "text-button", "aria-label": name, title: name, onclick }, label);
+  const button = (label, name, onclick) =>
+    el(
+      "button",
+      { type: "button", class: "text-button", "aria-label": name, title: name, onclick },
+      label,
+    );
   holder.prepend(
     el(
       "div",
@@ -141,23 +150,42 @@ function addZoom(holder) {
   // and any other diagram (a state machine) starts at natural size.
   const wide = (holder.clientWidth - 26) / natural;
   const kind = svg.getAttribute("aria-roledescription") ?? "";
-  set(kind === "sequence" ? Math.min(Math.max(wide, 0.6), 1.6) : kind.startsWith("flowchart") ? Math.min(wide, 1) : 1);
+  set(
+    kind === "sequence"
+      ? Math.min(Math.max(wide, 0.6), 1.6)
+      : kind.startsWith("flowchart")
+        ? Math.min(wide, 1)
+        : 1,
+  );
 }
 
 /** What the doc view can open: a repo path with no `..`, `.` or empty segment. The dev server decides which of them it serves. */
-export const isDocPath = (path) => !path.includes("\\") && path.split("/").every((s) => s && s !== "." && s !== "..");
+export const isDocPath = (path) =>
+  !path.includes("\\") && path.split("/").every((s) => s && s !== "." && s !== "..");
 
 /** The hash that opens a repo page in the doc view. */
-export const docHash = (path, fragment) => `#doc/${encodeURIComponent(path)}${fragment ? `/${encodeURIComponent(fragment)}` : ""}`;
+export const docHash = (path, fragment) =>
+  `#doc/${encodeURIComponent(path)}${fragment ? `/${encodeURIComponent(fragment)}` : ""}`;
 
 /** Where a repo path opens: the doc view when the dev server shows it, else GitHub. { href, external? }. */
 export const repoRoute = (path, fragment) =>
-  opensLocally(path) && isDocPath(path) ? { href: docHash(path, fragment) } : { href: sourceUrl(path), external: true };
+  opensLocally(path) && isDocPath(path)
+    ? { href: docHash(path, fragment) }
+    : { href: sourceUrl(path), external: true };
 
 /** A link to a repo path, labelled with the path. */
 export function pathLink(path) {
   const to = repoRoute(path);
-  return el("a", { class: "path", href: to.href, target: to.external ? "_blank" : null, rel: to.external ? "noreferrer" : null }, path);
+  return el(
+    "a",
+    {
+      class: "path",
+      href: to.href,
+      target: to.external ? "_blank" : null,
+      rel: to.external ? "noreferrer" : null,
+    },
+    path,
+  );
 }
 
 /** Where a link in the page at `path` goes: { href, external? }, or null to leave it. Map pages are `#<page>[/<box>]`, `#flows/<id>` (a flow, under Journeys), `#journeys/<id>`, `#machines`; any other repo path opens in the doc view. */
@@ -169,9 +197,12 @@ export function route(path, href) {
   const id = (name) => /^([\w-]+)\.md$/.exec(name)?.[1];
   if (inMap === "flows/index.md") return { href: "#journeys" };
   if (inMap === "journeys/index.md") return { href: "#journeys" };
-  if (inMap?.startsWith("flows/") && id(inMap.slice(6))) return { href: `#flows/${id(inMap.slice(6))}` };
-  if (inMap?.startsWith("journeys/") && id(inMap.slice(9))) return { href: `#journeys/${id(inMap.slice(9))}` };
-  if (inMap && id(inMap) && !["README.md", "AGENTS.md"].includes(inMap)) return { href: `#${id(inMap)}${fragment ? `/${fragment}` : ""}` };
+  if (inMap?.startsWith("flows/") && id(inMap.slice(6)))
+    return { href: `#flows/${id(inMap.slice(6))}` };
+  if (inMap?.startsWith("journeys/") && id(inMap.slice(9)))
+    return { href: `#journeys/${id(inMap.slice(9))}` };
+  if (inMap && id(inMap) && !["README.md", "AGENTS.md"].includes(inMap))
+    return { href: `#${id(inMap)}${fragment ? `/${fragment}` : ""}` };
   if (target === STATE_MACHINES_INDEX) return { href: "#machines" };
   return repoRoute(target, fragment);
 }
@@ -221,4 +252,9 @@ export async function paintMarkdown(root, markdown, path, onDiagram) {
 
 /** The text of a page that didn't load, with a way to read it on GitHub. */
 export const loadFailure = (path, error) =>
-  el("p", { class: "doc-note" }, `Couldn't load this page (${error.message ?? error}). Read it on GitHub: `, el("a", { href: sourceUrl(path), target: "_blank", rel: "noreferrer" }, path));
+  el(
+    "p",
+    { class: "doc-note" },
+    `Couldn't load this page (${error.message ?? error}). Read it on GitHub: `,
+    el("a", { href: sourceUrl(path), target: "_blank", rel: "noreferrer" }, path),
+  );

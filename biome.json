@@ -29,7 +29,7 @@
       "!.opencode",
       "!.cursor",
       "!**/.context",
-      "!tools/architecture-map",
+      "!tools/architecture-map/vendor",
       "!packages/database/src/migrations/meta/*_snapshot.json"
     ]
   },

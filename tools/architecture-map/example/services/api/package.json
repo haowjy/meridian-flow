@@ -1,1 +1,5 @@
-{ "name": "@toy/api", "private": true, "type": "module" }
+{
+  "name": "@toy/api",
+  "private": true,
+  "type": "module"
+}

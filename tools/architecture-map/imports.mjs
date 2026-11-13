@@ -9,9 +9,22 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 
 const SOURCE = /\.(?:[cm]?[jt]s|tsx|jsx|css)$/;
-const TEST = /\.(?:test|spec)\.[cm]?[jt]sx?$|\.d\.ts$|(?:^|\/)(?:__tests__|tests?|e2e|fixtures|test-support)\/|[^/]*test-support[^/]*$/;
+const TEST =
+  /\.(?:test|spec)\.[cm]?[jt]sx?$|\.d\.ts$|(?:^|\/)(?:__tests__|tests?|e2e|fixtures|test-support)\/|[^/]*test-support[^/]*$/;
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".output", ".nitro", ".tanstack"]);
-const EXTENSIONS = ["", ".ts", ".tsx", ".js", ".mjs", ".mts", ".cjs", ".jsx", "/index.ts", "/index.tsx", "/index.js"];
+const EXTENSIONS = [
+  "",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".mjs",
+  ".mts",
+  ".cjs",
+  ".jsx",
+  "/index.ts",
+  "/index.tsx",
+  "/index.js",
+];
 
 const STATEMENTS = [
   // import a, { b } from "x" / import type ... from "x" / export ... from "x"
@@ -35,11 +48,19 @@ function specifiersIn(source, isCss) {
   }
   for (const m of text.matchAll(STATEMENTS[0])) {
     const names = m[2].trim();
-    const specifiers = names.startsWith("{") ? names.slice(1, names.lastIndexOf("}")).split(",").map((n) => n.trim()).filter(Boolean) : [];
-    const typeOnly = Boolean(m[1]) || (specifiers.length > 0 && specifiers.every((n) => n.startsWith("type ")));
+    const specifiers = names.startsWith("{")
+      ? names
+          .slice(1, names.lastIndexOf("}"))
+          .split(",")
+          .map((n) => n.trim())
+          .filter(Boolean)
+      : [];
+    const typeOnly =
+      Boolean(m[1]) || (specifiers.length > 0 && specifiers.every((n) => n.startsWith("type ")));
     found.push({ spec: m[3], typeOnly });
   }
-  for (const pattern of STATEMENTS.slice(1)) for (const m of text.matchAll(pattern)) found.push({ spec: m[1], typeOnly: false });
+  for (const pattern of STATEMENTS.slice(1))
+    for (const m of text.matchAll(pattern)) found.push({ spec: m[1], typeOnly: false });
   return found;
 }
 
@@ -61,7 +82,12 @@ function sourceFiles(repo, path, out) {
 
 /** Package name → directory, for the workspace directories that hold a package.json. */
 function workspacePackages(repo, workspaceDirs) {
-  return new Map(workspaceDirs.map((dir) => [JSON.parse(readFileSync(join(repo, dir, "package.json"), "utf8")).name, dir]));
+  return new Map(
+    workspaceDirs.map((dir) => [
+      JSON.parse(readFileSync(join(repo, dir, "package.json"), "utf8")).name,
+      dir,
+    ]),
+  );
 }
 
 /**
@@ -86,12 +112,14 @@ export function readImports(repo, roots, { workspaceDirs, aliases }) {
     // TypeScript sources import each other as "./x.js".
     const stem = path.replace(/\.[cm]?js$/, "");
     for (const candidate of stem === path ? [path] : [path, stem]) {
-      for (const extension of EXTENSIONS) if (isFile(candidate + extension)) return candidate + extension;
+      for (const extension of EXTENSIONS)
+        if (isFile(candidate + extension)) return candidate + extension;
     }
     return path;
   };
   const resolve = (from, spec) => {
-    if (spec.startsWith(".")) return { to: settle(posix.normalize(posix.join(posix.dirname(from), spec))) };
+    if (spec.startsWith("."))
+      return { to: settle(posix.normalize(posix.join(posix.dirname(from), spec))) };
     const alias = aliases.find((a) => spec.startsWith(a.prefix) && from.startsWith(a.within));
     if (alias) return { to: settle(alias.to + spec.slice(alias.prefix.length)) };
     const name = spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0];

@@ -20,7 +20,17 @@ export const NODE_KINDS = [
 ];
 
 /** The section list items each kind of page may carry. */
-export const MAP_KEYS = ["Kind", "Paths", "Docs", "Machines", "Opens", "Breaks", "Drift", "See", "Shot"];
+export const MAP_KEYS = [
+  "Kind",
+  "Paths",
+  "Docs",
+  "Machines",
+  "Opens",
+  "Breaks",
+  "Drift",
+  "See",
+  "Shot",
+];
 export const JOURNEY_KEYS = ["Map", "Machines", "Shot"];
 
 const ID = "[A-Za-z][A-Za-z0-9_-]*";
@@ -72,7 +82,7 @@ export function parsePage(text) {
     paragraph = [];
   };
 
-  lines.forEach((raw, i) => {
+  for (const [i, raw] of lines.entries()) {
     const n = i + 1;
     const line = raw.trim();
     const marker = /^(`{3,})\s*(\S*)\s*$/.exec(line);
@@ -82,17 +92,26 @@ export function parsePage(text) {
         parseMermaidLine(page.mermaid, line, n, fail);
         page.mermaid.source += `${line}\n`;
       }
-      return;
+      continue;
     }
     if (marker) {
       endParagraph();
       const kind = marker[2] === "mermaid" && !page.mermaid ? "mermaid" : "other";
       if (marker[2] === "mermaid") {
         if (page.mermaid) fail(n, "A second mermaid block: a page has one.");
-        else page.mermaid = { type: null, source: "", line: n, nodes: [], edges: [], noteLinks: [], participants: [] };
+        else
+          page.mermaid = {
+            type: null,
+            source: "",
+            line: n,
+            nodes: [],
+            edges: [],
+            noteLinks: [],
+            participants: [],
+          };
       }
       fence = { length: marker[1].length, kind };
-      return;
+      continue;
     }
     const heading = /^(#{1,6}) (.+)$/.exec(line);
     if (heading) {
@@ -102,17 +121,24 @@ export function parsePage(text) {
         section = { id: heading[2], line: n, paragraphs: [], items: [] };
         page.sections.push(section);
       }
-      return;
+      continue;
     }
-    if (!line) return endParagraph();
+    if (!line) {
+      endParagraph();
+      continue;
+    }
     if (section && line.startsWith("- ")) {
       endParagraph();
       const item = /^- ([A-Za-z]+): ?(.*)$/.exec(line);
-      section.items.push(item ? { key: item[1], value: item[2], line: n } : { key: null, value: line.slice(2), line: n });
-      return;
+      section.items.push(
+        item
+          ? { key: item[1], value: item[2], line: n }
+          : { key: null, value: line.slice(2), line: n },
+      );
+      continue;
     }
     paragraph.push(line);
-  });
+  }
   endParagraph();
   page.intro = introParts.join("\n\n");
   return page;
@@ -123,14 +149,22 @@ function parseMermaidLine(mermaid, line, n, fail) {
   if (!mermaid.type) {
     if (LINE.header.test(line)) mermaid.type = "flowchart";
     else if (LINE.sequenceHeader.test(line)) mermaid.type = "sequence";
-    else fail(n, `The mermaid block must start with a flowchart or sequenceDiagram header, not: ${line}`);
+    else
+      fail(
+        n,
+        `The mermaid block must start with a flowchart or sequenceDiagram header, not: ${line}`,
+      );
     return;
   }
   if (mermaid.type === "sequence") return parseSequenceLine(mermaid, line, n, fail);
   let m = LINE.node.exec(line);
   if (m) {
     const bad = m[2].replace(LABEL_TAGS, "").match(/[<>]/);
-    if (bad) fail(n, `Box ${m[1]}'s label holds "${bad[0]}": only <br/> and <small>...</small> are allowed.`);
+    if (bad)
+      fail(
+        n,
+        `Box ${m[1]}'s label holds "${bad[0]}": only <br/> and <small>...</small> are allowed.`,
+      );
     mermaid.nodes.push({ id: m[1], label: m[2], kind: m[3], line: n });
     return;
   }
@@ -142,19 +176,26 @@ function parseMermaidLine(mermaid, line, n, fail) {
   m = LINE.edge.exec(line);
   if (m) {
     const step = /^(\d+)\. /.exec(m[3]);
-    mermaid.edges.push({ from: m[1], to: m[4], both: m[2] === "<-->", label: m[3], step: step ? Number(step[1]) : null, line: n });
+    mermaid.edges.push({
+      from: m[1],
+      to: m[4],
+      both: m[2] === "<-->",
+      label: m[3],
+      step: step ? Number(step[1]) : null,
+      line: n,
+    });
     return;
   }
   fail(n, `A mermaid line the format doesn't allow: ${line}`);
 }
 
 function parseSequenceLine(mermaid, line, n, fail) {
-  const participants = (...ids) => mermaid.participants.push(...ids.filter(Boolean).map((id) => ({ id, line: n })));
-  let m;
-  if ((m = LINE.participant.exec(line))) participants(m[1]);
-  else if ((m = LINE.message.exec(line))) participants(m[1], m[2]);
-  else if ((m = LINE.note.exec(line))) participants(m[1], m[2]);
-  else if ((m = LINE.activation.exec(line))) participants(m[1]);
+  const participants = (...ids) =>
+    mermaid.participants.push(...ids.filter(Boolean).map((id) => ({ id, line: n })));
+  const match = (re) => re.exec(line);
+  const m =
+    match(LINE.participant) ?? match(LINE.message) ?? match(LINE.note) ?? match(LINE.activation);
+  if (m) participants(m[1], m[2]);
   else if (line === "end" || LINE.sequenceBlock.test(line)) return;
   else fail(n, `A sequenceDiagram line the format doesn't allow: ${line}`);
 }
@@ -165,10 +206,22 @@ function parseSequenceLine(mermaid, line, n, fail) {
  * Returns { level, box } or { error }.
  */
 export function resolveParticipant(levels, name) {
-  const hits = levels.flatMap((l) => l.nodes.filter((n) => n.kind !== "context" && (n.id === name || `${l.id}-${n.id}` === name)).map((n) => ({ level: l, box: n })));
+  const hits = levels.flatMap((l) =>
+    l.nodes
+      .filter((n) => n.kind !== "context" && (n.id === name || `${l.id}-${n.id}` === name))
+      .map((n) => ({ level: l, box: n })),
+  );
   const bare = hits.filter((h) => h.box.id === name);
-  if (bare.length > 1) return { error: `participant ${name} is the id of boxes on ${bare.map((h) => h.level.id).join(", ")}: write <page>-${name}, e.g. ${bare[0].level.id}-${name}.` };
-  if (hits.length !== 1) return { error: hits.length ? `participant ${name} names ${hits.length} boxes.` : `participant ${name} isn't a box id on any level page.` };
+  if (bare.length > 1)
+    return {
+      error: `participant ${name} is the id of boxes on ${bare.map((h) => h.level.id).join(", ")}: write <page>-${name}, e.g. ${bare[0].level.id}-${name}.`,
+    };
+  if (hits.length !== 1)
+    return {
+      error: hits.length
+        ? `participant ${name} names ${hits.length} boxes.`
+        : `participant ${name} isn't a box id on any level page.`,
+    };
   return hits[0];
 }
 
@@ -179,7 +232,8 @@ export const item = (section, key) => section.items.find((it) => it.key === key)
 export const pathsOf = (value) => [...value.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
 
 /** Markdown links in a list value: [{ label, href }]. */
-export const linksOf = (value) => [...value.matchAll(/\[([^\]]*)\]\(([^)\s]+)\)/g)].map((m) => ({ label: m[1], href: m[2] }));
+export const linksOf = (value) =>
+  [...value.matchAll(/\[([^\]]*)\]\(([^)\s]+)\)/g)].map((m) => ({ label: m[1], href: m[2] }));
 
 const isUrl = (href) => /^[a-z][a-z0-9+.-]*:/i.test(href);
 
@@ -212,7 +266,15 @@ export const slug = (text) =>
 export function globRegExp(glob) {
   const source = glob
     .split(/(\*\*\/|\*\*|\*)/)
-    .map((part) => (part === "**/" ? "(?:.*/)?" : part === "**" ? ".*" : part === "*" ? "[^/]*" : part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")))
+    .map((part) =>
+      part === "**/"
+        ? "(?:.*/)?"
+        : part === "**"
+          ? ".*"
+          : part === "*"
+            ? "[^/]*"
+            : part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"),
+    )
     .join("");
   return new RegExp(`^${source}$`);
 }
@@ -267,7 +329,12 @@ export function levelLinks(readme) {
 export async function loadLevelPages(read, mapDir) {
   const roots = levelLinks(await read(`${mapDir}/README.md`));
   const levels = new Map();
-  const queue = roots.map((r) => ({ id: r.id, path: `${mapDir}/${r.href}`, trail: [], label: r.title }));
+  const queue = roots.map((r) => ({
+    id: r.id,
+    path: `${mapDir}/${r.href}`,
+    trail: [],
+    label: r.title,
+  }));
   while (queue.length) {
     const { id, path, trail, label } = queue.shift();
     if (levels.has(id)) continue;
@@ -280,7 +347,11 @@ export async function loadLevelPages(read, mapDir) {
       const opens = linksOf(item(s, "Opens")?.value ?? "")[0];
       const target = opens && resolveHref(path, opens.href).path;
       if (!target?.startsWith(`${mapDir}/`) || !target.endsWith(".md")) continue;
-      queue.push({ id: target.slice(mapDir.length + 1, -3), path: target, trail: [...trail, { title, page: page.title, hash: `#${id}` }] });
+      queue.push({
+        id: target.slice(mapDir.length + 1, -3),
+        path: target,
+        trail: [...trail, { title, page: page.title, hash: `#${id}` }],
+      });
     }
   }
   return { roots: roots.map((r) => ({ id: r.id, title: r.title })), levels };

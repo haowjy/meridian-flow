@@ -20,7 +20,8 @@ createServer((req, res) => {
     res.end("Unknown host");
     return;
   }
-  const result = req.method === "GET" || req.method === "HEAD" ? handle(req.url.split(/[?#]/)[0]) : null;
+  const result =
+    req.method === "GET" || req.method === "HEAD" ? handle(req.url.split(/[?#]/)[0]) : null;
   if (result) send(req, res, result);
   else {
     res.statusCode = 404;

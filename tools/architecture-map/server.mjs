@@ -26,7 +26,13 @@ const ENGINE_TYPES = {
   ".css": "text/css; charset=utf-8",
 };
 const TEXT_TYPES = { ".md": "text/markdown; charset=utf-8", ".css": "text/css; charset=utf-8" };
-const IMAGE_TYPES = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp" };
+const IMAGE_TYPES = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
 /** Engine files the browser may load; the example, check and server code stay out. */
 const ENGINE_FILES = /^\/(?:index\.html|js\/[\w.-]+\.js|styles\/page\.css|vendor\/[\w.-]+\.css)$/;
 const REFRESH_MS = 2000;
@@ -36,7 +42,11 @@ const REFRESH_MS = 2000;
  * { status, headers, file?, body? } the caller writes. `rawPath` is the request path without its query.
  */
 export async function createArchitectureServer(configFile) {
-  const config = (await import(/* @vite-ignore */ `${pathToFileURL(path.resolve(configFile)).href}?t=${Date.now()}`)).default;
+  const config = (
+    await import(
+      /* @vite-ignore */ `${pathToFileURL(path.resolve(configFile)).href}?t=${Date.now()}`
+    )
+  ).default;
   const root = fs.realpathSync(path.resolve(path.dirname(configFile), config.root ?? "."));
   const docs = (config.docs ?? []).map(globRegExp);
   const pagesDir = config.pagesDir;
@@ -45,8 +55,14 @@ export async function createArchitectureServer(configFile) {
   /** Tracked files, plus untracked unignored ones under the pages directory so a new page opens before it is added. */
   function tracked() {
     if (Date.now() - listed.at < REFRESH_MS) return listed;
-    const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).split("\0").filter(Boolean);
-    const files = new Set([...git("ls-files", "-z"), ...git("ls-files", "-z", "--others", "--exclude-standard", "--", pagesDir)]);
+    const git = (...args) =>
+      execFileSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
+        .split("\0")
+        .filter(Boolean);
+    const files = new Set([
+      ...git("ls-files", "-z"),
+      ...git("ls-files", "-z", "--others", "--exclude-standard", "--", pagesDir),
+    ]);
     const dirs = new Map();
     for (const file of files) {
       const parts = file.split("/");
@@ -60,9 +76,20 @@ export async function createArchitectureServer(configFile) {
     return listed;
   }
 
-  const showable = (repoPath) => config.serveSource !== false || repoPath.startsWith(`${pagesDir}/`) || docs.some((re) => re.test(repoPath));
-  const reject = { status: 403, headers: { "content-type": "text/plain; charset=utf-8" }, body: "Not served" };
-  const missing = { status: 404, headers: { "content-type": "text/plain; charset=utf-8" }, body: "Not found" };
+  const showable = (repoPath) =>
+    config.serveSource !== false ||
+    repoPath.startsWith(`${pagesDir}/`) ||
+    docs.some((re) => re.test(repoPath));
+  const reject = {
+    status: 403,
+    headers: { "content-type": "text/plain; charset=utf-8" },
+    body: "Not served",
+  };
+  const missing = {
+    status: 404,
+    headers: { "content-type": "text/plain; charset=utf-8" },
+    body: "Not found",
+  };
   const hardened = { "cache-control": "no-cache", "x-content-type-options": "nosniff" };
 
   function repoResponse(repoPath) {
@@ -70,11 +97,20 @@ export async function createArchitectureServer(configFile) {
     if (!showable(repoPath) && !dirs.has(repoPath)) return missing;
     if (dirs.has(repoPath) && !files.has(repoPath)) {
       const entries = [...dirs.get(repoPath)]
-        .filter(([name, dir]) => (dir ? config.serveSource !== false || [...files].some((f) => f.startsWith(`${repoPath}/${name}/`) && showable(f)) : showable(`${repoPath}/${name}`)))
+        .filter(([name, dir]) =>
+          dir
+            ? config.serveSource !== false ||
+              [...files].some((f) => f.startsWith(`${repoPath}/${name}/`) && showable(f))
+            : showable(`${repoPath}/${name}`),
+        )
         .map(([name, dir]) => ({ name, dir }))
         .sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name));
       if (!showable(repoPath) && !entries.length) return missing;
-      return { status: 200, headers: { ...hardened, "content-type": "application/json; charset=utf-8" }, body: JSON.stringify(entries) };
+      return {
+        status: 200,
+        headers: { ...hardened, "content-type": "application/json; charset=utf-8" },
+        body: JSON.stringify(entries),
+      };
     }
     if (!files.has(repoPath)) return missing;
     // A symlink must not lead out of the repo or to a file that isn't served.
@@ -85,13 +121,26 @@ export async function createArchitectureServer(configFile) {
       return missing;
     }
     const realPath = path.relative(root, real).split(path.sep).join("/");
-    if (real !== root && (/^\.\.(\/|$)/.test(realPath) || !files.has(realPath) || !showable(realPath))) return reject;
+    if (
+      real !== root &&
+      (/^\.\.(\/|$)/.test(realPath) || !files.has(realPath) || !showable(realPath))
+    )
+      return reject;
     if (!fs.statSync(real).isFile()) return missing;
     const image = IMAGE_TYPES[path.extname(repoPath).toLowerCase()];
     // Text is served as plain text (Markdown as Markdown, CSS for the viewer's stylesheet link), never as HTML or SVG, and sandboxed.
     const type = image ?? TEXT_TYPES[path.extname(repoPath)] ?? "text/plain; charset=utf-8";
-    if (!image && isBinary(real)) return { status: 415, headers: { "content-type": "text/plain; charset=utf-8" }, body: "Not a text file" };
-    return { status: 200, headers: { ...hardened, "content-type": type, "content-security-policy": "sandbox" }, file: real };
+    if (!image && isBinary(real))
+      return {
+        status: 415,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+        body: "Not a text file",
+      };
+    return {
+      status: 200,
+      headers: { ...hardened, "content-type": type, "content-security-policy": "sandbox" },
+      file: real,
+    };
   }
 
   function tokenSheet() {
@@ -99,9 +148,17 @@ export async function createArchitectureServer(configFile) {
     try {
       ({ css } = readTokens(root, config.tokens));
     } catch (error) {
-      return { status: 500, headers: { "content-type": "text/plain; charset=utf-8" }, body: `The token files didn't read: ${error.message}` };
+      return {
+        status: 500,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+        body: `The token files didn't read: ${error.message}`,
+      };
     }
-    return { status: 200, headers: { ...hardened, "content-type": ENGINE_TYPES[".css"] }, body: css };
+    return {
+      status: 200,
+      headers: { ...hardened, "content-type": ENGINE_TYPES[".css"] },
+      body: css,
+    };
   }
 
   return function handle(rawPath) {
@@ -117,7 +174,12 @@ export async function createArchitectureServer(configFile) {
     if (/(^|\/)\.\.?(\/|$)|\\|\0/.test(pathname)) return reject;
     const rest = pathname.slice(ENTRY.length - 1);
     if (rest === "/") return engineFile("/index.html");
-    if (rest === "/map.config.mjs") return { status: 200, headers: { ...hardened, "content-type": ENGINE_TYPES[".mjs"] }, file: path.resolve(configFile) };
+    if (rest === "/map.config.mjs")
+      return {
+        status: 200,
+        headers: { ...hardened, "content-type": ENGINE_TYPES[".mjs"] },
+        file: path.resolve(configFile),
+      };
     if (rest === "/tokens.css") return tokenSheet();
     if (rest.startsWith("/repo/")) {
       const repoPath = rest.slice("/repo/".length).replace(/\/$/, "");
@@ -144,7 +206,11 @@ const PAGE_CSP = [
 ].join("; ");
 
 function engineFile(rest) {
-  const headers = { "cache-control": "no-cache", "x-content-type-options": "nosniff", "content-type": ENGINE_TYPES[path.extname(rest)] ?? "text/plain" };
+  const headers = {
+    "cache-control": "no-cache",
+    "x-content-type-options": "nosniff",
+    "content-type": ENGINE_TYPES[path.extname(rest)] ?? "text/plain",
+  };
   if (rest === "/index.html") headers["content-security-policy"] = PAGE_CSP;
   return { status: 200, headers, file: path.join(ENGINE_DIR, rest) };
 }

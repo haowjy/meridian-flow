@@ -7,13 +7,29 @@
  * Every route is a history entry except choosing a box or step, so the browser's Back and the
  * Back button walk the same trail.
  */
-import { DEPENDENCIES_PAGE, MAP_DIR, NAV, STATE_MACHINES_INDEX, sourceUrl, storageKey, TITLE } from "./config.js";
+import {
+  DEPENDENCIES_PAGE,
+  MAP_DIR,
+  NAV,
+  STATE_MACHINES_INDEX,
+  sourceUrl,
+  storageKey,
+  TITLE,
+} from "./config.js";
 import { paintEntry } from "./files.js";
 import { createJourneys } from "./journeys.js";
 import { createMap } from "./map.js";
 import { isDocPath, loadFailure, paintMarkdown } from "./markdown.js";
 import { loadLevelPages, resolveParticipant } from "./pages.js";
-import { currentTheme, el, fetchPage, fetchRepoEntry, fetchRepoFile, onThemeChange, pinTheme } from "./shell.js";
+import {
+  currentTheme,
+  el,
+  fetchPage,
+  fetchRepoEntry,
+  fetchRepoFile,
+  onThemeChange,
+  pinTheme,
+} from "./shell.js";
 
 const root = document.getElementById("root");
 const host = el("main", { class: "view" });
@@ -38,8 +54,18 @@ try {
 function parseHash() {
   const [head, a, b] = location.hash.slice(1).split("/").map(decodeURIComponent);
   if (head === "doc") return { kind: "doc", path: a ?? "", fragment: b };
-  if (head === "flows" && NAV.journeys) return a ? { kind: "read", key: `flows/${a}`, path: `${MAP_DIR}/flows/${a}.md`, section: "journeys", flow: true } : { kind: "journeys" };
-  if (head in READ_PAGES) return { kind: "read", key: head, path: READ_PAGES[head], section: head, fragment: a };
+  if (head === "flows" && NAV.journeys)
+    return a
+      ? {
+          kind: "read",
+          key: `flows/${a}`,
+          path: `${MAP_DIR}/flows/${a}.md`,
+          section: "journeys",
+          flow: true,
+        }
+      : { kind: "journeys" };
+  if (head in READ_PAGES)
+    return { kind: "read", key: head, path: READ_PAGES[head], section: head, fragment: a };
   if (head === "journeys" && NAV.journeys) return { kind: "journeys", journey: a, step: b };
   const id = head || navLevels[0].id;
   return { kind: "level", id, box: a ?? null };
@@ -51,7 +77,9 @@ const stateNow = () => history.state ?? { docs: 0, direct: location.hash.startsW
 function go(hash, { replace = false } = {}) {
   if (hash === location.hash) return;
   const prev = stateNow();
-  const state = hash.startsWith("#doc/") ? { docs: prev.docs + 1, direct: prev.direct } : { docs: 0, direct: false };
+  const state = hash.startsWith("#doc/")
+    ? { docs: prev.docs + 1, direct: prev.direct }
+    : { docs: 0, direct: false };
   history[replace ? "replaceState" : "pushState"](state, "", hash);
   render();
 }
@@ -69,7 +97,8 @@ const close = () => {
 
 document.addEventListener("click", (event) => {
   const link = event.target.closest?.("a[href^='#']");
-  if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.button || link.target) return;
+  if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.button || link.target)
+    return;
   event.preventDefault();
   go(link.getAttribute("href"));
 });
@@ -99,7 +128,8 @@ async function render() {
   }
   hideDoc();
   syncChrome(r);
-  const key = r.kind === "level" ? `level:${r.id}:${mode}` : r.kind === "read" ? `read:${r.key}` : "journeys";
+  const key =
+    r.kind === "level" ? `level:${r.id}:${mode}` : r.kind === "read" ? `read:${r.key}` : "journeys";
   if (key === baseKey) {
     // Closing a doc returns to the same hash: leave the page as the reader left it.
     if (location.hash !== baseHash) base?.update(r);
@@ -118,7 +148,9 @@ async function render() {
     baseHash = location.hash;
   } catch (error) {
     if (mine !== seq) return;
-    host.replaceChildren(el("p", { class: "doc-note pad" }, `This page didn't load: ${error.message ?? error}`));
+    host.replaceChildren(
+      el("p", { class: "doc-note pad" }, `This page didn't load: ${error.message ?? error}`),
+    );
   }
 }
 
@@ -151,9 +183,14 @@ async function mountRead(path, target) {
   host.className = "view";
   const scroller = el("div", { class: "read" }, article);
   host.replaceChildren(scroller);
-  const scrollTo = (id) => (id ? article.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({ block: "start" }) : scroller.scrollTo(0, 0));
+  const scrollTo = (id) =>
+    id
+      ? article.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({ block: "start" })
+      : scroller.scrollTo(0, 0);
   try {
-    await paintMarkdown(article, await fetchRepoFile(path), path, (holder, source) => wireDiagram(holder, source, scrollTo));
+    await paintMarkdown(article, await fetchRepoFile(path), path, (holder, source) =>
+      wireDiagram(holder, source, scrollTo),
+    );
   } catch (error) {
     article.replaceChildren(loadFailure(path, error));
   }
@@ -169,10 +206,17 @@ function wireDiagram(holder, source, scrollTo) {
     g.setAttribute("role", "button");
     g.setAttribute("aria-label", label);
     g.addEventListener("click", onclick);
-    g.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onclick()));
+    g.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      onclick();
+    });
   };
   if (source.startsWith("sequenceDiagram")) {
-    const pages = [...levels.values()].map((l) => ({ id: l.id, nodes: l.page.mermaid?.nodes ?? [] }));
+    const pages = [...levels.values()].map((l) => ({
+      id: l.id,
+      nodes: l.page.mermaid?.nodes ?? [],
+    }));
     for (const actor of holder.querySelectorAll("rect.actor[name]")) {
       const hit = resolveParticipant(pages, actor.getAttribute("name"));
       if (hit.error) continue;
@@ -206,12 +250,20 @@ function saveMode() {
 
 /** "on GitHub" beside the path, under the title. */
 const pathLine = (path) =>
-  el("div", { class: "doc-path" }, path, " · ", el("a", { href: sourceUrl(path), target: "_blank", rel: "noreferrer" }, "on GitHub"));
+  el(
+    "div",
+    { class: "doc-path" },
+    path,
+    " · ",
+    el("a", { href: sourceUrl(path), target: "_blank", rel: "noreferrer" }, "on GitHub"),
+  );
 
 function showDoc({ path, fragment }) {
   if (!isDocPath(path)) {
     hideDoc();
-    host.replaceChildren(el("p", { class: "doc-note pad" }, `${path} isn't a path in this repository.`));
+    host.replaceChildren(
+      el("p", { class: "doc-note pad" }, `${path} isn't a path in this repository.`),
+    );
     return;
   }
   const key = `${path}#${fragment ?? ""}`;
@@ -229,7 +281,17 @@ function showDoc({ path, fragment }) {
         { class: "doc-head" },
         el("button", { type: "button", class: "text-button", onclick: back }, "← Back"),
         el("div", { class: "doc-title" }, title, pathLine(path)),
-        el("button", { type: "button", class: "icon-button", "aria-label": "Close", title: "Close (Esc)", onclick: close }, "×"),
+        el(
+          "button",
+          {
+            type: "button",
+            class: "icon-button",
+            "aria-label": "Close",
+            title: "Close (Esc)",
+            onclick: close,
+          },
+          "×",
+        ),
       ),
       scroll,
     );
@@ -244,7 +306,9 @@ function showDoc({ path, fragment }) {
       if (docKey !== key) return;
       return paintEntry(article, entry, path, fragment);
     })
-    .then((heading) => docKey === key && heading && (title.textContent = heading))
+    .then((heading) => {
+      if (docKey === key && heading) title.textContent = heading;
+    })
     .catch((error) => docKey === key && article.replaceChildren(loadFailure(path, error)));
 }
 
@@ -261,18 +325,39 @@ const chrome = {};
 function buildChrome() {
   const links = [
     ...navLevels.map((l) => ({ section: l.id, href: `#${l.id}`, label: l.title })),
-    ...["journeys", "machines", "dependencies"].filter((s) => NAV[s]).map((s) => ({ section: s, href: `#${s}`, label: NAV[s] })),
+    ...["journeys", "machines", "dependencies"]
+      .filter((s) => NAV[s])
+      .map((s) => ({ section: s, href: `#${s}`, label: NAV[s] })),
   ];
   chrome.links = new Map(links.map((l) => [l.section, el("a", { href: l.href }, l.label)]));
-  chrome.modes = ["read", "map"].map((m) => el("button", { type: "button", "data-mode": m, onclick: () => setMode(m) }, m === "read" ? "Read" : "Map"));
-  chrome.toggle = el("div", { class: "segmented", role: "group", "aria-label": "View" }, chrome.modes);
+  chrome.modes = ["read", "map"].map((m) =>
+    el(
+      "button",
+      { type: "button", "data-mode": m, onclick: () => setMode(m) },
+      m === "read" ? "Read" : "Map",
+    ),
+  );
+  chrome.toggle = el(
+    "div",
+    { class: "segmented", role: "group", "aria-label": "View" },
+    chrome.modes,
+  );
   const theme = el("button", { type: "button", class: "text-button" });
   const sync = () => (theme.textContent = currentTheme() === "dark" ? "Light theme" : "Dark theme");
   theme.addEventListener("click", () => pinTheme(currentTheme() === "dark" ? "light" : "dark"));
   onThemeChange(sync);
   sync();
   chrome.crumbs = el("nav", { class: "crumbs", "aria-label": "Breadcrumb", hidden: true });
-  return [el("header", { class: "topbar" }, el("nav", { class: "levels", "aria-label": "Sections" }, [...chrome.links.values()]), chrome.toggle, theme), chrome.crumbs];
+  return [
+    el(
+      "header",
+      { class: "topbar" },
+      el("nav", { class: "levels", "aria-label": "Sections" }, [...chrome.links.values()]),
+      chrome.toggle,
+      theme,
+    ),
+    chrome.crumbs,
+  ];
 }
 
 function setMode(next) {
@@ -285,7 +370,11 @@ function setMode(next) {
 /** The nav's current entry, and the Read | Map toggle on level pages. */
 function syncChrome(r) {
   const level = r.kind === "level" ? levels.get(r.id) : null;
-  const section = level ? (level.trail[0]?.hash.slice(1).split("/")[0] ?? r.id) : r.kind === "journeys" ? "journeys" : r.section;
+  const section = level
+    ? (level.trail[0]?.hash.slice(1).split("/")[0] ?? r.id)
+    : r.kind === "journeys"
+      ? "journeys"
+      : r.section;
   for (const [id, a] of chrome.links) {
     if (id === section) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -301,13 +390,18 @@ function syncCrumbs(r, level) {
   const mine = seq;
   const show = (trail, current) => {
     chrome.crumbs.hidden = !trail.length;
-    chrome.crumbs.replaceChildren(...trail.flatMap((t) => [el("a", { href: t.hash }, t.title), "›"]), el("span", { "aria-current": "page" }, current));
+    chrome.crumbs.replaceChildren(
+      ...trail.flatMap((t) => [el("a", { href: t.hash }, t.title), "›"]),
+      el("span", { "aria-current": "page" }, current),
+    );
   };
   chrome.crumbs.hidden = true;
   if (level?.trail.length) show(level.trail, level.title);
   else if (r.flow)
     fetchPage(r.path)
-      .then((page) => mine === seq && show([{ title: NAV.journeys, hash: "#journeys" }], page.title))
+      .then(
+        (page) => mine === seq && show([{ title: NAV.journeys, hash: "#journeys" }], page.title),
+      )
       .catch(() => {});
 }
 
@@ -321,5 +415,7 @@ async function main() {
 }
 
 main().catch((error) => {
-  root.replaceChildren(el("p", { class: "doc-note pad" }, `The map didn't load: ${error.message ?? error}`));
+  root.replaceChildren(
+    el("p", { class: "doc-note pad" }, `The map didn't load: ${error.message ?? error}`),
+  );
 });

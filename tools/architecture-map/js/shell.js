@@ -64,7 +64,7 @@ function applyTheme() {
   if (dark) html.setAttribute(DARK.attribute, DARK.value);
   else html.removeAttribute(DARK.attribute);
   html.style.colorScheme = dark ? "dark" : "light";
-  themeListeners.forEach((cb) => cb());
+  for (const cb of themeListeners) cb();
 }
 
 try {

@@ -45,11 +45,19 @@ export function readTokens(root, tokens) {
       const hit = wanted.find((w) => selector.split(",").some((s) => s.trim() === w));
       if (!hit) continue;
       found.add(hit);
-      const declarations = [...body.replace(/\{[^{}]*\}/g, "").matchAll(/(--[\w-]+)\s*:\s*([^;{}]+);/g)];
+      const declarations = [
+        ...body.replace(/\{[^{}]*\}/g, "").matchAll(/(--[\w-]+)\s*:\s*([^;{}]+);/g),
+      ];
       for (const [, name] of declarations) names.add(name.slice(2));
-      rules.push(`${hit === "@theme" ? ":root" : selector} {\n${declarations.map(([, name, value]) => `  ${name}: ${value.replace(/\s+/g, " ").trim()};`).join("\n")}\n}`);
+      rules.push(
+        `${hit === "@theme" ? ":root" : selector} {\n${declarations.map(([, name, value]) => `  ${name}: ${value.replace(/\s+/g, " ").trim()};`).join("\n")}\n}`,
+      );
     }
     for (const w of wanted) if (!found.has(w)) missing.push(`${file}: ${w}`);
   }
-  return { css: `/* Built from ${tokens.files.map((f) => f.file).join(", ")}. */\n${rules.join("\n\n")}\n`, names, missing };
+  return {
+    css: `/* Built from ${tokens.files.map((f) => f.file).join(", ")}. */\n${rules.join("\n\n")}\n`,
+    names,
+    missing,
+  };
 }

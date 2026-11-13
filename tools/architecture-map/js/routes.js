@@ -15,7 +15,8 @@ const NORMAL = { top: [0, -1], bottom: [0, 1], left: [-1, 0], right: [1, 0] };
 
 const cx = (r) => r.x + r.w / 2;
 const cy = (r) => r.y + r.h / 2;
-const overlaps = (a, b, gap) => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+const overlaps = (a, b, gap) =>
+  a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
 
 function facing(S, T) {
   if (T.y >= S.y + S.h + 12) return ["bottom", "top"];
@@ -26,9 +27,17 @@ function facing(S, T) {
 /** How an arrow from box S to box T runs now: { kind, sides }, kind "line" | "arc" | "wrap" | "curve". */
 function shapeOf(S, T, hint) {
   const sameRow = Math.abs(cy(S) - cy(T)) < Math.max(S.h, T.h) / 2;
-  if (hint?.kind === "row" && sameRow) return { kind: "line", sides: cx(T) > cx(S) ? ["right", "left"] : ["left", "right"] };
-  if (hint?.kind === "arc" && sameRow) return { kind: "arc", sides: hint.side === "above" ? ["top", "top"] : ["bottom", "bottom"], depth: hint.depth, up: hint.side === "above" };
-  if (hint?.kind === "wrap" && S.y + S.h < hint.lane && hint.lane < T.y) return { kind: "wrap", sides: ["right", "left"], lane: hint.lane };
+  if (hint?.kind === "row" && sameRow)
+    return { kind: "line", sides: cx(T) > cx(S) ? ["right", "left"] : ["left", "right"] };
+  if (hint?.kind === "arc" && sameRow)
+    return {
+      kind: "arc",
+      sides: hint.side === "above" ? ["top", "top"] : ["bottom", "bottom"],
+      depth: hint.depth,
+      up: hint.side === "above",
+    };
+  if (hint?.kind === "wrap" && S.y + S.h < hint.lane && hint.lane < T.y)
+    return { kind: "wrap", sides: ["right", "left"], lane: hint.lane };
   return { kind: "curve", sides: facing(S, T) };
 }
 
@@ -46,13 +55,17 @@ function assignPorts(lines, rects) {
     const side = key.slice(key.lastIndexOf(":") + 1);
     const box = rects.get(lines[ends[0].i].ids[ends[0].end]);
     const vertical = side === "top" || side === "bottom";
-    ends.sort((a, b) => (vertical ? cx(a.other) - cx(b.other) : cy(a.other) - cy(b.other)) || a.i - b.i);
+    ends.sort(
+      (a, b) => (vertical ? cx(a.other) - cx(b.other) : cy(a.other) - cy(b.other)) || a.i - b.i,
+    );
     const length = vertical ? box.w : box.h;
     const spacing = Math.min(16, (length * 0.8) / ends.length);
     ends.forEach((end, k) => {
       const off = (k - (ends.length - 1) / 2) * spacing;
       const [nx, ny] = NORMAL[side];
-      const point = vertical ? { x: cx(box) + off, y: side === "top" ? box.y : box.y + box.h } : { x: side === "left" ? box.x : box.x + box.w, y: cy(box) + off };
+      const point = vertical
+        ? { x: cx(box) + off, y: side === "top" ? box.y : box.y + box.h }
+        : { x: side === "left" ? box.x : box.x + box.w, y: cy(box) + off };
       lines[end.i].ports[end.end] = { ...point, nx, ny, off };
     });
   }
@@ -63,7 +76,8 @@ function cubicPoints(p0, c1, c2, p3) {
   for (let k = 0; k <= 24; k++) {
     const t = k / 24;
     const u = 1 - t;
-    const at = (a, b, c, d) => u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
+    const at = (a, b, c, d) =>
+      u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
     points.push({ x: at(p0.x, c1.x, c2.x, p3.x), y: at(p0.y, c1.y, c2.y, p3.y) });
   }
   return points;
@@ -73,7 +87,11 @@ function roundedPath(points) {
   let d = `M ${points[0].x} ${points[0].y}`;
   for (let k = 1; k < points.length - 1; k++) {
     const [a, b, c] = points.slice(k - 1, k + 2);
-    const r = Math.min(ROUND, Math.hypot(b.x - a.x, b.y - a.y) / 2, Math.hypot(c.x - b.x, c.y - b.y) / 2);
+    const r = Math.min(
+      ROUND,
+      Math.hypot(b.x - a.x, b.y - a.y) / 2,
+      Math.hypot(c.x - b.x, c.y - b.y) / 2,
+    );
     const toward = (p) => {
       const len = Math.hypot(p.x - b.x, p.y - b.y) || 1;
       return { x: b.x + ((p.x - b.x) / len) * r, y: b.y + ((p.y - b.y) / len) * r };
@@ -93,9 +111,17 @@ function draw(line, rects) {
     const [S, T] = line.ids.map((id) => rects.get(id));
     const lane = shape.lane + p0.off;
     const within = (y0, y1) => [...rects.values()].filter((r) => r.y < y1 && r.y + r.h > y0);
-    const right = Math.max(S.x + S.w, ...within(p0.y, lane).map((r) => r.x + r.w)) + WRAP_CLEAR + p0.off;
+    const right =
+      Math.max(S.x + S.w, ...within(p0.y, lane).map((r) => r.x + r.w)) + WRAP_CLEAR + p0.off;
     const left = Math.min(T.x, ...within(lane, p3.y).map((r) => r.x)) - WRAP_CLEAR + p0.off;
-    const points = [p0, { x: right, y: p0.y }, { x: right, y: lane }, { x: left, y: lane }, { x: left, y: p3.y }, p3];
+    const points = [
+      p0,
+      { x: right, y: p0.y },
+      { x: right, y: lane },
+      { x: left, y: lane },
+      { x: left, y: p3.y },
+      p3,
+    ];
     return { d: roundedPath(points), points, start: p0 };
   }
   let c1;
@@ -104,19 +130,37 @@ function draw(line, rects) {
     const base = shape.up ? Math.min(p0.y, p3.y) : Math.max(p0.y, p3.y);
     // A cubic's middle sits three quarters of the way to its control points.
     const y = base + ((shape.up ? -1 : 1) * shape.depth) / 0.75;
-    [c1, c2] = [{ x: p0.x, y }, { x: p3.x, y }];
+    [c1, c2] = [
+      { x: p0.x, y },
+      { x: p3.x, y },
+    ];
   } else {
-    const reach = Math.min(160, Math.max(24, 0.45 * (p0.nx ? Math.abs(p3.x - p0.x) : Math.abs(p3.y - p0.y))));
-    [c1, c2] = [{ x: p0.x + p0.nx * reach, y: p0.y + p0.ny * reach }, { x: p3.x + p3.nx * reach, y: p3.y + p3.ny * reach }];
+    const reach = Math.min(
+      160,
+      Math.max(24, 0.45 * (p0.nx ? Math.abs(p3.x - p0.x) : Math.abs(p3.y - p0.y))),
+    );
+    [c1, c2] = [
+      { x: p0.x + p0.nx * reach, y: p0.y + p0.ny * reach },
+      { x: p3.x + p3.nx * reach, y: p3.y + p3.ny * reach },
+    ];
   }
-  return { d: `M ${p0.x} ${p0.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${p3.x} ${p3.y}`, points: cubicPoints(p0, c1, c2, p3), start: p0 };
+  return {
+    d: `M ${p0.x} ${p0.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${p3.x} ${p3.y}`,
+    points: cubicPoints(p0, c1, c2, p3),
+    start: p0,
+  };
 }
 
 /** Whether segment a–b passes through `rect` (Liang–Barsky clipping). */
 function segmentHits(a, b, rect) {
   let [t0, t1] = [0, 1];
   const [dx, dy] = [b.x - a.x, b.y - a.y];
-  const sides = [[-dx, a.x - rect.x], [dx, rect.x + rect.w - a.x], [-dy, a.y - rect.y], [dy, rect.y + rect.h - a.y]];
+  const sides = [
+    [-dx, a.x - rect.x],
+    [dx, rect.x + rect.w - a.x],
+    [-dy, a.y - rect.y],
+    [dy, rect.y + rect.h - a.y],
+  ];
   for (const [p, q] of sides) {
     if (p === 0) {
       if (q < 0) return false;
@@ -131,17 +175,33 @@ function segmentHits(a, b, rect) {
 }
 
 function leastCovering(candidates, rects) {
-  const covered = (a) => rects.reduce((sum, b) => sum + Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)), 0);
+  const covered = (a) =>
+    rects.reduce(
+      (sum, b) =>
+        sum +
+        Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) *
+          Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)),
+      0,
+    );
   return candidates.reduce((best, c) => (covered(c) < covered(best) ? c : best));
 }
 
 function pointAlong(points, fraction) {
   const lengths = [0];
-  for (let k = 1; k < points.length; k++) lengths.push(lengths[k - 1] + Math.hypot(points[k].x - points[k - 1].x, points[k].y - points[k - 1].y));
+  for (let k = 1; k < points.length; k++)
+    lengths.push(
+      lengths[k - 1] + Math.hypot(points[k].x - points[k - 1].x, points[k].y - points[k - 1].y),
+    );
   const goal = lengths.at(-1) * fraction;
-  const k = Math.max(1, lengths.findIndex((l) => l >= goal));
+  const k = Math.max(
+    1,
+    lengths.findIndex((l) => l >= goal),
+  );
   const t = (goal - lengths[k - 1]) / (lengths[k] - lengths[k - 1] || 1);
-  return { x: points[k - 1].x + (points[k].x - points[k - 1].x) * t, y: points[k - 1].y + (points[k].y - points[k - 1].y) * t };
+  return {
+    x: points[k - 1].x + (points[k].x - points[k - 1].x) * t,
+    y: points[k - 1].y + (points[k].y - points[k - 1].y) * t,
+  };
 }
 
 /**
@@ -152,14 +212,23 @@ function pointAlong(points, fraction) {
  */
 export function routeLevel({ rects, edges, noteLinks, hints, labelSize, labelled }) {
   const lines = [
-    ...edges.map((e, i) => ({ ids: [e.from, e.to], shape: shapeOf(rects.get(e.from), rects.get(e.to), hints.get(i)), ports: [] })),
-    ...noteLinks.map((l) => ({ ids: [l.from, l.to], shape: { kind: "curve", sides: facing(rects.get(l.from), rects.get(l.to)) }, ports: [] })),
+    ...edges.map((e, i) => ({
+      ids: [e.from, e.to],
+      shape: shapeOf(rects.get(e.from), rects.get(e.to), hints.get(i)),
+      ports: [],
+    })),
+    ...noteLinks.map((l) => ({
+      ids: [l.from, l.to],
+      shape: { kind: "curve", sides: facing(rects.get(l.from), rects.get(l.to)) },
+      ports: [],
+    })),
   ];
   assignPorts(lines, rects);
   const drawn = lines.map((line) => draw(line, rects));
 
   const boxes = [...rects.values()];
-  const middle = (Math.min(...boxes.map((b) => b.x)) + Math.max(...boxes.map((b) => b.x + b.w))) / 2;
+  const middle =
+    (Math.min(...boxes.map((b) => b.x)) + Math.max(...boxes.map((b) => b.x + b.w))) / 2;
   const taken = [];
   const labels = new Map();
   const order = edges
@@ -170,7 +239,11 @@ export function routeLevel({ rects, edges, noteLinks, hints, labelSize, labelled
   // between the same two boxes aside).
   const pair = (k) => [...lines[k].ids].sort().join(">");
   const crosses = (rect, j) =>
-    drawn.some((other, k) => pair(k) !== pair(j) && other.points.some((p, n) => n > 0 && segmentHits(other.points[n - 1], p, rect)));
+    drawn.some(
+      (other, k) =>
+        pair(k) !== pair(j) &&
+        other.points.some((p, n) => n > 0 && segmentHits(other.points[n - 1], p, rect)),
+    );
   for (const i of order) {
     const { width: w, height: h } = labelSize(edges[i]);
     // Of two arrows side by side, each label leans to its own side, leaving the middle free; a
@@ -178,17 +251,34 @@ export function routeLevel({ rects, edges, noteLinks, hints, labelSize, labelled
     const { off, nx } = drawn[i].start;
     const pairX = (cx(rects.get(edges[i].from)) + cx(rects.get(edges[i].to))) / 2;
     const lean = Math.sign(off);
-    let offsets = [[0, 0], [0, -h / 2 - 4], [0, h / 2 + 4], [w / 2 + 4, 0], [-w / 2 - 4, 0]];
-    if (lean && nx) offsets = [[0, lean * (h / 2 + 4)], [0, 0], [0, -lean * (h / 2 + 4)]];
+    let offsets = [
+      [0, 0],
+      [0, -h / 2 - 4],
+      [0, h / 2 + 4],
+      [w / 2 + 4, 0],
+      [-w / 2 - 4, 0],
+    ];
+    if (lean && nx)
+      offsets = [
+        [0, lean * (h / 2 + 4)],
+        [0, 0],
+        [0, -lean * (h / 2 + 4)],
+      ];
     else if (lean) {
       const inward = pairX > middle ? -1 : 1;
-      offsets = [[inward * (w / 2 + 4), lean * (h / 2 + 3)], [inward * (w / 2 + 4), 0], [0, 0], [-inward * (w / 2 + 4), 0]];
+      offsets = [
+        [inward * (w / 2 + 4), lean * (h / 2 + 3)],
+        [inward * (w / 2 + 4), 0],
+        [0, 0],
+        [-inward * (w / 2 + 4), 0],
+      ];
     }
     const candidates = ALONG.flatMap((fraction) => {
       const p = pointAlong(drawn[i].points, fraction);
       return offsets.map(([dx, dy]) => ({ x: p.x - w / 2 + dx, y: p.y - h / 2 + dy, w, h }));
     });
-    const free = (rect) => !boxes.some((b) => overlaps(rect, b, 4)) && !taken.some((t) => overlaps(rect, t, 3));
+    const free = (rect) =>
+      !boxes.some((b) => overlaps(rect, b, 4)) && !taken.some((t) => overlaps(rect, t, 3));
     let spot = candidates.find((rect) => free(rect) && !crosses(rect, i)) ?? candidates.find(free);
     if (!spot && edges[i].step !== null) spot = leastCovering(candidates, [...boxes, ...taken]);
     if (spot) {
@@ -199,7 +289,14 @@ export function routeLevel({ rects, edges, noteLinks, hints, labelSize, labelled
 
   let bounds = null;
   const grow = (x0, y0, x1, y1) => {
-    bounds = bounds ? { x0: Math.min(bounds.x0, x0), y0: Math.min(bounds.y0, y0), x1: Math.max(bounds.x1, x1), y1: Math.max(bounds.y1, y1) } : { x0, y0, x1, y1 };
+    bounds = bounds
+      ? {
+          x0: Math.min(bounds.x0, x0),
+          y0: Math.min(bounds.y0, y0),
+          x1: Math.max(bounds.x1, x1),
+          y1: Math.max(bounds.y1, y1),
+        }
+      : { x0, y0, x1, y1 };
   };
   for (const r of [...boxes, ...taken]) grow(r.x, r.y, r.x + r.w, r.y + r.h);
   for (const { points } of drawn) for (const p of points) grow(p.x, p.y, p.x, p.y);

@@ -8,7 +8,8 @@ import { el } from "./shell.js";
 
 /** Fills `article` with the entry at `path`; returns the title for the header. `fragment` is a heading id (Markdown) or `L<n>` (a line). */
 export async function paintEntry(article, entry, path, fragment) {
-  const scrollTo = (id) => id && article.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({ block: "start" });
+  const scrollTo = (id) =>
+    id && article.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({ block: "start" });
   if (entry.kind === "dir") {
     article.className = "md";
     const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : null;
@@ -17,7 +18,13 @@ export async function paintEntry(article, entry, path, fragment) {
         "ul",
         { class: "dir-list" },
         parent !== null && el("li", null, el("a", { href: docHash(parent) }, "↑ ", parent)),
-        entry.entries.map((e) => el("li", { class: e.dir ? "is-dir" : null }, el("a", { href: docHash(`${path}/${e.name}`) }, e.dir ? `${e.name}/` : e.name))),
+        entry.entries.map((e) =>
+          el(
+            "li",
+            { class: e.dir ? "is-dir" : null },
+            el("a", { href: docHash(`${path}/${e.name}`) }, e.dir ? `${e.name}/` : e.name),
+          ),
+        ),
       ),
     );
     return `${path.split("/").at(-1)}/`;
@@ -35,7 +42,9 @@ export async function paintEntry(article, entry, path, fragment) {
   }
   article.className = "code";
   const lines = entry.text.replace(/\n$/, "").split("\n");
-  article.replaceChildren(...lines.map((text, i) => el("div", { class: "line", id: `L${i + 1}` }, text || " ")));
+  article.replaceChildren(
+    ...lines.map((text, i) => el("div", { class: "line", id: `L${i + 1}` }, text || " ")),
+  );
   const target = fragment && article.querySelector(`#${CSS.escape(fragment)}`);
   if (target) {
     target.classList.add("is-target");

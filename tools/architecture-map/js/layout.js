@@ -53,7 +53,12 @@ function mainPath(edges) {
 function pack(items) {
   const clusters = [];
   for (const item of [...items].sort((a, b) => a.want - b.want)) {
-    clusters.push({ items: [item], width: item.w, sum: (item.want - item.w / 2) * item.weight, n: item.weight });
+    clusters.push({
+      items: [item],
+      width: item.w,
+      sum: (item.want - item.w / 2) * item.weight,
+      n: item.weight,
+    });
     while (clusters.length > 1) {
       const [before, last] = clusters.slice(-2);
       if (before.sum / before.n + before.width + BOX_GAP <= last.sum / last.n) break;
@@ -93,7 +98,8 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
       indexOf.set(id, i);
     });
   });
-  const between = (a, b) => edges.filter((e) => (e.from === a && e.to === b) || (e.from === b && e.to === a));
+  const between = (a, b) =>
+    edges.filter((e) => (e.from === a && e.to === b) || (e.from === b && e.to === a));
 
   // The spine's centres along each row: a gap holds the widest label of the arrows across it.
   const cx = new Map();
@@ -122,18 +128,37 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
     if (rf === rt) {
       const [a, b] = [indexOf.get(e.from), indexOf.get(e.to)];
       if (Math.abs(a - b) === 1) hints.set(i, { kind: "row" });
-      else arcs.push({ i, r: rf, side: b > a ? "above" : "below", lo: Math.min(a, b), hi: Math.max(a, b) });
-    } else if (rt === rf + 1 && indexOf.get(e.from) === rows[rf].length - 1 && indexOf.get(e.to) === 0) {
+      else
+        arcs.push({
+          i,
+          r: rf,
+          side: b > a ? "above" : "below",
+          lo: Math.min(a, b),
+          hi: Math.max(a, b),
+        });
+    } else if (
+      rt === rf + 1 &&
+      indexOf.get(e.from) === rows[rf].length - 1 &&
+      indexOf.get(e.to) === 0
+    ) {
       hints.set(i, { kind: "wrap", lane: 0, row: rf });
     }
   });
   arcs.sort((a, b) => a.hi - a.lo - (b.hi - b.lo));
   arcs.forEach((arc, k) => {
-    const under = arcs.slice(0, k).filter((o) => o.r === arc.r && o.side === arc.side && Math.max(o.lo, arc.lo) < Math.min(o.hi, arc.hi));
+    const under = arcs
+      .slice(0, k)
+      .filter(
+        (o) =>
+          o.r === arc.r && o.side === arc.side && Math.max(o.lo, arc.lo) < Math.min(o.hi, arc.hi),
+      );
     arc.level = 1 + Math.max(0, ...under.map((o) => o.level));
     const depth = ARC_FIRST + (arc.level - 1) * ARC_STEP;
     hints.set(arc.i, { kind: "arc", side: arc.side, depth });
-    reach[arc.r][arc.side] = Math.max(reach[arc.r][arc.side], depth + labelSize(edges[arc.i]).height / 2);
+    reach[arc.r][arc.side] = Math.max(
+      reach[arc.r][arc.side],
+      depth + labelSize(edges[arc.i]).height / 2,
+    );
   });
 
   // Every other box gets a row, a side, a band (1 is next to the row) and the x it would like.
@@ -143,7 +168,13 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
     // A spur's arrows crowd the space beside it, so it counts double.
     const near = (side) =>
       [...band]
-        .filter(([, b]) => b.r === r && b.side === side && b.depth === 1 && Math.abs(b.want - x) < (b.w + w) / 2 + BOX_GAP)
+        .filter(
+          ([, b]) =>
+            b.r === r &&
+            b.side === side &&
+            b.depth === 1 &&
+            Math.abs(b.want - x) < (b.w + w) / 2 + BOX_GAP,
+        )
         .reduce((n, [id]) => n + (spurOf.has(id) ? 2 : 1), 0);
     const count = (side) => [...band.values()].filter((b) => b.r === r && b.side === side).length;
     const [a, b] = [near("above"), near("below")];
@@ -175,7 +206,13 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
         const x = known.reduce((sum, k) => sum + want(k), 0) / known.length;
         const anchor = rowOf.has(id) ? { r: rowOf.get(id), depth: 0 } : band.get(id);
         const side = anchor.depth === 0 ? chooseSide(anchor.r, x, size(next).width) : anchor.side;
-        band.set(next, { r: anchor.r, side, depth: anchor.depth + 1, want: x, w: size(next).width });
+        band.set(next, {
+          r: anchor.r,
+          side,
+          depth: anchor.depth + 1,
+          want: x,
+          w: size(next).width,
+        });
         queue.push(next);
       }
     }
@@ -183,20 +220,29 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
   visit();
   // Boxes the arrows don't reach (tools beside the system, a separate pair) go wherever the last
   // row's bands have room, beside a box they share a note with.
-  const noted = (id) => noteLinks.filter((l) => l.from === id || l.to === id).map((l) => (l.from === id ? l.to : l.from));
+  const noted = (id) =>
+    noteLinks
+      .filter((l) => l.from === id || l.to === id)
+      .map((l) => (l.from === id ? l.to : l.from));
   for (const id of boxes) {
     if (placed(id)) continue;
     const w = size(id).width;
-    const partner = noted(id).flatMap((note) => noted(note)).find((other) => band.has(other));
+    const partner = noted(id)
+      .flatMap((note) => noted(note))
+      .find((other) => band.has(other));
     const r = partner ? band.get(partner).r : rows.length - 1;
-    const x = partner ? band.get(partner).want + (band.get(partner).w + w) / 2 + BOX_GAP : rowRight[r] / 2;
+    const x = partner
+      ? band.get(partner).want + (band.get(partner).w + w) / 2 + BOX_GAP
+      : rowRight[r] / 2;
     const side = partner ? band.get(partner).side : chooseSide(r, x, w);
     band.set(id, { r, side, depth: partner ? band.get(partner).depth : 1, want: x, w });
     queue.push(id);
     visit();
   }
   for (const note of nodes.filter((n) => n.kind === "note")) {
-    const linked = noteLinks.flatMap((l) => (l.from === note.id ? [l.to] : l.to === note.id ? [l.from] : [])).filter(placed);
+    const linked = noteLinks
+      .flatMap((l) => (l.from === note.id ? [l.to] : l.to === note.id ? [l.from] : []))
+      .filter(placed);
     if (!linked.length) continue;
     const inBand = linked.map((id) => band.get(id)).filter(Boolean);
     const x = linked.reduce((sum, id) => sum + want(id), 0) / linked.length;
@@ -223,7 +269,12 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
     const r = Number(key.split(":")[0]);
     const lo = Math.min(...left.values());
     const hi = Math.max(...items.map((it) => left.get(it.id) + it.w));
-    const shift = hi > rowRight[r] ? -Math.min(hi - rowRight[r], Math.max(0, lo)) : lo < 0 ? Math.min(-lo, Math.max(0, rowRight[r] - hi)) : 0;
+    const shift =
+      hi > rowRight[r]
+        ? -Math.min(hi - rowRight[r], Math.max(0, lo))
+        : lo < 0
+          ? Math.min(-lo, Math.max(0, rowRight[r] - hi))
+          : 0;
     for (const [id, l] of left) x.set(id, l + shift);
   }
 
@@ -236,20 +287,36 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
     for (const side of ["above", "below"]) {
       let edge = side === "above" ? -rowH / 2 : rowH / 2;
       for (let depth = 1; ; depth++) {
-        const members = [...band].filter(([, b]) => b.r === r && b.side === side && b.depth === depth).map(([id]) => id);
+        const members = [...band]
+          .filter(([, b]) => b.r === r && b.side === side && b.depth === depth)
+          .map(([id]) => id);
         if (!members.length) break;
         // A numbered arrow across the gap shows its label there, so the gap holds it.
-        const inner = (id) => (depth === 1 ? rowOf.get(id) === r : band.get(id)?.r === r && band.get(id).side === side && band.get(id).depth === depth - 1);
-        const crossing = edges.filter((e) => e.step !== null && ((members.includes(e.from) && inner(e.to)) || (members.includes(e.to) && inner(e.from))));
+        const inner = (id) =>
+          depth === 1
+            ? rowOf.get(id) === r
+            : band.get(id)?.r === r &&
+              band.get(id).side === side &&
+              band.get(id).depth === depth - 1;
+        const crossing = edges.filter(
+          (e) =>
+            e.step !== null &&
+            ((members.includes(e.from) && inner(e.to)) ||
+              (members.includes(e.to) && inner(e.from))),
+        );
         const stacked = new Map();
         for (const e of crossing) {
           const pair = [e.from, e.to].sort().join(">");
           stacked.set(pair, (stacked.get(pair) ?? 16) + labelSize(e).height + 8);
         }
         const label = Math.max(0, ...stacked.values());
-        const gap = Math.max(depth === 1 ? Math.max(BAND_GAP, reach[r][side] + 24) : OUTER_BAND_GAP, label);
+        const gap = Math.max(
+          depth === 1 ? Math.max(BAND_GAP, reach[r][side] + 24) : OUTER_BAND_GAP,
+          label,
+        );
         const h = Math.max(...members.map((id) => size(id).height));
-        for (const id of members) y.set(id, side === "above" ? edge - gap - size(id).height : edge + gap);
+        for (const id of members)
+          y.set(id, side === "above" ? edge - gap - size(id).height : edge + gap);
         edge = side === "above" ? edge - gap - h : edge + gap + h;
       }
       if (side === "above") top = Math.min(top, edge);
@@ -272,7 +339,14 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
   const positions = new Map();
   let bounds = null;
   const grow = (x0, y0, x1, y1) => {
-    bounds = bounds ? { x0: Math.min(bounds.x0, x0), y0: Math.min(bounds.y0, y0), x1: Math.max(bounds.x1, x1), y1: Math.max(bounds.y1, y1) } : { x0, y0, x1, y1 };
+    bounds = bounds
+      ? {
+          x0: Math.min(bounds.x0, x0),
+          y0: Math.min(bounds.y0, y0),
+          x1: Math.max(bounds.x1, x1),
+          y1: Math.max(bounds.y1, y1),
+        }
+      : { x0, y0, x1, y1 };
   };
   for (const id of nodes.map((n) => n.id)) {
     if (!x.has(id)) continue;
@@ -289,7 +363,10 @@ function arrange(perRow, { spine, spurOf }, { nodes, edges, noteLinks, sizes, la
 
 /** The zoom that fits `bounds` in `area`, leaving a margin. */
 export function fitZoom(bounds, area) {
-  return Math.min((area.width - 2 * FIT_PAD) / (bounds.x1 - bounds.x0), (area.height - 2 * FIT_PAD) / (bounds.y1 - bounds.y0));
+  return Math.min(
+    (area.width - 2 * FIT_PAD) / (bounds.x1 - bounds.x0),
+    (area.height - 2 * FIT_PAD) / (bounds.y1 - bounds.y0),
+  );
 }
 
 /**

@@ -12,7 +12,10 @@ export function architectureMapPlugin(configFile) {
     async configureServer(server) {
       const handle = await createArchitectureServer(configFile);
       server.middlewares.use((req, res, next) => {
-        const result = req.url && (req.method === "GET" || req.method === "HEAD") ? handle(req.url.split(/[?#]/)[0]) : null;
+        const result =
+          req.url && (req.method === "GET" || req.method === "HEAD")
+            ? handle(req.url.split(/[?#]/)[0])
+            : null;
         if (result) send(req, res, result);
         else next();
       });

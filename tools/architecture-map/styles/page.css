@@ -460,7 +460,11 @@ button {
 
 /* A group opens a page of its own: a stacked card. */
 .card.kind-group {
-  box-shadow: 5px 5px 0 -1px var(--color-card), 5px 5px 0 0 var(--stroke), 9px 9px 0 -1px var(--color-card), 9px 9px 0 0 var(--stroke);
+  box-shadow:
+    5px 5px 0 -1px var(--color-card),
+    5px 5px 0 0 var(--stroke),
+    9px 9px 0 -1px var(--color-card),
+    9px 9px 0 0 var(--stroke);
 }
 
 .card.is-selected {
