@@ -80,8 +80,32 @@ function attrShare(a: PMNode, b: PMNode): number {
   return equal / (keys.length + 1);
 }
 
+/**
+ * Scores of an old node against new nodes, remembered per `kind` of score: a projection after one
+ * keystroke scores only the pairs that touch the new node, because every other block of both sides
+ * is the node the last projection saw.
+ */
+const scores = new Map<number, WeakMap<object, WeakMap<object, number>>>();
+function scoresOf(kind: number, a: object): WeakMap<object, number> {
+  const byOld = scores.get(kind) ?? new WeakMap<object, WeakMap<object, number>>();
+  scores.set(kind, byOld);
+  const byNew = byOld.get(a) ?? new WeakMap<object, number>();
+  byOld.set(a, byNew);
+  return byNew;
+}
+function remembered(memo: WeakMap<object, number>, b: object, score: () => number): number {
+  const known = memo.get(b);
+  if (known !== undefined) return known;
+  const v = score();
+  memo.set(b, v);
+  return v;
+}
+
 /** Score of pairing two blocks: same content beats similar text beats nothing (0). */
-function weight(a: PMNode, b: PMNode, floor = TUNE.similar): number {
+const weight = (a: PMNode, b: PMNode, floor = TUNE.similar) =>
+  remembered(scoresOf(floor, a), b, () => scoreWeight(a, b, floor));
+
+function scoreWeight(a: PMNode, b: PMNode, floor: number): number {
   if (sameContent(a, b)) return 20_000 + Math.round(100 * attrShare(a, b));
   const sim = similarity(a, b, false, floor);
   if (sim < floor) return 0;
@@ -94,11 +118,13 @@ function weight(a: PMNode, b: PMNode, floor = TUNE.similar): number {
 
 const words = (n: PMNode) => (n.isTextblock ? blockWords(n) : []);
 
-const commonWords = (x: readonly string[], y: readonly string[]) => {
-  let n = 0;
-  if (x.length && y.length) for (const [op, k] of diffKeys(x, y)) if (op === DIFF_EQUAL) n += k;
-  return n;
-};
+/** Words in common, in order. A block's own word list is the same array each projection, so it is remembered. */
+const commonWords = (x: readonly string[], y: readonly string[]) =>
+  remembered(scoresOf(-2, x), y, () => {
+    let n = 0;
+    if (x.length && y.length) for (const [op, k] of diffKeys(x, y)) if (op === DIFF_EQUAL) n += k;
+    return n;
+  });
 const wordSim = (x: readonly string[], y: readonly string[]) =>
   x.length && y.length ? commonWords(x, y) / Math.max(x.length, y.length) : 0;
 const contained = (piece: readonly string[], whole: readonly string[]) =>
@@ -186,9 +212,14 @@ function pairRun(old: readonly PMNode[], next: readonly PMNode[], guess: boolean
       return;
     }
     const w = new Uint32Array(rows * cols);
-    for (let r = 0; r < rows; r++)
+    for (let r = 0; r < rows; r++) {
+      const memo = scoresOf(TUNE.similar, old[a0 + r]);
       for (let q = 0; q < cols; q++)
-        w[r * cols + q] = skipped(a0 + r, b0 + q) ? 0 : weight(old[a0 + r], next[b0 + q]);
+        if (!skipped(a0 + r, b0 + q))
+          w[r * cols + q] = remembered(memo, next[b0 + q], () =>
+            scoreWeight(old[a0 + r], next[b0 + q], TUNE.similar),
+          );
+    }
     const at = (i: number, j: number) => (i - a0) * cols + (j - b0);
     const solve = (without: number) => {
       const m =
@@ -429,9 +460,13 @@ function findMoves(old: readonly PMNode[], next: readonly PMNode[], c: Correspon
   const oldLeft = [...c.partner.keys()].filter((i) => c.partner[i] < 0 && c.oldPiece[i] < 0);
   const nextLeft = [...c.back.keys()].filter((j) => c.back[j] < 0 && c.nextPiece[j] < 0);
   if (!oldLeft.length || !nextLeft.length || oldLeft.length * nextLeft.length > TUNE.cells) return;
-  const sims = oldLeft.map((i) =>
-    nextLeft.map((j) => similarity(old[i], next[j], false, TUNE.similar)),
-  );
+  // Kinds: a floor is a weight, -1 a similarity, -2 a word count.
+  const sims = oldLeft.map((i) => {
+    const memo = scoresOf(-1, old[i]);
+    return nextLeft.map((j) =>
+      remembered(memo, next[j], () => similarity(old[i], next[j], false, TUNE.similar)),
+    );
+  });
   const clear = (vals: number[], k: number) =>
     vals[k] >= TUNE.similar && vals.every((v, q) => q === k || v <= vals[k] * (1 - TUNE.margin));
   oldLeft.forEach((i, r) => {
