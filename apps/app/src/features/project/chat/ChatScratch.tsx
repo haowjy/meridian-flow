@@ -12,16 +12,17 @@
 import { t } from "@lingui/core/macro";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { Folder, FolderOpen } from "lucide-react";
+import { Folder, FolderOpen, MessageSquare } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { Button } from "@/components/ui/button";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { ListLine, ListRow } from "@/components/ui/list-row";
-import { role } from "@/components/ui/roles";
+import { ListSectionHeader } from "@/components/ui/list-section";
 import { SettledSearchField } from "@/components/ui/search-field";
-import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FoundFiles } from "../context/ContextTreePanel";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import { schemeLabel } from "../context/context-schemes";
@@ -129,8 +130,8 @@ export function ScratchSource({
   const { source } = scratch;
   if (!source) return null;
   const { catalog } = scratch.primary;
-  // A chat on no Work has notes of its own: the heading links to it. A Work's notes are
-  // shared by its chats, and the picker above already names the Work.
+  // A chat on no Work has notes of its own: the heading offers its chat, named on hover. A
+  // Work's notes are shared by its chats, and the picker above already names the Work.
   const chatOwned = threadId !== null && "rootThreadId" in source.owner;
   return (
     <EntryList list={list}>
@@ -149,28 +150,29 @@ export function ScratchSource({
                 onSettle={setSearch}
               />
             </div>
-            <div className="mx-2 flex min-h-7 min-w-0 items-center gap-1.5 pr-1 pl-1.5">
-              <h2 className={cn("shrink-0", role.groupLabel)}>{schemeLabel("scratch")}</h2>
-              {chatOwned ? (
-                <button
-                  type="button"
-                  title={source.ownerName}
-                  onClick={() => {
-                    void chat.openChat(threadId).then(() => onPicked?.());
-                  }}
-                  className="focus-ring min-w-0 truncate rounded-sm text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                >
-                  {source.ownerName}
-                </button>
-              ) : (
-                <span
-                  title={source.ownerName}
-                  className="min-w-0 truncate text-xs text-muted-foreground"
-                >
-                  {source.ownerName}
-                </span>
-              )}
-            </div>
+            <ListSectionHeader
+              level={2}
+              label={schemeLabel("scratch")}
+              title={source.heading}
+              actions={
+                chatOwned ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="quiet"
+                        size="xs"
+                        aria-label={t`Open chat ${source.ownerName ?? ""}`}
+                        onClick={() => void chat.openChat(threadId).then(() => onPicked?.())}
+                      >
+                        <MessageSquare aria-hidden />
+                        {t`Chat`}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">{source.ownerName}</TooltipContent>
+                  </Tooltip>
+                ) : undefined
+              }
+            />
           </div>
         )}
       >

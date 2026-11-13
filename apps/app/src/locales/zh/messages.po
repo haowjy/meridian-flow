@@ -1513,6 +1513,7 @@ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/ChatView.tsx
+#: src/features/project/chat/ChatScratch.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/mobile/MobileTopBar.tsx
 #: src/features/project/shell/MainHeader.tsx
@@ -4115,6 +4116,11 @@ msgstr ""
 
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "Open a Work to create an Untitled document"
+msgstr ""
+
+#. placeholder {0}: source.ownerName ?? ""
+#: src/features/project/chat/ChatScratch.tsx
+msgid "Open chat {0}"
 msgstr ""
 
 #: src/features/project/shell/MainTabStrip.tsx
