@@ -12,4 +12,16 @@ The model gateway, published to npm for other products. Rationale and policy:
 - `./shapes` must stay free of Node built-ins and SDKs: the browser bundle imports it through
   `@meridian/contracts`. The mock server (`node:http`) is only reachable from `./mock`.
 - `exports` point at source for the workspace; `publishConfig.exports` points at `dist/` for the
-  tarball. A new entry goes in both. The package is `private` until the publish workflow lands.
+  tarball. A new entry goes in both.
+- `pnpm check:gateway-package` (part of `pnpm check`) packs the tarball, installs it with plain
+  npm outside the workspace, imports each entry and typechecks it with `skipLibCheck: false`. It
+  catches a type-only import of a workspace package, which ships `.d.ts` files nobody can resolve.
+
+## Releasing
+
+Bump `version` in `package.json` in a PR; merging it to `main` runs
+[`publish-gateway.yml`](../../.github/workflows/publish-gateway.yml), which publishes the packed
+tarball to npm with provenance when that version isn't on the registry. A pre-release version
+(`0.2.0-rc.1`) goes to the `next` tag, any other to `latest`. There is no token: npm trusted
+publishing needs `haowjy/meridian-flow` and the workflow file name set as the package's trusted
+publisher on npmjs.com, once, before the first publish succeeds.

@@ -1,9 +1,14 @@
 {
   "name": "@meridian-flow/gateway",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Provider-neutral streaming model gateway: Anthropic, OpenAI and OpenAI-compatible adapters with retry, deadlines and usage normalization.",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haowjy/meridian-flow.git",
+    "directory": "packages/gateway"
+  },
+  "homepage": "https://github.com/haowjy/meridian-flow/tree/main/packages/gateway#readme",
   "type": "module",
   "sideEffects": false,
   "files": [
@@ -16,6 +21,7 @@
     "./mock-script": "./src/mock-script.ts"
   },
   "publishConfig": {
+    "access": "public",
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
