@@ -167,6 +167,9 @@ async function fixture(
       draftReview: {
         applyClick: service.apply,
         unapplyClick: service.unapply,
+        branchOwner: (branchId: string) => h.branches.ownerOf(branchId as never),
+        resolveItem: identity.resolveReviewItem,
+        resolveItemInBranch: identity.resolveReviewItemInBranch,
         resolveItemByDocument: identity.resolveReviewItemByDocument,
         lookupCommand: (key: CommandLookupKey) => commands.lookup(key),
       },
@@ -976,6 +979,23 @@ try {
     assert.deepEqual(readApplyRecord(durable), []);
     durable.destroy();
     assert.deepEqual(await f.unapply(click, commandId), answer);
+    f.close();
+  });
+  await row("a click's groups chain: live ends at the draft, Un-Apply returns it", async () => {
+    // Removing a paragraph break and adding one elsewhere: each group alone against the click's base
+    // restores the other's break.
+    const f = await fixture(
+      ["She turned away", "She waited by the door"],
+      ["She turned away She waited by", "the door"],
+    );
+    const click = f.click();
+    assert.equal(click.request.groupIds.length, 2);
+    await applied(f, click);
+    assert.deepEqual(await f.liveText(), ["She turned away She waited by", "the door"]);
+    const answer = await f.unapply(click);
+    assert.equal(answer.status, "unapplied", JSON.stringify(answer));
+    if (answer.status === "unapplied") assert.equal(answer.reversedGroupIds.length, 2);
+    assert.deepEqual(await f.liveText(), ["She turned away", "She waited by the door"]);
     f.close();
   });
   await row("Un-Apply skips an edited group and reverses an intact peer", async () => {

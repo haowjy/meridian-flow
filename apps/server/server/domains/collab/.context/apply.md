@@ -24,6 +24,13 @@ Editor Undo sends an `unapply_click` command for the original Apply command. Thi
 uses the forward-inverse kernel directly against live history, not the model/turn
 reversal planner, and folds only the reversed groups out of the current review base.
 
+The groups of one click are a chain: group *k* is compiled and merged against the base with groups
+1..*k*−1 already applied, one live update each. Merging each group against the click's base would
+see its sibling groups as concurrent changes, and two groups that change one structure (one removes
+a paragraph break, the next adds one nearby) would undo each other. Un-Apply inverts the latest
+group first, because a group's update builds on the earlier groups' items; an earlier group stays
+when a later one was edited in live.
+
 The command stores one full starting base plus per-group deltas, not a full
 before/after document for every group. A later Un-Apply rebuilds the complete delta
 chain before selecting effects that remain active, so an earlier partial reversal
