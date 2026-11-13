@@ -135,7 +135,8 @@ Which documents are mounted is one list, `PresentedDocuments` (`context/presente
 each document host registers its current descriptor there, and `shown` orders them newest on
 screen first. Besides main's and the side's document, the newest open tab shown that is off screen
 stays mounted as the kept host, hidden so its undo survives a return, so at most three documents
-are mounted (main, side, kept). The kept document is mounted but not presented:
+are mounted (main, side, kept). A parked host (`SlotGrid`) keeps the size of the slot it left and sets
+`content-visibility: hidden`, so an edit into the kept document lays out nothing until it returns. The kept document is mounted but not presented:
 it reviews nothing, admits nothing, writes neither pin nor address, raises no removed notice and
 is not on screen for removals or availability. A close, a Discard and a removal `forget` the
 document through the removal coordinator, so nothing picks it again and its host unmounts (taking

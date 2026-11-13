@@ -24,14 +24,18 @@ import { cn } from "@/lib/utils";
 
 import type { DesktopProjectSlotId, SlotDefinition } from "./types";
 
+/**
+ * A parked host keeps the size of the slot it left and skips its subtree's layout and paint
+ * (`content-visibility: hidden` keeps the rendering state, so the reveal lays out once). At zero
+ * width a kept document or chat would re-lay out every word on each edit or streamed token.
+ */
 const PARKED_SURFACE_STYLE: CSSProperties = {
   position: "absolute",
-  width: 0,
-  height: 0,
   overflow: "hidden",
   pointerEvents: "none",
   opacity: 0,
   transform: "translateX(-200vw)",
+  contentVisibility: "hidden",
 };
 
 export type SlotGridHost = {
@@ -106,12 +110,28 @@ function HostWrapper({
   children: ReactNode;
 }) {
   const active = slot !== undefined;
+  const ref = useRef<HTMLElement>(null);
+  const leftSize = useRef({ width: 0, height: 0 });
+  useEffect(() => {
+    const host = ref.current;
+    if (!active || !host) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) leftSize.current = { width: host.offsetWidth, height: host.offsetHeight };
+    });
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [active]);
   return (
     <section
+      ref={ref}
       aria-hidden={!active}
       inert={!active}
       className={cn("relative flex min-h-0 min-w-0 flex-col overflow-hidden", slot?.className)}
-      style={slot ? { gridArea: slot.area ?? slot.id, ...slot.style } : PARKED_SURFACE_STYLE}
+      style={
+        slot
+          ? { gridArea: slot.area ?? slot.id, ...slot.style }
+          : { ...PARKED_SURFACE_STYLE, ...leftSize.current }
+      }
       data-project-host={hostKey}
       data-project-slot={slot?.id}
       data-project-surface-state={active ? "active" : "parked"}
