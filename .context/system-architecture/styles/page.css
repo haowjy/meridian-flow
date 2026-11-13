@@ -1,0 +1,893 @@
+/*
+ * The page's layout and the diagram's look. Colours come only from the variables in styles/tokens.css. React
+ * Flow's own variables are pointed at the tokens here, so its vendored base.css draws nothing
+ * in its default colours.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  height: 100%;
+}
+
+a {
+  color: var(--color-jade-text);
+}
+
+code,
+.path {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+
+/* ---- Page frame ---- */
+
+.app {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+  background: var(--color-card);
+  border-bottom: 1px solid var(--color-border-subtle);
+  min-width: 0;
+}
+
+.roots {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--color-muted);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
+  flex: none;
+}
+
+.roots a {
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: var(--color-muted-foreground);
+  text-decoration: none;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.roots a:hover {
+  color: var(--color-foreground);
+}
+
+.roots a[aria-current] {
+  background: var(--color-card);
+  color: var(--color-foreground);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--color-border-subtle);
+}
+
+.breadcrumb {
+  flex: 1;
+  min-width: 0;
+}
+
+.breadcrumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breadcrumb li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.breadcrumb li + li::before {
+  content: "/";
+  color: var(--color-ink-subtle);
+}
+
+.breadcrumb a {
+  color: var(--color-muted-foreground);
+  text-decoration: none;
+}
+
+.breadcrumb a:hover {
+  color: var(--color-foreground);
+  text-decoration: underline;
+}
+
+.breadcrumb [aria-current="page"] {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.text-button:hover {
+  background: var(--color-accent);
+  color: var(--color-foreground);
+}
+
+.icon-button:hover {
+  background: var(--color-accent);
+  color: var(--color-foreground);
+}
+
+.primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.workspace {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  min-height: 0;
+}
+
+.diagram {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ---- Side panel ---- */
+
+.panel {
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--color-card);
+  border-left: 1px solid var(--color-border-subtle);
+}
+
+.panel-body {
+  padding: 16px 20px 24px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -6px -8px 0 0;
+}
+
+.panel-kind {
+  color: var(--color-ink-subtle);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.panel h2 {
+  margin: 4px 0 8px;
+  font-size: 18px;
+  line-height: 1.25;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.panel-about {
+  margin: 0 0 14px;
+  color: var(--color-card-foreground);
+}
+
+.panel-section {
+  margin-top: 18px;
+}
+
+.panel-section h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted-foreground);
+}
+
+.panel-section ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 5px;
+}
+
+.panel-section li {
+  overflow-wrap: anywhere;
+}
+
+.panel-section.tone-breaks,
+.panel-section.tone-drift {
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.panel-section.tone-breaks {
+  background: var(--color-destructive-tint);
+}
+
+.panel-section.tone-breaks h3 {
+  color: var(--color-destructive);
+}
+
+.panel-section.tone-drift {
+  background: var(--color-warning-bg);
+}
+
+.panel-section.tone-drift h3 {
+  color: var(--color-warning-foreground);
+}
+
+.panel-hint {
+  margin-top: 20px;
+  color: var(--color-ink-subtle);
+  font-size: 13px;
+}
+
+.panel-section .legend {
+  list-style: none;
+  padding-left: 0;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-muted-foreground);
+}
+
+.legend-line {
+  stroke: var(--color-ink-subtle);
+  stroke-width: 1.5;
+}
+
+/* ---- States ---- */
+
+.page-loading,
+.page-state {
+  display: grid;
+  place-content: center;
+  justify-items: start;
+  gap: 4px;
+  min-height: 100%;
+  padding: 24px 16px;
+  max-width: 560px;
+  margin: 0 auto;
+  color: var(--color-muted-foreground);
+}
+
+.page-state h1 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  color: var(--color-foreground);
+}
+
+.page-state p {
+  margin: 0;
+}
+
+.page-state .primary-button {
+  margin-top: 12px;
+}
+
+/* ---- The diagram ---- */
+
+.react-flow {
+  --xy-background-color: var(--color-background);
+  --xy-background-pattern-dots-color: var(--color-border);
+  --xy-edge-stroke: var(--color-ink-subtle);
+  --xy-attribution-background-color: transparent;
+}
+
+.react-flow__attribution a {
+  color: var(--color-ink-subtle);
+}
+
+.react-flow__controls {
+  box-shadow: var(--shadow-card);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.react-flow__controls-button {
+  width: 32px;
+  height: 32px;
+  background: var(--color-card);
+  color: var(--color-foreground);
+  border: 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  cursor: pointer;
+}
+
+.react-flow__controls-button:hover {
+  background: var(--color-accent);
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: 0;
+}
+
+.react-flow__handle {
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  opacity: 0;
+}
+
+.react-flow__node:focus-visible {
+  outline: none;
+}
+
+.marker-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.arch-arrow {
+  fill: var(--color-ink-subtle);
+}
+
+.arch-arrow-hi {
+  fill: var(--color-primary);
+}
+
+.arch-arrow-break {
+  fill: var(--color-destructive);
+}
+
+.react-flow__edge-text {
+  fill: var(--color-muted-foreground);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+}
+
+.react-flow__edge-textbg {
+  fill: var(--color-background);
+}
+
+/* Arrows: the kind is in the line's pattern, so colour stays free for selection. */
+.react-flow__edge-path,
+.legend-line {
+  stroke-width: 1.4;
+}
+
+.edge-sse .react-flow__edge-path,
+.legend-line.edge-sse {
+  stroke-dasharray: 8 4;
+}
+
+.edge-ws .react-flow__edge-path,
+.legend-line.edge-ws {
+  stroke-dasharray: 3 3;
+  stroke-width: 1.8;
+}
+
+.edge-model .react-flow__edge-path,
+.legend-line.edge-model {
+  stroke-width: 2.4;
+}
+
+.edge-files .react-flow__edge-path,
+.legend-line.edge-files {
+  stroke-dasharray: 2 4;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.edge-sql .react-flow__edge-path,
+.legend-line.edge-sql {
+  stroke-dasharray: 12 3 2 3;
+}
+
+.edge-port .react-flow__edge-path,
+.legend-line.edge-port {
+  stroke-dasharray: 5 3;
+  stroke-width: 1.8;
+}
+
+.edge-call .react-flow__edge-path,
+.legend-line.edge-call,
+.edge-import .react-flow__edge-path,
+.legend-line.edge-import {
+  stroke-width: 1;
+}
+
+.edge-import .react-flow__edge-path,
+.legend-line.edge-import {
+  stroke-dasharray: 1 3;
+  stroke-linecap: round;
+}
+
+.legend-line.is-break,
+.edge.is-break .react-flow__edge-path {
+  stroke: var(--color-destructive);
+  stroke-width: 1.8;
+}
+
+.edge.is-break .react-flow__edge-text {
+  fill: var(--color-destructive);
+  font-weight: 600;
+}
+
+.edge.is-hi .react-flow__edge-path {
+  stroke: var(--color-primary);
+}
+
+.edge.is-faded {
+  opacity: 0.22;
+}
+
+.edge.is-hi .react-flow__edge-text {
+  fill: var(--color-jade-text);
+  font-weight: 600;
+}
+
+/* ---- Screens: a box's thumbnail, and the full screenshot in the panel ---- */
+
+.thumb {
+  margin-top: 8px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 4px;
+  background-repeat: no-repeat;
+  background-color: var(--color-muted);
+}
+
+.shot-frame {
+  position: relative;
+  width: 100%;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--color-muted);
+}
+
+.shot-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.shot-region {
+  position: absolute;
+  border: 2px solid var(--color-primary);
+  border-radius: 2px;
+  background: transparent;
+}
+
+.shot-region.is-own {
+  border-color: var(--color-primary);
+  background: var(--select-tint);
+}
+
+.shot-region.is-hot {
+  border-color: var(--color-primary);
+  background: var(--select-tint);
+}
+
+.shot-number {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.shot-region .shot-number {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+}
+
+.shot-regions {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.shot-regions li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.shot-regions li.is-hot {
+  background: var(--select-tint);
+}
+
+.shot-region-text {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Boxes ---- */
+
+.card {
+  position: relative;
+  width: 220px;
+  padding: 10px 12px;
+  background: var(--color-card);
+  color: var(--color-card-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.react-flow__node:focus-visible .card {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 3px;
+}
+
+.card.has-child {
+  box-shadow:
+    4px 4px 0 -1px var(--color-card),
+    4px 4px 0 0 var(--color-border),
+    8px 8px 0 -1px var(--color-card),
+    8px 8px 0 0 var(--color-border);
+  padding-bottom: 42px;
+}
+
+.card.kind-context {
+  background: var(--color-muted);
+  border-style: dashed;
+  color: var(--color-muted-foreground);
+}
+
+.card.kind-context.has-child {
+  box-shadow: none;
+}
+
+.card.is-selected {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+
+.card.is-selected.has-child {
+  box-shadow:
+    0 0 0 2px var(--color-primary),
+    6px 6px 0 -1px var(--color-card),
+    6px 6px 0 0 var(--color-border);
+}
+
+.card-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--color-ink-subtle);
+  overflow-wrap: anywhere;
+}
+
+.card-label {
+  margin-top: 2px;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.kind-package .card-label {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.card-sub {
+  margin-top: 3px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--color-muted-foreground);
+}
+
+.card-markers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.card-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  line-height: 18px;
+}
+
+.card-marker.tone-machines {
+  background: var(--color-secondary);
+  color: var(--color-muted-foreground);
+}
+
+.card-marker.tone-breaks {
+  background: var(--color-destructive-tint);
+  color: var(--color-destructive);
+  font-weight: 500;
+}
+
+.card-marker.tone-drift {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-foreground);
+  font-weight: 500;
+}
+
+.card-open {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 6px 3px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-card);
+  color: var(--color-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.card-open:hover {
+  background: var(--color-accent);
+}
+
+/* ---- Mono and derived tones the sheets above use ---- */
+
+:root {
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --select-tint: color-mix(in oklab, var(--color-primary) 12%, transparent);
+}
+
+/* ---- Markdown pages (state machines) in a wide panel over the right of the page ---- */
+
+.doc-view {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, 100%);
+  background: var(--color-card);
+  border-left: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+}
+
+.doc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.doc-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.doc-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 24px 40px;
+}
+
+.doc-note {
+  max-width: 560px;
+  color: var(--color-muted-foreground);
+}
+
+.md > :not(.md-diagram):not(table):not(pre) {
+  max-width: 820px;
+}
+
+.md {
+  color: var(--color-card-foreground);
+  overflow-wrap: break-word;
+}
+
+.md h1 {
+  font-size: 22px;
+}
+
+.md h2 {
+  margin-top: 28px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border-subtle);
+  font-size: 17px;
+}
+
+.md h3 {
+  margin-top: 20px;
+  font-size: 15px;
+}
+
+.md p,
+.md li {
+  line-height: 1.55;
+}
+
+.md :not(pre) > code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--color-code-surface);
+  color: var(--color-code-foreground);
+}
+
+.md pre {
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--color-code-border);
+  border-radius: 6px;
+  background: var(--color-code-surface);
+  color: var(--color-code-foreground);
+}
+
+.md blockquote {
+  margin: 12px 0;
+  padding: 2px 14px;
+  border-left: 3px solid var(--color-border);
+  color: var(--color-muted-foreground);
+}
+
+.md table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.md th,
+.md td {
+  padding: 5px 10px;
+  border: 1px solid var(--color-border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+
+.md th {
+  background: var(--color-muted);
+}
+
+.md-diagram {
+  margin: 14px 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
+  background: var(--color-card);
+}
+
+.md-diagram-size {
+  float: right;
+  margin: 0 0 6px 8px;
+}
+
+.md-diagram.is-error {
+  color: var(--color-destructive);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+/* ---- Narrow screens: the panel goes under the diagram ---- */
+
+@media (max-width: 719px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .breadcrumb {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .panel {
+    height: 36dvh;
+    border-left: 0;
+    border-top: 1px solid var(--color-border-subtle);
+  }
+
+  .panel-body {
+    padding: 14px 16px 20px;
+  }
+
+  .doc-scroll {
+    padding: 4px 14px 32px;
+  }
+}

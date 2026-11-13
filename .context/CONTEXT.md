@@ -3,6 +3,8 @@
 Cross-cutting design lives in the [KB](https://github.com/haowjy/meridian-flow-docs/tree/main/kb).
 Server composition and transport: [apps/server](../apps/server/.context/CONTEXT.md).
 Every state machine, with its diagram: [state-machines](state-machines/index.md).
+The boxes and their dependencies, clickable, with those diagrams on the page:
+[architecture map](system-architecture/AGENTS.md).
 
 - **Domains are acyclic.** Threads reference project and Work ownership, never
   the reverse; the only projects↔threads imports are test fixtures.

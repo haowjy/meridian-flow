@@ -62,6 +62,10 @@ simple: before adding a state, check whether an existing one already covers the 
 **Comments.** Few. Write one only for what the code can't show and a wrong edit
 would break silently, at the line it guards. No file headers, no decision ids.
 
+**Architecture map.** A change that adds, moves or removes a box's code, an import between boxes,
+or a state-machines page updates [architecture.js](.context/system-architecture/AGENTS.md);
+the map is at the `map` URL `pnpm dev` prints.
+
 Debugging: [docs/debugging.md](docs/debugging.md).
 
 ## Dev environment

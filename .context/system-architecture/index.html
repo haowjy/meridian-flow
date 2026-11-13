@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Meridian architecture</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!--
+  How Meridian Flow is built today, as diagrams you can click into. The map's content is
+  architecture.js; js/ renders it. No build step: open this file from disk, or run `pnpm dev`
+  and open the printed architecture URL (state machine pages need it: they are fetched from the
+  repo). Edit the map, then run `pnpm check:architecture`.
+
+  Every third-party script is pinned here and nowhere else (Mermaid, which loads when the first
+  state machines page opens, is pinned in js/doc-view.js), with its integrity hash.
+  React stays on 18 because 19 ships no UMD build; @xyflow/react's UMD build needs React and
+  ReactDOM as globals, and js/jsx-runtime.js gives it the jsx runtime it expects.
+-->
+<link rel="stylesheet" href="vendor/xyflow-react-12.12.0-base.css" />
+<link rel="stylesheet" href="styles/tokens.css" />
+<link rel="stylesheet" href="styles/page.css" />
+
+<div id="root"><p class="page-loading">Loading the map…</p></div>
+
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js" integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js" integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1" crossorigin="anonymous"></script>
+<script src="js/jsx-runtime.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xyflow/react@12.12.0/dist/umd/index.js" integrity="sha384-26P2k8U43HJo0n2JZUyY6nnsfiNgR7HL6mVxldjscqie4vFcjkO2UtJBYZNSTx2a" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@dagrejs/dagre@3.1.1/dist/dagre.min.js" integrity="sha384-PHeXhmSy7tXR21c872Ck1MW+PDzqMB8JuNgHgRQ4oki7W3jBH2NBAnObIV5vxDeL" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@18.2.0/lib/marked.umd.js" integrity="sha384-DDYDxilZ1LlqPSbaRHlrwh12h+3fUewuQj7HjscrZIWt5bGyQ+n0DHtIoZE3i3zU" crossorigin="anonymous"></script>
+
+<script src="architecture.js"></script>
+<script src="js/theme.js"></script>
+<script src="../../docs/screens/screens.js"></script>
+<script src="js/model.js"></script>
+<script src="js/layout.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/screens.js"></script>
+<script src="js/node-card.js"></script>
+<script src="js/diagram.js"></script>
+<script src="js/doc-view.js"></script>
+<script src="js/side-panel.js"></script>
+<script src="js/header.js"></script>
+<script src="js/app.js"></script>
+<script src="js/main.js"></script>
