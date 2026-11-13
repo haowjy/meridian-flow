@@ -31,6 +31,11 @@ testing shows something better.
 
 ## Engineering
 
+**Choose the simpler system, not the smaller change.** When a case doesn't fit, change the
+design so it does, instead of adding a branch, flag or special case to the old one. Judge a
+choice by the code left afterwards: a bigger change or more deletion that leaves less to
+understand wins, and the next change should be easier than this one was.
+
 **Fix structural debt in the same PR,** whatever the PR's size: refactor, delete dead
 code and simplify without asking. A found fix too large for the PR gets its own PR now;
 an issue is only for a fix that needs a product decision or is a project of its own.
