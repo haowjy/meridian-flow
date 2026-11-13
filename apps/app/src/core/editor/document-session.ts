@@ -272,6 +272,8 @@ export class DocumentSession {
   private schemaRepairWitness: SchemaRepairWitness | null = null;
   private readonly persistSchemaFence: ((fence: SchemaFence) => void) | undefined;
   private readonly localPresence: LocalPresence;
+  /** `detachTransport` holds one presence suspension until the next transport attaches. */
+  private presenceHeldForTransport = false;
   private readonly localPersistenceSyncedPromise: Promise<void>;
   private readonly transportAttachedPromise: Promise<void>;
   private resolveTransportAttached!: () => void;
@@ -340,6 +342,8 @@ export class DocumentSession {
   }
 
   private connectTransport(transportFactory: DocumentSessionTransportFactory): void {
+    // Before the factory, so the new provider's first handshake carries this client's presence.
+    this.resumePresenceForTransport();
     try {
       this.transportProvider = transportFactory({
         roomKey: this.roomKey,
@@ -406,6 +410,12 @@ export class DocumentSession {
     this.unsubscribeTransportAccess = null;
     this.unsubscribeChangeEvents = null;
     this.unsubscribeAcknowledgement = null;
+    // Departure goes out while the provider is still attached. The provider never
+    // destroys this session's Awareness, so presence is held here and put back on attach.
+    if (!this.presenceHeldForTransport) {
+      this.presenceHeldForTransport = true;
+      this.localPresence.suspend();
+    }
     this.transportProvider = null;
     this.transportState = null;
     this.transportInitialSyncComplete = false;
@@ -713,6 +723,12 @@ export class DocumentSession {
    */
   get presence(): LocalPresenceFields {
     return this.localPresence;
+  }
+
+  private resumePresenceForTransport(): void {
+    if (!this.presenceHeldForTransport) return;
+    this.presenceHeldForTransport = false;
+    this.localPresence.resume();
   }
 
   /** Take this client off the wire. Field writes made meanwhile still count. */

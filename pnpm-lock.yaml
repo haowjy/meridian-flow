@@ -56,6 +56,9 @@ overrides:
   '@tanstack/history': 1.162.3
 
 patchedDependencies:
+  '@hocuspocus/provider@4.3.0':
+    hash: a9ff128540bc27c722e15a0ced42026081062cac7c1de1f6687c41affb2ef262
+    path: patches/@hocuspocus__provider@4.3.0.patch
   '@tanstack/history@1.162.3':
     hash: bf26a6dd5b5c22d4c5840acb40e83f6fb24a5d0c7492cb0b355657d6d260274d
     path: patches/@tanstack__history@1.162.3.patch
@@ -138,7 +141,7 @@ importers:
     dependencies:
       '@hocuspocus/provider':
         specifier: 4.3.0
-        version: 4.3.0(y-protocols@1.0.7(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e)))(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e))
+        version: 4.3.0(patch_hash=a9ff128540bc27c722e15a0ced42026081062cac7c1de1f6687c41affb2ef262)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e)))(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e))
       '@lingui/core':
         specifier: ^6.4.0
         version: 6.4.0(babel-plugin-macros@3.1.0)
@@ -563,7 +566,7 @@ importers:
     devDependencies:
       '@hocuspocus/provider':
         specifier: 4.3.0
-        version: 4.3.0(y-protocols@1.0.7(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e)))(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e))
+        version: 4.3.0(patch_hash=a9ff128540bc27c722e15a0ced42026081062cac7c1de1f6687c41affb2ef262)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e)))(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e))
       '@types/busboy':
         specifier: ^1.5.5
         version: 1.5.5
@@ -7611,7 +7614,7 @@ snapshots:
     dependencies:
       lib0: 0.2.117
 
-  '@hocuspocus/provider@4.3.0(y-protocols@1.0.7(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e)))(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e))':
+  '@hocuspocus/provider@4.3.0(patch_hash=a9ff128540bc27c722e15a0ced42026081062cac7c1de1f6687c41affb2ef262)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e)))(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e))':
     dependencies:
       '@hocuspocus/common': 4.3.0
       '@lifeomic/attempt': 3.1.0

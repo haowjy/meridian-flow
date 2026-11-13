@@ -1,12 +1,6 @@
 # Editor — TODO
 
-## Collaboration restart and detached status
-
-`DocumentSession.restartTransport()` reuses the session-owned Awareness after
-destroying a Hocuspocus provider, and provider destruction may also destroy
-caller-supplied Awareness. Terminal recovery has to keep provider and Awareness
-stable while replacing the socket, or make ownership explicit. Probe remote caret
-disappearance and restoration across terminal recovery.
+## Detached status
 
 An authorized editable session that stays `detached` without adoption failure is
 not surfaced by `SyncStatus.tsx`. Add an honest signal without flashing offline
