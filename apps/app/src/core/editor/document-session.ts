@@ -51,6 +51,7 @@ import type { Editor } from "@tiptap/core";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import type * as Y from "yjs";
+import { DocumentHistory } from "./editor-history";
 import {
   commitContentInitialization,
   readContentInitialization,
@@ -215,6 +216,8 @@ export type DocumentSessionOptions = {
   ownUserId?: string | null;
 };
 
+const noop = () => {};
+
 type Listener = (snapshot: DocumentSessionSnapshot) => void;
 type DestroyStage = { settled: boolean; run: () => void | Promise<void> };
 
@@ -226,12 +229,16 @@ export class DocumentSession {
   readonly awareness: Awareness;
   readonly fragmentName = PROSEMIRROR_FRAGMENT_NAME;
   readonly markerStore: SessionMarkerStore;
+  /** The writer's undo, kept with the document: editors attach to it while mounted. */
+  readonly history: DocumentHistory;
 
   private persistence: IndexeddbPersistence | null;
   private localPeers: LocalDocumentPeers | null = null;
   private initialization: Promise<void> | null = null;
   private transportProvider: DocumentSessionTransportProvider | null = null;
   private transportAttachmentPending = false;
+  /** The closing of a transport `detachTransport` released; the next one opens after it. */
+  private detaching: Promise<void> | null = null;
   /** Adopter-reported failure to reach server ownership; surfaced only while the session is `detached`. */
   private adoptionFailed = false;
   private readonly listeners = new Set<Listener>();
@@ -284,6 +291,7 @@ export class DocumentSession {
     this.room = room;
     this.documentId = room.kind === "live" ? room.documentId : room.draftId;
     this.document = createCollabYDoc();
+    this.history = DocumentHistory.forDocument(this.document);
     this.persistSchemaFence = persistSchemaFence;
     this.markerStore = new SessionMarkerStore(ownUserId);
     this.awareness = new Awareness(this.document);
@@ -317,8 +325,13 @@ export class DocumentSession {
     this.transportAttachmentPending = true;
     this.adoptionFailed = false;
     this.recomputeStatus();
-    if (this.persistence && !this.localPersistenceSynced) {
-      void this.waitForLocalPersistenceTransportGate().then(() => {
+    if ((this.persistence && !this.localPersistenceSynced) || this.detaching) {
+      void Promise.all([
+        this.detaching,
+        this.persistence && !this.localPersistenceSynced
+          ? this.waitForLocalPersistenceTransportGate()
+          : null,
+      ]).then(() => {
         if (!this.destroyed) this.connectTransport(transportFactory);
       });
       return;
@@ -377,16 +390,14 @@ export class DocumentSession {
     this.emit();
   }
 
-  /** Replace a terminal transport while preserving local persistence and the live Y.Doc. */
-  async restartTransport(transportFactory: DocumentSessionTransportFactory): Promise<void> {
-    if (this.destroyed) {
-      throw new Error(`Cannot restart transport for destroyed room: ${this.roomKey}`);
-    }
-    if (this.resetDisposition === "refused") {
-      // A reconnect would replay the refused edits from this Y.Doc.
-      throw new Error(`Cannot restart a room whose local edits were refused: ${this.roomKey}`);
-    }
+  /**
+   * Close the server transport and keep the Y.Doc, its local persistence and its history. Edits
+   * made after this wait in the document until `attachTransport` syncs the difference. A
+   * following `attachTransport` waits for this to finish.
+   */
+  detachTransport(): Promise<void> {
     const previous = this.transportProvider;
+    if (this.destroyed || !previous) return this.detaching ?? Promise.resolve();
     this.unsubscribeTransportStatus?.();
     this.unsubscribeTransportAccess?.();
     this.unsubscribeChangeEvents?.();
@@ -401,7 +412,25 @@ export class DocumentSession {
     this.transportAcknowledged = false;
     this.status = "detached";
     this.serverHasLocalChanges = false;
-    await previous?.destroy();
+    const closing = Promise.resolve(previous.destroy());
+    const settled = closing.then(noop, noop).then(() => {
+      if (this.detaching === settled) this.detaching = null;
+    });
+    this.detaching = settled;
+    this.emit();
+    return closing;
+  }
+
+  /** Replace a terminal transport while preserving local persistence and the live Y.Doc. */
+  async restartTransport(transportFactory: DocumentSessionTransportFactory): Promise<void> {
+    if (this.destroyed) {
+      throw new Error(`Cannot restart transport for destroyed room: ${this.roomKey}`);
+    }
+    if (this.resetDisposition === "refused") {
+      // A reconnect would replay the refused edits from this Y.Doc.
+      throw new Error(`Cannot restart a room whose local edits were refused: ${this.roomKey}`);
+    }
+    await this.detachTransport();
     await this.localPeers?.drain();
     this.localPeers = null;
     this.attachTransport(transportFactory);
@@ -750,6 +779,7 @@ export class DocumentSession {
         },
         { settled: false, run: () => this.schemaRepairWitness?.destroy() },
         { settled: false, run: () => this.awareness.destroy() },
+        { settled: false, run: () => this.history.destroy() },
         { settled: false, run: () => this.document.destroy() },
         { settled: false, run: () => this.listeners.clear() },
       ];

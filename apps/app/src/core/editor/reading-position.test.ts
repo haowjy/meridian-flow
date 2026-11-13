@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { createEditorConfig } from "./config";
+import { DocumentHistory } from "./editor-history";
 import { createLocalPresence } from "./local-presence";
 import { captureReadingPosition, restoreReadingPosition } from "./reading-position";
 import { claimDocumentTarget, mayRestoreReadingPosition } from "./reading-position-navigation";
@@ -32,6 +33,7 @@ function view(doc: Y.Doc) {
   const editor = new Editor(
     createEditorConfig({
       document: doc,
+      history: DocumentHistory.forDocument(doc),
       presence: createLocalPresence(new Awareness(doc)),
       showCollaborationDecorations: false,
     }),

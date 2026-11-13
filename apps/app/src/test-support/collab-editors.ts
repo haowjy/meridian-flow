@@ -23,6 +23,7 @@ import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protoc
 import * as Y from "yjs";
 
 import { createEditorConfig } from "@/core/editor/config";
+import { DocumentHistory } from "@/core/editor/editor-history";
 import { createLocalPresence, type LocalPresence } from "@/core/editor/local-presence";
 import type { SessionMarkerStore } from "@/core/editor/session-marker-store";
 
@@ -54,7 +55,12 @@ export type CollabPair = {
 function editorOn(doc: Y.Doc, presence: LocalPresence, markerStore?: SessionMarkerStore): Editor {
   return new Editor({
     element: document.createElement("div"),
-    ...createEditorConfig({ document: doc, presence, markerStore }),
+    ...createEditorConfig({
+      document: doc,
+      history: DocumentHistory.forDocument(doc),
+      presence,
+      markerStore,
+    }),
   });
 }
 
