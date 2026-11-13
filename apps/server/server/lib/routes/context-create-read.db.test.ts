@@ -37,7 +37,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe("context create/read routes (postgres)", async () => {
     const { Hocuspocus } = await import("@hocuspocus/server");
     const { Schema } = await import("prosemirror-model");
-    const { yXmlFragmentToProsemirrorJSON } = await import("y-prosemirror");
+    const { yXmlFragmentToProsemirrorJSON } = await import("@tiptap/y-tiptap");
     const { documentMarks, documentNodes } = await import("@meridian/prosemirror-schema");
     const schema = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(

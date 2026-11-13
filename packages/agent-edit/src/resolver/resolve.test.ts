@@ -11,8 +11,8 @@ import {
   createCollabYDoc,
   PROSEMIRROR_FRAGMENT_NAME,
 } from "@meridian/prosemirror-schema";
+import { prosemirrorToYXmlFragment } from "@tiptap/y-tiptap";
 import { describe, expect, it } from "vitest";
-import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import { Doc, XmlElement } from "yjs";
 import { editSegments } from "../apply/segments.js";
 import { opsOutput, type ResolvedEdit } from "../apply/types.js";

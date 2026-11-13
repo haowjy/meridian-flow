@@ -55,7 +55,7 @@ invented location.
 
 ## `AgentEditModel`
 
-`projectBlocks` runs y-prosemirror's repair on the document it is given (an
+`projectBlocks` runs the binding's repair (`@tiptap/y-tiptap`) on the document it is given (an
 unbuildable element is deleted and hashes cover the survivors), so hand it a private
 copy, never a shared document. The resolver projects once, first; its scopes, hashes
 and anchors index that repaired list, and a whole-document write takes its scope
