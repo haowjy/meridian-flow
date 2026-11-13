@@ -9,8 +9,8 @@ import {
   createCollabYDoc,
   isReservedClientId,
 } from "@meridian/prosemirror-schema";
+import { updateYFragment } from "@tiptap/y-tiptap";
 import { sql } from "drizzle-orm";
-import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { applyDevEnvToProcess } from "../../../tools/dev/lib/dev-env";
 import { createDrizzleJournal } from "../server/domains/collab/adapters/drizzle-journal.js";

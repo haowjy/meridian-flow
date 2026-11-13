@@ -69,7 +69,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     resolve: {
-      dedupe: ["yjs", "y-protocols", "y-prosemirror", "@tiptap/y-tiptap"],
+      dedupe: ["yjs", "y-protocols", "@tiptap/y-tiptap"],
       alias: {
         eventemitter3: path.resolve(repoRoot, "apps/app/src/client/shims/eventemitter3.ts"),
       },
@@ -102,11 +102,7 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks(id) {
             if (id.includes("node_modules")) {
-              if (
-                id.includes("yjs") ||
-                id.includes("y-protocols") ||
-                id.includes("y-prosemirror")
-              ) {
+              if (id.includes("yjs") || id.includes("y-protocols")) {
                 return "collab-yjs";
               }
               if (id.includes("@tiptap") || id.includes("prosemirror-")) {
