@@ -3,10 +3,9 @@
  * pan and zoom, and opens a box's section in the side panel. The URL hash is `#<page>/<id>`.
  */
 import { drawDiagram, initDocView, openDoc, paintInline, route, showPage } from "./doc-view.js";
-import { EDGE_KINDS, item, linksOf, MAP_DIR, NODE_KINDS, pathsOf, resolveHref, sourceUrl } from "./pages.js";
+import { EDGE_KINDS, item, linksOf, MAP_DIR, NODE_KINDS, pathsOf, resolveHref, sourceUrl, STATE_MACHINES_INDEX } from "./pages.js";
 import { el, fetchPage, loadLevels, onThemeChange, topBar } from "./shell.js";
 
-const INDEX = ".context/state-machines/index.md";
 
 const view = { levels: [], page: null, path: null, selected: null };
 const diagram = el("div", { class: "diagram", id: "map-diagram" });
@@ -21,7 +20,7 @@ const parseHash = () => {
 
 async function main() {
   view.levels = await loadLevels();
-  app.replaceChildren(topBar({ current: null, levels: view.levels, onMachines: () => openDoc(INDEX) }), workspace);
+  app.replaceChildren(topBar({ current: null, levels: view.levels, onMachines: () => openDoc(STATE_MACHINES_INDEX) }), workspace);
   initDocView(workspace);
   addEventListener("hashchange", route_);
   onThemeChange(() => view.page && draw({ keepZoom: true }));
@@ -200,7 +199,7 @@ async function draw({ keepZoom = false } = {}) {
   markSelected();
 }
 
-/** Classes the edges by kind and wires the boxes' clicks. Mermaid draws edges in the order written. */
+/** Classes the edges by kind and wires the boxes' clicks. Mermaid names an edge's elements `L_<from>_<to>_<n>`. */
 function annotate() {
   const { nodes, edges } = view.page.mermaid;
   const ids = new Set(nodes.map((n) => n.id));
@@ -213,10 +212,21 @@ function annotate() {
     g.addEventListener("click", () => go(id));
     g.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), go(id)));
   }
-  const paths = stage.querySelectorAll("path.flowchart-link");
-  const labels = stage.querySelectorAll("g.edgeLabel");
+  // The elements of each edge, by Mermaid's data-id. Several edges between one pair are numbered
+  // with gaps (_0, _2), so the k-th edge of a pair takes the k-th lowest number.
+  const lines = new Map();
+  for (const node of stage.querySelectorAll("path.flowchart-link[data-id], g.edgeLabel g.label[data-id]")) {
+    const holder = node.tagName === "path" ? node : node.closest("g.edgeLabel");
+    lines.set(node.dataset.id, [...(lines.get(node.dataset.id) ?? []), holder]);
+  }
+  const seen = new Map();
   edges.forEach((edge, i) => {
-    const path = paths[i];
+    const pair = `L_${edge.from}_${edge.to}_`;
+    const numbers = [...lines.keys()].filter((key) => key.startsWith(pair) && /^\d+$/.test(key.slice(pair.length))).map((key) => Number(key.slice(pair.length))).sort((x, y) => x - y);
+    const k = seen.get(pair) ?? 0;
+    seen.set(pair, k + 1);
+    const elements = lines.get(`${pair}${numbers[k]}`) ?? [];
+    const path = elements.find((e) => e.tagName === "path");
     if (!path) return;
     // A wide invisible copy of the line, so a thin edge is easy to hover.
     const hit = path.cloneNode(false);
@@ -227,8 +237,7 @@ function annotate() {
     hit.addEventListener("pointerenter", () => hover(i));
     hit.addEventListener("pointerleave", () => hover(null));
     path.after(hit);
-    for (const node of [path, labels[i]]) {
-      if (!node) continue;
+    for (const node of elements) {
       node.classList.add(`edge-${edge.kind}`);
       node.dataset.i = i;
       node.dataset.from = edge.from;
