@@ -48,6 +48,8 @@ export const API_THREADS_WS_PATH = "/api/threads/ws";
 export const API_BILLING_PATH = "/api/billing";
 export const API_ACCOUNT_SETTINGS_PATH = "/api/account/settings";
 export const API_ACCOUNT_RECENT_DOCUMENTS_PATH = "/api/account/recent-documents";
+/** The account's own sources (`user://`): `ContextSourcesResult`. */
+export const API_ACCOUNT_CONTEXT_SOURCES_PATH = "/api/account/context-sources";
 export const API_AUTH_ME_PATH = "/api/auth/me";
 export { YJS_WS_PATH_PREFIX, yjsWsPath } from "./yjs-ws.js";
 
@@ -189,6 +191,11 @@ export function apiProjectContextCatalogPath(
   operation: "snapshot" | "changes" | "children" | "lookup",
 ): string {
   return `${apiProjectPath(projectId)}/context/catalog/${operation}`;
+}
+
+/** The project's sources the account can read: `ContextSourcesResult`. */
+export function apiProjectContextSourcesPath(projectId: string): string {
+  return `${apiProjectPath(projectId)}/context/sources`;
 }
 
 export function apiProjectContextCreatePath(
