@@ -32,7 +32,8 @@ effect job, and inverse actions. All acceptance rows must pass:
 
 1. Two writers queue behind a held 50,000-word rebase; both writers' typing
    survives a low-similarity rewrite and a paragraph wrapped in a quote.
-2. Already committed writer and agent typing moves into the new quote once.
+2. Already committed writer and agent typing in a block the live document
+   wrapped in a quote survives once; the draft keeps its own paragraph.
 3. A pre-rebase frame followed by a later character extends beside the quote;
    resending the reconnect state writes nothing.
 4. Typing under another writer's deleted paragraph is not recovered.
