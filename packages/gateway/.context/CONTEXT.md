@@ -150,8 +150,8 @@ Whether a Chat Completions host fetches image links is that host's fact, so it i
 `ProviderConfig.imageLinks` (stamped on `ModelInfo.imageLinks`), not assumed of the wire.
 
 A PDF sent as bytes always has a filename (`document.pdf` by default); one sent by link needs none.
-Provider facts and the studies behind this are in the gateway-and-media work item's
-`findings/` in the docs repository.
+Provider facts and the reasons behind this are in
+[files the model sees](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/files-the-model-sees.md).
 
 ## Gemini adapter
 
