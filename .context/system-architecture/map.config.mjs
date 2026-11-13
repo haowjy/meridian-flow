@@ -54,12 +54,30 @@ export default {
   // The rules dependencies.md lists breaks of. A unit is a directory matching a glob, named by its
   // last segment (domains/runtime → runtime). `cycle`: units that import each other in a loop.
   // `from`/`to`: a unit of `from` importing anything under `to`. Only value imports count.
+  // `files`/`to`: a file under the directory `files` importing any module in the list `to` (a package, a
+  // package subpath or a repo path), one row per file and module; type-only imports count too.
   dependencies: {
     page: "dependencies.md",
     rules: [
       { rule: "domains are acyclic", cycle: "apps/server/server/domains/*" },
       { rule: "domains do not import lib/", from: "apps/server/server/domains/*", to: "apps/server/server/lib" },
       { rule: "packages do not import apps", from: "packages/*", to: "apps/*" },
+      {
+        rule: "the runtime does not import document, billing or Work code",
+        files: "apps/server/server/domains/runtime",
+        to: [
+          "@meridian/agent-edit",
+          "@meridian/markup",
+          "@meridian/contracts/works",
+          "apps/server/server/domains/context",
+          "apps/server/server/domains/billing",
+          "apps/server/server/domains/projects",
+          "apps/server/server/domains/file-policy",
+          "apps/server/server/domains/packages",
+          "apps/server/server/domains/notices",
+          "apps/server/server/domains/storage",
+        ],
+      },
     ],
   },
 
