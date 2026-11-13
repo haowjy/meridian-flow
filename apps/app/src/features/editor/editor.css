@@ -356,7 +356,7 @@
 }
 
 .meridian-collab-selection {
-  opacity: 0.2;
+  background: color-mix(in oklab, var(--caret-color, var(--color-primary)) 20%, transparent);
 }
 
 /* Peer marks are session presence. Manuscript anatomy uses authorship colors;

@@ -270,7 +270,7 @@ function createCollaborationExtensions({
       selectionRender: (cursorUser) => ({
         nodeName: "span",
         class: "meridian-collab-selection",
-        style: `background-color: ${String(cursorUser.color ?? DEFAULT_USER.color)}`,
+        style: `--caret-color: ${String(cursorUser.color ?? DEFAULT_USER.color)}`,
       }),
     }),
   ];
