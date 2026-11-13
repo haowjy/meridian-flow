@@ -10,7 +10,8 @@ import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-
 import type { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { IconButton } from "@/components/ui/icon-button";
-import { ListLine } from "@/components/ui/list-row";
+import { ListLine, ListRow } from "@/components/ui/list-row";
+import { SettledSearchField } from "@/components/ui/search-field";
 import { destinationOf, isImportScheme } from "@/features/import/destination";
 import {
   type PickKind,
@@ -23,7 +24,9 @@ import { useImportedTree } from "@/features/import/use-imported-tree";
 import { type SourceDrop, SourcePane } from "../shell/sidebar/SourcePane";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
+import { fileKindIcon } from "./context-file-icon";
 import { schemeAllowsCreation, schemeLabel } from "./context-schemes";
+import { matchFileSuggestions } from "./file-suggestions/file-suggestions";
 import { ImportHeaderAction } from "./ImportHeaderAction";
 import { useOptionalTreeCreation } from "./TreeCreationProvider";
 import { treeFolderIds } from "./tree-expansion-state";
@@ -257,12 +260,33 @@ export function ContextTreePanel({
     </>
   ) : undefined;
 
+  const [search, setSearch] = useState<string | null>(null);
   const empty = Boolean(
     env && isComplete && importedTree && importedTree.rows(importedTree.root.entryId).length === 0,
   );
   return (
-    <SourcePane label={schemeLabel(scheme)} actions={actions} drop={drop}>
-      {env && catalog ? (
+    <SourcePane
+      label={schemeLabel(scheme)}
+      actions={actions}
+      drop={drop}
+      search={
+        <SettledSearchField
+          quiet
+          label={t`Find in ${schemeLabel(scheme)}`}
+          value={search}
+          onSettle={setSearch}
+        />
+      }
+    >
+      {search && catalog ? (
+        <FoundFiles
+          files={catalog.files()}
+          scheme={scheme}
+          search={search}
+          activePath={activeScheme === scheme ? activePath : null}
+          onOpen={(file) => onSelectFile(scheme, file, { focus: true })}
+        />
+      ) : env && catalog ? (
         <TreeEnvProvider value={env}>
           <div className="px-2">
             <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={0} />
@@ -270,7 +294,7 @@ export function ContextTreePanel({
         </TreeEnvProvider>
       ) : null}
       {/* A load still running and a load that failed both leave the list empty; this line says which. */}
-      {isError ? (
+      {search && catalog ? null : isError ? (
         <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
       ) : !isComplete || !importedTree ? (
         <div className="px-2">
@@ -286,6 +310,60 @@ export function ContextTreePanel({
         </div>
       ) : null}
     </SourcePane>
+  );
+}
+
+/** A search's matches as one flat list, best first; the folder tells two of one name apart. */
+function FoundFiles({
+  files,
+  scheme,
+  search,
+  activePath,
+  onOpen,
+}: {
+  files: readonly ContextFile[];
+  scheme: ProjectContextTreeScheme;
+  search: string;
+  activePath: string | null;
+  onOpen: (file: ContextFile) => void;
+}) {
+  const byPath = new Map(files.map((file) => [file.path, file]));
+  const found = matchFileSuggestions(
+    files.map((file) => ({
+      entryId: file.path,
+      scheme,
+      path: file.path,
+      name: file.name,
+      kind: "file" as const,
+      parents: file.path.split("/").filter(Boolean).slice(0, -1),
+    })),
+    search,
+  );
+  if (found.length === 0)
+    return (
+      <div className="px-2">
+        <ListLine iconSlot>
+          <Trans>Nothing matches “{search}”.</Trans>
+        </ListLine>
+      </div>
+    );
+  return (
+    <div className="px-2">
+      {found.map((match) => {
+        const file = byPath.get(match.path);
+        if (!file) return null;
+        return (
+          <ListRow
+            key={file.path}
+            icon={fileKindIcon(file)}
+            title={file.name}
+            meta={match.parents.at(-1)}
+            current={file.path === activePath}
+            onOpen={() => onOpen(file)}
+          />
+        );
+      })}
+    </div>
   );
 }
 

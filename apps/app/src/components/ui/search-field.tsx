@@ -14,6 +14,7 @@ export function SearchField({
   onSubmit,
   listItem,
   className,
+  quiet = false,
 }: {
   ref?: Ref<HTMLInputElement>;
   value: string;
@@ -26,9 +27,18 @@ export function SearchField({
   listItem?: boolean;
   /** Its placement in the host. */
   className?: string;
+  /** A sidebar list's search: a borderless row that fills on hover, like the rows under it. */
+  quiet?: boolean;
 }) {
   return (
-    <div className={cn("relative min-w-0", className)}>
+    <div
+      className={cn(
+        "relative min-w-0",
+        quiet &&
+          "rounded-md text-muted-foreground transition-colors hover:bg-ink-fill focus-within:bg-ink-fill focus-within:ring-1 focus-within:ring-focus focus-within:ring-inset",
+        className,
+      )}
+    >
       <Search
         className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
         aria-hidden
@@ -52,7 +62,10 @@ export function SearchField({
             : undefined
         }
         // The browser's own clear button takes the platform's accent; this one takes ours.
-        className="h-8 pr-7 pl-8 coarse:h-11 coarse:pr-11 [&::-webkit-search-cancel-button]:appearance-none"
+        className={cn(
+          "h-8 pr-7 pl-8 coarse:h-11 coarse:pr-11 [&::-webkit-search-cancel-button]:appearance-none",
+          quiet && "border-transparent focus-visible:border-transparent",
+        )}
       />
       {value && !disabled ? (
         <button

@@ -104,10 +104,6 @@ msgstr "“{name}” can't be found"
 msgid "“{name}” doesn't exist yet"
 msgstr "“{name}” doesn't exist yet"
 
-#: src/features/draft-review/DraftSwitcher.tsx
-#~ msgid "(draft waiting)"
-#~ msgstr "(draft waiting)"
-
 #. placeholder {0}: stats.callCount
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0, plural, one {# call} other {# calls}}"
@@ -238,11 +234,6 @@ msgstr "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgid "{0} is text, so it was added as a document in assets. The chip links to it."
 msgstr "{0} is text, so it was added as a document in assets. The chip links to it."
 
-#. placeholder {0}: children.length
-#: src/features/chat/RunningSubagentsStrip.tsx
-#~ msgid "{0} running"
-#~ msgstr "{0} running"
-
 #. placeholder {0}: formatFixed(stats.ttftMs / 1000, i18n.locale)
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} s"
@@ -258,11 +249,6 @@ msgstr "{0} source copied"
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0} stopped"
 msgstr "{0} stopped"
-
-#. placeholder {0}: children.length
-#: src/features/chat/RunningSubagentsStrip.tsx
-#~ msgid "{0} subagents"
-#~ msgstr "{0} subagents"
 
 #. placeholder {0}: names.length
 #: src/features/chat/subagent/DeliveryEventRows.tsx
@@ -280,21 +266,11 @@ msgstr "{0} subagents finished ({1} stopped)"
 msgid "{0} tok/s"
 msgstr "{0} tok/s"
 
-#. placeholder {0}: other.needsYou
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#~ msgid "{0} waiting on you"
-#~ msgstr "{0} waiting on you"
-
 #. placeholder {0}: only.name
 #. placeholder {1}: only.as
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "{0} will be renamed {1}"
 msgstr "{0} will be renamed {1}"
-
-#. placeholder {0}: other.running
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#~ msgid "{0} working"
-#~ msgstr "{0} working"
 
 #: src/features/chat/ask/permission-request.ts
 msgid "{agent} wants to archive {work}?"
@@ -821,10 +797,6 @@ msgstr "A document blocks its folder path"
 msgid "A document blocks part of this location. Move or rename it, then apply again."
 msgstr "A document blocks part of this location. Move or rename it, then apply again."
 
-#: src/features/project/DesktopProject.tsx
-#~ msgid "A document you open shows here beside the chat."
-#~ msgstr "A document you open shows here beside the chat."
-
 #: src/core/editor/file-drop/file-drop-door.ts
 msgid "A file can’t go there."
 msgstr "A file can’t go there."
@@ -888,10 +860,6 @@ msgstr "Account settings."
 #: src/features/account/AccountMenu.tsx
 msgid "Account: {label}"
 msgstr "Account: {label}"
-
-#: src/features/project/context/ContextEntryActions.tsx
-#~ msgid "Actions"
-#~ msgstr "Actions"
 
 #. placeholder {0}: work.name
 #: src/features/project/work/WorkActionsMenu.tsx
@@ -999,10 +967,6 @@ msgstr "Align right"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Alignment applies to paragraphs, headings, and tables."
 msgstr "Alignment applies to paragraphs, headings, and tables."
-
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#~ msgid "All chats"
-#~ msgstr "All chats"
 
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "All open chats"
@@ -1455,11 +1419,6 @@ msgstr "Change position"
 msgid "Change reference"
 msgstr "Change reference"
 
-#. placeholder {0}: subject.name
-#: src/features/draft-review/CommandNotice.tsx
-#~ msgid "Change to {0} discarded."
-#~ msgstr "Change to {0} discarded."
-
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Change to {name} discarded."
 msgstr "Change to {name} discarded."
@@ -1738,10 +1697,6 @@ msgstr "Collaborative document editor"
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "Collaborator"
 msgstr "Collaborator"
-
-#: src/features/chat/DraftDock.tsx
-#~ msgid "Collapse changes"
-#~ msgstr "Collapse changes"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Color theme"
@@ -2068,10 +2023,6 @@ msgstr "Couldn't find {source} or {destination}."
 msgid "Couldn't find {source}."
 msgstr "Couldn't find {source}."
 
-#: src/features/project/side/SideHeader.tsx
-#~ msgid "Couldn't find what goes with this."
-#~ msgstr "Couldn't find what goes with this."
-
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't finish that step"
 msgstr "Couldn't finish that step"
@@ -2111,10 +2062,6 @@ msgstr "Couldn't load recent documents."
 msgid "Couldn't load references."
 msgstr "Couldn't load references."
 
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Couldn't load the chats for this document."
-#~ msgstr "Couldn't load the chats for this document."
-
 #: src/features/chat/TurnList.tsx
 msgid "Couldn't load the conversation this fork continues."
 msgstr "Couldn't load the conversation this fork continues."
@@ -2122,10 +2069,6 @@ msgstr "Couldn't load the conversation this fork continues."
 #: src/features/export/ExportProjectDialog.tsx
 msgid "Couldn't load the preview."
 msgstr "Couldn't load the preview."
-
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Couldn't load this chat's documents."
-#~ msgstr "Couldn't load this chat's documents."
 
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Couldn't load this document."
@@ -2143,10 +2086,6 @@ msgstr "Couldn't load this file."
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Couldn't load Trash."
 msgstr "Couldn't load Trash."
-
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Couldn't load what goes with this."
-#~ msgstr "Couldn't load what goes with this."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
@@ -2256,11 +2195,6 @@ msgstr "Couldn’t rename this Work. Try again."
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Couldn't rename. Use Rename in the file list to try again."
 msgstr "Couldn't rename. Use Rename in the file list to try again."
-
-#. placeholder {0}: notice.title
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#~ msgid "Couldn't restore {0}"
-#~ msgstr "Couldn't restore {0}"
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore {name}"
@@ -2401,10 +2335,6 @@ msgstr "Couldn't undo the switch."
 msgid "Couldn't undo this Apply. Try again."
 msgstr "Couldn't undo this Apply. Try again."
 
-#: src/features/draft-review/CommandNotice.tsx
-#~ msgid "Couldn't undo. Try again."
-#~ msgstr "Couldn't undo. Try again."
-
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Couldn’t unpin {title}"
 msgstr "Couldn’t unpin {title}"
@@ -2534,11 +2464,6 @@ msgstr "Delete Work"
 #: src/features/project/work/WorkCollection.tsx
 msgid "Deleted"
 msgstr "Deleted"
-
-#. placeholder {0}: notice.title
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#~ msgid "Deleted {0}"
-#~ msgstr "Deleted {0}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -2768,11 +2693,6 @@ msgstr "Draft"
 msgid "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 msgstr "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 
-#. placeholder {0}: subject.name
-#: src/features/draft-review/CommandNotice.tsx
-#~ msgid "Draft of {0} discarded."
-#~ msgstr "Draft of {0} discarded."
-
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Draft of {name} discarded."
 msgstr "Draft of {name} discarded."
@@ -2792,10 +2712,6 @@ msgstr "Drafted {count} documents"
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Drafted 1 document"
 msgstr "Drafted 1 document"
-
-#: src/features/draft-review/DraftSwitcher.tsx
-#~ msgid "Drafts"
-#~ msgstr "Drafts"
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 msgid "Drop to insert"
@@ -2864,10 +2780,6 @@ msgstr "Edited after it uploaded. The imported copy is the earlier version."
 msgid "Edited file"
 msgstr "Edited file"
 
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Edited this"
-#~ msgstr "Edited this"
-
 #: src/features/chat/command-descriptor.ts
 msgid "Editing"
 msgstr "Editing"
@@ -2915,10 +2827,6 @@ msgstr "Enter an amount in USD."
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "epigraph"
 msgstr "epigraph"
-
-#: src/features/chat/DraftDock.tsx
-#~ msgid "Expand changes"
-#~ msgstr "Expand changes"
 
 #. placeholder {0}: artifact.expiresAt
 #: src/features/chat/ArtifactGrid.tsx
@@ -3050,17 +2958,14 @@ msgstr "Find a chat"
 msgid "Find a document"
 msgstr "Find a document"
 
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Find a document or chat"
-#~ msgstr "Find a document or chat"
+#. placeholder {0}: schemeLabel(scheme)
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Find in {0}"
+msgstr "Find in {0}"
 
 #: src/features/project/side/SideHeader.tsx
 msgid "Finding a document…"
 msgstr "Finding a document…"
-
-#: src/features/project/side/SideHeader.tsx
-#~ msgid "Finding what goes with this…"
-#~ msgstr "Finding what goes with this…"
 
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
@@ -3096,22 +3001,6 @@ msgstr "Folder…"
 #: src/components/app/composer/Composer.tsx
 msgid "Folders can't be attached"
 msgstr "Folders can't be attached"
-
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Follow {mainName}"
-#~ msgstr "Follow {mainName}"
-
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Follow this chat"
-#~ msgstr "Follow this chat"
-
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "For {mainName}"
-#~ msgstr "For {mainName}"
-
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "For this chat"
-#~ msgstr "For this chat"
 
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Fork from here"
@@ -3205,17 +3094,6 @@ msgstr "Heading 2"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading 3"
 msgstr "Heading 3"
-
-#: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/side/ClosedSideButton.tsx
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Held"
-#~ msgstr "Held"
-
-#: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/side/SideHeader.tsx
-#~ msgid "Held here. Follow main again"
-#~ msgstr "Held here. Follow main again"
 
 #: src/features/import/reason-copy.ts
 msgid "Hidden file."
@@ -3556,10 +3434,6 @@ msgstr "Live"
 msgid "Live artifact view"
 msgstr "Live artifact view"
 
-#: src/features/draft-review/DraftSwitcher.tsx
-#~ msgid "Live version"
-#~ msgstr "Live version"
-
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Live view"
 msgstr "Live view"
@@ -3695,10 +3569,6 @@ msgstr "Mention"
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "Mention {0}"
 msgstr "Mention {0}"
-
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Mentioned"
-#~ msgstr "Mentioned"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Merge cells"
@@ -4008,14 +3878,6 @@ msgstr "No column has been resized yet."
 msgid "No documents match “{search}”."
 msgstr "No documents match “{search}”."
 
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "No documents or chats match “{search}”."
-#~ msgstr "No documents or chats match “{search}”."
-
-#: src/features/draft-review/DraftSwitcher.tsx
-#~ msgid "No drafts"
-#~ msgstr "No drafts"
-
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "No files attached in this chat yet."
 msgstr "No files attached in this chat yet."
@@ -4091,10 +3953,6 @@ msgstr "No Works match “{query}”."
 msgid "None"
 msgstr "None"
 
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "None yet"
-#~ msgstr "None yet"
-
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Not created"
@@ -4150,6 +4008,10 @@ msgstr "Nothing here yet"
 msgid "Nothing in the trash."
 msgstr "Nothing in the trash."
 
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Nothing matches “{search}”."
+msgstr "Nothing matches “{search}”."
+
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Nothing opened yet"
 msgstr "Nothing opened yet"
@@ -4177,10 +4039,6 @@ msgstr "Nothing uploaded yet. Pick {name} again to continue."
 #: src/features/import/import-presentation.ts
 msgid "Nothing was added. Your files are kept for 7 days so you can try again."
 msgstr "Nothing was added. Your files are kept for 7 days so you can try again."
-
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Nothing yet"
-#~ msgstr "Nothing yet"
 
 #: src/lib/date-groups.ts
 msgid "now"
@@ -4246,10 +4104,6 @@ msgstr "Open {0} in {1}"
 #: src/features/home/ProjectLibrary.tsx
 msgid "Open {title}"
 msgstr "Open {title}"
-
-#: src/features/project/chat/ChatScratch.tsx
-#~ msgid "Open a chat to see its Scratch."
-#~ msgstr "Open a chat to see its Scratch."
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Open a document from the project tree, or start a new one."
@@ -4356,10 +4210,6 @@ msgstr "Other chats"
 msgid "Other drafts"
 msgstr "Other drafts"
 
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#~ msgid "Other Works"
-#~ msgstr "Other Works"
-
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Output speed"
 msgstr "Output speed"
@@ -4420,10 +4270,6 @@ msgstr "Pick again"
 msgid "Pick the folder named {name} to continue."
 msgstr "Pick the folder named {name} to continue."
 
-#: src/features/draft-review/DraftSwitcher.tsx
-#~ msgid "picked Work"
-#~ msgstr "picked Work"
-
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "picture"
 msgstr "picture"
@@ -4431,10 +4277,6 @@ msgstr "picture"
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Pin"
 msgstr "Pin"
-
-#: src/features/project/shell/sidebar/ChatsBody.tsx
-#~ msgid "Pinned"
-#~ msgstr "Pinned"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Pinned {title}"
@@ -4455,10 +4297,6 @@ msgstr "Preferences"
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "Previous change"
 msgstr "Previous change"
-
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Previous chapter"
-#~ msgstr "Previous chapter"
 
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/SettingsDialog.tsx
@@ -4531,10 +4369,6 @@ msgstr "Read file"
 msgid "Read report from {line}"
 msgstr "Read report from {line}"
 
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Read this"
-#~ msgstr "Read this"
-
 #: src/features/project/context/viewers/ImageViewer.tsx
 msgid "Read-only preview"
 msgstr "Read-only preview"
@@ -4563,14 +4397,6 @@ msgstr "Reason: {0}"
 #: src/features/billing/BillingPage.tsx
 msgid "Recent activity"
 msgstr "Recent activity"
-
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Recent chats"
-#~ msgstr "Recent chats"
-
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Recent documents"
-#~ msgstr "Recent documents"
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/shell/MainHeader.tsx
@@ -5067,10 +4893,6 @@ msgstr "Shared an attachment"
 msgid "Show"
 msgstr "Show"
 
-#: src/features/project/side/ClosedSideButton.tsx
-#~ msgid "Show {name} beside"
-#~ msgstr "Show {name} beside"
-
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Show {sheetName}"
 msgstr "Show {sheetName}"
@@ -5126,10 +4948,6 @@ msgstr "Show Work"
 #: src/features/account/SettingsDialog.tsx
 msgid "Shows token counts and the model on each reply and compaction"
 msgstr "Shows token counts and the model on each reply and compaction"
-
-#: src/features/project/shell/sidebar/ListSwitch.tsx
-#~ msgid "Sidebar list"
-#~ msgstr "Sidebar list"
 
 #: src/features/account/AccountMenu.tsx
 msgid "Signed in"
@@ -6180,11 +5998,6 @@ msgstr "title"
 msgid "Today"
 msgstr "Today"
 
-#. placeholder {0}: dir.name
-#: src/features/project/context/ContextTreeRows.tsx
-#~ msgid "Toggle folder {0}"
-#~ msgstr "Toggle folder {0}"
-
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Tokens after"
 msgstr "Tokens after"
@@ -6467,10 +6280,6 @@ msgstr "Usage"
 msgid "Versions"
 msgstr "Versions"
 
-#: src/features/draft-review/DraftSwitcher.tsx
-#~ msgid "Versions of this document"
-#~ msgstr "Versions of this document"
-
 #: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "View projects"
 msgstr "View projects"
@@ -6619,10 +6428,6 @@ msgstr "Writing"
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Writing the handoff brief"
 msgstr "Writing the handoff brief"
-
-#: src/features/project/side/SidePicker.tsx
-#~ msgid "Wrote"
-#~ msgstr "Wrote"
 
 #: src/features/project/context/DocumentPropertyValue.tsx
 msgid "Yes"

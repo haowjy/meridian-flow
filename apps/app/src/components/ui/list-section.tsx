@@ -8,7 +8,6 @@ export type SectionFold = { open: boolean; onToggle: (open: boolean) => void };
 /**
  * The name above a list or a group of its rows, the one heading every sidebar list uses, as tall
  * as a row. A plain heading's text, and a fold's leading chevron, sit on the rows' text edge.
- * Actions show on hover or focus (`.rail-pane-actions`, globals.css).
  */
 export function ListSectionHeader({
   label,
@@ -65,11 +64,7 @@ export function ListSectionHeader({
           name
         )}
       </Heading>
-      {actions ? (
-        <span className="rail-pane-actions mr-2 flex shrink-0 items-center gap-1 [&>*]:transition-opacity">
-          {actions}
-        </span>
-      ) : null}
+      {actions ? <span className="mr-2 flex shrink-0 items-center gap-1">{actions}</span> : null}
     </div>
   );
 }
