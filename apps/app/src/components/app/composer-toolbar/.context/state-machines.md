@@ -32,4 +32,6 @@ cannot draw a state whose id is `root`.
   at once can move the control out from under the panel that is using it.
 - **Events name the panel session they came from** and are dropped when it is not the current
   one, so a late event from a closed panel cannot close its successor.
-- Every transition returns the focus target along with the surface.
+- Every transition returns the focus target along with the surface, except a dismissal whose
+  cause is `focus`: focus has already moved elsewhere, so the surface closes and names no
+  target.
