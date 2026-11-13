@@ -1,16 +1,15 @@
 import { t } from "@lingui/core/macro";
-import { Extension } from "@tiptap/core";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { type Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { yCursorPluginKey } from "@tiptap/y-tiptap";
-import { getEditorChrome, hoverOwner } from "../chrome";
-import type { PeerAwareness } from "../local-presence";
+import { getEditorChrome, hoverOwner, watchManuscriptLayout } from "../chrome";
 
 /** How far either side of a peer's caret line still names the peer, in px. */
 const REACH = 4;
 
 type PeerUser = { accountId?: string; name?: string; color?: string };
+type Awareness = { getStates: () => Map<number, { user?: PeerUser }> };
 
 /** A peer's caret: the widget y-prosemirror places at its head. Its spec carries `side`. */
 function isCaret(decoration: Decoration): boolean {
@@ -20,14 +19,38 @@ function isCaret(decoration: Decoration): boolean {
 const selectionsOnly = new WeakMap<DecorationSet, DecorationSet>();
 
 /**
- * Peers' selections, drawn by y-prosemirror as inline decorations, without its caret widgets. A
- * widget is a non-editable node in the line: a press just after it gives the browser a selection
- * anchor on one side of it and ProseMirror the other, so a drag starting there selects nothing.
- * The carets are drawn above the text by `PeerCaretLayer` instead.
+ * The text at `pos` is scrolled out of a box that pans on its own (a wide table, a long code
+ * line). The layer sits outside those boxes' clip, so such a caret is hidden rather than drawn
+ * over the margin.
  */
-export const PeerSelections = CollaborationCaret.extend({
+function pannedAway(view: EditorView, pos: number, x: number): boolean {
+  const at = view.domAtPos(pos).node;
+  for (
+    let element = at instanceof Element ? at : at.parentElement;
+    element && element !== view.dom;
+    element = element.parentElement
+  ) {
+    if (element.scrollWidth <= element.clientWidth) continue;
+    const box = element.getBoundingClientRect();
+    if (x < box.left || x > box.right) return true;
+  }
+  return false;
+}
+
+/**
+ * Peers' carets and selections. y-prosemirror draws a caret as a widget: a non-editable node in
+ * the line, and a press just after it gives the browser a selection anchor on one side of it and
+ * ProseMirror the other, so a drag starting there selects nothing. Its selection highlights stay;
+ * its widgets are dropped and each caret is drawn from the widget's position on a layer over the
+ * prose, which scrolls with the page and takes no pointer. A caret's name shows while the pointer
+ * is on or beside its line, read from the editor's one pointer source.
+ */
+export const PeerCarets = CollaborationCaret.extend({
   addProseMirrorPlugins() {
-    return (this.parent?.() ?? []).map((plugin) => {
+    const { editor } = this;
+    const awareness = this.options.provider.awareness as Awareness;
+    const self = (this.options.user as PeerUser).accountId;
+    const cursors = (this.parent?.() ?? []).map((plugin) => {
       if (plugin.spec.key !== yCursorPluginKey) return plugin;
       return new Plugin({
         ...plugin.spec,
@@ -49,112 +72,89 @@ export const PeerSelections = CollaborationCaret.extend({
         },
       });
     });
-  },
-});
 
-type PeerCaretLayerOptions = { peers: PeerAwareness | null; accountId: string };
+    const layerPlugin = new Plugin({
+      key: new PluginKey("peerCaretLayer"),
+      view(view) {
+        const layer = document.createElement("div");
+        layer.className = "meridian-peer-carets";
+        layer.setAttribute("aria-hidden", "true");
+        view.dom.after(layer);
+        const carets = new Map<number, { element: HTMLElement; head: number }>();
 
-/**
- * Peers' carets on a layer over the prose, positioned from the heads y-prosemirror tracks. The
- * layer scrolls with the page and takes no pointer; the name shows while the pointer is on or
- * beside a caret's line, read from the editor's one pointer source.
- */
-export const PeerCaretLayer = Extension.create<PeerCaretLayerOptions>({
-  name: "peerCaretLayer",
-
-  addOptions() {
-    return { peers: null, accountId: "" };
-  },
-
-  addProseMirrorPlugins() {
-    const { editor } = this;
-    const { peers, accountId } = this.options;
-    return [
-      new Plugin({
-        key: new PluginKey("peerCaretLayer"),
-        view(view) {
-          const layer = document.createElement("div");
-          layer.className = "meridian-peer-carets";
-          layer.setAttribute("aria-hidden", "true");
-          view.dom.after(layer);
-          const carets = new Map<number, { element: HTMLElement; head: number }>();
-
-          const draw = (current: EditorView) => {
-            const decorations = yCursorPluginKey.getState(current.state) as
-              | DecorationSet
-              | undefined;
-            // The editor content remounts view.dom (React's development double mount among
-            // others); the layer follows it.
-            if (layer.previousSibling !== current.dom) current.dom.after(layer);
-            const base = layer.getBoundingClientRect();
-            const seen = new Set<number>();
-            for (const decoration of decorations?.find() ?? []) {
-              if (!isCaret(decoration)) continue;
-              const clientId = Number(decoration.spec.key);
-              const user = (peers?.getStates().get(clientId)?.user ?? {}) as PeerUser;
-              let caret = carets.get(clientId);
-              if (!caret) {
-                const element = document.createElement("span");
-                element.className = "meridian-collab-cursor";
-                element.append(document.createElement("span"));
-                element.firstElementChild?.classList.add("meridian-collab-cursor__label");
-                layer.append(element);
-                caret = { element, head: decoration.from };
-                carets.set(clientId, caret);
-              }
-              caret.head = decoration.from;
-              const at = current.coordsAtPos(decoration.from);
-              const { element } = caret;
-              element.style.setProperty("--caret-color", user.color ?? "");
-              element.style.left = `${at.left - base.left}px`;
-              element.style.top = `${at.top - base.top}px`;
-              element.style.height = `${at.bottom - at.top}px`;
-              const label = element.firstElementChild as HTMLElement;
-              label.textContent =
-                accountId && user.accountId === accountId ? t`You` : user.name || t`Someone`;
-              seen.add(clientId);
+        const draw = () => {
+          if (editor.isDestroyed) return;
+          const decorations = yCursorPluginKey.getState(view.state) as DecorationSet | undefined;
+          const heads = (decorations?.find() ?? []).filter(isCaret);
+          for (const [clientId, caret] of carets) {
+            if (heads.some((decoration) => Number(decoration.spec.key) === clientId)) continue;
+            caret.element.remove();
+            carets.delete(clientId);
+          }
+          if (heads.length === 0) return;
+          // The editor content remounts view.dom (React's development double mount among
+          // others); the layer follows it.
+          if (layer.previousSibling !== view.dom) view.dom.after(layer);
+          const base = layer.getBoundingClientRect();
+          for (const decoration of heads) {
+            const clientId = Number(decoration.spec.key);
+            const user = awareness.getStates().get(clientId)?.user ?? {};
+            let caret = carets.get(clientId);
+            if (!caret) {
+              const element = document.createElement("span");
+              element.className = "meridian-collab-cursor";
+              const label = document.createElement("span");
+              label.className = "meridian-collab-cursor__label";
+              element.append(label);
+              layer.append(element);
+              caret = { element, head: decoration.from };
+              carets.set(clientId, caret);
             }
-            for (const [clientId, caret] of carets) {
-              if (seen.has(clientId)) continue;
-              caret.element.remove();
-              carets.delete(clientId);
+            caret.head = decoration.from;
+            const at = view.coordsAtPos(decoration.from);
+            const { element } = caret;
+            element.hidden = pannedAway(view, decoration.from, at.left);
+            element.style.setProperty("--caret-color", user.color ?? "");
+            element.style.left = `${at.left - base.left}px`;
+            element.style.top = `${at.top - base.top}px`;
+            element.style.height = `${at.bottom - at.top}px`;
+            (element.firstElementChild as HTMLElement).textContent =
+              self && user.accountId === self ? t`You` : user.name || t`Someone`;
+          }
+        };
+
+        const stopWatching = watchManuscriptLayout(editor, [], draw);
+        const release = getEditorChrome(editor)?.registerHoverAnchor<HTMLElement>({
+          id: "peer-caret",
+          probe: ({ x, y }) => {
+            for (const { element, head } of carets.values()) {
+              if (element.hidden) continue;
+              const box = element.getBoundingClientRect();
+              if (x < box.left - REACH || x > box.right + REACH) continue;
+              if (y < box.top - REACH || y > box.bottom) continue;
+              const at = view.domAtPos(head).node;
+              const owner = hoverOwner(view, at instanceof Element ? at : at.parentElement);
+              return owner ? { owner, value: element } : null;
             }
-          };
+            return null;
+          },
+          onSettle: (hovered) => {
+            for (const { element } of carets.values())
+              element.toggleAttribute("data-hovered", element === hovered);
+          },
+        });
 
-          // Layout moves without a transaction: a resize rewraps lines, an image or font loads.
-          const resize = new ResizeObserver(() => draw(view));
-          resize.observe(view.dom);
+        draw();
+        return {
+          destroy: () => {
+            release?.();
+            stopWatching();
+            layer.remove();
+          },
+        };
+      },
+    });
 
-          const release = getEditorChrome(editor)?.registerHoverAnchor<HTMLElement>({
-            id: "peer-caret",
-            probe: ({ x, y }) => {
-              for (const { element, head } of carets.values()) {
-                const box = element.getBoundingClientRect();
-                if (x < box.left - REACH || x > box.right + REACH) continue;
-                if (y < box.top - REACH || y > box.bottom) continue;
-                const at = view.domAtPos(head).node;
-                const owner = hoverOwner(view, at instanceof Element ? at : at.parentElement);
-                return owner ? { owner, value: element } : null;
-              }
-              return null;
-            },
-            onSettle: (hovered) => {
-              for (const { element } of carets.values())
-                element.toggleAttribute("data-hovered", element === hovered);
-            },
-          });
-
-          draw(view);
-          return {
-            update: draw,
-            destroy: () => {
-              release?.();
-              resize.disconnect();
-              layer.remove();
-            },
-          };
-        },
-      }),
-    ];
+    return [...cursors, layerPlugin];
   },
 });

@@ -48,7 +48,7 @@ import {
 } from "./extensions/meridian-extensions";
 import { PassageHighlightExtension } from "./extensions/PassageHighlightExtension";
 import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
-import { PeerCaretLayer, PeerSelections } from "./extensions/peer-carets";
+import { PeerCarets } from "./extensions/peer-carets";
 import { type ReferenceDropOptions, referenceDropDoor } from "./extensions/reference-drop";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
@@ -251,7 +251,7 @@ function createCollaborationExtensions({
     // y-prosemirror's cursor plugin write and clear `user`/`cursor` through it,
     // and a raw write made while the writer is hidden behind inline review is
     // dropped, then overwritten by the snapshot the review restores.
-    PeerSelections.configure({
+    PeerCarets.configure({
       provider: presence.caretProvider,
       user: published,
       selectionRender: (cursorUser) => ({
@@ -260,7 +260,6 @@ function createCollaborationExtensions({
         style: `--caret-color: ${String(cursorUser.color ?? FALLBACK_CARET_COLOR)}`,
       }),
     }),
-    PeerCaretLayer.configure({ peers: presence.peers, accountId: published.accountId }),
   ];
 }
 
