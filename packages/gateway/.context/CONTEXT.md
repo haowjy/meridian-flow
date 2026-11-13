@@ -7,7 +7,9 @@ normalization, cancellation settlement, and provider-error mapping.
 ## Package boundary
 
 `@meridian-flow/gateway` imports no workspace package and nothing under `apps/`, and reads
-no environment variable: keys arrive in `ProviderConfig`. Entries: `.` (the port, adapters,
+no environment variable itself: keys arrive in `ProviderConfig`, and every SDK client option
+that would default from the environment is passed explicitly. The one exception is the SDKs'
+own `ANTHROPIC_CUSTOM_HEADERS` and `OPENAI_CUSTOM_HEADERS`, which no client option turns off. Entries: `.` (the port, adapters,
 domain types), `./shapes` (usage, provider error, JSON value: no Node built-ins and no SDKs, so
 `@meridian/contracts` re-exports them into the browser bundle), `./mock-script` (the mock's zod
 script schemas, the one definition `contracts/protocol` re-exports) and `./mock` (the mock server,
