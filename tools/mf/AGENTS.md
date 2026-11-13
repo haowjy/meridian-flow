@@ -3,10 +3,10 @@
 Agent-facing dev CLI for this worktree's app API, not application runtime code.
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) first.
 
-- `./mf` drives the shared client core (`@meridian/thread-client`), so its debugging
-  is faithful: never reimplement that logic here, and `thread view` prints the view model
-  and never words or decides a row. Where a feature has no shared core yet, `./mf` calls
-  the server API and its claims say so. Missing data needs a server route behind the debug
+- `./mf` drives the shared client core ([`@meridian/thread-client`](../../packages/thread-client/AGENTS.md)),
+  so its debugging is faithful. `thread view` prints the view model and never words or
+  decides a row. Where a feature has no shared core yet, `./mf` calls the server API and
+  its claims say so. Missing data needs a server route behind the debug
   gate, not a CLI-side database query or business logic.
 - No CLI retry loop: the shared transport retries only the failed thread, and
   observers wait through retryable errors until the command deadline.

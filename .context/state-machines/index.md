@@ -36,7 +36,7 @@ have it:
 | Draft, branch | Whether a draft or branch still accepts writes | [collab](../../apps/server/server/domains/collab/.context/state-machines.md) |
 | Branch command | One Apply or Discard, carried out once however often it is sent | [collab](../../apps/server/server/domains/collab/.context/state-machines.md) |
 | Draft write journal row | Whether an undo left part of a recorded write unresolved | [collab](../../apps/server/server/domains/collab/.context/state-machines.md) |
-| Thread subscription lease | One subscription on one WebSocket peer | [lib](../../apps/server/server/lib/.context/state-machines.md) |
+| Thread subscription, server half | One subscription on one WebSocket peer | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 | Draft room handshake | Whether a connection may send edits to a draft room | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 
 ## Packages
@@ -44,7 +44,7 @@ have it:
 | Machine | State of | Page |
 |---|---|---|
 | Thread socket | The shared WebSocket and its handshake | [thread-client](../../packages/thread-client/.context/state-machines.md) |
-| Thread subscription | One thread's subscription and replay | [thread-client](../../packages/thread-client/.context/state-machines.md) |
+| Thread subscription, client half | One thread's subscription and replay | [thread-client](../../packages/thread-client/.context/state-machines.md) |
 | Hand-back and Stop commands | One Stop press, or one request to take queued messages back | [thread-client](../../packages/thread-client/.context/state-machines.md) |
 | Response | The document writes of one model reply, staged and then saved together | [agent-edit](../../packages/agent-edit/.context/state-machines.md) |
 | Server hold | Whether the server has a document or folder the browser created | [resource-replica](../../packages/resource-replica/.context/state-machines.md) |

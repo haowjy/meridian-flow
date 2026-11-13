@@ -3,7 +3,7 @@
 Two per-connection machines held in process memory. Both exist so that a client never receives
 or sends frames for a room it has not been admitted to.
 
-## Thread subscription lease
+## Thread subscription, server half
 
 One thread subscription on one WebSocket peer (`ThreadSubscriptionLease.phase` in
 `ws-thread-handler.ts`). The client half is the
@@ -23,7 +23,7 @@ stateDiagram-v2
 
 - **Events that arrive during catch-up are buffered**, then sent in sequence order above the
   last delivered sequence. Sending them as they arrive would put live events before the replay.
-- **A newer request does not drop a working subscription early.** An `active` lease stays until
+- **A newer request does not drop a working subscription early.** An `active` subscription stays until
   the new request is authorized; a `pending` one is replaced at once.
 - `disposeLease` unsubscribes from the event hub and clears the buffer. A replay gap sends the
   client a `gap` frame; any other read failure is the one retryable subscribe error.

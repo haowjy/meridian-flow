@@ -11,8 +11,6 @@ Doors, targets, geometry and presentation over shared table commands.
 - A click aimed at prose never mutates a table.
 - Grips use pane coordinates from `tableChromePieces`. Pointer listeners or viewport fit
   tests here compete with the kernel's one hover answer.
-- The block handle owns the outer margin band and row grips the inner band; keep them
-  disjoint.
 - A table may have no header row: don't treat row zero as special or use `toggleHeaderRow`
   from the table menu.
 - Alt+Arrows are consumed inside a table even when refused (the block surface declines them
