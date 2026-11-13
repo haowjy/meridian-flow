@@ -9,6 +9,9 @@
 import {
   type CommandProps,
   InputRule,
+  isiOS,
+  isMacOS,
+  type KeyboardShortcutCommand,
   mergeAttributes,
   Node,
   textblockTypeInputRule,
@@ -30,7 +33,12 @@ import { Table, TableView } from "@tiptap/extension-table";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
-import { DOMSerializer, type Node as ProseMirrorNode, Slice } from "@tiptap/pm/model";
+import {
+  DOMSerializer,
+  type Node as ProseMirrorNode,
+  type ResolvedPos,
+  Slice,
+} from "@tiptap/pm/model";
 import { Plugin, Selection, type Transaction } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
@@ -154,6 +162,34 @@ declare module "@tiptap/core" {
 
 const HEADING_LEVELS: readonly HeadingLevel[] = [1, 2, 3, 4, 5, 6];
 
+const unclosed = new WeakMap<Slice, Slice>();
+
+/**
+ * ProseMirror lets a pasted node replace the block it lands in, instead of
+ * merging into it, when the pasted node type is `defining`. That is a flag on
+ * the type, and a heading is no longer a type: closing the slice's open start
+ * for a leveled paragraph gives replaceRange the same input a `defining`
+ * heading gave it. A destination with the same level and alignment still takes
+ * the content in place, as `defining` also lets it.
+ */
+function closeLeveledSlice(slice: Slice, $dest: ResolvedPos): Slice {
+  const first = slice.content.firstChild;
+  if (
+    slice.openStart !== 1 ||
+    first?.type.name !== "paragraph" ||
+    first.attrs.level === null ||
+    first.sameMarkup($dest.parent)
+  ) {
+    return slice;
+  }
+  return new Slice(slice.content, 0, slice.openEnd);
+}
+
+/** A slice shaped for the block it will land in, whatever shaping the paste hook already gave it. */
+export function sliceForDestination(slice: Slice, $dest: ResolvedPos): Slice {
+  return closeLeveledSlice(unclosed.get(slice) ?? slice, $dest);
+}
+
 /**
  * A heading is a paragraph with a `level` (null is body text). One node name
  * means retyping a block edits its Yjs element in place instead of rebuilding
@@ -206,32 +242,31 @@ export const MeridianParagraph = Paragraph.extend({
   },
 
   addKeyboardShortcuts() {
+    // TipTap's Backspace clears a first empty block's type only when its node is
+    // not named `paragraph`, which now includes headings. The same condition, on
+    // every key TipTap's keymap routes to that one handler. Undoing the autoformat
+    // rule just applied comes first, and is not ours.
+    const clearFirstEmptyLevel: KeyboardShortcutCommand = ({ editor }) =>
+      editor.commands.command(({ tr, commands }) => {
+        if (editor.can().undoInputRule()) return false;
+        const { empty, $anchor } = tr.selection;
+        const { parent: block, pos } = $anchor;
+        if (!empty || block.type !== this.type || block.attrs.level === null || block.textContent) {
+          return false;
+        }
+        const $parentPos = pos > 0 ? tr.doc.resolve(pos - 1) : $anchor;
+        const isolated =
+          $parentPos.parent.type.spec.isolating && $parentPos.parent.childCount === 1;
+        const atStart = isolated
+          ? $anchor.pos - $anchor.parentOffset === pos
+          : Selection.atStart(tr.doc).from === pos;
+        return atStart && commands.updateAttributes(this.name, { level: null });
+      });
+    const backspaceKeys = ["Backspace", "Mod-Backspace", "Shift-Backspace"];
+    if (isMacOS() || isiOS()) backspaceKeys.push("Ctrl-h", "Alt-Backspace");
     return {
       ...this.parent?.(),
-      // TipTap's Backspace clears a first empty block's type only when its node
-      // is not named `paragraph`, which now includes headings. Same condition.
-      // Undoing the autoformat rule just applied comes first, and is not ours.
-      Backspace: ({ editor }) =>
-        editor.commands.command(({ state, commands }) => {
-          if (editor.can().undoInputRule()) return false;
-          const { selection, doc } = state;
-          const { $anchor } = selection;
-          const block = $anchor.parent;
-          if (
-            !selection.empty ||
-            block.type !== this.type ||
-            block.attrs.level === null ||
-            block.content.size > 0
-          ) {
-            return false;
-          }
-          // At the very start of the document, or the first block of an isolating
-          // container such as a table cell.
-          const atStart =
-            Selection.atStart(doc).from === $anchor.pos ||
-            (Boolean($anchor.node(-1).type.spec.isolating) && $anchor.index(-1) === 0);
-          return atStart && commands.updateAttributes(this.name, { level: null });
-        }),
+      ...Object.fromEntries(backspaceKeys.map((key) => [key, clearFirstEmptyLevel])),
       ...Object.fromEntries(
         HEADING_LEVELS.map((level) => [
           `Mod-Alt-${level}`,
@@ -242,27 +277,15 @@ export const MeridianParagraph = Paragraph.extend({
   },
 
   addProseMirrorPlugins() {
-    const type = this.type;
     return [
       new Plugin({
         props: {
-          // ProseMirror lets a pasted node replace the block it lands in, instead of
-          // merging into it, when the pasted node type is `defining`. That is a flag
-          // on the type, and a heading is no longer a type: closing the slice's open
-          // start for a leveled paragraph gives replaceRange the same input a
-          // `defining` heading gave it. A target with the same level and alignment
-          // still takes the content in place, as `defining` also lets it.
-          transformPasted(slice, view) {
-            const first = slice.content.firstChild;
-            if (
-              slice.openStart !== 1 ||
-              first?.type !== type ||
-              first.attrs.level === null ||
-              first.sameMarkup(view.state.selection.$from.parent)
-            ) {
-              return slice;
-            }
-            return new Slice(slice.content, 0, slice.openEnd);
+          // A paste lands at the selection. A drop is shaped again where it lands
+          // (`slice-drop.ts`), from the slice as it was before this ran.
+          transformPasted: (slice, view) => {
+            const shaped = closeLeveledSlice(slice, view.state.selection.$from);
+            if (shaped !== slice) unclosed.set(shaped, slice);
+            return shaped;
           },
         },
       }),
