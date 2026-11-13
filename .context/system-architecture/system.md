@@ -142,10 +142,10 @@ Credit grants come from the webhook and balances from the ledger in Postgres, ne
 
 `./mf`: the command-line client for debugging and for agents.
 
-It calls the same HTTP routes and uses the same thread socket client and view model as the app, so both read the same data. Only the rendering differs.
+It calls the same HTTP routes and uses the same thread socket client and view model as the app, so both read the same data. Only the rendering differs. It talks to the server of the current worktree's `pnpm dev` stack, found through its Portless route, or to the stack `MF_SERVER_URL` names.
 
 - Kind: client
-- Paths: `tools/mf/src/main.ts`
+- Paths: `tools/mf/src/main.ts`, `tools/mf/src/core/session.ts`
 - Docs: [thread-client CONTEXT](../../packages/thread-client/.context/CONTEXT.md)
 
 ## ci
