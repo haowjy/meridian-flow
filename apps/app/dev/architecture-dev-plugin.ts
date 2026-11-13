@@ -6,15 +6,17 @@ import type { Plugin } from "vite";
 const MAP_DIR = "/.context/system-architecture/";
 export const ARCHITECTURE_ENTRY = "/architecture/";
 
+const MARKDOWN = "text/markdown; charset=utf-8";
+
 /** What the map's directory may serve: pages, scripts, styles and images, not its check scripts. */
 const MAP_EXTENSIONS: Record<string, string> = {
+  ".md": MARKDOWN,
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
 };
-const MARKDOWN = "text/markdown; charset=utf-8";
 
 export type ArchitectureRequest =
   | { kind: "pass" }
