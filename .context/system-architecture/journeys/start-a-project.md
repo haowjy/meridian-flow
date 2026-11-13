@@ -1,8 +1,11 @@
 # Start a project
 
-A new writer signs in, creates a project, imports a manuscript, opens a chapter and writes. The
-steps follow the `ux-v1` interface. **Code** means the message catalog or code on `origin/ux-v1` or
-`main`; **PR body** means the description of #1304 only, which this page did not check against the code.
+A new writer signs in, creates a project, imports a manuscript, opens a chapter and writes.
+
+The screens are those of the interface redesign in pull request #1304, which is not merged yet.
+In a Source line, **code** means the message catalog or code, on that branch or on `main`, and
+**the redesign's description** means the pull request's text, which was not checked against the
+code.
 
 ## Sign in
 
@@ -10,7 +13,7 @@ Does: goes to the app and signs in. A visitor starts on the landing site or the 
 
 Sees: WorkOS's hosted sign-in. After it, the app's `/api/auth/callback` sets the sealed `wos-session` cookie and the writer is in.
 
-Source: code (the callback and the cookie, on `main`).
+Source: code (the callback and the cookie).
 
 - Map: [www](../system.md#www), [app](../system.md#app), [workos](../system.md#workos)
 
@@ -18,7 +21,7 @@ Source: code (the callback and the cookie, on `main`).
 
 Does: nothing; the server does this on the first request.
 
-Sees: the project library. The server creates the writer's user row, then a default project with a locked No Work and a first `Chapter 1`, and flags it ready.
+Sees: the project library. The server creates the writer's user row, then a default project with a first `Chapter 1` and a No Work (the locked Work that holds chats outside any task), and marks the account ready.
 
 Source: code (`projects` bootstrap).
 
@@ -42,7 +45,7 @@ Does: opens the sidebar, which has Chats, Manuscript and Knowledge, and chooses 
 
 Sees: the operating system's picker opens at once.
 
-Source: code for "Import…", "Folder…" and "Files…"; PR body for the sidebar's layout.
+Source: code for "Import…", "Folder…" and "Files…"; the redesign's description for the sidebar's layout.
 
 - Map: [project](../app.md#project), [import](../app.md#import)
 
@@ -50,7 +53,7 @@ Source: code for "Import…", "Folder…" and "Files…"; PR body for the sideba
 
 Does: waits, or keeps working. Navigating away does not stop it.
 
-Sees: upload progress. The server then reveals the whole tree at once. The ends are "Import another" and "Import didn't finish".
+Sees: upload progress. The server converts the files out of sight, and then every imported folder and document appears in the project's tree at once. The ends are "Import another" and "Import didn't finish".
 
 Source: code (the strings and the import coordinator).
 
@@ -63,7 +66,7 @@ Does: clicks a chapter in the Manuscript tree.
 
 Sees: it opens in a tab in the main area.
 
-Source: PR body for the tab; code for the tree.
+Source: the redesign's description for the tab; code for the tree.
 
 - Map: [project](../app.md#project), [core-resources](../app.md#core-resources), [context](../server.md#context)
 - Machines: [Live document binding](../../../apps/app/src/features/project/context/.context/state-machines.md), [Resource lifecycle](../../../packages/resource-replica/.context/state-machines.md)

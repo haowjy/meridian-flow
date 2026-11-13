@@ -88,7 +88,7 @@ Imports only `design-tokens`. It has one state machine, the landing page's.
 
 `tools/mf`: the `./mf` command-line client.
 
-It reads the same HTTP responses and thread events as the app, through `contracts` and `thread-client`, so a bug seen in `./mf` and a bug seen in the app share a cause.
+It reads the same HTTP responses and thread events as the app, through `contracts` and `thread-client`. A wrong value that shows in both is in the data or the shared client; one that shows only in the app is in the app's rendering.
 
 - Kind: module
 - Paths: `tools/mf/src`
@@ -97,7 +97,7 @@ It reads the same HTTP responses and thread events as the app, through `contract
 
 The shapes that cross the wire.
 
-One schema per HTTP response, shared by the app and `./mf`. A run's state travels whole on every carrier and is replaced by version; there is no second field for a fact the record carries.
+One schema per HTTP response, shared by the app and `./mf`. A chat's run state is one versioned record: every message that carries it carries all of it, a receiver keeps the newest version, and no fact in it is sent a second way.
 
 - Kind: package
 - Paths: `packages/contracts/src`
@@ -146,7 +146,7 @@ A change to a node, mark or attribute updates `meridian-extensions.ts` in the ap
 
 The Yjs editing core for the model's document `read` and `write`.
 
-It buffers a reply's saves, hands out write handles and makes inverses. Hosts supply the journal, coordinator and ports; it owns no Postgres, routes or auth. It holds no document or cache between calls. Every write lands through `ResponseCommitter` and `prepareSave`, and durability belongs to the host's commit. `./diff` and `./yjs-mutation` load in the browser and import no host code.
+It stages the writes of one model reply, saves them together and builds the inverse of each write, which is what Undo applies. The host (the server) supplies the journal, coordinator and ports; the package owns no Postgres, routes or auth. It holds no document or cache between calls. Every write lands through `ResponseCommitter` and `prepareSave`, and durability belongs to the host's commit. `./diff` and `./yjs-mutation` load in the browser and import no host code.
 
 - Kind: package
 - Paths: `packages/agent-edit/src`
@@ -157,7 +157,7 @@ It buffers a reply's saves, hands out write handles and makes inverses. Hosts su
 
 Pure policy for the writer's local copy of documents and folders.
 
-A catalog commit is a whole checkpoint, and placement is an identity dependency graph, not path replacement. No I/O: the app supplies storage.
+The replica follows catalogs, the server's listings of a project's documents and folders. A catalog update is installed whole or not at all, and a document missing from one listing is not thereby deleted. Where a document sits is worked out from ids (which folder id it is in), never from its path, so a rename or move cannot make two things look like one. No I/O: the app supplies storage.
 
 - Kind: package
 - Paths: `packages/resource-replica/src`

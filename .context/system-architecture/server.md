@@ -2,8 +2,8 @@
 
 `apps/server/server`: the Nitro server. Routes are thin; each domain holds one area's logic, behind
 a public `index.ts` and ports; `lib/` is the composition root that builds the domains into
-`AppServices`. The root `CONTEXT.md` means domains to be acyclic and not to import `lib/`. **Neither holds
-today**: six domains import each other in a cycle (drawn in the box below, every edge marked
+`AppServices`. The root `CONTEXT.md` says domains should not import each other in a cycle and should
+not import `lib/`. **Neither holds today**: six domains import each other in a cycle (drawn in the box below, every edge marked
 `breaks`), and `runtime` imports `lib/`. The diagram draws these and each domain's imports of other
 domains. `lib` imports every domain except `file-intake` to wire it, and routes also import the domains' public indexes
 directly, and domains import `shared/` and `@meridian/contracts`; those edges are left out because
@@ -129,7 +129,7 @@ The startup plugin boots the process and, in a built server, ends it on a boot f
 
 Small helpers used across domains: locks, transactions, results.
 
-Includes `lockSeamWorks` (`work-lifecycle-lock.ts`), which a new write seam calls before any advisory or document lock, the Drizzle transaction wrapper and keyed mutexes. No page states a dependency rule for `shared/`.
+Includes `lockSeamWorks` (`work-lifecycle-lock.ts`), which a new write seam calls before any advisory or document lock, the Drizzle transaction wrapper and keyed mutexes. No dependency rule is written for `shared/`.
 
 - Kind: module
 - Paths: `apps/server/server/shared`
@@ -140,37 +140,37 @@ Includes `lockSeamWorks` (`work-lifecycle-lock.ts`), which a new write seam call
 
 Runs a turn: streams the thread through a model with tools and persists the result.
 
-Takes a writer message (or a subagent report, a Work change, a queued control), runs the model with tools, saves through the threads repositories and emits `OrchestratorEvent`s. Subfolders: admission, asks, costing, gateway, handoff, loop (with compaction), spawn, summary, tools. The gateway has one registry and one retry loop; only committed output blocks a retry.
+A run is one stretch of the server working a thread. It takes a writer message (or a subagent's report, a Work change, a queued control), calls the model with tools, saves the turns through the threads repositories and emits `OrchestratorEvent`s. Subfolders: admission, asks, costing, gateway, handoff, loop (with compaction), spawn, summary, tools. The gateway has one registry and one retry loop; only committed output blocks a retry.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/runtime`
 - Docs: [CONTEXT](../../apps/server/server/domains/runtime/.context/CONTEXT.md)
 - Machines: [runtime](../../apps/server/server/domains/runtime/.context/state-machines.md)
-- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md means domains to be acyclic. Also `gateway/config/create-from-env.ts` imports `lib/production-env.ts`, which the root CONTEXT.md forbids. It reaches into `threads/adapters/drizzle/` (permission grants, admission records), not the threads port.
+- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; which the root CONTEXT.md rules out. Also `gateway/config/create-from-env.ts` imports `lib/production-env.ts`, which the root CONTEXT.md forbids. It reaches into `threads/adapters/drizzle/` (permission grants, admission records), not the threads port.
 
 ## threads
 
 Durable threads, turns, blocks and the event journal.
 
-Owns `ThreadEventHub`, the projector to AG-UI events and `thread_works` membership, with exactly one primary Work per thread; "No Work" is a real Work row. The hub writes a domain event and then schedules a commit-aware invalidation; Postgres notifications are invalidations, never the payload. Cold replay is O(history): there is no checkpoint yet.
+A thread is a chat and a turn is one entry in it. This domain owns `ThreadEventHub`, the projector to AG-UI events and `thread_works` membership. Every thread belongs to exactly one Work, the task it is part of; a chat outside any task belongs to the project's No Work, which is an ordinary row. The hub writes a domain event and then schedules a commit-aware invalidation; Postgres notifications are invalidations, never the payload. Cold replay is O(history): there is no checkpoint yet.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/threads`
 - Docs: [CONTEXT](../../apps/server/server/domains/threads/.context/CONTEXT.md)
 - Machines: [threads](../../apps/server/server/domains/threads/.context/state-machines.md)
-- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md means domains to be acyclic. It also imports `projects/adapters/work-projection-mutation.ts` directly.
+- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; which the root CONTEXT.md rules out. It also imports `projects/adapters/work-projection-mutation.ts` directly.
 
 ## projects
 
 Projects and Works: ownership gates, bootstrap and the Work lifecycle.
 
-`requireProjectOwner` is the ownership gate. A new account gets a default project, a locked No Work and `Chapter 1`. Archive, delete and the pending count follow the Work lifecycle rules in its CONTEXT.md, and a lifecycle fence guards them.
+A Work is a task inside a project: it groups chats and owns the drafts they produce. `requireProjectOwner` is the ownership gate. A new account gets a default project with `Chapter 1` and a No Work, the locked Work for chats outside any task. Archive, delete and the pending count follow the Work lifecycle rules in its CONTEXT.md. Every write that depends on a Work locks the Work's row first, so it cannot land while the Work is being archived or deleted.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/projects`
 - Docs: [CONTEXT](../../apps/server/server/domains/projects/.context/CONTEXT.md)
 - Machines: [projects](../../apps/server/server/domains/projects/.context/state-machines.md)
-- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md means domains to be acyclic. It also reaches into `context/adapters/context-fs/document-locations.ts`.
+- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; which the root CONTEXT.md rules out. It also reaches into `context/adapters/context-fs/document-locations.ts`.
 
 ## context
 
@@ -182,19 +182,19 @@ Catalog views, the tree, copy, uploads, links and arrivals. `skills://` exists f
 - Paths: `apps/server/server/domains/context`
 - Docs: [CONTEXT](../../apps/server/server/domains/context/.context/CONTEXT.md), [AGENTS](../../apps/server/server/domains/context/AGENTS.md)
 - Machines: [context uploads](../../apps/server/server/domains/context/uploads/.context/state-machines.md)
-- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md means domains to be acyclic. It also imports `projects/adapters/project-repository/shared.ts` and `threads/adapters/drizzle/top-primary-chat.ts`.
+- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; which the root CONTEXT.md rules out. It also imports `projects/adapters/project-repository/shared.ts` and `threads/adapters/drizzle/top-primary-chat.ts`.
 
 ## collab
 
-Live documents: Yjs rooms, journal-first admission, drafts, branches and Apply.
+Live documents: Yjs rooms, the write journal, drafts, branches and Apply.
 
-Hocuspocus rooms for live documents and Work drafts, plus the journal, the inverse and receipts, and checkpoints. It wraps `@meridian/agent-edit`. A write is journaled before it is admitted.
+A room is the server's in-memory session for one Yjs document. This domain runs the Hocuspocus rooms for live documents and for drafts (pending versions that the writer reviews and applies), and keeps the journal of writes, the inverses that Undo applies, the receipts and the checkpoints. It wraps `@meridian/agent-edit`. A write is recorded in the journal before the room accepts it, so a room never holds an edit the database has no record of.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/collab`
 - Docs: [CONTEXT](../../apps/server/server/domains/collab/.context/CONTEXT.md), [AGENTS](../../apps/server/server/domains/collab/AGENTS.md)
 - Machines: [collab](../../apps/server/server/domains/collab/.context/state-machines.md)
-- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md means domains to be acyclic.
+- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; which the root CONTEXT.md rules out.
 
 ## file-policy
 
@@ -205,7 +205,7 @@ Answers who may read or write a document and why not: `permission_denied` reason
 - Kind: domain
 - Paths: `apps/server/server/domains/file-policy`
 - Docs: [CONTEXT](../../apps/server/server/domains/file-policy/.context/CONTEXT.md)
-- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; the root CONTEXT.md means domains to be acyclic. It also imports `collab/adapters/drizzle-branches.ts`.
+- Breaks: Part of the import cycle among runtime, threads, projects, file-policy, context and collab; which the root CONTEXT.md rules out. It also imports `collab/adapters/drizzle-branches.ts`.
 
 ## import
 
@@ -222,7 +222,7 @@ The browser uploads bytes, then a durable server organizer reveals the whole tre
 
 Streams a project as a ZIP of live documents.
 
-Drafts are not included. The inventory and addresses are captured before any content is read. There is no ZIP64, so it refuses near 4 GiB. It uses Context's public index, not its adapters; today it imports `context/adapters/catalog-file-mapper.ts`.
+Drafts are not included. The inventory and addresses are captured before any content is read. There is no ZIP64, so it refuses near 4 GiB.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/export`
@@ -270,9 +270,9 @@ Runtime delivers pending notices at call boundaries, and the bytes stay identica
 
 ## packages
 
-Mars packages, immutable Agent definitions and skills.
+Agent definitions and skills, loaded from packages.
 
-Resolves which Agent and skills a thread uses. An unknown allow-list name is refused.
+An Agent is the profile a chat runs with: a model, its tools, its instructions and whether it may edit. A skill is a pack of instructions the model can load. Both come from packages of files, compiled into revisions that never change. This domain resolves which Agent and skills a thread uses; an unknown name in an allow-list is refused.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/packages`
@@ -292,7 +292,7 @@ Events and failures, sanitized before any sink.
 
 Account settings.
 
-Per-account preferences. No domain guide yet.
+Per-account preferences.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/preferences`
@@ -301,7 +301,7 @@ Per-account preferences. No domain guide yet.
 
 The writer's working-set snapshot.
 
-Stores a snapshot of the writer's recent routes, per account. No domain guide yet.
+Stores a snapshot of the documents the writer had open in a project, per account, so another device can restore them.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/working-set`

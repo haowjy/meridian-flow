@@ -2,12 +2,14 @@
 
 `apps/app/src`: the web app, in layers (`routes`, `client`, `components`, `core`, `features`, and a few
 helpers). `routes` mounts a screen from a feature, a feature draws it from `components` and reads
-data through `client`, and `core` holds the editor, the resource replica and the sockets. **No page
-writes a dependency rule for these layers**, and imports run both ways between them (see Drift
-below), so read the arrows as "uses", not as a layer order. Drawn: every `routes` import of a
-feature, and every other import of five or more files, except imports of `client`, `components`,
-`lib` and `hooks` by a feature (every feature has those) and imports of `contracts` and the other
-packages (see [code](code.md)). A domain's own boxes are on [server](server.md).
+data through `client`, and `core` holds the editor, the resource replica and the sockets. **No
+dependency rule is written for these layers**, and imports run both ways between them (see Drift
+below), so read the arrows as "uses", not as a layer order.
+
+The diagram draws every `routes` import of a feature, and every other import that five or more
+files make. It leaves out a feature's imports of `client`, `components`, `lib` and `hooks` (every
+feature has them) and imports of packages, which are on [code](code.md). The server's domains
+are on [server](server.md).
 
 ```mermaid
 flowchart LR
@@ -100,7 +102,7 @@ flowchart LR
 
 TanStack file routes: each URL mounts a screen.
 
-The root route, the `_authenticated` layout (which mounts one unconditional provider tree; do not gate a provider by pathname), the project routes, `projects/new`, billing, `/login`, `/logout`, `/signup` and `/api/auth/callback`. `/logout` is a full-document `<a href>`, never a `<Link>`. The project address and its first segments change on the `ux-v1` branch, so this page names none.
+The root route, the `_authenticated` layout (which mounts one unconditional provider tree; do not gate a provider by pathname), the project routes, `projects/new`, billing, `/login`, `/logout`, `/signup` and `/api/auth/callback`. `/logout` is a full-document `<a href>`, never a `<Link>`.
 
 - Kind: module
 - Paths: `apps/app/src/routes`
@@ -132,7 +134,7 @@ Shared UI: shadcn primitives and the composer.
 
 Talking to the server: HTTP clients, query hooks, the thread store, providers.
 
-`api/` has the HTTP clients, `query/` the React Query hooks, `stores/` the thread store, `providers/` the transport provider. It also holds chat submissions and the project creation record (both optimistic: the first send is journaled before navigation, and a failure stays on the thing the writer did), the failure cards, the working set and recents.
+`api/` has the HTTP clients, `query/` the React Query hooks, `stores/` the thread store, `providers/` the transport provider. It also holds chat submissions and the project creation record. Both are optimistic: the app shows the result and navigates before the server answers, and a failure shows on the thing the writer did. The failure cards live here too, with the working set (the documents open in a project on this device, restored on return) and recents.
 
 - Kind: module
 - Paths: `apps/app/src/client`
@@ -172,9 +174,9 @@ Chat messages and reviewed drafts both render through it, so they show the same 
 
 ## core-completion
 
-Headless suggestion and reference policy.
+What a suggestion menu offers, without drawing it.
 
-Independent of the editor, the features and rendering; the composer and the editor both use it.
+Holds the menu's state and the browser that walks a project's documents to complete a reference to one. It draws nothing and knows nothing of the editor, so the composer and the editor both use it and supply the trigger, the position and the rendering.
 
 - Kind: module
 - Paths: `apps/app/src/core/completion`
@@ -236,7 +238,7 @@ The menu, the settings dialog (with a phone variant) and the provider that cache
 
 The Agent picker and Agent identity.
 
-Creating a chat reserves the exact catalog-entry and revision ids.
+An Agent is the profile a chat runs with: a model, its tools and its instructions. A new chat records exactly which Agent, and which revision of it, the writer picked.
 
 - Kind: feature
 - Paths: `apps/app/src/features/agents`
@@ -246,7 +248,7 @@ Creating a chat reserves the exact catalog-entry and revision ids.
 
 The usage and credits page.
 
-The client projects neither credits nor balance.
+The page shows what the server's credit ledger reports. The browser never computes a balance or predicts a charge.
 
 - Kind: feature
 - Paths: `apps/app/src/features/billing`
@@ -256,7 +258,7 @@ The client projects neither credits nor balance.
 
 The transcript and the composer.
 
-The transcript is drawn once from the same view model `./mf` prints. The composer has the Work binding and queued control; forking and handoff creation have machines.
+The transcript is drawn from the same view model `./mf` prints. Four state machines live here: the composer's Work picker, a queued control, and the creation of a chat by fork or by handoff.
 
 - Kind: feature
 - Paths: `apps/app/src/features/chat`
@@ -265,9 +267,9 @@ The transcript is drawn once from the same view model `./mf` prints. The compose
 
 ## creation
 
-The create dialog.
+The dialog for creating a project.
 
-The create dialog. The creation record that survives navigation lives in `client/creation`.
+The record that lets the app open the new project before the server has answered lives in `client/creation`.
 
 - Kind: feature
 - Paths: `apps/app/src/features/creation`
@@ -338,7 +340,7 @@ An account-lifetime coordinator keeps an import running while the writer navigat
 
 Following an internal link.
 
-Resolves links from the local project index first and asks the server in batches of at most 200 questions; a failed request keeps the local answer. Opening finds a folder by identity, so a move or rename after the link was written still opens.
+Resolves links from the local project index first and asks the server about at most 200 links at a time; a failed request keeps the local answer. Opening finds a folder by identity, so a move or rename after the link was written still opens.
 
 - Kind: feature
 - Paths: `apps/app/src/features/links`

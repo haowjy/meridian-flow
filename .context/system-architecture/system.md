@@ -1,12 +1,12 @@
 # The running system
 
-What runs when a writer uses Meridian, as it runs under `pnpm dev`: a browser, two Nitro/Vite
+What runs when a writer uses Meridian Flow, as it runs under `pnpm dev`: a browser, two Nitro/Vite
 processes (the app and the server), a landing site, Postgres, and the outside services the server
 calls. **Nothing is deployed yet.** The hosting plan (Railway, one server replica, a Caddy ingress that
 gives the app and API one origin) is written down but not built: see the
 [hosting page](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/hosting.md).
 The deploy script is a stub and CI's only job after the build is a smoke check that runs when
-`STAGING_URL` is set. Where this page doesn't know something, it says so.
+`STAGING_URL` is set.
 
 Local development puts every process behind Portless HTTPS routes, and the app's Vite dev proxy
 forwards server-owned HTTP to the server.
@@ -46,7 +46,7 @@ flowchart LR
 
 The writer's browser: the app's JavaScript, local replicas in IndexedDB, a send journal in localStorage, two sockets.
 
-It runs the React app that the `app` process serves. IndexedDB holds the local replicas of documents and folders. Sent messages are journaled in localStorage before they are posted, so a message survives a reload before the server confirms it. One WebSocket carries chat events and commands, another carries document sync.
+It runs the React app that the `app` process serves. IndexedDB holds the local replicas of documents and folders, so a document opens and takes edits before the server answers. A sent message is written to a journal in localStorage before it is posted, so it survives a reload that happens before the server confirms it. One WebSocket carries chat events and commands, another carries document sync.
 
 - Kind: client
 - Paths: `apps/app/src/router.tsx`, `apps/app/src/routes/__root.tsx`
@@ -122,7 +122,7 @@ The runtime calls them through one gateway, with keys from `FLOW_<PROVIDER>_API_
 
 WorkOS AuthKit: hosted sign-in and the sealed `wos-session` cookie.
 
-The app mints the cookie at the callback, and the server unseals it on every request. The server creates the writer's `public.users` row on first sign-in. The callback URL is registered on the app's origin, which is why a deployed system needs one origin for app and API.
+The app sets the cookie at the callback, and the server unseals it on every request. The server creates the writer's `public.users` row on first sign-in. The callback URL is registered on the app's origin, which is why a deployed system needs one origin for app and API.
 
 - Kind: external
 - Paths: `apps/server/server/lib/auth.ts`, `apps/app/src/routes/api/auth/callback.tsx`
@@ -142,7 +142,7 @@ Credit grants come from the webhook and balances from the ledger in Postgres, ne
 
 `./mf`: the command-line client for debugging and for agents.
 
-It calls the same HTTP routes and uses the same thread socket client as the app, so what it prints is what the app would show. Which origin it talks to (the server directly or the app's) isn't recorded on this page.
+It calls the same HTTP routes and uses the same thread socket client and view model as the app, so both read the same data. Only the rendering differs.
 
 - Kind: client
 - Paths: `tools/mf/src/main.ts`
