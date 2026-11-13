@@ -22,12 +22,24 @@ function resolve(runtime: RelativePositionRuntime, value: ReadingAnchor): number
   }
 }
 
+/**
+ * The reading line: the top of the prose column, below its top inset. Measured from the pane's
+ * edge instead, a document read from its first line reopens scrolled by the inset.
+ */
+function readingLine(editor: Editor, pane: HTMLElement): number {
+  return (
+    pane.getBoundingClientRect().top +
+    pane.clientTop +
+    Number.parseFloat(getComputedStyle(editor.view.dom).paddingTop)
+  );
+}
+
 export function captureReadingPosition(editor: Editor, pane: HTMLElement): ReadingPosition | null {
   if (editor.isDestroyed) return null;
   try {
     const runtime = relativePositionRuntimeFromState(editor.state);
     if (!runtime) return null;
-    const top = pane.getBoundingClientRect().top + pane.clientTop;
+    const top = readingLine(editor, pane);
     let viewport: ReadingPosition["viewport"] | null = null;
     editor.state.doc.forEach((node, pos) => {
       if (viewport) return;
@@ -93,7 +105,7 @@ export function restoreReadingPosition(
     editor.view.dispatch(editor.state.tr.setSelection(selection).setMeta("addToHistory", false));
     const block = resolve(runtime, place.viewport.block);
     const text = place.viewport.text ? resolve(runtime, place.viewport.text) : null;
-    const top = pane.getBoundingClientRect().top + pane.clientTop;
+    const top = readingLine(editor, pane);
     if (text !== null && doc.resolve(text).parent.isTextblock) {
       const line = editor.view.coordsAtPos(text);
       pane.scrollTop += line.top - top + place.viewport.offset * (line.bottom - line.top);
