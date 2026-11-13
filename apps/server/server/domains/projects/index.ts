@@ -11,7 +11,9 @@ import { projects, works } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type { DocumentCreationAggregate, MarkdownDocumentStore } from "../collab/index.js";
-import { DrizzleContextDocumentStore } from "../context/index.js";
+import { LIVE, sourceRoot } from "@meridian/project-tree";
+import { treeListOfSource } from "../context/adapters/tree-list-facts.js";
+import type { TreeListStore } from "../context/ports/tree-list-store.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 import { LIVE_TREE, visibleDocuments } from "../context/tree/tree-view.js";
 import { ensureManuscriptSource, nextProjectSlug } from "./adapters/project-repository/shared.js";
@@ -67,6 +69,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   db: Database;
   documents: Pick<MarkdownDocumentStore, "seedFromMarkdown" | "bindStatic"> &
     Pick<DocumentCreationAggregate, "createDocumentAtomically">;
+  treeLists: TreeListStore;
 }): ProjectBootstrapRepository {
   const { db } = deps;
   type BootstrapDb = Pick<Database, "execute" | "insert" | "select" | "update">;
@@ -197,17 +200,22 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     const documentId = randomUUID() as DocumentId;
     const created = await deps.documents.createDocumentAtomically({
       persistIdentity: async () => {
-        const claimed = await new DrizzleContextDocumentStore({
-          db,
-          contextSourceId,
-        }).createDocumentRecordIfAbsent({
-          id: documentId,
-          folderId: null,
-          name: "Chapter 1",
-          extension: "",
-          filetype: "markdown",
+        await deps.treeLists.submit({
+          list: await treeListOfSource(tx as unknown as Database, contextSourceId),
+          make: (writer) => ({
+            records: [
+              writer.create(LIVE, "system", {
+                kind: "document",
+                filetype: "markdown",
+                name: "Chapter 1",
+                parent: sourceRoot(contextSourceId),
+                node: documentId,
+              }),
+            ],
+            result: undefined,
+          }),
         });
-        return (claimed?.document.id ?? null) as DocumentId | null;
+        return documentId;
       },
       initializeContent: (claimedId) => seedDocument(claimedId),
     });

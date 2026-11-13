@@ -54,6 +54,8 @@ export type VisibleDocument = {
   folderId: FolderId | null;
   /** The filename as the view shows it, extension included: never render it with an extension. */
   name: string;
+  /** What follows the last dot of the name, lowercased; empty when the name has none. */
+  extension: string;
   fileType: string;
   storageUrl: string | null;
   mimeType: string | null;
@@ -254,6 +256,7 @@ export function createTreeReader(db: Database): TreeReader {
       contextSourceId: row.contextSourceId,
       folderId: row.folderId,
       name: row.name,
+      extension: row.extension,
       fileType: row.fileType,
       storageUrl: row.storageUrl,
       mimeType: row.mimeType,

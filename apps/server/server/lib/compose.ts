@@ -24,6 +24,9 @@ import { createDrizzleDocumentRemovalCollab } from "../domains/collab/adapters/d
 import { createDraftClose } from "../domains/collab/adapters/drizzle-draft-close.js";
 import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
+import { createTrashRemovals } from "../domains/context/adapters/trash-removals.js";
+import { createDrizzleContextImportReveal } from "../domains/context/adapters/drizzle-import-reveal.js";
+import type { TreeListStore } from "../domains/context/ports/tree-list-store.js";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
@@ -40,7 +43,6 @@ import {
   createContextUploadContentPort,
   createDocumentAddressResolver,
   createDocumentLinkResolver,
-  createDocumentRemoval,
   createDocumentRevisions,
   createDraftUploadVerifier,
   createDrizzleChatUploadsOwners,
@@ -60,11 +62,8 @@ import {
   createDrizzleUploadIdentityPort,
   createDrizzleUploadIntakeRepository,
   createFigureAssetService,
-  createHiddenNodeRepair,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
-  createRemovalRecords,
-  createRestoreRemovedDocuments,
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentArrivals,
@@ -78,7 +77,6 @@ import {
   type LinkAheadRegistry,
   type ProjectContextAvailabilityPort,
   type PromotionService,
-  type RestoreRemovedDocuments,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
   type UploadIntake,
@@ -308,7 +306,6 @@ export type AppServices = {
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
-  restoreRemovedDocuments: RestoreRemovedDocuments;
   documentTrash: DocumentTrash;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
@@ -397,9 +394,9 @@ export type ProductionAppPorts = {
   eventSink: EventSink;
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
+  treeLists: TreeListStore;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog & DraftOwnerHintPort;
-  restoreRemovedDocuments: RestoreRemovedDocuments;
   documentTrash: DocumentTrash;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
@@ -573,23 +570,11 @@ export async function createProductionAppPorts(input: {
   // thread peers) exists only once the collab domain does, which binds it; nothing retires
   // before a commit, so the late binding is never observed unbound in production.
   const draftClose = createDraftClose();
-  const documentRemoval = createDocumentRemoval(db, {
-    collab: createDrizzleDocumentRemovalCollab(db, draftClose),
-    workProjection: workProjectionMutation,
-  });
-  // One repair on touch for every production tree reader and create (§12.4).
-  const hiddenNodeRepair = createHiddenNodeRepair({
-    db,
-    removal: documentRemoval,
-    eventSink,
-    objects: objectRelease,
-  });
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
     availability: projectContextAvailability,
     observer: createLinkScopeObserver(eventSink),
-    repair: hiddenNodeRepair,
   });
   // The project's tree lists, composed once: every server write of the tree is a `submit` on one.
   const treeLists = createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) });
@@ -604,9 +589,9 @@ export async function createProductionAppPorts(input: {
     eventSink,
     notices,
     workProjectionMutation,
-    objects: objectRelease,
     draftClose,
-    documentRemoval,
+    treeLists,
+    removals: createTrashRemovals(db),
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
@@ -657,10 +642,10 @@ export async function createProductionAppPorts(input: {
   const projects = createDrizzleProjectBootstrapRepository({
     db,
     documents: documentSync,
+    treeLists,
   });
   workRepo = createDrizzleProjectWorkRepository({
     db,
-    removal: documentRemoval,
     projectionMutation: workProjectionMutation,
     fileAccessChanges,
     lineageScratch,
@@ -704,23 +689,18 @@ export async function createProductionAppPorts(input: {
     eventSink,
     eventQuery: input.eventQuery,
     documentSync,
+    treeLists,
     documentArrivals: arrivals,
     organizeWake,
     linkAheadRegistry,
     contextPorts,
     contextCatalog,
-    restoreRemovedDocuments: createRestoreRemovedDocuments({
-      db,
-      fileAccess,
-      workProjection: workProjectionMutation,
-      arrivals,
-      catalog: contextCatalog,
-    }),
     documentTrash: createDrizzleDocumentTrash({
       db,
       objectStore,
       eventSink,
       drafts: documentSync.documentPurgeDraftDisposal,
+      tree: treeLists,
       readMarkdown: documentSync.readFrozenMarkdown,
     }),
     projectContextAvailability,
@@ -767,7 +747,7 @@ export async function createProductionAppPorts(input: {
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
     shownLinks: createDrizzleShownLinkStore(db),
-    documentRemovals: createRemovalRecords(db),
+    documentRemovals: createTrashRemovals(db),
     observationFrontiers: createDrizzleObservationFrontiers(db),
   };
 }
@@ -825,9 +805,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objects: ports.objectStore,
     eventSink: ports.eventSink,
     documents: ports.documentSync,
-    ahead: ports.linkAheadRegistry,
-    arrivals: ports.documentArrivals,
-    catalog: ports.contextCatalog,
+    reveal: createDrizzleContextImportReveal({
+      db: ports.db,
+      tree: ports.treeLists,
+      ahead: ports.linkAheadRegistry,
+      arrivals: ports.documentArrivals,
+    }),
   });
   const workContext = createWorkContextReader({
     threads: ports.threadRepos.threads,
@@ -1232,7 +1215,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         projectId,
       ),
     contextCatalog: ports.contextCatalog,
-    restoreRemovedDocuments: ports.restoreRemovedDocuments,
     documentTrash: ports.documentTrash,
     projectContextAvailability: ports.projectContextAvailability,
     documentAddresses: ports.documentAddresses,
@@ -1556,9 +1538,6 @@ export function createInMemoryAppServices(): AppServices {
       throw new Error("Import requires durable persistence");
     },
     contextCatalog,
-    async restoreRemovedDocuments() {
-      throw new Error("Document restore is unavailable in memory");
-    },
     documentTrash: {
       async retained() {
         return new Set();

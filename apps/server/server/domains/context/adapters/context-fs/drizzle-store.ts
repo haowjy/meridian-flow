@@ -43,12 +43,19 @@ type DocumentRow = Pick<
   | "rank"
 >;
 
+/** A node's name is its full filename; the document shape keeps the stem apart from the extension. */
+function stemOf(row: Pick<DocumentRow, "name" | "extension">): string {
+  return row.extension !== "" && row.name.toLowerCase().endsWith(`.${row.extension}`)
+    ? row.name.slice(0, -(row.extension.length + 1))
+    : row.name;
+}
+
 export function mapDocument(row: DocumentRow): ContextDocument {
   const isBinary = isStorageBackedDocument(row);
   return {
     id: row.id,
     folderId: row.folderId,
-    name: row.name,
+    name: stemOf(row),
     extension: row.extension,
     fileType: isBinary ? (row.fileType as DocumentFileType) : null,
     filetype: isBinary ? null : (row.fileType as Filetype),
@@ -155,11 +162,22 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return { folders, documents: docs.map(mapDocument) };
   }
 
-  namesAt(view: TreeView, parentId: string | null): Promise<Set<string>> {
-    return createTreeReader(this.deps.db).namesAt(view, {
-      contextSourceId: this.sourceId,
-      parentId: parentId as FolderId | null,
-    });
+  async namesAt(view: TreeView, parentId: string | null): Promise<Set<string>> {
+    const vd = visibleDocuments(view);
+    const vf = visibleFolders(view);
+    const here = (parent: typeof vd.folderId | typeof vf.parentId) =>
+      parentId === null ? isNull(parent) : eq(parent, parentId as FolderId);
+    const [documents, folders] = await Promise.all([
+      this.db
+        .select({ name: vd.name })
+        .from(vd)
+        .where(and(eq(vd.contextSourceId, this.sourceId), here(vd.folderId))),
+      this.db
+        .select({ name: vf.name })
+        .from(vf)
+        .where(and(eq(vf.contextSourceId, this.sourceId), here(vf.parentId))),
+    ]);
+    return new Set([...documents, ...folders].map((row) => row.name));
   }
 
   async listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]> {
