@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 import { execFileSync } from "node:child_process";
-import { ensureDatabaseForUrl, ensureExtensionsForUrl, formatPgError } from "./lib/dev-db";
+import { ensureDatabaseForUrl, formatPgError } from "./lib/dev-db";
 import { applyDevEnvToProcess, DEV_DATABASES, resolveCurrentRepoRoot } from "./lib/dev-env";
 
 async function main(): Promise<void> {
@@ -14,10 +14,6 @@ async function main(): Promise<void> {
   for (const { db, dbUrl } of active) {
     const { targetDb, created } = await ensureDatabaseForUrl(dbUrl);
     console.log(`▸ ${db.label} database "${targetDb}" ${created ? "created" : "ready"}`);
-    if (db.extensions?.length) {
-      await ensureExtensionsForUrl(dbUrl, db.extensions);
-      console.log(`▸ ${db.label} extensions ready: ${db.extensions.join(", ")}`);
-    }
     console.log(`▸ Migrating ${db.label}`);
     execFileSync(db.migrateScript, {
       cwd: repoRoot,

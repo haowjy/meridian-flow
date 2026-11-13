@@ -55,9 +55,8 @@ pnpm --filter @meridian/database db:migrate
 
 Writer project search ([#1173](https://github.com/haowjy/meridian-flow/issues/1173)) indexes
 block text with the pg_bigm extension, which stock `postgres:16` and Railway's default Postgres
-lack. The release whose migration runs `CREATE EXTENSION pg_bigm` fails on a host without it,
-so switch the production Postgres service to an image built from `tools/postgres/Dockerfile`
-before that release deploys. Releases before it run on either image.
+lack. The baseline requires it. Before installing any release, use an image built
+from `tools/postgres/Dockerfile` and confirm the extensions below are available.
 
 1. **Back up first.** Take a dump or a platform snapshot of the database you can restore from.
 2. **Build and publish the image.** Railway pulls a database image from a registry, so push
@@ -79,10 +78,16 @@ an existing dev container onto it), and CI installs it on the runner's Postgres.
 
 Before the first deploy with retained data, the baseline builds only an empty
 database. It refuses an older or different installed baseline; it never wipes
-data. Reset a deployment only with the owner's approval. At the first deploy
+data. If an existing deployment has a different baseline, stop and ask the owner
+whether its data must be retained. A reset destroys every app row, including
+documents and chats; it is allowed only with the owner's explicit approval. At the first deploy
 with data worth keeping, freeze the baseline and restore incremental migration
 generation, history checks and populated-table lint before any later schema
-change. See [database guidance](../../packages/database/AGENTS.md).
+change. “Freeze” means no deployed SQL or metadata may be rewritten: generation
+must append a new migration and CI must reject edits to applied history.
+The deployment owner makes that transition and proves an incremental upgrade
+against a populated fixture before accepting data worth keeping. See
+[database guidance](../../packages/database/AGENTS.md).
 
 ## Environment variables
 

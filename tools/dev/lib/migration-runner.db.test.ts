@@ -2,7 +2,7 @@
  * Real-Postgres contracts for migration refusal, catch-up, and serialization.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - single-snapshot migration bytes recorded before lock acquisition (kb/wiki/conventions/practice/database-migrations.md#merged-migration-history-never-changes)
+ * - single-snapshot migration bytes recorded before lock acquisition (packages/database/.context/CONTEXT.md#baseline-inputs)
  */
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -16,33 +16,9 @@ import { disposableTestDatabaseTarget } from "./test-db-lifecycle";
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
 
-interface TestMigration {
-  tag: string;
-  when: number;
-  sql: string;
-}
-
-async function writeMigrations(
-  directory: string,
-  migrations: readonly TestMigration[],
-  journalEntries = migrations.map((migration, idx) => ({
-    idx,
-    version: "7",
-    when: migration.when,
-    tag: migration.tag,
-    breakpoints: true,
-  })),
-): Promise<void> {
-  await mkdir(path.join(directory, "meta"), { recursive: true });
-  await writeFile(
-    path.join(directory, "meta", "_journal.json"),
-    JSON.stringify({ version: "7", dialect: "postgresql", entries: journalEntries }),
-  );
-  await Promise.all(
-    migrations.map((migration) =>
-      writeFile(path.join(directory, `${migration.tag}.sql`), migration.sql),
-    ),
-  );
+async function writeBaseline(directory: string, sql: string): Promise<void> {
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, "0000_baseline.sql"), sql);
 }
 
 async function waitForAdvisoryLockWaiters(
@@ -110,19 +86,15 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
   it("executes and records the snapshot read before waiting on the lock", async () => {
     const directory = path.join(temporaryRoot, "snapshot");
     const original = {
-      tag: "0000_baseline",
-      when: 600,
       sql: "\uFEFFCREATE TABLE public.snapshot_before (id int);\r\n",
     };
-    await writeMigrations(directory, [original]);
+    await writeBaseline(directory, original.sql);
     await sql`SELECT pg_advisory_lock(${MIGRATION_ADVISORY_LOCK_ID})`;
     const run = runMigrations({ databaseUrl: scratchUrl, migrationsDirectory: directory });
     let waitError: unknown;
     try {
       await waitForAdvisoryLockWaiters(sql, 1);
-      await writeMigrations(directory, [
-        { ...original, when: 700, sql: "CREATE TABLE public.snapshot_after (id int);" },
-      ]);
+      await writeBaseline(directory, "CREATE TABLE public.snapshot_after (id int);");
     } catch (error) {
       waitError = error;
     } finally {

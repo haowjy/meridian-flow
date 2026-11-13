@@ -150,7 +150,6 @@ describe("managed DB test lifecycle", () => {
     expect(managedTestDatabaseOwnerPid("other_test-run-1234-5678", ["meridian"])).toBeUndefined();
     expect(managedTestDatabaseOwnerPid("meridian_test-run-0-5678", ["meridian"])).toBeUndefined();
     expect(managedTestDatabaseOwnerPid("meridian_test-run-1-5678", ["meridian"])).toBeUndefined();
-    expect(managedTestDatabaseOwnerPid("meridian_migrations_1234_5678", ["meridian"])).toBe(1234);
     expect(isManualTestDatabase("meridian_test-manual-probe", ["meridian"])).toBe(true);
     expect(isManualTestDatabase("meridian_feature-test", ["meridian"])).toBe(false);
     expect(() => resolveWorktreeDatabaseName("meridian", "test-run-1-2")).toThrow(
@@ -182,16 +181,15 @@ describe("managed DB test lifecycle", () => {
         "meridian_stale-worktree",
         "meridian_test-run-10-100",
         "meridian_test-run-20-200",
-        "meridian_migrations_30_300",
         "meridian_test-manual-probe",
       ],
       new Set(["meridian_feature"]),
       ["meridian"],
-      (pid) => pid === 10 || pid === 30,
+      (pid) => pid === 10,
     );
 
     expect(classification).toEqual({
-      activeManaged: ["meridian_test-run-10-100", "meridian_migrations_30_300"],
+      activeManaged: ["meridian_test-run-10-100"],
       manual: ["meridian_test-manual-probe"],
       orphaned: ["meridian_stale-worktree", "meridian_test-run-20-200"],
     });

@@ -21,7 +21,8 @@ change never carries a backfill or a repair of old rows.
   documents from before the reset. Never reset another checkout or a deployment.
 - At the first deploy with data worth keeping, freeze the baseline and restore
   append-only migration generation, history checks and populated-table migration
-  lint before the next schema change.
+  lint before the next schema change. The deployment owner follows
+  [the deployment transition](../../docs/deploy/README.md).
 
 Identity is app-owned `public.users`, keyed by WorkOS `external_id`.
 Provider-specific auth stays at the adapter and composition boundary.

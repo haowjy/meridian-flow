@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { resolve } from "node:path";
-import { ensureDatabaseForUrl, ensureExtensionsForUrl } from "./lib/dev-db.ts";
+import { ensureDatabaseForUrl } from "./lib/dev-db.ts";
 import { applyDevEnvToProcess, DEV_DATABASES } from "./lib/dev-env.ts";
 import { ensureDevInfraUp } from "./lib/dev-infra.ts";
 
@@ -15,9 +15,6 @@ async function ensureDevDatabaseReady(): Promise<void> {
     if (!databaseUrl) continue;
     const { targetDb, created } = await ensureDatabaseForUrl(databaseUrl);
     console.log(`bootstrap: ${db.label} database "${targetDb}" ${created ? "created" : "ready"}`);
-    if (db.extensions?.length) {
-      await ensureExtensionsForUrl(databaseUrl, db.extensions);
-    }
   }
 }
 

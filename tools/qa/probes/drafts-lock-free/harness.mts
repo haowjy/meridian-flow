@@ -1,6 +1,6 @@
 /**
  * Shared harness for the lock-free drafts probes: one scratch PostgreSQL database
- * with the committed migration chain, the production collab and Work adapters wired over it, and
+ * with the committed baseline, the production collab and Work adapters wired over it, and
  * the fixtures and interleaving helpers the probes share. Each probe seeds its own Work, draft and
  * documents, so the probes run in any order against one database.
  */
@@ -57,17 +57,10 @@ export async function createScratchDatabase(): Promise<{ url: string; drop(): Pr
   const name = `${SCRATCH_PREFIX}${process.pid}_${Date.now().toString(36)}`;
   const url = `postgresql://postgres:postgres@127.0.0.1:${LOCAL_DEV_POSTGRES_PORT}/${name}`;
   await ensureDatabaseForUrl(url);
-  // The migration chain's PostgreSQL notices (identifier truncation, skipped drops) are noise here.
-  const log = console.log;
-  console.log = () => {};
-  try {
-    await runMigrations({
-      databaseUrl: url,
-      migrationsDirectory: resolve(resolveCurrentRepoRoot(), "packages/database/src/migrations"),
-    });
-  } finally {
-    console.log = log;
-  }
+  await runMigrations({
+    databaseUrl: url,
+    migrationsDirectory: resolve(resolveCurrentRepoRoot(), "packages/database/src/migrations"),
+  });
   return { url, drop: () => dropDatabaseForUrl(url, []).then(() => undefined) };
 }
 

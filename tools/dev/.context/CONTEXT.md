@@ -18,19 +18,18 @@ loader through `db:migrate` with no file defining the URL. Failure to derive a
 scoped database is loud, never a fallback.
 
 `db:migrate` resolves the checkout the same way and
-refuse a registered main database unless a human passes `--allow-main-database`;
-their managed-test bypass accepts only a local disposable database whose owner
+refuses a registered main database unless a human passes `--allow-main-database`;
+its managed-test bypass accepts only a local disposable database whose owner
 PID is a live, distinct ancestor of the command. Any other direct admin or test
 command resolves the checkout the same way before touching a database.
 
 `drop-db` protects every reserved main-checkout database; new main-like names
 extend `RESERVED_DATABASES`, not the CLI. `db:reset` is the
 schema-only reset for an owned active database; a full infrastructure wipe is a
-separate explicit operation. `db:migrate` runs the locked migration runner and
-function synchronization. Ordered code companions are declared and digest-pinned in
-no-transaction SQL files; history validation refuses changed bytes. The runner invokes
-`migrate(session)` before the SQL assertions and ledger write on its reserved advisory-
-lock session. Domain-specific conversion stays beside its migration, not in tools/dev.
+separate explicit operation. `db:migrate` applies the generated baseline and its
+ledger row in one locked transaction. Extensions, functions and triggers are
+included in the baseline; there is no post-install sync or code companion.
+
 
 Managed DB tests provision owned databases and route each worker to its own
 clone. Cleanup hands only this invocation's databases to the detached cleanup
@@ -48,18 +47,11 @@ server's durability settings or dev database durability. Do not scale workers
 with CPU count against the shared connection limit, and do not run `pnpm check`
 and `pnpm test:db` at once in one worktree.
 
-Concurrent managed runs from different checkouts share the dev server with no
-cross-run queue, and they all pass as long as no test waits on a drop inline.
-Under four concurrent full runs a single empty-database drop took 3–44 s
-(0.1 s idle), enough to time out a 30 s hook. Serialising runs with an advisory
-lock only hides that wait: with two concurrent full runs, both finished in a
-median 119 s with the lock against 68 s without, and neither failed. Capacity
-comes from `max_connections=300` in `docker-compose.yml` (a full run peaks near
-20 connections), so host memory limits concurrent runs before connections do.
-Raise that limit rather than shrinking fixture pools, which would change what
-the tests exercise. Local runs use 4 workers (`DB_TEST_WORKERS` overrides);
-don't size them per run from `vitest list`, whose 0.5–1.1 s discovery costs
-more than the clones it would save (about 0.1 s each, created in parallel).
+Concurrent managed runs from different checkouts share the dev server without a
+cross-run queue. Drop each run's databases in detached cleanup: PostgreSQL waits
+for an immediate checkpoint on drop, which can otherwise time out a test hook.
+Local runs use four workers (`DB_TEST_WORKERS` overrides). Size concurrency for
+host memory and the shared server's connection limit, not the host's CPU count.
 
 `pnpm test:all` runs unit and DB projects together; its DB
 reporter rejects a run with no passed or failed DB test, so a unit-only result
@@ -75,7 +67,7 @@ closer drains again before applying a bounded PostgreSQL pool timeout.
 The DB Vitest config refuses to run unless `RUN_DB_TESTS=1` and a throwaway
 `DATABASE_URL` are set. A managed run migrates a template database from empty
 and clones one database per worker from it. Managed names carry the owner's PID
-for GC, and `test-run-`, `test-manual-` and `migrations_` are reserved
+for GC, and `test-run-` and `test-manual-` are reserved
 worktree-slug prefixes, so a worktree database can't pass for a managed one.
 
 `pnpm check` ends with `check-db-gate.ts`: Vitest's module graph selects DB test

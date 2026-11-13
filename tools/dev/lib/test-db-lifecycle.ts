@@ -74,13 +74,6 @@ export function managedTestDatabaseOwnerPid(
       const ownerPid = match ? Number(match[1]) : undefined;
       return ownerPid !== undefined && ownerPid > 1 ? ownerPid : undefined;
     }
-
-    const migrationPrefix = `${baseDatabaseName}_migrations_`;
-    if (databaseName.startsWith(migrationPrefix)) {
-      const match = databaseName.slice(migrationPrefix.length).match(/^(\d+)_(\d+)$/);
-      const ownerPid = match ? Number(match[1]) : undefined;
-      return ownerPid !== undefined && ownerPid > 1 ? ownerPid : undefined;
-    }
   }
   return undefined;
 }

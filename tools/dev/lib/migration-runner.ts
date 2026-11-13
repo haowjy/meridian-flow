@@ -122,6 +122,9 @@ export async function runMigrations(input: {
   let failed = false;
   const client = postgres(input.databaseUrl, {
     max: 1,
+    onnotice: (notice) => {
+      if (notice.code !== "42622") console.warn(`db:migrate: ${notice.message}`);
+    },
     onclose: () => {
       disconnected = true;
     },

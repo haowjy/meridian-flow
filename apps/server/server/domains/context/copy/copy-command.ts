@@ -318,8 +318,8 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
           objectStore: deps.objectStore,
           source: {
             uri: file.uri,
-            storageUrl: file.storageUrl ?? "",
-            ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+            storageUrl: file.storageUrl,
+            mimeType: file.mimeType,
             hasPreview: file.hasPreview,
           },
         });

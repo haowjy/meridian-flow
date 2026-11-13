@@ -66,19 +66,17 @@ preserved (`NULL` differs from JSON `null`): read `payload::text` and parse it
 once, since the driver-decoded JSONB string plus Drizzle's second parse turns
 JSON-looking scalar strings into other values.
 
-Forward-turn inverses and write provenance live in immutable `document_edits`
-and `document_edit_parts`; the legacy reconstruction tables and the unused
-mutation provenance sink are retired.
+Undo records an inverse as a new edit rather than rewriting history. Immutable
+`document_edits` and `document_edit_parts` retain the original edit, its author
+and the inverse needed to take it back.
 
 Works retire by archive or by soft delete with a 30-day restore window; the
 hourly purge job disposes of expired Works. `deleted_by_work_id` markers on
 owned rows identify exactly what a restore revives; their FKs are `ON DELETE
 SET NULL` so a stale marker never deletes, and purge deletes marked rows
 explicitly. Branches and their drafts carry no marker: soft delete leaves them alone and
-purge disposes of them. The dropped `works.visibility` and `persistence` were
-speculative and must not return; if multi-writer sharing or ephemeral-Work GC
-comes back, design new columns. No Work is a locked Work, not a sharing
-preference.
+purge disposes of them. Each project has a locked Work row for the UI's
+“None” selection; it cannot be archived or deleted.
 
 `document_yjs_heads.latest_checkpoint_id` is a Drizzle FK with `ON DELETE SET
 NULL`. Compaction retires update prefixes through the generation-local
@@ -130,7 +128,5 @@ threads, not source rows. Catalog selection and the one-per-thread binding use
 compare-and-set and join the ambient transaction; idempotent binding compares
 revision and configuration and changes neither. The binding's configuration
 holds the resolved model, skill-content identities, and named-target revisions;
-execution identity comes from the thread binding, and the legacy project
-Agent/skill tables, the turn Agent-definition FK, and the slug-default
-preference are gone. `project_agent_removals` is only
+execution identity comes from the thread binding. `project_agent_removals` is only
 a Project/catalog-entry exclusion, never another definition owner.

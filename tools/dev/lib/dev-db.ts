@@ -45,12 +45,6 @@ export function isReservedDatabase(name: string, mainDbNames: Iterable<string>):
   return false;
 }
 
-function validateExtensionName(name: string): void {
-  if (!/^[a-z_][a-z0-9_]*$/.test(name)) {
-    throw new Error(`Refusing to create extension with unsafe name: ${name || "<empty>"}`);
-  }
-}
-
 function parsePostgresPort(databaseUrl: string): number {
   const port = new URL(databaseUrl).port;
   return port ? Number.parseInt(port, 10) : 5432;
@@ -204,7 +198,7 @@ export function isCiRunnerPostgres(databaseUrl: string): boolean {
   }
 }
 
-/** Clone a migrated test database without replaying the migration chain. */
+/** Clone a migrated test database without replaying the baseline. */
 export async function cloneDatabaseForUrl(
   templateDatabaseUrl: string,
   targetDatabaseUrl: string,
@@ -227,22 +221,6 @@ export async function cloneDatabaseForUrl(
     return { targetDb: target.targetDb };
   } finally {
     await adminSql.end();
-  }
-}
-
-export async function ensureExtensionsForUrl(
-  databaseUrl: string,
-  extensions: readonly string[],
-): Promise<void> {
-  if (extensions.length === 0) return;
-  const sql = postgres(databaseUrl, { max: 1 });
-  try {
-    for (const extension of extensions) {
-      validateExtensionName(extension);
-      await sql.unsafe(`CREATE EXTENSION IF NOT EXISTS "${extension}"`);
-    }
-  } finally {
-    await sql.end();
   }
 }
 

@@ -42,8 +42,11 @@ export function fileRefOf(
     if (!schemaType.ok) return schemaType;
     return Ok({ ...base, kind: "tracked", filetype, schemaType: schemaType.value });
   }
-  if (!doc.storageUrl) {
-    return Err({ code: "io_error", message: "Binary document is missing object storage URL" });
+  if (!doc.storageUrl || !doc.mimeType) {
+    return Err({
+      code: "io_error",
+      message: "Binary document is missing object storage URL or MIME type",
+    });
   }
   return Ok({
     ...base,
@@ -51,7 +54,7 @@ export function fileRefOf(
     fileType: doc.fileType,
     extension: doc.extension,
     storageUrl: doc.storageUrl,
-    mimeType: doc.mimeType ?? undefined,
+    mimeType: doc.mimeType,
     hasPreview: doc.hasPreview,
   });
 }

@@ -185,7 +185,7 @@ function historyAt(reference: string): SchemaShapeHistoryEntry[] | null {
     const recorded = JSON.parse(
       git("show", `${reference}:${HISTORY_PATH}`),
     ) as SchemaShapeHistoryEntry[];
-    // The pre-deploy database reset starts retained history at protocol 1.0.0.
+    // Bases older than the pre-deploy reset include discarded pre-1.0 history.
     return recorded.filter((entry) => entry.version.major >= 1);
   } catch {
     return null;
