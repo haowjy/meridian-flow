@@ -6,7 +6,6 @@ import {
   check,
   foreignKey,
   index,
-  pgSequence,
   pgTable,
   primaryKey,
   text,
@@ -21,15 +20,23 @@ import { documentYjsHeads } from "./yjs";
 type NodeKind = "folder" | "document";
 
 /**
- * The Yjs client id a server process uses for the records it makes in one tree list: below
- * 1,000, which clients may not use. One id per process and list, so two tool calls never make
- * Yjs items under one id at once, and the list's state vector stays small.
+ * The claim on a node id: one row per id any list has made a node of, never deleted while the
+ * list lives, so an id is never made twice and no two lists hold it. The unique key is the
+ * claim: the admitting transaction inserts the row, and a conflict means the id is taken. The
+ * rows of a node reference its claim with its list, so a row can never be written for another
+ * list's id, and an upsert cannot move one.
  */
-export const treeServerClientId = pgSequence("tree_server_client_id", {
-  minValue: 1,
-  maxValue: 999,
-  cycle: true,
-});
+export const treeNodeIds = pgTable(
+  "tree_node_ids",
+  {
+    id: uuid("id").$type<DocumentId>().primaryKey(),
+    listId: uuid("list_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documentYjsHeads.documentId, { onDelete: "cascade" }),
+  },
+  (table) => [unique("tree_node_ids_id_list").on(table.id, table.listId)],
+);
 
 /**
  * The live tree: one row per folder and document that is in live or in live's Trash, written
@@ -41,10 +48,7 @@ export const treeNodes = pgTable(
   {
     id: uuid("id").$type<DocumentId>().primaryKey(),
     /** The tree list (a project's, or an account's) whose replay wrote this row. */
-    listId: uuid("list_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documentYjsHeads.documentId, { onDelete: "cascade" }),
+    listId: uuid("list_id").$type<DocumentId>().notNull(),
     kind: text("kind").$type<NodeKind>().notNull(),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
@@ -68,6 +72,11 @@ export const treeNodes = pgTable(
   (table) => [
     // The target of the composite foreign key below.
     unique("tree_nodes_id_source").on(table.id, table.contextSourceId),
+    foreignKey({
+      name: "tree_nodes_claimed_by_list",
+      columns: [table.id, table.listId],
+      foreignColumns: [treeNodeIds.id, treeNodeIds.listId],
+    }).onDelete("cascade"),
     foreignKey({
       name: "tree_nodes_parent_in_source",
       columns: [table.parentId, table.contextSourceId],
@@ -107,10 +116,7 @@ export const branchTreeNodes = pgTable(
       .references(() => branches.id, { onDelete: "cascade" }),
     id: uuid("id").$type<DocumentId>().notNull(),
     /** The tree list the node is in; a Work's tree spans a project's list and the account's. */
-    listId: uuid("list_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documentYjsHeads.documentId, { onDelete: "cascade" }),
+    listId: uuid("list_id").$type<DocumentId>().notNull(),
     kind: text("kind").$type<NodeKind>().notNull(),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
@@ -127,6 +133,11 @@ export const branchTreeNodes = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.branchId, table.id] }),
+    foreignKey({
+      name: "branch_tree_nodes_claimed_by_list",
+      columns: [table.id, table.listId],
+      foreignColumns: [treeNodeIds.id, treeNodeIds.listId],
+    }).onDelete("cascade"),
     check("branch_tree_nodes_kind_valid", sql`${table.kind} IN ('folder', 'document')`),
     check(
       "branch_tree_nodes_file_type_of_document",

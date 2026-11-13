@@ -5,7 +5,6 @@ CREATE EXTENSION IF NOT EXISTS pg_bigm;
 CREATE SEQUENCE "public"."branch_tree_change_revision" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
 CREATE SEQUENCE "public"."context_availability_generation_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
 CREATE SEQUENCE "public"."context_namespace_observation_version_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
-CREATE SEQUENCE "public"."tree_server_client_id" INCREMENT BY 1 MINVALUE 1 MAXVALUE 999 START WITH 1 CACHE 1 CYCLE;--> statement-breakpoint
 CREATE TABLE "account_skill_installs" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"owner_user_id" uuid NOT NULL,
@@ -652,13 +651,15 @@ CREATE TABLE "projects" (
 	"name" text NOT NULL,
 	"slug" text NOT NULL,
 	"is_personal" boolean DEFAULT false NOT NULL,
+	"tree_list_id" uuid DEFAULT gen_random_uuid() NOT NULL,
 	"default_bootstrap_ready" boolean DEFAULT false NOT NULL,
 	"system_prompt" text,
 	"settings" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"last_activity_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"deleted_at" timestamp with time zone
+	"deleted_at" timestamp with time zone,
+	CONSTRAINT "projects_tree_list_id_unique" UNIQUE("tree_list_id")
 );
 --> statement-breakpoint
 CREATE TABLE "upload_intakes" (
@@ -942,6 +943,12 @@ CREATE TABLE "branch_tree_nodes" (
 	CONSTRAINT "branch_tree_nodes_rank_present" CHECK ("branch_tree_nodes"."rank" <> '')
 );
 --> statement-breakpoint
+CREATE TABLE "tree_node_ids" (
+	"id" uuid PRIMARY KEY NOT NULL,
+	"list_id" uuid NOT NULL,
+	CONSTRAINT "tree_node_ids_id_list" UNIQUE("id","list_id")
+);
+--> statement-breakpoint
 CREATE TABLE "tree_nodes" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"list_id" uuid NOT NULL,
@@ -978,6 +985,7 @@ CREATE TABLE "user_project_favorites" (
 --> statement-breakpoint
 CREATE TABLE "users" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"tree_list_id" uuid DEFAULT gen_random_uuid() NOT NULL,
 	"external_id" text NOT NULL,
 	"email" text NOT NULL,
 	"name" text,
@@ -986,6 +994,7 @@ CREATE TABLE "users" (
 	"working_set_sync_enabled" boolean DEFAULT true NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "users_tree_list_id_unique" UNIQUE("tree_list_id"),
 	CONSTRAINT "users_external_id_unique" UNIQUE("external_id"),
 	CONSTRAINT "users_email_unique" UNIQUE("email")
 );
@@ -1122,6 +1131,7 @@ CREATE TABLE "document_yjs_checkpoints" (
 --> statement-breakpoint
 CREATE TABLE "document_yjs_heads" (
 	"document_id" uuid PRIMARY KEY NOT NULL,
+	"kind" text DEFAULT 'document' NOT NULL,
 	"project_id" uuid,
 	"user_id" uuid,
 	"authority_id" uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1134,7 +1144,8 @@ CREATE TABLE "document_yjs_heads" (
 	"latest_state_vector" "bytea",
 	"latest_checkpoint_id" bigint,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "document_yjs_heads_one_owner" CHECK (num_nonnulls("document_yjs_heads"."project_id", "document_yjs_heads"."user_id") <= 1)
+	CONSTRAINT "document_yjs_heads_kind_valid" CHECK ("document_yjs_heads"."kind" IN ('document', 'tree_list')),
+	CONSTRAINT "document_yjs_heads_list_has_one_owner" CHECK (("document_yjs_heads"."kind" = 'tree_list') = (num_nonnulls("document_yjs_heads"."project_id", "document_yjs_heads"."user_id") = 1))
 );
 --> statement-breakpoint
 CREATE TABLE "document_yjs_updates" (
@@ -1301,10 +1312,11 @@ ALTER TABLE "asks" ADD CONSTRAINT "asks_thread_id_threads_id_fk" FOREIGN KEY ("t
 ALTER TABLE "asks" ADD CONSTRAINT "asks_asking_turn_fk" FOREIGN KEY ("thread_id","asking_turn_id") REFERENCES "public"."turns"("thread_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "project_action_grants" ADD CONSTRAINT "project_action_grants_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "branch_tree_nodes" ADD CONSTRAINT "branch_tree_nodes_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "branch_tree_nodes" ADD CONSTRAINT "branch_tree_nodes_list_id_document_yjs_heads_document_id_fk" FOREIGN KEY ("list_id") REFERENCES "public"."document_yjs_heads"("document_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "branch_tree_nodes" ADD CONSTRAINT "branch_tree_nodes_context_source_id_context_sources_id_fk" FOREIGN KEY ("context_source_id") REFERENCES "public"."context_sources"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "tree_nodes" ADD CONSTRAINT "tree_nodes_list_id_document_yjs_heads_document_id_fk" FOREIGN KEY ("list_id") REFERENCES "public"."document_yjs_heads"("document_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "branch_tree_nodes" ADD CONSTRAINT "branch_tree_nodes_claimed_by_list" FOREIGN KEY ("id","list_id") REFERENCES "public"."tree_node_ids"("id","list_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "tree_node_ids" ADD CONSTRAINT "tree_node_ids_list_id_document_yjs_heads_document_id_fk" FOREIGN KEY ("list_id") REFERENCES "public"."document_yjs_heads"("document_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tree_nodes" ADD CONSTRAINT "tree_nodes_context_source_id_context_sources_id_fk" FOREIGN KEY ("context_source_id") REFERENCES "public"."context_sources"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "tree_nodes" ADD CONSTRAINT "tree_nodes_claimed_by_list" FOREIGN KEY ("id","list_id") REFERENCES "public"."tree_node_ids"("id","list_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tree_nodes" ADD CONSTRAINT "tree_nodes_parent_in_source" FOREIGN KEY ("parent_id","context_source_id") REFERENCES "public"."tree_nodes"("id","context_source_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_preferences" ADD CONSTRAINT "user_preferences_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_project_favorites" ADD CONSTRAINT "user_project_favorites_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1920,8 +1932,8 @@ CREATE FUNCTION public.delete_document_yjs_head() RETURNS trigger
     AS $$
 BEGIN
   -- The Yjs document is keyed by its head, not by `documents`, so a document's delete takes
-  -- its head, and through it the journal, here.
-  DELETE FROM document_yjs_heads WHERE document_id = OLD.id;
+  -- its head, and through it the journal, here. A list's head is never a document's.
+  DELETE FROM document_yjs_heads WHERE document_id = OLD.id AND kind = 'document';
   RETURN OLD;
 END;
 $$;
@@ -1933,3 +1945,21 @@ ALTER TABLE ONLY public.tree_nodes
 
 ALTER TABLE ONLY public.document_yjs_checkpoints
     ALTER CONSTRAINT document_yjs_checkpoints_document_id_document_yjs_heads_document_id_fk DEFERRABLE INITIALLY DEFERRED;
+
+CREATE FUNCTION public.create_tree_list_head() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  -- A project's or an account's tree list has its journal head from the moment it exists.
+  IF TG_TABLE_NAME = 'projects' THEN
+    INSERT INTO document_yjs_heads (document_id, kind, project_id) VALUES (NEW.tree_list_id, 'tree_list', NEW.id);
+  ELSE
+    INSERT INTO document_yjs_heads (document_id, kind, user_id) VALUES (NEW.tree_list_id, 'tree_list', NEW.id);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER projects_create_tree_list_head AFTER INSERT ON public.projects FOR EACH ROW EXECUTE FUNCTION public.create_tree_list_head();
+
+CREATE TRIGGER users_create_tree_list_head AFTER INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION public.create_tree_list_head();

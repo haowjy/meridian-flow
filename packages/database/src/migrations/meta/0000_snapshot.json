@@ -6720,6 +6720,13 @@
           "notNull": true,
           "default": false
         },
+        "tree_list_id": {
+          "name": "tree_list_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
         "default_bootstrap_ready": {
           "name": "default_bootstrap_ready",
           "type": "boolean",
@@ -6845,7 +6852,15 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "projects_tree_list_id_unique": {
+          "name": "projects_tree_list_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tree_list_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -9530,19 +9545,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "branch_tree_nodes_list_id_document_yjs_heads_document_id_fk": {
-          "name": "branch_tree_nodes_list_id_document_yjs_heads_document_id_fk",
-          "tableFrom": "branch_tree_nodes",
-          "tableTo": "document_yjs_heads",
-          "columnsFrom": [
-            "list_id"
-          ],
-          "columnsTo": [
-            "document_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "branch_tree_nodes_context_source_id_context_sources_id_fk": {
           "name": "branch_tree_nodes_context_source_id_context_sources_id_fk",
           "tableFrom": "branch_tree_nodes",
@@ -9552,6 +9554,21 @@
           ],
           "columnsTo": [
             "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "branch_tree_nodes_claimed_by_list": {
+          "name": "branch_tree_nodes_claimed_by_list",
+          "tableFrom": "branch_tree_nodes",
+          "tableTo": "tree_node_ids",
+          "columnsFrom": [
+            "id",
+            "list_id"
+          ],
+          "columnsTo": [
+            "id",
+            "list_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -9582,6 +9599,54 @@
           "value": "\"branch_tree_nodes\".\"rank\" <> ''"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.tree_node_ids": {
+      "name": "tree_node_ids",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "list_id": {
+          "name": "list_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "tree_node_ids_list_id_document_yjs_heads_document_id_fk": {
+          "name": "tree_node_ids_list_id_document_yjs_heads_document_id_fk",
+          "tableFrom": "tree_node_ids",
+          "tableTo": "document_yjs_heads",
+          "columnsFrom": [
+            "list_id"
+          ],
+          "columnsTo": [
+            "document_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "tree_node_ids_id_list": {
+          "name": "tree_node_ids_id_list",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "list_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.tree_nodes": {
@@ -9773,19 +9838,6 @@
         }
       },
       "foreignKeys": {
-        "tree_nodes_list_id_document_yjs_heads_document_id_fk": {
-          "name": "tree_nodes_list_id_document_yjs_heads_document_id_fk",
-          "tableFrom": "tree_nodes",
-          "tableTo": "document_yjs_heads",
-          "columnsFrom": [
-            "list_id"
-          ],
-          "columnsTo": [
-            "document_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "tree_nodes_context_source_id_context_sources_id_fk": {
           "name": "tree_nodes_context_source_id_context_sources_id_fk",
           "tableFrom": "tree_nodes",
@@ -9795,6 +9847,21 @@
           ],
           "columnsTo": [
             "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "tree_nodes_claimed_by_list": {
+          "name": "tree_nodes_claimed_by_list",
+          "tableFrom": "tree_nodes",
+          "tableTo": "tree_node_ids",
+          "columnsFrom": [
+            "id",
+            "list_id"
+          ],
+          "columnsTo": [
+            "id",
+            "list_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -9979,6 +10046,13 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
+        "tree_list_id": {
+          "name": "tree_list_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
         "external_id": {
           "name": "external_id",
           "type": "text",
@@ -10035,6 +10109,13 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
+        "users_tree_list_id_unique": {
+          "name": "users_tree_list_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tree_list_id"
+          ]
+        },
         "users_external_id_unique": {
           "name": "users_external_id_unique",
           "nullsNotDistinct": false,
@@ -11166,6 +11247,13 @@
           "primaryKey": true,
           "notNull": true
         },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'document'"
+        },
         "project_id": {
           "name": "project_id",
           "type": "uuid",
@@ -11280,9 +11368,13 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "document_yjs_heads_one_owner": {
-          "name": "document_yjs_heads_one_owner",
-          "value": "num_nonnulls(\"document_yjs_heads\".\"project_id\", \"document_yjs_heads\".\"user_id\") <= 1"
+        "document_yjs_heads_kind_valid": {
+          "name": "document_yjs_heads_kind_valid",
+          "value": "\"document_yjs_heads\".\"kind\" IN ('document', 'tree_list')"
+        },
+        "document_yjs_heads_list_has_one_owner": {
+          "name": "document_yjs_heads_list_has_one_owner",
+          "value": "(\"document_yjs_heads\".\"kind\" = 'tree_list') = (num_nonnulls(\"document_yjs_heads\".\"project_id\", \"document_yjs_heads\".\"user_id\") = 1)"
         }
       },
       "isRLSEnabled": false
@@ -11853,16 +11945,6 @@
       "maxValue": "9223372036854775807",
       "cache": "1",
       "cycle": false
-    },
-    "public.tree_server_client_id": {
-      "name": "tree_server_client_id",
-      "schema": "public",
-      "increment": "1",
-      "startWith": "1",
-      "minValue": "1",
-      "maxValue": "999",
-      "cache": "1",
-      "cycle": true
     }
   },
   "roles": {},

@@ -210,8 +210,8 @@ CREATE FUNCTION public.delete_document_yjs_head() RETURNS trigger
     AS $$
 BEGIN
   -- The Yjs document is keyed by its head, not by `documents`, so a document's delete takes
-  -- its head, and through it the journal, here.
-  DELETE FROM document_yjs_heads WHERE document_id = OLD.id;
+  -- its head, and through it the journal, here. A list's head is never a document's.
+  DELETE FROM document_yjs_heads WHERE document_id = OLD.id AND kind = 'document';
   RETURN OLD;
 END;
 $$;
@@ -223,3 +223,21 @@ ALTER TABLE ONLY public.tree_nodes
 
 ALTER TABLE ONLY public.document_yjs_checkpoints
     ALTER CONSTRAINT document_yjs_checkpoints_document_id_document_yjs_heads_document_id_fk DEFERRABLE INITIALLY DEFERRED;
+
+CREATE FUNCTION public.create_tree_list_head() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  -- A project's or an account's tree list has its journal head from the moment it exists.
+  IF TG_TABLE_NAME = 'projects' THEN
+    INSERT INTO document_yjs_heads (document_id, kind, project_id) VALUES (NEW.tree_list_id, 'tree_list', NEW.id);
+  ELSE
+    INSERT INTO document_yjs_heads (document_id, kind, user_id) VALUES (NEW.tree_list_id, 'tree_list', NEW.id);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER projects_create_tree_list_head AFTER INSERT ON public.projects FOR EACH ROW EXECUTE FUNCTION public.create_tree_list_head();
+
+CREATE TRIGGER users_create_tree_list_head AFTER INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION public.create_tree_list_head();

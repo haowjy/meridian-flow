@@ -2,7 +2,7 @@
  * The tree list's store: the rows never trail the list.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - the list is stored through the document journal, keyed by the project's id
+ * - the list is stored through the document journal, keyed by the project's `tree_list_id`
  * - admission checks, journals and writes the rows in one transaction under the list's lock
  */
 
@@ -16,8 +16,10 @@ import {
   branchTreeNodes,
   contextSources,
   documents,
+  documentYjsHeads,
   documentYjsUpdates,
   projects,
+  treeNodeIds,
   treeNodes,
   users,
   works,
@@ -27,14 +29,19 @@ import {
   LIVE,
   type ProjectedRow,
   projectedRows,
+  recordsOf,
   replayView,
   sourceRoot,
   TreeWriter,
 } from "@meridian/project-tree";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { runWithEditConfirmation } from "../../../shared/edit-confirmation.js";
 import { setTestHook } from "../../../shared/test-hooks.js";
+import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
+import { initializeHead } from "../../collab/adapters/drizzle-document-authority-head.js";
 import { createDrizzleJournal } from "../../collab/adapters/drizzle-journal.js";
 import {
   closeDatabase,
@@ -59,6 +66,10 @@ describe("the tree list store (postgres)", () => {
   const journal = createDrizzleJournal(db);
   const newStore = (journalOverride = journal) =>
     createDrizzleTreeListStore({ db, journal: journalOverride });
+  /** The project's list id: its own, made with the project. */
+  let LIST = "";
+  /** The account's list id. */
+  let ACCOUNT_LIST = "";
 
   beforeEach(async () => {
     await deleteDrizzleRows(db, DOCUMENT_RUNTIME_RESET_TABLES);
@@ -71,6 +82,10 @@ describe("the tree list store (postgres)", () => {
     await db
       .insert(projects)
       .values({ id: PROJECT, userId: ACCOUNT, name: "Serial", slug: "serial" });
+    LIST = (await db.select().from(projects).where(eq(projects.id, PROJECT)))[0]
+      ?.treeListId as string;
+    ACCOUNT_LIST = (await db.select().from(users).where(eq(users.id, ACCOUNT)))[0]
+      ?.treeListId as string;
     await db.insert(contextSources).values([
       {
         id: MANUSCRIPT,
@@ -117,13 +132,13 @@ describe("the tree list store (postgres)", () => {
   }
 
   const updateCount = async () =>
-    (await db.select().from(documentYjsUpdates).where(eq(documentYjsUpdates.documentId, PROJECT)))
+    (await db.select().from(documentYjsUpdates).where(eq(documentYjsUpdates.documentId, LIST)))
       .length;
 
   /** The rows a fresh replay of the journal gives, for live and the Work. */
   async function replayedRows() {
     const doc = new Y.Doc({ gc: false });
-    const snapshot = await journal.read(PROJECT);
+    const snapshot = await journal.read(LIST);
     if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
     for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
     const shown = (view: { draft: string | null }) => {
@@ -410,11 +425,18 @@ describe("the tree list store (postgres)", () => {
     const root = path.resolve(import.meta.dirname, "../../../../../..");
 
     async function killAt(step: string) {
+      // Live rows and a Work's rows in one transaction.
       const c = client();
-      c.writer.create(LIVE, actor, {
+      const folder = c.writer.create(LIVE, actor, {
         kind: "folder",
         name: "Killed",
         parent: sourceRoot(MANUSCRIPT),
+      });
+      c.writer.create({ draft: BRANCH }, actor, {
+        kind: "document",
+        name: "killed draft.md",
+        parent: folder.node,
+        filetype: "markdown",
       });
       const dir = mkdtempSync(path.join(tmpdir(), "tree-list-kill-"));
       const ready = path.join(dir, "ready");
@@ -466,6 +488,7 @@ describe("the tree list store (postgres)", () => {
       expect(await updateCount()).toBe(0);
       expect(await storedRows()).toEqual({ live: [], branch: [] });
       expect(await db.select().from(documents)).toEqual([]);
+      expect(await db.select().from(treeNodeIds)).toEqual([]);
 
       // And the list admits as before.
       const c = client();
@@ -483,13 +506,220 @@ describe("the tree list store (postgres)", () => {
     it("leaves the record and its rows when killed after the commit", async () => {
       await killAt("treeList.afterCommit");
       expect(await updateCount()).toBe(1);
-      expect((await storedRows()).live.map((row) => row.name)).toEqual(["Killed"]);
+      const stored = await storedRows();
+      expect(stored.live.map((row) => row.name)).toEqual(["Killed"]);
+      expect(stored.branch.map((row) => row.name)).toEqual(["killed draft.md"]);
       await expectRowsEqualReplay();
     });
   });
 
-  it("keeps a journal of one list away from a document's", async () => {
-    // The list's head names its project, so deleting the project takes the journal and rows.
+  describe("a list's identity", () => {
+    it("is never a node's, a document's or another list's id", async () => {
+      for (const taken of [LIST, ACCOUNT_LIST]) {
+        const c = client();
+        c.writer.create(LIVE, actor, {
+          kind: "document",
+          name: "alias.md",
+          parent: sourceRoot(MANUSCRIPT),
+          filetype: "markdown",
+          node: taken,
+        });
+        expect(await newStore().admit({ list, accountId: ACCOUNT, update: c.send() })).toEqual({
+          ok: false,
+          reason: "a node id already in use",
+        });
+      }
+      expect(await updateCount()).toBe(0);
+      expect(await db.select().from(documents)).toEqual([]);
+      expect(await db.select().from(treeNodeIds)).toEqual([]);
+
+      // A document row that had a list's id would still take no head with it, and no document
+      // adopts a list's head.
+      await db.insert(documents).values({ id: LIST, contextSourceId: UNFILED, name: "alias" });
+      await db.delete(documents).where(eq(documents.id, LIST));
+      expect(
+        await db.select().from(documentYjsHeads).where(eq(documentYjsHeads.documentId, LIST)),
+      ).toHaveLength(1);
+      await expect(initializeHead(db, LIST as never)).rejects.toThrow("tree_list");
+    });
+
+    it("keeps a node id with the one list that claimed it, when two lists admit it at once", async () => {
+      const project2 = "00000000-0000-4000-8000-000000000b03";
+      const manuscript2 = "00000000-0000-4000-8000-000000000b04";
+      await db
+        .insert(projects)
+        .values({ id: project2, userId: ACCOUNT, name: "Second", slug: "second" });
+      await db.insert(contextSources).values({
+        id: manuscript2,
+        projectId: project2,
+        name: "Manuscript",
+        slug: "manuscript",
+        scope: "project",
+      });
+      const second = { kind: "project", projectId: project2 } as const;
+      for (let round = 0; round < 3; round++) {
+        const node = crypto.randomUUID();
+        const one = client();
+        one.writer.create(LIVE, actor, {
+          kind: "folder",
+          name: "First",
+          parent: sourceRoot(MANUSCRIPT),
+          node,
+        });
+        const two = client();
+        two.writer.create(LIVE, actor, {
+          kind: "folder",
+          name: "Second",
+          parent: sourceRoot(manuscript2),
+          node,
+        });
+        // Both see the id unused before either has claimed it.
+        let reached = 0;
+        let release = () => {};
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const remove = setTestHook("treeList.afterLock", async () => {
+          if (++reached === 2) release();
+          await gate;
+        });
+        const results = await Promise.all([
+          newStore().admit({ list, accountId: ACCOUNT, update: one.send() }),
+          newStore().admit({ list: second, accountId: ACCOUNT, update: two.send() }),
+        ]);
+        remove();
+
+        expect(results.filter((result) => result.ok)).toHaveLength(1);
+        expect(results.find((result) => !result.ok)).toMatchObject({
+          reason: "a node id already in use",
+        });
+        const [claim] = await db.select().from(treeNodeIds).where(eq(treeNodeIds.id, node));
+        const rows = await db.select().from(treeNodes).where(eq(treeNodes.id, node));
+        expect(rows.map((row) => row.listId)).toEqual([claim?.listId]);
+      }
+    });
+  });
+
+  it("reloads a copy that is behind a compaction instead of catching up from the rows left", async () => {
+    const [a, b] = [newStore(), newStore()];
+    const c = client();
+    const admit = (store: ReturnType<typeof newStore>, name: string) => {
+      c.writer.create(LIVE, actor, { kind: "folder", name, parent: sourceRoot(MANUSCRIPT) });
+      return store.admit({ list, accountId: ACCOUNT, update: c.send() });
+    };
+    await admit(a, "A");
+    await admit(b, "B");
+    await journal.compact(LIST, new Date(Date.now() + 60_000));
+    expect(await updateCount()).toBe(0);
+
+    await admit(a, "C");
+    expect((await storedRows()).live.map((row) => row.name).sort()).toEqual(["A", "B", "C"]);
+    await expectRowsEqualReplay();
+  });
+
+  it("keeps the server's items under one reserved client id while two processes write in turn", async () => {
+    const stores = [newStore(), newStore()];
+    for (let at = 0; at < 6; at++) {
+      const made = client();
+      made.writer.create(LIVE, actor, {
+        kind: "folder",
+        name: `Made ${at}`,
+        parent: sourceRoot(MANUSCRIPT),
+      });
+      await stores[at % 2]?.submit({
+        list,
+        entries: { records: recordsOf(made.doc).toArray() },
+      });
+    }
+    const doc = new Y.Doc({ gc: false });
+    const snapshot = await journal.read(LIST);
+    for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
+    expect([...Y.decodeStateVector(Y.encodeStateVector(doc)).keys()]).toEqual([1]);
+    expect((await storedRows()).live).toHaveLength(6);
+    await expectRowsEqualReplay();
+  });
+
+  it("takes a Work's lock before the list's, so a transaction holding the Work cannot deadlock a bound write", async () => {
+    const made = client();
+    made.writer.create(LIVE, actor, {
+      kind: "folder",
+      name: "Bound",
+      parent: sourceRoot(MANUSCRIPT),
+    });
+    const records = recordsOf(made.doc).toArray();
+    const other = newStore();
+    const store = newStore();
+    let holding = () => {};
+    const held = new Promise<void>((resolve) => {
+      holding = resolve;
+    });
+    // B holds the Work, then wants the list; A, bound to the same Work, wants both.
+    const b = runInDrizzleTransaction(db, async () => {
+      await lockSeamWorks(currentDrizzleDb(db), [WORK]);
+      holding();
+      // Until A is waiting on a lock, with the Work in B's hand.
+      await expect
+        .poll(async () => {
+          const [row] = await db.execute<{ n: number }>(
+            sql`SELECT count(*)::int AS n FROM pg_stat_activity
+                WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+          );
+          return row?.n;
+        })
+        .toBeGreaterThan(0);
+      return other.submit({ list, entries: { records: [] } });
+    });
+    await held;
+    const a = runWithEditConfirmation(
+      { workIds: [WORK], lineageRootIds: [], confirm: async () => {}, covers: async () => true },
+      () => store.submit({ list, entries: { records } }),
+    );
+    expect((await Promise.allSettled([a, b])).map((result) => result.status)).toEqual([
+      "fulfilled",
+      "fulfilled",
+    ]);
+    expect((await storedRows()).live.map((row) => row.name)).toEqual(["Bound"]);
+  });
+
+  describe("a commit that fails after the body succeeded", () => {
+    it("stores nothing and the list admits again, when a deferred constraint fails at COMMIT", async () => {
+      const store = newStore();
+      const c = client();
+      const folder = c.writer.create(LIVE, actor, {
+        kind: "folder",
+        name: "Part",
+        parent: sourceRoot(MANUSCRIPT),
+      });
+      c.writer.create(LIVE, actor, {
+        kind: "document",
+        name: "one.md",
+        parent: folder.node,
+        filetype: "markdown",
+      });
+      await store.admit({ list, accountId: ACCOUNT, update: c.send() });
+      c.writer.delete(LIVE, actor, folder.node);
+      await store.admit({ list, accountId: ACCOUNT, update: c.send() });
+      const before = { updates: await updateCount(), rows: await storedRows() };
+
+      // A purge of the folder alone leaves its child's row pointing at a folder with no row.
+      const scratch = client();
+      Y.applyUpdate(scratch.doc, Y.encodeStateAsUpdate(c.doc));
+      scratch.writer.author(LIVE, actor, { type: "purge", node: folder.node });
+      const purge = recordsOf(scratch.doc).toArray().at(-1);
+      await expect(
+        store.submit({ list, entries: { records: purge ? [purge] : [] } }),
+      ).rejects.toThrow();
+      expect({ updates: await updateCount(), rows: await storedRows() }).toEqual(before);
+
+      c.writer.create(LIVE, actor, { kind: "folder", name: "After", parent: sourceRoot(UNFILED) });
+      expect(await store.admit({ list, accountId: ACCOUNT, update: c.send() })).toMatchObject({
+        ok: true,
+      });
+      await expectRowsEqualReplay();
+    });
+  });
+
+  it("takes the list's journal and rows with its project, and leaves a document's delete out of it", async () => {
     const c = client();
     c.writer.create(LIVE, actor, { kind: "folder", name: "Gone", parent: sourceRoot(MANUSCRIPT) });
     await newStore().admit({ list, accountId: ACCOUNT, update: c.send() });
@@ -497,11 +727,9 @@ describe("the tree list store (postgres)", () => {
     await db.delete(projects).where(eq(projects.id, PROJECT));
     expect(await updateCount()).toBe(0);
     expect(await db.select().from(treeNodes)).toEqual([]);
+    expect(await db.select().from(treeNodeIds)).toEqual([]);
     expect(
-      await db
-        .select()
-        .from(branchTreeNodes)
-        .where(and(eq(branchTreeNodes.branchId, BRANCH))),
+      await db.select().from(branchTreeNodes).where(eq(branchTreeNodes.branchId, BRANCH)),
     ).toEqual([]);
   });
 });

@@ -7,7 +7,10 @@
 
 import type { SettleRecord, TreeRecord } from "@meridian/project-tree";
 
-/** A list is one project's, or one account's (`user://`). Its id is the owner's id. */
+/**
+ * A list is one project's, or one account's (`user://`). Its journal id is the owner's
+ * `tree_list_id`, a column of its own, never the owner's id or a node's.
+ */
 export type TreeList = { kind: "project"; projectId: string } | { kind: "account"; userId: string };
 
 /** What the server itself appends: records, and the settlements that go with them. */

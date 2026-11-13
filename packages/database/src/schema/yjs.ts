@@ -266,18 +266,19 @@ export const agentEditWidCounters = pgTable(
 
 /**
  * One row per Yjs document, the identity its journal rows (`document_yjs_updates`,
- * `document_yjs_checkpoints`) hang from. `document_id` is a `documents.id` for a manuscript
- * document, or the id of a list (a project's tree list is the project's id, an account's is the
- * account's); it names no `documents` row of its own, so a Yjs document can exist before its
- * `documents` row does (an import writes text first). A `documents` delete takes its head and
- * journal with it through a trigger; `project_id` and `user_id` give a head with no `documents`
- * row (a list) the project or account whose delete takes it, and mark it as one that needs
- * no living document to be written.
+ * `document_yjs_checkpoints`) hang from, of one `kind`. A `document` head's `document_id` is a
+ * `documents.id`; it names no `documents` row of its own, so a Yjs document can exist before its
+ * `documents` row does (an import writes text first), and a `documents` delete takes its head
+ * and journal through a trigger. A `tree_list` head is a list's (a project's or an account's):
+ * its id is the project's or account's `tree_list_id`, made with it by a trigger, and `project_id`
+ * or `user_id` names the owner whose delete takes it. A list needs no living document to be
+ * written, and no document's id is ever a list's.
  */
 export const documentYjsHeads = pgTable(
   "document_yjs_heads",
   {
     documentId: uuid("document_id").$type<DocumentId>().primaryKey(),
+    kind: text("kind").$type<"document" | "tree_list">().notNull().default("document"),
     projectId: uuid("project_id")
       .$type<ProjectId>()
       .references(() => projects.id, { onDelete: "cascade" }),
@@ -306,9 +307,10 @@ export const documentYjsHeads = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    check("document_yjs_heads_kind_valid", sql`${table.kind} IN ('document', 'tree_list')`),
     check(
-      "document_yjs_heads_one_owner",
-      sql`num_nonnulls(${table.projectId}, ${table.userId}) <= 1`,
+      "document_yjs_heads_list_has_one_owner",
+      sql`(${table.kind} = 'tree_list') = (num_nonnulls(${table.projectId}, ${table.userId}) = 1)`,
     ),
   ],
 );

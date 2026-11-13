@@ -1,7 +1,7 @@
 /**
  * What only the server knows about a connection to a tree list (`Connection` in
- * `@meridian/project-tree`), read inside the admission's transaction under the list's lock, so
- * what a Work's close or a source's end changed is current.
+ * `@meridian/project-tree`), read inside the admission's transaction under the list's lock. A
+ * Work's close, archive or delete takes that lock first, so the Works read here are current.
  */
 import { classifyFiletype, filetypeSchema } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
@@ -9,7 +9,6 @@ import type { Connection } from "@meridian/project-tree";
 import { sql } from "drizzle-orm";
 import { lineageHasLiveMember } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { isUuid } from "../../../shared/uuid.js";
 import type { TreeList } from "../ports/tree-list-store.js";
 
 const editableTypes: ReadonlySet<string> = new Set(
@@ -21,18 +20,34 @@ function schemaOf(type: string): string | null {
   return classification.kind === "tracked" ? classification.schemaType : null;
 }
 
-/** Node ids used by a row anywhere: a live row, a Work's row, or a document that has none yet. */
-export async function usedNodeIds(db: DrizzleDb, ids: readonly string[]): Promise<Set<string>> {
-  const candidates = ids.filter(isUuid);
-  if (candidates.length === 0) return new Set();
-  const list = sql.join(
-    candidates.map((id) => sql`${id}::uuid`),
-    sql`, `,
+/** The list's id: its project's or its account's `tree_list_id`, or null when that is gone. */
+export async function listIdOf(db: DrizzleDb, list: TreeList): Promise<string | null> {
+  const tx = currentDrizzleDb(db as Database);
+  const [row] = await tx.execute<{ id: string }>(
+    list.kind === "project"
+      ? sql`SELECT tree_list_id::text AS id FROM projects WHERE id = ${list.projectId}::uuid`
+      : sql`SELECT tree_list_id::text AS id FROM users WHERE id = ${list.userId}::uuid`,
   );
+  return row?.id ?? null;
+}
+
+/**
+ * The open Works of a list, as their branch ids: the one meaning of "open" for both a write's
+ * check (`Connection.drafts`) and the views the rows are replayed for. A Work is open while its
+ * branch is active and the Work is neither archived nor deleted; a branch with no Work (a chat's)
+ * is open while active. A project's list holds its project's Works, an account's its projects'.
+ */
+export async function openBranches(db: DrizzleDb, list: TreeList): Promise<Set<string>> {
   const rows = await currentDrizzleDb(db as Database).execute<{ id: string }>(sql`
-    SELECT id::text AS id FROM tree_nodes WHERE id IN (${list})
-    UNION SELECT id::text FROM branch_tree_nodes WHERE id IN (${list})
-    UNION SELECT id::text FROM documents WHERE id IN (${list})`);
+    SELECT b.id::text AS id FROM branches b
+    LEFT JOIN works w ON w.id = b.origin_work_id
+    WHERE b.status = 'active'
+      AND (w.id IS NULL OR (w.archived_at IS NULL AND w.deleted_at IS NULL))
+      AND b.project_id IN (SELECT id FROM projects WHERE ${
+        list.kind === "project"
+          ? sql`id = ${list.projectId}::uuid`
+          : sql`user_id = ${list.userId}::uuid`
+      })`);
   return new Set(rows.map((row) => row.id));
 }
 
@@ -44,10 +59,8 @@ export async function readConnection(
   db: DrizzleDb,
   list: TreeList,
   accountId: string,
-  takenIds: ReadonlySet<string>,
 ): Promise<Connection | null> {
   const tx = currentDrizzleDb(db as Database);
-  const projectId = list.kind === "project" ? list.projectId : null;
   const [project] = await tx.execute<{ id: string; owner: string }>(
     list.kind === "project"
       ? sql`SELECT id::text, user_id::text AS owner FROM projects
@@ -78,17 +91,11 @@ export async function readConnection(
     writable[0];
   if (!unfiled) return null;
 
-  const drafts = await tx.execute<{ id: string }>(sql`
-    SELECT b.id::text FROM branches b
-    LEFT JOIN works w ON w.id = b.origin_work_id
-    WHERE b.status = 'active'
-      AND b.project_id IN (SELECT id FROM projects WHERE user_id = ${accountId}::uuid
-        ${projectId === null ? sql`` : sql`AND id = ${projectId}::uuid`})
-      AND (b.origin_work_id IS NULL OR (w.archived_at IS NULL AND w.deleted_at IS NULL))`);
+  const drafts = await openBranches(tx, list);
 
   return {
     user: `user:${accountId}`,
-    drafts: new Set(drafts.map((row) => row.id)),
+    drafts,
     writableSources: new Set(writable.map((source) => source.id)),
     unfiledSource: unfiled.id,
     editableTypes,
@@ -96,6 +103,5 @@ export async function readConnection(
       const fromSchema = schemaOf(from);
       return fromSchema !== null && fromSchema === schemaOf(to);
     },
-    takenElsewhere: (id) => takenIds.has(id),
   };
 }

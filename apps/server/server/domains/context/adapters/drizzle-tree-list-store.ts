@@ -1,6 +1,4 @@
-import type { DocumentId, ProjectId, UserId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { documentYjsUpdates } from "@meridian/database/schema";
 import {
   admit,
   type Connection,
@@ -10,7 +8,7 @@ import {
   type TreeRecord,
   TreeWriter,
 } from "@meridian/project-tree";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
@@ -20,11 +18,11 @@ import {
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
-import { initializeHead } from "../../collab/adapters/drizzle-document-authority-head.js";
+import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { CollabJournal } from "../../collab/adapters/drizzle-journal.js";
 import type { CommittedTreeUpdate, TreeList, TreeListStore } from "../ports/tree-list-store.js";
-import { readConnection, usedNodeIds } from "./tree-list-facts.js";
-import { syncRows } from "./tree-list-rows.js";
+import { listIdOf, readConnection } from "./tree-list-facts.js";
+import { claimNodeIds, NodeIdRefusedError, syncRows } from "./tree-list-rows.js";
 
 /**
  * This process's copy of one list, brought to the journal's head under the list's lock and
@@ -34,31 +32,28 @@ import { syncRows } from "./tree-list-rows.js";
  */
 type Copy = { doc: Y.Doc; writer: TreeWriter; seq: number; pending: object | null };
 
-const listIdOf = (list: TreeList) => (list.kind === "project" ? list.projectId : list.userId);
+/**
+ * The Yjs client id of every record the server makes, in every list and every process. Below
+ * 1,000, which clients may not use. One id is safe because each server write is made under the
+ * list's lock on a copy at the journal's head, so two copies never make an item at once.
+ */
+const SERVER_CLIENT_ID = 1;
 
-function ownerOf(list: TreeList) {
-  return list.kind === "project"
-    ? { projectId: list.projectId as ProjectId }
-    : { userId: list.userId as UserId };
-}
+/** The id a copy has while it applies journal rows: reserved too, and never used for an item. */
+const CATCH_UP_CLIENT_ID = 2;
 
-/** The node ids the update's `create` records name, for the check of ids used elsewhere. */
-function createdNodes(update: Uint8Array): string[] {
-  let decoded: ReturnType<typeof Y.decodeUpdate>;
+/**
+ * Applies journal rows to a copy. Rows that advance the copy's own client's clock make Yjs give
+ * the copy a random id of 1,000 or more (a transaction that applies an update is never local),
+ * so the copy applies them under an id that has made nothing.
+ */
+function applyHistory(doc: Y.Doc, updates: readonly Uint8Array[]) {
+  doc.clientID = CATCH_UP_CLIENT_ID;
   try {
-    decoded = Y.decodeUpdate(update);
-  } catch {
-    return [];
+    for (const update of updates) Y.applyUpdate(doc, update, "journal");
+  } finally {
+    doc.clientID = SERVER_CLIENT_ID;
   }
-  const ids: string[] = [];
-  for (const struct of decoded.structs) {
-    if (!(struct instanceof Y.Item) || !(struct.content instanceof Y.ContentAny)) continue;
-    for (const value of struct.content.getContent()) {
-      const record = value as { type?: unknown; node?: unknown } | null;
-      if (record?.type === "create" && typeof record.node === "string") ids.push(record.node);
-    }
-  }
-  return ids;
 }
 
 const sameBytes = (a: Uint8Array, b: Uint8Array) =>
@@ -72,39 +67,41 @@ export function createDrizzleTreeListStore(deps: {
   const copies = new Map<string, Copy>();
   const listeners = new Set<(committed: CommittedTreeUpdate) => void>();
 
-  async function headSeq(tx: DrizzleDb, listId: string): Promise<number> {
-    const [row] = await tx
-      .select({ seq: sql<number>`coalesce(max(${documentYjsUpdates.id}), 0)::int` })
-      .from(documentYjsUpdates)
-      .where(eq(documentYjsUpdates.documentId, listId as DocumentId));
-    return row?.seq ?? 0;
+  /** The journal's newest row, and the newest row it may have folded into a checkpoint. */
+  async function journalBounds(tx: DrizzleDb, listId: string) {
+    const [row] = await tx.execute<{ retired: number; head: number }>(sql`
+      SELECT h.retired_through_seq::int AS retired,
+        coalesce((SELECT max(u.id) FROM document_yjs_updates u
+          WHERE u.document_id = h.document_id), 0)::int AS head
+      FROM document_yjs_heads h WHERE h.document_id = ${listId}::uuid`);
+    return { retired: row?.retired ?? 0, head: row?.head ?? 0 };
   }
 
   async function copyAtHead(tx: DrizzleDb, listId: string): Promise<Copy> {
     let copy = copies.get(listId);
-    if (copy && copy.pending !== null && copy.pending !== tx) {
-      copies.delete(listId);
-      copy = undefined;
-    }
+    if (copy && copy.pending !== null && copy.pending !== tx) copy = undefined;
+    const { retired, head } = await journalBounds(tx, listId);
+    // Rows up to `retired` may be gone into a checkpoint: a copy behind them cannot catch up
+    // from the rows that remain.
+    if (copy && copy.seq < retired) copy = undefined;
     if (copy) {
-      const head = await headSeq(tx, listId);
       if (head > copy.seq) {
         // Caught up from the journal's new rows, not from the start.
-        for (const row of await journal.readUpdates(listId, copy.seq, head))
-          Y.applyUpdate(copy.doc, row.update, "journal");
+        const rows = await journal.readUpdates(listId, copy.seq, head);
+        applyHistory(
+          copy.doc,
+          rows.map((row) => row.update),
+        );
         copy.seq = head;
       }
       return copy;
     }
     const doc = new Y.Doc({ gc: false });
     const snapshot = await journal.read(listId);
-    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint, "journal");
-    for (const row of snapshot.updates) Y.applyUpdate(doc, row.update, "journal");
-    // After the history, so Yjs never sees an item of its own id arrive from elsewhere.
-    const [id] = await tx.execute<{ id: string }>(
-      sql`SELECT nextval('tree_server_client_id')::int AS id`,
-    );
-    doc.clientID = Number(id?.id);
+    applyHistory(doc, [
+      ...(snapshot.checkpoint ? [snapshot.checkpoint] : []),
+      ...snapshot.updates.map((row) => row.update),
+    ]);
     copy = {
       doc,
       writer: new TreeWriter(doc, "server"),
@@ -116,18 +113,21 @@ export function createDrizzleTreeListStore(deps: {
   }
 
   /**
-   * One transaction on one list: its lock, its head and the copy at the journal's head. A
-   * failure discards the copy, which `body` may have changed in place.
+   * One transaction on one list: the Work locks, then the list's lock, its head and the copy at
+   * the journal's head. A failure discards the copy, which `body` may have changed in place.
    */
   function withList<T>(
     list: TreeList,
     body: (tx: DrizzleDb, copy: Copy, listId: string) => Promise<T>,
   ): Promise<T> {
-    const listId = listIdOf(list);
     return runInDrizzleTransaction(db, async () => {
       const tx = currentDrizzleDb(db);
+      // Work rows and lifecycle locks come before any advisory key (the lock order in
+      // `collab/.context/CONTEXT.md`); the journal's append then takes no lock it lacks.
+      await lockSeamWorks(tx, []);
+      const listId = await listIdOf(tx, list);
+      if (listId === null) throw new Error("The list's project or account is gone");
       await lockDocumentMutation(tx as Database, listId);
-      await initializeHead(tx as Database, listId as DocumentId, ownerOf(list));
       const copy = await copyAtHead(tx, listId);
       try {
         await testHook("treeList.afterLock");
@@ -142,6 +142,7 @@ export function createDrizzleTreeListStore(deps: {
   /** Journals what the copy gained since `before`, writes the rows, and queues the hand-off. */
   async function commitChange(
     tx: DrizzleDb,
+    list: TreeList,
     copy: Copy,
     listId: string,
     before: Uint8Array,
@@ -149,13 +150,14 @@ export function createDrizzleTreeListStore(deps: {
   ): Promise<CommittedTreeUpdate | null> {
     if (sameBytes(Y.encodeStateVector(copy.doc), before)) return null;
     copy.pending = tx;
+    await claimNodeIds(tx, listId, added);
     const update = Y.encodeStateAsUpdate(copy.doc, before);
     // The system path: a person's path would read the whole list under the lock to record an
     // edit, and a list's receipt is the record itself.
     const seq = await journal.append(listId, update, { origin: "system", seq: 0 });
     copy.seq = seq;
     await testHook("treeList.afterAppend");
-    await syncRows(tx, listId, copy.doc, added);
+    await syncRows(tx, list, listId, copy.doc, added);
     await testHook("treeList.afterRows");
     const committed = { listId, update, seq };
     runAfterDrizzleCommit(async () => {
@@ -167,24 +169,31 @@ export function createDrizzleTreeListStore(deps: {
   }
 
   return {
-    admit: ({ list, accountId, update }) =>
-      withList(list, async (tx, copy, listId) => {
-        const taken = await usedNodeIds(tx, createdNodes(update));
-        const connection: Connection | null = await readConnection(tx, list, accountId, taken);
-        if (!connection) return { ok: false as const, reason: "no write access" };
-        const before = Y.encodeStateVector(copy.doc);
-        const verdict = admit(copy.writer, update, connection);
-        if (!verdict.ok) return verdict;
-        const refused = new Set(verdict.refused.map((entry) => entry.id));
-        const added = [
-          ...verdict.records.filter((record) => !refused.has(record.id)),
-          ...keptCreateRecords(verdict.records, verdict.kept, connection.user),
-        ];
-        return {
-          ok: true as const,
-          committed: await commitChange(tx, copy, listId, before, added),
-        };
-      }),
+    admit: async ({ list, accountId, update }) => {
+      try {
+        return await withList(list, async (tx, copy, listId) => {
+          const connection: Connection | null = await readConnection(tx, list, accountId);
+          if (!connection) return { ok: false as const, reason: "no write access" };
+          const before = Y.encodeStateVector(copy.doc);
+          const verdict = admit(copy.writer, update, connection);
+          if (!verdict.ok) return verdict;
+          const refused = new Set(verdict.refused.map((entry) => entry.id));
+          const added = [
+            ...verdict.records.filter((record) => !refused.has(record.id)),
+            ...keptCreateRecords(verdict.records, verdict.kept, connection.user),
+          ];
+          return {
+            ok: true as const,
+            committed: await commitChange(tx, list, copy, listId, before, added),
+          };
+        });
+      } catch (cause) {
+        // The transaction is rolled back: the update, its claims and its rows are not stored.
+        if (cause instanceof NodeIdRefusedError)
+          return { ok: false as const, reason: cause.message };
+        throw cause;
+      }
+    },
 
     submit: ({ list, entries }) =>
       withList(list, async (tx, copy, listId) => {
@@ -193,7 +202,7 @@ export function createDrizzleTreeListStore(deps: {
           recordsOf(copy.doc).push([...entries.records]);
           settleLogOf(copy.doc).push([...(entries.settlements ?? [])]);
         });
-        return commitChange(tx, copy, listId, before, entries.records);
+        return commitChange(tx, list, copy, listId, before, entries.records);
       }),
 
     onCommitted(listener) {

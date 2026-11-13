@@ -10,7 +10,7 @@
  */
 
 import { DocumentNotFoundError } from "@meridian/agent-edit/integration";
-import type { DocumentAuthorityId, DocumentId, ProjectId, UserId } from "@meridian/contracts";
+import type { DocumentAuthorityId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentYjsHeads } from "@meridian/database";
 import {
@@ -19,7 +19,7 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, eq, isNotNull, or, sql } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { livingDocumentRefusal, livingDocumentSql } from "../../context/tree/living-document.js";
 
@@ -30,26 +30,23 @@ export type DocumentAuthorityHeadGeneration = {
   generation: bigint;
 };
 
-/** The project or account a head with no `documents` row (a tree list) belongs to. */
-export type HeadOwner = { projectId: ProjectId } | { userId: UserId };
-
 /**
- * A living document's first head, at birth; an existing head (a head-only anomaly) is reused.
- * A list has no document: its head names its `owner` instead, and is writable without one.
+ * A living document's first head, at birth; an existing head of a document (a head-only anomaly)
+ * is reused. A head of another kind under this id is a list's, and no document is made of it.
  */
-export async function initializeHead(
-  db: AuthorityHeadDb,
-  documentId: DocumentId,
-  owner?: HeadOwner,
-): Promise<void> {
-  await db
+export async function initializeHead(db: AuthorityHeadDb, documentId: DocumentId): Promise<void> {
+  const inserted = await db
     .insert(documentYjsHeads)
-    .values({
-      documentId,
-      schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
-      ...owner,
-    })
-    .onConflictDoNothing({ target: documentYjsHeads.documentId });
+    .values({ documentId, schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION) })
+    .onConflictDoNothing({ target: documentYjsHeads.documentId })
+    .returning({ documentId: documentYjsHeads.documentId });
+  if (inserted.length > 0) return;
+  const [existing] = await db
+    .select({ kind: documentYjsHeads.kind })
+    .from(documentYjsHeads)
+    .where(eq(documentYjsHeads.documentId, documentId));
+  if (existing && existing.kind !== "document")
+    throw new Error(`Document ${documentId} has the id of a ${existing.kind}'s journal`);
 }
 
 /** The generation a head is born with (the column's default). */
@@ -211,11 +208,7 @@ export async function refusedAuthority(
 function living(documentId: string) {
   return and(
     eq(documentYjsHeads.documentId, documentId as DocumentId),
-    or(
-      isNotNull(documentYjsHeads.projectId),
-      isNotNull(documentYjsHeads.userId),
-      livingDocumentSql(documentYjsHeads.documentId),
-    ),
+    or(eq(documentYjsHeads.kind, "tree_list"), livingDocumentSql(documentYjsHeads.documentId)),
   );
 }
 
