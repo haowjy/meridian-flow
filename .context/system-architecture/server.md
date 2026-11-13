@@ -114,7 +114,6 @@ The composition root: builds every domain into `AppServices`.
 - Paths: `apps/server/server/lib`
 - Docs: [lib CONTEXT](../../apps/server/server/lib/.context/CONTEXT.md)
 - Machines: [lib](../../apps/server/server/lib/.context/state-machines.md)
-- Drift: The root CONTEXT.md says domains do not import `lib/`; `runtime` does (marked on the edge).
 
 ## plugins
 
