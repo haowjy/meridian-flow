@@ -64,7 +64,7 @@ export type DocumentAddress = DocumentCoordinates & {
  * those, not this.
  */
 export function placedNodesSql(view: TreeView): SQL {
-  const live = sql`SELECT t.id, t.kind, t.context_source_id, t.parent_id, t.name, t.extension,
+  const live = sql`SELECT t.id, t.kind, t.context_source_id, t.parent_id, t.name, t.extension, t.stem,
       t.file_type, t.rank, t.location_version, t.trash_record IS NOT NULL AS deleted,
       false AS exists_only_in_draft
     FROM tree_nodes t`;
@@ -73,8 +73,9 @@ export function placedNodesSql(view: TreeView): SQL {
   return sql`(${live}
     WHERE NOT EXISTS (SELECT 1 FROM branch_tree_nodes x WHERE x.branch_id = ${branch} AND x.id = t.id)
     UNION ALL
-    SELECT b.id, b.kind, b.context_source_id, b.parent_id, b.name, b.extension, b.file_type,
-      b.rank, coalesce(lt.location_version, 0), b.deleted, b.exists_only_in_draft
+    SELECT b.id, b.kind, b.context_source_id, b.parent_id, b.name, b.extension,
+      CASE WHEN b.extension <> '' THEN left(b.name, -(length(b.extension) + 1)) ELSE b.name END,
+      b.file_type, b.rank, coalesce(lt.location_version, 0), b.deleted, b.exists_only_in_draft
     FROM branch_tree_nodes b LEFT JOIN tree_nodes lt ON lt.id = b.id
     WHERE b.branch_id = ${branch})`;
 }
@@ -195,12 +196,12 @@ function selectionFilter(selection: DocumentAddressSelection): SQL | null {
   if ("names" in selection) {
     const projectIds = selection.projectIds.filter(isUuid);
     if (selection.names.length === 0 || projectIds.length === 0) return null;
-    // A node's name is its full filename; the candidates are stems, so match the name without its extension too.
+    // A node's name is its full filename; the candidates are stems, so match its stem too.
     const names = sql.join(
       selection.names.map((name) => sql`${name}`),
       sql`, `,
     );
-    return sql`(d.name IN (${names}) OR (d.extension <> '' AND left(d.name, -(length(d.extension) + 1)) IN (${names}))) AND d.context_source_id IN (
+    return sql`(d.name IN (${names}) OR d.stem IN (${names})) AND d.context_source_id IN (
       SELECT cs.id FROM context_sources cs LEFT JOIN works w ON w.id = cs.work_id
       WHERE COALESCE(cs.project_id, w.project_id) IN (${uuidList(projectIds)}))`;
   }

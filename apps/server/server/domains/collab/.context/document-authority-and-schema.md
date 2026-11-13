@@ -94,7 +94,7 @@ string. The link binder parses, prepares the holder's link scope, assigns or
 preserves refs, registers ahead refs, and certifies the target before the
 caller opens a transaction. A fresh bind is initialize-only: admission refuses
 a non-empty target with `stale_generation`. Context checks the canonical path
-under namespace lock and returns `stale_target` when its occupant changed.
+under the project's list key and returns `stale_target` when its occupant changed.
 
 `agent-edit-runtime.ts` builds the codec once. Every serialization door gets a
 holder-bound `DocumentLinkScopes` snapshot and prepares the refs it will spell

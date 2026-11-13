@@ -239,16 +239,20 @@ export function createDrizzleDocumentTrash(deps: {
     }
   }
 
-  /** The Trash entries whose nodes have all been in Trash since `cutoff`, oldest first. */
-  async function dueEntries(cutoff: Date, after: { at: Date; id: string } | undefined) {
+  /**
+   * The Trash entries whose nodes have all been in Trash since `cutoff`, oldest first. The page
+   * key is the database's own text of the time: a JS date would drop its microseconds and the
+   * same entry would come back as the next page.
+   */
+  async function dueEntries(cutoff: Date, after: { at: string; id: string } | undefined) {
     const rowsDue = await currentDrizzleDb(deps.db).execute<{
       deleteId: string;
       projectId: string | null;
       userId: string | null;
-      at: Date;
+      at: string;
     }>(sql`
       SELECT t.trash_record AS "deleteId", p.id::text AS "projectId", u.id::text AS "userId",
-        min(t.trashed_at) AS "at"
+        min(t.trashed_at)::text AS "at"
       FROM tree_nodes t
         JOIN context_sources cs ON cs.id = t.context_source_id
         LEFT JOIN projects p ON p.tree_list_id = t.list_id
@@ -257,12 +261,12 @@ export function createDrizzleDocumentTrash(deps: {
       GROUP BY t.list_id, t.trash_record, p.id, p.deleted_at, u.id
       HAVING max(t.trashed_at) <= ${cutoff.toISOString()}::timestamptz
         AND bool_and(cs.deleted_at IS NULL) AND p.deleted_at IS NULL
-        ${after ? sql`AND (min(t.trashed_at), t.trash_record) > (${after.at.toISOString()}::timestamptz, ${after.id})` : sql``}
+        ${after ? sql`AND (min(t.trashed_at), t.trash_record) > (${after.at}::timestamptz, ${after.id})` : sql``}
       ORDER BY min(t.trashed_at), t.trash_record
       LIMIT ${ENTRY_PAGE}`);
     return rowsDue.map((row) => ({
       deleteId: row.deleteId,
-      at: new Date(row.at),
+      at: row.at,
       list: (row.projectId
         ? { kind: "project", projectId: row.projectId }
         : { kind: "account", userId: row.userId as string }) as TreeList,
@@ -368,7 +372,7 @@ export function createDrizzleDocumentTrash(deps: {
         count += released.documentIds.length;
         if (released.storageUrls.length) await objects.storageUrls(released.storageUrls);
       };
-      let after: { at: Date; id: string } | undefined;
+      let after: { at: string; id: string } | undefined;
       while (count < DOCUMENT_PURGE_BATCH_LIMIT) {
         const due = await dueEntries(cutoff, after);
         const last = due.at(-1);

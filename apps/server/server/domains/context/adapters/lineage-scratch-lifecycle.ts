@@ -40,13 +40,11 @@ export function createDrizzleLineageScratchLifecycle(
 ): LineageScratchLifecycle {
   // Use the Scratch namespace boundary already held by context commands. Taking
   // a second lineage lock after that boundary would invert catalog lock order.
-  async function lock(projectId: string) {
-    await lockContextNamespaces(db, { projectId, userId: "" }, [
-      { scheme: "scratch", workId: null },
-    ]);
+  async function lock() {
+    await lockContextNamespaces(db, [{ scheme: "scratch", workId: null }]);
   }
   async function requireLive(projectId: string, rootThreadId: string) {
-    await lock(projectId);
+    await lock();
     const [root] = await currentDrizzleDb(db)
       .select({ live: lineageHasLiveMember(rootThreadId) })
       .from(threads)
@@ -104,11 +102,10 @@ export function createDrizzleLineageScratchLifecycle(
         // may write, and they read that under this key.
         const projectIds = [...new Set(roots.map((root) => root.projectId))].sort();
         for (const projectId of projectIds) await lockProjectTreeList(db, projectId);
-        for (const projectId of projectIds)
-          await lockContextNamespaces(db, { projectId, userId: "" }, [
-            { scheme: "scratch", workId: null },
-            { scheme: "uploads", workId: null },
-          ]);
+        await lockContextNamespaces(db, [
+          { scheme: "scratch", workId: null },
+          { scheme: "uploads", workId: null },
+        ]);
         for (const rootThreadId of rootIds) {
           await reconcileSources(
             and(eq(contextSources.scope, "lineage"), eq(contextSources.rootThreadId, rootThreadId)),

@@ -50,7 +50,7 @@ Catalog views, the tree, copy, uploads, links and arrivals. `skills://` exists f
 - Kind: domain
 - Paths: `apps/server/server/domains/context`
 - Docs: [CONTEXT](../../apps/server/server/domains/context/.context/CONTEXT.md), [AGENTS](../../apps/server/server/domains/context/AGENTS.md)
-- Machines: [context uploads](../../apps/server/server/domains/context/uploads/.context/state-machines.md)
+- Machines: [document content](../../apps/server/server/domains/context/.context/state-machines.md), [context uploads](../../apps/server/server/domains/context/uploads/.context/state-machines.md)
 - Breaks: In the import cycle, which the root CONTEXT.md rules out. It also imports `projects/adapters/project-repository/shared.ts` and `threads/adapters/drizzle/top-primary-chat.ts`.
 
 ## file-policy

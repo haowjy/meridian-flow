@@ -40,7 +40,6 @@ export async function lockNamespaceKeys(
  */
 export async function lockContextNamespaces(
   db: Database,
-  _owner: { projectId: string; userId: string },
   scopes: readonly ContextCommandScope[],
   options: {
     workIds?: readonly string[];
@@ -60,22 +59,6 @@ export async function lockContextNamespaces(
   ];
   await requireLockedActiveWorks(db, workIds, options.lineageRootIds);
   await options.afterWorkLocks?.();
-}
-
-/** Direct persistence callers use exactly the same logical locks as Context commands. */
-export async function lockContextSources(
-  db: Database,
-  sourceIds: readonly string[],
-): Promise<void> {
-  const rows = await sourceNamespaces(db, sourceIds);
-  await requireLockedActiveWorks(
-    db,
-    rows.flatMap((row) => (row.workId ? [row.workId] : [])),
-  );
-  await lockAdvisoryKeys(db, [
-    ...rows.flatMap((row) => (row.scheme === "user" && row.userId ? [row.userId] : [])),
-    ...rows.map(contextNamespaceKey),
-  ]);
 }
 
 /**

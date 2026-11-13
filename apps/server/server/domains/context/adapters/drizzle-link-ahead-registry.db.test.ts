@@ -31,7 +31,7 @@ import {
   createTestLinkAheadRegistry,
 } from "../../collab/test-support/document-link-scopes.js";
 import { RegistrationInsideTransactionError } from "../ports/link-ahead-registry.js";
-import { lockContextSources } from "./context-fs/document-locations.js";
+import { lockDocumentNamespaces } from "./context-fs/document-locations.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN =
@@ -183,7 +183,7 @@ if (!RUN) {
       ]);
       await treeSeeder(database).document(SOURCES[0], "note.toml", { id: DOCUMENT });
       await runInDrizzleTransaction(database, async () => {
-        await lockContextSources(database, [SOURCES[0]]);
+        await lockDocumentNamespaces(database, [], [SOURCES[0]]);
         expect(await registry.settleArrivals([DOCUMENT as never])).toBe(1);
       });
       expect(

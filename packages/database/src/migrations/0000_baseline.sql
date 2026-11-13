@@ -807,6 +807,7 @@ CREATE TABLE "tree_nodes" (
 	"parent_id" uuid,
 	"name" text NOT NULL,
 	"extension" text DEFAULT '' NOT NULL,
+	"stem" text GENERATED ALWAYS AS (CASE WHEN extension <> '' THEN left(name, -(length(extension) + 1)) ELSE name END) STORED,
 	"file_type" text,
 	"rank" text NOT NULL,
 	"location_version" bigint DEFAULT 0 NOT NULL,
@@ -1266,6 +1267,8 @@ CREATE INDEX "branch_tree_nodes_list" ON "branch_tree_nodes" USING btree ("list_
 CREATE INDEX "branch_tree_nodes_walk" ON "branch_tree_nodes" USING btree ("branch_id","context_source_id","parent_id","name");--> statement-breakpoint
 CREATE INDEX "branch_tree_nodes_siblings" ON "branch_tree_nodes" USING btree ("branch_id","context_source_id","parent_id","rank" COLLATE "C","id");--> statement-breakpoint
 CREATE INDEX "tree_nodes_walk" ON "tree_nodes" USING btree ("context_source_id","parent_id","name");--> statement-breakpoint
+CREATE INDEX "tree_nodes_by_name" ON "tree_nodes" USING btree ("name","context_source_id");--> statement-breakpoint
+CREATE INDEX "tree_nodes_by_stem" ON "tree_nodes" USING btree ("stem","context_source_id");--> statement-breakpoint
 CREATE INDEX "tree_nodes_siblings" ON "tree_nodes" USING btree ("context_source_id","parent_id","rank" COLLATE "C","id") WHERE "tree_nodes"."trash_record" IS NULL;--> statement-breakpoint
 CREATE INDEX "tree_nodes_parent" ON "tree_nodes" USING btree ("parent_id");--> statement-breakpoint
 CREATE INDEX "tree_nodes_list" ON "tree_nodes" USING btree ("list_id");--> statement-breakpoint

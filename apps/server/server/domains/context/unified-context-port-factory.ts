@@ -424,14 +424,14 @@ export function createProductionUnifiedContextPortFactory(options: {
    * branch row; nothing above it holds a Work row. The tree writes inside it take the list's
    * lock, which sorts before any document or namespace key.
    */
-  function commandTransaction(projectId: string, userId: string): ContextCommandTransaction {
+  function commandTransaction(projectId: string): ContextCommandTransaction {
     return {
       run: (operation, scopes = [], commandOptions = {}) =>
         runInDrizzleTransaction(options.db, async () => {
           const branchWrite = commandOptions.branch;
           const command: ContextCommandContext = { branch: null };
           const lockedScopes = typeof scopes === "function" ? await scopes() : scopes;
-          await lockContextNamespaces(options.db, { projectId, userId }, lockedScopes, {
+          await lockContextNamespaces(options.db, lockedScopes, {
             workIds: branchWrite?.owner.kind === "work" ? [branchWrite.owner.workId] : [],
             lineageRootIds:
               branchWrite?.owner.kind === "lineage" ? [branchWrite.owner.rootThreadId] : [],
@@ -473,7 +473,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         links: options.links,
         documentCreation: options.documentSync,
         resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
-        commandTransaction: commandTransaction(projectId, userId),
+        commandTransaction: commandTransaction(projectId),
         branches: options.branches,
         treeLists: options.treeLists,
         db: options.db,
@@ -490,7 +490,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         links: options.links,
         documentCreation: options.documentSync,
         resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
-        commandTransaction: commandTransaction(projectId, userId),
+        commandTransaction: commandTransaction(projectId),
         branches: options.branches,
         treeLists: options.treeLists,
         db: options.db,

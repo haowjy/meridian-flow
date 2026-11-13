@@ -11,15 +11,12 @@ import { classifyFiletype } from "@meridian/contracts/protocol";
 import { decodeWorkHandle, type ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { documentAliases } from "../document-metadata.js";
 
-/** The stored file types whose bytes live in object storage (one definition, SQL included). */
-export const BINARY_FILE_TYPES: ReadonlySet<string> = new Set(["docx", "image", "pdf", "binary"]);
-
-/** Bytes in object storage rather than a Yjs document. */
+/** Bytes in object storage rather than a Yjs document: stored bytes, or a binary file type. */
 export function isStorageBackedDocument(document: {
   fileType: string;
   storageUrl: string | null;
 }): boolean {
-  return document.storageUrl !== null || BINARY_FILE_TYPES.has(document.fileType);
+  return document.storageUrl !== null || classifyFiletype(document.fileType).kind === "binary";
 }
 
 export type CatalogFileRow = {
@@ -95,14 +92,7 @@ export function mapAuthoritativeFile(input: {
             editable: false as const,
             disposition: "binary" as const,
             fileType:
-              document.fileType === "docx" ||
-              document.fileType === "image" ||
-              document.fileType === "pdf" ||
-              document.fileType === "binary"
-                ? document.fileType
-                : classification.kind === "binary"
-                  ? classification.fileType
-                  : ("binary" as const),
+              classification.kind === "binary" ? classification.fileType : ("binary" as const),
             mimeType: document.mimeType,
           };
   return {

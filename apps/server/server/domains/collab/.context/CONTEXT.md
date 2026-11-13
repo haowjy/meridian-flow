@@ -543,8 +543,9 @@ account's tree list key, then the sorted document advisory keys
 (`lockDocumentMutation`'s keys in ID order), then draft rows, an
 upstream before its peer, otherwise ID order. The list's key sorts before every
 document key, not among them by ID: a path that needs a list and
-documents takes the list first (several lists: by list ID). Apply and Discard reach the list
-through `treeListStore.submit` inside their transaction and take the documents' keys after it. A tree list's write
+documents takes the list first (several lists: by list ID, which `submit` does for the lists it is given). Apply and Discard reach the lists
+through `treeListStore.submit` inside their transaction and take the documents' keys after it. Closing a Work's draft (`DraftClose.closeDrafts`) and
+ending a branch call the store's `resync`, so a path that closes drafts holds the lists' keys already or takes them before any document key. A tree list's write
 (`withList`) takes the seam's Work locks first, so the append under the key takes no lock
 it lacks; a Work's close, archive, restore and delete takes the project's list key
 after its Work row and before its document keys (`lockProjectTreeList`), so the open Works

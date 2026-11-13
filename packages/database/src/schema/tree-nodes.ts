@@ -60,6 +60,10 @@ export const treeNodes = pgTable(
     name: text("name").notNull(),
     /** What follows the last dot of the name, lowercased; empty for a folder. */
     extension: text("extension").notNull().default(""),
+    /** The name without its extension: the link-name lookup's key, which an index can serve. */
+    stem: text("stem").generatedAlwaysAs(
+      sql`CASE WHEN extension <> '' THEN left(name, -(length(extension) + 1)) ELSE name END`,
+    ),
     /** A document's type: the editor that opens it. Null for a folder. */
     fileType: text("file_type"),
     rank: text("rank").notNull(),
@@ -93,6 +97,10 @@ export const treeNodes = pgTable(
       sql`(${table.trashRecord} IS NULL) = (${table.trashedAt} IS NULL)`,
     ),
     index("tree_nodes_walk").on(table.contextSourceId, table.parentId, table.name),
+    // The link-name lookup finds a document by its name or its stem in a project's sources: the
+    // name leads, since one source holds most of a project's nodes and a name is rare.
+    index("tree_nodes_by_name").on(table.name, table.contextSourceId),
+    index("tree_nodes_by_stem").on(table.stem, table.contextSourceId),
     index("tree_nodes_siblings")
       .on(table.contextSourceId, table.parentId, sql`${table.rank} COLLATE "C"`, table.id)
       .where(sql`${table.trashRecord} IS NULL`),

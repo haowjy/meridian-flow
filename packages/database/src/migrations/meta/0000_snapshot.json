@@ -8040,6 +8040,16 @@
           "notNull": true,
           "default": "''"
         },
+        "stem": {
+          "name": "stem",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "CASE WHEN extension <> '' THEN left(name, -(length(extension) + 1)) ELSE name END",
+            "type": "stored"
+          }
+        },
         "file_type": {
           "name": "file_type",
           "type": "text",
@@ -8090,6 +8100,48 @@
             },
             {
               "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tree_nodes_by_name": {
+          "name": "tree_nodes_by_name",
+          "columns": [
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "context_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tree_nodes_by_stem": {
+          "name": "tree_nodes_by_stem",
+          "columns": [
+            {
+              "expression": "stem",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "context_source_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
