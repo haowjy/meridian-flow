@@ -25,7 +25,7 @@ stateDiagram-v2
   }
 ```
 
-What every instance does, and why:
+The rules, and why:
 
 - **Connected means the handshake finished**, not that the socket opened. The retry count
   resets there, so a server that accepts and then drops connections is still backed off from.
@@ -42,11 +42,14 @@ What every instance does, and why:
 
 ## Instances
 
+The thread socket and its subscription are the whole pattern. The others have part of it, as
+the notes say.
+
 | Machine | Side | Notes |
 |---|---|---|
 | [Thread socket](../../packages/thread-client/.context/state-machines.md) | Client | The connection half |
 | [Thread subscription](../../packages/thread-client/.context/state-machines.md) | Client | The subscription half |
 | [Thread subscription lease](../../apps/server/server/lib/.context/state-machines.md) | Server | Buffers live events while it reads the replay |
-| [Document session status](../../apps/app/src/core/editor/.context/state-machines.md) | Client | Derived from the same connection states; Yjs sync replaces the replay |
-| [Draft room handshake](../../apps/server/server/lib/.context/state-machines.md) | Server | No edits before the sync handshake |
-| [Server feed](../../apps/app/src/features/debug/.context/state-machines.md) | Client | The browser's `EventSource` reconnects; no replay |
+| [Document session status](../../apps/app/src/core/editor/.context/state-machines.md) | Client | Computed from the same connection states. There is no replay: Yjs sync brings the document up to date |
+| [Draft room handshake](../../apps/server/server/lib/.context/state-machines.md) | Server | The handshake only: no edits are accepted before it |
+| [Server feed](../../apps/app/src/features/debug/.context/state-machines.md) | Client | The connection only: the browser's `EventSource` reconnects, and nothing is replayed |

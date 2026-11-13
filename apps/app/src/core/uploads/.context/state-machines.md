@@ -1,8 +1,9 @@
 # Upload store state machine
 
-One file being sent from the editor or composer (`UploadState` in `upload-store.ts`). An entry
-exists only while the upload is unfinished: success deletes it, and the node then shows the
-file itself. The server's side of the same upload is the
+One file being sent from the editor or the composer (`UploadState` in `upload-store.ts`). The
+text gets an image or file node as soon as the upload begins, and the node draws from this
+entry while the upload is unfinished. Success deletes the entry, and the node then shows the
+uploaded file. The server's side of the same upload is the
 [upload intake](../../../../../server/server/domains/context/uploads/.context/state-machines.md).
 
 ```mermaid

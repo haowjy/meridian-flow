@@ -1,8 +1,7 @@
 # Load status
 
-Something fetched or opened once and then shown. It is the smallest machine in the app and the
-most repeated, so it is drawn once here; a page beside the code mentions it only when it adds
-a rule.
+Something fetched or opened once and then shown. It is drawn once here; a page beside the
+code mentions it only when it adds a rule.
 
 ```mermaid
 stateDiagram-v2
@@ -30,9 +29,12 @@ The rules that go wrong in practice:
 
 ## Instances
 
-| Machine | Where |
+| Machine | Its states |
 |---|---|
 | [Live document binding](../../apps/app/src/features/project/context/.context/state-machines.md) | `absent`, `opening`, `opened`, `failed` |
 | [Draft room read](../../apps/app/src/core/editor/.context/state-machines.md) | `rebuilding`, `usable`, `fenced`, `unavailable`, `error` |
 | [Review state and draft changes](../../apps/app/src/features/draft-review/.context/state-machines.md) | `idle`, `loading`, `error`, `ready`, `gone` |
 | [Upload store](../../apps/app/src/core/uploads/.context/state-machines.md) | `uploading`, `failed`; success removes the entry |
+
+Draft room read departs from the third rule. Its `unavailable` includes a room that is gone,
+and it still offers Retry, which works only when the room can be opened again.

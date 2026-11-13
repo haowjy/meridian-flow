@@ -2,14 +2,15 @@
 
 ## Response
 
-One model response's staged document writes (`ResponseState` in
-`src/tool/response-committer.ts`). The write path around it is in
+The document writes of one model reply (`ResponseState` in
+`src/tool/response-committer.ts`). The package stages a reply's writes in a buffer and hands
+them to its host, the server code that embeds it, to save together. The write path around it is in
 [write-architecture.md](write-architecture.md).
 
 ```mermaid
 stateDiagram-v2
   [*] --> buffered: first write, commit or rollback for the response id
-  buffered --> buffered: stage a write, or drop one thread's claims
+  buffered --> buffered: stage a write, or drop the writes one thread staged
   buffered --> committing: a commit attempt takes its own snapshot
   committing --> buffered: the save did not commit, the staged buffer is put back
   committing --> committed: the save committed
@@ -28,7 +29,8 @@ stateDiagram-v2
 - **Closed is final.** A write, commit or rollback on a closed response throws
   `ResponseLifecycleError` naming `committed` or `rolledBack`. Closed responses are kept as
   tombstones up to `CLOSED_RESPONSE_TOMBSTONE_CAP`, then forgotten.
-- The response is durable when the host's save commits, not when the update reaches a room.
+- The response is durable when the host's save commits to the database, not when the update
+  reaches a room, the live Yjs session that browsers are connected to.
 
 `onTransition` reports a coarser `ResponseCommitterPhase` (`buffered`, `journalStaged`,
 `closed`) for observers. It is not this state and nothing branches on it.

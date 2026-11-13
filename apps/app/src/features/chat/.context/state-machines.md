@@ -1,6 +1,8 @@
 # Chat state machines
 
-The chat feature's own machines. The states a turn and a run go through are the server's:
+The chat feature's own machines. Product words are in the
+[glossary](../../../../../../.context/glossary.md). The states a turn and a run go through are
+the server's:
 [runtime](../../../../../server/server/domains/runtime/.context/state-machines.md). The message
 journal is in [chat-submissions](../../../client/chat-submissions/.context/state-machines.md).
 
@@ -33,7 +35,8 @@ stateDiagram-v2
 
 ## Queued control
 
-One compaction request or write-mode switch the writer queued behind a running reply
+One compaction request or write-mode switch the writer made while a reply was running, so
+it waits in the queue
 (`controlsReducer` in `thread-controls/thread-controls.ts`). An entry has two independent
 parts: sending it, and withdrawing it.
 
@@ -70,7 +73,8 @@ hidden while one is in flight or settled, else `failed` or `sending` from the se
 ## Fork and handoff creation
 
 A chat created from another one, shown before the server has it (`DerivationStatus` in
-`derivation/derive-conversation.ts`). The writer is taken to the new chat first; see
+`derivation/derive-conversation.ts`). A fork keeps the conversation up to a chosen turn; a
+handoff starts fresh from a brief the model writes about the old chat. The writer is taken to the new chat first; see
 [fork-and-handoff.md](fork-and-handoff.md).
 
 ```mermaid
@@ -91,7 +95,7 @@ the writer already is.
 These read like states but have no transitions of their own; each is computed from a turn's
 status every render:
 
-- `BriefCardState` (`derivation/handoff-seed.ts`): `generating` for `pending` or `streaming`,
+- `BriefCardState`, the card for a handoff's brief (`derivation/handoff-seed.ts`): `generating` for `pending` or `streaming`,
   `ready` for `complete`, `stopped` for `cancelled`, `failed` otherwise.
-- `DividerState` (`compaction/compaction-model.ts`): `pending`, `complete`, `failed`,
+- `DividerState`, the line that marks a compaction in the transcript (`compaction/compaction-model.ts`): `pending`, `complete`, `failed`,
   `cancelled`, from the compaction turn.

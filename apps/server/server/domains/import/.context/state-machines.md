@@ -1,6 +1,9 @@
 # Import state machines
 
-An import is a durable job (`imports.state`) over its entries (`import_entries.state`). The wire
+An import is a durable job (`imports.state`) over its entries, one per file
+(`import_entries.state`). The server converts each uploaded file into a staging area the
+project's tree does not show, then moves the staged tree into the project in one transaction,
+the reveal. The wire
 states are in `packages/contracts/src/imports.ts`; the lifecycle rules are in
 [CONTEXT.md](CONTEXT.md). How the app shows these states:
 [app import](../../../../../app/src/features/import/.context/state-machines.md).
@@ -35,7 +38,7 @@ stateDiagram-v2
 The organizer works under a lease on the import row
 (`adapters/drizzle-organize-queue.ts`): only an `organizing` import with no live lease can be
 claimed, and every organizing write rechecks the state, the lease token and the placement
-generation. Without those checks an organizer that lost its lease writes over its successor.
+generation (the version of the planned destination tree). Without those checks an organizer that lost its lease writes over its successor.
 See [a job worked under a lease](../../../../../../.context/state-machines/job-under-a-lease.md).
 
 ## Import entry
@@ -57,5 +60,6 @@ stateDiagram-v2
 ```
 
 `transitionEntries` updates only rows in the named source states, which is what stops a late
-receipt or an old organizer from overwriting newer work. A `prepared` entry belongs to one
-placement generation: rebuilding the placement returns all of them to `received` first.
+receipt or an old organizer from overwriting newer work. A `prepared` entry is converted
+and staged for one placement generation: when the planned tree is rebuilt, every `prepared`
+entry returns to `received` first.

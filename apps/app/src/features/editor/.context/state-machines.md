@@ -2,8 +2,8 @@
 
 ## Sync pill outage phase
 
-Whether the sync pill is telling the writer about an outage, or confirming that an outage's
-edits reached the server (`OutagePhase` and `nextPhase` in `SyncStatus.tsx`). It advances on
+The sync pill is the small status label in the editor. This machine is whether it is telling
+the writer about an outage, or confirming that an outage's edits reached the server (`OutagePhase` and `nextPhase` in `SyncStatus.tsx`). It advances on
 every [document session](../../../core/editor/.context/state-machines.md) snapshot.
 
 ```mermaid
@@ -22,4 +22,6 @@ stateDiagram-v2
 - **A healthy session never leaves `idle`.** The confirmation exists to answer "did my offline
   edits make it?"; showing it after ordinary typing would flicker on every keystroke. For the
   same reason an edit made while `confirmed` hides the pill instead of returning to `awaiting`.
+- **A stalled adoption counts as an outage.** Until the account's session registry takes a
+  document over (adoption), its edits stay in the browser, as when offline.
 - A refused update (`updatesRefused`) is not a phase. It is checked first and replaces the pill.

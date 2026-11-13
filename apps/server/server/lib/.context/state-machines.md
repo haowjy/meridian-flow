@@ -31,7 +31,9 @@ stateDiagram-v2
 ## Draft room handshake
 
 Whether one connection may send edits to one draft room (`DraftHandshakeState` in
-`yjs-ws-handler.ts`, keyed by draft id in the connection's context).
+`yjs-ws-handler.ts`, keyed by draft id in the connection's context). In a Yjs sync, step 1
+says what a client has and step 2 carries what the other side is missing. The server checks
+the draft is active at the client's step 1.
 
 ```mermaid
 stateDiagram-v2

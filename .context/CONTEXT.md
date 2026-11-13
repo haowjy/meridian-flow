@@ -3,6 +3,7 @@
 Cross-cutting design lives in the [KB](https://github.com/haowjy/meridian-flow-docs/tree/main/kb).
 Server composition and transport: [apps/server](../apps/server/.context/CONTEXT.md).
 Every state machine, with its diagram: [state-machines](state-machines/index.md).
+The product's words, for a reader new to it: [glossary](glossary.md).
 The running system, the code's boxes and their dependencies, and the writer journeys:
 [architecture map](system-architecture/README.md).
 

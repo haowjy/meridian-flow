@@ -1,6 +1,7 @@
 # Composer toolbar state machine
 
-Which toolbar surface is open (`NavigationSurface` in `composer-toolbar-navigation.ts`): none,
+The toolbar of the composer, the chat's message box. The machine is which toolbar surface is
+open (`NavigationSurface` in `composer-toolbar-navigation.ts`): none,
 the overflow list (`root`), or one control's panel. A panel is either dismissible or locked
 while it does work that must not be interrupted.
 
@@ -31,5 +32,4 @@ cannot draw a state whose id is `root`.
   at once can move the control out from under the panel that is using it.
 - **Events name the panel session they came from** and are dropped when it is not the current
   one, so a late event from a closed panel cannot close its successor.
-- Every transition returns the focus target along with the surface. Focus is part of the
-  machine's output, not something the components decide.
+- Every transition returns the focus target along with the surface.

@@ -1,7 +1,8 @@
 # resource-replica state machines
 
-Three states are recorded on every document and folder this device knows, and they are read
-together. [CONTEXT.md](CONTEXT.md) has the rules in prose; this page draws them.
+The browser's local copy of a project's documents and folders, which get their ids in the
+browser before the server has them. Server hold and lifecycle are recorded per document or
+folder, a namespace intent per operation the writer asked for, and they are read together. [CONTEXT.md](CONTEXT.md) has the rules in prose; this page draws them.
 
 ## Server hold
 
@@ -11,7 +12,7 @@ It decides whether the next send is a create or a move, and whether a delete nee
 ```mermaid
 stateDiagram-v2
   [*] --> local: id minted on this device
-  [*] --> held: learned from a catalog
+  [*] --> held: learned from a catalog, the server's listing
   local --> uncertain: a create is sent
   uncertain --> held: the create is accepted
   uncertain --> local: the create is refused
@@ -86,7 +87,8 @@ stateDiagram-v2
   the writer, and it survives a reload.
 - **Only an unsent `pending` intent can be cancelled.** One with an attempt may have reached
   the server and must be answered or superseded.
-- **A Copy settles its operation record and its roots together.** Left at `received`, it keeps
-  holding the placement admission keys and blocks later placements.
+- **A Copy settles its operation record and its roots together.** The roots are the outermost
+  things the writer copied. Left at `received`, the Copy keeps the keys that order operations
+  on the same places (`PlacementAdmission.scope`) and blocks later ones.
 - The app turns the newest intent for an operation into `pending`, `feedback` or `retired`:
   [project context](../../../apps/app/src/features/project/context/.context/state-machines.md).

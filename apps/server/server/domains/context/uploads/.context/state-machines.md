@@ -1,7 +1,8 @@
 # Upload intake state machine
 
-One chat or source file upload, from reservation to a file in Context
-(`upload_intakes.state`; `upload-intake.ts`, `drizzle-upload-intake.ts`). The database checks
+One uploaded file, a chat attachment or a file that becomes a document, from a reserved
+address to a file in Context (`upload_intakes.state`; `upload-intake.ts`,
+`drizzle-upload-intake.ts`). The database checks
 only that the value is one of the four; the order is enforced by the guards below.
 
 ```mermaid
@@ -9,9 +10,9 @@ stateDiagram-v2
   [*] --> reserved: start reserves the address and idempotency key
   reserved --> object_stored: finish validates the uploaded object, under the row lock
   object_stored --> finalized: placed in Context, then the row is updated
-  reserved --> deleted: the draft is deleted
-  object_stored --> deleted: the draft is deleted
-  finalized --> deleted: the draft is deleted, and the Context file is removed with it
+  reserved --> deleted: the writer removes the attachment
+  object_stored --> deleted: the writer removes the attachment
+  finalized --> deleted: the writer removes the attachment, and the Context file goes with it
   reserved --> [*]: abandoned for 24 hours, row dropped by the sweep
   object_stored --> [*]: abandoned for 24 hours, row dropped by the sweep
   deleted --> [*]
@@ -25,8 +26,11 @@ stateDiagram-v2
 - **A finalized upload keeps its identity through delete.** The row is marked `deleted`, never
   reused, so a reference that settled to it answers "gone" instead of capturing a later upload
   at the same address.
-- The abandoned sweep deletes the row before it releases the objects, and only the sweep that
-  won the row releases them: a `finish` that touched the row in between keeps its object.
+- **Only a chat attachment is removed this way** (`deleteDraft`, the undo of attaching). A
+  file uploaded into the project is deleted as the document it became.
+- The sweep for abandoned uploads deletes the row before it deletes the stored bytes, and only
+  the sweep that deleted the row deletes them: a `finish` that touched the row in between
+  keeps its bytes.
 
 The same shape recurs in the app's [direct upload](../../../../../../app/src/core/uploads/.context/state-machines.md),
 which drives this machine from the browser.
