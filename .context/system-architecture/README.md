@@ -20,7 +20,7 @@ group and opens a page of its own.
 - [App](app.md): `apps/app/src`: routes, `core`, `client`, `components` and the features.
 
 Child pages (a group's members) are opened from their group and sit beside these as
-`server-<group>.md`.
+`server-<group>.md` and `app-<group>.md`.
 
 [Flows](flows/index.md): end-to-end sequences, one page each. [Dependencies](dependencies.md): the
 rules the code is meant to keep and the places it breaks them. [Journeys](journeys/index.md): what a

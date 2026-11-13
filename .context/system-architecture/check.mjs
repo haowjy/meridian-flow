@@ -148,13 +148,8 @@ for (const { file, path, page } of levels) {
     }
     if (node.kind === "group" && !item(s, "Opens")) fail(where, `a group box needs "Opens: [label](child.md)".`);
     if (node.kind === "context" && !item(s, "See")) fail(where, `a context box needs "See: [label](page.md#id)".`);
-    boxes.push({ id: s.id, page: file, path, kind: node.kind, paths, opens: item(s, "Opens")?.value ?? "" });
+    boxes.push({ id: s.id, page: file, path, kind: node.kind, paths });
   }
-}
-for (const box of boxes) {
-  if (box.kind !== "group") continue;
-  const child = resolveHref(box.path, linksOf(box.opens)[0]?.href ?? "").path;
-  box.paths.push(...boxes.filter((b) => b.path === child).flatMap((b) => b.paths));
 }
 const levelNodes = levels.map((l) => ({ id: l.file.slice(0, -3), nodes: l.page.mermaid?.nodes ?? [] }));
 

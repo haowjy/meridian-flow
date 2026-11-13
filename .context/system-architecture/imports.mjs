@@ -75,7 +75,7 @@ function workspacePackages(repo) {
 /**
  * Imports out of the source under `roots` (repo-relative paths): [{ from, to, typeOnly }],
  * `to` a repo-relative file when the import resolves to one, else the path it points at; a
- * workspace package import has `pkg: true` and `to` the package directory. External packages
+ * workspace package import has `to` the package directory. External packages
  * are left out.
  */
 export function readImports(repo, roots) {
