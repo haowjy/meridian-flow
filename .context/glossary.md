@@ -1,12 +1,11 @@
 # Product words
 
 Meridian Flow is a writing app for long fiction. A writer keeps a manuscript and notes in a
-project, edits them in a browser editor, and works on them with a model in chat. The model can
-read and write the same documents, at the same time as the writer.
+project, edits them in the browser, and works on them with a model in chat. The model reads
+and writes the same documents, at the same time as the writer.
 
-The architecture and state machine pages use the product's own words. This page says what each
-means, briefly. The full vocabulary, with the rules behind each word, is in the
-[knowledge base](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/vocab.md).
+These are the product's words, briefly. The full vocabulary, with the rules behind each word,
+is in the [knowledge base](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/vocab.md).
 
 ## People and containers
 
