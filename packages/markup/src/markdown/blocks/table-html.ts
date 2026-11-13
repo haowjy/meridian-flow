@@ -23,7 +23,6 @@ const DELEGATED_BLOCK_KIND_ATTRIBUTE = "kind";
 const DELEGATED_BLOCK_SOURCE_ATTRIBUTE = "source";
 const NATIVE_CELL_BLOCK_KINDS = new Set([
   "paragraph",
-  "heading",
   "bullet_list",
   "ordered_list",
   "blockquote",
@@ -104,23 +103,12 @@ function serializeCellBlock(block: PMNode, ctx: SerializeContext, indent: string
   }
 
   switch (block.type.name) {
-    case "paragraph":
+    case "paragraph": {
+      const tag = block.attrs.level === null ? "p" : `h${block.attrs.level}`;
       return [
-        `${indent}<p${serializeBlockAlignment(block)}>${inlineToHtml(
+        `${indent}<${tag}${serializeBlockAlignment(block)}>${inlineToHtml(
           inlineContentToMdast(block, ctx),
-        )}</p>`,
-      ];
-    case "heading": {
-      const level = Number(block.attrs.level);
-      if (!Number.isInteger(level) || level < 1 || level > 6) {
-        throw new Error(
-          `pm->html: invalid table-cell heading level "${String(block.attrs.level)}"`,
-        );
-      }
-      return [
-        `${indent}<h${level}${serializeBlockAlignment(block)}>${inlineToHtml(
-          inlineContentToMdast(block, ctx),
-        )}</h${level}>`,
+        )}</${tag}>`,
       ];
     }
     case "bullet_list":
@@ -273,17 +261,11 @@ function parseCellBlocks(cell: HtmlElement, ctx: ParseContext): PMNode[] | null 
 
 function parseCellBlock(element: HtmlElement, ctx: ParseContext): PMNode | null {
   if (element.name === DELEGATED_BLOCK_ELEMENT) return parseDelegatedCellBlock(element, ctx);
-  if (element.name === "p") {
+  if (element.name === "p" || /^h[1-6]$/.test(element.name)) {
     const align = blockAlignment(element);
     const inline = align === undefined ? null : parseInlineNodes(element.children, ctx, []);
-    return inline ? ctx.schema.node("paragraph", { align }, inline) : null;
-  }
-  if (/^h[1-6]$/.test(element.name)) {
-    const align = blockAlignment(element);
-    const inline = align === undefined ? null : parseInlineNodes(element.children, ctx, []);
-    return inline
-      ? ctx.schema.node("heading", { level: Number(element.name[1]), align }, inline)
-      : null;
+    const level = element.name === "p" ? null : Number(element.name[1]);
+    return inline ? ctx.schema.node("paragraph", { align, level }, inline) : null;
   }
   if (element.name === "ul" || element.name === "ol") return parseList(element, ctx);
   if (element.name === "blockquote") {

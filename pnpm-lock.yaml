@@ -211,9 +211,6 @@ importers:
       '@tiptap/extension-hard-break':
         specifier: ^3.27.1
         version: 3.27.1(@tiptap/core@3.27.1(patch_hash=7111fe0589ac5166c85a85be2a71cb2d4d702d28afbf85c17d82903f39e14c67)(@tiptap/pm@3.27.1))
-      '@tiptap/extension-heading':
-        specifier: ^3.27.1
-        version: 3.27.1(@tiptap/core@3.27.1(patch_hash=7111fe0589ac5166c85a85be2a71cb2d4d702d28afbf85c17d82903f39e14c67)(@tiptap/pm@3.27.1))
       '@tiptap/extension-horizontal-rule':
         specifier: ^3.27.1
         version: 3.27.1(@tiptap/core@3.27.1(patch_hash=7111fe0589ac5166c85a85be2a71cb2d4d702d28afbf85c17d82903f39e14c67)(@tiptap/pm@3.27.1))(@tiptap/pm@3.27.1)

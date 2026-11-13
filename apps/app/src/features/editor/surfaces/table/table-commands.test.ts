@@ -118,7 +118,7 @@ function rowText(current: Editor): string[][] {
 }
 
 const heading = (text: string): JSONContent => ({
-  type: "heading",
+  type: "paragraph",
   attrs: { level: 2 },
   content: [{ type: "text", text }],
 });
@@ -232,7 +232,7 @@ describe("merging block-capable cells", () => {
 
     expect(mergedCellBlocks(current)).toEqual([
       ["bullet_list", "gather the disciplesseal the gate"],
-      ["heading", "The gate"],
+      ["paragraph", "The gate"],
     ]);
   });
 });

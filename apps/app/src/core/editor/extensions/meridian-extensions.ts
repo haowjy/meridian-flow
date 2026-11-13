@@ -6,13 +6,12 @@
  * Meridian ProseMirror schema and Warm Organic rendering. Owns the editor schema
  * surface; consumed by the editor `config`.
  */
-import { mergeAttributes, Node, wrappingInputRule } from "@tiptap/core";
+import { mergeAttributes, Node, textblockTypeInputRule, wrappingInputRule } from "@tiptap/core";
 import Bold from "@tiptap/extension-bold";
 import BulletList from "@tiptap/extension-bullet-list";
 import Code from "@tiptap/extension-code";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import HardBreak from "@tiptap/extension-hard-break";
-import Heading from "@tiptap/extension-heading";
 import HorizontalRule from "@tiptap/extension-horizontal-rule";
 import Image, { type ImageOptions } from "@tiptap/extension-image";
 import Italic from "@tiptap/extension-italic";
@@ -25,6 +24,7 @@ import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import { DOMSerializer, type Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { Plugin } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
 import { FigureNodeView } from "../FigureNodeView";
@@ -132,13 +132,126 @@ export const MeridianHorizontalRule = HorizontalRule.extend({
   name: "horizontal_rule",
 });
 
-export const MeridianParagraph = Paragraph.extend({
-  addAttributes: textLayoutAttributes,
-});
+export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
-export const MeridianHeading = Heading.extend({
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    heading: {
+      /** Sets the level of the blocks under the selection, keeping their elements. */
+      setHeading: (attributes: { level: HeadingLevel }) => ReturnType;
+      /** Sets the level, or returns the blocks to body text when they already have it. */
+      toggleHeading: (attributes: { level: HeadingLevel }) => ReturnType;
+    };
+  }
+}
+
+const HEADING_LEVELS: readonly HeadingLevel[] = [1, 2, 3, 4, 5, 6];
+
+/**
+ * A heading is a paragraph with a `level` (null is body text). One node name
+ * means retyping a block edits its Yjs element in place instead of rebuilding
+ * it, so a peer's concurrent typing, authorship and anchors in it survive.
+ */
+export const MeridianParagraph = Paragraph.extend({
   addAttributes() {
-    return { ...this.parent?.(), ...textLayoutAttributes() };
+    return {
+      ...textLayoutAttributes(),
+      level: {
+        default: null,
+        // Enter at the end of a heading starts body text.
+        keepOnSplit: false,
+        parseHTML: (element: HTMLElement) => {
+          const match = /^H([1-6])$/.exec(element.tagName);
+          return match ? Number(match[1]) : null;
+        },
+        renderHTML: () => ({}),
+      },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: "p" }, ...HEADING_LEVELS.map((level) => ({ tag: `h${level}` }))];
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const tag = node.attrs.level === null ? "p" : `h${node.attrs.level}`;
+    return [tag, mergeAttributes(this.options.HTMLAttributes, HTMLAttributes), 0];
+  },
+
+  addCommands() {
+    return {
+      // The stock command keeps the block's current attrs, level included.
+      setParagraph:
+        () =>
+        ({ commands }) =>
+          commands.setNode(this.name, { level: null }),
+      setHeading:
+        ({ level }) =>
+        ({ commands }) =>
+          commands.updateAttributes(this.name, { level }),
+      toggleHeading:
+        ({ level }) =>
+        ({ commands, editor }) =>
+          commands.updateAttributes(this.name, {
+            level: editor.isActive(this.name, { level }) ? null : level,
+          }),
+    };
+  },
+
+  addKeyboardShortcuts() {
+    return {
+      ...this.parent?.(),
+      ...Object.fromEntries(
+        HEADING_LEVELS.map((level) => [
+          `Mod-Alt-${level}`,
+          () => this.editor.commands.toggleHeading({ level }),
+        ]),
+      ),
+    };
+  },
+
+  addProseMirrorPlugins() {
+    const type = this.type;
+    return [
+      new Plugin({
+        props: {
+          // Pasted into an empty paragraph, a heading's content joins the block
+          // that is already there: the same node name no longer replaces it, so
+          // the level has to move first.
+          handlePaste(view, _event, slice) {
+            const { selection } = view.state;
+            const { $from } = selection;
+            const pasted = slice.content.firstChild;
+            if (
+              !selection.empty ||
+              $from.parent.type !== type ||
+              $from.parent.content.size > 0 ||
+              pasted?.type !== type ||
+              pasted.attrs.level === null
+            ) {
+              return false;
+            }
+            view.dispatch(
+              view.state.tr.setNodeMarkup($from.before(), undefined, {
+                ...$from.parent.attrs,
+                level: pasted.attrs.level,
+              }),
+            );
+            return false;
+          },
+        },
+      }),
+    ];
+  },
+
+  addInputRules() {
+    return [
+      textblockTypeInputRule({
+        find: /^(#{1,6})\s$/,
+        type: this.type,
+        getAttributes: (match) => ({ level: match[1]?.length }),
+      }),
+    ];
   },
 });
 

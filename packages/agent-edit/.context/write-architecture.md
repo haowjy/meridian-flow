@@ -26,9 +26,9 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   block the lowering does not keep (below) is block-diffed instead.
 - A write is planned on the model's view and never reads the room. `lowerBlock`
   (`resolver/lower-block.ts`) lowers the rewrite of a block into operations (`EditOp`):
-  per textblock at any depth (a paragraph, heading, code block, or a paragraph in a
+  per textblock at any depth (a paragraph or heading, code block, or a paragraph in a
   quote, list item or table cell), text splices with format ranges; per node at any depth,
-  attribute sets (a heading's level, a task item's `checked`, a code block's language);
+  attribute sets (a paragraph's heading level, a task item's `checked`, a code block's language);
   and for an inline atom the model kept (an image, a line break), attribute sets
   addressed by its unit. A unit is one UTF-16 code unit of text, or one inline atom. The
   model's changes come from a find's window, otherwise from the word diff (`wordHunks`;
@@ -53,7 +53,7 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
   paragraph leaves an image whose upload is in flight alone.
 - Shapes `lowerBlock` does not keep return null and the block is rewritten whole, as if
   there were no room: a node added, removed or retyped inside the block (a list item, a
-  table row, a quote paragraph; a paragraph made a heading), and an inline atom put into
+  table row, a quote paragraph), and an inline atom put into
   the middle of a run of text (a verse line broken in two). An atom added or removed at
   the edge of a run of text is an operation. Deleting an atom between two runs leaves
   them as two adjacent `Y.XmlText` children, which the editor's binding never writes;
@@ -78,7 +78,7 @@ View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal]
     deleted line can land split, by client id
     ([TODO](TODO.md#stale-view-writes-into-structural-blocks)).
   - A write that removes a block and adds another (merging or splitting top-level
-    paragraphs, a paragraph turned into a heading): the writer's typing in the removed
+    paragraphs): the writer's typing in the removed
     block goes, and text deleted from it can come back in the added one.
   - Two changes the model makes to one word where the writer retyped it merge by client
     id, as two people's concurrent typing does.

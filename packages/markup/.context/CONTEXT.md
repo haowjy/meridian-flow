@@ -250,7 +250,7 @@ a product registry can never shadow their dedicated codecs.
 
 `Layout` is a wire-only wrapper with no schema node behind it. It carries block
 alignment (`align`) and table column widths (`widths`) that live as attrs on
-`paragraph`, `heading`, and `table`. Serialization runs through the MDX plugin's
+`paragraph` (headings included) and `table`. Serialization runs through the MDX plugin's
 `postSerializeBlock` hook, so an unstyled document stays byte-identical plain
 markdown; only a styled block gains a wrapper. Parsing goes through
 `createLayoutCodec()`, which re-parses its single child through

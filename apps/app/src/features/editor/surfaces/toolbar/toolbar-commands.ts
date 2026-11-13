@@ -2,7 +2,6 @@
 
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
-import type { Level } from "@tiptap/extension-heading";
 import { type EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
 
@@ -13,6 +12,7 @@ import {
   redoEditorHistory,
   undoEditorHistory,
 } from "@/core/editor/editor-history";
+import type { HeadingLevel } from "@/core/editor/extensions/meridian-extensions";
 import { linkAttributesAtSelection } from "@/core/editor/links";
 
 import {
@@ -95,7 +95,7 @@ const BLOCK_TYPE_HEADING_LEVELS = {
   heading1: 1,
   heading2: 2,
   heading3: 3,
-} as const satisfies Partial<Record<BlockTypeId, Level>>;
+} as const satisfies Partial<Record<BlockTypeId, HeadingLevel>>;
 
 /** Alignment as the dropdown speaks it: `null` on the wire reads as default. */
 export type ToolbarAlignmentValue = "default" | Exclude<BlockAlignment, null>;
@@ -147,7 +147,7 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
       blockedBy: readOnly ?? (context.canRedo ? null : "empty-history"),
     },
     heading: {
-      active: editor.isActive("heading", { level: TOOLBAR_HEADING_LEVEL }),
+      active: editor.isActive("paragraph", { level: TOOLBAR_HEADING_LEVEL }),
       blockedBy: readOnly ?? blockType,
     },
     bold: blockedFirst(readOnly, textMarkState(editor, "strong")),
@@ -211,12 +211,12 @@ function activeBlockTypeId(editor: Editor): BlockTypeId | null {
   if (editor.isActive("ordered_list")) return "orderedList";
   if (editor.isActive("blockquote")) return "blockquote";
   for (const [id, level] of Object.entries(BLOCK_TYPE_HEADING_LEVELS)) {
-    if (editor.isActive("heading", { level })) return id as BlockTypeId;
+    if (editor.isActive("paragraph", { level })) return id as BlockTypeId;
   }
   return editor.isActive("paragraph") ? "paragraph" : null;
 }
 
-function headingLevel(id: BlockTypeId): Level | null {
+function headingLevel(id: BlockTypeId): HeadingLevel | null {
   return id in BLOCK_TYPE_HEADING_LEVELS
     ? BLOCK_TYPE_HEADING_LEVELS[id as keyof typeof BLOCK_TYPE_HEADING_LEVELS]
     : null;

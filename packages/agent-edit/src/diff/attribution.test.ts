@@ -185,7 +185,7 @@ const listText = (d: Y.Doc) =>
 const bold = (s: string) =>
   schema.nodes.paragraph.create(null, schema.text(s, [schema.marks.strong.create()]));
 const heading = (level: number, s: string) =>
-  schema.nodes.heading.create({ level }, schema.text(s));
+  schema.nodes.paragraph.create({ level }, schema.text(s));
 
 const ROWS: Row[] = [
   {
