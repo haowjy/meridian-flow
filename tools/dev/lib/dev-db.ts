@@ -147,7 +147,7 @@ export async function listDatabasesWithPrefixForUrl(
   }
 }
 
-/** Connect to target DB when present; auto-create only on the local dev endpoint. */
+/** Connect to target DB when present; auto-create only on the local dev endpoint or a CI runner's Postgres. */
 export async function ensureDatabaseForUrl(
   databaseUrl: string,
 ): Promise<{ targetDb: string; created: boolean }> {
@@ -165,10 +165,10 @@ export async function ensureDatabaseForUrl(
     await targetSql.end();
   }
 
-  if (!isLocalDevPostgres(databaseUrl)) {
+  if (!isLocalDevPostgres(databaseUrl) && !isCiRunnerPostgres(databaseUrl)) {
     throw new Error(
       `Database "${targetDb}" does not exist. Create it on your Postgres host or point DATABASE_URL at an existing database. ` +
-        `Auto-create is only available for the local dev Postgres endpoint (127.0.0.1:${LOCAL_DEV_POSTGRES_PORT}).`,
+        `Auto-create is only available for the local dev Postgres endpoint (127.0.0.1:${LOCAL_DEV_POSTGRES_PORT}) and a CI runner's own Postgres.`,
     );
   }
 
@@ -269,7 +269,8 @@ export async function dropDatabaseForUrl(
   databaseUrl: string,
   mainDbNames: Iterable<string>,
 ): Promise<{ targetDb: string; dropped: boolean }> {
-  assertLocalDevPostgresEndpoint(databaseUrl, "drop database");
+  if (!isCiRunnerPostgres(databaseUrl))
+    assertLocalDevPostgresEndpoint(databaseUrl, "drop database");
   const { targetDb, adminConnString } = parseTargetDatabase(databaseUrl);
   validateDbName(targetDb);
   if (isReservedDatabase(targetDb, mainDbNames)) {

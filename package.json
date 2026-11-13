@@ -48,8 +48,8 @@
     "dev:stacks": "tsx tools/dev/dev-stacks.ts",
     "dev:prune-worktrees": "tsx tools/dev/prune-worktrees.ts",
     "test:db": "tsx tools/dev/run-db-tests.ts",
-    "test:all": "tsx tools/dev/run-db-tests.ts --all",
-    "probe:db": "tsx tools/dev/run-db-probe.ts"
+    "test:probes": "tsx tools/qa/run-db-probes.ts",
+    "test:all": "tsx tools/dev/run-db-tests.ts --all"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",

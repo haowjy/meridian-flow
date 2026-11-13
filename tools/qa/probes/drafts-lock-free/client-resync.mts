@@ -40,6 +40,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import { createHocuspocusBinding } from "../../../../apps/server/server/domains/collab/adapters/hocuspocus-binding.ts";
+import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import { createHocuspocusPersistenceService } from "../../../../apps/server/server/domains/collab/hocuspocus-persistence.ts";
 import { createYjsGateway } from "../../../../apps/server/server/lib/yjs-ws-handler.ts";
 import { type Harness, observe, type Probe, Y } from "./harness.mts";
@@ -580,7 +581,11 @@ export const clientResync: Probe = {
           const room = `draft:${draft.draftId}`;
           const peer = new Y.Doc({ gc: false });
           peer.clientID = 970_001;
-          Y.applyUpdate(peer, Y.encodeStateAsUpdate(draft.live));
+          // The draft's seed is written under its own server client id, independent of live's, so
+          // the peer starts from the draft's durable state, never from `draft.live`.
+          const read = await harness.store.readDraftAt(draft.draftId);
+          if (!read) throw new Error("draft missing");
+          Y.applyUpdate(peer, Y.encodeStateAsUpdate(materializeDraftRead(read)));
           const paragraph = peer.getXmlFragment("prosemirror").get(0) as Y.XmlElement;
           const text = paragraph.get(0) as Y.XmlText;
           const before = Y.encodeStateVector(peer);
