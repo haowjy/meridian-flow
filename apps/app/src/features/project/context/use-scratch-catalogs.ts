@@ -6,6 +6,8 @@ import { useContextCatalogView } from "@/client/query/useContextCatalog";
 export type ScratchSource = {
   owner: ContextOwner;
   heading: string;
+  /** Whose notes these are: the Work's name, or the chat's title for a chat on no Work. */
+  ownerName?: string;
   earlierRootThreadId?: string | null;
 };
 

@@ -34,7 +34,8 @@ import {
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { cn } from "@/lib/utils";
-import { RailScratchSection } from "../../chat/ChatScratch";
+import { ScratchSource } from "../../chat/ChatScratch";
+import { useChatScratchSource } from "../../chat/use-chat-scratch-source";
 import { type CatalogState, ContextTreePanel } from "../../context/ContextTreePanel";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../../context/context-schemes";
 import type { MoveArea } from "../../context/entry-drag/move-plan";
@@ -55,10 +56,10 @@ type TreeKey = (typeof EDITOR_CONTEXT_SCHEMES)[number];
 
 /**
  * Every pane the sidebar can show: the strip's Chat, tree tabs and Changes, and the quiet rows
- * at its foot, Unfiled and Trash.
+ * at its foot, Scratch (while a chat is on screen), Unfiled and Trash.
  */
-type SourceKey = "chat" | TreeTab | "unfiled" | "trash" | "changes";
-const FOOT_SOURCES = ["unfiled", "trash"] as const satisfies readonly SourceKey[];
+type SourceKey = "chat" | TreeTab | "scratch" | "unfiled" | "trash" | "changes";
+const FOOT_SOURCES = ["scratch", "unfiled", "trash"] as const satisfies readonly SourceKey[];
 
 type WriteSources = {
   projectId: string;
@@ -157,10 +158,6 @@ const SOURCES: Record<SourceKey, Source> = {
           // The drawer closes once the navigation commits: a rejected one leaves it open.
           onOpenChat={(threadId) => void chat.openChat(threadId).then(() => onPicked?.())}
           onNewChat={() => void chat.openNewChat().then(() => onPicked?.())}
-          // Scratch lives with its chat. Renders nothing while no chat is open.
-          footer={
-            <RailScratchSection projectId={projectId} threadId={chatThreadId} onPicked={onPicked} />
-          }
         />
       );
     },
@@ -168,6 +165,15 @@ const SOURCES: Record<SourceKey, Source> = {
   manuscript: treeSource("manuscript"),
   kb: treeSource("kb"),
   user: treeSource("user"),
+  scratch: {
+    label: () => schemeLabel("scratch"),
+    icon: schemeIcon("scratch"),
+    useDrop: () => IDLE_DROP,
+    Body: () => {
+      const { projectId, chatThreadId, onPicked } = useWriteSources();
+      return <ScratchSource projectId={projectId} threadId={chatThreadId} onPicked={onPicked} />;
+    },
+  },
   unfiled: treeSource("unfiled"),
   trash: {
     label: () => t`Trash`,
@@ -294,10 +300,11 @@ export function SourcesBody({
     : (tabs.find((key) => activeScheme !== null && key === sourceOfScheme(activeScheme)) ??
       chosen[0] ??
       "chat");
+  // Scratch belongs to the chat on screen: with none, its row goes and its pane can't stay.
+  const hasScratch = useChatScratchSource(projectId, chatThreadId) !== null;
+  const foot = FOOT_SOURCES.filter((key) => key !== "scratch" || hasScratch);
   const source =
-    tabs.includes(picked) || (FOOT_SOURCES as readonly SourceKey[]).includes(picked)
-      ? picked
-      : fallback;
+    tabs.includes(picked) || (foot as readonly SourceKey[]).includes(picked) ? picked : fallback;
   if (source !== picked) setPicked(source);
   const changesCommands = useWorkBranchCommands({
     projectId,
@@ -369,7 +376,7 @@ export function SourcesBody({
           <SourceTabs chosen={chosen} tabs={tabs} source={source} onSelect={setPicked} />
           <SourceView key={source} source={source} />
           <div className="shrink-0 px-2 pt-1">
-            {FOOT_SOURCES.map((key) => (
+            {foot.map((key) => (
               <FootSource
                 key={key}
                 source={key}

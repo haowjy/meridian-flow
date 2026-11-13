@@ -61,7 +61,6 @@ export function ChatsBody({
   currentThreadId,
   onOpenChat,
   onNewChat,
-  footer,
 }: {
   projectId: string;
   scopeWorkId: string | null;
@@ -69,7 +68,6 @@ export function ChatsBody({
   currentThreadId: string | null;
   onOpenChat: (threadId: string) => void;
   onNewChat: () => void;
-  footer?: ReactNode;
 }) {
   const {
     threads,
@@ -234,7 +232,6 @@ export function ChatsBody({
           </>
         )}
       </SourcePane>
-      {footer}
     </div>
   );
 }

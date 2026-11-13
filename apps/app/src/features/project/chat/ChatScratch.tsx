@@ -19,8 +19,9 @@ import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { ListLine, ListRow } from "@/components/ui/list-row";
+import { ListSectionHeader } from "@/components/ui/list-section";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
-import { schemeIcon, schemeLabel } from "../context/context-schemes";
+import { schemeLabel } from "../context/context-schemes";
 import type { DragEntry } from "../context/entry-drag/entry";
 import type { MoveArea } from "../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
@@ -32,7 +33,6 @@ import type { EntryCapabilities } from "../context/use-entry-interaction";
 import { useScratchCatalogs } from "../context/use-scratch-catalogs";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
-import { DockedRailSection } from "../shell/DockedRailSection";
 import { useOptionalMainItem } from "../views";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
@@ -102,8 +102,11 @@ export function useChatScratch(projectId: string, threadId: string | null) {
 
 type ChatScratch = ReturnType<typeof useChatScratch>;
 
-/** The Chat list's Scratch, docked under the chat list; it collapses, and expanded takes up to 40% of the rail. */
-export function RailScratchSection({
+/**
+ * Scratch as a sidebar source, at its foot with Unfiled and Trash: the notes of the chat on
+ * screen, which are its Work's under a named Work. The heading names whose notes they are.
+ */
+export function ScratchSource({
   projectId,
   threadId,
   onPicked,
@@ -119,46 +122,36 @@ export function RailScratchSection({
   const { source } = scratch;
   if (!source) return null;
   return (
-    <DockedRailSection id="scratch">
-      {({ expanded, setExpanded }) => (
-        <EntryList list={list}>
-          <AreaDropRegion
-            scheme="scratch"
-            catalogRootId={scratch.primary.catalog?.root.entryId ?? null}
-            reveal={() => !expanded && setExpanded(true)}
-            className="flex min-h-0 flex-col"
-            // A row like Unfiled and Trash below it, not a list heading: it opens and closes
-            // the notes above them.
-            header={(dropProps) => (
-              <div {...dropProps} className="shrink-0">
-                <ListRow
-                  icon={schemeIcon("scratch")}
-                  title={schemeLabel("scratch")}
-                  onOpen={() => setExpanded(!expanded)}
-                  controlProps={{ "aria-expanded": expanded, title: source.heading }}
-                />
-              </div>
-            )}
-          >
-            {expanded ? (
-              <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
-                <div>
-                  <TreeGroup depth={1}>
-                    <ChatScratchTree
-                      projectId={projectId}
-                      scratch={scratch}
-                      depth={1}
-                      onPicked={onPicked}
-                    />
-                  </TreeGroup>
-                </div>
-                <ChatScratchStatus scratch={scratch} />
-              </div>
-            ) : null}
-          </AreaDropRegion>
-        </EntryList>
-      )}
-    </DockedRailSection>
+    <EntryList list={list}>
+      <AreaDropRegion
+        scheme="scratch"
+        catalogRootId={scratch.primary.catalog?.root.entryId ?? null}
+        reveal={() => {}}
+        className="flex min-h-0 flex-1 flex-col"
+        header={(dropProps) => (
+          <div {...dropProps} className="shrink-0">
+            <ListSectionHeader level={2} label={schemeLabel("scratch")} title={source.heading} />
+            <p className="mx-2 truncate px-1.5 pb-1 text-xs text-muted-foreground">
+              {source.ownerName}
+            </p>
+          </div>
+        )}
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-2">
+          <div className="px-2">
+            <TreeGroup depth={1}>
+              <ChatScratchTree
+                projectId={projectId}
+                scratch={scratch}
+                depth={1}
+                onPicked={onPicked}
+              />
+            </TreeGroup>
+          </div>
+          <ChatScratchStatus scratch={scratch} />
+        </div>
+      </AreaDropRegion>
+    </EntryList>
   );
 }
 
