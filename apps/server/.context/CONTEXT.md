@@ -28,7 +28,8 @@ composeAppServices(ports)
 `getApp()` caches the resulting `Promise<AppServices>` on a process-global symbol
 so hot reloads do not compose duplicate singletons.
 
-Startup also owns recovery polling for durable delivery outboxes. A Work-context
+Composing the app (`lib/app.ts`, `recovery-scheduler.ts`) also starts recovery polling for
+durable delivery outboxes; the startup plugin does not. A Work-context
 refresh is queued only for threads whose primary `thread_works` membership points
 at the changed Work; the rendered block describes that current Work only. These
 notices receive a non-blocking post-commit wake for low-latency idle-thread
