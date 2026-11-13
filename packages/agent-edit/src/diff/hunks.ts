@@ -7,6 +7,7 @@
  */
 import type { Node as PMNode } from "prosemirror-model";
 import { type Alignment, align } from "./align.js";
+import { type Correspondence, correspond } from "./correspond.js";
 import { buildSide, coreKey, type Side, type Tok } from "./tokens.js";
 
 export interface Hunk {
@@ -15,6 +16,7 @@ export interface Hunk {
   sfrom: number; // side token range this hunk came from: set where the hunk is made, never by a filter
   sto: number;
   ins: Tok[]; // the payload: all of sfrom..sto, or what a filter kept of it
+  unpaired?: boolean; // a removed run and an added run that are not each other
   sidx?: number[]; // side index of each payload token once filtered (merge only)
 }
 
@@ -138,6 +140,7 @@ export interface BlockDiff {
   raw: Hunk[]; // the same before semantic cleanup (the word-level edits `hunks` merged)
   pos: Int32Array; // base token -> draft token outside hunks, else -1
   alignment: Alignment; // uncleaned, for callers that need word precision
+  correspondence: Correspondence; // which base block each draft block is, moves included
 }
 
 export function diffBlocks(
@@ -147,11 +150,20 @@ export function diffBlocks(
 ): BlockDiff {
   const B = buildSide(base);
   const D = buildSide(draft);
-  const alignment = align(B, D);
+  const correspondence = correspond(base, draft, { guess: true, moves: true });
+  const alignment = align(B, D, correspondence);
   let hunks = alignment.hunks;
   const ws = whitespaceHunks(B, D, alignment);
   if (ws.length) hunks = [...hunks, ...ws].sort((x, y) => x.from - y.from || x.to - y.to);
   const raw = hunks;
   if (opts.cleanup !== false) hunks = cleanupHunks(hunks, B, D);
-  return { base: B, draft: D, hunks, raw, pos: posMap(B.toks.length, hunks), alignment };
+  return {
+    base: B,
+    draft: D,
+    hunks,
+    raw,
+    pos: posMap(B.toks.length, hunks),
+    alignment,
+    correspondence,
+  };
 }

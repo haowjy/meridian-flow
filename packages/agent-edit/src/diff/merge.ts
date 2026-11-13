@@ -12,6 +12,7 @@
  */
 import { Mark, type Node as PMNode, type Schema } from "prosemirror-model";
 import { align } from "./align.js";
+import { type Correspondence, correspond } from "./correspond.js";
 import type { Hunk } from "./hunks.js";
 import { posMap } from "./hunks.js";
 import {
@@ -25,7 +26,6 @@ import {
   type MergedTok,
   mergeMarks,
   overlaps,
-  pairBlocksByType,
   peel,
   reslide,
   sameTokens,
@@ -210,6 +210,36 @@ function mergeContainers(
   return out;
 }
 
+/** A correspondence carried onto reordered sides; pairs that no longer run in order are dropped. */
+function relaid(c: Correspondence, baseOrder: number[], sideOrder: number[]): Correspondence {
+  const baseAt = new Int32Array(c.partner.length).fill(-1);
+  baseOrder.forEach((o, n) => {
+    baseAt[o] = n;
+  });
+  const sideAt = new Int32Array(c.back.length).fill(-1);
+  sideOrder.forEach((o, n) => {
+    sideAt[o] = n;
+  });
+  const out: Correspondence = {
+    partner: new Int32Array(baseOrder.length).fill(-1),
+    back: new Int32Array(sideOrder.length).fill(-1),
+    moved: new Set(),
+    oldPiece: new Int32Array(baseOrder.length).fill(-1),
+    nextPiece: new Int32Array(sideOrder.length).fill(-1),
+  };
+  baseOrder.forEach((o, n) => {
+    if (c.partner[o] >= 0 && sideAt[c.partner[o]] >= 0) {
+      out.partner[n] = sideAt[c.partner[o]];
+      out.back[out.partner[n]] = n;
+    }
+    if (c.oldPiece[o] >= 0) out.oldPiece[n] = baseAt[c.oldPiece[o]];
+  });
+  sideOrder.forEach((o, n) => {
+    if (c.nextPiece[o] >= 0) out.nextPiece[n] = sideAt[c.nextPiece[o]];
+  });
+  return out;
+}
+
 export function rebase(
   schema: Schema,
   base: readonly PMNode[],
@@ -217,36 +247,39 @@ export function rebase(
   draft: readonly PMNode[],
 ): RebaseResult {
   shareBlockTokens([base, live, draft]);
-  const alignAll = (
-    baseBlocks: readonly PMNode[],
-    liveBlocks: readonly PMNode[],
-    draftBlocks: readonly PMNode[],
-  ) => {
-    const baseSide = buildSide(baseBlocks);
-    const liveSide = buildSide(liveBlocks);
-    const draftSide = buildSide(draftBlocks);
-    return {
-      base: baseSide,
-      live: liveSide,
-      draft: draftSide,
-      liveAlignment: align(baseSide, liveSide),
-      draftAlignment: align(baseSide, draftSide),
-    };
-  };
-  let sides = alignAll(base, live, draft);
+  let inLive = correspond(base, live, { moves: true });
+  let inDraft = correspond(base, draft, { moves: true });
+  let sides = { base: buildSide(base), live: buildSide(live), draft: buildSide(draft) };
   let baseIds = base.map((_, i) => i); // original base block index of each (reordered) base block
 
-  const order = mergeOrder(sides);
+  const order = mergeOrder({ ...sides, inLive, inDraft });
   if (order.reordered) {
     baseIds = order.baseOrder;
-    sides = alignAll(
-      baseIds.map((i) => base[i]),
-      order.live,
-      order.draft,
-    );
+    inLive = relaid(inLive, order.baseOrder, order.liveOrder);
+    inDraft = relaid(inDraft, order.baseOrder, order.draftOrder);
+    sides = {
+      base: buildSide(baseIds.map((i) => base[i])),
+      live: buildSide(order.live),
+      draft: buildSide(order.draft),
+    };
   }
-
-  const { base: baseSide, live: liveSide, draft: draftSide, liveAlignment, draftAlignment } = sides;
+  const { base: baseSide, live: liveSide, draft: draftSide } = sides;
+  const liveAlignment = align(baseSide, liveSide, inLive);
+  const draftAlignment = align(baseSide, draftSide, inDraft);
+  // Each removed block is its own removal, so one side's removal of a run meets the other's block by block.
+  for (const a of [liveAlignment, draftAlignment])
+    a.hunks = a.hunks.flatMap((h) => {
+      if (h.ins.length) return [h];
+      const cuts = [h.from];
+      for (
+        let b = baseSide.blockOf[h.from] + 1;
+        b < baseSide.starts.length && baseSide.starts[b] < h.to;
+        b++
+      )
+        if (baseSide.starts[b] > h.from) cuts.push(baseSide.starts[b]);
+      cuts.push(h.to);
+      return cuts.slice(1).map((to, k) => ({ ...h, from: cuts[k], to }));
+    });
   const baseToks = baseSide.toks;
   const idsIn = (lo: number, hi: number) => {
     const ids = new Set<number>();
@@ -307,13 +340,6 @@ export function rebase(
     });
   }
 
-  for (const [alignment, side] of [
-    [liveAlignment, liveSide],
-    [draftAlignment, draftSide],
-  ] as const) {
-    alignment.hunks = pairBlocksByType(alignment.hunks, baseToks, side.toks);
-    alignment.pos = posMap(baseToks.length, alignment.hunks);
-  }
   if (reslide(baseToks, liveSide.toks, liveAlignment.hunks, draftAlignment.hunks))
     liveAlignment.pos = posMap(baseToks.length, liveAlignment.hunks);
   if (reslide(baseToks, draftSide.toks, draftAlignment.hunks, liveAlignment.hunks))
@@ -355,8 +381,9 @@ export function rebase(
       merged.push(...draftVersion);
       continue;
     }
+    // An unpaired replacement says the blocks are not each other: nothing to merge by index inside.
     const nested =
-      lo === hi
+      lo === hi || [...liveHunks, ...draftHunks].some((h) => h.unpaired)
         ? null
         : mergeContainers(schema, baseToks.slice(lo, hi), liveVersion, draftVersion, idsIn(lo, hi));
     if (nested) {

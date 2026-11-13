@@ -28,95 +28,6 @@ type TextTok = Extract<Tok, { kind: "text" }>;
  * Whether two hunks from different sides touch the same text. New paragraphs inserted between
  * paragraphs the other side deleted don't: they stay, standing where the deleted ones were.
  */
-/** Runs longer than this many block pairs keep `align`'s pairing. */
-const REPAIR_PAIRS = 40_000;
-
-/**
- * `align` pairs the blocks of a replaced run in order and detaches the rest, so a deleted paragraph
- * before a changed figure or list becomes "paragraph → new figure" plus "old figure deleted". Review
- * wants that reading. The merge does not: the deletion of the old figure clashes with the other
- * side's change to it, and the new figure lands beside the other side's. Where a run pairs a text
- * block with a whole block, or two whole blocks of different types, pair its blocks again by type:
- * the blocks that find no partner are plain deletions and insertions.
- */
-export function pairBlocksByType(hunks: Hunk[], baseToks: Tok[], sideToks: Tok[]): Hunk[] {
-  const out: Hunk[] = [];
-  for (let i = 0; i < hunks.length; ) {
-    let j = i + 1;
-    while (
-      j < hunks.length &&
-      hunks[j - 1].to === hunks[j].from &&
-      hunks[j - 1].sto === hunks[j].sfrom
-    )
-      j++;
-    out.push(...(repairRun(hunks.slice(i, j), baseToks, sideToks) ?? hunks.slice(i, j)));
-    i = j;
-  }
-  return out;
-}
-
-const blockClass = (t: Tok) => (t.kind === "atom" ? `A${t.node.type.name}` : "text");
-
-function repairRun(run: Hunk[], baseToks: Tok[], sideToks: Tok[]): Hunk[] | null {
-  const { from, sfrom } = run[0];
-  const to = run[run.length - 1].to;
-  const ins = run.flatMap((h) => h.ins);
-  const sto = sfrom + ins.length;
-  const wholeBlocks =
-    from < to &&
-    ins.length > 0 &&
-    isBlockTok(baseToks[from]) &&
-    isBlockTok(ins[0]) &&
-    (to === baseToks.length || isBlockTok(baseToks[to])) &&
-    (sto === sideToks.length || isBlockTok(sideToks[sto]));
-  if (!wholeBlocks) return null;
-  const starts = (toks: readonly Tok[], offset: number) => {
-    const at: number[] = [];
-    toks.forEach((t, k) => {
-      if (isBlockTok(t)) at.push(k + offset);
-    });
-    return at;
-  };
-  const bAt = starts(baseToks.slice(from, to), from);
-  const sAt = starts(ins, 0);
-  const [n, m] = [bAt.length, sAt.length];
-  const bClass = bAt.map((k) => blockClass(baseToks[k]));
-  const sClass = sAt.map((k) => blockClass(ins[k]));
-  if (
-    n * m > REPAIR_PAIRS ||
-    !Array.from({ length: Math.min(n, m) }, (_, k) => k).some((k) => bClass[k] !== sClass[k])
-  )
-    return null;
-  // Longest common subsequence of the block classes.
-  const lcs = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
-  for (let a = n - 1; a >= 0; a--)
-    for (let b = m - 1; b >= 0; b--)
-      lcs[a][b] =
-        bClass[a] === sClass[b] ? lcs[a + 1][b + 1] + 1 : Math.max(lcs[a + 1][b], lcs[a][b + 1]);
-  const bEnd = (a: number) => (a < n ? bAt[a] : to);
-  const sEnd = (b: number) => (b < m ? sAt[b] : ins.length);
-  const out: Hunk[] = [];
-  const emit = (a0: number, a1: number, b0: number, b1: number) => {
-    const inserted = ins.slice(sAt[b0] ?? ins.length, sEnd(b1));
-    const [x, y] = [bEnd(a0), bEnd(a1)];
-    if (x === y && !inserted.length) return;
-    const at = sfrom + (sAt[b0] ?? ins.length);
-    out.push({ from: x, to: y, sfrom: at, sto: at + inserted.length, ins: inserted });
-  };
-  let [a, b, pa, pb] = [0, 0, 0, 0];
-  while (a < n && b < m) {
-    if (bClass[a] === sClass[b] && lcs[a][b] === lcs[a + 1][b + 1] + 1) {
-      if (pa < a || pb < b) emit(pa, a, pb, b);
-      const [x, y] = [baseToks.slice(bEnd(a), bEnd(a + 1)), ins.slice(sEnd(b), sEnd(b + 1))];
-      if (x.length !== y.length || x.some((t, k) => t.key !== y[k].key)) emit(a, a + 1, b, b + 1);
-      [a, b, pa, pb] = [a + 1, b + 1, a + 1, b + 1];
-    } else if (lcs[a + 1][b] >= lcs[a][b + 1]) a++;
-    else b++;
-  }
-  if (pa < n || pb < m) emit(pa, n, pb, m);
-  return out;
-}
-
 export function overlaps(x: Hunk, y: Hunk, baseToks: Tok[]): boolean {
   const xIsInsert = x.from === x.to;
   const yIsInsert = y.from === y.to;
@@ -155,7 +66,7 @@ export function overlaps(x: Hunk, y: Hunk, baseToks: Tok[]): boolean {
       return false;
     let host = insert.from - 1;
     while (host > 0 && !isBlockTok(baseToks[host])) host--;
-    return deletion.from <= host && !deletion.ins.some(isBlockTok);
+    return deletion.from <= host && (deletion.unpaired || !deletion.ins.some(isBlockTok));
   };
   if (typedAtEndOfDeleted(x, y) || typedAtEndOfDeleted(y, x)) return true;
   if (xIsInsert && yIsInsert) return x.from === y.from;

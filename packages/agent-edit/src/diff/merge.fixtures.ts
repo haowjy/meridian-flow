@@ -1441,7 +1441,7 @@ export const CASES: Case[] = [
     base: "p:他走了。",
     live: "p:他跑了。",
     draft: "p:她走了。",
-    merged: "p:她跑了。",
-    conflicts: 0,
+    merged: "p:她走了。",
+    conflicts: 1,
   },
 ];

@@ -28,18 +28,20 @@ ranges, identity and composition never expand.
 
 ## Only diff the units whose nodes changed
 
-Equal paragraphs anchor the diff. Each changed paragraph, or small run of adjacent
-changed paragraphs needed to read a split or join, is one **unit**. A weak trie keyed by
-the ordered retained base nodes, a side boundary and the ordered retained draft nodes
-caches a unit's hunks and their refinement, so a keystroke or AI write re-diffs only the
-unit whose nodes changed. Caches change cost, never output.
+`correspond` (`src/diff/correspond.ts`) decides which block of one version is which block of the
+other. `align` walks its pairs: each pair, with the pieces a split or a join left beside it, is
+one **unit**, and an equal one-to-one unit has no hunks. Blocks between units are a removed run,
+an added run, or one replacement marked `unpaired`. A weak trie keyed by the ordered retained
+base nodes, a side boundary and the ordered retained draft nodes caches a unit's hunks and
+their refinement, so a keystroke or AI write re-diffs only the unit whose nodes changed. Caches
+change cost, never output.
 
 Order matters within a unit:
 
 1. Word and mark refinement runs before boundary separation, because retaining a
    leading block token can turn a complete replacement into a partial edge.
 2. Separation splits partial edge blocks from complete consumed blocks, pairs complete
-   replacement blocks in order, and detaches excess blocks. Adjacent pure fragments from
+   replacement blocks in order, and detaches excess blocks (inside one unit only). Adjacent pure fragments from
    one separated replacement stay one edit, preserving split/join composition and
    identical concurrent-change collapse. Intervals with no complete consumed block keep
    their split/join structure.
@@ -158,11 +160,33 @@ insertions at either edge of an adjacent replacement peel off before clustering,
 A list, quote or table is one token to `align`, so a cluster in which both sides changed
 containers is merged over their children (`mergeContainers`), pairwise when each side replaced
 a run of the same containers, and at every depth. It falls back to a clash of the whole block
-when the types or counts differ, when the merged node fails `check()`, or when a merged table
-is ragged. `align` pairs the blocks of a replaced run in order, which review reads as
-"paragraph became figure"; the merge pairs them again by type (`pairBlocksByType`) so a deleted
-paragraph beside a changed figure or list is a deletion plus that change, not a rewrite of the
-paragraph into the figure. Review's hunks do not go through it.
+when the types or counts differ, when the merged node fails `check()`, or when a merged table's
+cells, with their `colspan` and `rowspan`, do not fill a rectangle. The merge and review pair
+blocks with the same function (`correspond`), so they agree on which block is which.
+
+### Block correspondence
+
+Steps, in order: blocks equal in full at the two ends pair; a block whose content (type and
+children, attributes left out) occurs once on each side pairs, where it is in every longest
+in-order set of such blocks (two that cross are not anchors); then each gap is scored at once,
+same content first (equal attributes break ties), then the share of words in common, in order,
+at least half. A repeated block is never an anchor. Unpaired text blocks beside a pair whose
+words went into or came out of it are the **pieces** of a split or a join; the unit's pair is
+its first block on each side (`partner`), the block Yjs keeps the identity of. A block that is
+left and clearly another's best candidate by a fifth is a move.
+
+The merge asks in **certain** mode: a pair that another reading of the run explains nearly as
+well (the total score falls by less than a fifth without it) is not made. Review asks in
+**guess** mode, where an unmade pair costs a coarser picture and a wrong one costs nothing the
+merge acts on. A gap over 40,000 block pairs pairs in place when it has as many blocks on each
+side and each pair is nearly the same text, and otherwise searches a band round the diagonal at
+0.8 similarity; blocks it leaves stay unpaired (`coarse-diff`).
+
+A removal of several blocks is one removal per block in the merge, so one side's removal of a
+run meets the other side's edit or removal of each block separately. A shared edge of two
+replacements is kept once only inside one block (`shared-edge-kept-once`): two paragraphs that
+end in the same word do not share it. A hunk keeps the side range it came from (`sfrom`..`sto`);
+a filter such as moved-text dropping changes its payload and `sidx`, never its range.
 
 Move-text matching checks whether the other side touched a source or pasted the same text
 only after selecting the globally longest run. Filtering sources first would change the
