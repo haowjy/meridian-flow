@@ -95,7 +95,7 @@ it("aligns parse spans with walk order for links, images, figures and table anch
       t(" and "),
       image("manuscript://assets/old-map.png", `doc:${id.map}`),
     ),
-    schema.node("heading", { level: 2 }, [
+    schema.node("paragraph", { level: 2 }, [
       t("Ahead", [link("manuscript://book/ch12.md#top", `ahead:${id.open}`)]),
     ]),
     schema.node("bullet_list", { tight: true }, [

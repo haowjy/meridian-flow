@@ -16,6 +16,7 @@ import {
 import { canJoin, dropPoint } from "@tiptap/pm/transform";
 import type { EditorView } from "@tiptap/pm/view";
 
+import { sliceForDestination } from "../extensions/meridian-extensions";
 import type { DropDoor, DropPlan } from "./drop-plan";
 import { isTable, isTableCell, type Landing } from "./point-landing";
 import { crossesTextblocks, removeRange } from "./range-removal";
@@ -98,11 +99,12 @@ function reparsedOutsideCode(view: EditorView, event: DragEvent, landing: Landin
 function slicePlan(
   view: EditorView,
   landing: Landing,
-  slice: Slice | null,
+  dropped: Slice | null,
   source: SliceSource,
 ): DropPlan {
   const { state } = view;
-  if (!slice) return { kind: "accept", pos: landing.pos };
+  if (!dropped) return { kind: "accept", pos: landing.pos };
+  const slice = sliceForDestination(dropped, state.doc.resolve(landing.pos));
   if (source.moved && landsInMovedRange(state, landing, source)) return { kind: "refuse" };
 
   if (landing.kind === "source") {

@@ -17,7 +17,7 @@ one transaction the host owns, and route inverses through `prepareSave`.
 ## Stale-view writes into structural blocks
 
 A write that adds, removes or retypes a node inside a quote, list, table or other
-container (a new list item, a table row, a paragraph made a heading), or breaks a line of
+container (a new list item, a table row), or breaks a line of
 verse in two, is rewritten as a whole block, as if the writer had deleted nothing since
 the model's read. A model insert beside a line the writer deleted can land split, a
 rewrite can bring the deleted line back, and a change to a word the writer retyped can
@@ -29,7 +29,7 @@ of a run (a work item of its own, after
 ## Blocks a write removes and adds
 
 A write that removes a block and adds another (merging or splitting top-level
-paragraphs, a paragraph turned into a heading) is rewritten whole:
+paragraphs) is rewritten whole:
 the writer's typing in the removed block goes, and text deleted from it can come back
 in the added one. Covering it means deciding the replaced scope as one sequence, block
 edges included, in `replaceScope`'s alignment.

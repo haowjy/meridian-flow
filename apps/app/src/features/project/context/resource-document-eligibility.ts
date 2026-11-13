@@ -8,7 +8,7 @@ export function resourceDocumentIsEmpty(fragment: Y.XmlFragment): boolean {
 function nodeHasContent(value: unknown): boolean {
   if (value instanceof Y.XmlText) return value.toString().length > 0;
   if (value instanceof Y.XmlElement) {
-    if (!["doc", "paragraph", "heading"].includes(value.nodeName)) return true;
+    if (!["doc", "paragraph"].includes(value.nodeName)) return true;
     return value.toArray().some(nodeHasContent);
   }
   return typeof value === "string" && value.length > 0;
