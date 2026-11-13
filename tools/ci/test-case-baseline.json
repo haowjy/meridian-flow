@@ -358,7 +358,7 @@
     "apps/server/server/lib/work-receipt-reversal.test.ts": 9,
     "apps/server/server/lib/ws-thread-handler.handoff.test.ts": 13,
     "apps/server/server/lib/ws-thread-handler.test.ts": 10,
-    "apps/server/server/lib/yjs-tree-room.db.test.ts": 5,
+    "apps/server/server/lib/yjs-tree-room.db.test.ts": 6,
     "apps/server/server/routes/api/threads/[threadId]/messages.post.test.ts": 1,
     "apps/server/server/shared/drizzle-transaction.db.test.ts": 1,
     "apps/server/server/shared/keyed-mutex.test.ts": 7,

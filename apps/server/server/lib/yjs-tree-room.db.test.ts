@@ -360,6 +360,24 @@ describe("a tree list's room (postgres)", () => {
     expect(rows.map((row) => row.name).sort()).toEqual(["from process one", "from process two"]);
   });
 
+  it("keeps a read-only connection's updates out of the store", async () => {
+    // A project with no source the account can write: the owner may read the list, not write it.
+    const READ_ONLY = "00000000-0000-4000-8000-000000000b06";
+    await db
+      .insert(projects)
+      .values({ id: READ_ONLY, userId: ACCOUNT, name: "Empty", slug: "empty" });
+    const server = serverProcess();
+    const admit = vi.spyOn(server.store, "admit");
+    const tab = browser(server, { room: `tree:project:${READ_ONLY}` });
+    await until(() => tab.state === "synced", "synced");
+    const framesBefore = tab.wire.toClient.length;
+    createDocument(tab.copy, "never admitted", sourceRoot(UNFILED));
+    // The room answers the dropped frame with its SyncStatus(false): nothing was admitted or stored.
+    await until(() => tab.wire.toClient.length > framesBefore, "the room's answer");
+    expect(admit).not.toHaveBeenCalled();
+    expect(await db.select().from(treeNodes)).toHaveLength(0);
+  });
+
   it("refuses a connection that is not the list's account", async () => {
     const server = serverProcess();
     const stranger = browser(server, { userId: STRANGER });
