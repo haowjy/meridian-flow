@@ -40,6 +40,7 @@ beforeEach(() => {
 function createFactory(created: DocumentSession[] = []): LocalDocumentSessionFactory {
   return {
     whenAuthorityReady: async () => undefined,
+    attachTransport: () => undefined,
     createDetached(input) {
       databases.add(input.persistenceKey);
       const session = new DocumentSession({

@@ -73,6 +73,7 @@ export interface LiveSessionIncarnationPort {
 
 export interface LocalDocumentSessionFactory {
   whenAuthorityReady(): Promise<void>;
+  attachTransport(session: DocumentSession): void;
   createDetached(input: {
     accountId: AccountId;
     projectId: ProjectId;

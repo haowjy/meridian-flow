@@ -96,7 +96,7 @@ export class DocumentSessionRegistry
     liveRoom: (documentId) => this.liveRooms.get(documentId),
     retain: (ownerId, leases, options) => this.retain(ownerId, leases, options),
     release: (ownerId) => this.release(ownerId),
-    attachTransport: (session) => this.attachSessionTransport(session),
+    attachTransport: (session) => this.attachTransport(session),
   });
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Stops the connected-time cap of a held session kept open until the server acknowledges its edits. */
@@ -646,6 +646,10 @@ export class DocumentSessionRegistry
     if (this.accountRuntimeState !== "open") {
       throw new Error("Account document session runtime is closing");
     }
+  }
+
+  attachTransport(session: DocumentSession): void {
+    this.attachSessionTransport(session);
   }
 
   private attachSessionTransport(session: DocumentSession): void {

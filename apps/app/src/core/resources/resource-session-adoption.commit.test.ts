@@ -170,6 +170,7 @@ async function seam(
     metadata,
     {
       whenAuthorityReady: async () => undefined,
+      attachTransport: () => undefined,
       createDetached(input) {
         const session = new DocumentSession({
           roomKey: input.documentId,
@@ -407,6 +408,7 @@ function record(): ResourceRecord {
 function factory(created: DocumentSession[]): LocalDocumentSessionFactory {
   return {
     whenAuthorityReady: async () => undefined,
+    attachTransport: () => undefined,
     createDetached(input) {
       const session = new DocumentSession({
         roomKey: input.documentId,

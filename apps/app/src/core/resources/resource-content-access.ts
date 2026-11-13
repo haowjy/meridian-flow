@@ -516,6 +516,9 @@ export class ResourceContentAccess {
     if (adoptionEligible) {
       entry.leases.set(lease, true);
       entry.adoptionBound = true;
+      // Back on screen: a session whose socket an off-screen tab closed syncs the difference.
+      if (entry.ownership.kind === "registry" && entry.session.getSnapshot().status === "detached")
+        this.sessions.attachTransport(entry.session);
     }
     let released = false;
     const openedEntry = entry;
@@ -654,13 +657,27 @@ export class ResourceContentAccess {
 
   private releaseLease(id: string, entry: ContentEntry, lease: symbol): void {
     entry.leases.delete(lease);
-    if (entry.leases.size > 0 || this.entries.get(id) !== entry) return;
+    if (entry.leases.size > 0) {
+      this.closeOffScreenTransport(entry);
+      return;
+    }
+    if (this.entries.get(id) !== entry) return;
     if (entry.ownership.kind === "transferring") return;
     // Server acquisition must survive navigation preflight until the editor binds that session.
     if (entry.ownership.kind === "registry" && !entry.adoptionBound) return;
     this.entries.delete(id);
     if (entry.ownership.kind === "registry") this.releaseRegistryOwnership(entry.ownership);
     else this.retire(id, entry.session);
+  }
+
+  /**
+   * A session only an open tab keeps (no host holds an adoption-eligible lease) gives up its
+   * socket and keeps its document and undo. Unsent edits keep it on the wire until acknowledged.
+   */
+  private closeOffScreenTransport(entry: ContentEntry): void {
+    if (entry.ownership.kind !== "registry" || [...entry.leases.values()].some(Boolean)) return;
+    if (entry.session.hasUnacknowledgedEdits()) return;
+    void entry.session.detachTransport().catch(reportError);
   }
 
   private releaseRegistryOwnership(

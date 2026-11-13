@@ -138,9 +138,11 @@ identity in anchors or holds.
 ## Editor policy seams
 
 - Disable TipTap's trailing node and local undo defaults where collaborative
-  behavior supplies the contract. `editor-history.ts` is mounted with each
-  collaborative editor and orders Yjs stack items with editor-originated text
-  Apply commands. The dedicated keymap and toolbar both use it. Apply stops Yjs
+  behavior supplies the contract. `editor-history.ts` is the document's history:
+  its `DocumentHistory` is owned by the `DocumentSession`, with the `Y.UndoManager`
+  the editor's collaboration plugin uses (`yUndoOptions`), and each collaborative
+  editor attaches to it while mounted (range capture, the restore dispatch). It
+  orders Yjs stack items with editor-originated text Apply commands. The dedicated keymap and toolbar both use it. Apply stops Yjs
   capture at each Apply boundary, so nearby typing stays in separate native
   segments. History traversal is synchronous: Apply entries enqueue owner-held
   commands, while Yjs Undo/Redo never waits on the network or crosses an Apply
@@ -150,8 +152,11 @@ identity in anchors or holds.
   that UndoManager generates. It is never read from y-tiptap's copy, which a
   plugin's appended transaction makes wrong; Yjs alone would map the current
   selection, and a moved range has just been removed. Redo and a caret keep
-  y-tiptap's mapped selection. Destroying the editor is terminal and
-  discards only that mounted navigation history. The side, Work, tree-only Apply, and title changes never enter it.
+  y-tiptap's mapped selection. Destroying an editor only detaches it: the
+  history lasts as long as the session, so a tab's undo survives its editor (the patched
+  y-tiptap undo plugin neither destroys a manager it didn't create nor leaves its
+  listeners on it). Only edits written through an editor are tracked, so Ctrl+Z reverts
+  the writer's own and leaves peer and model edits alone. Reload resets it. The side, Work, tree-only Apply, and title changes never enter it.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks
@@ -376,6 +381,8 @@ keyboard, pointer, drop, or draft-recovery answer.
 
 ### Live session teardown
 
+- A session holds the writer's undo (`session.history`), so teardown ends it. The registry's
+  3 s grace therefore applies to documents no open tab keeps (see `useOpenTabSessions`).
 - When the last host releases a live document, the registry retires its session after a
   3 s grace. A session with unacknowledged edits is held instead, so edits made offline
   reach the server without the writer reopening the document. Reopening takes the

@@ -149,6 +149,10 @@ export function createAccountDocumentSessionRuntime(
       requireOpen();
       return core.localConstruction.createDetached(request);
     },
+    attachTransport(session) {
+      requireOpen();
+      core.localConstruction.attachTransport(session);
+    },
   };
   const liveIncarnation: LiveSessionIncarnationPort = {
     incarnationOf: (session) => core.liveIncarnation.incarnationOf(session),
