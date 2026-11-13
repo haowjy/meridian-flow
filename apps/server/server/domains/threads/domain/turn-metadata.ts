@@ -400,7 +400,12 @@ export function encodeImageInclusionMetadata(breaks: readonly ImageContextBreak[
   return {
     kind: "system_update",
     section: "image_inclusion",
-    breaks: breaks.map(({ blockId, uri, reason }) => ({ blockId, uri, reason })),
+    breaks: breaks.map(({ blockId, uri, mediaType, reason }) => ({
+      blockId,
+      uri,
+      mediaType,
+      reason,
+    })),
   };
 }
 
