@@ -95,6 +95,8 @@ the items `Map` (links to `#<box id>` on a level page), `Machines` and later `Sh
   `Kind` that isn't the box's class; an unknown node or edge kind.
 - A path that doesn't exist; a link whose file or `#id` doesn't resolve, in every page here and in
   the journeys; a journey `Map` link that isn't a box.
+- An app, package (with a `package.json`), server domain or app feature directory that no box's
+  `Paths` reaches: a new one needs a box, or a path on the box that holds it.
 - A state machine page the index links that is on no box; a `*state-machine*.md` the index doesn't link.
 - An `import` or `call` edge between boxes that have `Paths` when nothing in the first box's paths
   imports the second's. It reads the source (relative imports, `@/` in `apps/app`, `~/` in

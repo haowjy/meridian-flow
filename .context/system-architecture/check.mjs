@@ -190,6 +190,21 @@ for (const page of written) {
 // ---- Imports ----
 
 const roots = [...new Set(boxes.flatMap((b) => b.paths))];
+
+// Coverage: every app, package, domain and feature has a box with a path inside it.
+const subdirectories = (path, wanted = () => true) =>
+  readdirSync(join(repo, path), { withFileTypes: true })
+    .filter((e) => e.isDirectory() && wanted(e.name))
+    .map((e) => `${path}/${e.name}`);
+const hasManifest = (path) => existsSync(join(repo, path, "package.json"));
+for (const directory of [
+  ...subdirectories("apps"),
+  ...subdirectories("packages").filter(hasManifest),
+  ...subdirectories("apps/server/server/domains"),
+  ...subdirectories("apps/app/src/features"),
+]) {
+  if (!roots.some((p) => under(p, directory))) fail("map", `${directory} is in no box's Paths: add a box for it, or a path to the box that holds it.`);
+}
 const imports = readImports(repo, roots);
 const covers = (box, imp) => box.paths.some((p) => reaches(imp, p));
 
