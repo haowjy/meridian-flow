@@ -159,8 +159,8 @@ the items `Map` (links to `#<box id>` on a level page), `Machines` and later `Sh
   example file that doesn't make the break. The check reads value imports from source (relative
   imports, `@/` in `apps/app`, `~/` in `apps/www`, `@meridian/*` names, stylesheet `@import`) and
   leaves out tests, `test-support` files and comments.
-- **Colours:** `styles/tokens.css` must match `packages/design-tokens`, and the engine's `page.css`
-  holds no raw colour.
+- **Colours:** the `packages/design-tokens` blocks the config names are there, and the engine's
+  `page.css` holds no raw colour and uses only variables they or `page.css` define.
 
 It doesn't catch: whether a box's words or an arrow are still true; an ordinary import (none is
 listed anywhere); `Drift` and `Breaks` notes that went stale; a feature importing another feature,

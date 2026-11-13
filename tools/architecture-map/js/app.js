@@ -7,7 +7,7 @@
  * Every route is a history entry except choosing a box or step, so the browser's Back and the
  * Back button walk the same trail.
  */
-import { DEPENDENCIES_PAGE, MAP_DIR, NAV, STATE_MACHINES_INDEX, sourceUrl, storageKey, STYLES, TITLE } from "./config.js";
+import { DEPENDENCIES_PAGE, MAP_DIR, NAV, STATE_MACHINES_INDEX, sourceUrl, storageKey, TITLE } from "./config.js";
 import { paintEntry } from "./files.js";
 import { createJourneys } from "./journeys.js";
 import { createMap } from "./map.js";
@@ -314,11 +314,6 @@ function syncCrumbs(r, level) {
 // ---- Start ----
 
 async function main() {
-  // The project's colours (the viewer holds none); drawing waits for them.
-  await new Promise((done) => {
-    const link = el("link", { rel: "stylesheet", href: `repo/${STYLES}`, onload: done, onerror: done });
-    document.head.append(link);
-  });
   ({ roots: navLevels, levels } = await loadLevelPages(fetchRepoFile, MAP_DIR));
   if (location.hash.startsWith("#doc/") && !history.state) history.replaceState(stateNow(), "");
   root.replaceChildren(...buildChrome(), host);

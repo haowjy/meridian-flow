@@ -11,7 +11,7 @@ import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readImports, under } from "./imports.mjs";
 import { item, JOURNEY_KEYS, linksOf, loadLevelPages, MAP_KEYS, NODE_KINDS, parsePage, pathsOf, resolveHref, resolveParticipant, slug, unitOf, withoutFences } from "./js/pages.js";
-import { blocks, expectedTokens, MIRRORED } from "./tokens.mjs";
+import { readTokens } from "./tokens.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const configFile = resolve(process.argv[2] ?? "");
@@ -408,39 +408,19 @@ function stronglyConnected(adjacency) {
   return result;
 }
 
-// ---- Tokens ----
+// ---- Colours ----
 
-const expected = config.tokens ? expectedTokens(repo, config.tokens) : null;
-const mirror = blocks(readFileSync(join(repo, config.styles), "utf8"));
-const stylesName = config.styles;
-for (const [selector, values] of [
-  [':root, [data-theme="light"]', expected?.light],
-  [':root:not([data-theme="light"])', expected?.dark],
-  [':root[data-theme="dark"]', expected?.dark],
-]) {
-  const props = mirror.get(selector);
-  if (!props) {
-    fail(stylesName, `has no ${selector} block.`);
-    continue;
-  }
-  for (const name of MIRRORED) {
-    if (props[name] === undefined) fail(stylesName, `${selector} lacks --${name}.`);
-    else if (values && props[name] !== values[name])
-      fail(stylesName, `${selector} --${name} is ${props[name]}; the token source says ${values[name]}.`);
-  }
-  for (const name of Object.keys(props))
-    if (!MIRRORED.includes(name)) fail(stylesName, `${selector} sets --${name}, which tokens.mjs doesn't list.`);
-}
-
-// Only the project's styles file may hold a colour; the page sheet uses its variables.
-const defined = new Set([...mirror.values()].flatMap((props) => Object.keys(props)));
+// Only the token files hold a colour; the page sheet uses their variables and roles built from them.
+const tokens = readTokens(repo, config.tokens);
+for (const block of tokens.missing) fail("tokens", `${block}: no such block.`);
 {
+  const defined = new Set(tokens.names);
   const css = readFileSync(join(here, "styles/page.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   for (const match of css.matchAll(/(--[\w-]+)\s*:/g)) defined.add(match[1].slice(2));
   const raw = css.match(/#[0-9a-fA-F]{3,8}\b|\b(?:oklch|oklab|rgba?|hsla?|hwb|lab|lch)\(/g);
-  if (raw) fail("styles/page.css", `holds a raw colour (${raw[0]}): use a variable from the styles file.`);
+  if (raw) fail("styles/page.css", `holds a raw colour (${raw[0]}): use a variable from the token files.`);
   for (const match of css.matchAll(/var\(\s*--([\w-]+)\s*(,)?/g))
-    if (!defined.has(match[1]) && !match[2]) fail("styles/page.css", `uses --${match[1]}, which no stylesheet defines.`);
+    if (!defined.has(match[1]) && !match[2]) fail("styles/page.css", `uses --${match[1]}, which neither the token files nor page.css define.`);
 }
 
 if (problems.length) {

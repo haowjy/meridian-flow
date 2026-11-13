@@ -10,7 +10,7 @@ export default {
   repo: "example/toy", // "on GitHub" links point at a repository that doesn't exist
   branch: "main",
   pagesDir: "architecture",
-  styles: "architecture/styles/tokens.css", // a copy of the engine's palette; no `tokens` key, so nothing keeps it in step with a source
+  tokens: { files: [{ file: "tokens.css", blocks: [":root", '[data-theme="dark"]'] }], dark: { attribute: "data-theme", value: "dark" } },
   services: { glob: "services/*", page: "system.md" },
   coverage: [{ glob: "services/*" }, { glob: "services/api/src/*" }],
   imports: { workspaces: ["services/*"], aliases: [] },

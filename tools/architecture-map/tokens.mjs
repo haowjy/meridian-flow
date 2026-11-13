@@ -1,77 +1,55 @@
 /**
- * The design tokens the page mirrors, resolved from the project's token source (the only source of
- * these values; the config's `tokens` says where). A source may keep its light palette in a block
- * a browser ignores (Tailwind's `@theme`), so the page carries a mirror (the config's `styles`)
- * and `check.mjs` fails when a value there differs.
+ * The viewer's colours, read from the project's design token files (the config's `tokens.files`)
+ * each time they are asked for: the custom property declarations of the blocks the config names,
+ * as one stylesheet. A Tailwind `@theme` block, which a browser ignores, becomes `:root`.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** The tokens page.css uses; add one here, then copy its resolved value into the project's styles file. */
-export const MIRRORED = [
-  "color-background",
-  "color-foreground",
-  "color-card",
-  "color-card-foreground",
-  "color-muted",
-  "color-muted-foreground",
-  "color-accent",
-  "color-secondary",
-  "color-border",
-  "color-border-subtle",
-  "color-ring",
-  "color-primary",
-  "color-primary-foreground",
-  "color-jade-text",
-  "color-destructive",
-  "color-destructive-tint",
-  "color-ink-subtle",
-  "color-warning-bg",
-  "color-warning-foreground",
-  "color-code-surface",
-  "color-code-foreground",
-  "color-code-border",
-  "shadow-card",
-  "font-sans",
-];
-
-/** Custom properties by block, from a CSS file: selector text (whitespace-collapsed) to {name without `--`: value}. */
-export function blocks(css) {
-  const out = new Map();
+/** The top-level blocks of a stylesheet, comments removed: [{ selector, body }]. */
+function topLevelBlocks(css) {
   const text = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  for (const match of text.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    const selector = match[1].replace(/\s+/g, " ").trim();
-    const props = {};
-    for (const decl of match[2].matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) props[decl[1].slice(2)] = decl[2].replace(/\s+/g, " ").trim();
-    out.set(selector, { ...out.get(selector), ...props });
+  const blocks = [];
+  let depth = 0;
+  let start = 0;
+  let selector = "";
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === "{") {
+      if (depth++ === 0) {
+        selector = text.slice(start, i).replace(/\s+/g, " ").trim();
+        start = i + 1;
+      }
+    } else if (c === "}") {
+      if (--depth === 0) {
+        blocks.push({ selector, body: text.slice(start, i) });
+        start = i + 1;
+      }
+    } else if (c === ";" && depth === 0) start = i + 1;
   }
-  return out;
-}
-
-/** Custom properties declared in the blocks of `css` whose selector satisfies `wanted`. */
-function declarations(css, wanted) {
-  const props = {};
-  for (const [selector, declared] of blocks(css)) if (wanted(selector)) Object.assign(props, declared);
-  return props;
-}
-
-/** `var(--x)` replaced by its value in `scope`, until none is left. */
-function resolve(value, scope) {
-  let out = value;
-  for (let i = 0; i < 8 && out.includes("var(--"); i++)
-    out = out.replace(/var\(--([\w-]+)\)/g, (whole, name) => scope[name] ?? whole);
-  return out;
+  return blocks;
 }
 
 /**
- * { light, dark }: each the mirrored tokens by name (without `--`), resolved.
- * `source.light` = { file, selectors } (blocks whose selector is one of them);
- * `source.dark` = { file, selectorPrefix } (blocks whose selector starts with it), overriding light.
+ * The token stylesheet for `tokens` ({ files: [{ file, blocks }] }), read from the repo at `root`.
+ * A block is taken when one of the selectors in its list is in `blocks` (`@theme` names the Tailwind block).
+ * Returns { css, names: the property names without `--`, missing: "file: selector" for each listed block that isn't there }.
  */
-export function expectedTokens(repo, source) {
-  const read = (file) => readFileSync(join(repo, file), "utf8");
-  const light = declarations(read(source.light.file), (s) => source.light.selectors.includes(s));
-  const dark = { ...light, ...declarations(read(source.dark.file), (s) => s.startsWith(source.dark.selectorPrefix)) };
-  const pick = (scope) => Object.fromEntries(MIRRORED.map((name) => [name, resolve(scope[name] ?? "", scope)]));
-  return { light: pick(light), dark: pick(dark) };
+export function readTokens(root, tokens) {
+  const rules = [];
+  const names = new Set();
+  const missing = [];
+  for (const { file, blocks: wanted } of tokens.files) {
+    const found = new Set();
+    for (const { selector, body } of topLevelBlocks(readFileSync(join(root, file), "utf8"))) {
+      const hit = wanted.find((w) => selector.split(",").some((s) => s.trim() === w));
+      if (!hit) continue;
+      found.add(hit);
+      const declarations = [...body.replace(/\{[^{}]*\}/g, "").matchAll(/(--[\w-]+)\s*:\s*([^;{}]+);/g)];
+      for (const [, name] of declarations) names.add(name.slice(2));
+      rules.push(`${hit === "@theme" ? ":root" : selector} {\n${declarations.map(([, name, value]) => `  ${name}: ${value.replace(/\s+/g, " ").trim()};`).join("\n")}\n}`);
+    }
+    for (const w of wanted) if (!found.has(w)) missing.push(`${file}: ${w}`);
+  }
+  return { css: `/* Built from ${tokens.files.map((f) => f.file).join(", ")}. */\n${rules.join("\n\n")}\n`, names, missing };
 }

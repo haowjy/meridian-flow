@@ -1,6 +1,7 @@
 /*
- * The viewers' layout and the diagram's look. Colours come only from the variables in
- * styles/tokens.css; check.mjs fails on a raw colour or a variable nothing defines.
+ * The viewers' layout and the diagram's look. Colours come only from the project's token files
+ * (served as tokens.css) and the --map-* roles below, built from them; check.mjs fails on a raw
+ * colour or a variable nothing defines.
  */
 
 *,
@@ -40,12 +41,17 @@ button {
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-ring);
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
 :root {
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* Declared on <html>, where the theme attribute sits, so they follow the theme. */
+  --map-muted: color-mix(in oklab, var(--color-foreground) 6%, var(--color-background));
+  --map-ink-subtle: color-mix(in oklab, var(--color-muted-foreground) 85%, var(--color-background));
+  --map-warning: var(--color-syntax-string);
+  --map-warning-tint: color-mix(in oklab, var(--map-warning) 7%, var(--color-card));
 }
 
 /* ---- Page frame ---- */
@@ -73,7 +79,7 @@ button {
 }
 
 .segmented button[aria-pressed="true"] {
-  background: var(--color-muted);
+  background: var(--map-muted);
   color: var(--color-foreground);
   font-weight: 600;
 }
@@ -117,7 +123,7 @@ button {
 
 .levels a[aria-current],
 .bar-link[aria-current] {
-  background: var(--color-muted);
+  background: var(--map-muted);
   color: var(--color-foreground);
   font-weight: 600;
 }
@@ -153,7 +159,7 @@ button {
 
 .text-button:hover,
 .icon-button:hover {
-  background: var(--color-accent);
+  background: var(--map-muted);
   color: var(--color-foreground);
 }
 
@@ -328,14 +334,14 @@ button {
 
 .kind-person,
 .node.person {
-  --fill: color-mix(in oklab, var(--color-warning-foreground) 14%, var(--color-card));
-  --stroke: var(--color-warning-foreground);
+  --fill: color-mix(in oklab, var(--map-warning) 14%, var(--color-card));
+  --stroke: var(--map-warning);
 }
 
 .kind-client,
 .node.client {
-  --fill: color-mix(in oklab, var(--color-warning-foreground) 8%, var(--color-card));
-  --stroke: var(--color-warning-foreground);
+  --fill: color-mix(in oklab, var(--map-warning) 8%, var(--color-card));
+  --stroke: var(--map-warning);
   --dash: 5 3;
 }
 
@@ -347,21 +353,21 @@ button {
 
 .kind-store,
 .node.store {
-  --fill: color-mix(in oklab, var(--color-ink-subtle) 24%, var(--color-card));
-  --stroke: var(--color-ink-subtle);
+  --fill: color-mix(in oklab, var(--map-ink-subtle) 24%, var(--color-card));
+  --stroke: var(--map-ink-subtle);
 }
 
 .kind-external,
 .node.external {
   --fill: var(--color-card);
-  --stroke: var(--color-ink-subtle);
+  --stroke: var(--map-ink-subtle);
   --dash: 5 3;
 }
 
 .kind-files,
 .node.files {
-  --fill: color-mix(in oklab, var(--color-ink-subtle) 12%, var(--color-card));
-  --stroke: var(--color-ink-subtle);
+  --fill: color-mix(in oklab, var(--map-ink-subtle) 12%, var(--color-card));
+  --stroke: var(--map-ink-subtle);
   --dash: 2 2;
 }
 
@@ -380,7 +386,7 @@ button {
 
 .kind-module,
 .node.module {
-  --fill: var(--color-muted);
+  --fill: var(--map-muted);
   --stroke: var(--color-muted-foreground);
 }
 
@@ -409,7 +415,7 @@ button {
   height: 12px;
   border-radius: 3px;
   background: var(--fill, var(--color-card));
-  border: 1.5px solid var(--stroke, var(--color-ink-subtle));
+  border: 1.5px solid var(--stroke, var(--map-ink-subtle));
   border-style: var(--border-style, solid);
 }
 
@@ -430,7 +436,7 @@ button {
   min-width: 120px;
   max-width: 176px;
   padding: 8px 12px 9px;
-  border: 1.5px solid var(--stroke, var(--color-ink-subtle));
+  border: 1.5px solid var(--stroke, var(--map-ink-subtle));
   border-style: var(--border-style, solid);
   border-radius: 8px;
   background: var(--fill, var(--color-card));
@@ -458,8 +464,8 @@ button {
 }
 
 .card.is-selected {
-  border-color: var(--color-ring);
-  box-shadow: 0 0 0 3px var(--color-ring);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary);
 }
 
 .card.is-dim,
@@ -470,17 +476,17 @@ button {
 .note-card {
   max-width: 220px;
   padding: 7px 10px;
-  border: 1px dashed var(--color-warning-foreground);
+  border: 1px dashed var(--map-warning);
   border-radius: 4px;
-  background: var(--color-warning-bg);
-  color: var(--color-warning-foreground);
+  background: var(--map-warning-tint);
+  color: var(--map-warning);
   font-size: 12.5px;
   line-height: 1.35;
   cursor: grab;
 }
 
 .react-flow__node:hover .card:not(.is-selected) {
-  border-color: var(--color-ring);
+  border-color: var(--color-primary);
 }
 
 .react-flow__handle {
@@ -499,7 +505,7 @@ button {
 }
 
 .react-flow__edge.note-link .react-flow__edge-path {
-  stroke: var(--color-warning-foreground);
+  stroke: var(--map-warning);
   stroke-width: 1.25px;
   stroke-dasharray: 3 4;
 }
@@ -537,7 +543,7 @@ button {
 
 .react-flow__controls {
   --xy-controls-button-background-color: var(--color-card);
-  --xy-controls-button-background-color-hover: var(--color-accent);
+  --xy-controls-button-background-color-hover: var(--map-muted);
   --xy-controls-button-color: var(--color-foreground);
   --xy-controls-button-border-color: var(--color-border-subtle);
   box-shadow: none;
@@ -653,8 +659,8 @@ button {
   margin: 12px 0;
   padding: 8px 10px;
   border-radius: 6px;
-  background: var(--color-warning-bg);
-  color: var(--color-warning-foreground);
+  background: var(--map-warning-tint);
+  color: var(--map-warning);
   font-size: 13px;
 }
 
@@ -703,15 +709,15 @@ button {
 }
 
 .step.is-selected {
-  border-color: var(--color-ring);
-  box-shadow: 0 0 0 2px var(--color-ring);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary);
 }
 
 .step-no {
   position: absolute;
   top: 10px;
   right: 12px;
-  color: var(--color-ink-subtle);
+  color: var(--map-ink-subtle);
   font-size: 12px;
 }
 
@@ -737,7 +743,7 @@ button {
   aspect-ratio: 16 / 10;
   border: 1px dashed var(--color-border);
   border-radius: 6px;
-  background: var(--color-muted);
+  background: var(--map-muted);
 }
 
 /* ---- A .context page over the whole window ---- */
@@ -788,7 +794,7 @@ button {
 .md {
   max-width: 1200px;
   margin: 0 auto;
-  color: var(--color-card-foreground);
+  color: var(--color-foreground);
   overflow-wrap: break-word;
 }
 
@@ -816,17 +822,17 @@ button {
 .md :not(pre) > code {
   padding: 1px 4px;
   border-radius: 4px;
-  background: var(--color-code-surface);
-  color: var(--color-code-foreground);
+  background: var(--map-muted);
+  color: var(--color-foreground);
 }
 
 .md pre {
   padding: 10px 12px;
   overflow-x: auto;
-  border: 1px solid var(--color-code-border);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--color-code-surface);
-  color: var(--color-code-foreground);
+  background: var(--map-muted);
+  color: var(--color-foreground);
 }
 
 .md blockquote {
@@ -852,7 +858,7 @@ button {
 }
 
 .md th {
-  background: var(--color-muted);
+  background: var(--map-muted);
 }
 
 .md-diagram {
@@ -884,7 +890,7 @@ button {
 
 .md-diagram g.node:focus-visible,
 .md-diagram g[role="button"]:focus-visible {
-  outline: 2px solid var(--color-ring);
+  outline: 2px solid var(--color-primary);
 }
 
 .md-diagram.is-error {
@@ -972,10 +978,10 @@ button {
 .code {
   min-width: max-content;
   padding: 8px 0;
-  border: 1px solid var(--color-code-border);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--color-code-surface);
-  color: var(--color-code-foreground);
+  background: var(--map-muted);
+  color: var(--color-foreground);
   font-family: var(--mono);
   font-size: 12.5px;
   line-height: 1.55;
@@ -999,5 +1005,5 @@ button {
 }
 
 .code .line.is-target {
-  background: var(--color-warning-bg);
+  background: var(--map-warning-tint);
 }

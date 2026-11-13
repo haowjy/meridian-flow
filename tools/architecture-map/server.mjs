@@ -3,6 +3,7 @@
  *   /architecture/                  index.html
  *   /architecture/<engine file>     js/, styles/page.css, vendor/ of this directory
  *   /architecture/map.config.mjs    the project's config file, whatever it is called on disk
+ *   /architecture/tokens.css        the project's colours, built from its token files (tokens.mjs)
  *   /architecture/repo/<path>       a repo file as text (or an image), or a directory as JSON
  * Repo paths are served only if git tracks them (or, for the pages directory, lists them as
  * new and not ignored), so `.env`, ignored files and `node_modules` are never served; a symlink
@@ -13,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { globRegExp } from "./js/pages.js";
+import { readTokens } from "./tokens.mjs";
 
 export const ENTRY = "/architecture/";
 const ENGINE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -92,6 +94,16 @@ export async function createArchitectureServer(configFile) {
     return { status: 200, headers: { ...hardened, "content-type": type, "content-security-policy": "sandbox" }, file: real };
   }
 
+  function tokenSheet() {
+    let css;
+    try {
+      ({ css } = readTokens(root, config.tokens));
+    } catch (error) {
+      return { status: 500, headers: { "content-type": "text/plain; charset=utf-8" }, body: `The token files didn't read: ${error.message}` };
+    }
+    return { status: 200, headers: { ...hardened, "content-type": ENGINE_TYPES[".css"] }, body: css };
+  }
+
   return function handle(rawPath) {
     let pathname;
     try {
@@ -106,6 +118,7 @@ export async function createArchitectureServer(configFile) {
     const rest = pathname.slice(ENTRY.length - 1);
     if (rest === "/") return engineFile("/index.html");
     if (rest === "/map.config.mjs") return { status: 200, headers: { ...hardened, "content-type": ENGINE_TYPES[".mjs"] }, file: path.resolve(configFile) };
+    if (rest === "/tokens.css") return tokenSheet();
     if (rest.startsWith("/repo/")) {
       const repoPath = rest.slice("/repo/".length).replace(/\/$/, "");
       return repoPath ? repoResponse(repoPath) : missing;

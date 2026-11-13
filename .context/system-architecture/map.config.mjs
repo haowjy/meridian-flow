@@ -19,13 +19,14 @@ export default {
   // flows/, journeys/ and dependencies.md.
   pagesDir: ".context/system-architecture",
 
-  // The viewer's colour variables: a copy of the design tokens, because the light palette lives in
-  // a Tailwind @theme block a browser ignores. `tokens` says where the values come from, so the
-  // check can keep the copy equal to them.
-  styles: ".context/system-architecture/styles/tokens.css",
+  // The viewer's colours: the custom properties these blocks declare, read from the design tokens
+  // each time the viewer loads. The viewer sets `dark` on <html> for the dark theme.
   tokens: {
-    light: { file: "packages/design-tokens/src/ink-jade.css", selectors: [":root", "@theme"] },
-    dark: { file: "packages/design-tokens/src/themes.css", selectorPrefix: ':root[data-ui-theme="dark"]' },
+    files: [
+      { file: "packages/design-tokens/src/ink-jade.css", blocks: [":root", "@theme"] },
+      { file: "packages/design-tokens/src/themes.css", blocks: ['[data-ui-theme="dark"]'] },
+    ],
+    dark: { attribute: "data-ui-theme", value: "dark" },
   },
 
   // Each directory matching `glob` is a service: a box on `page` whose Paths are inside it and

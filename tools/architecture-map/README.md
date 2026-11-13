@@ -57,8 +57,7 @@ functions, no imports. Paths are repo-relative; a glob's `*` is one path segment
 | `root` | the repository root, relative to the config file |
 | `repo`, `branch` | "on GitHub" links: `https://github.com/<repo>/blob/<branch>/<path>` |
 | `pagesDir` | the directory with README.md, the level pages, `journeys/`, `flows/` and the dependencies page |
-| `styles` | the project's CSS file defining the colour variables the viewer uses (see `MIRRORED` in `tokens.mjs`) |
-| `tokens` | optional: where the colours come from, so the check keeps `styles` equal. `light: { file, selectors }` (blocks whose selector is listed), `dark: { file, selectorPrefix }` (blocks that override light) |
+| `tokens` | the colours. `files: [{ file, blocks }]`: the custom properties of each listed block (a block is taken when one selector in its list is in `blocks`; `@theme` takes a Tailwind `@theme` block, served as `:root`). `dark: { attribute, value }`: what the viewer sets on `<html>` for the dark theme, which a dark block's selector must match. The names `styles/page.css` uses must be among them: the check names any missing, and `example/tokens.css` defines just those |
 | `services` | optional: `{ glob, page }`. Each directory matching `glob` needs a box on `page` whose Paths are inside it and whose Opens is the page named after the directory |
 | `coverage` | `[{ glob, needs? }]`: each directory matching `glob` (that holds `needs`, if given) must lie under some box's Paths |
 | `imports` | `{ workspaces, aliases }`: `workspaces` are globs of package directories, resolved by their `package.json` name; `aliases` are `{ prefix, within, to }` |
@@ -70,7 +69,8 @@ functions, no imports. Paths are repo-relative; a glob's `*` is one path segment
 
 ## What the viewer serves
 
-Under `/architecture/`: the engine's own files, the config, and `repo/<path>`: any file git tracks, as text
+Under `/architecture/`: the engine's own files, the config, `tokens.css` (the `tokens` blocks, read from
+disk on each request), and `repo/<path>`: any file git tracks, as text
 (images as images), or a directory as the tracked entries under it. It reads the working-tree copy, so
 uncommitted edits show; untracked files are refused except new unignored ones under `pagesDir`. Ignored
 files (`.env`, `node_modules`), anything with `..` in it, and binary files are refused. `index.html` is sent
@@ -86,5 +86,5 @@ Grammar (a Mermaid line the format doesn't allow, a box without its section, num
 a note linked to nothing); every path, link and `#id` resolving; every `coverage` directory under some box;
 every service with its page; every journey step's map link and flow reached; flow participants being box ids;
 state machine pages indexed and on a box; dependency rows matching the breaks computed from value imports
-(a break with no row, a row with no break, a wrong example file); the colour mirror equal to its source and the
-viewer's stylesheet free of raw colours. It doesn't catch whether a box's words or an arrow is still true.
+(a break with no row, a row with no break, a wrong example file); every `tokens` block present, and the
+viewer's stylesheet free of raw colours and of variables the token files don't define. It doesn't catch whether a box's words or an arrow is still true.

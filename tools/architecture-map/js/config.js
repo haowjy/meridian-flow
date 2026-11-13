@@ -10,7 +10,8 @@ export const MAP_DIR = config.pagesDir;
 export const NAV = config.nav ?? {};
 export const STATE_MACHINES_INDEX = config.stateMachines?.index ?? null;
 export const DEPENDENCIES_PAGE = config.nav?.dependencies ? `${MAP_DIR}/${config.dependencies.page}` : null;
-export const STYLES = config.styles;
+/** The attribute and value the token files put the dark theme under. */
+export const DARK = config.tokens.dark;
 
 /** The key the viewer files a browser setting under, so two maps on one origin don't share settings. */
 export const storageKey = (name) => `architecture-map:${config.repo}:${name}`;

@@ -1,5 +1,5 @@
 /* What both viewers share: DOM helper, theme, page fetching, and the top bar. */
-import { storageKey } from "./config.js";
+import { DARK, storageKey } from "./config.js";
 import { parsePage } from "./pages.js";
 
 /** Where the dev server serves the repo's files, relative to index.html. */
@@ -54,24 +54,36 @@ export const fetchPage = async (path) => parsePage(await fetchRepoFile(path));
 const THEME_KEY = storageKey("theme");
 const themeListeners = new Set();
 const systemDark = matchMedia("(prefers-color-scheme: dark)");
-export const currentTheme = () => document.documentElement.dataset.theme ?? (systemDark.matches ? "dark" : "light");
+let pinned = null;
+export const currentTheme = () => pinned ?? (systemDark.matches ? "dark" : "light");
+
+/** Puts <html> in the theme: the token files' dark attribute on or off. */
+function applyTheme() {
+  const html = document.documentElement;
+  const dark = currentTheme() === "dark";
+  if (dark) html.setAttribute(DARK.attribute, DARK.value);
+  else html.removeAttribute(DARK.attribute);
+  html.style.colorScheme = dark ? "dark" : "light";
+  themeListeners.forEach((cb) => cb());
+}
 
 try {
   const saved = localStorage.getItem(THEME_KEY);
-  if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
+  if (saved === "light" || saved === "dark") pinned = saved;
 } catch {
   // No storage: follow the system.
 }
-systemDark.addEventListener("change", () => themeListeners.forEach((cb) => cb()));
+applyTheme();
+systemDark.addEventListener("change", applyTheme);
 
 export const onThemeChange = (cb) => themeListeners.add(cb);
 
 export function pinTheme(theme) {
-  document.documentElement.dataset.theme = theme;
+  pinned = theme;
   try {
     localStorage.setItem(THEME_KEY, theme);
   } catch {
     // Not remembered; the pin still holds for this visit.
   }
-  themeListeners.forEach((cb) => cb());
+  applyTheme();
 }

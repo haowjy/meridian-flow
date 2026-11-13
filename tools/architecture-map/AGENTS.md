@@ -46,9 +46,13 @@ names: nothing here outside comments may name the project it is used in, its dir
 - The nav is the README's `## The pages` list plus the entries the config's `nav` names. Every other
   level page is reached by a box's `Opens`; `loadLevelPages` in `pages.js` builds the set and each page's
   breadcrumb trail, and the viewer and `check.mjs` both call it.
-- `styles/page.css` holds no colour: it uses the variables the project's styles file defines, and
-  `check.mjs` fails a raw colour here. To use another variable, add its name to `MIRRORED` in `tokens.mjs`;
-  every project's styles file then needs it.
+- `styles/page.css` holds no colour: it uses the project's token variables, served at `tokens.css` and
+  built by `tokens.mjs` from the token files the config names, and its own `--map-*` roles, built from
+  them. `check.mjs` fails a raw colour here or a variable neither defines. Where the token files have no
+  name for what the page needs, add a `--map-*` role built from names they have.
+- The theme toggle sets the config's `tokens.dark` attribute on `<html>`; with no choice pinned it
+  follows the system. Read colours from `<html>` (`markdown.js` does, for Mermaid), not from an element
+  lower down, so the `--map-*` roles have resolved in the current theme.
 - Third-party scripts are pinned with integrity hashes: React, ReactDOM, `@xyflow/react` and
   `marked` in `index.html`, Mermaid in `js/markdown.js`. To bump one, fetch the new file and
   recompute its `sha384`. React stays on 18 (19 has no UMD build); `@xyflow/react`'s UMD build wants a

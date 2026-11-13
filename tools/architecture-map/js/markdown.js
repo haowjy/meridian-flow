@@ -29,9 +29,14 @@ function loadMermaid() {
   return mermaidLoad;
 }
 
-/** A CSS colour as "rgb(r, g, b)", which Mermaid's colour maths parses (it can't read oklch). */
-function toRgb(css) {
+/**
+ * A CSS colour as "rgb(r, g, b)", which Mermaid's colour maths parses (it can't read oklch or
+ * color-mix), laid over `ground` so a translucent colour comes out as it shows on the page.
+ */
+function toRgb(css, ground) {
   const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+  ctx.fillStyle = ground;
+  ctx.fillRect(0, 0, 1, 1);
   ctx.fillStyle = css;
   ctx.fillRect(0, 0, 1, 1);
   const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
@@ -44,29 +49,30 @@ function toRgb(css) {
  */
 function mermaidConfig(look = {}) {
   const style = getComputedStyle(document.documentElement);
-  const color = (token) => toRgb(style.getPropertyValue(`--color-${token}`).trim());
+  const ground = style.getPropertyValue("--color-background").trim();
+  const color = (name) => toRgb(style.getPropertyValue(name).trim(), ground);
   return {
     startOnLoad: false,
     securityLevel: "strict",
     theme: "base",
     fontFamily: style.getPropertyValue("--font-sans"),
     themeVariables: {
-      background: color("card"),
-      mainBkg: color("background"),
-      primaryColor: color("background"),
-      primaryTextColor: color("foreground"),
-      primaryBorderColor: color("ink-subtle"),
-      secondaryColor: color("muted"),
-      tertiaryColor: color("muted"),
-      lineColor: color("muted-foreground"),
-      textColor: color("foreground"),
-      noteBkgColor: color("warning-bg"),
-      noteTextColor: color("warning-foreground"),
-      noteBorderColor: color("warning-foreground"),
-      edgeLabelBackground: color("card"),
-      clusterBkg: color("muted"),
-      clusterBorder: color("border"),
-      titleColor: color("foreground"),
+      background: color("--color-card"),
+      mainBkg: color("--color-background"),
+      primaryColor: color("--color-background"),
+      primaryTextColor: color("--color-foreground"),
+      primaryBorderColor: color("--map-ink-subtle"),
+      secondaryColor: color("--map-muted"),
+      tertiaryColor: color("--map-muted"),
+      lineColor: color("--color-muted-foreground"),
+      textColor: color("--color-foreground"),
+      noteBkgColor: color("--map-warning-tint"),
+      noteTextColor: color("--map-warning"),
+      noteBorderColor: color("--map-warning"),
+      edgeLabelBackground: color("--color-card"),
+      clusterBkg: color("--map-muted"),
+      clusterBorder: color("--color-border"),
+      titleColor: color("--color-foreground"),
       ...(look.fontSize && { fontSize: `${look.fontSize}px` }),
     },
     themeCSS: `.nodeLabel small { display: block; margin-top: 3px; font-size: 0.68em; opacity: 0.8; }${look.edgeFontSize ? ` .edgeLabel, .edgeLabel p, .edgeLabel span { font-size: ${look.edgeFontSize}px; }` : ""}`,

@@ -4,11 +4,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <!--
   A viewer over a project's Markdown pages (README.md here says how to adopt it). It holds no content
-  and no colours: the dev server serves the project's map.config.mjs beside this page, and the pages
-  and the colour variables (the config's `styles`) come from the project's files at repo/<path>.
+  and no colours: the dev server serves the project's map.config.mjs beside this page, the pages at
+  repo/<path>, and the colour variables at tokens.css, built from the project's token files.
   Open it through the dev server; from disk it can't read the pages. The server sends a Content-Security-Policy with it (server.mjs): scripts only from this server and the CDN, so a script inside rendered Markdown never runs. Every script is pinned here with its integrity hash, except Mermaid (js/markdown.js), which loads with the first diagram. React stays on 18: 19 ships no UMD build, and @xyflow/react's UMD build needs React and ReactDOM as globals; js/jsx-runtime.js gives it the jsx runtime it expects.
 -->
 <link rel="stylesheet" href="vendor/xyflow-react-12.12.0-base.css" />
+<link rel="stylesheet" href="tokens.css" />
 <link rel="stylesheet" href="styles/page.css" />
 
 <!-- Module scripts don't run from file://, so this note is what a page opened from disk shows. -->
