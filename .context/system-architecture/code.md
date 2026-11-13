@@ -1,7 +1,7 @@
 # Code
 
-The apps, and the packages under them. An arrow means "calls code from" (it is not a flow, so
-nothing is numbered). No package imports an app, and `contracts`, `prosemirror-schema`, `yjs-inspect` and
+The apps, and the packages under them. An arrow means "calls code from". The page shows layers,
+not a path, so no arrow is numbered. No package imports an app, and `contracts`, `prosemirror-schema`, `yjs-inspect` and
 `design-tokens` import no workspace code. Where the code breaks its written rules is on
 [dependencies](dependencies.md). `./mf` lives in `tools/`, outside these layers: see
 [system](system.md#mf).

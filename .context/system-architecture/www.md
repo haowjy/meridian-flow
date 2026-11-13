@@ -1,6 +1,6 @@
 # www
 
-`apps/www/src`: the public landing site. A visitor's browser asks for the page (1), a route renders the landing page with the app's address (2), the page plays its scroll film in the browser (3), and its "Sign in" and "Start writing" links lead to the app (4). www never calls the app or the server. Back to the [system](system.md).
+`apps/www/src`: the public landing site. A visitor's browser asks for the page (1), a route renders the landing page with the app's address (2), the page plays its film, an animated story driven by scrolling (3), and its "Sign in" and "Start writing" links lead to the app (4). www never calls the app or the server. Back to the [system](system.md).
 
 ```mermaid
 flowchart LR
@@ -32,7 +32,7 @@ The one route, `/`, and the root document around it.
 
 The landing page: server-rendered markup that a script then plays as a film.
 
-React renders the markup, so the page reads without script. `film.ts` then writes that DOM frame by frame from the beats in `timeline.ts`; CSS owns placement.
+React renders the markup, so the page reads without script. `film.ts` then animates it frame by frame from the beats in `timeline.ts`; CSS decides where things sit.
 
 - Kind: feature
 - Paths: `apps/www/src/features/landing`
@@ -41,7 +41,7 @@ React renders the markup, so the page reads without script. `film.ts` then write
 
 ## chrome
 
-What every page shares.
+What surrounds the page.
 
 The error boundary, the not-found view, the base stylesheet and the SEO meta helper.
 
@@ -52,7 +52,7 @@ The error boundary, the not-found view, the base stylesheet and the SEO meta hel
 
 The visitor's browser tab.
 
-Plays the film and follows the links; there is no sign-in on this site.
+Plays the film and follows the links. This site has no sign-in.
 
 - Kind: context
 - See: [browser](system.md#browser)
