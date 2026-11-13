@@ -145,21 +145,19 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     if (!target.ok) return target;
 
     try {
-      await mkdir(path.dirname(target.value), { recursive: true });
-      await writeFile(target.value, bytes);
-      await writeFile(
-        this.metadataPath(target.value),
-        JSON.stringify(
-          {
-            key,
-            mimeType,
-            sizeBytes: bytes.byteLength,
-            updatedAt: this.now().toISOString(),
-          } satisfies LocalObjectMetadata,
-          null,
-          2,
-        ),
-      );
+      const tempData = await this.tempPath();
+      try {
+        await writeFile(tempData, bytes);
+        await this.commit(tempData, target.value, {
+          key,
+          mimeType,
+          sizeBytes: bytes.byteLength,
+          updatedAt: this.now().toISOString(),
+        });
+      } catch (error) {
+        await rm(tempData, { force: true });
+        throw error;
+      }
       return ok({ storageUrl: createObjectStorageUrl(key) });
     } catch (error) {
       return err("io_error", error instanceof Error ? error.message : "Failed to write object");

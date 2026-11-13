@@ -22,6 +22,7 @@ import {
   survivingDraftNotice,
 } from "@meridian/agent-edit/integration";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
+import type { ModelInfo } from "@meridian-flow/gateway";
 import { createCopyIdentityMap, remapCopiedBlocks } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
@@ -39,6 +40,7 @@ import {
 } from "../../domains/runtime/index.js";
 import { removedFileResult } from "../file-access-denial-copy.js";
 import { threadContainerTarget } from "../file-targets.js";
+import { readBinaryFile } from "./binary-read.js";
 import {
   binaryCopySelectionMessage,
   type CopiedSource,
@@ -287,7 +289,12 @@ export async function readTrackedDocument(
   deps: ToolWiringDeps,
   input: ReadToolInput,
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity" | "toolCallId">,
-  options: { expectedDocumentId?: string; recordingFrontier?: FrontierLookup } = {},
+  options: {
+    expectedDocumentId?: string;
+    recordingFrontier?: FrontierLookup;
+    /** Set by the `read` tool: a binary file is shown to this model rather than refused. */
+    binary?: { model: ModelInfo | undefined };
+  } = {},
 ): Promise<{
   output: AgentEditResultV1;
   revision: string | null;
@@ -300,6 +307,8 @@ export async function readTrackedDocument(
   if (isToolError(call)) return { ...writeToolError("read", call.output.message), revision: null };
   const address = await resolveDocumentAddress(call.context, "read", path);
   if (isToolError(address)) {
+    if (address.output.status === "binary_file" && options.binary)
+      return readBinaryFile(deps, call, input, options.binary.model);
     const removed =
       address.output.status === "document_not_found"
         ? await removedPathError(deps, call, "read", path, ctx.threadId)
@@ -368,6 +377,7 @@ export function createReadHandler(deps: ToolWiringDeps) {
     const parsed = input as ReadToolInput;
     if (isSkillsUri(parsed.path)) return readSkill(deps, ctx.threadId, parsed);
     const { revision: _revision, ...result } = await readTrackedDocument(deps, parsed, ctx, {
+      binary: { model: ctx.model },
       ...(ctx.frontiers ? { recordingFrontier: ctx.frontiers.recording } : {}),
     });
     return result;
