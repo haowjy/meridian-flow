@@ -113,13 +113,6 @@ character tombstones, cannot borrow another block's author. Only proven Undo del
 Discard base copies are excluded from that guard, so undoing Discard keeps the original
 byline.
 
-`originOf` and `deleterOf` are current-ID readers, not review-role readers: they never
-follow restoration links or consult Apply or Discard records. A receipt whose thread or
-turn was deleted answers unknown rather than inventing an author. Call them against the
-captured cut, since absence outside it is not proof of writer activity, and treat
-provenance and its range arrays as immutable: the readers share interval indexes by
-provenance object.
-
 `appliedParts` associates positive Apply evidence with immutable receipt ranges. Any
 overlap is evidence, not full receipt coverage, and absence of a change alone never proves
 Apply: the host combines this with lifecycle and membership to tell pending from discarded.
