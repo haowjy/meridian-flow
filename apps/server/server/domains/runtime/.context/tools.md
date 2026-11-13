@@ -169,7 +169,10 @@ Command details the model sees:
   picks the deleted one, so moving a blocker aside never makes `undo` pick the
   blocker.
 - A server-side read of a writer's @-mention calls the same read and renderer
-  as the `read` handler instead of building tool arguments.
+  as the `read` handler instead of building tool arguments. That includes a binary file: one
+  decision (`lib/model-tools/binary-read.ts`) gives the model the file as media, its extracted
+  text, or a description, for an @-mention and a `read` alike. The reader asks for the thread's
+  model lazily (`lazyThreadModel`), only when the file turns out to be binary.
 
 Tool policy does not gate model-call cost. `turn-accounting.ts` uses
 `CreditLedger` and `TreeBudget`; `costing/` resolves token rates and applies the

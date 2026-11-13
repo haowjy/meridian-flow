@@ -132,9 +132,10 @@ This is the server half of [a command that may have landed](../../../../../../.c
 
 ## Media inclusion
 
-Whether one piece of media is in the model request: a picture the writer attached, or a media
-part inside a tool result. The unit is `(blockId, partIndex)`: a picture is part 0 of its block,
-and a tool result's media are the indexes of its `content` parts. `loop/image-context.ts` decides;
+Whether one piece of media is in the model request: a picture the writer attached, a file the
+writer mentioned that its read showed as media, or a media part inside a tool result. The unit is
+`(blockId, partIndex)`: a picture or a mentioned file is part 0 of its block, and a tool result's
+media are the indexes of its `content` parts. `loop/image-context.ts` decides;
 decisions are saved per unit in `thread_image_inclusions`, one row per deciding turn, never
 updated.
 

@@ -5,6 +5,7 @@
  * not sent costs no link and no read.
  */
 
+import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { TurnId } from "@meridian/contracts/runtime";
 import type { Block, StoredMediaPart, Thread, ToolContentPart } from "@meridian/contracts/threads";
 import { type MediaPart, type ModelInfo, placeMedia } from "@meridian-flow/gateway";
@@ -77,13 +78,34 @@ function toolResultParts(block: Block): ToolContentPart[] | null {
 /** The gateway's part, held in a block's JSON content for the one request it is built for. */
 const asBlockContent = (value: unknown) => value as Block["content"];
 
-/** The media a block holds: a writer's picture is its one unit; a tool result's media are its parts. */
+/** The file a mention's read decided to show the model as media: the read result names it. */
+function referencedMedia(block: Block): StoredMediaPart | null {
+  const reference = referenceOccurrenceContent(block);
+  if (reference?.kind !== "document" || !reference.read) return null;
+  const file = (reference.read.result as { file?: Record<string, unknown> } | null)?.file;
+  return file?.given === "media"
+    ? {
+        type: "media",
+        ref: { documentId: file.documentId as string, uri: file.uri as string },
+        mediaType: file.mediaType as string,
+        sizeBytes: file.sizeBytes as number,
+        name: file.name as string,
+      }
+    : null;
+}
+
+/**
+ * The media a block holds: a writer's picture, or a file they mentioned that was shown as media,
+ * is its one unit; a tool result's media are its parts.
+ */
 export function mediaUnits(block: Block): MediaUnit[] {
   if (block.blockType === "image") {
     return isStoredMedia(block.content)
       ? [{ partIndex: 0, part: block.content, inToolResult: false }]
       : [];
   }
+  const mentioned = referencedMedia(block);
+  if (mentioned) return [{ partIndex: 0, part: mentioned, inToolResult: false }];
   return (toolResultParts(block) ?? []).flatMap((part, partIndex) =>
     isStoredMedia(part) ? [{ partIndex, part, inToolResult: true }] : [],
   );
@@ -118,8 +140,12 @@ function choose(
     : null;
 }
 
-export function describeMedia(part: StoredMediaPart, why: string): string {
-  return `[${part.name}: ${part.mediaType}, ${part.sizeBytes} bytes. ${why}]`;
+/**
+ * A media part as text. It starts on its own line because the text part before it is joined to
+ * it without a separator when the request is mapped.
+ */
+export function describeMedia(part: StoredMediaPart, why?: string): string {
+  return `\n[${part.name}: ${part.mediaType}, ${part.sizeBytes} bytes${why ? `. ${why}` : ""}]`;
 }
 
 /**
@@ -208,6 +234,7 @@ export async function projectImageBlocksForModel(input: {
         breaks.push({
           blockId: block.id,
           uri: unit.part.ref.uri,
+          mediaType: unit.part.mediaType,
           reason: unavailableReason(includedDecision),
         });
         diagnosedOmission = true;
@@ -249,6 +276,7 @@ export async function projectImageBlocksForModel(input: {
     breaks.push({
       blockId: entry.block.id,
       uri: entry.unit.part.ref.uri,
+      mediaType: entry.unit.part.mediaType,
       reason: "budget_eviction",
     });
   };
@@ -360,6 +388,19 @@ export async function projectImageBlocksForModel(input: {
       return description
         ? [{ ...block, blockType: "text", textContent: description, content: description }]
         : [];
+    }
+    const reference = referenceOccurrenceContent(block);
+    if (reference?.kind === "document" && reference.read) {
+      const key = mediaUnitKey(block.id, 0);
+      const shown = sent.get(key) ?? descriptions.get(key);
+      return [
+        shown === undefined
+          ? block
+          : {
+              ...block,
+              content: asBlockContent({ ...reference, read: { ...reference.read, media: shown } }),
+            },
+      ];
     }
     const parts = toolResultParts(block) ?? [];
     return [

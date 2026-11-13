@@ -25,6 +25,7 @@ export const SavedSubagentReportMetadataCodec = SystemUpdateMetadataCodec.extend
 export const ImageContextBreakCodec = z.object({
   blockId: z.string(),
   uri: z.string(),
+  mediaType: z.string(),
   reason: z.enum(["asset_unavailable", "asset_unavailable_first_sight", "budget_eviction"]),
 });
 

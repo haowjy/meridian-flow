@@ -125,6 +125,7 @@ else
         const breaks = excluded.map(({ block, uri }) => ({
           blockId: block.id,
           uri,
+          mediaType: "image/png",
           reason: "budget_eviction" as const,
         }));
         const notice = await rig.repos.turns.create({
@@ -139,8 +140,8 @@ else
           turnId: notice.id,
           blockType: "text",
           sequence: 0,
-          content: `<system_update>\nImage context changed.\n${breaks.map(({ uri }) => `Removed ${uri} to fit the image context budget.`).join("\n")}\n</system_update>`,
-          textContent: `<system_update>\nImage context changed.\n${breaks.map(({ uri }) => `Removed ${uri} to fit the image context budget.`).join("\n")}\n</system_update>`,
+          content: `<system_update>\nMedia context changed.\n${breaks.map(({ uri }) => `Removed the image ${uri} to fit the media budget.`).join("\n")}\n</system_update>`,
+          textContent: `<system_update>\nMedia context changed.\n${breaks.map(({ uri }) => `Removed the image ${uri} to fit the media budget.`).join("\n")}\n</system_update>`,
           status: "complete",
         });
         exclusionTurnId = notice.id;

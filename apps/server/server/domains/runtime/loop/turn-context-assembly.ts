@@ -180,6 +180,31 @@ interface PreparedNextTurnContext
   eventSink?: EventSink;
 }
 
+function modelOf(
+  gateway: AssembleNextTurnContextInput["gateway"],
+  agentContext: Awaited<ReturnType<typeof resolveAgentThreadTurnContext>>,
+): ModelInfo | undefined {
+  const modelId = agentContext.gatewayParams.model ?? gateway?.getDefaultModel?.();
+  return gateway?.listModels().find((model) => model.id === modelId);
+}
+
+/**
+ * The thread's model, looked up on first use: a reference read learns what it may show the
+ * model only once it meets a binary file, and most turns never do.
+ */
+export function lazyThreadModel(
+  input: Pick<
+    AssembleNextTurnContextInput,
+    "thread" | "agentRevisions" | "threads" | "toolRegistry" | "gateway" | "baseTools"
+  >,
+): () => Promise<ModelInfo | undefined> {
+  let model: Promise<ModelInfo | undefined> | undefined;
+  return () =>
+    (model ??= resolveAgentThreadTurnContext({ ...input, baseTools: input.baseTools }).then(
+      (context) => modelOf(input.gateway, context),
+    ));
+}
+
 /** Assemble the next model request context — shared by orchestrator and debug preview. */
 export async function assembleNextTurnContext(
   input: AssembleNextTurnContextInput,
@@ -235,9 +260,7 @@ export async function prepareNextTurnContext(
     }
   }
 
-  const gatewayParams = agentContext.gatewayParams;
-  const modelId = gatewayParams.model ?? input.gateway?.getDefaultModel?.();
-  const resolvedModel = input.gateway?.listModels().find((model) => model.id === modelId);
+  const resolvedModel = modelOf(input.gateway, agentContext);
   const activeHistory = await projectActiveHistoryWithBakes(
     input.turns,
     input.blocks,
@@ -303,7 +326,7 @@ export async function prepareNextTurnContext(
     promptCacheKey: cacheKeyOwner,
     eventSink: input.eventSink,
     policy: agentContext.policy,
-    gatewayParams,
+    gatewayParams: agentContext.gatewayParams,
     resolvedModel: resolvedModel ?? null,
     baked,
     compactionTriggerTokens: compactionTrigger?.thresholdTokens ?? null,

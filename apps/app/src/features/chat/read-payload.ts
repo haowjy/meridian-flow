@@ -11,6 +11,26 @@ const HEADING_LINE = /^(#{1,6})\s+(.*)$/;
 /** The agent-edit result schema; its block items already carry hash-free bodies. */
 const READ_RESULT_SCHEMA = "meridian.agent-edit.v1";
 
+/** How a read of a file that isn't a tracked document went: what the model was given of it. */
+export type ReadFile = {
+  documentId: string;
+  name: string;
+  given: "media" | "text" | "description";
+};
+
+export function readPayloadFile(result: JsonValue | null | undefined): ReadFile | null {
+  if (!isRecord(result) || result.schema !== READ_RESULT_SCHEMA) return null;
+  const file = result.file;
+  if (
+    !isRecord(file) ||
+    typeof file.documentId !== "string" ||
+    typeof file.name !== "string" ||
+    (file.given !== "media" && file.given !== "text" && file.given !== "description")
+  )
+    return null;
+  return { documentId: file.documentId, name: file.name, given: file.given };
+}
+
 /** The document body the read returned, with no block hashes; each block its own paragraph. */
 export function readPayloadMarkup(result: JsonValue | null | undefined): string {
   const bodies = documentBodies(result);

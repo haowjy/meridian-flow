@@ -16,6 +16,7 @@ import {
 import type { ReadReferenceOccurrence } from "@meridian/contracts/protocol";
 import { type ReferenceOccurrence, referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue } from "@meridian/contracts/threads";
+import type { ModelInfo } from "@meridian-flow/gateway";
 import type { ShownLinkShowing, ShownLinkStore } from "../ports/shown-links.js";
 import {
   type DocumentTextTreatment,
@@ -38,6 +39,8 @@ export interface ReferenceReader {
       input?: ReadToolInput;
       /** The read records its frontier, chained from this lookup. */
       recordingFrontier?: FrontierLookup;
+      /** The thread's model, asked for only when the file is binary and what to show depends on it. */
+      model?: () => Promise<ModelInfo | undefined>;
     },
   ): Promise<ReferenceRead & { evidence?: ResultEvidence }>;
 }
@@ -99,18 +102,15 @@ export async function loadReferenceReads(input: {
   reader: ReferenceReader;
   signal?: AbortSignal;
   recordingFrontier?: FrontierLookup;
+  model?: () => Promise<ModelInfo | undefined>;
 }): Promise<LoadedReferenceReads> {
+  // A picture the writer attached is already shown as media; its mention reads nothing more.
   const images = new Set(
     input.blocks
       .filter((block) => block.turnId === input.userTurnId && block.blockType === "image")
       .flatMap((block) => {
-        const content = block.content;
-        return content &&
-          typeof content === "object" &&
-          !Array.isArray(content) &&
-          typeof content.documentId === "string"
-          ? [content.documentId]
-          : [];
+        const content = block.content as { ref?: { documentId?: unknown } } | null;
+        return typeof content?.ref?.documentId === "string" ? [content.ref.documentId] : [];
       }),
   );
   const reads = new Map<string, ReferenceRead & { frontier?: ObservationFrontier }>();
@@ -130,6 +130,7 @@ export async function loadReferenceReads(input: {
         turnId: input.assistantTurnId,
         ...(input.signal ? { signal: input.signal } : {}),
         ...(input.recordingFrontier ? { recordingFrontier: input.recordingFrontier } : {}),
+        ...(input.model ? { model: input.model } : {}),
       });
       result = {
         result: read.result,

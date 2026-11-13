@@ -38,6 +38,7 @@ import {
 import {
   type AssembledNextTurnContext,
   type AssembleNextTurnContextInput,
+  lazyThreadModel,
   prepareNextTurnContext,
   renderPreparedTurnContext,
 } from "./turn-context-assembly.js";
@@ -109,6 +110,14 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
           threadId: input.threadId,
           assistantTurnId: input.currentTurnId,
           reader: input.deps.referenceReader,
+          model: lazyThreadModel({
+            thread: input.thread,
+            agentRevisions: input.deps.agentRevisions,
+            threads: input.deps.repos.threads,
+            toolRegistry: input.deps.toolRegistry,
+            gateway: input.deps.gateway,
+            baseTools: input.baseTools ?? input.deps.toolExecutor.getDefinitions?.(),
+          }),
           signal: input.signal,
           // The read is shown beside what this request carries, so only that credits it (C10).
           recordingFrontier: frontierLookup(input.deps, requestCreditedIds, {
@@ -374,15 +383,23 @@ function buildImageProjectionEvents(input: {
   return { turns, blocks, events };
 }
 
+function mediaKind(mediaType: string): string {
+  return mediaType.startsWith("image/")
+    ? "image"
+    : mediaType === "application/pdf"
+      ? "PDF"
+      : "file";
+}
+
 function imageContextBreakText(breaks: readonly ImageContextBreak[]): string {
   const lines = [
-    "Image context changed.",
+    "Media context changed.",
     ...breaks.map((entry) =>
       entry.reason === "budget_eviction"
-        ? `Removed ${entry.uri} to fit the image context budget.`
+        ? `Removed the ${mediaKind(entry.mediaType)} ${entry.uri} to fit the media budget.`
         : entry.reason === "asset_unavailable"
-          ? `The model request no longer includes ${entry.uri} because its asset is unavailable.`
-          : `The model could not include ${entry.uri} because its asset is unavailable.`,
+          ? `The model request no longer includes the ${mediaKind(entry.mediaType)} ${entry.uri} because it is unavailable.`
+          : `The model could not include the ${mediaKind(entry.mediaType)} ${entry.uri} because it is unavailable.`,
     ),
   ];
   return `<system_update>\n${lines.join("\n")}\n</system_update>`;

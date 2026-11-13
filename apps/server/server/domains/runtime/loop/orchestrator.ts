@@ -206,6 +206,7 @@ import {
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
 import {
   type AssembledNextTurnContext,
+  lazyThreadModel,
   persistPreparedPromptBake,
 } from "./turn-context-assembly.js";
 import type { WorkContextReader } from "./work-context.js";
@@ -1367,6 +1368,7 @@ async function persistCommittedWriteResult(input: {
  */
 async function prepareReferenceReads(input: {
   deps: OrchestratorDeps;
+  thread: Thread;
   threadId: ThreadId;
   userTurnId: string;
   assistantTurnId: string;
@@ -1381,6 +1383,14 @@ async function prepareReferenceReads(input: {
     threadId: input.threadId,
     assistantTurnId: input.assistantTurnId,
     reader: input.deps.referenceReader,
+    model: lazyThreadModel({
+      thread: input.thread,
+      agentRevisions: input.deps.agentRevisions,
+      threads: input.deps.repos.threads,
+      toolRegistry: input.deps.toolRegistry,
+      gateway: input.deps.gateway,
+      baseTools: input.deps.toolExecutor.getDefinitions?.(),
+    }),
     signal: input.signal,
     recordingFrontier: frontierLookup(
       input.deps,
@@ -1900,6 +1910,7 @@ async function executeLoop({
       prepareAdoptedTurn: async (turn, blocks) => {
         const withReferences = await prepareReferenceReads({
           deps,
+          thread,
           threadId: input.threadId,
           userTurnId: turn.id,
           assistantTurnId: currentTurn.id,

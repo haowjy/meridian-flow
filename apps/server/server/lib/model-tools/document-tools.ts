@@ -292,8 +292,8 @@ export async function readTrackedDocument(
   options: {
     expectedDocumentId?: string;
     recordingFrontier?: FrontierLookup;
-    /** Set by the `read` tool: a binary file is shown to this model rather than refused. */
-    binary?: { model: ModelInfo | undefined };
+    /** The thread's model, asked for only when the file is binary and what to show depends on it. */
+    model?: () => Promise<ModelInfo | undefined>;
   } = {},
 ): Promise<{
   output: AgentEditResultV1;
@@ -307,8 +307,8 @@ export async function readTrackedDocument(
   if (isToolError(call)) return { ...writeToolError("read", call.output.message), revision: null };
   const address = await resolveDocumentAddress(call.context, "read", path);
   if (isToolError(address)) {
-    if (address.output.status === "binary_file" && options.binary)
-      return readBinaryFile(deps, call, input, options.binary.model);
+    if (address.output.status === "binary_file")
+      return readBinaryFile(deps, call, input, await options.model?.());
     const removed =
       address.output.status === "document_not_found"
         ? await removedPathError(deps, call, "read", path, ctx.threadId)
@@ -377,7 +377,7 @@ export function createReadHandler(deps: ToolWiringDeps) {
     const parsed = input as ReadToolInput;
     if (isSkillsUri(parsed.path)) return readSkill(deps, ctx.threadId, parsed);
     const { revision: _revision, ...result } = await readTrackedDocument(deps, parsed, ctx, {
-      binary: { model: ctx.model },
+      model: async () => ctx.model,
       ...(ctx.frontiers ? { recordingFrontier: ctx.frontiers.recording } : {}),
     });
     return result;

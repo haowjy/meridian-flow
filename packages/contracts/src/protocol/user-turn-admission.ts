@@ -158,7 +158,13 @@ export type UserTurnAdmissionResult = Exclude<AdmissionLookup, { kind: "not-seen
 /** Server-generated snapshot; input is validated before execution, then display-only JSON on replay. Never accepted in a submitted reference. */
 export type ReadReferenceOccurrence =
   | (Extract<ReferenceOccurrence, { kind: "document" }> & {
-      read?: { result: JsonValue; revision: string | null; input?: JsonObject };
+      read?: {
+        result: JsonValue;
+        revision: string | null;
+        input?: JsonObject;
+        /** Request-time only, never stored: the media part or text that stands for a file shown as media. */
+        media?: JsonValue;
+      };
     })
   | Extract<ReferenceOccurrence, { kind: "folder" }>;
 
@@ -201,7 +207,7 @@ export function referenceOccurrenceContent(block: {
       !read ||
       typeof read !== "object" ||
       Array.isArray(read) ||
-      Object.keys(read).filter((key) => key !== "input").length !== 2 ||
+      Object.keys(read).filter((key) => key !== "input" && key !== "media").length !== 2 ||
       ("input" in read &&
         (!read.input || typeof read.input !== "object" || Array.isArray(read.input))) ||
       !("result" in read) ||

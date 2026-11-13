@@ -2,12 +2,13 @@
 
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
-import {
-  type Block,
-  type Thread,
-  type ToolContentPart,
-  type Turn,
-  toolContentPartText,
+import type {
+  Block,
+  StoredMediaPart,
+  StoredTextPart,
+  Thread,
+  ToolContentPart,
+  Turn,
 } from "@meridian/contracts/threads";
 import type {
   ContentPart,
@@ -27,6 +28,7 @@ import {
 import { orderTurnsByPosition } from "../../threads/order-turns.js";
 import { componentModelText } from "./component-model-text.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
+import { describeMedia } from "./image-context.js";
 import { referenceReadText } from "./reference-context.js";
 
 export interface BuildContextInput {
@@ -258,7 +260,11 @@ function storedContentParts(
   return parts.map((part) =>
     part.type === "media" && "source" in part
       ? part
-      : text(toolContentPartText(part as ToolContentPart)),
+      : text(
+          part.type === "media"
+            ? describeMedia(part as StoredMediaPart)
+            : (part as StoredTextPart).text,
+        ),
   );
 }
 
@@ -294,6 +300,9 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
         `\n\nReference read result for ${reference.uri}:\n${referenceReadText(reference.read.result)}`,
       ),
     );
+    const media = reference.read.media;
+    if (typeof media === "string") parts.push(text(`\n${media}`));
+    else if (media) parts.push(media as unknown as MediaPart);
   }
   return parts;
 }
