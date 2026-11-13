@@ -17,7 +17,7 @@ import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-pr
 import * as Y from "yjs";
 import type { TreeList, TreeListStore } from "../domains/context/ports/tree-list-store.js";
 import { NO_WRITE_ACCESS } from "../domains/context/ports/tree-list-store.js";
-import { emitEvent } from "../domains/observability/index.js";
+import { emitEvent, unknownToEventPayload } from "../domains/observability/index.js";
 import type { AppServices } from "./app.js";
 
 /** What one part holds at most: a few hundred records, far under the admission's cap of 2,000. */
@@ -99,9 +99,15 @@ export function createTreeRooms(services: TreeRoomServices) {
     const room = rooms.get(committed.listId);
     if (!room) return;
     Y.applyUpdate(room.document, committed.update, SERVER_ORIGIN);
-    void catchUp(room).catch(() => {
-      // The next exchange reads again; the commit itself is already in the room.
-    });
+    // The commit itself is already in the room; a failed read is repeated at the next exchange.
+    void catchUp(room).catch((cause: unknown) =>
+      emitEvent(services.eventSink, {
+        level: "warn",
+        source: "collab.tree_list",
+        name: "catch_up.failed",
+        payload: unknownToEventPayload(cause),
+      }),
+    );
   });
 
   function takeToken(state: TreeRoomConnection): number {

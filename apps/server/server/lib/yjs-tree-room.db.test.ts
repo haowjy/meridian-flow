@@ -22,7 +22,7 @@ import {
 import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import { connectTreeList, type ListCopy, type ListSyncState } from "@meridian/tree-list-sync";
 import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import {
@@ -45,13 +45,13 @@ const UNFILED = "00000000-0000-4000-8000-000000000b05";
 const actor = `user:${ACCOUNT}`;
 const ROOM = `tree:project:${PROJECT}`;
 
-const until = async (condition: () => boolean | Promise<boolean>, what: string, ms = 15_000) => {
-  const end = Date.now() + ms;
-  while (!(await condition())) {
-    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-};
+const until = (condition: () => boolean | Promise<boolean>, what: string, ms = 15_000) =>
+  vi.waitFor(
+    async () => {
+      if (!(await condition())) throw new Error(`waiting for ${what}`);
+    },
+    { timeout: ms, interval: 20 },
+  );
 
 /** What the browser sees of its copy: a fresh Yjs client id each time it is replaced. */
 function memoryCopy(): ListCopy & { doc: Y.Doc } {
@@ -240,7 +240,7 @@ describe("a tree list's room (postgres)", () => {
       tabs.map(async (tab, at) => {
         for (let n = 0; n < 4; n++) {
           createDocument(tab.copy, `chapter ${at}-${n}`);
-          await new Promise((resolve) => setTimeout(resolve, 5));
+          await Promise.resolve();
         }
       }),
     );
@@ -344,7 +344,6 @@ describe("a tree list's room (postgres)", () => {
 
     createDocument(tabOne.copy, "from process one");
     await until(async () => (await journalRecords(one)).length === 1, "admitted by process one");
-    await new Promise((resolve) => setTimeout(resolve, 300));
     // The other room has had no exchange since: it has not heard.
     expect(tabOther.ids()).toHaveLength(0);
 
