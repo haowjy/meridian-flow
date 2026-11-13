@@ -191,6 +191,20 @@ function mergeContainers(
       Object.keys(dn.attrs).map((key) => [key, changed(dn, key) ? dn.attrs[key] : ln.attrs[key]]),
     );
     const marks = Mark.sameSet(dn.marks, bn.marks) ? ln.marks : dn.marks;
+    // Both sides changed one attribute (or the marks) to different values: the draft's stands.
+    if (
+      Object.keys(dn.attrs).some(
+        (key) =>
+          changed(dn, key) &&
+          changed(ln, key) &&
+          JSON.stringify(ln.attrs[key]) !== JSON.stringify(dn.attrs[key]),
+      ) ||
+      (!Mark.sameSet(dn.marks, bn.marks) &&
+        !Mark.sameSet(ln.marks, bn.marks) &&
+        !Mark.sameSet(ln.marks, dn.marks))
+    ) {
+      out.conflicts.push({ kind: "overlap", baseIds, base: [b], live: [l], draft: [d] });
+    }
     let node: PMNode;
     try {
       node = bn.type.create(attrs, inner.blocks, marks);
