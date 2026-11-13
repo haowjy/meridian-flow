@@ -306,21 +306,43 @@
 
 .meridian-collab-cursor {
   position: relative;
-  border-left: 0.125rem solid var(--color-primary);
+  border-left: 0.125rem solid var(--caret-color, var(--color-primary));
   margin-left: -0.0625rem;
   pointer-events: none;
 }
 
+/* The cap atop a peer's caret: the only part that takes the pointer, and hovering it names the
+   peer. */
+.meridian-collab-cursor::before {
+  content: "";
+  position: absolute;
+  top: -0.125rem;
+  left: -0.1875rem;
+  width: 0.375rem;
+  height: 0.375rem;
+  background: var(--caret-color, var(--color-primary));
+  pointer-events: auto;
+}
+
+.meridian-collab-cursor .meridian-collab-cursor__label {
+  display: none;
+  background: var(--caret-color, var(--color-primary));
+}
+
+.meridian-collab-cursor:hover .meridian-collab-cursor__label {
+  display: block;
+}
+
 .meridian-collab-cursor__label {
   position: absolute;
-  top: -1.4rem;
+  bottom: calc(100% + 0.125rem);
   left: calc(-1 * var(--editor-cursor-label-offset));
   border-radius: var(--radius-sm);
   color: var(--color-primary-foreground);
-  font-size: var(--text-xs);
+  font-size: 0.6875rem;
   font-weight: 600;
   line-height: 1;
-  padding: 0.25rem 0.375rem;
+  padding: 0.1875rem 0.3125rem;
   white-space: nowrap;
 }
 

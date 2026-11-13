@@ -258,11 +258,10 @@ function createCollaborationExtensions({
       render: (cursorUser) => {
         const cursor = window.document.createElement("span");
         cursor.classList.add("meridian-collab-cursor");
-        cursor.style.borderColor = String(cursorUser.color ?? DEFAULT_USER.color);
+        cursor.style.setProperty("--caret-color", String(cursorUser.color ?? DEFAULT_USER.color));
 
         const label = window.document.createElement("span");
         label.classList.add("meridian-collab-cursor__label");
-        label.style.backgroundColor = String(cursorUser.color ?? DEFAULT_USER.color);
         label.textContent = String(cursorUser.name ?? DEFAULT_USER.name);
 
         cursor.append(label);
