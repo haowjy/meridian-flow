@@ -56,6 +56,32 @@ button {
   height: 100dvh;
 }
 
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segmented button {
+  padding: 4px 12px;
+  border: 0;
+  background: var(--color-card);
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--color-muted);
+  color: var(--color-foreground);
+  font-weight: 600;
+}
+
+.segmented[hidden] {
+  display: none;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -131,6 +157,15 @@ button {
   color: var(--color-foreground);
 }
 
+.view {
+  min-height: 0;
+  min-width: 0;
+}
+
+.pad {
+  padding: 24px;
+}
+
 .workspace {
   position: relative;
   display: grid;
@@ -145,8 +180,59 @@ button {
 
 /* ---- The map ---- */
 
+.canvas {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.intro {
+  flex: none;
+  max-height: 45%;
+  overflow-y: auto;
+  padding: 10px 18px;
+  background: var(--color-card);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.intro summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.intro .up {
+  font-size: 12px;
+}
+
+.intro p {
+  max-width: 900px;
+  margin: 6px 0 0;
+}
+
+.intro .is-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.intro .more {
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.intro .how-to {
+  color: var(--color-muted-foreground);
+  font-size: 12.5px;
+}
+
 .diagram {
   position: relative;
+  flex: 1;
   overflow: hidden;
   min-width: 0;
   min-height: 0;
@@ -286,6 +372,12 @@ button {
   --stroke: var(--color-foreground);
 }
 
+.kind-group,
+.node.group {
+  --fill: color-mix(in oklab, var(--color-primary) 20%, var(--color-card));
+  --stroke: var(--color-jade-text);
+}
+
 .kind-context,
 .node.context {
   --fill: transparent;
@@ -304,6 +396,11 @@ button {
 
 #map-diagram svg .node {
   cursor: pointer;
+}
+
+/* A group opens a page of its own: a stacked card. */
+#map-diagram svg .node.group {
+  filter: drop-shadow(5px 5px 0 var(--color-border)) drop-shadow(2px 2px 0 var(--stroke));
 }
 
 #map-diagram svg .node.is-selected rect {
@@ -333,58 +430,10 @@ button {
   --border-style: dotted;
 }
 
-.edge-http {
-  --edge: var(--color-muted-foreground);
-  --edge-width: 1.5px;
-}
-
-.edge-ws {
-  --edge: var(--color-warning-foreground);
-  --edge-width: 3px;
-}
-
-.edge-sql {
-  --edge: var(--color-ink-subtle);
-  --edge-width: 1.5px;
-  --edge-dash: 7 4;
-  --edge-style: dashed;
-}
-
-.edge-model {
-  --edge: var(--color-warning-foreground);
-  --edge-width: 1.5px;
-  --edge-dash: 2 3;
-  --edge-style: dotted;
-}
-
-.edge-files {
-  --edge: var(--color-ink-subtle);
+/* Numbered arrows are the main path; the rest are side trips. */
+.edge-step {
+  --edge: var(--color-jade-text);
   --edge-width: 2.5px;
-  --edge-dash: 9 3 2 3;
-  --edge-style: double;
-}
-
-.edge-call {
-  --edge: var(--color-jade-text);
-  --edge-width: 1.5px;
-}
-
-.edge-port {
-  --edge: var(--color-jade-text);
-  --edge-width: 1.5px;
-  --edge-dash: 4 3;
-  --edge-style: dashed;
-}
-
-.edge-import {
-  --edge: var(--color-primary);
-  --edge-width: 1px;
-}
-
-/* A dense level can have many breaks: quiet until their box is selected, still red. */
-.edge-breaks {
-  --edge: color-mix(in oklab, var(--color-destructive) 60%, transparent);
-  --edge-width: 1.25px;
 }
 
 #map-diagram svg path.flowchart-link {
@@ -402,7 +451,6 @@ button {
 #map-diagram svg g.edgeLabel span,
 #map-diagram svg g.edgeLabel p {
   color: var(--edge, var(--color-muted-foreground));
-  font-size: 12px;
 }
 
 #map-diagram svg path.edge-hit {
@@ -419,12 +467,6 @@ button {
 #map-diagram svg path.flowchart-link.is-linked,
 #map-diagram svg path.flowchart-link.is-hovered {
   stroke-width: calc(var(--edge-width, 1.5px) + 1px);
-}
-
-.stage.has-selection path.flowchart-link.is-linked.edge-breaks,
-.stage path.flowchart-link.is-hovered.edge-breaks,
-.edge-tag.edge-breaks {
-  --edge: var(--color-destructive);
 }
 
 .stage.has-selection path.flowchart-link:not(.is-linked),
@@ -456,22 +498,6 @@ button {
   font-size: 12px;
   line-height: 1.35;
   box-shadow: var(--shadow-card);
-}
-
-.line {
-  display: inline-block;
-  width: 26px;
-  border-top: var(--edge-width, 1.5px) var(--edge-style, solid) var(--edge, var(--color-muted-foreground));
-}
-
-.edge-kind {
-  display: inline-block;
-  padding: 0 6px;
-  border: 1px solid var(--edge);
-  border-radius: 4px;
-  color: var(--edge);
-  font-family: var(--mono);
-  font-size: 11px;
 }
 
 /* ---- Side panel ---- */
@@ -541,6 +567,32 @@ button {
   font-size: 12px;
 }
 
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-jade-text);
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+}
+
+.link-button.back {
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.box-list {
+  padding: 0;
+  list-style: none;
+}
+
+.box-list .sub-line {
+  margin: 0 0 8px;
+  color: var(--color-muted-foreground);
+  font-size: 12.5px;
+}
+
 .chip {
   padding: 1px 8px;
   border: 1.5px solid var(--stroke, var(--color-border));
@@ -562,22 +614,6 @@ button {
 .callout.is-breaks {
   background: var(--color-destructive-tint);
   color: var(--color-destructive);
-}
-
-details.page {
-  margin: 6px 0;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 6px;
-}
-
-details.page > summary {
-  padding: 6px 10px;
-  cursor: pointer;
-}
-
-details.page > .md {
-  padding: 0 10px 10px;
-  font-size: 13px;
 }
 
 /* ---- Journeys ---- */
@@ -657,41 +693,44 @@ details.page > .md {
   background: var(--color-muted);
 }
 
-/* ---- Markdown pages (state machines) in a wide panel over the right of the page ---- */
+/* ---- A .context page over the whole window ---- */
 
 .doc-view {
-  position: absolute;
-  inset: 0 0 0 auto;
-  z-index: 5;
+  position: fixed;
+  inset: 0;
+  z-index: 20;
   display: flex;
   flex-direction: column;
-  width: min(1100px, 100%);
-  background: var(--color-card);
-  border-left: 1px solid var(--color-border);
-  box-shadow: var(--shadow-card);
+  background: var(--color-background);
 }
 
 .doc-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 16px;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--color-card);
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .doc-title {
   display: flex;
+  flex: 1;
   flex-direction: column;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.doc-scroll {
+.doc-scroll,
+.read {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 8px 24px 40px;
+  padding: 8px 32px 56px;
+}
+
+.read {
+  height: 100%;
 }
 
 .doc-note {
@@ -780,9 +819,27 @@ details.page > .md {
   background: var(--color-card);
 }
 
-.md-diagram-size {
-  float: right;
-  margin: 0 0 6px 8px;
+.md-diagram {
+  position: relative;
+}
+
+.md-diagram-tools {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.md-diagram svg {
+  display: block;
+}
+
+.md-diagram g.node:focus-visible,
+.md-diagram g[role="button"]:focus-visible {
+  outline: 2px solid var(--color-ring);
 }
 
 .md-diagram.is-error {
@@ -817,8 +874,14 @@ details.page > .md {
     border-top: 1px solid var(--color-border-subtle);
   }
 
-  .doc-scroll {
+  .doc-scroll,
+  .read {
     padding: 4px 14px 32px;
+  }
+
+  .intro {
+    max-height: 30%;
+    padding: 8px 12px;
   }
 
   .journeys {

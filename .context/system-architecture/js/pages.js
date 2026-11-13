@@ -18,26 +18,40 @@ export const NODE_KINDS = [
   "module",
   "package",
   "context",
+  "group",
 ];
-export const EDGE_KINDS = ["http", "ws", "sql", "model", "files", "call", "port", "import"];
 
 /** The section list items each kind of page may carry. */
 export const MAP_KEYS = ["Kind", "Paths", "Docs", "Machines", "Opens", "Breaks", "Drift", "See", "Shot"];
 export const JOURNEY_KEYS = ["Map", "Machines", "Shot"];
 
 const ID = "[A-Za-z][A-Za-z0-9_-]*";
+// A hyphen joins two parts of an id; one before an arrow's dashes ("a-->>b") is the arrow's.
+const SEQ_ID = "[A-Za-z][A-Za-z0-9_]*(?:-[A-Za-z0-9_]+)*";
 const LINE = {
   header: /^flowchart (?:LR|RL|TB|TD|BT)$/,
   node: new RegExp(`^(${ID})\\["([^"]*)"\\]:::(\\w+)$`),
-  edge: new RegExp(`^(${ID}) (-->|<-->)\\|"(\\w+): ([^"]+)"\\| (${ID})$`),
+  edge: new RegExp(`^(${ID}) (-->|<-->)\\|"([^"]+)"\\| (${ID})$`),
   subgraph: new RegExp(`^subgraph ${ID}(?:\\["[^"]*"\\])?$`),
+  sequenceHeader: /^sequenceDiagram$/,
+  participant: new RegExp(`^(?:participant|actor) (${SEQ_ID})(?: as .+)?$`),
+  message: new RegExp(`^(${SEQ_ID}) ?(?:-->>|->>|--x|-x|--\\)|-\\))[+-]? ?(${SEQ_ID}): .+$`),
+  note: new RegExp(`^Note (?:over|left of|right of) (${SEQ_ID})(?:, ?(${SEQ_ID}))?: .+$`),
+  activation: new RegExp(`^(?:activate|deactivate) (${SEQ_ID})$`),
+  sequenceBlock: /^(?:loop|alt|opt|par|critical|break|rect|else|and|option)(?: .*)?$|^autonumber$/,
 };
+// A label may break lines and shrink a role line, nothing else.
+const LABEL_TAGS = /<br\/>|<\/?small>/g;
 
 /**
  * @typedef {{ line: number, message: string }} Problem
  * @returns {{
  *   title: string, intro: string,
- *   mermaid: null | { source: string, line: number, nodes: {id, label, kind, line}[], edges: {from, to, both, kind, label, line}[] },
+ *   mermaid: null | {
+ *     type: "flowchart" | "sequence" | null, source: string, line: number,
+ *     nodes: {id, label, kind, line}[], edges: {from, to, both, label, step, line}[],
+ *     participants: {id, line}[],
+ *   },
  *   sections: { id: string, line: number, paragraphs: string[], items: { key: string | null, value: string, line: number }[] }[],
  *   problems: Problem[],
  * }}
@@ -76,7 +90,7 @@ export function parsePage(text) {
       const kind = marker[2] === "mermaid" && !page.mermaid ? "mermaid" : "other";
       if (marker[2] === "mermaid") {
         if (page.mermaid) fail(n, "A second mermaid block: a page has one.");
-        else page.mermaid = { source: "", line: n, nodes: [], edges: [] };
+        else page.mermaid = { type: null, source: "", line: n, nodes: [], edges: [], participants: [] };
       }
       fence = { length: marker[1].length, kind };
       return;
@@ -106,19 +120,40 @@ export function parsePage(text) {
 }
 
 function parseMermaidLine(mermaid, line, n, fail) {
-  if (!line || line.startsWith("%%") || line === "end") return;
-  if (LINE.header.test(line) || LINE.subgraph.test(line)) return;
+  if (!line || line.startsWith("%%")) return;
+  if (!mermaid.type) {
+    if (LINE.header.test(line)) mermaid.type = "flowchart";
+    else if (LINE.sequenceHeader.test(line)) mermaid.type = "sequence";
+    else fail(n, `The mermaid block must start with a flowchart or sequenceDiagram header, not: ${line}`);
+    return;
+  }
+  if (mermaid.type === "sequence") return parseSequenceLine(mermaid, line, n, fail);
+  if (line === "end" || LINE.subgraph.test(line)) return;
   let m = LINE.node.exec(line);
   if (m) {
+    const bad = m[2].replace(LABEL_TAGS, "").match(/[<>]/);
+    if (bad) fail(n, `Box ${m[1]}'s label holds "${bad[0]}": only <br/> and <small>...</small> are allowed.`);
     mermaid.nodes.push({ id: m[1], label: m[2], kind: m[3], line: n });
     return;
   }
   m = LINE.edge.exec(line);
   if (m) {
-    mermaid.edges.push({ from: m[1], to: m[5], both: m[2] === "<-->", kind: m[3], label: m[4], line: n });
+    const step = /^(\d+)\. /.exec(m[3]);
+    mermaid.edges.push({ from: m[1], to: m[4], both: m[2] === "<-->", label: m[3], step: step ? Number(step[1]) : null, line: n });
     return;
   }
   fail(n, `A mermaid line the format doesn't allow: ${line}`);
+}
+
+function parseSequenceLine(mermaid, line, n, fail) {
+  const participants = (...ids) => mermaid.participants.push(...ids.filter(Boolean).map((id) => ({ id, line: n })));
+  let m;
+  if ((m = LINE.participant.exec(line))) participants(m[1]);
+  else if ((m = LINE.message.exec(line))) participants(m[1], m[2]);
+  else if ((m = LINE.note.exec(line))) participants(m[1], m[2]);
+  else if ((m = LINE.activation.exec(line))) participants(m[1]);
+  else if (line === "end" || LINE.sequenceBlock.test(line)) return;
+  else fail(n, `A sequenceDiagram line the format doesn't allow: ${line}`);
 }
 
 /** The item of a section with this key, or undefined. */

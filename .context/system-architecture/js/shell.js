@@ -35,7 +35,7 @@ export async function fetchRepoFile(path) {
 
 export const fetchPage = async (path) => parsePage(await fetchRepoFile(path));
 
-/** The map's level pages, from the links in README.md: [{ id, title, path }]. */
+/** The map's main level pages, from the links in README.md: [{ id, title, path }]. */
 export async function loadLevels() {
   const links = levelLinks(await fetchRepoFile(`${MAP_DIR}/README.md`));
   return links.map(({ id, title, href }) => ({ id, title, path: `${MAP_DIR}/${href}` }));
@@ -58,7 +58,7 @@ systemDark.addEventListener("change", () => themeListeners.forEach((cb) => cb())
 
 export const onThemeChange = (cb) => themeListeners.add(cb);
 
-function pinTheme(theme) {
+export function pinTheme(theme) {
   document.documentElement.dataset.theme = theme;
   try {
     localStorage.setItem(THEME_KEY, theme);
@@ -66,33 +66,4 @@ function pinTheme(theme) {
     // Not remembered; the pin still holds for this visit.
   }
   themeListeners.forEach((cb) => cb());
-}
-
-/**
- * The top bar. `current` is a level id, or "journeys". `onMachines` opens the state machines
- * index. Returns the element; the level links are filled in once README.md has loaded.
- */
-export function topBar({ current, levels, onMachines }) {
-  const nav = el(
-    "nav",
-    { class: "levels", "aria-label": "Levels" },
-    levels.map((level) =>
-      el("a", { href: `index.html#${level.id}`, "aria-current": level.id === current ? "page" : null }, level.title),
-    ),
-  );
-  const theme = el("button", { type: "button", class: "text-button" });
-  const sync = () => {
-    theme.textContent = currentTheme() === "dark" ? "Light theme" : "Dark theme";
-  };
-  theme.addEventListener("click", () => pinTheme(currentTheme() === "dark" ? "light" : "dark"));
-  onThemeChange(sync);
-  sync();
-  return el(
-    "header",
-    { class: "topbar" },
-    nav,
-    el("a", { class: "bar-link", href: "journeys.html", "aria-current": current === "journeys" ? "page" : null }, "Journeys"),
-    el("button", { type: "button", class: "text-button", onclick: onMachines }, "State machines"),
-    theme,
-  );
 }
