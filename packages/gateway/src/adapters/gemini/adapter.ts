@@ -2,12 +2,10 @@
  * Gemini provider adapter: the provider-adapter port over Google's native `generateContent`
  * API through `@google/genai`. The shared stream envelope is `../provider-stream.ts`.
  *
- * The SDK fits the gateway's rules: it takes every option it would read from the environment
- * (`GOOGLE_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_GENAI_USE_VERTEXAI`, `GOOGLE_CLOUD_*`,
- * `GOOGLE_GEMINI_BASE_URL`, `GOOGLE_GENAI_API_VERSION`) as a constructor option, and sends one
- * request unless `retryOptions` is set, which this adapter never does. The one residue: if the
- * machine sets both of its Google key variables it prints a console warning, and the explicit
- * key still wins.
+ * Every option the SDK would read from the environment (key, Vertex mode, project, location,
+ * base URL, API version) is passed explicitly, and it sends one request because `retryOptions`
+ * is never set. If the machine sets both of the SDK's own key variables it prints a console
+ * warning; the explicit key still wins.
  */
 import { ApiError, GoogleGenAI } from "@google/genai";
 import type { ProviderConfig } from "../../domain/index.js";
