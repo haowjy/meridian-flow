@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { ListChecks, type LucideIcon, MessageSquare, Plus, Trash2 } from "lucide-react";
+import { Ellipsis, ListChecks, type LucideIcon, MessageSquare, Trash2 } from "lucide-react";
 import {
   type ComponentType,
   createContext,
@@ -397,7 +397,7 @@ function SourceTabs({
   source,
   onSelect,
 }: {
-  /** The writer's tree tabs, which the + menu shows and changes. */
+  /** The writer's tree tabs, which the ⋯ menu shows and changes. */
   chosen: readonly TreeTab[];
   /** The tabs on the strip now: Chat, the chosen trees, and Changes while it is offered. */
   tabs: readonly SourceKey[];
@@ -435,7 +435,7 @@ function SourceTabs({
               tooltipSide="bottom"
               className="size-7 shrink-0 coarse:size-11"
             >
-              <Plus aria-hidden />
+              <Ellipsis aria-hidden />
             </IconButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-52">
