@@ -1856,4 +1856,23 @@ export const CASES: Case[] = [
     merged: "list:w33 w34 w35;w36 w37{w52 w39 w40.}",
     conflicts: 1,
   },
+  // Equal blocks in a stretch are no clash only when they sit in the same places
+  {
+    row: "both sides split a block; the draft's second half sits past another paragraph",
+    name: "split-placed-apart",
+    base: "p:a b | p:c d",
+    live: "p:a | p:b | p:c d",
+    draft: "p:a | p:c d | p:b",
+    merged: "p:a | p:c d | p:b",
+    conflicts: 1,
+  },
+  {
+    row: "the same inside a quote",
+    name: "split-placed-apart-quote",
+    base: "quote:a b;c d",
+    live: "quote:a;b;c d",
+    draft: "quote:a;c d;b",
+    merged: "quote:a;c d;b",
+    conflicts: 1,
+  },
 ];

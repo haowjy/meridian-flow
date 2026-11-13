@@ -20,6 +20,8 @@ interface View {
   image: number[][];
   /** Per slot: 0 unchanged, 1 text changed, 2 split, joined, moved or added, 3 removed. */
   kind: Uint8Array;
+  /** By side block: it is a base block moved, whose place the order merge settles. */
+  moved: Uint8Array;
   /** Per slot: a base block cut apart or joined to a neighbour (a split or a join, not a move). */
   cut: Uint8Array;
   /** A gap inside one change (between the blocks of a join, or of an unsure group). */
@@ -42,6 +44,7 @@ function view(base: readonly PMNode[], side: readonly PMNode[], c: Correspondenc
   const kind = new Uint8Array(S);
   const interior = new Uint8Array(S);
   const cut = new Uint8Array(S);
+  const moved = new Uint8Array(side.length);
   const changes = new Dsu(S + side.length);
   const item = (x: number) => changes.find(x);
   const link = (a: number, b: number) => changes.union(a, b);
@@ -58,7 +61,10 @@ function view(base: readonly PMNode[], side: readonly PMNode[], c: Correspondenc
       let end = i + 1;
       while (end < base.length && c.oldPiece[end] === i) end++;
       gap = end;
-    } else kind[slot] = RESTRUCTURED;
+    } else {
+      kind[slot] = RESTRUCTURED;
+      if (i >= 0) moved[j] = 1;
+    }
     image[slot].push(j);
   }
 
@@ -108,8 +114,11 @@ function view(base: readonly PMNode[], side: readonly PMNode[], c: Correspondenc
     if (unsureNode[x]) unsure[item(x)] = 1;
     if (x < S && kind[x] && (x % 2 || interior[x])) solid[item(x)] = 1;
   }
-  return { image, kind, cut, interior, item, unsure, solid };
+  return { image, kind, moved, cut, interior, item, unsure, solid };
 }
+
+/** A side's block (second) and the slot it sits in (first; -1 for a moved base block, placed by the order merge). */
+type Placed = [slot: number, block: number];
 
 export interface Stretch {
   /** The base blocks the clash covers. */
@@ -189,7 +198,7 @@ export function settleStretches(
   };
 
   // Per clash: the base blocks it covers and each side's blocks there.
-  const parts = new Map<number, { slots: number[]; l: number[]; d: number[] }>();
+  const parts = new Map<number, { slots: number[]; l: Placed[]; d: Placed[] }>();
   const part = (r: number) => {
     let p = parts.get(r);
     if (!p) {
@@ -204,31 +213,32 @@ export function settleStretches(
       if (r < 0) continue;
       const p = part(r);
       p.slots.push(s);
-      p.l.push(...L.image[s]);
-      p.d.push(...D.image[s]);
+      p.l.push(...L.image[s].map((j): Placed => [L.moved[j] ? -1 : s, j]));
+      p.d.push(...D.image[s].map((j): Placed => [D.moved[j] ? -1 : s, j]));
     } else {
       for (const j of L.image[s])
-        if (clashOf(L, S + j, 0) >= 0) part(clashOf(L, S + j, 0)).l.push(j);
+        if (clashOf(L, S + j, 0) >= 0) part(clashOf(L, S + j, 0)).l.push([L.moved[j] ? -1 : s, j]);
       for (const j of D.image[s])
-        if (clashOf(D, S + j, off) >= 0) part(clashOf(D, S + j, off)).d.push(j);
+        if (clashOf(D, S + j, off) >= 0)
+          part(clashOf(D, S + j, off)).d.push([D.moved[j] ? -1 : s, j]);
     }
   }
   const taken = new Uint8Array(S);
   const dropped = new Uint8Array(live.length);
   const stretches: Stretch[] = [];
   for (const p of parts.values()) {
-    // The same blocks on both sides is no clash.
+    // The same blocks in the same places on both sides is no clash.
     if (
       p.l.length === p.d.length &&
-      p.l.every((j, x) => blockKey(live[j]) === blockKey(draft[p.d[x]]))
+      p.l.every(([s, j], x) => s === p.d[x][0] && blockKey(live[j]) === blockKey(draft[p.d[x][1]]))
     )
       continue;
     for (const s of p.slots) taken[s] = 1;
-    for (const j of p.l) dropped[j] = 1;
+    for (const [, j] of p.l) dropped[j] = 1;
     stretches.push({
       baseIds: p.slots.map((s) => (s - 1) / 2),
-      live: p.l.map((j) => live[j]),
-      draft: p.d.map((j) => draft[j]),
+      live: p.l.map(([, j]) => live[j]),
+      draft: p.d.map(([, j]) => draft[j]),
     });
   }
 

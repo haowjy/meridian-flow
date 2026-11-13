@@ -211,7 +211,7 @@ cannot be trusted with them:
 Text against text, text against a split, a join or a move of that block (the edit travels with
 the block), additions by both sides at one gap, and removals of different blocks are left to the
 token merge. A stretch is the changes joined by clashes; where both sides hold the same blocks
-in it, it is no clash. Otherwise the draft's blocks stand, live is handed on with its changes to
+in it in the same places (a moved base block's place is the order merge's), it is no clash. Otherwise the draft's blocks stand, live is handed on with its changes to
 the stretch undone (the base's blocks in place), one conflict is recorded with the base blocks it
 covers, and live's words the draft lacks count under `overrode`. Live is set back to the base
 rather than to the draft's blocks: copying the draft's blocks in doubled them when the sides
