@@ -12,7 +12,8 @@ const cli = path.join(checkout, "tools/dev/prune-worktrees.ts");
 const tsx = path.join(checkout, "node_modules/tsx/dist/cli.mjs");
 const hasTmux = spawnSync("tmux", ["-V"]).status === 0;
 
-describe.skipIf(!hasTmux)("orphan dev session cleanup (isolated tmux server)", () => {
+// These cases launch real CLIs and wait for process teardown, not just in-memory work.
+describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 }, () => {
   let temp: string;
   let repo: string;
   let env: NodeJS.ProcessEnv;
