@@ -188,24 +188,29 @@
 @layer base {
   * {
     @apply border-border outline-focus;
-    /* Thin scrollbars everywhere — the default chunky track fights the paper
-       calm. Firefox honours scrollbar-width/color; Chromium uses the webkit
-       pseudos below. Thumb fades from the shared foreground ink so it tracks
-       light/dark without a dedicated token. */
+    /* Thin scrollbars everywhere, and only while the pointer is over the scroll area: a resting
+       thumb is a mark on the paper. Firefox and Chromium read scrollbar-width/color; Safari reads
+       the webkit pseudos below. The thumb is the shared foreground ink, so it tracks light/dark
+       without a token. */
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklab, var(--color-foreground) 15%, transparent)
-      transparent;
+    scrollbar-color: transparent transparent;
+  }
+  *:hover {
+    scrollbar-color: color-mix(in oklab, var(--color-foreground) 15%, transparent) transparent;
   }
   *::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
-  *::-webkit-scrollbar-track {
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-thumb {
     background: transparent;
   }
   *::-webkit-scrollbar-thumb {
-    background: color-mix(in oklab, var(--color-foreground) 15%, transparent);
     border-radius: calc(infinity * 1px);
+  }
+  *:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--color-foreground) 15%, transparent);
   }
   *::-webkit-scrollbar-thumb:hover {
     background: color-mix(in oklab, var(--color-foreground) 30%, transparent);
