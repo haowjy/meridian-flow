@@ -43,8 +43,8 @@ export async function createArchitectureServer(configFile) {
   /** Tracked files, plus untracked unignored ones under the pages directory so a new page opens before it is added. */
   function tracked() {
     if (Date.now() - listed.at < REFRESH_MS) return listed;
-    const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).split("\n").filter(Boolean);
-    const files = new Set([...git("ls-files"), ...git("ls-files", "--others", "--exclude-standard", "--", pagesDir)]);
+    const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).split("\0").filter(Boolean);
+    const files = new Set([...git("ls-files", "-z"), ...git("ls-files", "-z", "--others", "--exclude-standard", "--", pagesDir)]);
     const dirs = new Map();
     for (const file of files) {
       const parts = file.split("/");
@@ -114,8 +114,26 @@ export async function createArchitectureServer(configFile) {
   };
 }
 
+/**
+ * The page's scripts come from itself and the pinned CDN, so a script or handler inside rendered Markdown
+ * (`<img onerror>`) never runs. Inline styles stay allowed: Mermaid and React Flow set them.
+ */
+const PAGE_CSP = [
+  "default-src 'none'",
+  "script-src 'self' https://cdn.jsdelivr.net",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+].join("; ");
+
 function engineFile(rest) {
-  return { status: 200, headers: { "cache-control": "no-cache", "x-content-type-options": "nosniff", "content-type": ENGINE_TYPES[path.extname(rest)] ?? "text/plain" }, file: path.join(ENGINE_DIR, rest) };
+  const headers = { "cache-control": "no-cache", "x-content-type-options": "nosniff", "content-type": ENGINE_TYPES[path.extname(rest)] ?? "text/plain" };
+  if (rest === "/index.html") headers["content-security-policy"] = PAGE_CSP;
+  return { status: 200, headers, file: path.join(ENGINE_DIR, rest) };
 }
 
 /** A NUL byte in the first 8 KB: the file is not text. */

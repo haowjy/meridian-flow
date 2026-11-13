@@ -21,5 +21,4 @@ export const sourceUrl = (path) => `https://github.com/${config.repo}/blob/${con
 const docs = (config.docs ?? []).map(globRegExp);
 
 /** Whether the dev server shows this repo path in the viewer (see `serveSource` in the config). */
-export const opensLocally = (path) =>
-  location.protocol !== "file:" && (config.serveSource !== false || path.startsWith(`${MAP_DIR}/`) || docs.some((re) => re.test(path)));
+export const opensLocally = (path) => config.serveSource !== false || path.startsWith(`${MAP_DIR}/`) || docs.some((re) => re.test(path));

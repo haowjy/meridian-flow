@@ -49,7 +49,7 @@ A level page is a `flowchart` with at most about 12 boxes; each box is
 ## The config
 
 `map.config.mjs` default-exports a plain object. The browser imports it too, so it holds data only: no
-functions, no imports. Paths are repo-relative; a glob's `*` is one path segment and `**` any depth.
+functions, no imports. Paths are repo-relative; a glob's `*` is one path segment and `**` any depth (`docs` globs only: `coverage`, `services`, `imports.workspaces` and dependency rules take `*` alone, and the check fails on a `**` there).
 
 | key | meaning |
 |---|---|
@@ -71,12 +71,16 @@ functions, no imports. Paths are repo-relative; a glob's `*` is one path segment
 ## What the viewer serves
 
 Under `/architecture/`: the engine's own files, the config, and `repo/<path>`: any file git tracks, as text
-(images as images), or a directory as the tracked entries under it. Untracked and ignored files (`.env`,
-`node_modules`), anything with `..` in it, and binary files are refused. `pnpm dev:funnel`-style tunnels that
+(images as images), or a directory as the tracked entries under it. It reads the working-tree copy, so
+uncommitted edits show; untracked files are refused except new unignored ones under `pagesDir`. Ignored
+files (`.env`, `node_modules`), anything with `..` in it, and binary files are refused. `index.html` is sent
+with a Content-Security-Policy (scripts only from the server and the pinned CDN), so a script inside a
+rendered Markdown file does not run; `serve.mjs` also answers only to `localhost` and `127.0.0.1` on its port. `pnpm dev:funnel`-style tunnels that
 publish the dev server also publish what it serves, so on a private repository set `serveSource: false`.
-Outside the dev server (opened from disk, or no server), links fall back to GitHub.
 
 ## What the check catches
+
+It needs the project to be a git repository: it lists files with `git ls-files`.
 
 Grammar (a Mermaid line the format doesn't allow, a box without its section, numbered arrows out of order,
 a note linked to nothing); every path, link and `#id` resolving; every `coverage` directory under some box;

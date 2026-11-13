@@ -234,8 +234,8 @@ if (config.stateMachines) {
     else if (/state-machine[^/]*\.md$/.test(page) && !attached.has(page))
       fail(STATE_MACHINES_INDEX, `${page} is on no box: add it to a box's Machines.`);
   }
-  written = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "--", config.stateMachines.pages], { cwd: repo, encoding: "utf8" })
-    .split("\n")
+  written = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", config.stateMachines.pages], { cwd: repo, encoding: "utf8" })
+    .split("\0")
     .filter(Boolean);
   for (const page of written) {
     if (page !== STATE_MACHINES_INDEX && existsSync(join(repo, page)) && !indexed.has(page)) fail(page, `isn't linked by ${STATE_MACHINES_INDEX}: add it to the index.`);
@@ -246,9 +246,17 @@ if (config.stateMachines) {
 // From git, not the disk: a branch switch leaves untracked node_modules or build output behind.
 
 const roots = [...new Set(boxes.flatMap((b) => b.paths))];
-const gitFiles = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
-  .split("\n")
+const gitFiles = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
+  .split("\0")
   .filter(Boolean);
+// Segment globs match one directory depth (`unitOf`); a `**` in one would match nothing and pass silently.
+const segmentGlobs = [
+  ["services.glob", config.services ? [config.services.glob] : []],
+  ["coverage", (config.coverage ?? []).map((c) => c.glob)],
+  ["imports.workspaces", config.imports?.workspaces ?? []],
+  ["dependencies.rules", (config.dependencies?.rules ?? []).flatMap((r) => [r.cycle, r.from, r.to].filter(Boolean))],
+];
+for (const [key, globs] of segmentGlobs) for (const glob of globs) if (glob.includes("**")) fail(`config ${key}`, `"${glob}" has a "**", which these globs don't support: use "*" for one path segment.`);
 /** Directories matching a segment glob that hold tracked files (a file directly in the pattern's depth is not one). */
 const directoriesMatching = (glob) => [...new Set(gitFiles.filter((f) => f.split("/").length > glob.split("/").length).map((f) => unitOf(f, glob)).filter(Boolean))];
 
@@ -289,6 +297,18 @@ if (DEPENDENCIES) {
     breaks.get(key).files.add(file);
   };
   const nameOf = (unit) => unit.split("/").at(-1);
+  // Breaks name a unit by its last path segment, so two units of one glob with the same one would merge their rows.
+  for (const glob of new Set(rules.flatMap((r) => [r.cycle, r.from, r.to].filter(Boolean)))) {
+    const seen = new Map();
+    for (const unit of directoriesMatching(glob)) {
+      const other = seen.get(nameOf(unit));
+      if (other) {
+        fail("config dependencies.rules", `"${glob}" matches both ${other} and ${unit}, which share the name "${nameOf(unit)}" in the breaks table: narrow the glob so each unit has its own last segment.`);
+        break;
+      }
+      seen.set(nameOf(unit), unit);
+    }
+  }
   /** How a break of each rule reads in a failure. */
   const describe = (b) => (rules.find((r) => r.rule === b.rule).cycle ? `${b.from} importing ${b.to} inside a cycle` : `${b.from} importing ${b.to}`);
   for (const rule of rules) {
