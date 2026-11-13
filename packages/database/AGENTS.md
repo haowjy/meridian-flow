@@ -11,15 +11,12 @@ transaction propagation live in the server.
   and composition boundary.
 - Schema-shaped DDL comes from `db:generate`; write a migration by hand only for
   behavior Drizzle cannot model. Keep journals and snapshots tracked.
-- Migrations merged to `main` or `staging` are frozen. Append contiguous,
-  strictly timestamped history and regenerate an unmerged branch's migration
-  after a merge; never edit, renumber, retimestamp or remove an applied
-  identity.
-- Write migrations for populated tables: preserve writer data, add constraints
-  `NOT VALID` then validate, build or drop indexes concurrently in re-runnable
-  no-transaction files, retire columns only after removing readers and
-  auditing values, and bound ACCESS EXCLUSIVE lock acquisition with a short
-  transactional `lock_timeout`.
+- Until the first deploy with data worth keeping, no stored data is kept. Write a migration
+  for empty tables: no backfills, no repairs of old rows, no `NOT VALID` or concurrent
+  steps, no readers kept for old shapes; dev data is wiped with `pnpm db:reset`. The
+  migration history check still refuses edits to merged migrations, so append one until all
+  of them are replaced by one baseline; after that a schema change edits the baseline. The
+  first deploy brings back frozen history and migrations written for populated tables.
 - `db:migrate` owns migration application and function sync; run the guarded
   `db:apply-functions` alone only when function sync is the whole operation.
   Divergent applied history is a refusal, not a skip.
