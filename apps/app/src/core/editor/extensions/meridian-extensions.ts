@@ -202,32 +202,29 @@ export const MeridianParagraph = Paragraph.extend({
     return {
       ...this.parent?.(),
       // TipTap's Backspace clears a first empty block's type only when its node
-      // is not named `paragraph`, which now includes headings. Same condition,
-      // and it still lets Backspace undo an autoformat rule first.
+      // is not named `paragraph`, which now includes headings. Same condition.
+      // Undoing the autoformat rule just applied comes first, and is not ours.
       Backspace: ({ editor }) =>
-        editor.commands.first(({ commands }) => [
-          () => commands.undoInputRule(),
-          () =>
-            commands.command(({ state }) => {
-              const { selection, doc } = state;
-              const { $anchor } = selection;
-              const block = $anchor.parent;
-              if (
-                !selection.empty ||
-                block.type !== this.type ||
-                block.attrs.level === null ||
-                block.content.size > 0
-              ) {
-                return false;
-              }
-              // At the very start of the document, or the first block of an isolating
-              // container such as a table cell.
-              const atStart =
-                Selection.atStart(doc).from === $anchor.pos ||
-                (Boolean($anchor.node(-1).type.spec.isolating) && $anchor.index(-1) === 0);
-              return atStart && commands.updateAttributes(this.name, { level: null });
-            }),
-        ]),
+        editor.commands.command(({ state, commands }) => {
+          if (editor.can().undoInputRule()) return false;
+          const { selection, doc } = state;
+          const { $anchor } = selection;
+          const block = $anchor.parent;
+          if (
+            !selection.empty ||
+            block.type !== this.type ||
+            block.attrs.level === null ||
+            block.content.size > 0
+          ) {
+            return false;
+          }
+          // At the very start of the document, or the first block of an isolating
+          // container such as a table cell.
+          const atStart =
+            Selection.atStart(doc).from === $anchor.pos ||
+            (Boolean($anchor.node(-1).type.spec.isolating) && $anchor.index(-1) === 0);
+          return atStart && commands.updateAttributes(this.name, { level: null });
+        }),
       ...Object.fromEntries(
         HEADING_LEVELS.map((level) => [
           `Mod-Alt-${level}`,
