@@ -7,8 +7,8 @@ browser side is the app's `import` feature, which calls through the client.
 ```mermaid
 sequenceDiagram
   participant client
-  participant server-routes
-  participant server-files-import
+  participant server-routes as routes
+  participant server-files-import as import
   participant storage
   participant file-intake
   participant context

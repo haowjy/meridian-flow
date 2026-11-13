@@ -19,12 +19,10 @@ that already exists, and prefer deleting one over adding a row.
 
 ## Where the code breaks them
 
-One row per break, and the check compares the rows with the breaks it finds, one to one: a break
-with no row fails, and so does a row that matches no break. `from` and `to` are single domains, a
-domain and `lib`, or a package and an app. `rule` is one of `domains are acyclic`, `domains do not
-import lib/`, `packages do not import apps`. Only value imports count: a cycle is run-time coupling, so
-a type-only import (`import type`) and a test-only import are not breaks. The example is one importing
-file, not the only one.
+One row per break. `from` and `to` are two domains, a domain and `lib`, or a package and an app.
+Only value imports count: a type-only import (`import type`) or a test-only import is not a break.
+The example is one importing file, not the only one. `pnpm check:architecture` fails on a break
+with no row and on a row with no break.
 
 | from | to | rule | example file |
 |---|---|---|---|

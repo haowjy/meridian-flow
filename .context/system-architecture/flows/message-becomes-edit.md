@@ -8,7 +8,7 @@ over the Yjs socket. The numbers below are the steps in the list under the pictu
 sequenceDiagram
   participant chat
   participant client
-  participant server-routes
+  participant server-routes as routes
   participant runtime
   participant threads
   participant packages

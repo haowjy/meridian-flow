@@ -10,8 +10,8 @@ sequenceDiagram
   participant core-editor
   participant core-resources
   participant core-transport
-  participant server-routes
-  participant server-lib
+  participant server-routes as routes
+  participant server-lib as lib
   participant file-policy
   participant collab
   participant postgres
