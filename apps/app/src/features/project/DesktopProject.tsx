@@ -21,6 +21,7 @@ import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranc
 import { cn } from "@/lib/utils";
 import { ChatPaneController } from "./ChatPaneController";
 import { ChatSurface } from "./chat/ChatSurface";
+import { RecentChatsLanding } from "./chat/RecentChatsLanding";
 import { useShownDocuments } from "./context/account-feature-context";
 import { DocumentHost, MainDocumentStatus } from "./context/DocumentHost";
 import { RecentDocumentsLanding } from "./context/RecentDocumentsLanding";
@@ -178,7 +179,9 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const sideChat = side.item?.kind === "chat" ? side.item : null;
   const chatThread = useHostChatId();
   const chatOnScreen = useChatOnScreen();
-  const chatInMain = mainChat !== null;
+  // Recent chats is the chat lane's page with no chat: main shows it in its own host.
+  const chatRecents = mainChat?.kind === "recents";
+  const chatInMain = mainChat !== null && !chatRecents;
   const chatHost: SlotGridHost = {
     key: "chat",
     slot: chatInMain ? "center" : sideChat && sideOpen ? "side" : null,
@@ -302,6 +305,28 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 />
               )}
             </ProjectRouteBoundary>
+          </div>
+        </main>
+      ),
+    });
+  if (chatRecents)
+    hosts.push({
+      key: "main",
+      slot: "center",
+      children: (
+        <main className="flex min-h-0 flex-1 flex-col">
+          <MainHeader
+            projectId={projectId}
+            kind="chat"
+            open={open}
+            landing
+            onShowRecents={onShowRecents}
+            onNew={() => void chat.openNewChat()}
+            sidebarToggle={sidebarToggle}
+            sideToggle={sideToggle}
+          />
+          <div className="page-sheet relative flex min-h-0 flex-1 flex-col">
+            <RecentChatsLanding projectId={projectId} />
           </div>
         </main>
       ),

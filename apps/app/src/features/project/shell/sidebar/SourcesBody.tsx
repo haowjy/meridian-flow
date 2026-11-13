@@ -257,7 +257,11 @@ export function SourcesBody({
   }, []);
   const showTab = useSidebarTabs((state) => state.show);
   const mainChat = useChatNavigation().display;
-  const mainChatKey = mainChat ? (mainChat.kind === "thread" ? mainChat.threadId : "new") : null;
+  const mainChatKey = mainChat
+    ? mainChat.kind === "thread"
+      ? mainChat.threadId
+      : mainChat.kind
+    : null;
   const [picked, setPicked] = useState<SourceKey>(mainChat ? "chat" : "manuscript");
   // Changes stays: it is the list the writer opens drafts from, whatever tree they live in.
   // `picked` is Changes only while it is shown (see below).

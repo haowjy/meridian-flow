@@ -2036,6 +2036,7 @@ msgstr ""
 msgid "Couldn't load agents."
 msgstr ""
 
+#: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SidePicker.tsx
 msgid "Couldn't load chats."
@@ -2047,6 +2048,10 @@ msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "Couldn't load files."
+msgstr ""
+
+#: src/features/project/chat/RecentChatsLanding.tsx
+msgid "Couldn't load more chats."
 msgstr ""
 
 #: src/features/project/context/DocumentProperties.tsx
@@ -2949,6 +2954,7 @@ msgstr ""
 msgid "Filter subagents"
 msgstr "筛选子代理"
 
+#: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SidePicker.tsx
 msgid "Find a chat"
@@ -3468,6 +3474,7 @@ msgstr ""
 msgid "Loading image"
 msgstr "正在加载图片"
 
+#: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Loading more…"
 msgstr ""
@@ -3482,6 +3489,10 @@ msgstr ""
 
 #: src/features/home/ProjectLibrary.tsx
 msgid "Loading projects…"
+msgstr ""
+
+#: src/features/project/chat/RecentChatsLanding.tsx
+msgid "Loading recent chats"
 msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -3785,6 +3796,7 @@ msgstr ""
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat/ChatScreen.tsx
+#: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/MainTabStrip.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SideHeader.tsx
@@ -3865,9 +3877,14 @@ msgid "No chats here yet."
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SidePicker.tsx
 msgid "No chats match “{search}”."
+msgstr ""
+
+#: src/features/project/chat/RecentChatsLanding.tsx
+msgid "No chats yet"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
@@ -4402,6 +4419,12 @@ msgstr ""
 msgid "Recent activity"
 msgstr ""
 
+#: src/features/project/chat/RecentChatsLanding.tsx
+#: src/features/project/mobile/ChatBreadcrumb.tsx
+#: src/features/project/shell/MainHeader.tsx
+msgid "Recent chats"
+msgstr ""
+
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/shell/MainHeader.tsx
 #: src/features/project/side/DocumentChoices.tsx
@@ -4654,6 +4677,7 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
+#: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/ProjectCreationNotice.tsx
@@ -4911,6 +4935,7 @@ msgstr ""
 msgid "Show less"
 msgstr ""
 
+#: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SidePicker.tsx
 #: src/features/project/work/WorkMetadata.tsx

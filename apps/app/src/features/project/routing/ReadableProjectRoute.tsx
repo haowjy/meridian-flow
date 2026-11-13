@@ -124,7 +124,9 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         ? { kind: "thread", threadId: destination.chatId }
         : destination.kind === "new-chat"
           ? { kind: "new" }
-          : null,
+          : destination.kind === "chat-recents"
+            ? { kind: "recents" }
+            : null,
     go: (next, options) => go(toDestination(next), options),
   });
   // The Work scope is stored, never read from the address: a Work-scoped page lens, not a place.

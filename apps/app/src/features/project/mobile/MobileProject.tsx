@@ -12,6 +12,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { ChatSurface } from "../chat/ChatSurface";
+import { RecentChatsLanding } from "../chat/RecentChatsLanding";
 import { useAccountId } from "../context/account-feature-context";
 import { fileKindIcon } from "../context/context-file-icon";
 import { DocumentHost, MainDocumentStatus } from "../context/DocumentHost";
@@ -248,6 +249,8 @@ function OpenInMainButton({ onOpen }: { onOpen: () => void }) {
 }
 
 function renderActiveView(props: MobileProjectProps) {
+  if (props.chatDisplay?.kind === "recents")
+    return <RecentChatsLanding projectId={props.projectId} />;
   if (props.chatDisplay) {
     return (
       <WorkBranchCommandsBoundary value={props.chatCommands}>

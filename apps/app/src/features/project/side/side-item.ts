@@ -5,7 +5,8 @@
  *
  * ```text
  * main document / landing   side = chat slot ?? a new chat (about main's document)
- * main chat / new chat      side = document slot, else nothing (the side's empty state)
+ * main chat / new chat / recent chats
+ *                           side = document slot, else nothing (the side's empty state)
  * main opening              side keeps what it showed
  * ```
  *
@@ -34,6 +35,8 @@ export type MainForSide =
   | { kind: "chat"; chatId: string }
   /** The new-chat composer: main is a chat with none yet. */
   | { kind: "new-chat" }
+  /** Recent chats: the chat lane's page that names no chat. */
+  | { kind: "chat-recents" }
   /** Recently opened: main names no document. */
   | { kind: "landing" }
   /** The address names a document that is still resolving. */
@@ -73,9 +76,11 @@ export function mainItem(main: MainForSide): Item | null {
 }
 
 /** The kind of item main holds, which the side does not show; null while main is opening. */
-function mainMode(main: MainForSide): Item["kind"] | null {
+export function mainMode(main: MainForSide): Item["kind"] | null {
   if (main.kind === "opening") return null;
-  return main.kind === "chat" || main.kind === "new-chat" ? "chat" : "document";
+  return main.kind === "chat" || main.kind === "new-chat" || main.kind === "chat-recents"
+    ? "chat"
+    : "document";
 }
 
 /** Whether an item may sit beside main, before its descriptor is known: the other kind. */

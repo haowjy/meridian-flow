@@ -2036,6 +2036,7 @@ msgstr "Couldn't load"
 msgid "Couldn't load agents."
 msgstr "Couldn't load agents."
 
+#: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SidePicker.tsx
 msgid "Couldn't load chats."
@@ -2048,6 +2049,10 @@ msgstr "Couldn't load documents."
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "Couldn't load files."
 msgstr "Couldn't load files."
+
+#: src/features/project/chat/RecentChatsLanding.tsx
+msgid "Couldn't load more chats."
+msgstr "Couldn't load more chats."
 
 #: src/features/project/context/DocumentProperties.tsx
 msgid "Couldn't load properties."
@@ -2949,6 +2954,7 @@ msgstr "Files…"
 msgid "Filter subagents"
 msgstr "Filter subagents"
 
+#: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SidePicker.tsx
 msgid "Find a chat"
@@ -3468,6 +3474,7 @@ msgstr "Loading files…"
 msgid "Loading image"
 msgstr "Loading image"
 
+#: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Loading more…"
 msgstr "Loading more…"
@@ -3483,6 +3490,10 @@ msgstr "Loading project…"
 #: src/features/home/ProjectLibrary.tsx
 msgid "Loading projects…"
 msgstr "Loading projects…"
+
+#: src/features/project/chat/RecentChatsLanding.tsx
+msgid "Loading recent chats"
+msgstr "Loading recent chats"
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Loading recent documents"
@@ -3785,6 +3796,7 @@ msgstr "New"
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat/ChatScreen.tsx
+#: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/MainTabStrip.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SideHeader.tsx
@@ -3865,10 +3877,15 @@ msgid "No chats here yet."
 msgstr "No chats here yet."
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SidePicker.tsx
 msgid "No chats match “{search}”."
 msgstr "No chats match “{search}”."
+
+#: src/features/project/chat/RecentChatsLanding.tsx
+msgid "No chats yet"
+msgstr "No chats yet"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "No chats yet."
@@ -4402,6 +4419,12 @@ msgstr "Reason: {0}"
 msgid "Recent activity"
 msgstr "Recent activity"
 
+#: src/features/project/chat/RecentChatsLanding.tsx
+#: src/features/project/mobile/ChatBreadcrumb.tsx
+#: src/features/project/shell/MainHeader.tsx
+msgid "Recent chats"
+msgstr "Recent chats"
+
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/shell/MainHeader.tsx
 #: src/features/project/side/DocumentChoices.tsx
@@ -4654,6 +4677,7 @@ msgstr "Resume my documents on any device"
 #: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
+#: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/ProjectCreationNotice.tsx
@@ -4911,6 +4935,7 @@ msgstr "Show changes"
 msgid "Show less"
 msgstr "Show less"
 
+#: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SidePicker.tsx
 #: src/features/project/work/WorkMetadata.tsx
