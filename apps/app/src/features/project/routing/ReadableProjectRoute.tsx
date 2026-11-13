@@ -788,10 +788,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     [contextDestination],
   );
 
-  const goLegacy = async (next: ProjectAddress, options: NavigationOptions) => {
-    const result = await go(next, options);
-    if (result.kind === "failed") throw result.error;
-  };
   const routeCommands: ProjectRouteCommands = {
     // Already on the chooser is a no-op. A local draft is also `/editor`; its history pointer
     // names it. Navigation clears that pointer. Departure freezes it, so Back returns to the
@@ -801,7 +797,9 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         destination.kind === "editor" &&
         (!("meridianProjectSelection" in location.state) ||
           location.state.meridianProjectSelection == null);
-      return onChooser ? Promise.resolve() : goLegacy(toDestination({ kind: "editor" }), options);
+      return onChooser
+        ? Promise.resolve({ kind: "applied" } as const)
+        : go(toDestination({ kind: "editor" }), options);
     },
   };
   // A resource pointer holds identity, not an Untitled address. Once placement

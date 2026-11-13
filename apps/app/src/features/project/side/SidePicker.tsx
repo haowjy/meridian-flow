@@ -4,7 +4,7 @@
  * It offers one kind, the one main is not. Beside a document, chats as the sidebar lists them:
  * New chat, the scoped Work's chats (pinned first), then Other chats. Beside a chat, documents:
  * those open in main's tabs, Recently opened, then the file explorer over the project's areas.
- * Search filters that kind. A choice writes the project's current chat or document, which lasts until main changes mode.
+ * Search filters that kind. A choice writes the chat or document slot, which lasts until main changes mode.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -26,9 +26,9 @@ import { cn } from "@/lib/utils";
 import { useChatGroups } from "../shell/sidebar/use-chat-groups";
 import { titleChipClass } from "../shell/tab-chip";
 import { useWorkScope } from "../use-work-scope";
-import { type Item, useMainItem } from "../views";
+import { useMainItem } from "../views";
 import { DocumentChoices } from "./DocumentChoices";
-import { useMainForSide, useShellCommands, useSideItem } from "./SideView";
+import { type PlacedItem, useMainForSide, usePlace, useSideItem } from "./SideView";
 
 /** Unpinned chats a list shows at first, and adds with each Show more (the sidebar's page). */
 const PAGE = 20;
@@ -100,9 +100,9 @@ function SidePickerLists({
   onDone: () => void;
 }) {
   const main = useMainForSide();
-  const { swapSide } = useShellCommands(projectId);
-  const choose = (item: Item) => {
-    swapSide(item);
+  const place = usePlace();
+  const choose = (item: PlacedItem) => {
+    place(item);
     onDone();
   };
   // Beside a chat or the new-chat composer, documents; otherwise (a document, the landing, a
@@ -118,7 +118,7 @@ function SidePickerLists({
   );
 }
 
-const chatItem = (chatId: string): Item => ({ kind: "chat", chatId });
+const chatItem = (chatId: string): PlacedItem => ({ kind: "chat", chatId });
 
 /** Beside a document: the sidebar's order, New chat first. */
 function ChatChoices({
@@ -128,7 +128,7 @@ function ChatChoices({
 }: {
   projectId: string;
   searchRef: React.RefObject<HTMLInputElement | null>;
-  choose: (item: Item) => void;
+  choose: (item: PlacedItem) => void;
 }) {
   const [query, setQuery] = useState("");
   const mainName = useMainItem().document.document?.name ?? null;

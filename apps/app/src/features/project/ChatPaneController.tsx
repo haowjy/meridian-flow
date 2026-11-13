@@ -10,6 +10,7 @@ import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { useChatNavigation } from "./routing/chat-navigation";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
+import type { ProjectRouteCommands } from "./routing/project-route";
 import { MainHeader } from "./shell/MainHeader";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
@@ -17,7 +18,7 @@ export type ChatPaneControllerProps = {
   projectId: string;
   threadId: string | null;
   open: OpenContextRoute;
-  onShowRecents: (options: { replace: boolean }) => Promise<void>;
+  onShowRecents: ProjectRouteCommands["showEditorRecents"];
   sidebarToggle: PaneHeaderRailToggle;
   contextToggle: PaneHeaderRailToggle;
 };

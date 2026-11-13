@@ -85,19 +85,11 @@ export function fitsBeside(item: Item, main: MainForSide): boolean {
 }
 
 /**
- * Where an item opens, from a pane: the same kind as the pane's own item opens there, the other
- * kind in the other pane, and the left sidebar always opens in main. Main and the side hold
- * different kinds, so from main or from the side this is "main's kind opens in main".
+ * Where an item opens: main's kind in main, the other kind beside. The left sidebar always opens in
+ * main, which its callers do without asking.
  */
-export function placeIn(
-  kind: Item["kind"],
-  main: MainForSide,
-  from: PanePlace | "sidebar",
-): PanePlace {
-  if (from === "sidebar") return "main";
-  const mainKind = mainMode(main) ?? "document";
-  const fromKind = from === "main" ? mainKind : mainKind === "chat" ? "document" : "chat";
-  return kind === fromKind ? from : from === "main" ? "side" : "main";
+export function placeIn(kind: Item["kind"], main: MainForSide): PanePlace {
+  return kind === (mainMode(main) ?? "document") ? "main" : "side";
 }
 
 export function resolveSide(input: {

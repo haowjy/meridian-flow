@@ -19,6 +19,7 @@ import type { AgentNameStore } from "./agent-name-store";
 import { BlockDragExtension } from "./blocks";
 import { ChromeKernelExtension } from "./chrome";
 import { COLLABORATION_CURSOR_COLORS, resolveCollaborationColor } from "./collaboration-colors";
+import type { DocumentHistory } from "./editor-history";
 import { AtReferenceExtension, type AtReferenceExtensionOptions } from "./extensions/at-reference";
 import { AutoPairExtension } from "./extensions/auto-pair";
 import { DraftInlineReviewExtension } from "./extensions/inline-review";
@@ -83,6 +84,8 @@ export type AssetRenderContext = {
 
 export type CreateEditorExtensionsOptions = {
   document: Y.Doc;
+  /** The document's undo, owned by its session; this editor attaches while mounted. */
+  history: DocumentHistory;
   schemaType?: YjsTrackedSchemaType;
   /**
    * This client's presence, held by whatever decides when it is on the wire —
@@ -223,12 +226,13 @@ const CodeDocument = Node.create({
 
 function createCollaborationExtensions({
   document,
+  history,
   presence,
   user,
   showCollaborationDecorations = true,
 }: Pick<
   CreateEditorExtensionsOptions,
-  "document" | "presence" | "user" | "showCollaborationDecorations"
+  "document" | "history" | "presence" | "user" | "showCollaborationDecorations"
 >): Extensions {
   const published = {
     accountId: user?.accountId ?? "",
@@ -241,6 +245,8 @@ function createCollaborationExtensions({
       // Passing the concrete Y.XmlFragment keeps the shared type name at the
       // server contract value (`prosemirror`).
       fragment: document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
+      // The session's manager, not one this editor would build and lose when it unmounts.
+      yUndoOptions: { undoManager: history.manager },
     }),
   ];
 
@@ -266,6 +272,7 @@ function createCollaborationExtensions({
 
 export function createEditorExtensions({
   document,
+  history,
   schemaType = "document",
   presence,
   user,
@@ -281,6 +288,7 @@ export function createEditorExtensions({
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
     document,
+    history,
     presence,
     user,
     showCollaborationDecorations,
@@ -298,7 +306,7 @@ export function createEditorExtensions({
     ...collaboration,
     // Mounted history depends on collaboration's UndoManager, so its key bindings
     // mount with collaboration rather than in the standalone set.
-    UndoRedoKeymapExtension,
+    UndoRedoKeymapExtension.configure({ history }),
     // A document with no shared room has no "uploading elsewhere", so the
     // ephemeral half of uploads mounts here rather than beside the doors.
     ...(schemaType === "document" ? [UploadPresenceExtension.configure({ presence })] : []),
@@ -416,6 +424,7 @@ export function createStandaloneEditorExtensions({
 
 export function createEditorConfig({
   document,
+  history,
   schemaType,
   presence,
   user,
@@ -447,6 +456,7 @@ export function createEditorConfig({
     extensions: [
       ...createEditorExtensions({
         document,
+        history,
         schemaType: resolvedSchemaType,
         presence,
         user,

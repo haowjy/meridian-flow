@@ -97,6 +97,8 @@ type Binding = {
 type Item = {
   ref: DraftRef;
   queue: ApplyClickQueue;
+  /** Removers of the editor-history entries whose actions go through `queue`. */
+  applyEntries: Set<() => void>;
   /** Its draft rooms: a text click pins the draft it froze, so an older room can outlive a newer bind. */
   rooms: Set<Entry>;
 };
@@ -261,6 +263,7 @@ export class DraftCommandOwner {
     const item: Item = {
       ref,
       rooms: new Set(),
+      applyEntries: new Set(),
       queue: new ApplyClickQueue({
         send: (body) => applyDraftClick(ref, body),
         lookup: (body) => observeDraftClick(ref, body),
@@ -547,6 +550,9 @@ export class DraftCommandOwner {
   private releaseItem(item: Item) {
     if (item.rooms.size || item.queue.pending || this.items.get(item.ref.itemKey) !== item) return;
     this.items.delete(item.ref.itemKey);
+    // The Apply entries sit on a session that can outlive this queue; their actions need it.
+    for (const remove of item.applyEntries) remove();
+    item.applyEntries.clear();
   }
 
   /** A click's answer, as its caller's outcome and a refusal on the generation it was made for. */
@@ -762,7 +768,8 @@ export class DraftCommandOwner {
             }),
         })
       : { outcome: entry.item.queue.enqueue(frozen, barrier.promise), handle: null };
-    if (scheduled.handle) history?.captureApply(scheduled.handle);
+    if (scheduled.handle && history)
+      entry.item.applyEntries.add(history.captureApply(scheduled.handle));
     binding.runtime.projectNow();
     const outcome = scheduled.outcome.then((answer) => this.settled(ref, entry.draftId, answer));
     let released = false;

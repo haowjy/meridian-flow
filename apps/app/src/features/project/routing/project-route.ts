@@ -1,5 +1,6 @@
 /** Stable-ID navigation commands and normalized context-removal CAS snapshots, not browser grammar. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { NavigationSettlement } from "./project-navigation";
 
 /**
  * Main's document as the removal coordinator compares it: its locator, absent when main holds no
@@ -129,7 +130,7 @@ export function contextRouteMatchesSearch(
 
 export type ProjectRouteCommands = {
   /** Editor destination with no document and no local history pointer. */
-  showEditorRecents: (options: NavigationOptions) => Promise<void>;
+  showEditorRecents: (options: NavigationOptions) => Promise<NavigationSettlement>;
 };
 
 function stripEmptySearch(search: ProjectSearch): ProjectSearch {

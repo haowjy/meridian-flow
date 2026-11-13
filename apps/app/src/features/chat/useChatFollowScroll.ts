@@ -11,29 +11,38 @@ const AUTOSCROLL_GUARD_MS = 180;
 type Options = {
   scrollRef: RefObject<HTMLElement | null>;
   contentHeight: number;
+  /** A chat returned to starts as the writer left it; a fresh one follows. */
+  initialMode?: FollowMode;
 };
 
 function maxScrollTopFrom(contentHeight: number, viewportHeight: number): number {
   return Math.max(contentHeight - viewportHeight, 0);
 }
 
-export function useChatFollowScroll({ scrollRef, contentHeight }: Options): {
+export function useChatFollowScroll({
+  scrollRef,
+  contentHeight,
+  initialMode = "follow",
+}: Options): {
   mode: FollowMode;
+  /** The mode now, for a caller leaving the chat that records it. */
+  currentMode: () => FollowMode;
   /** Re-acquire follow (pill click, submit): flips mode synchronously — so the pill hides in the same commit — then pins instantly. */
   enterFollow: () => void;
   /** Leave follow without moving: a caller about to scroll elsewhere (a reveal) must not be re-pinned to the bottom. */
   releaseFollow: () => void;
 } {
-  const [mode, setMode] = useState<FollowMode>("follow");
+  const [mode, setMode] = useState<FollowMode>(initialMode);
   // `commitMode` below is the ONLY writer of this ref (no render-time sync — a
   // render with stale state would clobber a transition committed between
   // renders). The ref is therefore always the freshest intended mode, which is
   // what event/timer callbacks must read in the gap before React commits.
-  const modeRef = useRef<FollowMode>("follow");
+  const modeRef = useRef<FollowMode>(initialMode);
 
   const programmaticGuardRef = useRef(false);
   const guardTimeoutRef = useRef<number | null>(null);
   const lastScrollTopRef = useRef(0);
+  const lastScrollHeightRef = useRef(0);
   const touchStartYRef = useRef<number | null>(null);
   // Cached geometry: the pin avoids reading `scrollHeight`/`clientHeight`.
   const contentHeightRef = useRef(contentHeight);
@@ -144,6 +153,13 @@ export function useChatFollowScroll({ scrollRef, contentHeight }: Options): {
         const currentTop = el.scrollTop;
         const prevTop = lastScrollTopRef.current;
         const max = maxScrollTop();
+        // Rows measuring smaller than their estimates shrink the content, and the virtualizer (or
+        // the browser's clamp) moves the offset up by as much. That is layout, not the reader
+        // scrolling up, so only a move beyond the shrink counts as one.
+        const scrollHeight = el.scrollHeight;
+        const shrunk = lastScrollHeightRef.current - scrollHeight;
+        lastScrollHeightRef.current = scrollHeight;
+        const movedUp = currentTop < prevTop - 1 && prevTop - currentTop > shrunk + 1;
         // Keep the baseline fresh even for guarded writes, so the next real user
         // delta is measured from where the viewport actually is.
         lastScrollTopRef.current = currentTop;
@@ -155,7 +171,7 @@ export function useChatFollowScroll({ scrollRef, contentHeight }: Options): {
           // continuously while streaming pins, so without this the drag would be
           // swallowed and the next pin would yank the reader back down).
           const farAboveBottom = max - currentTop > 2 * BOTTOM_THRESHOLD_PX;
-          if (farAboveBottom && currentTop < prevTop - 1) commitMode("free");
+          if (farAboveBottom && movedUp) commitMode("free");
           return;
         }
 
@@ -165,11 +181,12 @@ export function useChatFollowScroll({ scrollRef, contentHeight }: Options): {
           return;
         }
 
-        if (currentTop < prevTop - 1) commitMode("free");
+        if (movedUp) commitMode("free");
       }, 1);
     };
 
     lastScrollTopRef.current = el.scrollTop;
+    lastScrollHeightRef.current = el.scrollHeight;
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       el.removeEventListener("scroll", onScroll);
@@ -198,5 +215,7 @@ export function useChatFollowScroll({ scrollRef, contentHeight }: Options): {
     };
   }, []);
 
-  return { mode, enterFollow, releaseFollow };
+  const currentMode = useCallback(() => modeRef.current, []);
+
+  return { mode, currentMode, enterFollow, releaseFollow };
 }

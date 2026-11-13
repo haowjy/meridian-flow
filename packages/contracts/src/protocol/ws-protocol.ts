@@ -335,6 +335,8 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
   z.object({
     type: z.literal("project-chats-hint"),
     projectId: z.string().min(1),
+    removedChatIds: z.array(z.string().min(1)).optional(),
+    recheckTabs: z.literal(true).optional(),
   }),
   z.object({
     type: z.literal("draft-owner-hint"),

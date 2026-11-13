@@ -20,15 +20,18 @@ export type MainTab =
 
 export type MainTabKind = MainTab["kind"];
 
-export type Lane = Readonly<{
-  tabs: readonly MainTab[];
+/** One kind's tab, so a lane's reader never re-checks the kind it already named. */
+export type TabOf<K extends MainTabKind> = Extract<MainTab, { kind: K }>;
+
+export type Lane<K extends MainTabKind = MainTabKind> = Readonly<{
+  tabs: readonly TabOf<K>[];
   /** The tab main showed last, kept while main shows the other kind: a new tab opens to its right. */
   selected: string | null;
 }>;
 
-export type MainTabs = Readonly<Record<MainTabKind, Lane>>;
+export type MainTabs = Readonly<{ [K in MainTabKind]: Lane<K> }>;
 
-const EMPTY_LANE: Lane = { tabs: [], selected: null };
+const EMPTY_LANE = { tabs: [], selected: null } as const;
 const EMPTY: MainTabs = { document: EMPTY_LANE, chat: EMPTY_LANE };
 
 export function mainTabKey(tab: MainTab): string {
@@ -46,17 +49,17 @@ function parseDocument(value: unknown): OpenDocument | undefined {
   return value as OpenDocument;
 }
 
-function parseLane(value: unknown, kind: MainTabKind): Lane {
+function parseLane<K extends MainTabKind>(
+  value: unknown,
+  kind: K,
+  parseTab: (raw: Record<string, unknown>) => TabOf<K> | undefined,
+): Lane<K> {
   if (!isRecord(value) || !Array.isArray(value.tabs)) return EMPTY_LANE;
-  const tabs: MainTab[] = [];
+  const tabs: TabOf<K>[] = [];
   const seen = new Set<string>();
   for (const raw of value.tabs) {
     if (!isRecord(raw) || raw.kind !== kind) continue;
-    let tab: MainTab | undefined;
-    if (kind === "document") {
-      const document = parseDocument(raw.document);
-      tab = document && { kind, document };
-    } else if (typeof raw.chatId === "string") tab = { kind, chatId: raw.chatId };
+    const tab = parseTab(raw);
     if (!tab || seen.has(mainTabKey(tab))) continue;
     seen.add(mainTabKey(tab));
     tabs.push(tab);
@@ -70,7 +73,15 @@ function parseLane(value: unknown, kind: MainTabKind): Lane {
 
 function parseTabs(value: unknown): MainTabs | undefined {
   if (!isRecord(value)) return undefined;
-  return { document: parseLane(value.document, "document"), chat: parseLane(value.chat, "chat") };
+  return {
+    document: parseLane(value.document, "document", (raw) => {
+      const document = parseDocument(raw.document);
+      return document && { kind: "document", document };
+    }),
+    chat: parseLane(value.chat, "chat", (raw) =>
+      typeof raw.chatId === "string" ? { kind: "chat", chatId: raw.chatId } : undefined,
+    ),
+  };
 }
 
 function record(accountId: string, projectId: string) {
@@ -109,7 +120,12 @@ function write(accountId: string, projectId: string, next: MainTabs): void {
   for (const listener of listeners.get(key) ?? []) listener();
 }
 
-function writeLane(accountId: string, projectId: string, kind: MainTabKind, lane: Lane): void {
+function writeLane<K extends MainTabKind>(
+  accountId: string,
+  projectId: string,
+  kind: K,
+  lane: Lane<K>,
+): void {
   write(accountId, projectId, { ...readMainTabs(accountId, projectId), [kind]: lane });
 }
 
@@ -119,7 +135,7 @@ function writeLane(accountId: string, projectId: string, kind: MainTabKind, lane
  * (a rename, a move) in place.
  */
 export function arriveMainTab(accountId: string, projectId: string, tab: MainTab): void {
-  const current = readMainTabs(accountId, projectId)[tab.kind];
+  const current: Lane = readMainTabs(accountId, projectId)[tab.kind];
   const key = mainTabKey(tab);
   const at = current.tabs.findIndex((member) => mainTabKey(member) === key);
   if (at >= 0) {
@@ -139,7 +155,7 @@ export function arriveMainTab(accountId: string, projectId: string, tab: MainTab
  * A closed one stays closed, so a removal that closed it is not undone by the page re-rendering.
  */
 export function refreshMainTab(accountId: string, projectId: string, tab: MainTab): void {
-  const current = readMainTabs(accountId, projectId)[tab.kind];
+  const current: Lane = readMainTabs(accountId, projectId)[tab.kind];
   const at = current.tabs.findIndex((member) => mainTabKey(member) === mainTabKey(tab));
   if (at < 0) return;
   const tabs = refreshed(current.tabs, at, tab);
@@ -154,7 +170,8 @@ function refreshed(tabs: readonly MainTab[], at: number, tab: MainTab): readonly
 
 /**
  * Closes a tab. Returns the tab main should show in its place when it was main's (its right
- * neighbour, else its left), or null when none is left or it was not main's.
+ * neighbour, else its left, among `drawn`: the tabs the strip shows, not the whole record), or null
+ * when none is left or it was not main's.
  */
 export function closeMainTab(
   accountId: string,
@@ -162,14 +179,15 @@ export function closeMainTab(
   kind: MainTabKind,
   key: string,
   mainKey: string | null,
+  drawn: readonly MainTab[],
 ): MainTab | null {
-  const current = readMainTabs(accountId, projectId)[kind];
-  const at = current.tabs.findIndex((member) => mainTabKey(member) === key);
-  if (at < 0) return null;
-  const tabs = current.tabs.filter((_, i) => i !== at);
-  const next = key === mainKey ? (tabs[at] ?? tabs[at - 1] ?? null) : null;
+  const current: Lane = readMainTabs(accountId, projectId)[kind];
+  if (!current.tabs.some((member) => mainTabKey(member) === key)) return null;
+  const shown = drawn.filter((member) => mainTabKey(member) !== key);
+  const at = drawn.findIndex((member) => mainTabKey(member) === key);
+  const next = key === mainKey ? (shown[at] ?? shown[at - 1] ?? null) : null;
   writeLane(accountId, projectId, kind, {
-    tabs,
+    tabs: current.tabs.filter((member) => mainTabKey(member) !== key),
     selected: current.selected === key ? null : current.selected,
   });
   return next;
@@ -181,11 +199,11 @@ export function closeAllMainTabs(accountId: string, projectId: string, kind: Mai
 }
 
 /** These tabs' items are gone (documents deleted or Discarded, chats deleted): their tabs close. */
-function dropTabs(
+function dropTabs<K extends MainTabKind>(
   accountId: string,
   projectId: string,
-  kind: MainTabKind,
-  gone: (tab: MainTab) => boolean,
+  kind: K,
+  gone: (tab: TabOf<K>) => boolean,
 ): void {
   const current = readMainTabs(accountId, projectId)[kind];
   const tabs = current.tabs.filter((tab) => !gone(tab));
@@ -201,16 +219,13 @@ export function dropMainTabDocuments(
   projectId: string,
   documentIds: readonly string[],
 ): void {
-  dropTabs(
-    accountId,
-    projectId,
-    "document",
-    (tab) => tab.kind === "document" && documentIds.includes(tab.document.documentId),
+  dropTabs(accountId, projectId, "document", (tab) =>
+    documentIds.includes(tab.document.documentId),
   );
 }
 
 export function dropMainTabChat(accountId: string, projectId: string, chatId: string): void {
-  dropTabs(accountId, projectId, "chat", (tab) => tab.kind === "chat" && tab.chatId === chatId);
+  dropTabs(accountId, projectId, "chat", (tab) => tab.chatId === chatId);
 }
 
 function subscribe(accountId: string, projectId: string, listener: () => void) {

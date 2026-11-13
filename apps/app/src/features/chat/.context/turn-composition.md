@@ -98,6 +98,18 @@ It reads cached content and viewport heights and guards programmatic scroll
 bursts, so streaming needs no synchronous layout read per token. No child
 transcript surface adds a scroller.
 
+Leaving a chat writes its view record (`chat-view-record.ts`): the virtualizer's measured row
+sizes (`takeSnapshot`), its offset and the follow mode. The next mount of that chat starts from
+it (`initialMeasurementsCache`, `initialOffset`, `initialMode`), so a return paints at the place
+the writer left, at the tail if they were following, without re-measuring from the 160 px
+estimate. The record is module state, 32 chats deep, and a chat that never measured a row
+leaves the earlier record alone.
+
+The router's scroll restoration is off under `/p/` (`router.tsx`): it copies the previous route's
+offset onto the next chat's transcript and writes it over the tail pin. A scroll-up no larger than
+the content's shrink since the last scroll event is layout (rows measuring under their estimate),
+not the writer, so it doesn't release follow.
+
 The app reads the chat's `RunState` only through the `@meridian/thread-client`
 selectors (`isBusy`, `waitingWriterMessages`, `usageBlockedMessages`,
 `switchState`), as `./mf` does

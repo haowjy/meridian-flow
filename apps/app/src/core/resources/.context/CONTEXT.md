@@ -63,7 +63,12 @@ That opened handle is the verified-local readiness signal consumed by the Editor
 it does not wait for or imply first server sync. Remote admission proceeds in the
 background against the same Y.Doc. Separate browser contexts converge through
 local Yjs peers. Failed destruction quarantines the handle until retry; abort and
-account close fence delivery after every await.
+account close fence delivery after every await. The session lives while any lease is
+held, and a lease taken with `adoptionEligible` is a host showing the document. Each lease
+change reports "hosted or not" to the registry through the entry's ownership (`setHosted`); the
+registry alone then attaches or detaches the socket (see the registry's "attached" rule in
+core/editor's context). An open tab kept for its undo (`useOpenTabSessions`) holds the session
+and its history, not a socket.
 
 `AccountResourceReplica.start()` observes the shared account metadata stream to
 schedule recoverable namespace, adoption and cleanup work, independently of mounted

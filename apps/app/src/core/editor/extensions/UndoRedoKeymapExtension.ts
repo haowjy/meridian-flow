@@ -10,12 +10,7 @@
  * history exists — a standalone editor has no undo command to bind to.
  */
 import { Extension } from "@tiptap/core";
-import {
-  mountEditorHistory,
-  redoEditorHistory,
-  undoEditorHistory,
-  unmountEditorHistory,
-} from "../editor-history";
+import { type DocumentHistory, redoEditorHistory, undoEditorHistory } from "../editor-history";
 
 export const UndoRedoKeymapExtension = Extension.create({
   name: "meridianUndoRedoKeymap",
@@ -23,12 +18,22 @@ export const UndoRedoKeymapExtension = Extension.create({
   // first and no extension added later can quietly take them.
   priority: 1100,
 
+  addOptions() {
+    return { history: null as DocumentHistory | null };
+  },
+
+  addStorage() {
+    return { detach: null as (() => void) | null };
+  },
+
+  // The history belongs to the document's session; this editor follows it while mounted.
   onCreate() {
-    mountEditorHistory(this.editor);
+    this.storage.detach = this.options.history?.attach(this.editor) ?? null;
   },
 
   onDestroy() {
-    unmountEditorHistory(this.editor);
+    this.storage.detach?.();
+    this.storage.detach = null;
   },
 
   // Every binding consumes its key whether or not the stack had anything left.

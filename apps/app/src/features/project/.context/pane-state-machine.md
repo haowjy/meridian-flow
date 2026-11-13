@@ -6,7 +6,7 @@ changing this page in the same commit:** the rules, the tables and the diagrams 
 placement rule in code that this page doesn't state is a bug in one of the two.
 
 Status: current. The code implements this page: `useMainArrival` writes the slots and main's tabs,
-`place(item, from)` is the one placement command, and the Write | Chat switch opens the slot of its
+`place(item)` is the one placement command, and the Write | Chat switch opens the slot of its
 kind in main (`shell/MainModeSwitch.tsx`). Every swap, whatever opened it (the switch, Swap with main in the side header or Open in main on the phone, a pick or a link), glides in one place: `layout/SlotGrid.tsx` animates any host whose slot changed. Where this page and the
 code disagree, one of them is a bug.
 
@@ -44,13 +44,9 @@ flowchart TD
   pick([Writer picks X]) --> where{Where?}
   where -->|Left sidebar| om[openMain X]
   where -->|Write or Chat switch to kind k| cur[X = slot of k, else current of k, else empty page of k] --> om
-  where -->|Inside main| inMain{Same kind as main?}
-  inMain -->|yes| om
-  inMain -->|no| os[openSide X]
-  where -->|Inside the side| inSide{Same kind as the side?}
-  inSide -->|yes| os
-  inSide -->|no| om
-  where -->|Side picker, other kind only| os
+  where -->|Inside a pane, or the side picker| inPane{Same kind as main?}
+  inPane -->|yes| om
+  inPane -->|no| os[openSide X]
   om --> kind{Same kind as main?}
   kind -->|yes| rep[main := X; side stays]
   kind -->|no| swap[side := main; main := X]
@@ -60,20 +56,21 @@ flowchart TD
   os --> sideset[side := X] --> done
 ```
 
-In one line: **the same kind opens in place, the other kind opens in the other pane, and the left
-sidebar always opens in main.** Main and the side always hold different kinds.
+In one line: **main's kind opens in main, the other kind opens beside, and the left sidebar always
+opens in main.** Main and the side always hold different kinds, so from either pane this is the
+same rule (`placeIn(kind, main)`); only the sidebar, outside every pane, opens in main without asking.
 
 ## Events
 
 | Event | Result |
 |---|---|
 | Pick in the left sidebar | `openMain(X)` |
-| Pick inside main | same kind as main: `openMain(X)`; other kind: `openSide(X)` |
-| Pick inside the side | same kind as the side: `openSide(X)`; other kind (main's): `openMain(X)`, side stays |
+| Pick inside main or the side | main's kind: `openMain(X)`; the other kind: `openSide(X)` |
 | Pick in the side's picker | `openSide(X)`; it lists only the other kind |
 | Write or Chat switch to kind k | `openMain(slot of k ?? current of k ?? empty page of k)`: the panes swap kinds, the side's item first |
 | Close main's tab | main shows the next tab of its kind, else its empty page; the side stays |
 | Delete or remove the side's item | the side shows its empty state |
+| A chat tab's chat is deleted (here or in another window) | its tab closes; a chat delete's `project-chats-hint` names the chat ids, so those tabs close with no request; a Work delete (ids unknown) and a catalog-channel reconnect (hints may be lost) send `recheckTabs`, and mount does the same, each running the owner-gate probe over the tabs main isn't showing as one batch. Ordinary lifecycle hints and a restore leave tabs alone. The hub is in process: with several server instances a delete's hint reaches only windows on the same instance until their next reconnect; nothing polls |
 
 Home is the new-chat composer: it suggests what to continue and documents to open beside it, and a
 suggested document is the other kind, so it opens in the side.

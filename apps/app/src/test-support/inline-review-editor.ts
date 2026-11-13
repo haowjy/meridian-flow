@@ -9,6 +9,7 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
 import { createEditorConfig } from "@/core/editor/config";
+import { DocumentHistory } from "@/core/editor/editor-history";
 import { createLocalPresence } from "@/core/editor/local-presence";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@/core/editor/schema";
 import { createReviewRuntime, type ReviewRuntime } from "@/features/draft-review/review-runtime";
@@ -55,6 +56,7 @@ export function createReviewEditor(
     element,
     ...createEditorConfig({
       document: doc,
+      history: DocumentHistory.forDocument(doc),
       presence: createLocalPresence(new Awareness(doc)),
       showCollaborationDecorations: false,
       enableDraftInlineReview: true,
