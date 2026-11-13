@@ -4,8 +4,7 @@
  * the side reads, so a change of kind needs no swap code. Main's empty pages (the landing, the
  * new-chat composer) null their slot: the side never holds what main left empty.
  *
- * It also lets go of chats deleted elsewhere (`useDropGoneChatTabs`), which leaves through the
- * deleted-chat cleanup.
+ * It also closes the chat tabs of chats deleted elsewhere (`useDropGoneChatTabs`).
  *
  * Placement follows `features/project/.context/pane-state-machine.md`: change that page's rules and
  * diagrams with any change here.
@@ -20,6 +19,7 @@ import {
 } from "@/client/project-shell/main-tabs";
 import { writeLastShownChat, writeLastShownDocument } from "@/client/project-shell/store";
 import type { OpenDocument } from "@/client/stores";
+import { useChatNavigation } from "./routing/chat-navigation";
 import type { MainForSide } from "./side/side-item";
 
 export function useMainArrival({
@@ -36,7 +36,14 @@ export function useMainArrival({
   document: OpenDocument | null;
   locationKey: string | undefined;
 }) {
-  useDropGoneChatTabs(accountId, projectId);
+  // A chat deleted elsewhere goes as one deleted here does: its tab and slot, and main to a new chat.
+  const navigation = useChatNavigation();
+  useDropGoneChatTabs(accountId, projectId, (chatId) => {
+    const { display } = navigation;
+    navigation.forgetChat(chatId);
+    if (display?.kind === "thread" && display.threadId === chatId)
+      void navigation.openNewChat({ replace: true, focus: false });
+  });
   // A document's arrival opens or selects its tab once per arrival at an address; after that its
   // descriptor only refreshes the tab while it is open.
   const arrivedAt = useRef<string | undefined>(undefined);
