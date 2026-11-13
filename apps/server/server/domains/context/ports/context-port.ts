@@ -14,14 +14,10 @@ import type {
   ContextEntryRef,
   ContextError,
   ContextMoveResult,
-  ContextOperationCommand,
-  ContextOperationReceipt,
   ContextSiblingPosition,
   CopyContextEntriesResult,
-  DeleteContextEntryResult,
   DocumentFileType,
   Filetype,
-  MoveContextEntryRequest,
   RetractionCause,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
@@ -32,7 +28,7 @@ import type { BranchOwnerRef } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 import type { AddressGlob } from "../grep/address-glob.js";
 import type { GrepMatcher } from "../grep/matcher.js";
-import type { BranchChangeAuthor, RecordedBranchTreeChange } from "./branch-tree.js";
+import type { AdapterDraftedChange } from "./context-adapter.js";
 
 /**
  * Registered context URI schemes.
@@ -106,98 +102,6 @@ export interface ContextEnsureTrackedDocumentResult {
 export interface ContextCreateTrackedDocumentResult {
   uri: string;
   documentId: string;
-}
-
-export type ContextCreateUntitledDocumentResult =
-  | {
-      status: "created";
-      documentId: string;
-      scheme: ContextScheme;
-      path: string;
-      name: string;
-      workId?: string;
-    }
-  /** The create joined a branch's document; `documentId` is that document, at its current address. */
-  | {
-      status: "joined";
-      documentId: string;
-      scheme: ContextScheme;
-      path: string;
-      name: string;
-      workId?: string;
-    }
-  | {
-      status: "already-materialized";
-      documentId: string;
-      scheme: ContextScheme;
-      path: string;
-      name: string;
-      /** Present only when the canonical location is Work-scoped. */
-      workId?: string;
-    };
-
-export interface ContextCreateUntitledDocumentOptions {
-  documentId: string;
-  origin: WriteProvenance;
-  /**
-   * The writer's chosen place for this document, the same identity-based address a move
-   * carries. The create joins a branch's hidden document waiting there. Without it the
-   * create is nameless: `Untitled N` in the home URI's folder.
-   */
-  destination?: {
-    parent: NonNullable<MoveContextEntryRequest["destinationParent"]>;
-    name: string;
-    position?: MoveContextEntryRequest["position"];
-  };
-  /** Refuses a destination the caller may not edit; given the resolved destination URI. */
-  authorizeDestination?: (uri: string) => Promise<boolean>;
-}
-
-/** What the router hands an adapter: the destination resolved to a folder path and a leaf. */
-export interface AdapterCreateUntitledOptions {
-  documentId: string;
-  origin: WriteProvenance;
-  /** The typed leaf filename; absent for a nameless create. */
-  name?: string;
-  /** The folder identity the destination named: a stale one is retried, never made again. */
-  expectFolderId?: string;
-  /** Where among the folder's children a new document goes; it never moves one that exists. */
-  position?: MoveContextEntryRequest["position"];
-}
-
-export interface ContextCreateFolderOptions {
-  folderId: string;
-  origin: WriteProvenance;
-  /** Where the writer put the folder; the same identity-based address a move carries. */
-  destination: {
-    parent: NonNullable<MoveContextEntryRequest["destinationParent"]>;
-    name: string;
-    position?: MoveContextEntryRequest["position"];
-  };
-  /** Refuses a destination the caller may not edit; given the resolved destination URI. */
-  authorizeDestination?: (uri: string) => Promise<boolean>;
-}
-
-export interface ContextCreateFolderResult {
-  /** `already-exists` answers a replay of the same id. */
-  status: "created" | "already-exists";
-  folderId: string;
-  scheme: ContextScheme;
-  path: string;
-  name: string;
-  workId?: string;
-}
-
-/** What the router hands an adapter: the destination resolved to a folder path and a leaf. */
-export interface AdapterCreateFolderOptions {
-  folderId: string;
-  origin: WriteProvenance;
-  /** The typed folder name; a taken one yields to the first free name. */
-  name: string;
-  /** The folder identity the destination named: a stale one is retried, never made again. */
-  expectFolderId?: string;
-  /** Where among the folder's siblings a new folder goes. */
-  position?: MoveContextEntryRequest["position"];
 }
 
 interface BaseListEntry {
@@ -417,75 +321,58 @@ export interface ContextWriteOptions {
   metadata?: DocumentCreationMetadata;
 }
 
-/** A move or delete the writer's device sent, with the receipt command it answers a resend from. */
-export type ContextOperationInput<K extends ContextOperationCommand["kind"]> = {
-  id: string;
-  command: Extract<ContextOperationCommand, { kind: K }>;
-};
-
 /**
- * Where a moved node lands. The node's own row is read under the locks, so none of these carry
- * its path; `folderUri` and `folderId` name only the folder it goes into.
+ * Where a moved node lands. The node is read by id under the list's lock, so none of these
+ * carry its path; `folderUri` names only the folder it goes into.
  */
 export type ContextMoveDestination =
   /** The folder the node is in: a rename or a reorder. */
   | { kind: "keep" }
-  /** A folder by identity, read again under the locks; `authorize` rechecks edit there. */
-  | {
-      kind: "folder";
-      folderId: string;
-      createFolders?: readonly string[];
-      authorize: (uri: string) => Promise<boolean>;
-    }
-  /** A folder (or an area root) by address, which `createFolders` extends. */
-  | { kind: "at"; folderUri: string; createFolders?: readonly string[] };
+  /** A folder by address. */
+  | { kind: "at"; folderUri: string };
+
+/** A move as it landed: `moved` is false when the node already stood there and nothing was written. */
+export type ContextMoved = ContextMoveResult & {
+  moved: boolean;
+  /** The Work's branch and the node's facts in it on either side, for a drafted move. */
+  drafted?: AdapterDraftedChange;
+};
 
 export interface ContextLocationChange {
   destination: ContextMoveDestination;
   /** The name the writer typed, when they did; omitted keeps the node's own name. */
   name?: string;
-  position?: MoveContextEntryRequest["position"];
+  position?: ContextSiblingPosition;
   origin?: WriteProvenance;
-  operation?: ContextOperationInput<"move">;
+  /** A record of the Work's branch, not of live; the port must have a branch placement. */
+  drafted?: boolean;
   /**
-   * Runs inside the move's own transaction once its rows are written, so a caller's record of
-   * the move (the model's edit history) commits or rolls back with it.
+   * Runs inside the move's own transaction once its records are made, so a caller's entry of
+   * the move (the model's edit history) commits or rolls back with it. Not called when
+   * nothing moved.
    */
-  inTransaction?: (moved: ContextMoveResult) => Promise<void>;
+  inTransaction?: (moved: ContextMoved) => Promise<void>;
 }
 
-/**
- * What `changeInBranch` does to the document it names, wherever the branch has it now. `area` is
- * the root URI of the scheme and owner it was last seen in, as for `commitWriterLocation`.
- */
-export type ContextBranchTreeCommand = {
-  documentId: string;
-  area: string;
-  changedBy: BranchChangeAuthor;
-  record(change: RecordedBranchTreeChange): Promise<void>;
-} & (
-  | {
-      op: "move";
-      destinationUri: string;
-      position?: MoveContextEntryRequest["position"];
-    }
-  | { op: "delete" }
-);
-
-/** `uri` is where a move landed; a delete answers its area and `moved: false`. */
-export type ContextBranchTreeResult = { uri: string; moved: boolean };
+/** What a delete took: the documents and files in it, the node itself among them. */
+export type ContextDeleted = {
+  /** Where the entry stood. */
+  uri: string;
+  documentIds: string[];
+  drafted?: AdapterDraftedChange;
+};
 
 export interface ContextDeleteOptions {
   origin?: WriteProvenance;
-  removal?: { reason: "discarded"; cause: RetractionCause };
-  operation?: ContextOperationInput<"delete">;
+  /** A record of the Work's branch, not of live. */
+  drafted?: boolean;
   /**
    * Delete only while the node is still at this path of its area; a node the writer has
    * renamed or moved since survives, and the delete answers `stale_target`.
    */
   onlyAt?: string;
-  /** Runs inside the delete's own transaction once the removal is written (see the move's). */
-  inTransaction?: (deleted: DeleteContextEntryResult) => Promise<void>;
+  /** Runs inside the delete's own transaction once its record is made (see the move's). */
+  inTransaction?: (deleted: ContextDeleted) => Promise<void>;
 }
 
 /** Input for writing a binary (storage-backed) document through {@link ContextPort.writeBinary}. */
@@ -508,8 +395,6 @@ export interface ContextWriteBinaryOptions extends ContextWriteOptions {
  * boundary (architecture-constraints #7).
  */
 export interface ContextPort {
-  lookupOperation(operationId: string): Promise<ContextOperationReceipt | null>;
-
   /**
    * One Copy: the request's roots are read through this port's sources (an explicit per-source
    * read view), and the destination's adapter inserts the tree, all in one transaction with a
@@ -569,18 +454,6 @@ export interface ContextPort {
     documentId: string,
   ): Promise<Result<{ documentId: string; uri: string } | null, ContextError>>;
 
-  /** Allocate and persist an empty client-seeded document under a home directory URI. */
-  createUntitledDocument(
-    homeUri: string,
-    options: ContextCreateUntitledDocumentOptions,
-  ): Promise<Result<ContextCreateUntitledDocumentResult, ContextError>>;
-
-  /** Create a folder under a device-minted id at the writer's destination. */
-  createFolder(
-    homeUri: string,
-    options: ContextCreateFolderOptions,
-  ): Promise<Result<ContextCreateFolderResult, ContextError>>;
-
   /** Ensure a tracked text document row and empty Yjs document exist without replacing content. */
   ensureTrackedDocument(
     uri: string,
@@ -588,10 +461,9 @@ export interface ContextPort {
   ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>>;
 
   /**
-   * Reverse a create this port made, for a rolled-back reply or a failed create write
-   * (contract §12.5): a live create is deleted; a branch's create ends the branch's use of
-   * the document unless the document's draft already holds committed text. A draft-mode
-   * port's `delete` never reverses a branch's create.
+   * Reverse a create this port made when its write failed (contract §12.5): a live create
+   * goes to Trash; a drafted one is discarded unless the document's draft already holds
+   * committed text. A draft-mode port's `delete` never reverses a branch's create.
    */
   retractCreate(
     uri: string,
@@ -605,42 +477,25 @@ export interface ContextPort {
   ): Promise<Result<ContextBinaryWriteResult, ContextError>>;
 
   /**
-   * A draft-mode chat's move or delete: facts in its Work's branch, never the
-   * shared tree and never the mover. Each end must participate in the branch tree; its content
-   * placement may remain live, as Scratch's does. `record` runs in the same transaction. A move
-   * to where the branch already has the document answers `moved: false` and records nothing.
-   */
-  changeInBranch(
-    command: ContextBranchTreeCommand,
-  ): Promise<Result<ContextBranchTreeResult, ContextError>>;
-
-  /**
    * Move or rename the node `node` names, which the locks find by id wherever it is by then.
    * `area` is the root URI of the scheme and owner it was last seen in: it picks the adapter
    * and the locks, and names no entry. `change.destination` says where it lands and
    * `change.name` what it is called there; whatever the change omits keeps the row's own value.
    */
-  commitWriterLocation(
+  move(
     node: ContextEntryRef,
     area: string,
     change: ContextLocationChange,
-  ): Promise<Result<ContextMoveResult, ContextError>>;
+  ): Promise<Result<ContextMoved, ContextError>>;
 
   /** Delete the node `node` names, found by id under the locks (`area` as in the move). */
   delete(
     node: ContextEntryRef,
     area: string,
     options?: ContextDeleteOptions,
-  ): Promise<Result<DeleteContextEntryResult, ContextError>>;
+  ): Promise<Result<ContextDeleted, ContextError>>;
 
   list(uri?: string, options?: ContextListOptions): Promise<Result<ContextListing, ContextError>>;
-
-  /**
-   * Create an empty directory at the URI, including any missing ancestors.
-   * No-op if the directory already exists. `permission_denied` for read-only
-   * schemes.
-   */
-  mkdir(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>>;
 
   /**
    * Regex search over document text, restricted to what `query.readable` allows.

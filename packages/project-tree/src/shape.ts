@@ -46,6 +46,18 @@ export function nameAmong(
   return freeName(kind, name, taken);
 }
 
+/** A rank that sorts at `index` among sibling `ranks` (in display order). */
+export function rankAmong(ranks: readonly string[], index: number): string {
+  const at = Math.max(0, Math.min(index, ranks.length));
+  const before = at > 0 ? (ranks[at - 1] ?? null) : null;
+  let after: string | null = ranks[at] ?? null;
+  // Concurrent inserts can leave equal ranks; place after the run of equal ranks.
+  if (before !== null && after !== null && after <= before) {
+    after = ranks.slice(at).find((rank) => rank > before) ?? null;
+  }
+  return generateKeyBetween(before, after);
+}
+
 /** A rank that sorts at `index` among the parent's shown children. */
 export function rankAt(
   projection: TreeProjection,
@@ -53,15 +65,12 @@ export function rankAt(
   index: number,
   moving?: string,
 ): string {
-  const siblings = childrenOf(projection, parent).filter((node) => node.id !== moving);
-  const at = Math.max(0, Math.min(index, siblings.length));
-  const before = at > 0 ? (siblings[at - 1]?.rank ?? null) : null;
-  let after: string | null = siblings[at]?.rank ?? null;
-  // Concurrent inserts can leave equal ranks; place after the run of equal ranks.
-  if (before !== null && after !== null && after <= before) {
-    after = siblings.slice(at).find((node) => node.rank > before)?.rank ?? null;
-  }
-  return generateKeyBetween(before, after);
+  return rankAmong(
+    childrenOf(projection, parent)
+      .filter((node) => node.id !== moving)
+      .map((node) => node.rank),
+    index,
+  );
 }
 
 /**

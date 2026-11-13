@@ -7,7 +7,6 @@
 import assert from "node:assert/strict";
 import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import { createDrizzleWorkRepository } from "../../../../apps/server/server/domains/projects/adapters/work-repository/drizzle.ts";
-import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.js";
 import {
   appendToFirstParagraph,
   gate,
@@ -28,22 +27,19 @@ export const d12CreateDuringArchive: Probe = {
     const paused = gate();
     const finish = gate();
     let pause = true;
-    // Archive's Works notice runs inside its transaction, after its Work update.
+    // Archive publishes the Work's file-access change inside its transaction, after its Work update.
     const works = createDrizzleWorkRepository({
-      removal: createTestDocumentRemoval(harness.db),
       db: harness.db,
-      projectionMutation: {
-        ...harness.projection,
-        async notifyWorksChanged(ids) {
+      projectionMutation: harness.projection,
+      fileAccessChanges: {
+        async publish() {
           if (pause) {
             pause = false;
             paused.open();
             await finish.wait;
           }
-          return harness.projection.notifyWorksChanged(ids);
         },
       },
-      fileAccessChanges: { publish: async () => {} },
       lineageScratch: {} as never,
     });
     const { documentId, live } = await harness.seedDocument("create-archive", "Fresh");

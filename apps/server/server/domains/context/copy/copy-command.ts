@@ -14,18 +14,15 @@
  *    lock: a source room that is not open loads through a second connection, so a transaction
  *    held across the read could starve the pool, and a lock held across them would stall every
  *    writer in the destination for the length of the tree;
- * 3. opens the operation receipt's transaction and, inside it, the command transaction that
- *    takes the destination's Work and namespace (the sources are a frozen cut and are not
- *    locked);
- * 4. rechecks the destination under that lock and asks the destination adapter to insert the
- *    plan. If a concurrent write took a root's name since the plan, the adapter inserts
- *    nothing and the command plans and binds again, now under the lock.
+ * 3. opens the command transaction, which takes the destination's Work (the sources are a
+ *    frozen cut and are not locked);
+ * 4. inserts the plan as one `submit` on the destination's list, which checks under the list's
+ *    lock that every root's name is still free. If a concurrent write took one since the plan,
+ *    nothing is inserted and the command plans and binds again, now under the lock.
  *
- * A refusal is typed and recorded on the receipt, so a replay reads the same answer. An
- * infrastructure failure, or a source whose room has not yet received the client's edits,
- * records nothing and stays retryable under the same operation ID. A duplicate that arrives
- * while the first attempt is preparing waits for it in this process instead of reading every
- * source again.
+ * A refusal is typed. An infrastructure failure, or a source whose room has not yet received
+ * the client's edits, is retryable. A repeated request finds its copies' ids taken and answers
+ * `conflict`: the browser makes the new nodes' ids once, so an id in use is the same drop.
  *
  * The answer returns when the rows commit; their projections and link rows are derived after
  * commit without holding the answer. There is no Undo command: Copy's Undo is ordinary
@@ -33,11 +30,8 @@
  */
 
 import { setTimeout as delay } from "node:timers/promises";
-import { draftOwnerKey } from "@meridian/contracts";
 import type {
-  ContextOperationCommand,
   CopyContextEntriesResult,
-  CopyContextEntryCommandSource,
   CopyContextEntryCreated,
 } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -52,7 +46,6 @@ import type { CollabDomain } from "../../collab/index.js";
 import type { ObjectRelease, ObjectStorePort } from "../../storage/index.js";
 import { prepareBinaryCopy } from "../binary-copy.js";
 import { adapterFaultToContextError } from "../context/adapter-fault.js";
-import type { ContextOperationReceipts } from "../context/context-operation-receipts.js";
 import type {
   ContextCommandScope,
   ContextCommandTransaction,
@@ -123,9 +116,8 @@ export interface ContextCopyCommandDeps {
   release: Pick<ObjectRelease, "keys">;
 }
 
-/** The receipt owner and command transaction one authenticated caller's port already holds. */
+/** The command transaction one authenticated caller's port already holds. */
 export interface ContextCopyEnvironment {
-  receipts: ContextOperationReceipts;
   commandTransaction: ContextCommandTransaction;
 }
 
@@ -146,81 +138,29 @@ export interface ContextCopyCommand {
   copy(input: ContextCopyInput): Promise<Result<CopyContextEntriesResult, ContextError>>;
 }
 
-/**
- * Prepares in flight in this process, by operation ID: a duplicate request waits for the
- * first instead of reading every source and binding the tree again. Only a committed receipt
- * is durable; another process would still re-prepare.
- */
-const inFlight = new Map<string, Promise<void>>();
-
-function tryHoldOperation(operationId: string): (() => void) | null {
-  if (inFlight.has(operationId)) return null;
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  inFlight.set(operationId, held);
-  return () => {
-    inFlight.delete(operationId);
-    release();
-  };
-}
-
-async function holdOperation(operationId: string): Promise<() => void> {
-  for (;;) {
-    const release = tryHoldOperation(operationId);
-    if (release) return release;
-    await inFlight.get(operationId);
-  }
-}
-
 export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextCopyCommand {
   async function copy(
     input: ContextCopyInput,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
-    // The receipt keeps the selection as the writer made it, so a replay is matched against
-    // what was sent; the copy works from its outermost roots.
+    // The copy works from the selection's outermost roots.
     const selected = { ...input, sources: outermostRoots(input.sources) };
-    const { receipts, commandTransaction } = input.environment;
-    // A replay has nothing to read: its answer is stored, and receipts are never deleted.
-    let replay = await receipts.lookup(input.request.operationId);
-    // A duplicate that arrives while the first attempt is still preparing waits for it; the
-    // winner's receipt, when it records one, is then the waiter's answer.
-    const release = replay ? null : await holdOperation(input.request.operationId);
-    try {
-      replay = replay ?? (await receipts.lookup(input.request.operationId));
-      // Reading holds no transaction. A source room that is not open loads through a second
-      // connection, so Copies that each held one while reading would starve the pool they
-      // wait on.
-      const prepared = replay ? null : await prepare(selected);
-      let claimed = false;
-      try {
-        return await receipts.execute(
-          input.request.operationId,
-          receiptCommand(input),
-          input.destination.uri,
-          async () => {
-            claimed = true;
-            if (!prepared)
-              throw new Error("A stored receipt vanished between its lookup and its use");
-            if (!prepared.ok) return prepared;
-            // The rows name these objects only if this operation commits.
-            const { putKeys } = prepared.value;
-            if (putKeys.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
-            return commandTransaction.run(
-              () => write(selected, prepared.value),
-              [scopeOf(input.destination)],
-              { sourceIds: prepared.value.sourceIds },
-            );
-          },
-        );
-      } finally {
-        // A replay, a mismatch or a throw before the receipt's callback ran leaves them unclaimed.
-        if (!claimed && prepared?.ok) await deps.release.keys(prepared.value.putKeys);
-      }
-    } finally {
-      release?.();
-    }
+    const { commandTransaction } = input.environment;
+    // Reading holds no transaction. A source room that is not open loads through a second
+    // connection, so Copies that each held one while reading would starve the pool they wait on.
+    const prepared = await prepare(selected);
+    if (!prepared.ok) return prepared;
+    // The rows name these objects only if this operation commits.
+    const { putKeys } = prepared.value;
+    const outcome = await commandTransaction.run(
+      async () => {
+        if (putKeys.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
+        return write(selected, prepared.value);
+      },
+      [scopeOf(input.destination)],
+      { sourceIds: prepared.value.sourceIds },
+    );
+    if (!outcome.ok) await deps.release.keys(putKeys);
+    return outcome;
   }
 
   /**
@@ -574,30 +514,6 @@ function outermostRoots(sources: readonly CopySourceHandoff[]): CopySourceHandof
 
 function scopeOf(destination: CopyDestinationHandoff): ContextCommandScope {
   return { scheme: destination.scheme, workId: destination.workScopeId };
-}
-
-function receiptCommand(
-  input: ContextCopyInput,
-): Extract<ContextOperationCommand, { kind: "copy" }> {
-  return {
-    kind: "copy",
-    sources: input.sources.map(
-      (source): CopyContextEntryCommandSource => ({
-        uri: source.uri,
-        view:
-          source.view.kind === "draft"
-            ? { kind: "draft", owner: draftOwnerKey(source.view.owner) }
-            : source.view,
-        expected: source.expected,
-        ...(source.copyId ? { copyId: source.copyId } : {}),
-      }),
-    ),
-    destinationUri: input.destination.uri,
-    ...(input.request.destinationParent
-      ? { destinationParent: input.request.destinationParent }
-      : {}),
-    ...(input.request.position ? { position: input.request.position } : {}),
-  };
 }
 
 /** The source's identity for the expected-identity check. */

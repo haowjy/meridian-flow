@@ -32,17 +32,50 @@ export async function listIdOf(db: DrizzleDb, list: TreeList): Promise<string | 
 }
 
 /**
- * The open Works of a list, as their branch ids: the one meaning of "open" for both a write's
- * check (`Connection.drafts`) and the views the rows are replayed for. A Work is open while its
- * branch is active and the Work is neither archived nor deleted; a branch with no Work (a chat's)
- * is open while active. A project's list holds its project's Works, an account's its projects'.
+ * The list a source's nodes are in: the account's for its `user://` source (the personal
+ * project's source with slug `user`), else the list of the project that holds the source (a
+ * Work's source belongs to the Work's project).
  */
-export async function openBranches(db: DrizzleDb, list: TreeList): Promise<Set<string>> {
+export async function treeListOfSource(db: DrizzleDb, sourceId: string): Promise<TreeList> {
+  const [row] = await currentDrizzleDb(db as Database).execute<{
+    project_id: string;
+    user_id: string;
+    account: boolean;
+  }>(sql`
+    SELECT p.id::text AS project_id, p.user_id::text AS user_id,
+      (s.scope = 'project' AND s.slug = 'user') AS account
+    FROM context_sources s
+      LEFT JOIN works w ON w.id = s.work_id
+      JOIN projects p ON p.id = COALESCE(s.project_id, w.project_id)
+    WHERE s.id = ${sourceId}::uuid`);
+  if (!row) throw new Error(`Context source ${sourceId} is gone`);
+  return row.account
+    ? { kind: "account", userId: row.user_id }
+    : { kind: "project", projectId: row.project_id };
+}
+
+/** The project that owns the documents a list's creates make: an account's list is its personal project's. */
+export async function projectOfList(db: DrizzleDb, list: TreeList): Promise<string> {
+  if (list.kind === "project") return list.projectId;
+  const [row] = await currentDrizzleDb(db as Database).execute<{ id: string }>(
+    sql`SELECT id::text FROM projects WHERE user_id = ${list.userId}::uuid AND is_personal AND deleted_at IS NULL`,
+  );
+  if (!row) throw new Error("The account has no personal project");
+  return row.id;
+}
+
+/**
+ * The branches of a list's projects that can still come back, as ids: a Work's (open,
+ * archived, or deleted and restorable) or a chat's, while the branch is active. A branch ends
+ * with a whole Discard, and a Work purged for good has its branches discarded first. A project's
+ * list holds its project's branches, an account's its projects'. Only `open` ones may write.
+ */
+async function activeBranches(db: DrizzleDb, list: TreeList, open: boolean): Promise<Set<string>> {
   const rows = await currentDrizzleDb(db as Database).execute<{ id: string }>(sql`
     SELECT b.id::text AS id FROM branches b
     LEFT JOIN works w ON w.id = b.origin_work_id
     WHERE b.status = 'active'
-      AND (w.id IS NULL OR (w.archived_at IS NULL AND w.deleted_at IS NULL))
+      ${open ? sql`AND (w.id IS NULL OR (w.archived_at IS NULL AND w.deleted_at IS NULL))` : sql``}
       AND b.project_id IN (SELECT id FROM projects WHERE ${
         list.kind === "project"
           ? sql`id = ${list.projectId}::uuid`
@@ -50,6 +83,21 @@ export async function openBranches(db: DrizzleDb, list: TreeList): Promise<Set<s
       })`);
   return new Set(rows.map((row) => row.id));
 }
+
+/**
+ * The Works whose view the rows keep (`branch_tree_nodes`, pending text counted): every branch
+ * that can still come back, so an archived Work's drafted creates and a restorable deleted
+ * Work's changes are never in no view. Readers that show only open Works filter by the Work's
+ * state themselves.
+ */
+export const keptBranches = (db: DrizzleDb, list: TreeList) => activeBranches(db, list, false);
+
+/**
+ * The open Works of a list: the one meaning of "open" for a write's check
+ * (`Connection.drafts`). A Work is open while its branch is active and the Work is neither
+ * archived nor deleted; a branch with no Work (a chat's) is open while active.
+ */
+export const openBranches = (db: DrizzleDb, list: TreeList) => activeBranches(db, list, true);
 
 /**
  * The connection's facts, or null when the account has no write access to the list: every

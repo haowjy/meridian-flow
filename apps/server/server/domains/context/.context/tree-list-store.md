@@ -12,9 +12,28 @@ and no reader of `documents` meets one.
 
 ## One function
 
-`createDrizzleTreeListStore({ db, journal })` (`adapters/drizzle-tree-list-store.ts`) has two
-entry points over one transaction skeleton (`withList`): `admit` (a client's Yjs update for a
-connection) and `submit` (records the server made, which joins the caller's transaction).
+`createDrizzleTreeListStore({ db, journal })` (`adapters/drizzle-tree-list-store.ts`) has these entries.
+`admit` (a client's Yjs update for a connection) and `submit` (records the server made, joining the
+caller's transaction) change lists over one transaction skeleton (`withLists`); `read` and `resync`
+are the other two:
+
+- `submit({ lists, make })` works on one list or several. The keys of all of them are taken in
+  list-id order whatever order the caller names them, so no path on the same lists deadlocks with
+  another (Discard spans a project's list and the account's; retention takes both; a move between
+  them is `moveBetweenLists` over both writers). `make` is synchronous and gets a writer per list;
+  it returns what the caller reads back. The store derives what was made from the copy's own
+  change: the new nodes are the creates in the tail of the records that no earlier create names
+  (a copy of a create, as Apply's live copy of a drafted one, claims nothing), and a state that
+  changed without a record (a settlement) is stored too. A `make` that throws, `TreeRefusal` or
+  anything else, stores nothing and the copies reload: refuse after reading, not after half
+  making.
+- `read({ lists, view })` reads the replays at the journal's head with no key and no Work lock. A
+  copy this process changed and has not committed is never read: the list is loaded afresh. A
+  `make` and a `view` are synchronous, so a copy is never seen half changed.
+- `resync(lists)` brings the rows to the list's replay when something the rows read changed outside
+  the list: a branch ended (a whole Discard, a Work purged), or a Work's text draft closed
+  (`DraftClose.closeDrafts`). It takes the keys, or finds them held. A draft opening changes no row:
+  the document must show in the Work's view for the draft to open.
 
 Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advisory lock
 (`lockDocumentMutation` on the list id), in this order:
@@ -31,17 +50,19 @@ Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advi
    journal has, rolls the whole transaction back and `admit` returns `ok: false`;
 4. append what the copy gained to the journal through its system path (`origin: "system"`;
    a person's path would read the whole list to record an edit);
-5. `syncRows` (`tree-list-rows.ts`): replay live and every open Work with pending tree
-   records or pending text, then the `documents` rows of created documents from the
+5. `syncRows` (`tree-list-rows.ts`): replay live and every kept Work (a branch that has not
+   ended: open, archived, or deleted and restorable) with pending tree records or pending text, then the `documents` rows of created documents from the
    replay's rows, compare with the rows last written, write the rows that differ, the
-   previous locations and `location_version`. "Open Work" is `openBranches`
-   (`tree-list-facts.ts`), the one predicate for both a write's check and the views;
+   previous locations and `location_version`. "Kept" is `keptBranches` and "open" is
+   `openBranches` (`tree-list-facts.ts`): only open Works may write, but every kept Work's view is
+   kept, so retention and "living" never lose a Work that can come back;
 6. after the outermost commit, `onCommitted` listeners get the update (the list's room is one).
 
-`submit` joins the caller's transaction, so a caller must hold no document or namespace key
-when it calls (the list's key sorts before them; see the lock order in
-`collab/.context/CONTEXT.md`); a path that needs a list and documents submits first or takes the
-list's key itself before theirs.
+`submit` and `resync` join the caller's transaction, so a caller must hold no document or namespace
+key it did not already hold with the list's (the list's key sorts before them; see the lock order
+in `collab/.context/CONTEXT.md`); a path that needs a list and documents submits first. A purge asks
+what holds a document (`tree/retention-holds.ts`) after a `submit` that only reads under the key and
+before the one that purges, because a purge removes the rows the question reads.
 
 Test hook points `treeList.*` mark each step; the kill suite stops a real process at each.
 
@@ -58,8 +79,9 @@ Test hook points `treeList.*` mark each step; the kill suite stops a real proces
   an applying transaction is never local, so wrapping the apply in `transact` does not help.
 - **A node id belongs to the list that claimed it, for good** (`tree_node_ids`). A row's
   `(id, list_id)` references the claim, and the upsert never writes `list_id`, so no write
-  moves a node between lists. Only the server's own move of a node to the other list would
-  move its claim, and none is built.
+  moves a node between lists. A server move between a project's list and the account's is one
+  `submit` over both: the list the node leaves writes first, then the other takes its claim (and
+  the document's project) with the create.
 - **The delete in force is part of a row.** The comparison includes the trash record; a new
   delete in force gets a new `trashed_at`. A node's location version bumps on any change to
   its address, its source included, and so do its descendants'.

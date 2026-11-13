@@ -7,8 +7,8 @@
 
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
+import { treeSeeder } from "../../test-support/tree-seed.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import {
@@ -48,9 +48,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { DrizzleContextDocumentStore } = await import(
         "../context/adapters/context-fs/drizzle-store.js"
       );
-      const { DrizzleContextTreeMutationStore } = await import(
-        "../context/adapters/context-fs/drizzle-tree-mutation-store.js"
-      );
+      const { createSourceTree } = await import("../context/adapters/context-fs/tree-writes.js");
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       await db.insert(modelResponses).values({
@@ -69,9 +67,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links: createTestDocumentLinkScopes(db),
         scheme: "manuscript",
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
-        mutationStore: new DrizzleContextTreeMutationStore(db, {
-          removal: createTestDocumentRemoval(db),
+        writes: createSourceTree({
+          store: treeSeeder(db).store,
+          db,
+          sourceId: async () => SOURCE_ID,
         }),
+        drafts: collab,
+        actor: `user:${USER_ID}`,
         documentCreation: collab,
         documentSync: {
           ...collab,

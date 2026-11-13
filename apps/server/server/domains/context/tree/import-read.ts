@@ -66,7 +66,7 @@ export function createDrizzleContextImportRead(db: Database, projectId: string):
               .from(vf)
               .where(and(eq(vf.contextSourceId, sourceId), parent(vf.parentId))),
             currentDrizzleDb(db)
-              .select({ name: vd.name, extension: vd.extension })
+              .select({ name: vd.name })
               .from(vd)
               .where(and(eq(vd.contextSourceId, sourceId), parent(vd.folderId))),
           ]);
@@ -76,8 +76,8 @@ export function createDrizzleContextImportRead(db: Database, projectId: string):
             uri,
             fellBack: area === originalArea && input.folderId !== null && !destinationFolder,
             children: [
-              ...folders.map(({ name }) => ({ kind: "folder" as const, name, extension: "" })),
-              ...files.map((file) => ({ kind: "file" as const, ...file })),
+              ...folders.map(({ name }) => ({ kind: "folder" as const, name })),
+              ...files.map(({ name }) => ({ kind: "file" as const, name })),
             ],
           };
         }),
@@ -111,7 +111,7 @@ export function createDrizzleContextImportRead(db: Database, projectId: string):
         );
         return rows.map((row) => {
           const address = addresses.get(row.id);
-          if (!address || address.deleted || address.hidden)
+          if (!address || address.deleted)
             throw new Error(`Live import candidate disappeared: ${row.id}`);
           const area = sourceById.get(row.sourceId);
           if (!area) throw new Error(`Import candidate has no project area: ${row.id}`);

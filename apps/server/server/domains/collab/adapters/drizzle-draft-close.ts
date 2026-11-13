@@ -22,12 +22,14 @@ import {
   runAfterDrizzleCommit,
 } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
+import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import type {
   ClosedDraft,
   DraftCloseCause,
   DraftRetirement,
   DraftRetirementBatch,
 } from "../domain/draft-retirement.js";
+import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 
 /** Which drafts a close takes: by document (optionally one branch's), branch, id or upstream. */
 export type DraftSelection =
@@ -104,7 +106,7 @@ export type DraftClose = {
 type Hold = { effects: Array<() => Promise<void>>; open: boolean };
 const retirementHold = new AsyncLocalStorage<Hold>();
 
-export function createDraftClose(): DraftClose {
+export function createDraftClose(deps: { treeLists: Pick<TreeListStore, "resync"> }): DraftClose {
   let sink: { retire: DraftRetirement; onError(error: unknown): void } | null = null;
 
   async function retire(batch: DraftRetirementBatch): Promise<void> {
@@ -173,8 +175,18 @@ export function createDraftClose(): DraftClose {
               documentId: documentDrafts.documentId,
               threadId: documentDrafts.threadId,
               branchId: documentDrafts.branchId,
+              kind: documentDrafts.kind,
             })
         : [];
+      // A Work's last text on a document going leaves its view's rows stale: they trail the
+      // list's replay by what the text kept shown (rule 7). The caller holds, or takes before any
+      // document key, the lists' keys.
+      const lists = new Map<string, TreeList>();
+      for (const row of closed)
+        if (row.kind === "work_draft" && row.branchId)
+          for (const list of await treeListsOfBranch(db, row.branchId as BranchId))
+            lists.set(JSON.stringify(list), list);
+      if (lists.size > 0) await deps.treeLists.resync([...lists.values()]);
       const ended = closed.map((row) => ({
         draftId: row.draftId,
         documentId: row.documentId as DocumentId,

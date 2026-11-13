@@ -12,6 +12,7 @@ import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { processDetachedWork } from "../domains/runtime/detached-work.js";
 import type { ToolCall } from "../test-support/composed-runtime.js";
 import { releaseLeaseUnderLock } from "../test-support/release-lease.js";
+import { treeSeeder } from "../test-support/tree-seed.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -70,13 +71,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "manuscript",
         scope: "project",
       });
-      await db.insert(schema.documents).values({
-        id: DOC_ID,
-        contextSourceId: SOURCE_ID,
-        name: "chapter",
-        extension: "",
-        fileType: "markdown",
-      });
+      await treeSeeder(db).document(SOURCE_ID, "chapter", { id: DOC_ID });
       await db.insert(schema.threads).values({
         rootThreadId: THREAD.threadId,
         id: THREAD.threadId,
@@ -176,59 +171,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const listedLive = await call("ls", { path: "kb://", version: "live" });
       expect(text(listedLive)).toMatch(/^kb:\/\//);
       expect(text(listedLive)).not.toContain("lore");
-    });
-
-    it("the turn card hides a drafted creation and redo reveals its retained text", async () => {
-      const script = await startWithChapter("Writer live content.");
-      const reply = await script.begin();
-      const created = await reply.call("write", {
-        command: "create",
-        path: "manuscript://new-chapter",
-        content: "The new chapter.",
-      });
-      expect(created.isError, text(created)).toBeFalsy();
-      const documentId = (created.metadata as { documentId?: unknown } | undefined)?.documentId;
-      if (typeof documentId !== "string") throw new Error("Create returned no document identity");
-      await reply.save();
-
-      const receipt = await script.runtime.ports.documentSync.listEditedDocumentsForTurn(
-        THREAD.threadId as never,
-        THREAD.turnId as never,
-      );
-      expect(receipt.map((document) => document.documentId)).toContain(documentId);
-
-      const reverse = (direction: "undo" | "redo") =>
-        script.runtime.ports.documentSync.reverseThreadContext({
-          threadId: THREAD.threadId as never,
-          userId: USER_ID as never,
-          direction,
-          turnId: THREAD.turnId as never,
-        });
-      expect(await reverse("undo")).toMatchObject({ status: "reversed" });
-      const [removed] = await db
-        .select({ deletedAt: schema.documents.deletedAt })
-        .from(schema.documents)
-        .where(eq(schema.documents.id, documentId));
-      expect(removed?.deletedAt).toBeNull();
-      expect(
-        (await db.select().from(schema.branchTreeChanges)).filter(
-          (row) => row.nodeId === documentId,
-        ),
-      ).toEqual([expect.objectContaining({ created: true, deleted: true })]);
-      expect(
-        (await db.select().from(schema.documentDrafts)).filter(
-          (row) => row.documentId === documentId && row.status === "active",
-        ),
-      ).not.toEqual([]);
-
-      const redone = await reverse("redo");
-      expect(redone).toMatchObject({ status: "reversed" });
-      expect(
-        (await db.select().from(schema.branchTreeChanges)).filter(
-          (row) => row.nodeId === documentId,
-        ),
-      ).toEqual([expect.objectContaining({ created: true, deleted: false })]);
-      expect(await script.text("new-chapter")).toContain("The new chapter.");
     });
 
     // auto-apply writes live, but an explicit `draft` still reads what the Work kept.
@@ -526,9 +468,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(copied.isError).toBeFalsy();
       const [copy] = await db
-        .select()
-        .from(schema.documents)
-        .where(eq(schema.documents.name, "gate-copy"));
+        .select({ metadata: schema.documents.metadata })
+        .from(schema.branchTreeNodes)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.branchTreeNodes.id))
+        .where(eq(schema.branchTreeNodes.name, "gate-copy"));
       expect(copy?.metadata).toMatchObject({
         properties,
         aliases: ["Gate"],
@@ -565,130 +508,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     // §12.5, O-11: a rolled-back reply retracts its draft create, unless another thread in
     // the Work already committed text to it.
-    it("retracts a rolled-back reply's draft create unless another thread committed text to it (C-4)", async () => {
-      const runtime = await runtimes.compose();
-      const scenario = await branchTreeScenario(db, { runtime, runtimes });
-      const work = await scenario.work("Retracting", "draft");
-      const documentIdOf = (result: { metadata?: unknown }) => {
-        const documentId = (result.metadata as { documentId?: unknown } | undefined)?.documentId;
-        if (typeof documentId !== "string") throw new Error("the create reported no documentId");
-        return documentId;
-      };
-      const rowOf = async (id: string) => {
-        const [found] = await db
-          .select({ hidden: schema.documents.hidden, deletedAt: schema.documents.deletedAt })
-          .from(schema.documents)
-          .where(eq(schema.documents.id, id));
-        return found;
-      };
-      const usesOf = (id: string) =>
-        db
-          .select({ branchId: schema.branchTreeChanges.branchId })
-          .from(schema.branchTreeChanges)
-          .where(eq(schema.branchTreeChanges.nodeId, id));
-
-      const alone = await scenario.model(work).reply();
-      const aloneId = documentIdOf(
-        await alone.call("write", {
-          command: "create",
-          path: "manuscript://lore/alone.md",
-          content: "Never kept.",
-        }),
-      );
-      await alone.rollback();
-      expect.soft(await rowOf(aloneId), "retracted: tombstoned").toMatchObject({
-        hidden: true,
-        deletedAt: expect.any(Date),
-      });
-      expect.soft(await usesOf(aloneId), "retracted: no use left").toEqual([]);
-      expect
-        .soft(
-          await db
-            .select({
-              status: schema.documentDrafts.status,
-              cause: schema.documentDrafts.closedCause,
-              state: schema.documentDrafts.state,
-            })
-            .from(schema.documentDrafts)
-            .where(eq(schema.documentDrafts.documentId, aloneId)),
-          "retracted: its drafts retained closed with bytes released",
-        )
-        .toEqual([
-          expect.objectContaining({ status: "closed", cause: "discarded", state: Buffer.alloc(0) }),
-          expect.objectContaining({ status: "closed", cause: "discarded", state: Buffer.alloc(0) }),
-        ]);
-
-      const other = await scenario.thread(work);
-      const first = await scenario.model(work).reply();
-      const sharedId = documentIdOf(
-        await first.call("write", {
-          command: "create",
-          path: "manuscript://lore/shared.md",
-          content: "The first thread's text.",
-        }),
-      );
-      const second = await scenario.model(other).reply();
-      await second.call("read", { path: "manuscript://lore/shared.md" });
-      const inserted = await second.call("write", {
-        command: "insert",
-        path: "manuscript://lore/shared.md",
-        content: "The second thread's line.",
-      });
-      expect.soft(inserted.isError ?? false, "the other thread writes").toBe(false);
-      await second.save();
-      await first.rollback();
-      expect.soft(await rowOf(sharedId), "stands: still hidden and live").toMatchObject({
-        hidden: true,
-        deletedAt: null,
-      });
-      expect.soft(await usesOf(sharedId), "stands: the branch keeps it").toHaveLength(1);
-      const read = await scenario.view(other).read("lore/shared.md");
-      expect
-        .soft(read.ok && read.value.content, "stands: the other thread's text")
-        .toContain("The second thread's line.");
-
-      // Two Works share one hidden identity: retracting A's create retires only A's peers.
-      const workA = await scenario.work("Retracting A", "draft");
-      const workB = await scenario.work("Surviving B", "draft");
-      const replyA = await scenario.model(workA).reply();
-      const twoWorkId = documentIdOf(
-        await replyA.call("write", {
-          command: "create",
-          path: "manuscript://lore/two-works.md",
-          content: "A's text, never kept.",
-        }),
-      );
-      const replyB = await scenario.model(workB).reply();
-      const joined = await replyB.call("write", {
-        command: "create",
-        path: "manuscript://lore/two-works.md",
-        content: "B's unsaved contribution.",
-      });
-      expect.soft(documentIdOf(joined), "B joins A's hidden identity").toBe(twoWorkId);
-      const bPeer = async () => {
-        const [peer] = await db
-          .select({ status: schema.documentDrafts.status })
-          .from(schema.documentDrafts)
-          .where(eq(schema.documentDrafts.threadId, workB.threadId));
-        return peer?.status;
-      };
-      expect.soft(await bPeer(), "B's peer before A retracts").toBe("active");
-      await replyA.rollback();
-      expect.soft(await bPeer(), "B's peer survives A's retraction").toBe("active");
-      const saved = (await replyB.save()) as { receipts?: readonly unknown[] };
-      expect
-        .soft(saved.receipts ?? [], "B's overlapping reply commits with a receipt")
-        .toHaveLength(1);
-      expect.soft(await rowOf(twoWorkId), "B keeps the identity").toMatchObject({
-        hidden: true,
-        deletedAt: null,
-      });
-      const readB = await scenario.view(workB).read("lore/two-works.md");
-      expect
-        .soft(readB.ok && readB.value.content, "B's saved text")
-        .toContain("B's unsaved contribution.");
-    });
-
     it("stages nothing for a write that leaves the chapter unchanged", async () => {
       await db
         .update(schema.threads)
@@ -713,7 +532,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     // a binary copy duplicates the stored object; in a draft-mode Work it
     // is the branch's own hidden row, never shared and not live.
-    it("copies a binary file into the branch as its own hidden row and stored object", async () => {
+    it("copies a binary file into the branch as its own stored object", async () => {
       const runtime = await runtimes.compose();
       const bytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]);
       const put = await runtime.ports.objectStore.put(
@@ -752,17 +571,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         destination: "draft",
         draftWork: "w1",
       });
+      // A drafted copy is a record of the Work's branch with its own stored object.
       const [copy] = await db
-        .select()
-        .from(schema.documents)
-        .where(eq(schema.documents.name, "scan-copy"));
-      expect(copy?.hidden).toBe(true);
+        .select({ storageUrl: schema.documents.storageUrl })
+        .from(schema.branchTreeNodes)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.branchTreeNodes.id))
+        .where(eq(schema.branchTreeNodes.name, "scan-copy.pdf"));
       expect(copy?.storageUrl).not.toBe(put.value.storageUrl);
-      const created = await db
-        .select({ branchId: schema.branchTreeChanges.branchId })
-        .from(schema.branchTreeChanges)
-        .where(eq(schema.branchTreeChanges.nodeId, copy?.id ?? ""));
-      expect(created).toHaveLength(1);
       await expect(
         runtime.ports.contextPorts
           .forProject(PROJECT_ID, USER_ID, new Map())

@@ -6,9 +6,8 @@ import {
   documentPreviousLocations,
   documents,
   projects,
-  works,
 } from "@meridian/database/schema";
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { createDocumentUriResolver } from "../document-uri-resolver.js";
 import type { DocumentLinkHistory } from "../ports/document-link-resolver.js";
@@ -20,12 +19,7 @@ export function createDrizzleDocumentLinkHistory(db: Database): DocumentLinkHist
     const [row] = await tx
       .select({ id: documents.id })
       .from(documents)
-      .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-      .leftJoin(works, eq(works.id, contextSources.workId))
-      .innerJoin(
-        projects,
-        eq(projects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
-      )
+      .innerJoin(projects, eq(projects.id, documents.projectId))
       .where(
         and(
           eq(documents.id, documentId),

@@ -5,7 +5,6 @@
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documents,
   documentYjsUpdates,
   projects,
   threads,
@@ -18,6 +17,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { UngrantedAgentWriteError } from "../../shared/edit-confirmation.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
+import { treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
   createDrizzleCollabPersistence,
@@ -74,7 +74,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db
         .insert(contextSources)
         .values({ id: source, workId: w, scope: "work", name: "Scratch", slug: "scratch" });
-      await db.insert(documents).values({ id: probe, contextSourceId: source, name: "probe" });
+      await treeSeeder(db).document(source, "probe", { id: probe });
     });
 
     const access = () =>

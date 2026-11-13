@@ -1,6 +1,6 @@
 /** Shared authoritative row-to-file mapping for catalog and project availability. */
 
-import { type DocumentId, hasDisplayableProperties } from "@meridian/contracts";
+import { hasDisplayableProperties } from "@meridian/contracts";
 import {
   type CanonicalContextAuthority,
   type ContextUriScheme,
@@ -11,32 +11,27 @@ import { classifyFiletype } from "@meridian/contracts/protocol";
 import { decodeWorkHandle, type ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { documentAliases } from "../document-metadata.js";
 
-/** The stored file types whose bytes live in object storage (one definition, SQL included). */
-export const BINARY_FILE_TYPES: ReadonlySet<string> = new Set(["docx", "image", "pdf", "binary"]);
-
-/** Bytes in object storage rather than a Yjs document. */
+/** Bytes in object storage rather than a Yjs document: stored bytes, or a binary file type. */
 export function isStorageBackedDocument(document: {
   fileType: string;
   storageUrl: string | null;
 }): boolean {
-  return document.storageUrl !== null || BINARY_FILE_TYPES.has(document.fileType);
+  return document.storageUrl !== null || classifyFiletype(document.fileType).kind === "binary";
 }
 
 export type CatalogFileRow = {
   id: string;
   contextSourceId: string;
   folderId: string | null;
+  /** The filename as the tree shows it, extension included. */
   name: string;
   extension: string;
   fileType: string;
   storageUrl: string | null;
   mimeType: string | null;
   metadata: unknown;
-  provisionalName: boolean;
   rank: string | null;
   locationVersion?: bigint;
-  /** Ids a device's create forwarded into this document (a join). */
-  joinedFrom?: readonly string[];
 };
 
 export function catalogSourceAuthority(
@@ -74,7 +69,7 @@ export function mapAuthoritativeFile(input: {
   upload?: { attachedAt: Date; consumed: boolean; intakeId: string; locationRevision: string };
 }): CatalogFileEntry {
   const { document, scope, scheme } = input;
-  const filename = document.extension ? `${document.name}.${document.extension}` : document.name;
+  const filename = document.name;
   const path = [...input.parentPath, filename];
   const classification = classifyFiletype(document.fileType);
   const storageBacked = isStorageBackedDocument(document);
@@ -97,14 +92,7 @@ export function mapAuthoritativeFile(input: {
             editable: false as const,
             disposition: "binary" as const,
             fileType:
-              document.fileType === "docx" ||
-              document.fileType === "image" ||
-              document.fileType === "pdf" ||
-              document.fileType === "binary"
-                ? document.fileType
-                : classification.kind === "binary"
-                  ? classification.fileType
-                  : ("binary" as const),
+              classification.kind === "binary" ? classification.fileType : ("binary" as const),
             mimeType: document.mimeType,
           };
   return {
@@ -134,7 +122,8 @@ export function mapAuthoritativeFile(input: {
     ),
     extension: document.extension,
     ...persistedClassification,
-    provisionalName: document.provisionalName,
+    // No name is provisional: the list names every node when it is made.
+    provisionalName: false,
     rank: document.rank,
     ...(input.upload
       ? {
@@ -146,6 +135,5 @@ export function mapAuthoritativeFile(input: {
           },
         }
       : {}),
-    ...(document.joinedFrom?.length ? { joinedFrom: document.joinedFrom as DocumentId[] } : {}),
   };
 }

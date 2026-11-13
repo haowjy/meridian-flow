@@ -17,7 +17,6 @@ import {
 } from "@meridian/database";
 import { eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
-import { treeChangeFault } from "../domain/tree-inverse.js";
 
 type Db = Pick<Database, "select" | "insert" | "update">;
 export interface ReceiptWrite {
@@ -43,8 +42,6 @@ export interface ReceiptWrite {
 export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<string> {
   if (input.actor === "agent" && input.threadId && input.wId === undefined)
     throw new Error("Model edit capture requires its reserved ordinal");
-  const fault = input.treeChange && treeChangeFault(input.treeChange);
-  if (fault) throw new Error(fault);
   const wId = input.actor === "agent" ? (input.wId ?? null) : null;
   const [edit] = await db
     .insert(documentEdits)

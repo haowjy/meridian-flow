@@ -170,7 +170,14 @@ const ApplyClickBody = z
     ),
     groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
     restore: z.literal(true).optional(),
-    tree: z.strictObject({ revision: z.string().regex(/^\d+$/).nullable() }).optional(),
+    tree: z
+      .strictObject({
+        revision: z
+          .string()
+          .regex(/^[0-9a-f]{32}$/)
+          .nullable(),
+      })
+      .optional(),
   })
   .refine((body) => Boolean(body.snapshot) === Boolean(body.draftId));
 const UnapplyClickBody = z.strictObject({

@@ -51,13 +51,8 @@ if (!RUN_DB_TESTS || !url) {
         slug: "kb",
         scope: "project",
       });
-      await db.insert(schema.documents).values({
-        id: documentId,
-        contextSourceId: sourceId,
-        name: "chapter",
-        extension: "",
-        fileType: "markdown",
-      });
+      const { treeSeeder } = await import("../../test-support/tree-seed.js");
+      await treeSeeder(db).document(sourceId, "chapter", { id: documentId });
       return documentId;
     }
 

@@ -10,7 +10,7 @@ import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { testLinkDeps } from "../collab/test-support/document-link-scopes.js";
-import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
+import { createTreeReader, LIVE_TREE } from "../context/tree/tree-view.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "./test-support/project-repository.js";
 
 const RUN = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -48,7 +48,6 @@ else
         db,
         ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        catalogMutations: createDrizzleContextCatalog(db),
       });
       domain.bindHocuspocus(
         new Hocuspocus({
@@ -66,7 +65,6 @@ else
         db,
         ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        catalogMutations: createDrizzleContextCatalog(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -77,7 +75,11 @@ else
       return { domain, hocuspocus };
     }
     it("converges project, manuscript and locked No Work, with no uploads source and no thread", async () => {
-      const repository = createDrizzleProjectBootstrapRepository({ db, documents: collab() });
+      const repository = createDrizzleProjectBootstrapRepository({
+        db,
+        treeLists: createTestRemovalDeps(db).treeLists,
+        documents: collab(),
+      });
       const first = await repository.ensureDefaultBootstrap(USER_ID as never);
       const second = await repository.ensureDefaultBootstrap(USER_ID as never);
       expect(second).toEqual(first);
@@ -128,7 +130,12 @@ else
       expect(workSources).toEqual([]);
       expect(threadRows).toEqual([]);
       expect(docs).toHaveLength(1);
-      expect(docs[0]).toMatchObject({ name: "Chapter 1", extension: "", fileType: "markdown" });
+      expect(
+        await createTreeReader(db).findById(LIVE_TREE, first.documentId as never),
+      ).toMatchObject({
+        kind: "found",
+        document: { name: "Chapter 1", extension: "", fileType: "markdown" },
+      });
       expect(first.uri).toBe("manuscript://Chapter 1");
     });
 
@@ -144,7 +151,7 @@ else
       await expect(
         runInDrizzleTransaction(db, () =>
           store.transaction(async () => {
-            await store.ensureFolderPath(["rolled-back"]);
+            await store.contextSourceId();
             throw new Error("rollback");
           }),
         ),
@@ -155,7 +162,7 @@ else
           .from(schema.contextSources)
           .where(eq(schema.contextSources.projectId, projectId)),
       ).resolves.toEqual([]);
-      await expect(store.ensureFolderPath(["retry"])).resolves.toBeDefined();
+      await expect(store.contextSourceId()).resolves.toBeDefined();
     });
 
     it("rolls back interrupted materialization and provisions cleanly on retry", async () => {
@@ -163,6 +170,7 @@ else
       let interruptedDocumentId: string | undefined;
       const interrupted = createDrizzleProjectBootstrapRepository({
         db,
+        treeLists: createTestRemovalDeps(db).treeLists,
         documents: {
           ...domain,
           createDocumentAtomically(input) {
@@ -195,6 +203,7 @@ else
       expect(hocuspocus.documents.has(interruptedDocumentId as string)).toBe(false);
       const repaired = await createDrizzleProjectBootstrapRepository({
         db,
+        treeLists: createTestRemovalDeps(db).treeLists,
         documents: domain,
       }).ensureDefaultBootstrap(USER_ID as never);
       await expect(domain.readAsMarkdown(repaired.documentId)).resolves.toEqual({
@@ -208,6 +217,7 @@ else
       let warmConnection: Awaited<ReturnType<typeof hocuspocus.openDirectConnection>> | undefined;
       const bootstrap = await createDrizzleProjectBootstrapRepository({
         db,
+        treeLists: createTestRemovalDeps(db).treeLists,
         documents: {
           ...domain,
           async seedFromMarkdown(documentId, markdown, origin) {

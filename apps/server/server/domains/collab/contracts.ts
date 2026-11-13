@@ -188,22 +188,14 @@ type AgentTreeChange = {
       /** The canonical destination committed by the tree write, never the requested path. */
       landedAt: string;
     }
-) &
-  (
-    | {
-        threadId: ThreadId;
-        turnId?: TurnId;
-        responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
-        toolCallId?: string;
-        /** Where the model saw the document: the path it moved or deleted it from. */
-        shownAt: string;
-        materializes?: never;
-      }
-    | {
-        /** Exact drafted tree entry that Apply materialized into live. */
-        materializes: string;
-      }
-  );
+) & {
+    threadId: ThreadId;
+    turnId?: TurnId;
+    responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+    toolCallId?: string;
+    /** Where the model saw the document: the path it moved or deleted it from. */
+    shownAt: string;
+  };
 
 export type AgentTreeHistory = {
   /**
@@ -211,7 +203,7 @@ export type AgentTreeHistory = {
    * and returns its handle on the document's counter for this chat.
    */
   recordAgentTreeChange(input: AgentTreeChange): Promise<{ handle: string }>;
-  /** The document's live state now, as a tree entry records it; null while it is hidden. */
+  /** The document's live state now, as a tree entry records it; null while no live row has it (a creation only a Work shows). */
   liveState(documentId: DocumentId): Promise<import("@meridian/contracts").LiveTreeState | null>;
   /** The Works (`Work "‹name›"`) whose active drafts of a document still change it. */
   survivingDraftWorks(documentId: DocumentId): Promise<string[]>;
@@ -290,10 +282,8 @@ export type MarkdownDocumentStore = LinkBinder & {
     content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
-  prepareSeed: import("./domain/markdown-document.js").MarkdownDocumentEngine["prepareSeed"];
-  stageInitialStates: import("./domain/ports/initial-document-seeds.js").InitialDocumentSeeds["stageInitialStates"];
-  commitStagedStates(stagingId: string): Promise<void>;
-  discardStagedStates: import("./domain/ports/initial-document-seeds.js").InitialDocumentSeeds["discardStagedStates"];
+  /** Deletes the journals of documents that never got a row (an import that ended early). */
+  discardUnbornDocuments: import("./domain/ports/initial-document-seeds.js").InitialDocumentSeeds["discardUnbornDocuments"];
   /** A fresh write's first state, built in memory (see the engine's `encodeSeed`). */
   encodeSeed(content: BoundWrite, origin: DocumentSeedOrigin): Uint8Array;
   /** Installs `encodeSeed`'s states as the first of documents the caller's transaction created. */

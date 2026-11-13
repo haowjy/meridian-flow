@@ -35,10 +35,9 @@ import {
   lockSeamWorks,
   lockWorksInIdOrder,
 } from "../../../shared/work-lifecycle-lock.js";
-import type { ProjectContextAvailabilityMutationPort } from "../../context/ports/project-context-availability.js";
+import type { DraftOwnerHintPort } from "../../context/ports/context-catalog.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { WorkLifecycleUnavailableError } from "../domain/work-lifecycle.js";
-import type { ContextCatalogLifecyclePort } from "../ports/context-catalog-lifecycle.js";
 import type { WorkBranchPendingCounts } from "../ports/work-branch-pending-counts.js";
 
 /**
@@ -74,7 +73,6 @@ export type LockedWorkWriteSet = {
 };
 
 export type WorkProjectionMutation = {
-  notifyWorksChanged(workIds: readonly WorkId[]): Promise<void>;
   /** Activity on the Works (`lastActivityAt`): a revision and a notice, count or not. */
   touchWorks(workIds: readonly WorkId[], activityAt: Date): Promise<void>;
   /**
@@ -106,13 +104,11 @@ type WorksNoticeState = {
   /** Owners changed but not locked: recounted after commit unless locked by then. */
   recountWorkIds: Set<WorkId>;
   recountRootIds: Set<string>;
-  pendingWorkIdsByProject: Map<string, Set<WorkId>>;
 };
 
 export function createWorkProjectionMutation(input: {
   db: Database;
-  availability: Pick<ProjectContextAvailabilityMutationPort, "advance">;
-  catalog: ContextCatalogLifecyclePort;
+  draftOwnerHints: DraftOwnerHintPort;
   /** The collab-owned pending membership rule, counted per Work in SQL. */
   pendingCounts: WorkBranchPendingCounts;
   eventSink?: EventSink;
@@ -125,7 +121,6 @@ export function createWorkProjectionMutation(input: {
       reconcileRootIds: new Set(),
       recountWorkIds: new Set(),
       recountRootIds: new Set(),
-      pendingWorkIdsByProject: new Map(),
     }),
     fork: (parent) => ({
       touchedWorkIds: new Set(parent.touchedWorkIds),
@@ -133,12 +128,6 @@ export function createWorkProjectionMutation(input: {
       reconcileRootIds: new Set(parent.reconcileRootIds),
       recountWorkIds: new Set(parent.recountWorkIds),
       recountRootIds: new Set(parent.recountRootIds),
-      pendingWorkIdsByProject: new Map(
-        [...parent.pendingWorkIdsByProject].map(([projectId, workIds]) => [
-          projectId,
-          new Set(workIds),
-        ]),
-      ),
     }),
     merge(parent, child) {
       for (const workId of child.touchedWorkIds) parent.touchedWorkIds.add(workId);
@@ -146,11 +135,6 @@ export function createWorkProjectionMutation(input: {
       for (const root of child.reconcileRootIds) parent.reconcileRootIds.add(root);
       for (const workId of child.recountWorkIds) parent.recountWorkIds.add(workId);
       for (const root of child.recountRootIds) parent.recountRootIds.add(root);
-      for (const [projectId, childWorkIds] of child.pendingWorkIdsByProject) {
-        const parentWorkIds = parent.pendingWorkIdsByProject.get(projectId) ?? new Set<WorkId>();
-        for (const workId of childWorkIds) parentWorkIds.add(workId);
-        parent.pendingWorkIdsByProject.set(projectId, parentWorkIds);
-      }
       return parent;
     },
     async beforeCommit(state) {
@@ -161,13 +145,6 @@ export function createWorkProjectionMutation(input: {
       if (unlocked.length || unlockedRoots.length)
         runAfterDrizzleCommit(() => recountInRoot(unlocked.sort(), unlockedRoots.sort()));
       await reconcilePendingCounts(state);
-      if (state.pendingWorkIdsByProject.size === 0) return;
-      const projectIds = [...state.pendingWorkIdsByProject.keys()].sort();
-      const workIds = projectIds.flatMap((projectId) => [
-        ...(state.pendingWorkIdsByProject.get(projectId) ?? []),
-      ]);
-      await input.availability.advance({ projectIds, userIds: [] });
-      await input.catalog.upsertWorkAuthorities(workIds);
     },
   };
 
@@ -190,26 +167,6 @@ export function createWorkProjectionMutation(input: {
 
   function worksNoticeState(): WorksNoticeState {
     return enlistDrizzleTransactionParticipant(worksNoticeParticipant);
-  }
-
-  function enrollRows(
-    state: WorksNoticeState,
-    rows: readonly { id: string; projectId: string }[],
-  ): void {
-    for (const { id, projectId } of rows) {
-      const projectWorkIds = state.pendingWorkIdsByProject.get(projectId) ?? new Set<WorkId>();
-      projectWorkIds.add(id as WorkId);
-      state.pendingWorkIdsByProject.set(projectId, projectWorkIds);
-    }
-  }
-
-  async function enrollWorksNotice(workIds: readonly WorkId[]): Promise<void> {
-    const unique = [...new Set(workIds)].sort() as WorkId[];
-    const rows = await currentDrizzleDb(input.db)
-      .select({ id: works.id, projectId: works.projectId })
-      .from(works)
-      .where(inArray(works.id, unique));
-    enrollRows(worksNoticeState(), rows);
   }
 
   /**
@@ -251,7 +208,7 @@ export function createWorkProjectionMutation(input: {
             .returning({ id: branches.id })
         ).map(({ id }) => id as string),
       );
-      input.catalog.publishDraftOwnerHints(
+      input.draftOwnerHints.publishDraftOwnerHints(
         branchCounts.flatMap((row) =>
           row.rootThreadId && movedBranches.has(row.branchId)
             ? [
@@ -274,12 +231,10 @@ export function createWorkProjectionMutation(input: {
       workIds.map((workId) => sql`when ${workId}::uuid then ${totals.get(workId) ?? 0}::integer`),
       sql` `,
     )} end)`;
-    const moved = await tx
+    await tx
       .update(works)
       .set({ pendingDocumentCount: count, entityRevision: sql`${works.entityRevision} + 1` })
-      .where(and(inArray(works.id, workIds), ne(works.pendingDocumentCount, count)))
-      .returning({ id: works.id, projectId: works.projectId });
-    enrollRows(state, moved);
+      .where(and(inArray(works.id, workIds), ne(works.pendingDocumentCount, count)));
   }
 
   async function lockWriteSet(
@@ -347,9 +302,6 @@ export function createWorkProjectionMutation(input: {
   }
 
   const mutation: WorkProjectionMutation = {
-    async notifyWorksChanged(workIds) {
-      await runInDrizzleTransaction(input.db, () => enrollWorksNotice(workIds));
-    },
     async touchWorks(workIds, activityAt) {
       await runInDrizzleTransaction(input.db, async () => {
         const state = worksNoticeState();
@@ -360,9 +312,8 @@ export function createWorkProjectionMutation(input: {
           .update(works)
           .set({ entityRevision: sql`${works.entityRevision} + 1`, updatedAt: activityAt })
           .where(inArray(works.id, untouched))
-          .returning({ id: works.id, projectId: works.projectId });
+          .returning({ id: works.id });
         for (const { id } of rows) state.touchedWorkIds.add(id as WorkId);
-        enrollRows(state, rows);
       });
     },
     lockWorks: lockWriteSet,

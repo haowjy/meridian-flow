@@ -1,9 +1,6 @@
-/** Drizzle adapter for authoritative catalog snapshots, replay, and mutation reconciliation. */
-import { randomUUID } from "node:crypto";
 import type { ContextSourceId, DocumentId } from "@meridian/contracts";
 import { type ContextUriScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
 import type {
-  CatalogChange,
   CatalogChanges,
   CatalogChildrenRequest,
   CatalogChildrenResult,
@@ -22,7 +19,6 @@ import type { Database } from "@meridian/database";
 import {
   contextAvailabilityHeads,
   contextCatalogCommits,
-  contextCatalogEntries,
   contextCatalogScopeHeads,
   contextSources,
   projects,
@@ -30,35 +26,16 @@ import {
   uploadIntakes,
   works,
 } from "@meridian/database/schema";
-import { and, asc, eq, gt, inArray, isNull, lt, lte, ne, sql } from "drizzle-orm";
-import {
-  currentDrizzleDb,
-  runAfterDrizzleCommit,
-  runInDrizzleTransaction,
-} from "../../../shared/drizzle-transaction.js";
+import { and, asc, eq, gt, inArray, isNull, lte, ne, sql } from "drizzle-orm";
+import { runAfterDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type {
   ContextCatalog,
-  ContextCatalogFileMutationPort,
-  ContextCatalogMutationPort,
   ContextCatalogWakePort,
-  ProjectCatalogLifecyclePort,
-  WorkAuthorityCatalogMutationPort,
+  DraftOwnerHintPort,
 } from "../ports/context-catalog.js";
 import { normalizeCatalogChangesLimit } from "../ports/context-catalog.js";
-import type { ProjectContextAvailabilityMutationPort } from "../ports/project-context-availability.js";
-import { loadJoinedFrom } from "../tree/forwards.js";
-import {
-  createTreeReader,
-  LIVE_TREE,
-  visibleDocuments,
-  visibleFolders,
-} from "../tree/tree-view.js";
+import { LIVE_TREE, visibleDocuments, visibleFolders } from "../tree/tree-view.js";
 import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-mapper.js";
-import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
-
-const DEFAULT_RETAINED_COMMITS_PER_SCOPE = 1_000;
-/** Postgres binds at most 65,534 parameters per statement; an entry row binds three. */
-const ENTRY_INSERT_ROWS = 10_000;
 
 type CatalogDb = Pick<Database, "delete" | "insert" | "select" | "update">;
 
@@ -85,78 +62,6 @@ function decodeCursor(cursor: string): CursorPayload | null {
   } catch {
     return null;
   }
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-/** An entry without its namespace stamp: what a namespace change compares. */
-function unstamped(entry: CatalogEntry): unknown {
-  if (entry.kind !== "file" && entry.kind !== "folder") return entry;
-  const { observationVersion: _stamp, ...rest } = entry;
-  return rest;
-}
-
-function scopeForSource(row: {
-  sourceProjectId: string | null;
-  sourceWorkId: string | null;
-  sourceRootThreadId: string | null;
-  sourceChatThreadId: string | null;
-  projectUserId: string | null;
-  projectIsPersonal: boolean | null;
-  workProjectId: string | null;
-  sourceSlug: string;
-}): CatalogScope | null {
-  if (row.sourceRootThreadId && row.sourceProjectId)
-    return {
-      kind: "lineage",
-      projectId: row.sourceProjectId,
-      rootThreadId: row.sourceRootThreadId,
-    };
-  if (row.sourceChatThreadId && row.sourceProjectId)
-    return { kind: "chat", projectId: row.sourceProjectId, chatId: row.sourceChatThreadId };
-  if (row.sourceWorkId && row.workProjectId) {
-    return { kind: "work", projectId: row.workProjectId, workId: row.sourceWorkId };
-  }
-  if (!row.sourceProjectId) return null;
-  if (row.sourceSlug === "user" && row.projectIsPersonal && row.projectUserId) {
-    return { kind: "user", userId: row.projectUserId };
-  }
-  if (row.sourceSlug === "scratch" || row.sourceSlug === "uploads") return null;
-  return { kind: "project", projectId: row.sourceProjectId };
-}
-
-function catalogDispatchScopes(row: Parameters<typeof scopeForSource>[0]): readonly CatalogScope[] {
-  const scope = scopeForSource(row);
-  return scope ? [scope] : [];
-}
-
-async function sourceScopes(db: CatalogDb, sourceId: string): Promise<readonly CatalogScope[]> {
-  const [row] = await db
-    .select({
-      sourceProjectId: contextSources.projectId,
-      sourceWorkId: contextSources.workId,
-      sourceRootThreadId: contextSources.rootThreadId,
-      sourceChatThreadId: contextSources.chatThreadId,
-      sourceSlug: contextSources.slug,
-      projectUserId: projects.userId,
-      projectIsPersonal: projects.isPersonal,
-      workProjectId: works.projectId,
-    })
-    .from(contextSources)
-    .leftJoin(projects, eq(contextSources.projectId, projects.id))
-    .leftJoin(works, eq(contextSources.workId, works.id))
-    .where(eq(contextSources.id, sourceId as never))
-    .limit(1);
-  return row ? catalogDispatchScopes(row) : [];
 }
 
 async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
@@ -256,11 +161,8 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
             contextSourceId: vf.contextSourceId,
             parentId: vf.parentId,
             name: vf.name,
-            description: vf.description,
             rank: vf.rank,
             locationVersion: vf.locationVersion,
-            createdAt: vf.createdAt,
-            updatedAt: vf.updatedAt,
           })
           .from(vf)
           .where(inArray(vf.contextSourceId, sourceIds));
@@ -278,16 +180,11 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
             storageUrl: vd.storageUrl,
             mimeType: vd.mimeType,
             metadata: vd.metadata,
-            provisionalName: vd.provisionalName,
             rank: vd.rank,
             locationVersion: vd.locationVersion,
           })
           .from(vd)
           .where(inArray(vd.contextSourceId, sourceIds));
-  const joinedFrom = await loadJoinedFrom(
-    db as Database,
-    documentRows.map((document) => document.id as DocumentId),
-  );
   const chatSourceIds = new Set(sourceRows.filter((r) => r.chatThreadId !== null).map((r) => r.id));
   const chatDocumentIds = documentRows
     .filter((document) => chatSourceIds.has(document.contextSourceId))
@@ -387,7 +284,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       if (!parentPath) continue;
       entries.push(
         mapAuthoritativeFile({
-          document: { ...document, joinedFrom: joinedFrom.get(document.id as DocumentId) },
+          document,
           scope,
           observationVersion,
           scheme,
@@ -455,15 +352,7 @@ function mapCommit(row: typeof contextCatalogCommits.$inferSelect): CatalogCommi
 export function createDrizzleContextCatalog(
   db: Database,
   wakePort?: ContextCatalogWakePort,
-  options: {
-    retainedCommitsPerScope?: number;
-    availabilityMutations?: ProjectContextAvailabilityMutationPort;
-  } = {},
-): ContextCatalog &
-  ContextCatalogMutationPort &
-  ContextCatalogFileMutationPort &
-  ProjectCatalogLifecyclePort &
-  WorkAuthorityCatalogMutationPort {
+): ContextCatalog & DraftOwnerHintPort {
   /** Wake hints are explicitly lossy: pull-on-focus and polling repair a missed one. */
   function publishLossy(hints: readonly (CatalogWakeHint | DraftOwnerHint)[]) {
     if (!wakePort || hints.length === 0) return;
@@ -477,187 +366,6 @@ export function createDrizzleContextCatalog(
       }
     });
   }
-  const availabilityMutations =
-    options.availabilityMutations ?? createDrizzleProjectContextAvailability(db);
-  const retainedCommitsPerScope = Math.max(
-    1,
-    Math.floor(options.retainedCommitsPerScope ?? DEFAULT_RETAINED_COMMITS_PER_SCOPE),
-  );
-  type ScopePlan = {
-    scope: CatalogScope;
-    head: typeof contextCatalogScopeHeads.$inferSelect;
-    authoritative: CatalogEntry[];
-    oldById: Map<string, CatalogEntry>;
-    invalidatedRoots: string[];
-    namespaceChanged: boolean;
-  };
-
-  /** Lock the scope's head and read what it publishes now against what it last published. */
-  async function planScope(
-    tx: Database,
-    scope: CatalogScope,
-    invalidatedRootIds: readonly string[],
-  ): Promise<ScopePlan> {
-    const initialHead = await ensureHead(tx, scope);
-    await tx.execute(
-      sql`select 1 from ${contextCatalogScopeHeads} where ${contextCatalogScopeHeads.scopeKey} = ${initialHead.scopeKey} for update`,
-    );
-    const [head] = await tx
-      .select()
-      .from(contextCatalogScopeHeads)
-      .where(eq(contextCatalogScopeHeads.scopeKey, initialHead.scopeKey))
-      .limit(1);
-    if (!head) throw new Error(`Catalog head disappeared: ${initialHead.scopeKey}`);
-    const authoritative = await buildScopeEntries(tx, scope);
-    const existing = await tx
-      .select()
-      .from(contextCatalogEntries)
-      .where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
-    const oldById = new Map(existing.map((row) => [row.entryId, row.entry]));
-    const nextById = new Map(authoritative.map((entry) => [entry.entryId, entry]));
-    // Only roots this scope has published or publishes now: a hidden node a branch let go
-    // (Discard) was never in a live scope, and naming it would leak it.
-    const invalidatedRoots = [...new Set(invalidatedRootIds)].filter(
-      (id) => oldById.has(id) || nextById.has(id),
-    );
-    const isNamespace = (entry: CatalogEntry) => entry.kind !== "authority";
-    const namespaceChanged =
-      invalidatedRoots.length > 0 ||
-      authoritative.some((entry) => {
-        const old = oldById.get(entry.entryId);
-        return (
-          isNamespace(entry) &&
-          (!old || stableJson(unstamped(old)) !== stableJson(unstamped(entry)))
-        );
-      }) ||
-      [...oldById.values()].some((entry) => isNamespace(entry) && !nextById.has(entry.entryId));
-    return { scope, head, authoritative, oldById, invalidatedRoots, namespaceChanged };
-  }
-
-  /** Install one scope's plan as one catalog commit, or nothing when nothing changed. */
-  async function commitScope(tx: Database, plan: ScopePlan, commitId: string) {
-    const { scope, head, authoritative, oldById, invalidatedRoots } = plan;
-    const nextById = new Map(authoritative.map((entry) => [entry.entryId, entry]));
-    // Replay clears the old subtree before installing this commit. Restore every
-    // survivor, including entries already published by a separate repair and
-    // descendants that moved out of the root during this refresh.
-    const replacedIds = new Set(invalidatedRoots);
-    const children = new Map<string, Set<string>>();
-    for (const entry of [...oldById.values(), ...nextById.values()]) {
-      if (entry.kind !== "folder" && entry.kind !== "file") continue;
-      const ids = children.get(entry.parentId) ?? new Set<string>();
-      ids.add(entry.entryId);
-      children.set(entry.parentId, ids);
-    }
-    for (const entryId of replacedIds) {
-      for (const childId of children.get(entryId) ?? []) replacedIds.add(childId);
-    }
-    const changes: CatalogChange[] = [];
-    for (const rootEntryId of invalidatedRoots) {
-      changes.push({ operation: "invalidate-subtree", ordinal: changes.length, rootEntryId });
-    }
-    for (const [entryId, entry] of nextById) {
-      const old = oldById.get(entryId);
-      if (replacedIds.has(entryId) || !old || stableJson(old) !== stableJson(entry)) {
-        changes.push({ operation: "upsert", ordinal: changes.length, entry });
-      }
-    }
-    for (const entryId of oldById.keys()) {
-      if (!nextById.has(entryId)) {
-        changes.push({ operation: "delete", ordinal: changes.length, entryId });
-      }
-    }
-    if (changes.length === 0) return;
-    const revision = head.headRevision + 1;
-    await tx.delete(contextCatalogEntries).where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
-    for (let offset = 0; offset < authoritative.length; offset += ENTRY_INSERT_ROWS) {
-      await tx.insert(contextCatalogEntries).values(
-        authoritative.slice(offset, offset + ENTRY_INSERT_ROWS).map((entry) => ({
-          scopeKey: head.scopeKey,
-          entryId: entry.entryId,
-          entry,
-        })),
-      );
-    }
-    await tx.insert(contextCatalogCommits).values({
-      commitId,
-      scopeKey: head.scopeKey,
-      firstRevision: revision,
-      lastRevision: revision,
-      changes,
-    });
-    const oldestRevision = Math.max(1, revision - retainedCommitsPerScope + 1);
-    await tx
-      .update(contextCatalogScopeHeads)
-      .set({ headRevision: revision, oldestRevision, updatedAt: new Date() })
-      .where(eq(contextCatalogScopeHeads.scopeKey, head.scopeKey));
-    await tx
-      .delete(contextCatalogCommits)
-      .where(
-        and(
-          eq(contextCatalogCommits.scopeKey, head.scopeKey),
-          lt(contextCatalogCommits.lastRevision, oldestRevision),
-        ),
-      );
-    publishLossy([{ type: "context-catalog-hint", scope, headRevision: String(revision) }]);
-  }
-
-  /**
-   * Reconcile `scopes` against the authoritative tree. Only a namespace change (a live
-   * file, folder or source added, removed, changed or invalidated) allocates a namespace
-   * observation version, and it stamps only the scopes that changed. A scope without one,
-   * such as a branch's hidden-only lifecycle, keeps its published entries and stamps, so it
-   * publishes at most its authority entries.
-   */
-  async function reconcileScopes(
-    scopes: readonly CatalogScope[],
-    authorities: { projectIds: readonly string[]; userIds: readonly string[] },
-    invalidatedRootIds: readonly string[] = [],
-  ): Promise<string> {
-    return runInDrizzleTransaction(db, async () => {
-      const tx = currentDrizzleDb(db) as Database;
-      const commitId = randomUUID();
-      // Availability's publisher fence before any catalog head lock (lock order).
-      const availabilityGeneration = await availabilityMutations.advance(authorities);
-      const plans: ScopePlan[] = [];
-      for (const scope of [...scopes].sort((a, b) =>
-        catalogScopeKey(a).localeCompare(catalogScopeKey(b)),
-      )) {
-        plans.push(await planScope(tx, scope, invalidatedRootIds));
-      }
-      const changed = plans.filter((plan) => plan.namespaceChanged);
-      if (changed.length > 0) {
-        const userIds = new Set<string>();
-        const projectIds = new Set<string>();
-        for (const { scope } of changed) {
-          if (scope.kind === "user") userIds.add(scope.userId);
-          else projectIds.add(scope.projectId);
-        }
-        const version = await availabilityMutations.publishNamespace({
-          projectIds: [...projectIds],
-          userIds: [...userIds],
-        });
-        for (const plan of changed) {
-          plan.authoritative = plan.authoritative.map((entry) =>
-            entry.kind === "file" || entry.kind === "folder"
-              ? { ...entry, observationVersion: version }
-              : entry,
-          );
-        }
-      }
-      for (const plan of plans) {
-        if (!plan.namespaceChanged) {
-          // Structurally equal: keep each published entry, stamp and all.
-          plan.authoritative = plan.authoritative.map((entry) =>
-            entry.kind === "authority" ? entry : (plan.oldById.get(entry.entryId) ?? entry),
-          );
-        }
-        await commitScope(tx, plan, commitId);
-      }
-      return availabilityGeneration;
-    });
-  }
-
   return {
     async snapshot(scope) {
       await ensureHead(db, scope);
@@ -770,189 +478,8 @@ export function createDrizzleContextCatalog(
       );
       return { entry: entry ?? null, headRevision: snapshot.headRevision };
     },
-    async refreshFiles(documentIds) {
-      if (documentIds.length === 0) return;
-      const rows = await Promise.all(
-        documentIds.map((id) => createTreeReader(db).findById(LIVE_TREE, id as DocumentId)),
-      );
-      await this.refreshSources([
-        ...new Set(
-          rows.flatMap((row) => (row.kind === "found" ? [row.document.contextSourceId] : [])),
-        ),
-      ]);
-    },
-    async refreshSources(sourceIds, invalidatedRootIds = []) {
-      const tx = currentDrizzleDb(db) as Database;
-      const scopes = new Map<string, CatalogScope>();
-      for (const sourceId of new Set(sourceIds)) {
-        for (const scope of await sourceScopes(tx, sourceId)) {
-          scopes.set(catalogScopeKey(scope), scope);
-        }
-      }
-      const ownershipRows =
-        sourceIds.length === 0
-          ? []
-          : await tx
-              .select({
-                projectId: contextSources.projectId,
-                sourceSlug: contextSources.slug,
-                projectUserId: projects.userId,
-                projectIsPersonal: projects.isPersonal,
-                workProjectId: works.projectId,
-              })
-              .from(contextSources)
-              .leftJoin(projects, eq(contextSources.projectId, projects.id))
-              .leftJoin(works, eq(contextSources.workId, works.id))
-              .where(inArray(contextSources.id, [...new Set(sourceIds)] as never));
-      const projectIds = [
-        ...new Set(
-          ownershipRows.flatMap(
-            (row) => [row.projectId ?? row.workProjectId].filter(Boolean) as string[],
-          ),
-        ),
-      ];
-      const userIds = [
-        ...new Set(
-          ownershipRows.flatMap((row) =>
-            row.sourceSlug === "user" && row.projectIsPersonal && row.projectUserId
-              ? [row.projectUserId]
-              : [],
-          ),
-        ),
-      ];
-      return reconcileScopes([...scopes.values()], { projectIds, userIds }, invalidatedRootIds);
-    },
-    async refreshProject(projectId) {
-      const tx = currentDrizzleDb(db) as Database;
-      const [project] = await tx
-        .select({ userId: projects.userId, isPersonal: projects.isPersonal })
-        .from(projects)
-        .where(eq(projects.id, projectId))
-        .limit(1);
-      const workRows = await tx
-        .select({ id: works.id })
-        .from(works)
-        .where(eq(works.projectId, projectId));
-      const scopes: CatalogScope[] = [
-        { kind: "project", projectId },
-        ...workRows.map(({ id }) => ({ kind: "work" as const, projectId, workId: id })),
-        ...(project?.isPersonal ? [{ kind: "user" as const, userId: project.userId }] : []),
-      ];
-      await reconcileScopes(scopes, {
-        projectIds: [projectId],
-        userIds: project?.isPersonal ? [project.userId] : [],
-      });
-    },
     publishDraftOwnerHints(hints) {
       publishLossy(hints);
-    },
-    async upsertWorkAuthorities(workIds) {
-      const unique = [...new Set(workIds)].sort();
-      if (unique.length === 0) return;
-      await runInDrizzleTransaction(db, async () => {
-        const tx = currentDrizzleDb(db) as Database;
-        const rows = await tx
-          .select({
-            id: works.id,
-            projectId: works.projectId,
-            handle: works.handle,
-            name: works.name,
-            archivedAt: works.archivedAt,
-            deletedAt: works.deletedAt,
-            entityRevision: works.entityRevision,
-          })
-          .from(works)
-          .where(inArray(works.id, unique as never));
-        const byProject = new Map<string, typeof rows>();
-        for (const row of rows) {
-          const projectRows = byProject.get(row.projectId) ?? [];
-          projectRows.push(row);
-          byProject.set(row.projectId, projectRows);
-        }
-        for (const [projectId, projectRows] of [...byProject].sort(([left], [right]) =>
-          left.localeCompare(right),
-        )) {
-          const scope = { kind: "project" as const, projectId };
-          const initialHead = await ensureHead(tx, scope);
-          await tx.execute(
-            sql`select 1 from ${contextCatalogScopeHeads} where ${contextCatalogScopeHeads.scopeKey} = ${initialHead.scopeKey} for update`,
-          );
-          const [head] = await tx
-            .select()
-            .from(contextCatalogScopeHeads)
-            .where(eq(contextCatalogScopeHeads.scopeKey, initialHead.scopeKey))
-            .limit(1);
-          if (!head) throw new Error(`Catalog head disappeared: ${initialHead.scopeKey}`);
-          const changes: CatalogChange[] = [];
-          const entries: CatalogEntry[] = [];
-          const existingRows = await tx
-            .select({ entryId: contextCatalogEntries.entryId, entry: contextCatalogEntries.entry })
-            .from(contextCatalogEntries)
-            .where(
-              and(
-                eq(contextCatalogEntries.scopeKey, head.scopeKey),
-                inArray(
-                  contextCatalogEntries.entryId,
-                  projectRows.map(({ id }) => id),
-                ),
-              ),
-            );
-          const existingById = new Map(existingRows.map(({ entryId, entry }) => [entryId, entry]));
-          for (const work of projectRows.sort((left, right) => left.id.localeCompare(right.id))) {
-            const workHandle = work.handle === null ? null : decodeWorkHandle(work.handle);
-            if (work.handle !== null && !workHandle) continue;
-            const entry: CatalogEntry = {
-              kind: "authority",
-              entryId: work.id,
-              scope,
-              authority: { workId: work.id, workHandle },
-              name: work.name,
-              available: work.deletedAt === null && work.archivedAt === null,
-              entityRevision: String(work.entityRevision),
-            };
-            const existing = existingById.get(work.id);
-            if (existing && stableJson(existing) === stableJson(entry)) continue;
-            entries.push(entry);
-            changes.push({ operation: "upsert", ordinal: changes.length, entry });
-          }
-          if (changes.length === 0) continue;
-          const revision = head.headRevision + 1;
-          await tx
-            .insert(contextCatalogEntries)
-            .values(
-              entries.map((entry) => ({
-                scopeKey: head.scopeKey,
-                entryId: entry.entryId,
-                entry,
-              })),
-            )
-            .onConflictDoUpdate({
-              target: [contextCatalogEntries.scopeKey, contextCatalogEntries.entryId],
-              set: { entry: sql`excluded.entry` },
-            });
-          await tx.insert(contextCatalogCommits).values({
-            commitId: randomUUID(),
-            scopeKey: head.scopeKey,
-            firstRevision: revision,
-            lastRevision: revision,
-            changes,
-          });
-          const oldestRevision = Math.max(1, revision - retainedCommitsPerScope + 1);
-          await tx
-            .update(contextCatalogScopeHeads)
-            .set({ headRevision: revision, oldestRevision, updatedAt: new Date() })
-            .where(eq(contextCatalogScopeHeads.scopeKey, head.scopeKey));
-          await tx
-            .delete(contextCatalogCommits)
-            .where(
-              and(
-                eq(contextCatalogCommits.scopeKey, head.scopeKey),
-                lt(contextCatalogCommits.lastRevision, oldestRevision),
-              ),
-            );
-          publishLossy([{ type: "context-catalog-hint", scope, headRevision: String(revision) }]);
-        }
-      });
     },
   };
 }

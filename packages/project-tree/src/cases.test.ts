@@ -441,9 +441,9 @@ describe("file tree log: cases found in review", () => {
       name: "Old",
       parent: ROOT,
     }).node;
-    a.delete(LIVE, W, ch);
+    const removal = a.delete(LIVE, W, ch);
     expect(replayView(a.doc, LIVE).trash.map((entry) => entry.node)).toEqual([ch]);
-    a.author(LIVE, "system", { type: "purge", node: ch });
+    a.purge("system", removal);
     a.restore(LIVE, W, ch);
     a.rename(LIVE, W, ch, "Back");
     const live = replayView(a.doc, LIVE);
@@ -491,7 +491,7 @@ describe("file tree log: cases found in review", () => {
     const arc = a.create(LIVE, A, { kind: "folder", name: "Arc", parent: ROOT }).node;
     const renamed = a.rename({ draft: "w" }, A, arc, "Act 1");
     discardDraft(a, "w", W, "cmd-1");
-    a.author(LIVE, "system", { type: "purge", node: arc });
+    a.purge("system", a.delete(LIVE, A, arc));
     const result = restoreDiscard(a, "cmd-1", A, "w", "restore-3");
     expect(result).toEqual({ copies: [], leftOut: [renamed] });
   });

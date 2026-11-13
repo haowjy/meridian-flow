@@ -5,22 +5,18 @@ import { handleDocumentAddressRequest } from "../../lib/document-address-route.j
 import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
 
 describeBranchTreeDb("review address identity", (start, db) => {
-  it("selects the renamed hidden KB draft by review identity and refuses invalid capabilities", async () => {
+  it("selects the renamed drafted KB document by review identity and refuses invalid capabilities", async () => {
     const { s, runtime } = await start();
     const work = await s.work("review-binding", "draft");
     const hidden = await s.model(work).create("kb://Withern", "MODEL DRAFT words.");
     const live = await s.seedLive("kb://Withern");
     expect(live).not.toBe(hidden);
+    // A document no view places: its row exists, nothing shows it.
     const [unusedRow] = await db
       .insert(documents)
-      .values({
-        contextSourceId: s.project.sources.kb,
-        name: "Unused",
-        extension: "",
-        hidden: true,
-      })
+      .values({ projectId: s.project.id })
       .returning({ id: documents.id });
-    if (!unusedRow) throw new Error("Expected an orphan hidden document");
+    if (!unusedRow) throw new Error("Expected a document in no view");
     const unused = unusedRow.id;
     const row = (await s.items(work)).find((item) => item.documentId === hidden);
     if (!row) throw new Error("Expected draft item");

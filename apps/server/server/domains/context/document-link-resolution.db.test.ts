@@ -6,13 +6,12 @@
  */
 
 import type { DraftOwner } from "@meridian/contracts";
+import type { Filetype } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   branches,
-  branchTreeChanges,
   contextSources,
   documents,
-  folders,
   linkAheadRefs,
   projects,
   threads,
@@ -20,20 +19,20 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
+import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   type DocumentLinkRouteDeps,
   handleDocumentLinkResolveRequest,
 } from "../../lib/document-link-route.js";
-import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
+import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createLinkScopeObserver } from "../collab/index.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../projects/index.js";
 import { createDrizzleChatUploadsOwners } from "./adapters/chat-uploads-owners.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
-import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
 import { createDrizzleDocumentLinkScopes } from "./adapters/document-link-scope.js";
 import { createDocumentLinkResolver } from "./document-link-resolution.js";
@@ -53,7 +52,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
+    const sourceOf = new Map<string, string>();
+    /** A document seeded into a source through the list; remembers its source. */
+    async function seedDocument(
+      sourceId: string,
+      name: string,
+      options: { id?: string; filetype?: Filetype } = {},
+    ) {
+      const id = options.id ?? crypto.randomUUID();
+      await treeSeeder(database.current).document(sourceId, name, { ...options, id });
+      sourceOf.set(id, sourceId);
+      return id;
+    }
+    /** Changes the source's live tree with the writer, as a record any actor could make. */
+    async function change(sourceId: string, edit: (writer: TreeWriter) => void) {
+      await treeSeeder(database.current).store.submit({
+        lists: [await treeListOfSource(database.current, sourceId)],
+        make: ([{ writer }]) => {
+          edit(writer);
+        },
+      });
+    }
     beforeEach(async () => {
+      sourceOf.clear();
       const db = database.current;
       await db.insert(users).values(conformanceUserValues(u, "canonical-links"));
       await db.insert(projects).values([
@@ -87,7 +108,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       const source = crypto.randomUUID();
       const chapter = crypto.randomUUID();
-      const act = crypto.randomUUID();
       await db.insert(contextSources).values({
         id: source,
         projectId: p,
@@ -95,14 +115,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "manuscript",
         name: "Manuscript",
       });
-      await db
-        .insert(documents)
-        .values({ id: chapter, contextSourceId: source, name: "chapter", extension: "" });
-      await db.insert(folders).values({
-        id: act,
-        contextSourceId: source,
-        name: "Act 1",
-      });
+      await seedDocument(source, "chapter", { id: chapter });
+      const act = await treeSeeder(db).folder(source, "Act 1");
       const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
         listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
       };
@@ -151,7 +165,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         // A chat with no Work reads its own lineage's branch view.
         expect(viewed).toEqual([{ kind: "lineage", projectId: p, rootThreadId: root }]);
       }
-      await db.update(folders).set({ deletedAt: new Date() }).where(eq(folders.id, act));
+      await change(source, (writer) => writer.delete(LIVE, "system", act));
       const gone = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,
         userId: u as never,
@@ -177,6 +191,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       name: string,
       workId: string | null = null,
       chatThreadId: string | null = null,
+      filetype?: Filetype,
     ) {
       const db = database.current;
       const sourceId = crypto.randomUUID();
@@ -190,10 +205,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId,
         chatThreadId,
       });
-      await db
-        .insert(documents)
-        .values({ id: documentId, contextSourceId: sourceId, name, extension: "" });
-      return documentId;
+      return seedDocument(sourceId, name, { id: documentId, ...(filetype ? { filetype } : {}) });
     }
     it("opens all canonical schemes, explicit other Work and no-Work targets", async () => {
       const r = resolver();
@@ -243,11 +255,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     it("canonicalizes prose aliases before exact-first non-prose omission", async () => {
       const r = resolver();
-      const data = await add("manuscript", "outline");
-      await database.current
-        .update(documents)
-        .set({ extension: "json", fileType: "json" })
-        .where(eq(documents.id, data));
+      const data = await add("manuscript", "outline.json", null, null, "json");
       const resolve = (path: string) =>
         r.resolve({
           projectId: p,
@@ -259,17 +267,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         uri: "manuscript://outline.json",
       });
       const prose = crypto.randomUUID();
-      const [row] = await database.current
-        .select({ contextSourceId: documents.contextSourceId })
-        .from(documents)
-        .where(eq(documents.id, data));
-      if (!row) throw new Error("Missing data fixture");
-      await database.current.insert(documents).values({
-        id: prose,
-        contextSourceId: row.contextSourceId,
-        name: "outline",
-        extension: "",
-      });
+      const dataSource = sourceOf.get(data);
+      if (!dataSource) throw new Error("Missing data fixture");
+      await seedDocument(dataSource, "outline", { id: prose });
       for (const path of ["outline", "outline.md", "outline.txt"])
         expect(await resolve(path)).toMatchObject({
           documentId: prose,
@@ -315,10 +315,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           uri: "scratch://@w3/Gate",
         }),
       ).toBeNull();
-      await database.current
-        .update(documents)
-        .set({ deletionReason: "deleted", deletedAt: new Date() })
-        .where(eq(documents.id, local));
+      await change(sourceOf.get(local) as string, (writer) => writer.delete(LIVE, "system", local));
       expect(
         await r.resolve({
           projectId: p,
@@ -331,23 +328,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("chat history follows a rename, a document link never does, and a new occupant wins", async () => {
       const db = database.current;
       const targetId = await add("manuscript", "old");
-      const [target] = await db.select().from(documents).where(eq(documents.id, targetId));
-      if (!target) throw new Error("target fixture missing");
-      const tree = new DrizzleContextTreeMutationStore(db, {
-        removal: createTestDocumentRemoval(db),
-      });
-      const source = await tree.inspect(target.contextSourceId, "old");
-      if (source?.kind !== "file") throw new Error("source fixture missing");
-      expect(
-        await tree.commitMove({
-          source,
-          destinationSourceId: target.contextSourceId,
-          destinationPath: "new",
-          expectedTarget: { state: "absent" },
-          destinationFiletype: "markdown",
-          destinationFilename: { name: "new", extension: "" },
-        }),
-      ).toMatchObject({ ok: true });
+      const targetSource = sourceOf.get(targetId) as string;
+      await change(targetSource, (writer) => writer.rename(LIVE, "system", targetId, "new"));
       const r = resolver();
       const input = {
         projectId: p,
@@ -395,12 +377,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
 
       const occupant = crypto.randomUUID();
-      await db.insert(documents).values({
-        id: occupant,
-        contextSourceId: target.contextSourceId,
-        name: "old",
-        extension: "",
-      });
+      await seedDocument(targetSource, "old", { id: occupant });
       expect(await r.resolve(chat)).toMatchObject({ documentId: occupant });
       expect(await r.resolve(input)).toMatchObject({ documentId: occupant });
     });
@@ -425,12 +402,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "scratch",
         name: "Scratch",
       });
-      await db.insert(documents).values({
-        id: note,
-        contextSourceId: lineageSource,
-        name: "note",
-        extension: "",
-      });
+      await seedDocument(lineageSource, "note", { id: note });
       const rows = [
         { id: note, uri: "scratch://@c1/note", workId: null, rootThreadId: root },
         { id: await add("scratch", "named", b), uri: "scratch://@w3/named", workId: b },
@@ -477,18 +449,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("answers an address-only link from the request's own Work branch, live first", async () => {
       const db = database.current;
       const live = await add("manuscript", "live");
-      const [{ contextSourceId } = { contextSourceId: "" }] = await db
-        .select({ contextSourceId: documents.contextSourceId })
-        .from(documents)
-        .where(eq(documents.id, live));
+      const contextSourceId = sourceOf.get(live) as string;
+      // A document that exists only in a Work's draft.
       const hidden = async (name: string, branchId: string) => {
         const id = crypto.randomUUID();
-        await db
-          .insert(documents)
-          .values({ id, contextSourceId, name, extension: "md", hidden: true });
-        await db
-          .insert(branchTreeChanges)
-          .values({ branchId, nodeId: id, nodeKind: "document", created: true });
+        await treeSeeder(db).document(contextSourceId, name, { id, view: { draft: branchId } });
         return id;
       };
       const branchA = crypto.randomUUID();
@@ -557,24 +522,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("answers ref links through the route core: gone never carries a location", async () => {
       const db = database.current;
       const live = await add("manuscript", "live");
-      const [{ contextSourceId } = { contextSourceId: "" }] = await db
-        .select({ contextSourceId: documents.contextSourceId })
-        .from(documents)
-        .where(eq(documents.id, live));
-      const sibling = async (name: string) => {
-        const id = crypto.randomUUID();
-        await db.insert(documents).values({ id, contextSourceId, name, extension: "" });
-        return id;
-      };
+      const contextSourceId = sourceOf.get(live) as string;
+      const sibling = (name: string) => seedDocument(contextSourceId, name);
       // The holder the request's base names: pinned, so its ahead answers read its bindings.
       await sibling("holder");
       const deleted = await sibling("deleted");
-      const discarded = await sibling("discarded");
+      // A discarded branch create is in no view: a row, and nowhere to read it.
+      const discarded = crypto.randomUUID();
+      await db.insert(documents).values({ id: discarded, projectId: p });
       const secret = await sibling("secret");
-      await db
-        .update(documents)
-        .set({ deletionReason: "deleted", deletedAt: new Date() })
-        .where(eq(documents.id, deleted));
+      await change(contextSourceId, (writer) => writer.delete(LIVE, "system", deleted));
       const otherProject = crypto.randomUUID();
       const otherSource = crypto.randomUUID();
       const foreign = crypto.randomUUID();
@@ -588,9 +545,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "manuscript",
         scope: "project",
       });
-      await db
-        .insert(documents)
-        .values({ id: foreign, contextSourceId: otherSource, name: "foreign", extension: "" });
+      await seedDocument(otherSource, "foreign", { id: foreign });
       const settled = crypto.randomUUID();
       const unsettled = crypto.randomUUID();
       const settledGone = crypto.randomUUID();
@@ -614,11 +569,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         { aheadId: unsettled, projectId: p, scheme: "manuscript", path: "later" },
       ]);
-      await db
-        .update(documents)
-        .set({ hidden: true, deletionReason: "discarded", deletedAt: new Date() })
-        .where(eq(documents.id, discarded));
-      // A discarded branch create is a tombstone, never an address occupant.
       const provisioned: (DraftOwner | null)[] = [];
       const deps: DocumentLinkRouteDeps = {
         projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,

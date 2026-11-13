@@ -29,8 +29,11 @@ particular, verify that:
   frozen click. Overlapping live words report `overrode`.
 - A deleted document answers `needs_restore` without changing state; a click
   with `restore` restores it, and a taken path returns a `renamed` note.
-- Ordinary text Apply does not need the source namespace lock. Hidden-create
-  reveal and restore use the tree lock.
+- A Work's drafted create (in the Work's tree view only, no live row) goes live
+  inside its Apply with the same document id and no `branch_tree_nodes` row left;
+  a live-deleted document sits in Trash until a click with `restore` brings it
+  back, and a taken path returns a `renamed` note. The fixtures write the tree
+  through `treeListStore.submit` (`test-support/tree-seed.ts`), never by row.
 
 ## Late closure at the append door
 

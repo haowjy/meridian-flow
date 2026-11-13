@@ -30,8 +30,7 @@ export type DocumentIdentityAddressInput = Pick<
 export interface DocumentAddressResolver {
   /**
    * A validated review item (one document's draft) selects identity, never the occupant of its
-   * locator. Its draft admits it like a write (`admitDrafts`): an open no-effect draft of a
-   * document deleted live still opens.
+   * locator. It opens where the view shows the document.
    */
   resolveById(input: DocumentIdentityAddressInput): Promise<DocumentAddressResult>;
   resolve(input: DocumentAddressInput): Promise<DocumentAddressResult>;

@@ -22,6 +22,12 @@ Durable Yjs coordination and persistence for live documents and Work drafts.
   database watermark.
 - Schema-aware reads, seeds and writes go through `domain/markdown-document.ts` and
   the scoped link codec.
+- Apply's and Discard's tree halves are the project-tree package's `applyDraft` and
+  `discardDraft`, run through `treeListStore.submit` in the click's transaction (each list
+  the Work spans); collab writes no tree row. The list's lock comes before any document's
+  mutex, and a Discard releases no document: a discarded create stays in no view until
+  retention purges it.
+- A failed reply's rollback undoes text only. Each tree tool call is its own command.
 - Destination selection is explicit: don't infer live versus draft from a thread mode.
 
 ## Depth

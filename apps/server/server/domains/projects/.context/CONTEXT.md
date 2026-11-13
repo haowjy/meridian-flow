@@ -29,10 +29,18 @@ Lifecycle writes lock the Work row and publish `{ workId }` through
 reconnect at their new access level. Work context mutations use that same
 lifecycle lock.
 
-Work deletion marks primary chats and live Work context rows with
-`deletedByWorkId`. Branches and their drafts remain until purge, so restore
-clears exactly the rows marked by that deletion. Purge tombstones hidden
-branch-created nodes before deleting branch rows.
+Work deletion marks primary chats, result rows and the Work's context sources with
+`deletedByWorkId`; restore clears exactly the rows marked by that deletion. A source's end is
+its row's: the cascade writes no node, because the project's tree list is the only writer of
+node rows and its replay follows the source. Branches and their drafts remain until purge, so
+restore finds them. Purge ends the Work's branches through collab's Discard, which settles every
+pending record of the Work; the documents it drafted are then in no view and context retention
+releases them after its window. Purge also deletes the documents of the Work's own nodes before
+their source rows go (the nodes follow the sources by foreign key).
+
+Delete, restore, archive and unarchive take the project's tree list lock
+(`shared/tree-list-lock.ts`) after the Work rows and before the namespaces, so the open Works an
+admission reads under that key are current.
 
 Work delete, and a receipt reversal that deletes a Work, ends each deleted
 thread's run and subagent subtree, its open questions included, in the delete's
@@ -40,7 +48,7 @@ own transaction (`stopThreads`), before `lockWorkThreadTree` locks the tree's
 rows parents first.
 
 A lineage lock (`pg_advisory_xact_lock` on `draft-owner:lineage:<root>`) follows the
-Work locks and precedes branch, namespace and document locks; the thread tree lock,
+Work locks and precedes branch, list, namespace and document locks; the thread tree lock,
 trash and restore take it too, because they change whether a lineage is live. Purge
 also disposes the active branches of the lineages it deletes.
 Delete and purge lock the thread tree before the Work, then recheck the full

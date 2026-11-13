@@ -1,8 +1,10 @@
 /**
  * Permanently removes expired Works, then best-effort removes their object-store blobs.
- * A purged Work's branches are disposed of first through collab's locked Discard kernel
- * (contract §2.6, F10): their drafts leased before the transaction, then, after the
- * deleted/cutoff proof, every hidden document they created tombstoned and released.
+ * A purged Work's branches end first through collab's Discard (contract §2.6, F10): their drafts
+ * leased before the transaction, then, after the deleted/cutoff proof, one settlement discards
+ * every pending record of the Work. The documents it drafted are then in no view, and retention
+ * releases them on its own window. The Work's sources go with it and the list's replay follows:
+ * the cascade of its source rows takes their node rows; the documents of those nodes go here.
  */
 
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
@@ -16,6 +18,7 @@ import {
   projectResults,
   promptBakes,
   threads,
+  treeNodes,
   turns,
   uploadIntakes,
   works,
@@ -141,9 +144,10 @@ export function createDrizzleWorkPurger(deps: {
           .from(projectResults)
           .where(eq(projectResults.deletedByWorkId, workId)),
         activeDb
-          .select({ storageUrl: documents.storageUrl })
-          .from(documents)
-          .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+          .select({ id: treeNodes.id, storageUrl: documents.storageUrl })
+          .from(treeNodes)
+          .innerJoin(documents, eq(documents.id, treeNodes.id))
+          .innerJoin(contextSources, eq(contextSources.id, treeNodes.contextSourceId))
           .where(
             or(
               eq(contextSources.workId, workId),
@@ -188,6 +192,15 @@ export function createDrizzleWorkPurger(deps: {
         }),
       ];
 
+      // The documents of the Work's nodes go before their source rows do: a node's row follows its
+      // source's, and a document's content with it.
+      if (binaries.length > 0)
+        await activeDb.delete(documents).where(
+          inArray(
+            documents.id,
+            binaries.map(({ id }) => id),
+          ),
+        );
       // Results and journal history restrict conversation deletion.
       await activeDb.delete(projectResults).where(eq(projectResults.deletedByWorkId, workId));
       if (lockedTree.threadIds.length > 0) {

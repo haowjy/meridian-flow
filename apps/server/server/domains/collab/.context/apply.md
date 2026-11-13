@@ -7,11 +7,12 @@
 blocks: independently built schemas have distinct node and mark types, which the merge
 kernel can't mix. Receipt membership is classified at that cut, not replayed onto live.
 
-The `restore` check runs under the document lock, so a delete the writer's view didn't
-show answers `needs_restore`, however late it landed: nothing changes, the draft stays
-pending, and the answer is stored, so a replay returns it. The client asks before
-sending a new click with `restore`. Apply reads the addressed document's own lifecycle
-row for these decisions, not a branch-wide tree listing.
+The `restore` check runs under the Work's and branch's locks, before the list's, so a
+delete the writer's view didn't show answers `needs_restore`, however late it landed: nothing
+changes, the draft stays pending, and the answer is stored, so a replay returns it. The client
+asks before sending a new click with `restore`; with it, the document's `restore` record and the
+Apply are one `submit`. Apply reads the addressed document's own row in the Work's tree
+(`branch_tree_nodes` against `tree_nodes`), not a branch-wide listing.
 
 The route authorizes a deleted item at its source through the draft destination
 (`restoreGrant`), not a live grant. A drafted delete of a document live deleted too
@@ -38,9 +39,20 @@ does not stand in for integrated browser FIFO and optimistic-review verification
 
 ## The tree cut
 
-A text-only click on a hidden creation reveals it at its own row, and the branch's row
-loses only `created` (`endCreatedFact`, a new revision), so its move or delete stays a
-pending tree line on the now-live document.
+A click's tree half is the package's `applyDraft` (`adapters/drizzle-apply-tree.ts`), run with
+`treeListStore.submit` in the list that holds the document (`tree_node_ids.list_id`: the
+project's, or the account's for `user://`), in the click's own transaction. Its `only` is the
+document's item: the pending records made on it, and a drafted delete of a folder above it that
+took it along; the package adds the drafted creates they stand on and earlier records on the
+same facts. The click carries `tree.revision`, a digest of the Work's row on the document
+(`md5` over its source, parent, name, rank, `deleted` and `exists_only_in_draft`), and answers
+`changed` when the row says something else now. A record that cannot land (a move into itself,
+a move of what live has in Trash) lands nothing of the item: the click is `refused` with
+`ancestor_taken` and the draft stays pending. A text-only click leaves a pending move or delete
+pending, except for a creation only the Work shows, which lands whole.
+
+Lock order inside the click: Work, branch, the list (inside `submit`), then the document's mutex
+for the text half, then draft rows. Nothing takes a document mutex before the list's lock.
 
 [frozen]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#the-click-owns-its-meaning
 [later]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#when-draft-and-live-both-changed-the-later-action-wins

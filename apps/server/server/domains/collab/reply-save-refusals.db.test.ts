@@ -6,12 +6,11 @@
  */
 
 import { removedWriteRefusal } from "@meridian/agent-edit/integration";
-import type { WorkId } from "@meridian/contracts/runtime";
-import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { setTestHook } from "../../shared/test-hooks.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
   createDrizzleBranchStore,
@@ -27,12 +26,11 @@ import {
   PROJECT_ID,
   resetDatabase,
   SOURCE_ID,
-  schema,
   THREAD_ID,
+  TURN_ID,
   USER_ID,
   WORK_ID,
 } from "./test-support/collab-postgres-harness.js";
-import { seedSecondWork, THREAD_B_ID, WORK_B_ID } from "./test-support/cross-work-probe-harness.js";
 import {
   createResponse,
   responseContext,
@@ -42,13 +40,11 @@ import { reviewDriver } from "./test-support/draft-review-requests.js";
 
 const DRAFT = "Write did not land: the user discarded this draft. Re-read and retry.";
 const _EDIT = "Write did not land: the user discarded the text it edited. Re-read and retry.";
-const DOC = "Write did not land: the user discarded this new document. Re-read and retry.";
 
-type Fixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
 type Saved = Awaited<ReturnType<ReturnType<typeof createHarness>["commit"]>>;
-/** A Discard that released the creation refuses with the removal record's copy, never a retry. */
-const REMOVED =
-  "This file was discarded from the draft before this reply was saved, so this change wasn't made.";
+/** A Discard leaves the creation's document in no view with no removal record: the draft's own copy answers. */
+const CREATE_DISCARDED =
+  "Write did not land: the user discarded this new document. Re-read and retry.";
 /** Each refused write's document and the copy it carries, in save order. */
 function refused(saved: Saved) {
   return [
@@ -137,32 +133,20 @@ describe("reply save refusals (postgres)", () => {
       store: createDrizzleBranchStore(db),
       boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
     });
-  /** Marks `documentId` as created by `workId`'s active branch, making that branch if need be. */
-  async function claimCreate(documentId: string, workId: WorkId, threadId: string) {
+  /** A document the Work's branch created in its draft view and has not applied. */
+  async function draftedCreate(documentId: string, name: string) {
     const branch = await branchesOf().ensureActiveForWrite({
-      owner: { kind: "work", workId },
+      owner: { kind: "work", workId: WORK_ID },
       projectId: PROJECT_ID as never,
-      threadId: threadId as never,
+      threadId: THREAD_ID as never,
       userId: USER_ID as never,
     });
-    await db.insert(schema.branchTreeChanges).values({
-      branchId: branch.id,
-      nodeKind: "document",
-      nodeId: documentId as never,
-      created: true,
-    });
-  }
-  /** A document the branch created and has not revealed: hidden, with its tree row. */
-  async function hiddenCreate(documentId: string, name: string) {
-    await db.insert(schema.documents).values({
-      id: documentId as never,
-      contextSourceId: SOURCE_ID,
-      name,
-      extension: "",
-      hidden: true,
+    await treeSeeder(db).document(SOURCE_ID, name, {
+      id: documentId,
+      view: { draft: branch.id },
+      actor: `agent:${THREAD_ID}/${TURN_ID}`,
     });
     await seedEmptyAuthority(documentId);
-    await claimCreate(documentId, WORK_ID, THREAD_ID);
   }
   /** A create's own step: the document's empty authority. */
   async function seedEmptyAuthority(documentId: string) {
@@ -170,11 +154,6 @@ describe("reply save refusals (postgres)", () => {
       documentId as never,
       Y.encodeStateAsUpdate(new Y.Doc()),
     );
-  }
-  /** Work B's branch claims the same hidden create, as two chats creating one path would. */
-  async function shareHiddenCreate(fixture: Fixture) {
-    await seedSecondWork(fixture);
-    await claimCreate(NEW_ID, WORK_B_ID, THREAD_B_ID);
   }
   const NEW_ID = "00000000-0000-4000-8000-000000000830";
   const grantFor = (documentId: string, workId = WORK_ID, slug = "atomicity-work") => {
@@ -193,7 +172,7 @@ describe("reply save refusals (postgres)", () => {
   async function createdThenStaged() {
     const base = await setup();
     const { core } = base;
-    await hiddenCreate(NEW_ID, "created");
+    await draftedCreate(NEW_ID, "created");
     const first = await createResponse(db, 3);
     expect(
       await core.write(
@@ -220,45 +199,22 @@ describe("reply save refusals (postgres)", () => {
     return { ...base, second };
   }
 
-  it("13: Discard of a created item while staged refuses discarded_document and leaves its tombstone", async () => {
+  it("13: Discard of a created item while staged refuses discarded_document", async () => {
     const { second, review } = await createdThenStaged();
     expect(await review.discardItem(NEW_ID)).toMatchObject({ status: "discarded" });
     const saved = await harness.commit(second);
-    expect(refused(saved)).toEqual([[NEW_ID, REMOVED]]);
-    const [row] = await db
-      .select()
-      .from(schema.documents)
-      .where(eq(schema.documents.id, NEW_ID as never));
-    expect(row?.deletedAt).not.toBeNull();
+    expect(refused(saved)).toEqual([[NEW_ID, CREATE_DISCARDED]]);
   });
 
-  describe("17: a save between a Discard's commit and its retirement is refused by draft state", () => {
-    it.each([
-      { name: "a hidden create another Work's branch uses", reveal: false, other: true, copy: DOC },
-      { name: "a hidden create no other branch uses", reveal: false, other: false, copy: REMOVED },
-    ])("$name refuses its draft state's copy", async ({ reveal, other, copy }) => {
-      const { second, review, fixture } = await createdThenStaged();
-      if (reveal) {
-        await db
-          .update(schema.documents)
-          .set({ hidden: false })
-          .where(eq(schema.documents.id, NEW_ID as never));
-        await db
-          .delete(schema.branchTreeChanges)
-          .where(eq(schema.branchTreeChanges.nodeId, NEW_ID as never));
-      }
-      if (other) {
-        await seedSecondWork(fixture);
-        await shareHiddenCreate(fixture);
-      }
-      let saved: Saved | undefined;
-      const remove = setTestHook("draft.beforeRetirement", async () => {
-        remove();
-        saved = await harness.commit(second);
-      });
-      expect(await review.discardItem(NEW_ID)).toMatchObject({ status: "discarded" });
-      expect(refused(saved as Saved)).toEqual([[NEW_ID, copy]]);
+  it("17: a save between a Discard's commit and its retirement is refused by draft state", async () => {
+    const { second, review } = await createdThenStaged();
+    let saved: Saved | undefined;
+    const remove = setTestHook("draft.beforeRetirement", async () => {
+      remove();
+      saved = await harness.commit(second);
     });
+    expect(await review.discardItem(NEW_ID)).toMatchObject({ status: "discarded" });
+    expect(refused(saved as Saved)).toEqual([[NEW_ID, CREATE_DISCARDED]]);
   });
 
   it("22: a write landing between Discard all's commit and its retirement gets the named refusal, not an internal error", async () => {

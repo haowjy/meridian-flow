@@ -13,7 +13,6 @@ export function createDocumentAddressResolver(deps: {
           projectId: input.projectId,
           documentIds: [input.documentId],
           view: input.view,
-          admitDrafts: true,
         },
         { userId: input.userId },
       );

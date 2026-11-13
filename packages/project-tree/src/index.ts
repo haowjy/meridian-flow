@@ -71,4 +71,4 @@ export {
   viewRecords,
   viewValues,
 } from "./view.js";
-export { type ListEnd, moveBetweenLists, TreeWriter } from "./writer.js";
+export { type CreateInput, type ListEnd, moveBetweenLists, TreeWriter } from "./writer.js";

@@ -180,7 +180,9 @@ export function createDrizzleRecentDocumentsRepository(deps: {
             .from(folders)
             .where(inArray(folders.contextSourceId, sourceIds as never))
         : [];
-      const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
+      const foldersById = new Map(
+        folderRows.map((folder) => [folder.id, { ...folder, deleted: false }]),
+      );
 
       const namespaceKeys = [
         ...new Set([

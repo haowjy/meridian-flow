@@ -1,7 +1,7 @@
 /**
  * The branch-tree DB tests' world and seed verbs (contract §16.1): a project with its
  * sources, Works with their primary threads, rows written the way the product's creates
- * leave them, written through the tree's own row writers. No composed runtime: command
+ * leave them, written through `treeListStore.submit` (`tree-seed.ts`). No composed runtime: command
  * verbs, the link resolve route's answer among them, live in `branch-tree-commands.ts`.
  *
  * Paths are source-relative, Manuscript by default; prefix `kb://` or `unfiled://` for
@@ -13,13 +13,11 @@ import { randomUUID } from "node:crypto";
 import type {
   ContextSourceId,
   DocumentId,
-  FolderId,
   ProjectId,
   ThreadId,
   UserId,
   WorkId,
 } from "@meridian/contracts";
-import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import { formatWorkHandle, type WorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -40,13 +38,7 @@ import {
 } from "../domains/collab/adapters/drizzle-branches.js";
 import { type Branches, createBranches } from "../domains/collab/domain/branches.js";
 import type { Branch } from "../domains/collab/domain/ports/branch-store.js";
-import { lockContextSources } from "../domains/context/adapters/context-fs/document-locations.js";
-import { recordCreated } from "../domains/context/tree/branch-tree-store.js";
-import { normalizeNames } from "../domains/context/tree/name-normalization.js";
-import { insertDocumentRow, insertFolder } from "../domains/context/tree/node-rows.js";
-import { ensureLiveFolderPath, walkFolders } from "../domains/context/tree/placement.js";
-import { runInDrizzleTransaction } from "../shared/drizzle-transaction.js";
-
+import { treeSeeder } from "./tree-seed.js";
 import { createTestWorkProjectionMutation } from "./work-projection.js";
 export type ScenarioSource = "manuscript" | "kb" | "unfiled" | "user";
 
@@ -81,18 +73,12 @@ export interface BranchTreeWorld {
   /** A live document, with live folders made as needed. */
   seedLive(path: string): Promise<DocumentId>;
   /** A live folder chain; returns the leaf. */
-  seedLiveFolder(path: string): Promise<FolderId>;
+  seedLiveFolder(path: string): Promise<string>;
   /**
-   * A document the Work's branch created: hidden folders made (or joined) as needed, a
-   * hidden document at the path, and the branch's `created` row at that location. Makes
-   * the Work's branch if it has none. A new document, unless `join` names a hidden one this
-   * branch then uses at `path` too (the row a create's join leaves, at a location of its own).
+   * A document the Work's branch created: a `create` record in the Work's draft view
+   * (`{ draft: branchId }`) at the path. Makes the Work's branch if it has none.
    */
-  seedHidden(
-    work: ScenarioWork,
-    path: string,
-    options?: { join?: DocumentId },
-  ): Promise<DocumentId>;
+  seedHidden(work: ScenarioWork, path: string): Promise<DocumentId>;
   /** A registry row for an ahead ref at `path`, settled live to `settledTo` if given. */
   seedAhead(path: string, options?: { settledTo?: DocumentId }): Promise<string>;
 }
@@ -103,13 +89,6 @@ const SOURCES = ["manuscript", "kb", "unfiled"] as const;
 export function sourceOf(path: string): { scheme: ScenarioSource; rel: string } {
   const match = /^(kb|unfiled|manuscript|user):\/\/(.*)$/.exec(path);
   return { scheme: (match?.[1] ?? "manuscript") as ScenarioSource, rel: match?.[2] ?? path };
-}
-
-/** A seeded row's stored parts: the name codec's canonical name, as every create stores it. */
-function splitFilename(filename: string) {
-  const parsed = parseDocumentFilename(filename);
-  if (!parsed.ok) throw new Error(`Seed name ${filename}: ${parsed.error.message}`);
-  return { name: parsed.value.name, extension: parsed.value.extension };
 }
 
 /** The account's personal project and its `user://` source, made once per account. */
@@ -209,43 +188,10 @@ export function branchTreeWorldOver(
 
   function locate(path: string) {
     const { scheme, rel } = sourceOf(path);
-    const segments = rel.split("/").filter(Boolean);
-    const filename = segments.pop();
-    if (!filename) throw new Error(`Scenario path names no file: ${path}`);
-    return { sourceId: sources[scheme], dir: segments, filename };
+    return { sourceId: sources[scheme], rel };
   }
 
-  /** Live folders root to leaf, as `mkdir` makes them: a hidden one at the path is revealed. */
-  function liveFolders(sourceId: ContextSourceId, dir: readonly string[]) {
-    return runInDrizzleTransaction(db, async () => {
-      await lockContextSources(db, [sourceId]);
-      const ensured = await ensureLiveFolderPath(db, { contextSourceId: sourceId, dir });
-      if (!ensured.ok) throw new Error(`Live folders ${dir.join("/")}: ${ensured.error.code}`);
-      return ensured.value.folderId;
-    });
-  }
-
-  /** The product's document insert: a live row claims its location, a hidden one doesn't. */
-  async function insertDocument(
-    sourceId: ContextSourceId,
-    folderId: FolderId | null,
-    filename: string,
-    hidden: boolean,
-  ): Promise<DocumentId> {
-    const slot = { contextSourceId: sourceId, folderId, ...splitFilename(filename) };
-    const id = await runInDrizzleTransaction(db, async () => {
-      const inserted = await insertDocumentRow(
-        db,
-        slot,
-        { kind: "tracked", filetype: "markdown" },
-        { hidden },
-      );
-      if (inserted && !hidden) await normalizeNames(db, [{ kind: "document", id: inserted }]);
-      return inserted;
-    });
-    if (!id) throw new Error(`Document ${filename} was not inserted`);
-    return id;
-  }
+  const seeds = treeSeeder(db);
 
   /** A thread with one assistant turn, primary in `workId`. */
   async function insertThread(title: string, workId: WorkId, mode: ScenarioWork["mode"]) {
@@ -307,34 +253,17 @@ export function branchTreeWorldOver(
     },
     branchOf,
     async seedLive(path) {
-      const { sourceId, dir, filename } = locate(path);
-      return insertDocument(sourceId, await liveFolders(sourceId, dir), filename, false);
+      const { sourceId, rel } = locate(path);
+      return (await seeds.document(sourceId, rel)) as DocumentId;
     },
     async seedLiveFolder(path) {
-      const { sourceId, dir, filename } = locate(path);
-      const leaf = await liveFolders(sourceId, [...dir, filename]);
-      if (!leaf) throw new Error(`Scenario path names no folder: ${path}`);
-      return leaf;
+      const { sourceId, rel } = locate(path);
+      return seeds.folder(sourceId, rel);
     },
-    async seedHidden(work, path, hiddenOptions = {}) {
+    async seedHidden(work, path) {
       const branch = await branchOf(work);
-      const { sourceId, dir, filename } = locate(path);
-      // A branch places under the folders it sees and makes hidden ones past the first gap.
-      const walk = await walkFolders(
-        db,
-        { kind: "branch", branchId: branch.id },
-        sourceId,
-        dir,
-        (gap) => insertFolder(db, { contextSourceId: sourceId, ...gap }, { hidden: true }),
-      );
-      if (walk.kind !== "walked") throw new Error(`Hidden folders ${dir.join("/")}: ${walk.kind}`);
-      const documentId =
-        hiddenOptions.join ?? (await insertDocument(sourceId, walk.folderId, filename, true));
-      await recordCreated(db, {
-        branchId: branch.id,
-        documentId,
-      });
-      return documentId;
+      const { sourceId, rel } = locate(path);
+      return (await seeds.document(sourceId, rel, { view: { draft: branch.id } })) as DocumentId;
     },
     async seedAhead(path, aheadOptions = {}) {
       const { scheme, rel } = sourceOf(path);

@@ -8,6 +8,7 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
+import { treeSeeder } from "../test-support/tree-seed.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -70,23 +71,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         { id: SCRATCH_ID, workId: WORK_ID, name: "Scratch", slug: "scratch", scope: "work" },
       ]);
-      await db.insert(schema.documents).values([
-        {
-          id: CHAPTER_ID,
-          contextSourceId: MANUSCRIPT_ID,
-          name: "chapter",
-          extension: "",
-          fileType: "markdown",
-          rank: "a1",
-        },
-        {
-          id: NOTES_ID,
-          contextSourceId: SCRATCH_ID,
-          name: "notes",
-          extension: "",
-          fileType: "markdown",
-        },
-      ]);
+      const seeds = treeSeeder(db);
+      await seeds.document(MANUSCRIPT_ID, "chapter", { id: CHAPTER_ID });
+      await seeds.document(SCRATCH_ID, "notes", { id: NOTES_ID });
       await db.insert(schema.threads).values({
         rootThreadId: THREAD.threadId,
         id: THREAD.threadId,
@@ -147,21 +134,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(search.output).toContain("manuscript://chapter");
       expect(search.output).not.toContain(".md");
       const data = crypto.randomUUID();
-      await db.insert(schema.folders).values({
-        contextSourceId: MANUSCRIPT_ID,
-        name: "scenes",
-        rank: "a0",
-      });
-      await db.insert(schema.documents).values({
-        id: data,
-        contextSourceId: MANUSCRIPT_ID,
-        name: "outline",
-        extension: "json",
-        fileType: "json",
-        rank: "a2",
-      });
+      await treeSeeder(db).folder(MANUSCRIPT_ID, "scenes");
+      await treeSeeder(db).document(MANUSCRIPT_ID, "outline.json", { id: data });
       const manuscriptCall = await call("ls", { path: "manuscript://" });
-      expect(manuscriptCall.output).toBe("manuscript://\n  scenes/\n  chapter\n  outline.json");
+      expect(manuscriptCall.output).toBe("manuscript://\n  chapter\n  scenes/\n  outline.json");
       expect(manuscriptCall.output).not.toContain(".md");
       const missing = await call("read", { path: "manuscript://missing.md" });
       expect(missing.output).toContain("path: manuscript://missing.md");

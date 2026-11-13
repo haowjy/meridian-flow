@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import type * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { treeSeeder } from "../../test-support/tree-seed.js";
 import { createDrizzleThreadWorksRepository } from "../threads/adapters/drizzle/thread-works-repository.js";
 import {
   ALPHA_ID,
@@ -60,19 +61,12 @@ describe("inverse integration (postgres)", () => {
   });
   afterAll(() => closeDatabase(db));
 
+  /** The Work's draft creates the chapter, as ContextFS leaves a model's create in a draft-mode Work. */
   async function claimCreate(branchId: string, documentId: string) {
-    await db.insert(schema.documents).values({
-      id: documentId as never,
-      contextSourceId: SOURCE_ID,
-      name: "created",
-      extension: "",
-      hidden: true,
-    });
-    await db.insert(schema.branchTreeChanges).values({
-      branchId: branchId as never,
-      nodeKind: "document",
-      nodeId: documentId as never,
-      created: true,
+    await treeSeeder(db).document(SOURCE_ID, "created", {
+      id: documentId,
+      view: { draft: branchId },
+      actor: `agent:${THREAD_ID}/${TURN_ID}`,
     });
   }
 

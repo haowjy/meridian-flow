@@ -8,7 +8,8 @@ rest of the contracts: [context contracts](.context/CONTEXT.md).
 - `scratchOwnerFor(thread, work)` is the one owner rule for bare Scratch, in
   resolution and in file policy. `skills://` is model-only, not a context scheme.
 - Routes and tools ask file policy before calling this domain. Storage
-  transactions begin with `lockSeamWorks`, then namespace/source locks; lifecycle
+  transactions begin with `lockSeamWorks`, then the list's lock (`treeListStore.submit`), then
+  namespace and document keys; lifecycle
   loss is reported as `context_unavailable`.
 - Capabilities are declared in `ports/context-adapter.ts`. Uploads authority stays
   separate from `UploadIntake`; uploads are flat while Scratch accepts nested
@@ -18,12 +19,11 @@ rest of the contracts: [context contracts](.context/CONTEXT.md).
 - A move writes no document content. Stable links re-spell on read, and every
   arrival settles ahead refs once against its final tree.
 - A Copy (`copy/`) reads, plans names and binds refs before taking any lock, then
-  locks only the destination namespace. A hidden draft node yields its name to a
-  copy. A source not yet caught up to the client answers `source_behind`, which is
+  submits one command into the destination's list. A source not yet caught up to the client answers `source_behind`, which is
   retryable and records nothing.
-- The catalog and ContextFS use the same tree view. Branch-hidden rows never
-  escape it; Apply and Discard reconcile tree changes inside their own completion
-  transactions.
+- The catalog and ContextFS read the same replay through a tree view. Every write of the
+  tree (ContextFS, copy, upload, the model's tree tools) is records made in `treeListStore.submit`;
+  the browser has no tree routes, and no write inserts a `documents` or `tree_nodes` row itself.
 - Lineage hiding is reversible authority loss, not document deletion. Folder
   deletes validate the supplied folder identity before recursive mutation.
 

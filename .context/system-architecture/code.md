@@ -34,6 +34,7 @@ flowchart TB
   server -->|"calls the models through"| gateway
   www -->|"takes colours from"| design-tokens
   app -->|"debug overlay reads sync with"| yjs-inspect
+  server -->|"writes and replays the project tree with"| project-tree
   app -->|"syncs the tree's list with"| tree-list-sync
   tree-list-sync -->|"reads the list's records with"| project-tree
   note1["markup turns text into a document and back. The app uses it for the writer's text, and agent-edit uses it for the model's reads and writes."]:::note

@@ -6,17 +6,6 @@
  */
 
 const TEST_HOOK_POINTS = [
-  // Tree lifecycle.
-  "absorb.beforeRepoint",
-  "createInBranch.afterCandidateLock",
-  "createLive.afterLease",
-  "createLive.afterCandidateLock",
-  "endUse.afterRevalidate",
-  "moves.beforeInstall",
-  "place.afterRevalidate",
-  /** A removal wrote its record and, for a discard, closed the drafts; not yet committed. */
-  "removal.afterRecord",
-  "split.beforeRepoint",
   // A tree list's admission (domains/context tree-list store), in step order. A kill at any
   // before `afterCommit` leaves neither the records nor the rows.
   "treeList.afterLock",
@@ -41,8 +30,6 @@ const TEST_HOOK_POINTS = [
   "draft.beforeAccess",
   "apply.beforeCompile",
   "apply.beforeBoundary",
-  /** Apply chose its lock scope from an unlocked tree read and holds no tree lock yet. */
-  "apply.afterScopeGuess",
   "apply.afterLive",
   /** A created document's retraction read its drafts and holds no draft row yet. */
   "retract.beforeLocks",

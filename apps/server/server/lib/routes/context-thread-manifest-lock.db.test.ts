@@ -11,16 +11,12 @@ import {
   createTestDocumentLinkScopes,
   testLinkDeps,
 } from "../../domains/collab/test-support/document-link-scopes.js";
-import { createDrizzleContextCatalog } from "../../domains/context/adapters/context-catalog.js";
 import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
 import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
 } from "../../domains/file-policy/index.js";
-import {
-  createTestDocumentRemoval,
-  createTestRemovalDeps,
-} from "../../test-support/document-removal.js";
+import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -80,7 +76,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        catalogMutations: createDrizzleContextCatalog(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -97,7 +92,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
-        removal: createTestDocumentRemoval(db),
+        treeLists: createTestRemovalDeps(db).treeLists,
         documentSync: collab,
         branches: collab.branches,
       });
@@ -114,7 +109,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadId === THREAD_ID ? ({ threadId, workId: NO_WORK_ID } as never) : null,
         },
         works: createDrizzleProjectWorkRepository({
-          removal: createTestDocumentRemoval(db),
           lineageScratch: createDrizzleLineageScratchLifecycle(db),
           db,
           fileAccessChanges: createLocalFileAccessChanges(),
@@ -144,7 +138,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         schema.threadWorks,
         schema.turns,
         schema.threads,
-        schema.folders,
         schema.documents,
         schema.contextSources,
         schema.works,

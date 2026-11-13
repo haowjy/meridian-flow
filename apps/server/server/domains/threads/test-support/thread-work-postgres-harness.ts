@@ -3,6 +3,7 @@ import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import * as schema from "@meridian/database/schema";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { treeSeeder } from "../../../test-support/tree-seed.js";
 
 export const THREAD_WORK_RACE = {
   userId: "00000000-0000-4000-8000-000000000471",
@@ -68,11 +69,7 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
     name: "Project context",
     slug: "project-context",
   });
-  await db.insert(schema.documents).values({
-    id: ids.documentId,
-    contextSourceId: ids.contextId,
-    name: "Branch target",
-  });
+  await treeSeeder(db).document(ids.contextId, "Branch target", { id: ids.documentId });
   await db.insert(schema.branches).values({
     id: ids.branchId,
     projectId: ids.projectId,

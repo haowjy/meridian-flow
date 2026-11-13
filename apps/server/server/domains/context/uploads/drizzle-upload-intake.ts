@@ -1,14 +1,13 @@
 /** Drizzle lifecycle adapter for authoritative upload intake reservations. */
 
-import type { ContextSourceId } from "@meridian/contracts";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
-import { type Filetype, firstFreeName, type UploadOwner } from "@meridian/contracts/protocol";
+import type { Filetype, UploadOwner } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { projects, threads, uploadIntakes } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { createChatContextDocumentStore } from "../context-source-provisioning.js";
-import { createTreeReader, LIVE_TREE } from "../tree/tree-view.js";
+import { createTreeReader } from "../tree/tree-view.js";
 import {
   claimedOf,
   type PlacedUpload,
@@ -346,8 +345,8 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         );
     },
     async consume(documentIds, chatId) {
-      if (documentIds.length === 0) return [];
-      const consumed = await currentDrizzleDb(db)
+      if (documentIds.length === 0) return;
+      await currentDrizzleDb(db)
         .update(uploadIntakes)
         .set({ consumedAt: new Date(), updatedAt: new Date() })
         .where(
@@ -357,9 +356,7 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
             eq(uploadIntakes.state, "finalized"),
             isNull(uploadIntakes.consumedAt),
           ),
-        )
-        .returning({ contextSourceId: uploadIntakes.contextSourceId });
-      return [...new Set(consumed.map((row) => row.contextSourceId as string))];
+        );
     },
     async listAbandoned(cutoff, limit) {
       return currentDrizzleDb(db)

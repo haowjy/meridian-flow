@@ -13,19 +13,19 @@ import { createDb, type Database } from "@meridian/database";
 import postgres from "postgres";
 import * as Y from "yjs";
 import { createDrizzleBranchStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branches.ts";
-import { createDraftClose } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-close.js";
 import {
   type AppendCommitted,
   createDrizzleDraftStore,
 } from "../../../../apps/server/server/domains/collab/adapters/drizzle-drafts.ts";
 import { createDrizzleCollabPersistence } from "../../../../apps/server/server/domains/collab/adapters/drizzle-journal.ts";
-import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
 import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
 import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
-import { createWorkProjectionMutation } from "../../../../apps/server/server/domains/projects/adapters/work-projection-mutation.ts";
 import { createDrizzleWorkRepository } from "../../../../apps/server/server/domains/projects/adapters/work-repository/drizzle.ts";
 import { runInDrizzleSavepoint } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
-import { createTestDocumentRemoval } from "../../../../apps/server/server/test-support/document-removal.js";
+import { createTestRemovalDeps } from "../../../../apps/server/server/test-support/document-removal.ts";
+import { treeSeeder } from "../../../../apps/server/server/test-support/tree-seed.ts";
+import { createTestWorkProjectionMutation } from "../../../../apps/server/server/test-support/work-projection.ts";
+import type { View } from "../../../../packages/project-tree/src/index.ts";
 import {
   dropDatabaseForUrl,
   ensureDatabaseForUrl,
@@ -88,23 +88,14 @@ export async function openHarness(
   await raw`insert into projects(id,user_id,name,slug) values (${ids.project},${ids.user},'probe','probe')`;
   await raw`insert into context_sources(id,project_id,name,slug,scope) values (${ids.source},${ids.project},'probe','probe','project')`;
 
-  const pending = createDrizzleWorkBranchPendingStore(db);
-  const projection = createWorkProjectionMutation({
-    db,
-    availability: { advance: async () => "0" },
-    catalog: {
-      refreshProject: async () => {},
-      upsertWorkAuthorities: async () => {},
-      publishDraftOwnerHints: async () => {},
-    },
-    pendingCounts: pending,
-  });
+  const projection = createTestWorkProjectionMutation(db);
+  const seeds = treeSeeder(db);
   const branches = createDrizzleBranchStore(db);
   const persistence = createDrizzleCollabPersistence(db);
   /** Every committed append's sequence-point timing, in commit order. */
   const appends: AppendCommitted[] = [];
   const store = createDrizzleDraftStore(db, {
-    close: createDraftClose(),
+    close: createTestRemovalDeps(db).draftClose,
     workProjection: projection,
     branches,
     live: persistence,
@@ -118,7 +109,6 @@ export async function openHarness(
   // The real Work lifecycle writer. Its file-access and Scratch ports are inert: the probes
   // observe the Work row, its draft fences and the locks, not access or Scratch notices.
   const works = createDrizzleWorkRepository({
-    removal: createTestDocumentRemoval(db),
     db,
     projectionMutation: projection,
     fileAccessChanges: { publish: async () => {} },
@@ -132,6 +122,7 @@ export async function openHarness(
     raw,
     ids,
     projection,
+    seeds,
     branches,
     persistence,
     store,
@@ -159,10 +150,15 @@ export async function openHarness(
     },
 
     /** A live document holding one paragraph of `text`; the caller owns the returned doc. */
-    async seedDocument(label: string, text = "Base") {
+    async seedDocument(
+      label: string,
+      text = "Base",
+      /** A Work's drafted create (its tree view only) instead of a live document. */
+      seed: { view?: View; actor?: string } = {},
+    ) {
       documents += 1;
       const documentId = randomUUID() as DocumentId;
-      await raw`insert into documents(id,context_source_id,name) values (${documentId},${ids.source},${`${label}-${documents}.md`})`;
+      await seeds.document(ids.source, `${label}-${documents}.md`, { id: documentId, ...seed });
       const live = paragraphDoc(text);
       await persistence.seeds.seedInitialDocument(documentId, Y.encodeStateAsUpdate(live));
       return { documentId, live };

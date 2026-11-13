@@ -23,8 +23,9 @@ stateDiagram-v2
   `FileAccessChanges` in the same transaction.** That publication is what makes the Work's
   notes, uploads and draft rooms reconnect at their new access level; without it an archived Work
   stays writable in tabs that are already open.
-- **Delete marks what it took.** The Work's primary chats and live context rows get
-  `deletedByWorkId`, and restore clears exactly the rows carrying that mark. A chat the writer
+- **Delete marks what it took.** The Work's primary chats, results and context sources get
+  `deletedByWorkId`, and restore clears exactly the rows carrying that mark. No node is written:
+  what is in a deleted Work's sources, or separately in Trash, comes back as it was. A chat the writer
   trashed separately stays trashed
   ([thread trash](../../threads/.context/state-machines.md)).
 - **Branches and drafts outlive the delete** until purge, so restore finds them.

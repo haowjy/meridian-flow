@@ -1,10 +1,9 @@
 /**
  * Atomic Apply: Work lock, command claim, committed live effect and prefix-authored base.
- * A click's tree cut runs first, keyed on the branch's logical state for the document and its
- * live state (design-v2 §4): a delete removes it live, a move moves it (or restores it there,
- * or reveals it there), a creation reveals it; then the branch's row goes with settlement rows.
- * A document deleted live comes back only when the click carries the writer's `restore`
- * (`restoreDocument`), then the text merges.
+ * A click's tree cut runs first, in the list that holds the document's drafted records: the
+ * package's `applyDraft` appends live copies and settles the drafted ones, in this transaction
+ * (`drizzle-apply-tree.ts`); then the document's text merges at the result. A document live has in
+ * Trash comes back only when the click carries the writer's `restore`.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
@@ -20,13 +19,8 @@ import {
 import type { InversePart, UpdateJournal } from "@meridian/agent-edit/integration";
 import { computeInverse } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import { type BranchId, type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
-import type {
-  AppliedReviewItem,
-  ApplyClickAnswer,
-  ApplyClickResult,
-  ApplyRenamedNote,
-} from "@meridian/contracts/branches";
+import { draftItemKey, type UserId } from "@meridian/contracts";
+import type { ApplyClickAnswer, ApplyClickResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import { applyCommandEffects, branches, documentDrafts } from "@meridian/database/schema";
 import {
@@ -38,21 +32,11 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { LineageDraftsUnavailableError } from "../../../shared/draft-owner.js";
-import {
-  currentDrizzleDb,
-  deferUntilDrizzleCommit,
-  runInDrizzleSavepoint,
-} from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
-import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
-import type { DocumentRemoval } from "../../context/ports/document-removal.js";
-import { endCreatedFact } from "../../context/tree/branch-tree-store.js";
-import { movePlacementCycle } from "../../context/tree/live-tree-state.js";
-import { acquireTreeScope, TreeScopeChangedError } from "../../context/tree/mutation-scope.js";
-import { restoreDocument } from "../../context/tree/removal.js";
-import { createTreeReader, LIVE_TREE, type TreeStateNode } from "../../context/tree/tree-view.js";
-import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
+import type { TreeListStore } from "../../context/ports/tree-list-store.js";
+import type { TreeReader } from "../../context/tree/tree-view.js";
 import {
   WorkLifecycleUnavailableError,
   type WorkProjectionMutation,
@@ -66,10 +50,11 @@ import { BranchCommandExistsError } from "../domain/branch-commands.js";
 import type { Branches } from "../domain/branches.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import { DraftStaleUpdateError } from "../domain/draft-store.js";
+import type { BranchTreeStateReader } from "../domain/ports/branch-tree-state.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { storedDocument } from "../domain/stored-document.js";
-import { createApplyTreeOperations, liveLocation } from "./drizzle-apply-tree.js";
+import { createApplyTreeOperations } from "./drizzle-apply-tree.js";
 import {
   claimCommandWithinTx,
   lookupCommand,
@@ -100,12 +85,10 @@ export function createDrizzleApplyClick(
     live: UpdateJournal;
     liveCoordinator: Pick<LiveDocumentCoordinator, "deliver">;
     arrivals?: Pick<DocumentArrivals, "settle">;
-    catalog: ContextCatalogMutationPort;
-    removal: DocumentRemoval;
-    history: Pick<import("../contracts.js").AgentTreeHistory, "recordAgentTreeChange">;
-    close: Pick<DraftClose, "closeDrafts">;
-    /** After commit: delete a tombstoned creation's stored object, best effort. */
-    releaseObjects(storageUrls: readonly string[]): Promise<void>;
+    treeLists: Pick<TreeListStore, "submit">;
+    tree: Pick<TreeReader, "identityStatus">;
+    branchTree: BranchTreeStateReader;
+    close: Pick<DraftClose, "closeDrafts" | "registerRemoved">;
     onCommitted(documentId: ApplyClickCommand["documentId"]): Promise<void>;
     measured(input: {
       commandId: string;
@@ -115,70 +98,18 @@ export function createDrizzleApplyClick(
     }): void;
   },
 ): ApplyCommandStore {
-  const tree = createTreeReader(db);
   const closed = (command: ApplyClickCommand): ApplyClickResult => ({
     status: "closed",
     commandId: command.envelope.commandId,
   });
-  /** The addressed document's node in the branch, never another created document's. */
-  async function itemNode(branchId: BranchId, documentId: DocumentId) {
-    const nodes = await tree.treeState(branchId, [documentId], [documentId]);
-    return nodes.find((node) => node.nodeId === documentId);
-  }
-
-  type DependencyPlan = {
-    nodes: Map<DocumentId, TreeStateNode>;
-    chain: DocumentId[];
-    cycleAt: number | null;
-  };
-
-  /** The live occupant chain that this one click owns under the branch lock. */
-  async function dependencyPlan(branchId: BranchId, root: DocumentId): Promise<DependencyPlan> {
-    const nodes = new Map<DocumentId, TreeStateNode>();
-    const chain: DocumentId[] = [];
-    const positions = new Map<DocumentId, number>();
-    let cycleAt: number | null = null;
-    let documentId: DocumentId | null = root;
-    while (documentId) {
-      const repeated = positions.get(documentId);
-      if (repeated !== undefined) {
-        cycleAt = repeated;
-        break;
-      }
-      const node = await itemNode(branchId, documentId);
-      if (!node) break;
-      positions.set(documentId, chain.length);
-      chain.push(documentId);
-      nodes.set(documentId, node);
-      if (node.branch?.state !== "moving") break;
-      const found = await tree.resolvePath(LIVE_TREE, {
-        contextSourceId: node.target.contextSourceId,
-        path: node.target.path,
-      });
-      if (found.kind !== "found" || found.node.kind !== "document") break;
-      const occupant = found.node.document.id;
-      if (occupant === documentId) break;
-      const other = await itemNode(branchId, occupant);
-      if (!other?.branch || (!other.branch.moved && !other.branch.deleted)) break;
-      documentId = occupant;
-    }
-    return { nodes, chain, cycleAt };
-  }
-
-  function displayedPath(node: TreeStateNode, path: string): string {
-    const marker = node.target.uri?.indexOf("://") ?? -1;
-    return marker < 0 ? path : `${node.target.uri?.slice(0, marker + 3)}${path}`;
-  }
-
-  async function renamedNote(node: TreeStateNode): Promise<ApplyRenamedNote | undefined> {
-    const found = await tree.findById(LIVE_TREE, node.nodeId);
-    if (found.kind !== "found" || found.document.path === node.target.path) return undefined;
-    return {
-      code: "renamed",
-      wanted: node.target.uri ?? node.target.path,
-      path: displayedPath(node, found.document.path),
-    };
-  }
+  const treeHalf = createApplyTreeOperations({
+    db,
+    treeLists: deps.treeLists,
+    tree: deps.tree,
+    close: deps.close,
+    arrivals: deps.arrivals,
+    onCommitted: deps.onCommitted,
+  });
 
   return {
     async loadBase(command) {
@@ -202,7 +133,7 @@ export function createDrizzleApplyClick(
       try {
         return await deps.coordinator.loadBase(draftId);
       } catch (cause) {
-        // A hidden-create removal may release its bytes between resolution and this read.
+        // A discarded creation closes its drafts between resolution and this read.
         const [row] = await currentDrizzleDb(db)
           .select({ status: documentDrafts.status })
           .from(documentDrafts)
@@ -433,393 +364,208 @@ export function createDrizzleApplyClick(
       await testHook("apply.beforeBoundary");
       const boundaryStart = performance.now();
       let committedAt: number | undefined;
-      // A restore or reveal locks the document's namespace before the document. Once an
-      // attempt finds that scope needed, every later attempt takes it from the start.
-      let treeScope = false;
       try {
-        for (let attempt = 0; ; attempt++) {
-          try {
-            return await applyTiming.run(
-              { commandId: command.envelope.commandId, measured: deps.measured },
-              () =>
-                deps.workProjection.mutate(
-                  // The branch's owner enters the boundary as Discard's does.
-                  { branches: [branchId] },
-                  async (): Promise<ApplyClickAnswer> => {
-                    // mutate awaits post-commit delivery too; stop the boundary clock at
-                    // root commit, before room recovery and document projections run.
-                    deferUntilDrizzleCommit(() => {
-                      committedAt = performance.now();
-                    });
-                    const tx = currentDrizzleDb(db);
-                    const found = await lookupCommand(tx, command.envelope);
-                    if (found.kind === "done")
-                      return found.commandKind === "apply_click"
-                        ? (found.result as ApplyClickResult)
-                        : { status: "conflict", commandId: command.envelope.commandId };
-                    if (found.kind !== "none")
-                      return { status: found.kind, commandId: command.envelope.commandId };
-                    if (
-                      !(await claimCommandWithinTx(tx, {
-                        ...command.envelope,
-                        branchId: branchId,
-                      }))
-                    )
-                      throw new BranchCommandExistsError(command.envelope.commandId);
-                    const finish = async (result: ApplyClickResult) => {
-                      await settleCommandWithinTx(tx, command.envelope.commandId, result);
-                      return result;
-                    };
-                    if (!(await deps.branches.lockActive(branchId))) return finish(closed(command));
-                    // Only a tree cut, a hidden-create reveal or a deleted document's restore
-                    // changes the tree. Ordinary text Apply must not serialize unrelated
-                    // documents on their source's namespace lock.
-                    const lifecycle = async () => {
-                      const [row] = await loadDocumentIdentityRows(tx, [command.documentId]);
-                      if (!row) throw new ApplyClickRefused("not_found");
-                      return row;
-                    };
-                    const guess = await lifecycle();
-                    treeScope ||= guess.hidden || guess.deleted || cut !== null;
-                    await testHook("apply.afterScopeGuess");
-                    const guessedPlan = cut
-                      ? await dependencyPlan(branchId, command.documentId)
-                      : null;
-                    const scopeIds = guessedPlan
-                      ? [...guessedPlan.nodes.keys()]
-                      : [command.documentId];
-                    if (treeScope)
-                      await acquireTreeScope(db, {
-                        branches: [{ branchId, documentIds: scopeIds }],
-                        documentIds: scopeIds,
-                      });
-                    else await lockDocumentMutation(tx, command.documentId);
-                    const locked = await lifecycle();
-                    if (locked.deleted && !treeScope) {
-                      // A delete committed between the guess and the lock: start over
-                      // namespace-first, never taking a namespace under a document lock.
-                      treeScope = true;
-                      throw new TreeScopeChangedError();
-                    }
-                    const node = await itemNode(branchId, command.documentId);
-                    // The click applies exactly the row revision the writer saw.
-                    if (
-                      cut &&
-                      (!node?.branch || (node.branch.revision?.toString() ?? null) !== cut.revision)
-                    )
-                      return finish({ status: "changed", commandId: command.envelope.commandId });
-                    const state = cut ? (node?.branch?.state ?? null) : null;
-                    // Only the writer's knowledge brings a document back: a delete their view
-                    // did not show leaves the click undone and the draft pending. A
-                    // hidden tombstone is a discarded creation, never asked about.
-                    if (
-                      state !== "deleting" &&
-                      locked.deleted &&
-                      !locked.hidden &&
-                      !command.request.restore
-                    )
-                      return finish({
-                        status: "needs_restore",
-                        commandId: command.envelope.commandId,
-                      });
-                    let restored = false;
-                    const applied: AppliedReviewItem[] = [];
-                    const treeOperations = createApplyTreeOperations({
-                      db,
-                      branchId,
-                      commandDocumentId: command.documentId,
-                      userId,
-                      removal: deps.removal,
-                      history: deps.history,
-                      close: deps.close,
-                      arrivals: deps.arrivals,
-                      catalog: deps.catalog,
-                      releaseObjects: deps.releaseObjects,
-                      onCommitted: deps.onCommitted,
-                      findLive: (documentId) => tree.findById(LIVE_TREE, documentId),
-                      resolveLivePath: async (path) => {
-                        const occupant = await tree.resolvePath(LIVE_TREE, {
-                          contextSourceId: node?.target.contextSourceId ?? locked.contextSourceId,
-                          path,
-                        });
-                        if (occupant.kind === "not_found") return "free";
-                        return occupant.kind === "ambiguous" || occupant.node.kind === "document"
-                          ? "blocked"
-                          : "folder";
-                      },
-                      renamedNote,
-                      displayedPath,
-                    });
-
-                    if (cut && node) {
-                      const plan = await dependencyPlan(branchId, command.documentId);
-                      const scoped = new Set(scopeIds);
-                      if ([...plan.nodes.keys()].some((id) => !scoped.has(id)))
-                        throw new TreeScopeChangedError();
-                      const tolerateDependency = async (
-                        operation: () => Promise<AppliedReviewItem[]>,
-                      ): Promise<AppliedReviewItem[]> => {
-                        try {
-                          return await runInDrizzleSavepoint(db, operation);
-                        } catch (cause) {
-                          if (!(cause instanceof ApplyClickRefused)) throw cause;
-                          return [];
-                        }
-                      };
-                      const cycleIds = plan.cycleAt === null ? [] : plan.chain.slice(plan.cycleAt);
-                      if (cycleIds.length) {
-                        const cycleNodes = cycleIds.map(
-                          (id) => plan.nodes.get(id) as TreeStateNode,
-                        );
-                        const installCycle = async (): Promise<AppliedReviewItem[]> => {
-                          const before = new Map(
-                            await Promise.all(
-                              cycleNodes.map(async (cycleNode) => {
-                                const found = await tree.findById(LIVE_TREE, cycleNode.nodeId);
-                                return [
-                                  cycleNode.nodeId,
-                                  found.kind === "found"
-                                    ? displayedPath(cycleNode, found.document.path)
-                                    : null,
-                                ] as const;
-                              }),
-                            ),
-                          );
-                          await movePlacementCycle(
-                            db,
-                            cycleNodes.map((cycleNode) => ({
-                              documentId: cycleNode.nodeId,
-                              to: liveLocation(cycleNode),
-                            })),
-                            { arrivals: deps.arrivals, catalog: deps.catalog },
-                          );
-                          const items: AppliedReviewItem[] = [];
-                          for (const cycleNode of cycleNodes)
-                            items.push(
-                              await treeOperations.settle(
-                                cycleNode,
-                                before.get(cycleNode.nodeId) ?? null,
-                              ),
-                            );
-                          return items;
-                        };
-                        applied.push(
-                          ...(plan.cycleAt === 0
-                            ? await installCycle()
-                            : await tolerateDependency(installCycle)),
-                        );
-                      }
-                      const beforeCycle = plan.cycleAt ?? plan.chain.length;
-                      for (let index = beforeCycle - 1; index >= 0; index--) {
-                        const planned = plan.nodes.get(plan.chain[index] as DocumentId);
-                        if (!planned) continue;
-                        if (index === 0) {
-                          const outcome = await treeOperations.apply(planned);
-                          applied.push(outcome.item);
-                          restored ||= outcome.restored;
-                        } else
-                          applied.push(
-                            ...(await tolerateDependency(async () => [
-                              (await treeOperations.apply(planned)).item,
-                            ])),
-                          );
-                      }
-                      if (state === "deleting")
-                        return finish({
-                          status: "applied",
-                          commandId: command.envelope.commandId,
-                          applied,
-                        });
-                    } else {
-                      if (locked.deleted) {
-                        const outcome = await restoreDocument(
-                          db,
-                          { documentId: command.documentId },
-                          { arrivals: deps.arrivals, catalog: deps.catalog },
-                        );
-                        if (outcome.kind === "ancestor_taken")
-                          throw new ApplyClickRefused("ancestor_taken");
-                        if (outcome.kind === "refused") return finish(closed(command));
-                        restored = outcome.kind === "restored";
-                      }
-                      if (node?.hidden && node.origin === "created" && base) {
-                        await treeOperations.reveal(node, {
-                          contextSourceId: locked.contextSourceId,
-                          parentFolderId: locked.folderId,
-                          name: locked.name,
-                          extension: locked.extension,
-                        });
-                      }
-                    }
-                    if (!cut && node?.origin === "created")
-                      await endCreatedFact(db, { branchId, documentId: command.documentId });
-                    if (
-                      !applied.some(
-                        ({ itemKey }) => itemKey === draftItemKey(branchId, command.documentId),
-                      )
-                    ) {
-                      const renamed = node ? await renamedNote(node) : undefined;
-                      applied.push({
-                        itemKey: draftItemKey(branchId, command.documentId),
-                        ...(renamed ? { renamed } : {}),
-                      });
-                    }
-                    if (!base || !click) {
-                      deferUntilDrizzleCommit(() => deps.onCommitted(command.documentId));
-                      return finish({
-                        status: "applied",
-                        commandId: command.envelope.commandId,
-                        applied,
-                        ...(restored ? { restored } : {}),
-                      });
-                    }
-                    const { schema } = click;
-                    const snapshot = await deps.live.read(command.documentId);
-                    const live = storedDocument(snapshot);
-                    let update: Uint8Array | undefined;
-                    const capture = (bytes: Uint8Array) => {
-                      update = bytes;
-                    };
-                    live.on("update", capture);
-                    try {
-                      const merged = rebase(
-                        schema,
-                        click.optimistic,
-                        readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
-                        click.patched,
-                      );
-                      const liveEffects: { groupId: string; seq: number | null }[] = [];
-                      for (const group of click.groups) {
-                        const groupMerge = rebase(
+        return await applyTiming.run(
+          { commandId: command.envelope.commandId, measured: deps.measured },
+          () =>
+            deps.workProjection.mutate(
+              // The branch's owner enters the boundary as Discard's does.
+              { branches: [branchId] },
+              async (): Promise<ApplyClickAnswer> => {
+                // mutate awaits post-commit delivery too; stop the boundary clock at
+                // root commit, before room recovery and document projections run.
+                deferUntilDrizzleCommit(() => {
+                  committedAt = performance.now();
+                });
+                const tx = currentDrizzleDb(db);
+                const found = await lookupCommand(tx, command.envelope);
+                if (found.kind === "done")
+                  return found.commandKind === "apply_click"
+                    ? (found.result as ApplyClickResult)
+                    : { status: "conflict", commandId: command.envelope.commandId };
+                if (found.kind !== "none")
+                  return { status: found.kind, commandId: command.envelope.commandId };
+                if (
+                  !(await claimCommandWithinTx(tx, {
+                    ...command.envelope,
+                    branchId: branchId,
+                  }))
+                )
+                  throw new BranchCommandExistsError(command.envelope.commandId);
+                const finish = async (result: ApplyClickResult) => {
+                  await settleCommandWithinTx(tx, command.envelope.commandId, result);
+                  return result;
+                };
+                if (!(await deps.branches.lockActive(branchId))) return finish(closed(command));
+                const [item = null] = await deps.branchTree.read(
+                  branchId,
+                  [],
+                  [command.documentId],
+                );
+                const outcome = await treeHalf.apply({
+                  branchId,
+                  documentId: command.documentId,
+                  userId,
+                  commandId: command.envelope.commandId,
+                  restore: command.request.restore === true,
+                  cut,
+                  item,
+                });
+                if (outcome.kind !== "applied")
+                  return finish({ status: outcome.kind, commandId: command.envelope.commandId });
+                const restored = outcome.restored;
+                const applied = outcome.applied;
+                if (!applied.length)
+                  applied.push({ itemKey: draftItemKey(branchId, command.documentId) });
+                // The text half: the document's mutex follows the list's lock.
+                await lockDocumentMutation(tx, command.documentId);
+                // A delete takes the document out of live: its text has nowhere to merge.
+                if (!base || !click || item?.change === "deleting") {
+                  deferUntilDrizzleCommit(() => deps.onCommitted(command.documentId));
+                  return finish({
+                    status: "applied",
+                    commandId: command.envelope.commandId,
+                    applied,
+                    ...(restored ? { restored } : {}),
+                  });
+                }
+                const { schema } = click;
+                const snapshot = await deps.live.read(command.documentId);
+                const live = storedDocument(snapshot);
+                let update: Uint8Array | undefined;
+                const capture = (bytes: Uint8Array) => {
+                  update = bytes;
+                };
+                live.on("update", capture);
+                try {
+                  const merged = rebase(
+                    schema,
+                    click.optimistic,
+                    readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
+                    click.patched,
+                  );
+                  const liveEffects: { groupId: string; seq: number | null }[] = [];
+                  for (const group of click.groups) {
+                    const groupMerge = rebase(
+                      schema,
+                      click.optimistic,
+                      readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
+                      group.patched,
+                    );
+                    update = undefined;
+                    live.transact(
+                      () =>
+                        writeBlocks(
+                          live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
                           schema,
-                          click.optimistic,
-                          readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
-                          group.patched,
-                        );
-                        update = undefined;
-                        live.transact(
-                          () =>
-                            writeBlocks(
-                              live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-                              schema,
-                              groupMerge.blocks,
-                            ),
-                          "apply",
-                        );
-                        const seq = update
-                          ? await deps.live.append(
-                              command.documentId,
-                              update,
-                              { seq: 0, origin: `human:${command.envelope.accountId}` },
-                              snapshot.authority,
-                            )
-                          : null;
-                        liveEffects.push({ groupId: group.groupId, seq });
-                      }
-                      await testHook("apply.afterLive");
-                      const baseEffects: {
-                        groupId: string;
-                        start?: unknown[];
-                        delta: unknown[];
-                      }[] = [];
-                      const write = deps.coordinator.prepareAppend(base, [], {
-                        authorServerRows(prefix) {
-                          const rows: Uint8Array[] = [];
-                          let row: Uint8Array | undefined;
-                          const capture = (bytes: Uint8Array) => {
-                            row = bytes;
-                          };
-                          prefix.on("update", capture);
-                          try {
-                            for (const group of click.groups) {
-                              row = undefined;
-                              const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
-                              const before = readBlocks(fragment, schema);
-                              const after = applyBase(
-                                schema,
-                                before,
-                                click.optimistic,
-                                group.patched,
-                              );
-                              prefix.transact(() => {
-                                writeBlocks(fragment, schema, after);
-                                appendApplyRecord(prefix, group.record);
-                              }, "apply");
-                              if (!row) throw new Error("Apply must append its command record");
-                              rows.push(row);
-                              baseEffects.push({
-                                groupId: group.groupId,
-                                ...(baseEffects.length === 0
-                                  ? { start: before.map((block) => block.toJSON()) }
-                                  : {}),
-                                delta: baseViewDelta(schema, before, after).map((patch) => ({
-                                  ...patch,
-                                  blocks: patch.blocks.map((block) => block.toJSON()),
-                                })),
-                              });
-                            }
-                            return rows;
-                          } finally {
-                            prefix.off("update", capture);
-                          }
-                        },
-                      });
-                      try {
-                        await write.persist();
-                        write.transfer();
-                      } finally {
-                        write.dispose();
-                      }
-                      await tx.insert(applyCommandEffects).values(
-                        click.groups.map((group, ordinal) => {
-                          const liveEffect = liveEffects.find(
-                            (effect) => effect.groupId === group.groupId,
-                          );
-                          const baseEffect = baseEffects.find(
-                            (effect) => effect.groupId === group.groupId,
-                          );
-                          if (!liveEffect || !baseEffect)
-                            throw new Error("Apply effect was not captured");
-                          return {
-                            commandId: command.envelope.commandId,
-                            ordinal,
-                            groupId: group.groupId,
-                            documentId: command.documentId,
-                            draftId: base.snapshot.draftId,
-                            liveUpdateSeq: liveEffect.seq,
-                            baseStart: baseEffect.start,
-                            baseDelta: baseEffect.delta,
-                          };
-                        }),
-                      );
-                      const overrode = merged.overrode;
-                      const answer: ApplyClickResult = {
-                        status: "applied",
-                        commandId: command.envelope.commandId,
-                        applied,
-                        textEffect: true,
-                        ...(overrode ? { overrode } : {}),
-                        ...(restored ? { restored } : {}),
+                          groupMerge.blocks,
+                        ),
+                      "apply",
+                    );
+                    const seq = update
+                      ? await deps.live.append(
+                          command.documentId,
+                          update,
+                          { seq: 0, origin: `human:${command.envelope.accountId}` },
+                          snapshot.authority,
+                        )
+                      : null;
+                    liveEffects.push({ groupId: group.groupId, seq });
+                  }
+                  await testHook("apply.afterLive");
+                  const baseEffects: {
+                    groupId: string;
+                    start?: unknown[];
+                    delta: unknown[];
+                  }[] = [];
+                  const write = deps.coordinator.prepareAppend(base, [], {
+                    authorServerRows(prefix) {
+                      const rows: Uint8Array[] = [];
+                      let row: Uint8Array | undefined;
+                      const capture = (bytes: Uint8Array) => {
+                        row = bytes;
                       };
-                      await finish(answer);
-                      deferUntilDrizzleCommit(async () => {
-                        await deps.liveCoordinator.deliver(command.documentId);
-                        await deps.onCommitted(command.documentId);
-                      });
-                      return answer;
-                    } finally {
-                      live.off("update", capture);
-                      live.destroy();
-                    }
-                  },
-                  { requireActive: true, seam: true },
-                ),
-            );
-          } catch (cause) {
-            if (cause instanceof TreeScopeChangedError && attempt < 3) continue;
-            throw cause;
-          }
-        }
+                      prefix.on("update", capture);
+                      try {
+                        for (const group of click.groups) {
+                          row = undefined;
+                          const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
+                          const before = readBlocks(fragment, schema);
+                          const after = applyBase(schema, before, click.optimistic, group.patched);
+                          prefix.transact(() => {
+                            writeBlocks(fragment, schema, after);
+                            appendApplyRecord(prefix, group.record);
+                          }, "apply");
+                          if (!row) throw new Error("Apply must append its command record");
+                          rows.push(row);
+                          baseEffects.push({
+                            groupId: group.groupId,
+                            ...(baseEffects.length === 0
+                              ? { start: before.map((block) => block.toJSON()) }
+                              : {}),
+                            delta: baseViewDelta(schema, before, after).map((patch) => ({
+                              ...patch,
+                              blocks: patch.blocks.map((block) => block.toJSON()),
+                            })),
+                          });
+                        }
+                        return rows;
+                      } finally {
+                        prefix.off("update", capture);
+                      }
+                    },
+                  });
+                  try {
+                    await write.persist();
+                    write.transfer();
+                  } finally {
+                    write.dispose();
+                  }
+                  await tx.insert(applyCommandEffects).values(
+                    click.groups.map((group, ordinal) => {
+                      const liveEffect = liveEffects.find(
+                        (effect) => effect.groupId === group.groupId,
+                      );
+                      const baseEffect = baseEffects.find(
+                        (effect) => effect.groupId === group.groupId,
+                      );
+                      if (!liveEffect || !baseEffect)
+                        throw new Error("Apply effect was not captured");
+                      return {
+                        commandId: command.envelope.commandId,
+                        ordinal,
+                        groupId: group.groupId,
+                        documentId: command.documentId,
+                        draftId: base.snapshot.draftId,
+                        liveUpdateSeq: liveEffect.seq,
+                        baseStart: baseEffect.start,
+                        baseDelta: baseEffect.delta,
+                      };
+                    }),
+                  );
+                  const overrode = merged.overrode;
+                  const answer: ApplyClickResult = {
+                    status: "applied",
+                    commandId: command.envelope.commandId,
+                    applied,
+                    textEffect: true,
+                    ...(overrode ? { overrode } : {}),
+                    ...(restored ? { restored } : {}),
+                  };
+                  await finish(answer);
+                  deferUntilDrizzleCommit(async () => {
+                    await deps.liveCoordinator.deliver(command.documentId);
+                    await deps.onCommitted(command.documentId);
+                  });
+                  return answer;
+                } finally {
+                  live.off("update", capture);
+                  live.destroy();
+                }
+              },
+              { requireActive: true, seam: true },
+            ),
+        );
       } catch (cause) {
         // The append door alone locks and rechecks the addressed draft. Closure rolls
         // back the claim and live half with it before the service reads a stored outcome.

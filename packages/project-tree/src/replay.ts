@@ -54,6 +54,8 @@ export type SkipReason =
   | "parent-not-folder"
   | "duplicate"
   | "purged"
+  /** A purge of a delete's nodes while a node outside it stands inside one. */
+  | "standing"
   /** The value is not a record the server writes (decoded from a list that was changed outside the package). */
   | "unreadable";
 
@@ -330,9 +332,32 @@ export function replay(
           }
         break;
       }
-      case "purge":
-        node.purged = true;
+      case "purge": {
+        // Rule 3 keeps a folder standing while something stands in it, so what a delete took is
+        // purged only if nothing outside it still stands inside it.
+        const entry = deletes.find((d) => d.id === record.delete || d.from === record.delete);
+        if (!entry || entry.node !== record.node) {
+          skip("missing-node");
+          break;
+        }
+        const taken = new Set([entry.node, ...entry.cascade]);
+        const standing = [...nodes.values()].some(
+          (other) =>
+            !other.purged &&
+            !taken.has(other.id) &&
+            [...taken].some((id) => other.id !== id && isAncestor(id, other.id)),
+        );
+        if (standing) {
+          skip("standing");
+          break;
+        }
+        for (const id of taken) {
+          const gone = nodes.get(id);
+          if (gone) gone.purged = true;
+        }
+        deletes = deletes.filter((d) => d !== entry);
         break;
+      }
     }
   }
 

@@ -3,6 +3,7 @@
  * filename derived from the document's persisted type (prose leaves as `<name>.md`).
  */
 import type { DocumentId } from "@meridian/contracts";
+import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import { createError, type H3Event, sendRedirect, setHeader } from "nitro/h3";
 import { exportFilename } from "../domains/context/index.js";
 import { LIVE_TREE } from "../domains/context/tree/tree-view.js";
@@ -11,16 +12,20 @@ import type { AppServices } from "./app.js";
 import { attachmentDisposition } from "./attachment-disposition.js";
 
 export async function downloadDocument(
-  services: Pick<AppServices, "liveDocuments" | "uploadIdentity" | "objectStore" | "documentSync">,
+  services: Pick<AppServices, "liveDocuments" | "objectStore" | "documentSync">,
   documentId: string,
   event: H3Event,
 ) {
-  if ((await services.liveDocuments.findById(LIVE_TREE, documentId as DocumentId)).kind !== "found")
-    throw createError({ statusCode: 404, message: "Document not found" });
-  const document = await services.uploadIdentity.lookupDocument(documentId);
-  if (!document) throw createError({ statusCode: 404, message: "Document not found" });
+  const found = await services.liveDocuments.findById(LIVE_TREE, documentId as DocumentId);
+  if (found.kind !== "found") throw createError({ statusCode: 404, message: "Document not found" });
+  const { document } = found;
+  const parsed = parseDocumentFilename(document.name);
   const disposition = attachmentDisposition(
-    exportFilename(document.name, document.extension, document.fileType),
+    exportFilename(
+      parsed.ok ? parsed.value.name : document.name,
+      parsed.ok ? parsed.value.extension : "",
+      document.fileType,
+    ),
   );
   if (document.storageUrl) {
     // The store serves the bytes, so a large file never passes through this process.

@@ -8,15 +8,16 @@ import type {
 } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { projects, works } from "@meridian/database";
+import { LIVE, sourceRoot } from "@meridian/project-tree";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type { DocumentCreationAggregate, MarkdownDocumentStore } from "../collab/index.js";
-import { DrizzleContextDocumentStore } from "../context/index.js";
+import { treeListOfSource } from "../context/adapters/tree-list-facts.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
+import type { TreeListStore } from "../context/ports/tree-list-store.js";
 import { LIVE_TREE, visibleDocuments } from "../context/tree/tree-view.js";
 import { ensureManuscriptSource, nextProjectSlug } from "./adapters/project-repository/shared.js";
 import { NO_WORK_NAME } from "./adapters/work-repository/shared.js";
-import type { ContextCatalogLifecyclePort } from "./ports/context-catalog-lifecycle.js";
 
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
 
@@ -68,7 +69,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   db: Database;
   documents: Pick<MarkdownDocumentStore, "seedFromMarkdown" | "bindStatic"> &
     Pick<DocumentCreationAggregate, "createDocumentAtomically">;
-  catalogLifecycle: ContextCatalogLifecyclePort;
+  treeLists: TreeListStore;
 }): ProjectBootstrapRepository {
   const { db } = deps;
   type BootstrapDb = Pick<Database, "execute" | "insert" | "select" | "update">;
@@ -199,17 +200,19 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     const documentId = randomUUID() as DocumentId;
     const created = await deps.documents.createDocumentAtomically({
       persistIdentity: async () => {
-        const claimed = await new DrizzleContextDocumentStore({
-          db,
-          contextSourceId,
-        }).createDocumentRecordIfAbsent({
-          id: documentId,
-          folderId: null,
-          name: "Chapter 1",
-          extension: "",
-          filetype: "markdown",
+        await deps.treeLists.submit({
+          lists: [await treeListOfSource(tx as unknown as Database, contextSourceId)],
+          make: ([{ writer }]) => {
+            writer.create(LIVE, "system", {
+              kind: "document",
+              filetype: "markdown",
+              name: "Chapter 1",
+              parent: sourceRoot(contextSourceId),
+              node: documentId,
+            });
+          },
         });
-        return (claimed?.document.id ?? null) as DocumentId | null;
+        return documentId;
       },
       initializeContent: (claimedId) => seedDocument(claimedId),
     });
@@ -235,7 +238,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       const tx = currentDrizzleDb(db) as BootstrapDb;
       await lockBootstrap(tx, userId);
       const projectId = await ensureProject(tx, userId);
-      const noWorkId = await ensureLockedNoWork(tx, projectId, userId);
+      const _noWorkId = await ensureLockedNoWork(tx, projectId, userId);
       const manuscriptSourceId = await ensureManuscriptSource(db, projectId);
       const documentId = await ensureDocument(tx, manuscriptSourceId);
 
@@ -252,7 +255,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         .where(eq(projects.id, projectId))
         .returning({ id: projects.id });
       if (!updated) throw new Error("Failed to mark default bootstrap ready");
-      await deps.catalogLifecycle.refreshProject(projectId);
       return result;
     });
     return bootstrap;

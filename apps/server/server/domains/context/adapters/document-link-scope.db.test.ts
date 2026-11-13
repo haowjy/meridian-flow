@@ -9,24 +9,23 @@ import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   branches,
-  branchTreeChanges,
   contextSources,
   documents,
-  folders,
   linkAheadRefs,
   projects,
   threads,
   users,
   works,
 } from "@meridian/database/schema";
+import { LIVE as TREE_LIVE } from "@meridian/project-tree";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { prosemirrorToYXmlFragment } from "@tiptap/y-tiptap";
-import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import { createScopedDocumentLinks, liveViewFor } from "../../collab/domain/document-links-port.js";
 import { createLinkScopeObserver } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
@@ -42,7 +41,7 @@ const PROJECT = id(2);
 const OTHER_PROJECT = id(3);
 const SOURCE = id(4);
 const OTHER_SOURCE = id(5);
-const PART = id(6);
+const _PART = id(6);
 const HOLDER = id(7);
 const TARGET = id(8);
 const DELETED = id(9);
@@ -66,6 +65,7 @@ const RETIRED_SOURCE = id(27);
 const RETIRED_IMAGE = id(28);
 const RETIRED_CHAT = id(29);
 const LIVE = { kind: "live" } as const;
+const BRANCH = id(25);
 
 const schema = buildDocumentSchema();
 
@@ -110,6 +110,14 @@ if (!RUN) {
       observer: createLinkScopeObserver(),
     });
 
+    const renameTarget = async (name: string, filetype?: string) =>
+      treeSeeder(db).store.submit({
+        lists: [await treeListOfSource(db, SOURCE)],
+        make: ([{ writer }]) => {
+          writer.rename(TREE_LIVE, "system", TARGET, name, filetype);
+        },
+      });
+
     async function seed() {
       await deleteDrizzleRows(db, [users]);
       await db.insert(users).values(conformanceUserValues(USER, "document-link-scope"));
@@ -139,58 +147,6 @@ if (!RUN) {
         slug: "scratch",
         deletedAt: new Date(),
       });
-      await db.insert(folders).values({
-        id: PART,
-        contextSourceId: SOURCE,
-        name: "part1",
-      });
-      const row = (docId: string, name: string, extra: Record<string, unknown> = {}) => ({
-        id: docId,
-        contextSourceId: SOURCE,
-        name,
-        extension: "",
-        ...extra,
-      });
-      await db.insert(documents).values([
-        row(HOLDER, "holder", { folderId: PART }),
-        row(TARGET, "target", { folderId: PART }),
-        row(DELETED, "gone", { deletionReason: "deleted", deletedAt: new Date() }),
-        row(SECRET, "secret"),
-        row(NOTES, "notes"),
-        row(DRAFTED, "drafted", { hidden: true }),
-        row(STAGED, "staged", { hidden: true }),
-        row(MAP, "map", { folderId: PART, extension: "png", fileType: "image" }),
-        // A deleted picture alone at its path, and one whose path a live picture took.
-        row(SEAL, "seal", {
-          extension: "png",
-          fileType: "image",
-          deletionReason: "deleted",
-          deletedAt: new Date(),
-        }),
-        row(OLD_CREST, "crest", {
-          extension: "png",
-          fileType: "image",
-          deletionReason: "deleted",
-          deletedAt: new Date(),
-        }),
-        row(CREST, "crest", { extension: "png", fileType: "image" }),
-        // A discarded branch's picture: a hidden tombstone, never a live or deleted image.
-        row(WRECK, "wreck", {
-          extension: "png",
-          fileType: "image",
-          hidden: true,
-          deletionReason: "discarded",
-          deletedAt: new Date(),
-        }),
-        { id: FOREIGN, contextSourceId: OTHER_SOURCE, name: "foreign", extension: "" },
-        {
-          id: RETIRED_IMAGE,
-          contextSourceId: RETIRED_SOURCE,
-          name: "sketch",
-          extension: "png",
-          fileType: "image",
-        },
-      ]);
       await db.insert(works).values({
         id: WORK,
         projectId: PROJECT,
@@ -200,15 +156,33 @@ if (!RUN) {
       });
       await db
         .insert(branches)
-        .values({ id: id(25), projectId: PROJECT, originWorkId: WORK, createdBy: USER });
-      await db.insert(branchTreeChanges).values(
-        [DRAFTED, STAGED].map((nodeId) => ({
-          branchId: id(25),
-          nodeId,
-          nodeKind: "document" as const,
-          created: true,
-        })),
-      );
+        .values({ id: BRANCH, projectId: PROJECT, originWorkId: WORK, createdBy: USER });
+      const seed = treeSeeder(db);
+      const trash = async (sourceId: string, ...ids: string[]) =>
+        seed.store.submit({
+          lists: [await treeListOfSource(db, sourceId)],
+          make: ([{ writer }]) => {
+            for (const id of ids) writer.delete(TREE_LIVE, "system", id);
+          },
+        });
+      await seed.document(SOURCE, "part1/holder", { id: HOLDER });
+      await seed.document(SOURCE, "part1/target", { id: TARGET });
+      await seed.document(SOURCE, "gone", { id: DELETED });
+      await seed.document(SOURCE, "secret", { id: SECRET });
+      await seed.document(SOURCE, "notes", { id: NOTES });
+      // Documents that exist only in the Work's draft.
+      await seed.document(SOURCE, "drafted", { id: DRAFTED, view: { draft: BRANCH } });
+      await seed.document(SOURCE, "staged", { id: STAGED, view: { draft: BRANCH } });
+      await seed.document(SOURCE, "part1/map.png", { id: MAP, filetype: "image" });
+      // A deleted picture alone at its path, and one whose path a live picture took.
+      await seed.document(SOURCE, "seal.png", { id: SEAL, filetype: "image" });
+      await seed.document(SOURCE, "crest.png", { id: OLD_CREST, filetype: "image" });
+      await trash(SOURCE, DELETED, SEAL, OLD_CREST);
+      await seed.document(SOURCE, "crest.png", { id: CREST, filetype: "image" });
+      // A discarded branch's picture: in no view, so never a live or deleted image.
+      await db.insert(documents).values({ id: WRECK, projectId: PROJECT });
+      await seed.document(OTHER_SOURCE, "foreign", { id: FOREIGN });
+      await seed.document(RETIRED_SOURCE, "sketch.png", { id: RETIRED_IMAGE, filetype: "image" });
       await db.insert(linkAheadRefs).values([
         {
           aheadId: SETTLED_AHEAD,
@@ -227,10 +201,7 @@ if (!RUN) {
       ]);
     }
     it("preloads extension-omitted dotted names independently of other addresses", async () => {
-      await db
-        .update(documents)
-        .set({ name: "config.json", extension: "toml", fileType: "text" })
-        .where(eq(documents.id, TARGET));
+      await renameTarget("config.json.toml", "text");
       for (const addresses of [
         ["manuscript://part1/config.json"],
         ["manuscript://part1/config.json", "manuscript://part1/config.json.toml"],
@@ -422,7 +393,7 @@ if (!RUN) {
       expect.soft(registered).toEqual([PROJECT]);
     });
 
-    it("names the reader's own branch else the oldest, reads an unbound ahead ref by address in each view, and pins only a holder the reader may name (L-1)", async () => {
+    it("names the branch that made a draft document, reads an unbound ahead ref by address in each view, and pins only a holder the reader may name (L-1)", async () => {
       const s = await branchTreeScenario(db, { runtime: await runtimes.compose(), runtimes });
       const [atlas, beacon, cove] = [
         await s.work("Atlas", "draft"),
@@ -431,10 +402,10 @@ if (!RUN) {
       ];
       const chapter = await s.seedLive("chapter");
       await s.seedLive("notes");
-      // Atlas's branch made Kael first; Beacon's branch joined it (one row, one place).
+      // Atlas's branch made Kael: a draft's document belongs to the one branch that created it.
       const kael = await s.seedHidden(atlas, "lore/kael");
-      await s.seedHidden(beacon, "lore/kael", { join: kael });
-      const [atlasBranch, beaconBranch] = [await s.branchOf(atlas), await s.branchOf(beacon)];
+      const atlasBranch = await s.branchOf(atlas);
+      await s.branchOf(beacon);
       await s.branchOf(cove);
 
       const named = async (view: typeof atlas | "live") => {
@@ -449,15 +420,13 @@ if (!RUN) {
           : answer.state;
       };
       const atAtlas = [true, atlasBranch.id, "manuscript://lore/kael"];
-      expect.soft(await named("live"), "live: the oldest branch, its path").toEqual(atAtlas);
-      expect.soft(await named(cove), "a branch not using it: the oldest").toEqual(atAtlas);
-      expect.soft(await named(atlas), "its own oldest branch").toEqual(atAtlas);
-      expect
-        .soft(await named(beacon), "the reader's own branch, where it has it")
-        .toEqual([true, beaconBranch.id, "manuscript://lore/kael"]);
+      expect.soft(await named(atlas), "its own branch").toEqual(atAtlas);
+      for (const view of ["live", cove, beacon] as const) {
+        expect.soft(await named(view), "a view that does not show it names nothing").toBe("gone");
+      }
 
       // An ahead ref reads by address in the reader's view until a live document binds it:
-      // a branch's hidden document there reads "in a draft" from every view.
+      // a branch's own document there reads "in a draft" in that branch's view only.
       const draftShip = await s.seedHidden(atlas, "ship");
       const unbound = await s.seedAhead("ship");
       const liveAnchor = await s.seedLive("anchor");
@@ -486,19 +455,22 @@ if (!RUN) {
       const ANCHOR = "manuscript://anchor";
       const CHAPTER = "manuscript://chapter";
       const inShip = { id: draftShip, inBranch: true };
+      expect
+        .soft(await read(atlas, unbound, SHIP, CHAPTER), "unbound: in a draft, in its branch")
+        .toEqual(inShip);
       for (const view of [atlas, beacon, "live"] as const) {
-        expect
-          .soft(await read(view, unbound, SHIP, CHAPTER), "unbound: in a draft, from any view")
-          .toEqual(inShip);
+        if (view !== atlas) {
+          expect
+            .soft(await read(view, unbound, SHIP, CHAPTER), "unbound: another view has nothing")
+            .toEqual({ id: "missing" });
+        }
         expect
           .soft(await read(view, bound, ANCHOR, CHAPTER), "bound: the live document")
           .toEqual({ id: liveAnchor });
       }
-      expect.soft(await read("live", unbound, SHIP, null), "chat: the same").toEqual(inShip);
-      await s.seedHidden(beacon, "ship", { join: draftShip });
       expect
-        .soft(await read(beacon, unbound, SHIP, CHAPTER), "joined by another branch")
-        .toEqual(inShip);
+        .soft(await read("live", unbound, SHIP, null), "chat: live shows no draft")
+        .toEqual({ id: "missing" });
 
       // A stale base: the id still pins the holder, and the answer names where it is now.
       expect
@@ -527,8 +499,7 @@ if (!RUN) {
         scopes
           .holder({ documentId: HOLDER, view: LIVE })
           .spellLink({ ref: `doc:${TARGET}`, href: "x" }).href;
-      const rename = (name: string) =>
-        db.update(documents).set({ name }).where(eq(documents.id, TARGET));
+      const rename = renameTarget;
       let inherited: Promise<string> | undefined;
       let stray: Promise<string> | undefined;
       await scopes.within({ projectId: PROJECT }, async () => {

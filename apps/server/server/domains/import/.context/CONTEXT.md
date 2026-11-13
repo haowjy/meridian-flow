@@ -4,8 +4,9 @@
 
 Upload and organization are separate durable phases. Upload completion sets
 `organizing` and wakes one server-owned organizer lane. The organizer prepares
-receipts, stages bounded generations through Context and Collab, then reveals the
-tree, catalog publication and terminal import status in one transaction. Do not reintroduce placeholders,
+receipts, plans the tree once, writes bounded batches of first texts into the journal, then
+makes every planned node a `create` record in one submission to the project's tree list, in the
+transaction that marks the import finished. Do not reintroduce placeholders,
 landing receipts, awaited document ids, or browser plan/resume loops to bridge
 that boundary. `OrganizeWake` is only a latency hint; durable rows are authoritative.
 
@@ -22,7 +23,7 @@ The header retains summary counts when its entries expire. Roots retain their
 historical creation facts. `project_id` is nullable with `ON DELETE SET NULL`;
 headers are never deleted. Soft-deleted projects leave the open list and open
 count. The project repository has no hard-purge command; the sweep reclaims
-NULL-project staging and entries after a hard deletion, leaving the tombstone.
+NULL-project objects, waiting texts and entries after a hard deletion, leaving the tombstone.
 
 ## Upload receipts
 
@@ -105,17 +106,17 @@ organized binaries still belong to documents.
 
 `planSelection` accepts server receipt facts, not browser sniff/frontmatter.
 Its identity graph preserves folder-note relocation and export-marker routing.
-Name allocation belongs to Context. The header stores nullable placement facts and
-a generation (initially zero); entries can become `prepared` and retain a
-`converted_key` for DOCX Markdown. Counts distinguish prepared from organized.
-The header's destination URI and folder identity are the immutable selection. Each
-placement generation derives its effective destinations from that identity; the
-summary reads the selected area's effective placement. Once any generation falls
-back, the import retains that outcome for its completion notice.
+The header stores nullable placement facts, written once by the first organize pass; entries can
+become `prepared` and retain a `converted_key` for DOCX Markdown. Counts distinguish prepared from
+organized. The header's destination URI and folder identity are the immutable selection. The
+first pass derives the effective destinations from that identity, and later passes plan from the
+stored placement (`buildOrganizedTree`'s `fixed`), so the top-level names, and with them the paths
+the stored texts spell their links with, never change between passes. Once the plan falls back
+to an area's root, the import retains that outcome for its completion notice.
 The repository projects nullable storage columns into one verified `FileReceipt`
 at its boundary. Entries expose immutable `selection` separately; folders and
-unreadable items have no receipt. Placement records destinations (including fallback),
-top-level names and the creation-set digest, independent of its header generation.
+unreadable items have no receipt. Placement records destinations (including fallback)
+and top-level names.
 A DOCX's embedded images are extracted by the converter, never inlined as `data:`
 URLs. Prepare stores each as an object plus an extra `import_entries` row
 (`spec.derivedFrom` = the DOCX entry id, state `received`), at the path
@@ -127,7 +128,7 @@ listing, and go with the import on Stop. A derived row has its own id namespace
 picked file. If a picked or other derived path already holds an image's path, the images'
 folder gets a numeric suffix (`Chapter 1 (2)/`). Derived files skip the per-file size cap
 (their DOCX passed admission) and count against the file budget; past it, the DOCX stays a
-file. A lost image object makes prepare convert its DOCX again; once the DOCX is staged,
+file. A lost image object makes prepare convert its DOCX again; once the DOCX's text is written,
 the image fails and the DOCX takes `upload_lost` so the loss reaches "needs a look". A
 DOCX whose conversion failed (`kept_as_file`) is not converted again. Prepare lists the
 import's objects once per pass instead of reading each one to check it exists. Image types browsers can't render (TIFF,
@@ -142,17 +143,31 @@ fallback for selected targets.
 ## Organize transaction seam
 
 `OrganizeQueue` (claim, heartbeat and release with token predicates) stays separate
-from the repository. One organize transaction entry guards build, reset and
-reveal: lock the import, check organizing/token/generation, acquire the
-project lifecycle gate shared and check liveness, then run repository and Context
-staging writes in that same transaction. The generation reset persists placement,
-increments generation, resets prepared entries set-wise and discards the old stage.
-Do not add token arguments to upload mutations or open a second Context transaction.
-It is not an upload capability.
+from the repository. One organize transaction entry guards each batch and the reveal: lock the
+import, check organizing and the lease token, acquire the project lifecycle gate shared and check
+liveness, then run the writes in that same transaction. Do not add token arguments to upload
+mutations or open a second Context transaction. It is not an upload capability.
 
-Staged batches advance work only within their placement generation. A placement
-rebuild keeps the accumulated no-progress count; five rebuilt generations without
-a reveal fail the import with `organize_failed`.
+**The text waits in the journal.** A batch of at most 500 nodes or 16 MiB writes each document's
+first Yjs state under the id its create will have (`encodeSeed`, `installSeeds`): a head with no
+`documents` row, which nothing reads because no record names it. What else the batch worked out,
+the document's properties and aliases and the links it made to documents that do not exist yet
+(their random ids are inside the stored text, so they cannot be worked out twice), goes to
+`import_entries.ahead` in the same transaction as the entries' `received -> prepared`.
+
+**The reveal is one submission.** `ContextImportReveal` (`context/adapters/drizzle-import-reveal.ts`)
+makes the planned folders, documents and files `create` records (actor `system`; the top level
+arrives after what its folder already holds, a new folder's children in name order), writes the
+documents' properties and previews, registers the ahead links and settles arrivals, all in the
+transaction that marks the import finished. It is never refused: the list's replay numbers a name
+taken meanwhile and stands a deleted destination folder again. A name numbered at the top level
+is not respelled in links inside the import; they still reach it by id.
+
+A pass that fails keeps its lease for a delay; five failed passes without a reveal fail the import
+with `organize_failed`. Retry starts again from the stored plan and the texts already written.
+
+**A stopped or abandoned import** deletes its waiting texts by its entries' ids in the sweep that
+removes its objects (`discardUnbornDocuments`: heads of documents that never got a row).
 
 Context and Collab refusals retain typed causes in server diagnostics. Browser
 entry reasons remain the import-specific reason union; do not expose provider

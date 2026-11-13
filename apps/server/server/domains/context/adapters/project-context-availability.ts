@@ -13,15 +13,13 @@ import type {
   ProjectContextFolderResolution,
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
-import { PROJECT_CONTEXT_AVAILABILITY_MAX_IDS, renderFilename } from "@meridian/contracts/protocol";
+import { PROJECT_CONTEXT_AVAILABILITY_MAX_IDS } from "@meridian/contracts/protocol";
 import { decodeWorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
-  contextAvailabilityGeneration,
   contextAvailabilityHeads,
-  contextNamespaceObservationVersion,
   contextSources,
-  type folders,
+  documents as documentsTable,
   projects,
   threads,
   works,
@@ -29,8 +27,6 @@ import {
 import { eq, inArray, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
-  type DrizzleTransactionParticipant,
-  enlistDrizzleTransactionParticipant,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
@@ -38,57 +34,18 @@ import { isUuid } from "../../../shared/uuid.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import type {
   HeldContextNode,
-  ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,
 } from "../ports/project-context-availability.js";
-import { findForward } from "../tree/forwards.js";
-import { survivingDraftDocuments } from "../tree/living-document.js";
-import { readRemovalRecords } from "../tree/removal.js";
-import {
-  identityDocumentFields,
-  identityDocuments,
-  identityFolderFields,
-  identityFolders,
-  identityFoldersSql,
-  LIVE_TREE,
-  type TreeView,
-  visibleDocuments,
-  visibleFolders,
-} from "../tree/tree-view.js";
-import { loadDocumentIdentityRows, loadFolderIdentityRows } from "../tree/tree-view-sql.js";
+import { type FolderLink, loadFolderChains, placedNodesSql } from "../tree/tree-addresses.js";
+import { LIVE_TREE, type TreeView } from "../tree/tree-view.js";
 import {
   type CatalogFileRow,
   catalogSourceAuthority,
   mapAuthoritativeFile,
 } from "./catalog-file-mapper.js";
 
-const ADVANCE_STATE = {};
-type AdvanceState = { generation?: bigint; keys: Set<string>; publisherFenceHeld: boolean };
-const advanceParticipant: DrizzleTransactionParticipant<AdvanceState> = {
-  key: ADVANCE_STATE,
-  create: () => ({ keys: new Set(), publisherFenceHeld: false }),
-  fork: (parent) => ({
-    generation: parent.generation,
-    keys: new Set(parent.keys),
-    publisherFenceHeld: parent.publisherFenceHeld,
-  }),
-  merge(parent, child) {
-    if (
-      parent.generation !== undefined &&
-      child.generation !== undefined &&
-      parent.generation !== child.generation
-    ) {
-      throw new Error("Availability generation changed inside one ambient transaction");
-    }
-    return {
-      generation: parent.generation ?? child.generation,
-      keys: new Set([...parent.keys, ...child.keys]),
-      publisherFenceHeld: parent.publisherFenceHeld || child.publisherFenceHeld,
-    };
-  },
-};
 type AvailabilityRow = {
-  document: CatalogFileRow & { deletedAt?: Date | null };
+  document: CatalogFileRow & { deleted?: boolean };
   source: typeof contextSources.$inferSelect | null;
   sourceProject: typeof projects.$inferSelect | null;
   work: typeof works.$inferSelect | null;
@@ -108,36 +65,16 @@ type IdentityClassification =
 
 const WORK_SCHEMES = new Set<ContextUriScheme>(["scratch", "uploads"]);
 
-type IdentityFolder = Pick<
-  typeof folders.$inferSelect,
-  "id" | "name" | "parentId" | "contextSourceId"
-> & { deletedAt?: Date | null };
+type IdentityFolder = FolderLink;
 
-/** Requested parent folders and only the identity-visible ancestors needed to spell them. */
+/** Requested parent folders and the ancestors needed to spell them, in the view. */
 async function loadIdentityFolderClosure(
   db: Database,
   view: TreeView,
   folderIds: readonly string[],
 ): Promise<IdentityFolder[]> {
-  const ids = [...new Set(folderIds)];
-  if (ids.length === 0) return [];
-  return db.execute<IdentityFolder>(sql`
-    WITH RECURSIVE ancestor_folders AS (
-      SELECT f.id, f.name, f.parent_id, f.context_source_id, f.deleted_at
-      FROM ${identityFoldersSql(view)} f
-      WHERE f.id IN (${sql.join(
-        ids.map((id) => sql`${id}::uuid`),
-        sql`, `,
-      )})
-      UNION
-      SELECT f.id, f.name, f.parent_id, f.context_source_id, f.deleted_at
-      FROM ${identityFoldersSql(view)} f
-      JOIN ancestor_folders child ON child.parent_id = f.id
-    )
-    SELECT id::text, name, parent_id::text AS "parentId",
-      context_source_id::text AS "contextSourceId", deleted_at AS "deletedAt"
-    FROM ancestor_folders
-  `);
+  const chains = await loadFolderChains(db, folderIds as never, view);
+  return [...new Map([...chains.values()].flat().map((folder) => [folder.id, folder])).values()];
 }
 
 export function classifyAuthoritativeIdentity(input: {
@@ -154,7 +91,7 @@ export function classifyAuthoritativeIdentity(input: {
       ...input.row,
       node: {
         parentId: input.row.document.folderId,
-        deletedAt: input.row.document.deletedAt ?? null,
+        deleted: input.row.document.deleted ?? false,
       },
     },
   });
@@ -162,7 +99,7 @@ export function classifyAuthoritativeIdentity(input: {
 
 function classifySourceIdentity(input: {
   row: Omit<AvailabilityRow, "document"> & {
-    node: { parentId: string | null; deletedAt: Date | null };
+    node: { parentId: string | null; deleted: boolean };
   };
   requestProjectId: string;
   actorUserId: string;
@@ -272,11 +209,7 @@ function classifySourceIdentity(input: {
     if (visited.has(folderId)) return { kind: "inconsistent" };
     visited.add(folderId);
     const folder = input.foldersById.get(folderId);
-    if (
-      !folder ||
-      folder.contextSourceId !== source.id ||
-      (!node.deletedAt && source.deletedAt === null && !!folder.deletedAt)
-    ) {
+    if (!folder || (!node.deleted && source.deletedAt === null && folder.deleted)) {
       return { kind: "inconsistent" };
     }
     parentPath.unshift(folder.name);
@@ -302,109 +235,141 @@ function userKey(userId: string) {
   return `user:${userId}`;
 }
 
-/** One transaction-scoped publisher fence makes sequence allocation order match commit
- * visibility, even when later calls introduce previously unknown keys. */
-async function holdPublisherFence(tx: Database, state: AdvanceState) {
-  if (state.publisherFenceHeld) return;
-  await tx.execute(sql`select pg_advisory_xact_lock(1296387666, 1096174676)`);
-  state.publisherFenceHeld = true;
+type SourceFacts = {
+  source: typeof contextSources.$inferSelect;
+  sourceProject: typeof projects.$inferSelect | null;
+  work: typeof works.$inferSelect | null;
+  ownerThreadRef: string | null;
+};
+
+/** The sources, their owners and the thread whose ref spells them, by source id. */
+async function loadSourceFacts(
+  tx: Database,
+  sourceIds: readonly string[],
+): Promise<Map<string, SourceFacts>> {
+  const ids = [...new Set(sourceIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await tx
+    .select({
+      source: contextSources,
+      sourceProject: projects,
+      work: works,
+      ownerThreadRef: threads.ref,
+    })
+    .from(contextSources)
+    .leftJoin(projects, eq(contextSources.projectId, projects.id))
+    .leftJoin(works, eq(contextSources.workId, works.id))
+    .leftJoin(
+      threads,
+      eq(threads.id, sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`),
+    )
+    .where(inArray(contextSources.id, ids as never));
+  return new Map(rows.map((row) => [row.source.id, row]));
 }
 
-/** The caller holds the publisher fence. Each namespace change needs its own stamp even
- * when availability groups several changes in one transaction. */
-async function publishNamespaceVersion(
-  tx: Database,
-  authorityKeys: readonly string[],
-): Promise<string | null> {
-  const keys = [...new Set(authorityKeys)].sort();
-  if (!keys.length) return null;
-  const [row] = await tx.execute<{ version: string }>(
-    sql`select nextval(${sql.raw(`'${contextNamespaceObservationVersion.seqName}'`)})::text as version`,
+type PlacedRow = {
+  id: string;
+  kind: "document" | "folder";
+  contextSourceId: string;
+  parentId: string | null;
+  name: string;
+  extension: string;
+  fileType: string | null;
+  rank: string;
+  locationVersion: string;
+  deleted: boolean;
+};
+
+/** The nodes among `ids` the view places (deleted ones too), with the facts of their sources. */
+async function loadPlacedRows(tx: Database, view: TreeView, ids: readonly string[]) {
+  const wanted = [...new Set(ids)].filter(isUuid);
+  const placed =
+    wanted.length === 0
+      ? []
+      : await tx.execute<PlacedRow>(sql`
+          SELECT n.id::text AS id, n.kind, n.context_source_id::text AS "contextSourceId",
+            n.parent_id::text AS "parentId", n.name, n.extension, n.file_type AS "fileType",
+            n.rank, n.location_version::text AS "locationVersion", n.deleted
+          FROM ${placedNodesSql(view)} n
+          WHERE n.id IN (${sql.join(
+            wanted.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})`);
+  const documentIds = placed.filter((row) => row.kind === "document").map((row) => row.id);
+  const stored = new Map(
+    (documentIds.length === 0
+      ? []
+      : await tx
+          .select({
+            id: documentsTable.id,
+            storageUrl: documentsTable.storageUrl,
+            mimeType: documentsTable.mimeType,
+            metadata: documentsTable.metadata,
+          })
+          .from(documentsTable)
+          .where(inArray(documentsTable.id, documentIds as never))
+    ).map((row) => [row.id as string, row]),
   );
-  if (!row) throw new Error("Failed to allocate namespace observation version");
-  const version = BigInt(row.version);
-  await tx
-    .insert(contextAvailabilityHeads)
-    .values(
-      keys.map((authorityKey) => ({
-        authorityKey,
-        generation: 0n,
-        namespaceGeneration: version,
-      })),
-    )
-    .onConflictDoUpdate({
-      target: contextAvailabilityHeads.authorityKey,
-      set: { namespaceGeneration: version },
+  const facts = await loadSourceFacts(
+    tx,
+    placed.map((row) => row.contextSourceId),
+  );
+  const documents: (SourceFacts & { document: CatalogFileRow & { deleted: boolean } })[] = [];
+  const folders: (SourceFacts & {
+    folder: {
+      id: string;
+      contextSourceId: string;
+      parentId: string | null;
+      name: string;
+      deleted: boolean;
+    };
+  })[] = [];
+  for (const row of placed) {
+    const source = facts.get(row.contextSourceId);
+    if (!source) continue;
+    if (row.kind === "folder") {
+      folders.push({
+        ...source,
+        folder: {
+          id: row.id,
+          contextSourceId: row.contextSourceId,
+          parentId: row.parentId,
+          name: row.name,
+          deleted: row.deleted,
+        },
+      });
+      continue;
+    }
+    const content = stored.get(row.id);
+    if (!content || !row.fileType) continue;
+    documents.push({
+      ...source,
+      document: {
+        id: row.id,
+        contextSourceId: row.contextSourceId,
+        folderId: row.parentId,
+        name: row.name,
+        extension: row.extension,
+        fileType: row.fileType,
+        storageUrl: content.storageUrl,
+        mimeType: content.mimeType,
+        metadata: content.metadata,
+        rank: row.rank,
+        locationVersion: BigInt(row.locationVersion),
+        deleted: row.deleted,
+      },
     });
-  return String(version);
+  }
+  return { documents, folders };
 }
 
 export function createDrizzleProjectContextAvailability(
   db: Database,
   eventSink?: EventSink,
-): ProjectContextAvailabilityPort & ProjectContextAvailabilityMutationPort {
+): ProjectContextAvailabilityPort {
   return {
-    async advance(input) {
-      return runInDrizzleTransaction(db, async () => {
-        const tx = currentDrizzleDb(db) as Database;
-        const requested = new Set([
-          ...input.projectIds.map(projectKey),
-          ...input.userIds.map(userKey),
-        ]);
-        const state = enlistDrizzleTransactionParticipant(advanceParticipant);
-        const missing = [...requested].filter((key) => !state.keys.has(key)).sort();
-        await holdPublisherFence(tx, state);
-        if (missing.length > 0) {
-          await tx
-            .insert(contextAvailabilityHeads)
-            .values(missing.map((authorityKey) => ({ authorityKey, generation: 0n })))
-            .onConflictDoNothing({ target: contextAvailabilityHeads.authorityKey });
-          // Lock one canonical key at a time rather than relying on a query plan's row-lock order.
-          for (const authorityKey of missing) {
-            await tx.execute(
-              sql`select authority_key from context_availability_heads where authority_key = ${authorityKey} for update`,
-            );
-          }
-        }
-        if (state.generation === undefined) {
-          const result = await tx.execute<{ generation: string }>(
-            sql`select nextval(${sql.raw(`'${contextAvailabilityGeneration.seqName}'`)})::text as generation`,
-          );
-          const value = result[0]?.generation;
-          if (!value) throw new Error("Failed to allocate availability generation");
-          state.generation = BigInt(value);
-        }
-        if (missing.length > 0) {
-          await tx
-            .update(contextAvailabilityHeads)
-            .set({
-              generation: state.generation,
-              updatedAt: new Date(),
-            })
-            .where(inArray(contextAvailabilityHeads.authorityKey, missing));
-          for (const key of missing) state.keys.add(key);
-        }
-        return String(state.generation);
-      });
-    },
-
-    async publishNamespace(input) {
-      return runInDrizzleTransaction(db, async () => {
-        const tx = currentDrizzleDb(db) as Database;
-        await holdPublisherFence(tx, enlistDrizzleTransactionParticipant(advanceParticipant));
-        const version = await publishNamespaceVersion(tx, [
-          ...input.projectIds.map(projectKey),
-          ...input.userIds.map(userKey),
-        ]);
-        if (version === null) throw new Error("publishNamespace needs at least one authority");
-        return version;
-      });
-    },
-
     async lookup(input, actor) {
       const view = input.view ?? LIVE_TREE;
-      const documents = identityDocuments(view);
-      const folders = identityFolders(view);
       const ids = normalizeAvailabilityDocumentIds(input.documentIds);
       const folderIds = normalizeAvailabilityDocumentIds(input.folderIds ?? []);
       if (ids.length + folderIds.length > PROJECT_CONTEXT_AVAILABILITY_MAX_IDS)
@@ -449,48 +414,9 @@ export function createDrizzleProjectContextAvailability(
           if (ids.length === 0 && folderIds.length === 0) {
             return { projectId: input.projectId, resolutionId: randomUUID(), resolutions: [] };
           }
-          const rows = await tx
-            .select({
-              document: identityDocumentFields(documents),
-              source: contextSources,
-              sourceProject: projects,
-              work: works,
-              ownerThreadRef: threads.ref,
-            })
-            .from(documents)
-            .leftJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-            .leftJoin(projects, eq(contextSources.projectId, projects.id))
-            .leftJoin(works, eq(contextSources.workId, works.id))
-            .leftJoin(
-              threads,
-              eq(
-                threads.id,
-                sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`,
-              ),
-            )
-            .where(inArray(documents.id, ids as never));
-          const requestedFolders = folderIds.length
-            ? await tx
-                .select({
-                  folder: identityFolderFields(folders),
-                  source: contextSources,
-                  sourceProject: projects,
-                  work: works,
-                  ownerThreadRef: threads.ref,
-                })
-                .from(folders)
-                .leftJoin(contextSources, eq(folders.contextSourceId, contextSources.id))
-                .leftJoin(projects, eq(contextSources.projectId, projects.id))
-                .leftJoin(works, eq(contextSources.workId, works.id))
-                .leftJoin(
-                  threads,
-                  eq(
-                    threads.id,
-                    sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`,
-                  ),
-                )
-                .where(inArray(folders.id, folderIds as never))
-            : [];
+          const placed = await loadPlacedRows(tx, view, [...ids, ...folderIds]);
+          const rows = placed.documents.map((row) => row);
+          const requestedFolders = placed.folders;
           const byId = new Map(rows.map((row) => [row.document.id, row]));
           const folderRows = await loadIdentityFolderClosure(tx, view, [
             ...rows.flatMap((row) => (row.document.folderId ? [row.document.folderId] : [])),
@@ -498,44 +424,6 @@ export function createDrizzleProjectContextAvailability(
           ]);
           const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
 
-          const tombstoned = rows
-            .filter((row) => row.document.deletedAt)
-            .map((row) => row.document.id as DocumentId);
-          const removals = await readRemovalRecords(tx, tombstoned);
-          // A branch's view lists a document deleted live while it has pending changes to it,
-          // so there it is available at the location it was deleted at. The view's own
-          // listing decides, so availability and the branch's tree never disagree.
-          const listedInView = new Set<string>();
-          if (view.kind === "branch") {
-            const deletedFolders = requestedFolders
-              .filter((row) => row.folder.deletedAt)
-              .map((row) => row.folder.id);
-            const shownDocuments = visibleDocuments(view);
-            const shownFolders = visibleFolders(view);
-            const shown = await Promise.all([
-              tombstoned.length
-                ? tx
-                    .select({ id: shownDocuments.id })
-                    .from(shownDocuments)
-                    .where(inArray(shownDocuments.id, tombstoned))
-                : [],
-              deletedFolders.length
-                ? tx
-                    .select({ id: shownFolders.id })
-                    .from(shownFolders)
-                    .where(inArray(shownFolders.id, deletedFolders))
-                : [],
-            ]);
-            for (const { id } of shown.flat()) listedInView.add(id);
-            const unlisted = tombstoned.filter((id) => !listedInView.has(id));
-            if (input.admitDrafts && unlisted.length)
-              for (const id of await survivingDraftDocuments(
-                tx,
-                { branchId: view.branchId },
-                unlisted,
-              ))
-                listedInView.add(id);
-          }
           const resolutions: ProjectContextIdentityResolution[] = ids.map((documentId) => {
             const row = byId.get(documentId);
             if (!row) return { kind: "not-visible", documentId, checkedGeneration } as never;
@@ -564,31 +452,21 @@ export function createDrizzleProjectContextAvailability(
               checkedGeneration,
               foldersById,
             });
-            // A discarded creation only answers its removal: one that cannot be placed
-            // (its draft folder went with it) stays not visible, never inconsistent.
-            if (
-              classification.kind === "not-visible" ||
-              (classification.kind === "inconsistent" &&
-                document.deletedAt &&
-                document.deletionReason === "discarded")
-            ) {
+            if (classification.kind === "not-visible") {
               return { kind: "not-visible", documentId, checkedGeneration } as never;
             }
             if (classification.kind === "inconsistent") return indeterminate();
             const { scope, authority, scheme, generation, parentPath } = classification.identity;
-            // The same liveness facts the SQL predicates filter on, but this site
-            // has to name the one that failed, so it classifies rather than filters.
-            // Independent document deletion remains deletion even when its authority hides.
-            // Work-cascade tombstones belong to the reversible authority lifecycle.
-            const listed = listedInView.has(documentId);
-            if (document.deletedAt && !document.deletedByWorkId && !listed) {
+            // This site has to name the liveness fact that failed, so it classifies rather
+            // than filters. A node in Trash, or deleted in this Work's tree, is deleted even
+            // when its authority hides.
+            if (document.deleted) {
               return {
                 kind: "deleted",
                 documentId,
                 generation,
                 observationVersion: namespaceVersion(scope),
                 lastAuthority: authority,
-                removal: removals.get(documentId as DocumentId),
               };
             }
             if (requestProject.deletedAt || sourceProject?.deletedAt) {
@@ -630,14 +508,13 @@ export function createDrizzleProjectContextAvailability(
                 reason: "chat_hidden",
               };
             }
-            if ((document.deletedAt && !listed) || source?.deletedAt) {
+            if (source?.deletedAt) {
               return {
                 kind: "deleted",
                 documentId,
                 generation,
                 observationVersion: namespaceVersion(scope),
                 lastAuthority: authority,
-                removal: removals.get(documentId as DocumentId),
               } as never;
             }
             try {
@@ -669,7 +546,7 @@ export function createDrizzleProjectContextAvailability(
             const classification = classifySourceIdentity({
               row: {
                 ...row,
-                node: { parentId: row.folder.parentId, deletedAt: row.folder.deletedAt },
+                node: { parentId: row.folder.parentId, deleted: row.folder.deleted },
               },
               requestProjectId: input.projectId,
               actorUserId: actor.userId,
@@ -684,10 +561,8 @@ export function createDrizzleProjectContextAvailability(
                 checkedGeneration,
               };
             const { scope, scheme, generation, parentPath } = classification.identity;
-            // Independent tombstones are final, except one the branch's view still places a
-            // surviving draft under. Work/lineage unavailability is not deletion.
-            const listed = listedInView.has(folderId);
-            if (row.folder.deletedAt && !row.folder.deletedByWorkId && !listed)
+            // Work/lineage unavailability is not deletion.
+            if (row.folder.deleted)
               return {
                 folderId,
                 kind: "deleted",
@@ -762,50 +637,27 @@ export function createDrizzleProjectContextAvailability(
   };
 }
 
-/**
- * Resolve an active live folder inside the caller's namespace transaction, without a new
- * snapshot. A hidden folder is missing: no live writer could have picked it.
- */
+/** Resolve an active live folder inside the caller's transaction, without a new snapshot. */
 export async function resolveActiveFolderUri(
   db: Database,
   projectId: string,
   userId: string,
   folderId: string,
 ): Promise<string | null> {
-  const tx = currentDrizzleDb(db);
-  const folders = identityFolders(LIVE_TREE);
-  const [row] = await tx
-    .select({
-      folder: identityFolderFields(folders),
-      source: contextSources,
-      sourceProject: projects,
-      work: works,
-      ownerThreadRef: threads.ref,
-    })
-    .from(folders)
-    .leftJoin(contextSources, eq(folders.contextSourceId, contextSources.id))
-    .leftJoin(projects, eq(contextSources.projectId, projects.id))
-    .leftJoin(works, eq(contextSources.workId, works.id))
-    .leftJoin(
-      threads,
-      eq(threads.id, sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`),
-    )
-    .where(eq(folders.id, folderId));
+  const tx = currentDrizzleDb(db) as Database;
+  const [row] = (await loadPlacedRows(tx, LIVE_TREE, [folderId])).folders;
   if (
     !row?.source ||
-    row.folder.deletedAt ||
+    row.folder.deleted ||
     row.source.deletedAt ||
     row.sourceProject?.deletedAt ||
     row.work?.deletedAt ||
     row.work?.archivedAt
   )
     return null;
-  const ancestors = await tx
-    .select()
-    .from(folders)
-    .where(eq(folders.contextSourceId, row.source.id));
+  const ancestors = await loadIdentityFolderClosure(tx, LIVE_TREE, [folderId]);
   const classification = classifySourceIdentity({
-    row: { ...row, node: { parentId: row.folder.parentId, deletedAt: row.folder.deletedAt } },
+    row: { ...row, node: { parentId: row.folder.parentId, deleted: false } },
     requestProjectId: projectId,
     actorUserId: userId,
     projectGeneration: "0",
@@ -826,73 +678,8 @@ export async function resolveActiveFolderUri(
   );
 }
 
-/** Any row this project holds under an id, whatever its visibility, and the source that owns it. */
-type HeldRow = {
-  /** The row's name as the catalog spells it (a document's filename, a folder's name). */
-  name: string;
-  parentId: string | null;
-  heldOutOfReach: boolean;
-  source: typeof contextSources.$inferSelect;
-  sourceProject: typeof projects.$inferSelect | null;
-  work: typeof works.$inferSelect | null;
-  ownerThreadRef: string | null;
-};
-
-/** The source and owners that spell a node's address, read without any Work authority. */
-async function heldSource(tx: Database, contextSourceId: string) {
-  const [row] = await tx
-    .select({
-      source: contextSources,
-      sourceProject: projects,
-      work: works,
-      ownerThreadRef: threads.ref,
-    })
-    .from(contextSources)
-    .leftJoin(projects, eq(contextSources.projectId, projects.id))
-    .leftJoin(works, eq(contextSources.workId, works.id))
-    .leftJoin(
-      threads,
-      eq(threads.id, sql`coalesce(${contextSources.rootThreadId}, ${contextSources.chatThreadId})`),
-    )
-    .where(eq(contextSources.id, contextSourceId))
-    .limit(1);
-  return row ?? null;
-}
-
-/**
- * Any row under this id, whatever its visibility: a replay must answer for deleted and hidden
- * ones. Reads the tree's own by-id row readers, so the hidden predicate has one owner.
- */
-async function heldRow(
-  tx: Database,
-  node: { kind: "document"; id: DocumentId } | { kind: "folder"; id: string },
-): Promise<HeldRow | null> {
-  if (node.kind === "document") {
-    const [row] = await loadDocumentIdentityRows(tx, [node.id]);
-    if (!row) return null;
-    const source = await heldSource(tx, row.contextSourceId);
-    if (!source) return null;
-    return {
-      name: renderFilename(row.name, row.extension),
-      parentId: row.folderId,
-      heldOutOfReach: row.hidden || row.deleted,
-      ...source,
-    };
-  }
-  const [row] = await loadFolderIdentityRows(tx, [node.id]);
-  if (!row) return null;
-  const source = await heldSource(tx, row.contextSourceId);
-  if (!source) return null;
-  return {
-    name: row.name,
-    parentId: row.parentId,
-    heldOutOfReach: row.hidden || row.deleted,
-    ...source,
-  };
-}
-
 /** Whether this project (or the writer's own User area) holds the row's source. */
-function heldInProject(row: HeldRow, projectId: string, userId: string): boolean {
+function heldInProject(row: SourceFacts, projectId: string, userId: string): boolean {
   return (
     row.source.projectId === projectId ||
     row.work?.projectId === projectId ||
@@ -903,11 +690,10 @@ function heldInProject(row: HeldRow, projectId: string, userId: string): boolean
 }
 
 /**
- * The address this project holds `id` at, read from the row and its source rather than through a
- * Work authority: a deleted Work's tree is exactly what a route can no longer resolve, and a
- * create's replay must still answer for it. Null when the project holds no such row;
- * `unreachable` when it holds one no live address can name (deleted, hidden, or an inconsistent
- * identity), which a create answers as a conflict.
+ * The address this project holds `id` at in live, in Trash included, read from the node and its
+ * source rather than through a Work authority. Null when the project holds no such node (a node
+ * in no live view is held by no one); `unreachable` when it holds one no live address can name
+ * (in Trash, or an inconsistent identity).
  */
 async function resolveHeldContextNode(input: {
   db: Database;
@@ -915,35 +701,41 @@ async function resolveHeldContextNode(input: {
   userId: string;
   node: { kind: "document"; id: DocumentId } | { kind: "folder"; id: string };
 }): Promise<HeldContextNode | null> {
-  // An id that cannot name a row is held by no one; the create answers its own typed refusal.
   if (!isUuid(input.node.id)) return null;
   const tx = currentDrizzleDb(input.db) as Database;
-  // A joined create's id is spent on the document it forwarded to; answer as that document.
-  const forwardedTo =
-    input.node.kind === "document" ? await findForward(tx, input.node.id, input.projectId) : null;
-  const node = forwardedTo
-    ? { kind: "document" as const, id: forwardedTo as DocumentId }
-    : input.node;
-  const row = await heldRow(tx, node);
-  if (!row) return forwardedTo ? { kind: "unreachable" } : null;
-  // Another project holding the id is not this project's row: the create proceeds and the
-  // catalog's global entry-id space answers it.
-  if (!heldInProject(row, input.projectId, input.userId)) return null;
-  if (row.heldOutOfReach) return { kind: "unreachable" };
-  if (row.source.deletedAt || row.sourceProject?.deletedAt || row.work?.deletedAt)
+  const placed = await loadPlacedRows(tx, LIVE_TREE, [input.node.id]);
+  const found =
+    input.node.kind === "document"
+      ? placed.documents.map((row) => ({
+          ...row,
+          name: row.document.name,
+          parentId: row.document.folderId,
+          deleted: row.document.deleted,
+        }))[0]
+      : placed.folders.map((row) => ({
+          ...row,
+          name: row.folder.name,
+          parentId: row.folder.parentId,
+          deleted: row.folder.deleted,
+        }))[0];
+  if (!found) return null;
+  // Another project holding the id is not this project's row.
+  if (!heldInProject(found, input.projectId, input.userId)) return null;
+  if (found.deleted) return { kind: "unreachable" };
+  if (found.source.deletedAt || found.sourceProject?.deletedAt || found.work?.deletedAt)
     return { kind: "unreachable" };
   const foldersById = new Map(
-    (await loadIdentityFolderClosure(tx, LIVE_TREE, row.parentId ? [row.parentId] : [])).map(
+    (await loadIdentityFolderClosure(tx, LIVE_TREE, found.parentId ? [found.parentId] : [])).map(
       (folder) => [folder.id, folder],
     ),
   );
   const classification = classifySourceIdentity({
     row: {
-      source: row.source,
-      sourceProject: row.sourceProject,
-      work: row.work,
-      ownerThreadRef: row.ownerThreadRef,
-      node: { parentId: row.parentId, deletedAt: null },
+      source: found.source,
+      sourceProject: found.sourceProject,
+      work: found.work,
+      ownerThreadRef: found.ownerThreadRef,
+      node: { parentId: found.parentId, deleted: false },
     },
     requestProjectId: input.projectId,
     actorUserId: input.userId,
@@ -954,25 +746,24 @@ async function resolveHeldContextNode(input: {
   if (classification.kind === "not-visible") return null;
   if (classification.kind !== "valid") return { kind: "unreachable" };
   const { scheme, parentPath } = classification.identity;
-  const path = [...parentPath, row.name].join("/");
+  const path = [...parentPath, found.name].join("/");
   return {
     kind: "held",
-    forwarded: forwardedTo !== null,
     address: {
-      id: node.id,
+      id: input.node.id,
       scheme,
       path,
-      name: row.name,
-      workId: row.work?.id ?? null,
+      name: found.name,
+      workId: found.work?.id ?? null,
       uri: canonicalContextUri(
         scheme,
         path,
         catalogSourceAuthority(
           scheme,
-          row.work?.id ?? null,
-          row.work && !row.work.isNoWork ? row.work.handle : null,
-          row.ownerThreadRef,
-          row.source.scope === "chat",
+          found.work?.id ?? null,
+          found.work && !found.work.isNoWork ? found.work.handle : null,
+          found.ownerThreadRef,
+          found.source.scope === "chat",
         ),
       ),
     },

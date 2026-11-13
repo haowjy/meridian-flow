@@ -274,7 +274,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
           return { before: existing, after: existing, changed: false };
         }
         if (nameIsTaken(row.projectId, row.name, row.id)) {
-          throw new WorkRestoreConflictError("name");
+          throw new WorkRestoreConflictError();
         }
         const before = { ...row };
         const restoredAt = currentTime();

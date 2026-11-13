@@ -1,4 +1,5 @@
 import type * as Y from "yjs";
+import { freeName } from "./names.js";
 import {
   type Actor,
   type BlobRef,
@@ -8,6 +9,7 @@ import {
   listRoot,
   type MoveRecord,
   newId,
+  type PurgeRecord,
   type RenameRecord,
   type RestoreRecord,
   recordsOf,
@@ -18,7 +20,7 @@ import {
   type TreeRecordInput,
 } from "./record.js";
 import type { TreeProjection } from "./replay.js";
-import { descendantsOf, nameAmong, rankAt } from "./shape.js";
+import { childrenOf, descendantsOf, nameAmong, rankAmong, rankAt } from "./shape.js";
 import { writable } from "./validate.js";
 import { inForce, LIVE, replayView, type View } from "./view.js";
 
@@ -84,38 +86,61 @@ export class TreeWriter {
     settleLogOf(this.doc).push([{ id: newId(), actor, targets: [...targets], to, ...extra }]);
   }
 
-  create(
-    view: View,
-    actor: Actor,
-    input: {
-      name: string;
-      parent: string;
-      index?: number;
-      node?: string;
-      provisional?: true;
-    } & (
-      | { kind: "folder" }
-      | { kind: "document"; filetype: string }
-      | { kind: "file"; blob?: BlobRef }
-    ),
-  ): CreateRecord {
+  /** One create: `createAll` of one. */
+  create(view: View, actor: Actor, input: CreateInput): CreateRecord {
+    return this.createAll(view, actor, [input])[0] as CreateRecord;
+  }
+
+  /**
+   * Creates, in order, against one replay of the view: a name is numbered against the shown
+   * siblings and the ones this call made before it, a rank is placed among them, and a parent
+   * may be a node an earlier input created. A replay per create would cost the whole list each.
+   */
+  createAll(view: View, actor: Actor, inputs: readonly CreateInput[]): CreateRecord[] {
     const projection = this.view(view);
-    const source = isSourceRoot(input.parent)
-      ? sourceIdOf(input.parent)
-      : projection.nodes.get(input.parent)?.source;
-    if (source === undefined) throw new Error(`create under unknown parent ${input.parent}`);
-    return this.author(view, actor, {
-      type: "create",
-      node: input.node ?? newId(),
-      kind: input.kind,
-      name: nameAmong(projection, input.parent, input.kind, input.name),
-      parent: input.parent,
-      source,
-      rank: rankAt(projection, input.parent, input.index ?? Number.MAX_SAFE_INTEGER),
-      ...(input.kind === "document" ? { filetype: input.filetype } : {}),
-      ...(input.provisional ? { provisional: true as const } : {}),
-      ...(input.kind === "file" && input.blob ? { blob: input.blob } : {}),
-    }) as CreateRecord;
+    const sources = new Map<string, string>();
+    const siblings = new Map<string, { name: string; rank: string }[]>();
+    const out: CreateRecord[] = [];
+    this.transact(() => {
+      for (const input of inputs) {
+        const source = isSourceRoot(input.parent)
+          ? sourceIdOf(input.parent)
+          : (sources.get(input.parent) ?? projection.nodes.get(input.parent)?.source);
+        if (source === undefined) throw new Error(`create under unknown parent ${input.parent}`);
+        let kids = siblings.get(input.parent);
+        if (!kids) {
+          kids = childrenOf(projection, input.parent).map((node) => ({
+            name: node.displayName,
+            rank: node.rank,
+          }));
+          siblings.set(input.parent, kids);
+        }
+        const name = freeName(input.kind, input.name, new Set(kids.map((kid) => kid.name)));
+        const at = Math.max(0, Math.min(input.index ?? kids.length, kids.length));
+        const rank = rankAmong(
+          kids.map((kid) => kid.rank),
+          at,
+        );
+        kids.splice(at, 0, { name, rank });
+        const record = this.author(view, actor, {
+          type: "create",
+          node: input.node ?? newId(),
+          kind: input.kind,
+          name,
+          parent: input.parent,
+          source,
+          rank,
+          ...(input.kind === "document" ? { filetype: input.filetype } : {}),
+          ...(input.provisional ? { provisional: true as const } : {}),
+          ...(input.aliases ? { aliases: input.aliases } : {}),
+          ...(input.hasProperties ? { hasProperties: true as const } : {}),
+          ...(input.kind === "file" && input.blob ? { blob: input.blob } : {}),
+        }) as CreateRecord;
+        sources.set(record.node, source);
+        out.push(record);
+      }
+    });
+    return out;
   }
 
   move(
@@ -160,6 +185,15 @@ export class TreeWriter {
     return this.author(view, actor, { type: "restore", node }) as RestoreRecord;
   }
 
+  /** Empties one Trash entry: what the delete `entry.id` took is gone for good. */
+  purge(actor: Actor, entry: { id: string; node: string }): PurgeRecord {
+    return this.author(LIVE, actor, {
+      type: "purge",
+      node: entry.node,
+      delete: entry.id,
+    }) as PurgeRecord;
+  }
+
   /**
    * Restores one Trash entry: the delete named, and no other delete of the same folder. A
    * folder deleted, brought back for one chapter and deleted again by someone else has two
@@ -176,6 +210,22 @@ export class TreeWriter {
     ) as RestoreRecord;
   }
 }
+
+/** What a create asks for: the name is numbered and the rank placed by the writer. */
+export type CreateInput = {
+  name: string;
+  parent: string;
+  index?: number;
+  node?: string;
+  provisional?: true;
+  /** Server only: what the node was known as before (an import's reveal). */
+  aliases?: CreateRecord["aliases"];
+  hasProperties?: true;
+} & (
+  | { kind: "folder" }
+  | { kind: "document"; filetype: string }
+  | { kind: "file"; blob?: BlobRef }
+);
 
 /** One side of a move between two lists: the writer on that list's copy, and the list's id. */
 export type ListEnd = { writer: TreeWriter; list: string };
