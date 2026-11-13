@@ -13,21 +13,17 @@ type DocumentRow = {
   id: string;
   storageUrl: string | null;
   mimeType: string | null;
-  fileType: string;
   sizeBytes: number | null;
   name: string;
   hasPreview: boolean;
 };
 
 function mapDocumentFile(
-  row: Pick<
-    DocumentRow,
-    "id" | "storageUrl" | "mimeType" | "fileType" | "sizeBytes" | "name" | "hasPreview"
-  >,
+  row: Pick<DocumentRow, "id" | "storageUrl" | "mimeType" | "sizeBytes" | "name" | "hasPreview">,
 ): DocumentFileRecord | null {
   if (!row.storageUrl || !row.mimeType) return null;
   const fileType = mapFigureFileType(row.mimeType);
-  if (!fileType || row.fileType !== fileType) return null;
+  if (!fileType) return null;
   return {
     assetDocumentId: row.id,
     storageUrl: row.storageUrl,

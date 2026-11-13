@@ -29,7 +29,6 @@ import {
   LIVE,
   type ProjectedRow,
   projectedRows,
-  recordsOf,
   replayView,
   sourceRoot,
   TreeWriter,
@@ -41,6 +40,7 @@ import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizz
 import { runWithEditConfirmation } from "../../../shared/edit-confirmation.js";
 import { setTestHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
+import { treeSeeder } from "../../../test-support/tree-seed.js";
 import { initializeHead } from "../../collab/adapters/drizzle-document-authority-head.js";
 import { createDrizzleJournal } from "../../collab/adapters/drizzle-journal.js";
 import {
@@ -319,7 +319,7 @@ describe("the tree list store (postgres)", () => {
 
       // A create naming a document some other row already has.
       const owned = crypto.randomUUID();
-      await db.insert(documents).values({ id: owned, contextSourceId: UNFILED, name: "elsewhere" });
+      await treeSeeder(db).document(UNFILED, "elsewhere", { id: owned });
       const takeover = client();
       Y.applyUpdate(takeover.doc, Y.encodeStateAsUpdate(honest.doc));
       takeover.writer.create(LIVE, actor, {
@@ -537,7 +537,7 @@ describe("the tree list store (postgres)", () => {
 
       // A document row that had a list's id would still take no head with it, and no document
       // adopts a list's head.
-      await db.insert(documents).values({ id: LIST, contextSourceId: UNFILED, name: "alias" });
+      await db.insert(documents).values({ id: LIST, projectId: PROJECT });
       await db.delete(documents).where(eq(documents.id, LIST));
       expect(
         await db.select().from(documentYjsHeads).where(eq(documentYjsHeads.documentId, LIST)),
@@ -622,15 +622,18 @@ describe("the tree list store (postgres)", () => {
   it("keeps the server's items under one reserved client id while two processes write in turn", async () => {
     const stores = [newStore(), newStore()];
     for (let at = 0; at < 6; at++) {
-      const made = client();
-      made.writer.create(LIVE, actor, {
-        kind: "folder",
-        name: `Made ${at}`,
-        parent: sourceRoot(MANUSCRIPT),
-      });
       await stores[at % 2]?.submit({
         list,
-        entries: { records: recordsOf(made.doc).toArray() },
+        make: (writer) => ({
+          records: [
+            writer.create(LIVE, actor, {
+              kind: "folder",
+              name: `Made ${at}`,
+              parent: sourceRoot(MANUSCRIPT),
+            }),
+          ],
+          result: null,
+        }),
       });
     }
     const doc = new Y.Doc({ gc: false });
@@ -642,13 +645,6 @@ describe("the tree list store (postgres)", () => {
   });
 
   it("takes a Work's lock before the list's, so a transaction holding the Work cannot deadlock a bound write", async () => {
-    const made = client();
-    made.writer.create(LIVE, actor, {
-      kind: "folder",
-      name: "Bound",
-      parent: sourceRoot(MANUSCRIPT),
-    });
-    const records = recordsOf(made.doc).toArray();
     const other = newStore();
     const store = newStore();
     let holding = () => {};
@@ -669,12 +665,25 @@ describe("the tree list store (postgres)", () => {
           return row?.n;
         })
         .toBeGreaterThan(0);
-      return other.submit({ list, entries: { records: [] } });
+      return other.submit({ list, make: () => ({ records: [], result: null }) });
     });
     await held;
     const a = runWithEditConfirmation(
       { workIds: [WORK], lineageRootIds: [], confirm: async () => {}, covers: async () => true },
-      () => store.submit({ list, entries: { records } }),
+      () =>
+        store.submit({
+          list,
+          make: (writer) => ({
+            records: [
+              writer.create(LIVE, actor, {
+                kind: "folder",
+                name: "Bound",
+                parent: sourceRoot(MANUSCRIPT),
+              }),
+            ],
+            result: null,
+          }),
+        }),
     );
     expect((await Promise.allSettled([a, b])).map((result) => result.status)).toEqual([
       "fulfilled",
@@ -692,25 +701,38 @@ describe("the tree list store (postgres)", () => {
         name: "Part",
         parent: sourceRoot(MANUSCRIPT),
       });
-      c.writer.create(LIVE, actor, {
+      const child = c.writer.create(LIVE, actor, {
         kind: "document",
         name: "one",
         parent: folder.node,
         filetype: "markdown",
       });
       await store.admit({ list, accountId: ACCOUNT, update: c.send() });
-      c.writer.delete(LIVE, actor, folder.node);
-      await store.admit({ list, accountId: ACCOUNT, update: c.send() });
       const before = { updates: await updateCount(), rows: await storedRows() };
 
-      // A purge of the folder alone leaves its child's row pointing at a folder with no row.
-      const scratch = client();
-      Y.applyUpdate(scratch.doc, Y.encodeStateAsUpdate(c.doc));
-      scratch.writer.author(LIVE, actor, { type: "purge", node: folder.node });
-      const purge = recordsOf(scratch.doc).toArray().at(-1);
+      // Rows written after the body leave the child under a parent no row has: the constraint
+      // that says so is deferred, so only COMMIT refuses.
+      const remove = setTestHook("treeList.afterRows", async () => {
+        await currentDrizzleDb(db).execute(
+          sql`UPDATE tree_nodes SET parent_id = gen_random_uuid() WHERE id = ${child.node}::uuid`,
+        );
+      });
       await expect(
-        store.submit({ list, entries: { records: purge ? [purge] : [] } }),
+        store.submit({
+          list,
+          make: (writer) => ({
+            records: [
+              writer.create(LIVE, actor, {
+                kind: "folder",
+                name: "Refused",
+                parent: sourceRoot(MANUSCRIPT),
+              }),
+            ],
+            result: null,
+          }),
+        }),
       ).rejects.toThrow();
+      remove();
       expect({ updates: await updateCount(), rows: await storedRows() }).toEqual(before);
 
       c.writer.create(LIVE, actor, { kind: "folder", name: "After", parent: sourceRoot(UNFILED) });

@@ -8,7 +8,7 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import { contextSources, documents, projects, users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
+import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { treeSeeder } from "../../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
@@ -86,7 +86,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
-        removal: createTestDocumentRemoval(db),
+        treeLists: createTestRemovalDeps(db).treeLists,
         documentSync: collab,
         branches: collab.branches,
       });

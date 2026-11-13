@@ -4,17 +4,18 @@
 import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
+  branches,
   contextAvailabilityHeads,
   contextSources,
-  documents,
-  folders,
   projects,
   users,
   works,
 } from "@meridian/database/schema";
+import { LIVE } from "@meridian/project-tree";
 import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
 import { createDrizzleContextCatalog } from "./context-catalog.js";
@@ -40,9 +41,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const WORK = "00000000-0000-4000-8000-000000000921";
     const NO_WORK = "00000000-0000-4000-8000-000000000938";
     const PROJECT_AUTHORITY_KEY = `project:${PROJECT}`;
-    const FOREIGN_PROJECT_AUTHORITY_KEY = `project:${FOREIGN_PROJECT}`;
-    const USER_AUTHORITY_KEY = `user:${USER}`;
-    const OTHER_AUTHORITY_KEY = `user:${OTHER}`;
+    const _FOREIGN_PROJECT_AUTHORITY_KEY = `project:${FOREIGN_PROJECT}`;
+    const _USER_AUTHORITY_KEY = `user:${USER}`;
+    const _OTHER_AUTHORITY_KEY = `user:${OTHER}`;
     const DOCS = [
       "00000000-0000-4000-8000-000000000922",
       "00000000-0000-4000-8000-000000000923",
@@ -97,17 +98,39 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { id: USER_SOURCE, projectId: PERSONAL, name: "User", slug: "user" },
         { id: FOREIGN_SOURCE, projectId: FOREIGN_PROJECT, name: "Foreign", slug: "manuscript" },
       ]);
-      await db.insert(documents).values(
-        DOCS.map((id, index) => ({
-          id,
-          contextSourceId:
-            [PROJECT_SOURCE, NONE_SOURCE, WORK_SOURCE, USER_SOURCE, FOREIGN_SOURCE][index] ??
-            PROJECT_SOURCE,
-          name: `doc-${index}`,
-          extension: "",
-        })),
-      );
+      const seeder = treeSeeder(db);
+      for (const [index, id] of DOCS.entries()) {
+        const sourceId =
+          [PROJECT_SOURCE, NONE_SOURCE, WORK_SOURCE, USER_SOURCE, FOREIGN_SOURCE][index] ??
+          PROJECT_SOURCE;
+        await seeder.document(sourceId, `doc-${index}`, { id });
+      }
       return db;
+    }
+
+    /** Puts the nodes in Trash through the one writer of the tree. */
+    async function trash(db: Database, sourceId: string, ...ids: string[]) {
+      await treeSeeder(db).store.submit({
+        list: await treeListOfSource(db, sourceId),
+        make: (writer) => {
+          for (const id of ids) writer.delete(LIVE, "system", id);
+          return { records: [], result: null };
+        },
+      });
+    }
+
+    /** A branch of the project's Work, for documents that exist only in its draft. */
+    async function draftView(db: Database) {
+      const [branch] = await db
+        .insert(branches)
+        .values({
+          projectId: PROJECT as never,
+          createdBy: USER as never,
+          originWorkId: WORK as never,
+        })
+        .returning({ id: branches.id });
+      if (!branch) throw new Error("branch not inserted");
+      return { draft: branch.id };
     }
 
     it("resolves every requested authority and does not disclose foreign or unknown identities", async () => {
@@ -159,21 +182,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Foreign invalid",
         slug: "invalid-scheme",
       });
-      await db.insert(documents).values([
-        {
-          id: foreignInvalidDocument,
-          contextSourceId: foreignInvalidSource,
-          name: "private",
-          extension: "",
-        },
-        {
-          id: foreignHidden,
-          contextSourceId: FOREIGN_SOURCE,
-          hidden: true,
-          name: "draft-only",
-          extension: "json",
-        },
-      ]);
+      const seeder = treeSeeder(db);
+      await seeder.document(foreignInvalidSource, "private", { id: foreignInvalidDocument });
+      await seeder.document(FOREIGN_SOURCE, "draft-only.json", {
+        id: foreignHidden,
+        view: await draftView(db),
+      });
 
       const result = await createDrizzleProjectContextAvailability(db, evidence).lookup(
         {
@@ -204,11 +218,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Personal manuscript",
         slug: "manuscript",
       });
-      await db.insert(documents).values({
+      await treeSeeder(db).document(personalManuscriptSource, "chapter", {
         id: personalManuscriptDocument,
-        contextSourceId: personalManuscriptSource,
-        name: "chapter",
-        extension: "",
       });
       const result = await createDrizzleProjectContextAvailability(db).lookup(
         {
@@ -233,12 +244,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Other manuscript",
         slug: "manuscript",
       });
-      await db.insert(documents).values({
-        id: otherPersonalDocument,
-        contextSourceId: otherPersonalSource,
-        name: "private",
-        extension: "",
-      });
+      await treeSeeder(db).document(otherPersonalSource, "private", { id: otherPersonalDocument });
       const result = await createDrizzleProjectContextAvailability(db).lookup(
         { projectId: PROJECT as never, documentIds: [otherPersonalDocument] as never },
         { userId: USER },
@@ -246,17 +252,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(result.resolutions).toMatchObject([{ kind: "not-visible" }]);
     });
 
-    it("keeps archived Work documents available and returns deleted authority tombstones", async () => {
+    it("keeps archived Work documents available, and answers a trashed document as deleted whatever its authority", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
       await db
         .insert(contextAvailabilityHeads)
         .values({ authorityKey: PROJECT_AUTHORITY_KEY, generation: 7n });
       const generation = "7";
-      await db
-        .update(documents)
-        .set({ deletionReason: "deleted", deletedAt: new Date() })
-        .where(eq(documents.id, DOCS[0]));
+      await trash(db, PROJECT_SOURCE, DOCS[0]);
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
       let result = await availability.lookup(
         { projectId: PROJECT as never, documentIds: [DOCS[0], DOCS[2]] as never },
@@ -271,17 +274,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       ]);
       await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, WORK));
-      await db
-        .update(documents)
-        .set({ deletionReason: "deleted", deletedAt: new Date() })
-        .where(eq(documents.id, DOCS[2]));
-      await expect(
-        availability.lookup(
-          { projectId: PROJECT as never, documentIds: [DOCS[2]] as never },
-          { userId: USER },
-        ),
-      ).resolves.toMatchObject({ resolutions: [{ kind: "deleted" }] });
-      await db.update(documents).set({ deletedByWorkId: WORK }).where(eq(documents.id, DOCS[2]));
       await expect(
         availability.lookup(
           { projectId: PROJECT as never, documentIds: [DOCS[2]] as never },
@@ -290,6 +282,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({
         resolutions: [{ kind: "authority-unavailable", reason: "work_deleted" }],
       });
+      await trash(db, WORK_SOURCE, DOCS[2]);
+      await expect(
+        availability.lookup(
+          { projectId: PROJECT as never, documentIds: [DOCS[2]] as never },
+          { userId: USER },
+        ),
+      ).resolves.toMatchObject({ resolutions: [{ kind: "deleted" }] });
       await db.update(projects).set({ deletedAt: new Date() }).where(eq(projects.id, PROJECT));
       result = await availability.lookup(
         { projectId: PROJECT as never, documentIds: [DOCS[1]] as never },
@@ -346,48 +345,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("hides draft-only identities from live availability, and answers a discarded one", async () => {
+    it("hides draft-only identities from live availability", async () => {
       const db = await seed();
       const evidence = createInMemoryEventSink();
       const hiddenId = "00000000-0000-4000-8000-000000000927";
-      const discardedId = "00000000-0000-4000-8000-000000000928";
-      await db.insert(documents).values([
-        {
-          id: hiddenId,
-          contextSourceId: PROJECT_SOURCE,
-          hidden: true,
-          name: "draft-only",
-          extension: "json",
-        },
-        {
-          id: discardedId,
-          contextSourceId: PROJECT_SOURCE,
-          hidden: true,
-          name: "discarded-creation",
-          extension: "md",
-          deletedAt: new Date("2026-10-18T00:00:00Z"),
-          deletionReason: "discarded",
-          deletedByUserId: USER as never,
-        },
-      ]);
+      await treeSeeder(db).document(PROJECT_SOURCE, "draft-only.json", {
+        id: hiddenId,
+        view: await draftView(db),
+      });
       const availability = createDrizzleProjectContextAvailability(db, evidence);
       const result = await availability.lookup(
-        { projectId: PROJECT as never, documentIds: [hiddenId, discardedId] as never },
+        { projectId: PROJECT as never, documentIds: [hiddenId] as never },
         { userId: USER },
       );
-      expect(result.resolutions).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ kind: "not-visible", documentId: hiddenId }),
-          expect.objectContaining({
-            kind: "deleted",
-            documentId: discardedId,
-            removal: expect.objectContaining({
-              reason: "discarded",
-              actor: expect.objectContaining({ kind: "user", userId: USER }),
-            }),
-          }),
-        ]),
-      );
+      expect(result.resolutions).toEqual([
+        expect.objectContaining({ kind: "not-visible", documentId: hiddenId }),
+      ]);
       expect(evidence.events).toEqual([]);
     });
 
@@ -419,10 +392,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ]);
       };
       await assertInconsistent();
-      await db
-        .update(documents)
-        .set({ deletionReason: "deleted", deletedAt: new Date() })
-        .where(eq(documents.id, DOCS[0]));
+      await trash(db, PROJECT_SOURCE, DOCS[0]);
       await assertInconsistent();
       expect(evidence.events).toEqual([
         expect.objectContaining({
@@ -436,40 +406,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
-    it("resolves folder identity across scope changes without confusing authority hiding with deletion", async () => {
+    it("resolves folder identity in each source without confusing authority hiding with deletion", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
-      const id = "00000000-0000-4000-8000-000000000942";
-      const foreign = "00000000-0000-4000-8000-000000000943";
-      await db.insert(folders).values([
-        { id, contextSourceId: PROJECT_SOURCE, name: "A" },
-        {
-          id: foreign,
-          contextSourceId: FOREIGN_SOURCE,
-          name: "Foreign",
-        },
-      ]);
-      const lookup = async () =>
+      const seeder = treeSeeder(db);
+      const id = await seeder.folder(PROJECT_SOURCE, "A");
+      const workFolder = await seeder.folder(WORK_SOURCE, "Moved");
+      const foreign = await seeder.folder(FOREIGN_SOURCE, "Foreign");
+      const lookup = async (...ids: string[]) =>
         (
           await availability.lookup(
-            {
-              projectId: PROJECT as never,
-              documentIds: [],
-              folderIds: [id, foreign, "00000000-0000-4000-8000-000000000944"],
-            },
+            { projectId: PROJECT as never, documentIds: [], folderIds: ids },
             { userId: USER },
           )
         ).folderResolutions!;
-      expect(await lookup()).toMatchObject([
+      expect(await lookup(id, foreign, "00000000-0000-4000-8000-000000000944")).toMatchObject([
         { folderId: id, kind: "available", entry: { path: ["A"], uri: "manuscript://A" } },
         { folderId: foreign, kind: "not-visible" },
         { kind: "not-visible" },
       ]);
-      await db
-        .update(folders)
-        .set({ contextSourceId: WORK_SOURCE, name: "Moved" })
-        .where(eq(folders.id, id));
-      expect((await lookup())[0]).toMatchObject({
+      expect((await lookup(workFolder))[0]).toMatchObject({
         kind: "available",
         entry: {
           scope: { kind: "work", workId: WORK },
@@ -478,16 +434,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       });
       await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, WORK));
-      await db
-        .update(folders)
-        .set({ deletedAt: new Date(), deletedByWorkId: WORK })
-        .where(eq(folders.id, id));
-      expect((await lookup())[0].kind).toBe("authority-unavailable");
-      await db.update(folders).set({ deletedByWorkId: null }).where(eq(folders.id, id));
-      expect((await lookup())[0].kind).toBe("deleted");
+      expect((await lookup(workFolder))[0].kind).toBe("authority-unavailable");
+      await trash(db, WORK_SOURCE, workFolder);
+      expect((await lookup(workFolder))[0].kind).toBe("deleted");
     });
 
-    it("rejects invalid schemes, Work authority, scope pairing, and cross-source ancestry", async () => {
+    it("rejects invalid schemes, Work authority and scope pairing", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
       const assertIndeterminate = async (documentId: string) => {
@@ -525,15 +477,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.execute(sql`alter table works drop constraint works_handle_valid`);
       await db.update(works).set({ handle: "invalid handle" }).where(eq(works.id, WORK));
       await assertIndeterminate(DOCS[2]);
-
-      const foreignFolder = "00000000-0000-4000-8000-000000000928";
-      await db.insert(folders).values({
-        id: foreignFolder,
-        contextSourceId: FOREIGN_SOURCE,
-        name: "foreign-parent",
-      });
-      await db.update(documents).set({ folderId: foreignFolder }).where(eq(documents.id, DOCS[0]));
-      await assertIndeterminate(DOCS[0]);
     });
   });
 }

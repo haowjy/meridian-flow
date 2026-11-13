@@ -17,7 +17,7 @@ import {
 } from "@meridian/database/schema";
 import { LIVE } from "@meridian/project-tree";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -31,6 +31,7 @@ import {
   createTestLinkAheadRegistry,
 } from "../../collab/test-support/document-link-scopes.js";
 import { RegistrationInsideTransactionError } from "../ports/link-ahead-registry.js";
+import { lockContextSources } from "./context-fs/document-locations.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN =
@@ -99,6 +100,12 @@ if (!RUN) {
         (row) => row.id,
       );
     const newRegistry = (db: Database) => createTestLinkAheadRegistry(db);
+
+    beforeEach(seed);
+    afterAll(async () => {
+      await deleteDrizzleRows(database, [users]);
+      await database.close();
+    });
 
     it("settles an occupied address at registration, once: later occupants and re-registration never retarget", async () => {
       await insertDocument(database);
@@ -277,7 +284,7 @@ if (!RUN) {
         const minted = crypto.randomUUID();
         await links.registerAhead([{ ref: `ahead:${minted}`, ...at, view: { kind: "live" } }]);
         expect.soft(await registryRow(minted)).toEqual({ registered: true, live: null });
-        // The first live arrival at the path (a Create reveals the branch's document, 12b)
+        // The first live arrival at the path (a live create there: the draft's document stays the draft's)
         // binds every waiting ref, once.
         const live = await scenario.writer.createDocument("lore/kael", "Kael, live.");
         for (const aheadId of [typed, minted]) {
@@ -286,7 +293,7 @@ if (!RUN) {
             live,
           });
         }
-        expect.soft(live, "the revealed branch document").toBe(kael);
+        expect.soft(live, "a live create at the address makes its own document").not.toBe(kael);
       });
 
       it("registers the writer's link typed in the draft's review room, best effort and globally (L-3)", async () => {

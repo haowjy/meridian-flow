@@ -41,7 +41,7 @@ const PROJECT = id(2);
 const OTHER_PROJECT = id(3);
 const SOURCE = id(4);
 const OTHER_SOURCE = id(5);
-const PART = id(6);
+const _PART = id(6);
 const HOLDER = id(7);
 const TARGET = id(8);
 const DELETED = id(9);
@@ -110,11 +110,11 @@ if (!RUN) {
       observer: createLinkScopeObserver(),
     });
 
-    const renameTarget = async (name: string) =>
+    const renameTarget = async (name: string, filetype?: string) =>
       treeSeeder(db).store.submit({
         list: await treeListOfSource(db, SOURCE),
         make: (writer) => {
-          writer.rename(TREE_LIVE, "system", TARGET, name);
+          writer.rename(TREE_LIVE, "system", TARGET, name, filetype);
           return { records: [], result: null };
         },
       });
@@ -203,7 +203,7 @@ if (!RUN) {
       ]);
     }
     it("preloads extension-omitted dotted names independently of other addresses", async () => {
-      await renameTarget("config.json.toml");
+      await renameTarget("config.json.toml", "text");
       for (const addresses of [
         ["manuscript://part1/config.json"],
         ["manuscript://part1/config.json", "manuscript://part1/config.json.toml"],
@@ -395,7 +395,7 @@ if (!RUN) {
       expect.soft(registered).toEqual([PROJECT]);
     });
 
-    it("names the reader's own branch else the oldest, reads an unbound ahead ref by address in each view, and pins only a holder the reader may name (L-1)", async () => {
+    it("names the branch that made a draft document, reads an unbound ahead ref by address in each view, and pins only a holder the reader may name (L-1)", async () => {
       const s = await branchTreeScenario(db, { runtime: await runtimes.compose(), runtimes });
       const [atlas, beacon, cove] = [
         await s.work("Atlas", "draft"),
@@ -404,10 +404,10 @@ if (!RUN) {
       ];
       const chapter = await s.seedLive("chapter");
       await s.seedLive("notes");
-      // Atlas's branch made Kael first; Beacon's branch joined it (one row, one place).
+      // Atlas's branch made Kael: a draft's document belongs to the one branch that created it.
       const kael = await s.seedHidden(atlas, "lore/kael");
-      await s.seedHidden(beacon, "lore/kael", { join: kael });
-      const [atlasBranch, beaconBranch] = [await s.branchOf(atlas), await s.branchOf(beacon)];
+      const atlasBranch = await s.branchOf(atlas);
+      await s.branchOf(beacon);
       await s.branchOf(cove);
 
       const named = async (view: typeof atlas | "live") => {
@@ -422,15 +422,13 @@ if (!RUN) {
           : answer.state;
       };
       const atAtlas = [true, atlasBranch.id, "manuscript://lore/kael"];
-      expect.soft(await named("live"), "live: the oldest branch, its path").toEqual(atAtlas);
-      expect.soft(await named(cove), "a branch not using it: the oldest").toEqual(atAtlas);
-      expect.soft(await named(atlas), "its own oldest branch").toEqual(atAtlas);
-      expect
-        .soft(await named(beacon), "the reader's own branch, where it has it")
-        .toEqual([true, beaconBranch.id, "manuscript://lore/kael"]);
+      expect.soft(await named(atlas), "its own branch").toEqual(atAtlas);
+      for (const view of ["live", cove, beacon] as const) {
+        expect.soft(await named(view), "a view that does not show it names nothing").toBe("gone");
+      }
 
       // An ahead ref reads by address in the reader's view until a live document binds it:
-      // a branch's hidden document there reads "in a draft" from every view.
+      // a branch's own document there reads "in a draft" in that branch's view only.
       const draftShip = await s.seedHidden(atlas, "ship");
       const unbound = await s.seedAhead("ship");
       const liveAnchor = await s.seedLive("anchor");
@@ -459,19 +457,22 @@ if (!RUN) {
       const ANCHOR = "manuscript://anchor";
       const CHAPTER = "manuscript://chapter";
       const inShip = { id: draftShip, inBranch: true };
+      expect
+        .soft(await read(atlas, unbound, SHIP, CHAPTER), "unbound: in a draft, in its branch")
+        .toEqual(inShip);
       for (const view of [atlas, beacon, "live"] as const) {
-        expect
-          .soft(await read(view, unbound, SHIP, CHAPTER), "unbound: in a draft, from any view")
-          .toEqual(inShip);
+        if (view !== atlas) {
+          expect
+            .soft(await read(view, unbound, SHIP, CHAPTER), "unbound: another view has nothing")
+            .toEqual({ id: "missing" });
+        }
         expect
           .soft(await read(view, bound, ANCHOR, CHAPTER), "bound: the live document")
           .toEqual({ id: liveAnchor });
       }
-      expect.soft(await read("live", unbound, SHIP, null), "chat: the same").toEqual(inShip);
-      await s.seedHidden(beacon, "ship", { join: draftShip });
       expect
-        .soft(await read(beacon, unbound, SHIP, CHAPTER), "joined by another branch")
-        .toEqual(inShip);
+        .soft(await read("live", unbound, SHIP, null), "chat: live shows no draft")
+        .toEqual({ id: "missing" });
 
       // A stale base: the id still pins the holder, and the answer names where it is now.
       expect

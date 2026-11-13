@@ -10,7 +10,6 @@ import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { testLinkDeps } from "../collab/test-support/document-link-scopes.js";
-import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "./test-support/project-repository.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -53,7 +52,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        catalogMutations: createDrizzleContextCatalog(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -69,6 +67,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let seedCalls = 0;
       const coldRepository = createDrizzleProjectBootstrapRepository({
         db,
+        treeLists: createTestRemovalDeps(db).treeLists,
         documents: {
           ...collab,
           async seedFromMarkdown(...args: Parameters<typeof collab.seedFromMarkdown>) {
@@ -160,6 +159,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createBoundCollab();
       const interrupted = createDrizzleProjectBootstrapRepository({
         db,
+        treeLists: createTestRemovalDeps(db).treeLists,
         documents: {
           ...collab,
           async seedFromMarkdown() {
@@ -174,6 +174,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const repaired = createDrizzleProjectBootstrapRepository({
         db,
+        treeLists: createTestRemovalDeps(db).treeLists,
         documents: collab,
       });
       await expect(repaired.ensureDefaultBootstrapReady(USER_ID as never)).resolves.toBe(true);

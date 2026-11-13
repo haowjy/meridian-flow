@@ -95,14 +95,13 @@ if (!RUN) {
 
     async function seedUpload(documentId: string, suffix: string) {
       const uri = `uploads://@c1/map-${suffix}.png`;
-      await firstDb.insert(schema.documents).values({
-        id: documentId as never,
-        contextSourceId: SOURCE,
-        name: `map-${suffix}`,
-        extension: "png",
-        fileType: "png",
-        mimeType: "image/png",
-      });
+      const { treeSeeder } = await import("../../../test-support/tree-seed.js");
+      await treeSeeder(firstDb).file(
+        SOURCE,
+        `map-${suffix}.png`,
+        { storageKey: `uploads/${PROJECT}/${documentId}`, mime: "image/png", size: 1 },
+        { id: documentId },
+      );
       await firstDb.insert(schema.uploadIntakes).values({
         projectId: PROJECT,
         intakeId: `intake-${suffix}`,

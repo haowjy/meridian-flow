@@ -188,10 +188,12 @@ function selectionFilter(selection: DocumentAddressSelection): SQL | null {
   if ("names" in selection) {
     const projectIds = selection.projectIds.filter(isUuid);
     if (selection.names.length === 0 || projectIds.length === 0) return null;
-    return sql`d.name IN (${sql.join(
+    // A node's name is its full filename; the candidates are stems, so match the name without its extension too.
+    const names = sql.join(
       selection.names.map((name) => sql`${name}`),
       sql`, `,
-    )}) AND d.context_source_id IN (
+    );
+    return sql`(d.name IN (${names}) OR (d.extension <> '' AND left(d.name, -(length(d.extension) + 1)) IN (${names}))) AND d.context_source_id IN (
       SELECT cs.id FROM context_sources cs LEFT JOIN works w ON w.id = cs.work_id
       WHERE COALESCE(cs.project_id, w.project_id) IN (${uuidList(projectIds)}))`;
   }

@@ -14,7 +14,6 @@ import {
 import { LIVE } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-work-branch-pending.js";
@@ -95,24 +94,24 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       const db = database.current;
       const registry = createTestLinkAheadRegistry(db);
       const arrivals = createDrizzleDocumentArrivals(db, registry);
-      const lifecycle = createDrizzleLineageScratchLifecycle(db, undefined, arrivals);
+      const catalog = createDrizzleContextCatalog(db);
+      const fileAccessChanges = createLocalFileAccessChanges();
+      const lifecycle = createDrizzleLineageScratchLifecycle(db, arrivals, {
+        fileAccessChanges,
+        draftOwnerHints: catalog,
+      });
       const threadRepo = createDrizzleThreadRepository(db, { lineageScratch: lifecycle });
       const availability = createDrizzleProjectContextAvailability(db);
-      const catalog = createDrizzleContextCatalog(db, undefined, {
-        availabilityMutations: availability,
-      });
       const workRepo = createDrizzleProjectWorkRepository({
-        removal: createTestDocumentRemoval(db),
         db,
         lineageScratch: lifecycle,
         arrivals,
         projectionMutation: createWorkProjectionMutation({
           db,
           pendingCounts: createDrizzleWorkBranchPendingStore(db),
-          availability,
-          catalog,
+          draftOwnerHints: catalog,
         }),
-        fileAccessChanges: createLocalFileAccessChanges(),
+        fileAccessChanges,
       });
       const note = crypto.randomUUID(),
         deleted = crypto.randomUUID(),
