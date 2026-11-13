@@ -4,6 +4,7 @@
  * a browser learns that a source ended or that its account lost access to one: neither is a tree
  * record.
  */
+import type { CanonicalContextAuthority } from "../context-uri.js";
 import type { ContextSourceId, WorkId } from "../ids.js";
 import type { ProjectContextTreeScheme } from "./http-types.js";
 
@@ -19,6 +20,8 @@ export type ContextSource = {
   scheme: ProjectContextTreeScheme;
   name: string;
   owner: ContextSourceOwner;
+  /** What the source's addresses are qualified with (a Work's handle, a chat's or lineage's ref), for `canonicalContextUri(scheme, path, authority)`. */
+  authority: CanonicalContextAuthority;
 };
 
 /** The sources the account can read in one project, or the account's own (`user://`). */
