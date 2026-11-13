@@ -17,6 +17,13 @@ const TEST_HOOK_POINTS = [
   /** A removal wrote its record and, for a discard, closed the drafts; not yet committed. */
   "removal.afterRecord",
   "split.beforeRepoint",
+  // A tree list's admission (domains/context tree-list store), in step order. A kill at any
+  // before `afterCommit` leaves neither the records nor the rows.
+  "treeList.afterLock",
+  "treeList.afterAppend",
+  "treeList.afterLiveRows",
+  "treeList.afterRows",
+  "treeList.afterCommit",
   // Collab.
   "draft.ensure.afterDocumentLock",
   "draft.peer.afterDocumentLock",

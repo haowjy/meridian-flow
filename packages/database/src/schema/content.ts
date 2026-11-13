@@ -41,6 +41,12 @@ export const projects = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     isPersonal: boolean("is_personal").notNull().default(false),
+    /** The id of this project's tree list, its own and never a node's or document's id. */
+    treeListId: uuid("tree_list_id")
+      .$type<DocumentId>()
+      .notNull()
+      .unique()
+      .default(sql`gen_random_uuid()`),
     defaultBootstrapReady: boolean("default_bootstrap_ready").notNull().default(false),
     systemPrompt: text("system_prompt"),
     settings: jsonbDefault("settings").$type<ProjectSettings>(),

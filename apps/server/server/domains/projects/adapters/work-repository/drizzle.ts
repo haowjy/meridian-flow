@@ -22,6 +22,7 @@ import {
 } from "../../../../shared/drizzle-transaction.js";
 import { allocateHandleNumber } from "../../../../shared/handle-counter.js";
 import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
+import { lockProjectTreeList } from "../../../../shared/tree-list-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
 import {
@@ -317,18 +318,24 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       }
     },
     async archive(id: WorkId): Promise<Work> {
-      const existing = await requireUnlocked(id);
-      if (existing.archivedAt !== null) return existing;
-      const archived = await updateWork(id, { archivedAt: new Date() });
-      await deps.fileAccessChanges.publish({ workId: id });
-      return archived;
+      return runInDrizzleTransaction(db, async () => {
+        const existing = await requireUnlocked(id);
+        if (existing.archivedAt !== null) return existing;
+        await lockProjectTreeList(db, existing.projectId);
+        const archived = await updateWork(id, { archivedAt: new Date() });
+        await deps.fileAccessChanges.publish({ workId: id });
+        return archived;
+      });
     },
     async unarchive(id: WorkId): Promise<Work> {
-      const existing = await requireUnlocked(id);
-      if (existing.archivedAt === null) return existing;
-      const unarchived = await updateWork(id, { archivedAt: null });
-      await deps.fileAccessChanges.publish({ workId: id });
-      return unarchived;
+      return runInDrizzleTransaction(db, async () => {
+        const existing = await requireUnlocked(id);
+        if (existing.archivedAt === null) return existing;
+        await lockProjectTreeList(db, existing.projectId);
+        const unarchived = await updateWork(id, { archivedAt: null });
+        await deps.fileAccessChanges.publish({ workId: id });
+        return unarchived;
+      });
     },
     async softDelete(id: WorkId, endThreads) {
       return runInDrizzleTransaction(db, async () => {
@@ -340,6 +347,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         }
         if (before.isNoWork) throw new WorkLockedError();
         if (lockedTree.changed) throw new WorkDeleteRetryError();
+        await lockProjectTreeList(db, before.projectId);
 
         const deletedAt = now();
         await cascadeDelete(db, {
@@ -375,8 +383,10 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           if (decideWorkRestore(existing, now()) === "unchanged") {
             return { before: existing, after: existing, changed: false };
           }
-          // Thread forest → Work above, then the namespaces the restore re-occupies, before
-          // any row reappears (contract §9.3). Individually deleted rows stay deleted.
+          // Thread forest → Work above, then the project's tree list and the namespaces the
+          // restore re-occupies, before any row reappears (contract §9.3). Individually deleted
+          // rows stay deleted.
+          await lockProjectTreeList(db, existing.projectId);
           const arriving = deps.arrivals ? await workCascadedDocumentIds(id) : [];
           if (arriving.length > 0) await deps.arrivals?.lockNamespaces(arriving);
           await guardWorkContextRestore(db, id);

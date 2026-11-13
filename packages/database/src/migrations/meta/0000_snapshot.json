@@ -6720,6 +6720,13 @@
           "notNull": true,
           "default": false
         },
+        "tree_list_id": {
+          "name": "tree_list_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
         "default_bootstrap_ready": {
           "name": "default_bootstrap_ready",
           "type": "boolean",
@@ -6845,7 +6852,15 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "projects_tree_list_id_unique": {
+          "name": "projects_tree_list_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tree_list_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -9343,6 +9358,562 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.branch_tree_nodes": {
+      "name": "branch_tree_nodes",
+      "schema": "",
+      "columns": {
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "list_id": {
+          "name": "list_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "context_source_id": {
+          "name": "context_source_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "extension": {
+          "name": "extension",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "file_type": {
+          "name": "file_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rank": {
+          "name": "rank",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deleted": {
+          "name": "deleted",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "exists_only_in_draft": {
+          "name": "exists_only_in_draft",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "branch_tree_nodes_list": {
+          "name": "branch_tree_nodes_list",
+          "columns": [
+            {
+              "expression": "list_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "branch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "branch_tree_nodes_walk": {
+          "name": "branch_tree_nodes_walk",
+          "columns": [
+            {
+              "expression": "branch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "context_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "parent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "branch_tree_nodes_siblings": {
+          "name": "branch_tree_nodes_siblings",
+          "columns": [
+            {
+              "expression": "branch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "context_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "parent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"rank\" COLLATE \"C\"",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "branch_tree_nodes_branch_id_branches_id_fk": {
+          "name": "branch_tree_nodes_branch_id_branches_id_fk",
+          "tableFrom": "branch_tree_nodes",
+          "tableTo": "branches",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "branch_tree_nodes_context_source_id_context_sources_id_fk": {
+          "name": "branch_tree_nodes_context_source_id_context_sources_id_fk",
+          "tableFrom": "branch_tree_nodes",
+          "tableTo": "context_sources",
+          "columnsFrom": [
+            "context_source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "branch_tree_nodes_claimed_by_list": {
+          "name": "branch_tree_nodes_claimed_by_list",
+          "tableFrom": "branch_tree_nodes",
+          "tableTo": "tree_node_ids",
+          "columnsFrom": [
+            "id",
+            "list_id"
+          ],
+          "columnsTo": [
+            "id",
+            "list_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "branch_tree_nodes_branch_id_id_pk": {
+          "name": "branch_tree_nodes_branch_id_id_pk",
+          "columns": [
+            "branch_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "branch_tree_nodes_kind_valid": {
+          "name": "branch_tree_nodes_kind_valid",
+          "value": "\"branch_tree_nodes\".\"kind\" IN ('folder', 'document')"
+        },
+        "branch_tree_nodes_file_type_of_document": {
+          "name": "branch_tree_nodes_file_type_of_document",
+          "value": "(\"branch_tree_nodes\".\"kind\" = 'folder') = (\"branch_tree_nodes\".\"file_type\" IS NULL)"
+        },
+        "branch_tree_nodes_rank_present": {
+          "name": "branch_tree_nodes_rank_present",
+          "value": "\"branch_tree_nodes\".\"rank\" <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.tree_node_ids": {
+      "name": "tree_node_ids",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "list_id": {
+          "name": "list_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "tree_node_ids_list_id_document_yjs_heads_document_id_fk": {
+          "name": "tree_node_ids_list_id_document_yjs_heads_document_id_fk",
+          "tableFrom": "tree_node_ids",
+          "tableTo": "document_yjs_heads",
+          "columnsFrom": [
+            "list_id"
+          ],
+          "columnsTo": [
+            "document_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "tree_node_ids_id_list": {
+          "name": "tree_node_ids_id_list",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "list_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tree_nodes": {
+      "name": "tree_nodes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "list_id": {
+          "name": "list_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "context_source_id": {
+          "name": "context_source_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "extension": {
+          "name": "extension",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "file_type": {
+          "name": "file_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rank": {
+          "name": "rank",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "location_version": {
+          "name": "location_version",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
+        },
+        "trash_record": {
+          "name": "trash_record",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "trashed_at": {
+          "name": "trashed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "tree_nodes_walk": {
+          "name": "tree_nodes_walk",
+          "columns": [
+            {
+              "expression": "context_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "parent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tree_nodes_siblings": {
+          "name": "tree_nodes_siblings",
+          "columns": [
+            {
+              "expression": "context_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "parent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "\"rank\" COLLATE \"C\"",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"tree_nodes\".\"trash_record\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tree_nodes_parent": {
+          "name": "tree_nodes_parent",
+          "columns": [
+            {
+              "expression": "parent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tree_nodes_list": {
+          "name": "tree_nodes_list",
+          "columns": [
+            {
+              "expression": "list_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tree_nodes_trashed": {
+          "name": "tree_nodes_trashed",
+          "columns": [
+            {
+              "expression": "trashed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"tree_nodes\".\"trashed_at\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "tree_nodes_context_source_id_context_sources_id_fk": {
+          "name": "tree_nodes_context_source_id_context_sources_id_fk",
+          "tableFrom": "tree_nodes",
+          "tableTo": "context_sources",
+          "columnsFrom": [
+            "context_source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "tree_nodes_claimed_by_list": {
+          "name": "tree_nodes_claimed_by_list",
+          "tableFrom": "tree_nodes",
+          "tableTo": "tree_node_ids",
+          "columnsFrom": [
+            "id",
+            "list_id"
+          ],
+          "columnsTo": [
+            "id",
+            "list_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "tree_nodes_parent_in_source": {
+          "name": "tree_nodes_parent_in_source",
+          "tableFrom": "tree_nodes",
+          "tableTo": "tree_nodes",
+          "columnsFrom": [
+            "parent_id",
+            "context_source_id"
+          ],
+          "columnsTo": [
+            "id",
+            "context_source_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "tree_nodes_id_source": {
+          "name": "tree_nodes_id_source",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "context_source_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "tree_nodes_kind_valid": {
+          "name": "tree_nodes_kind_valid",
+          "value": "\"tree_nodes\".\"kind\" IN ('folder', 'document')"
+        },
+        "tree_nodes_file_type_of_document": {
+          "name": "tree_nodes_file_type_of_document",
+          "value": "(\"tree_nodes\".\"kind\" = 'folder') = (\"tree_nodes\".\"file_type\" IS NULL)"
+        },
+        "tree_nodes_rank_present": {
+          "name": "tree_nodes_rank_present",
+          "value": "\"tree_nodes\".\"rank\" <> ''"
+        },
+        "tree_nodes_trash_shape": {
+          "name": "tree_nodes_trash_shape",
+          "value": "(\"tree_nodes\".\"trash_record\" IS NULL) = (\"tree_nodes\".\"trashed_at\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.user_preferences": {
       "name": "user_preferences",
       "schema": "",
@@ -9475,6 +10046,13 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
+        "tree_list_id": {
+          "name": "tree_list_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
         "external_id": {
           "name": "external_id",
           "type": "text",
@@ -9531,6 +10109,13 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
+        "users_tree_list_id_unique": {
+          "name": "users_tree_list_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tree_list_id"
+          ]
+        },
         "users_external_id_unique": {
           "name": "users_external_id_unique",
           "nullsNotDistinct": false,
@@ -10632,15 +11217,15 @@
         }
       },
       "foreignKeys": {
-        "document_yjs_checkpoints_document_id_documents_id_fk": {
-          "name": "document_yjs_checkpoints_document_id_documents_id_fk",
+        "document_yjs_checkpoints_document_id_document_yjs_heads_document_id_fk": {
+          "name": "document_yjs_checkpoints_document_id_document_yjs_heads_document_id_fk",
           "tableFrom": "document_yjs_checkpoints",
-          "tableTo": "documents",
+          "tableTo": "document_yjs_heads",
           "columnsFrom": [
             "document_id"
           ],
           "columnsTo": [
-            "id"
+            "document_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -10661,6 +11246,25 @@
           "type": "uuid",
           "primaryKey": true,
           "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'document'"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "authority_id": {
           "name": "authority_id",
@@ -10733,12 +11337,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "document_yjs_heads_document_id_documents_id_fk": {
-          "name": "document_yjs_heads_document_id_documents_id_fk",
+        "document_yjs_heads_project_id_projects_id_fk": {
+          "name": "document_yjs_heads_project_id_projects_id_fk",
           "tableFrom": "document_yjs_heads",
-          "tableTo": "documents",
+          "tableTo": "projects",
           "columnsFrom": [
-            "document_id"
+            "project_id"
           ],
           "columnsTo": [
             "id"
@@ -10746,24 +11350,33 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "document_yjs_heads_latest_checkpoint_id_document_yjs_checkpoints_id_fk": {
-          "name": "document_yjs_heads_latest_checkpoint_id_document_yjs_checkpoints_id_fk",
+        "document_yjs_heads_user_id_users_id_fk": {
+          "name": "document_yjs_heads_user_id_users_id_fk",
           "tableFrom": "document_yjs_heads",
-          "tableTo": "document_yjs_checkpoints",
+          "tableTo": "users",
           "columnsFrom": [
-            "latest_checkpoint_id"
+            "user_id"
           ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "document_yjs_heads_kind_valid": {
+          "name": "document_yjs_heads_kind_valid",
+          "value": "\"document_yjs_heads\".\"kind\" IN ('document', 'tree_list')"
+        },
+        "document_yjs_heads_list_has_one_owner": {
+          "name": "document_yjs_heads_list_has_one_owner",
+          "value": "(\"document_yjs_heads\".\"kind\" = 'tree_list') = (num_nonnulls(\"document_yjs_heads\".\"project_id\", \"document_yjs_heads\".\"user_id\") = 1)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.document_yjs_updates": {
@@ -10914,15 +11527,15 @@
         }
       },
       "foreignKeys": {
-        "document_yjs_updates_document_id_documents_id_fk": {
-          "name": "document_yjs_updates_document_id_documents_id_fk",
+        "document_yjs_updates_document_id_document_yjs_heads_document_id_fk": {
+          "name": "document_yjs_updates_document_id_document_yjs_heads_document_id_fk",
           "tableFrom": "document_yjs_updates",
-          "tableTo": "documents",
+          "tableTo": "document_yjs_heads",
           "columnsFrom": [
             "document_id"
           ],
           "columnsTo": [
-            "id"
+            "document_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"

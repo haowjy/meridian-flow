@@ -16,6 +16,7 @@ export * from "./imports";
 export * from "./recent-documents";
 export * from "./results";
 export * from "./thread-asks";
+export * from "./tree-nodes";
 export * from "./user";
 export * from "./users";
 export * from "./waitlist";

@@ -14,6 +14,7 @@ export * from "./imports";
 export * from "./recent-documents";
 export * from "./results";
 export * from "./thread-asks";
+export * from "./tree-nodes";
 export * from "./user";
 export * from "./users";
 export * from "./waitlist";
@@ -33,6 +34,7 @@ import * as imports from "./imports";
 import * as recentDocuments from "./recent-documents";
 import * as results from "./results";
 import * as threadAsks from "./thread-asks";
+import * as treeNodes from "./tree-nodes";
 import * as user from "./user";
 import { users } from "./users";
 import * as waitlist from "./waitlist";
@@ -52,6 +54,7 @@ export const schema = {
   ...branches,
   ...agentThreads,
   ...threadAsks,
+  ...treeNodes,
   ...agentDefinitionRevisions,
   ...recentDocuments,
   ...results,

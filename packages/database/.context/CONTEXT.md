@@ -78,8 +78,21 @@ explicitly. Branches and their drafts carry no marker: soft delete leaves them a
 purge disposes of them. Each project has a locked Work row for the UI's
 “None” selection; it cannot be archived or deleted.
 
-`document_yjs_heads.latest_checkpoint_id` is a Drizzle FK with `ON DELETE SET
-NULL`. Compaction retires update prefixes through the generation-local
+`document_yjs_heads` is the identity of a Yjs document, of one `kind`: its journal rows
+(`document_yjs_updates`, `document_yjs_checkpoints`) cascade from it, not from `documents`, so
+a document's text can exist before its `documents` row (an import). A `document` head's id is
+a `documents.id`; the `documents_delete_yjs_head` trigger deletes it with the document, and
+`initializeHead` refuses an existing head of another kind. A `tree_list` head is a project's
+or an account's tree list: its id is the owner's `tree_list_id`, a column of its own made with
+the owner, and the `projects_` / `users_create_tree_list_head` triggers make the head in the
+same statement. `project_id` / `user_id` name the owner, whose delete takes the head, and a
+list is written with no document. So no document's or node's id is ever a list's.
+`latest_checkpoint_id` has no FK: checkpoints reference their head, and a cycle gives the
+focused resets no delete order.
+`tree_node_ids` holds the claim on every node id any list has made: its primary key is the
+claim, taken by one insert in the admitting transaction, and `tree_nodes` / `branch_tree_nodes`
+reference `(id, list_id)` in it, so a row cannot be written for another list's id. They are the
+project tree's rows, written only by the tree list store (domains/context). Compaction retires update prefixes through the generation-local
 `retired_through_seq`; checkpoints survive until document cascade except for
 the initial seed. Lazy checkpoint cuts validate their captured suffix floor
 against `retired_through_seq` after fetching inputs and again under the

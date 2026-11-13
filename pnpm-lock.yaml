@@ -446,6 +446,9 @@ importers:
       '@meridian/markup':
         specifier: workspace:*
         version: link:../../packages/markup
+      '@meridian/project-tree':
+        specifier: workspace:*
+        version: link:../../packages/project-tree
       '@meridian/prosemirror-schema':
         specifier: workspace:*
         version: link:../../packages/prosemirror-schema
