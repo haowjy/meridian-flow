@@ -13,24 +13,23 @@ import {
   documentBlockRooms,
   documentBlocks,
   documentLinks,
-  documents,
   documentYjsCheckpoints,
-  folders,
   linkAheadRefs,
   projects,
   users,
 } from "@meridian/database/schema";
+import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import {
   createDocumentLastAddress,
   createDocumentUriResolver,
 } from "../../context/document-uri-resolver.js";
-import { bumpLocationVersions, recordLocationHistory } from "../../context/tree/node-locations.js";
 import { createCheckpointService } from "../checkpoints.js";
 import {
   createDocumentDerivationService,
@@ -84,7 +83,15 @@ describe("durable document derivations", () => {
   const documentId = randomUUID();
   const persistence = createDrizzleCollabPersistence(db);
   const store = createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db));
+  const seeder = treeSeeder(db);
   let fail = false;
+  /** A live edit of the tree (move, rename, delete) through the list store, as a person's would be. */
+  async function liveEdit(edit: (writer: TreeWriter) => unknown) {
+    await seeder.store.submit({
+      list: await treeListOfSource(db, sourceId),
+      make: (writer) => ({ records: [], result: edit(writer) }),
+    });
+  }
   // The document's prose is one block: these cases are about cuts and certification, not blocks.
   const proseBlocks: DeriveBlocks = async (_id, doc) => {
     if (fail) throw new Error("deriver unavailable");
@@ -112,11 +119,7 @@ describe("durable document derivations", () => {
       slug: "manuscript",
       scope: "project",
     });
-    await db.insert(documents).values({
-      id: documentId,
-      contextSourceId: sourceId,
-      name: "chapter",
-    });
+    await seeder.document(sourceId, "chapter", { id: documentId });
     // A room from an older cut: what a failed derive leaves standing.
     const [room] = await db
       .insert(documentBlockRooms)
@@ -541,13 +544,7 @@ describe("durable document derivations", () => {
     expect(await projection()).toBe("old new");
     const preMove = await store.capture(documentId);
     if (!preMove) throw new Error("Missing location cut");
-    await runInDrizzleTransaction(db, async () => {
-      await recordLocationHistory(db, {
-        vacated: [{ contextSourceId: sourceId, path: "/chapter", documentId }],
-        claimed: [{ contextSourceId: sourceId, path: "/renamed" }],
-      });
-      await bumpLocationVersions(db, { documentIds: [documentId] });
-    });
+    await liveEdit((writer) => writer.rename(LIVE, "system", documentId, "renamed"));
     expect(await store.certify(preMove, outputsOf("wrong folder"), new Date())).toBe(false);
     expect(await projection()).toBe("old new");
     doc.destroy();
@@ -597,23 +594,8 @@ describe("durable document derivations", () => {
     expect(await projection()).toBe("old new");
     const preMove = await store.capture(documentId);
     if (!preMove) throw new Error("Missing location cut");
-    const folderId = randomUUID();
-    await runInDrizzleTransaction(db, async () => {
-      await currentDrizzleDb(db).insert(folders).values({
-        id: folderId,
-        contextSourceId: sourceId,
-        name: "moved",
-      });
-      await currentDrizzleDb(db)
-        .update(documents)
-        .set({ folderId })
-        .where(eq(documents.id, documentId));
-      await recordLocationHistory(db, {
-        vacated: [{ contextSourceId: sourceId, path: "/chapter", documentId }],
-        claimed: [{ contextSourceId: sourceId, path: "/moved/chapter" }],
-      });
-      await bumpLocationVersions(db, { documentIds: [documentId] });
-    });
+    const folderId = await seeder.folder(sourceId, "moved");
+    await liveEdit((writer) => writer.move(LIVE, "system", documentId, folderId));
     expect(await store.certify(preMove, outputsOf("wrong folder"), new Date())).toBe(false);
     expect(await store.stale({ projectId })).toEqual([documentId]);
     await service.flush({ projectId });
@@ -649,7 +631,7 @@ describe("durable document derivations", () => {
     expect(await store.stale({ projectId })).toEqual([]);
     expect(await projection()).toBe("old new");
     // A live document under a deleted folder holds no address there (deleted-ancestor rule).
-    await db.update(folders).set({ deletedAt: new Date() }).where(eq(folders.id, folderId));
+    await liveEdit((writer) => writer.delete(LIVE, "system", folderId));
     expect((await store.capture(documentId))?.holderUri).toBeNull();
     expect(await createDocumentUriResolver(db)(documentId)).toBeNull();
     doc.destroy();

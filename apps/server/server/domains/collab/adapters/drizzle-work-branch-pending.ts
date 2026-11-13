@@ -1,24 +1,18 @@
-/** Drizzle store for what is pending review in a Work: counts, the branches changing a document, the chats behind its tree rows and evidence. */
+/** Drizzle store for what is pending review in a Work: counts, the branches changing a document and evidence. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  branches,
-  branchTreeChanges,
-  documentDrafts,
-  threads,
-  works,
-} from "@meridian/database/schema";
+import { branches, documentDrafts, threads, works } from "@meridian/database/schema";
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { livingDocumentUses, pendingDocuments } from "../../context/tree/tree-view.js";
+import { pendingDocuments } from "../../context/tree/pending-documents.js";
 import { createDraftDispositionReader } from "../domain/draft-disposition.js";
 import type { WorkBranchPendingStore } from "../domain/ports/work-branch-pending-store.js";
 import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
 
 /**
- * What is pending in a Work is the tree view's one reviewable-pending predicate
- * (`pendingDocuments`), the review list's too: the Work count and the document hint both
+ * What is pending in a Work is the one reviewable-pending predicate
+ * (`context/tree/pending-documents.ts`), the review list's too: the Work count and the document hint both
  * count by it, and the Works boundary reconciles each Work's stored count through it.
  */
 export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPendingStore {
@@ -105,38 +99,6 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
         originRootThreadId: row.originRootThreadId,
         originLabel: row.originWorkId ? (row.isNoWork ? null : row.workName) : row.rootTitle,
       }));
-    },
-    async listTreeActors(branchId, documentIds) {
-      // A creation counts only while its document lives; a move or delete stays the chat's
-      // while the row holds it, whatever live did to the document since.
-      const uses = livingDocumentUses(currentDrizzleDb(db));
-      const scope = (table: typeof uses | typeof branchTreeChanges) =>
-        and(
-          eq(table.branchId, branchId),
-          eq(table.nodeKind, "document"),
-          documentIds ? inArray(table.nodeId, [...documentIds]) : undefined,
-        );
-      const [created, changed] = await Promise.all([
-        currentDrizzleDb(db)
-          .select({ documentId: uses.nodeId, threadId: uses.createdThreadId })
-          .from(uses)
-          .where(and(scope(uses), isNotNull(uses.createdThreadId))),
-        currentDrizzleDb(db)
-          .select({
-            documentId: branchTreeChanges.nodeId,
-            threadId: branchTreeChanges.changedThreadId,
-          })
-          .from(branchTreeChanges)
-          .where(and(scope(branchTreeChanges), isNotNull(branchTreeChanges.changedThreadId))),
-      ]);
-      const actors = new Map<DocumentId, string[]>();
-      for (const row of [...changed, ...created]) {
-        if (!row.threadId) continue;
-        const list = actors.get(row.documentId as DocumentId) ?? [];
-        if (!list.includes(row.threadId)) list.push(row.threadId);
-        actors.set(row.documentId as DocumentId, list);
-      }
-      return actors;
     },
     async listBranchDraftMetadata(branchId, documentIds) {
       const rows = await currentDrizzleDb(db)

@@ -3,28 +3,26 @@
 import { randomUUID } from "node:crypto";
 import { aheadAddress } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
-import { createDb, type Database } from "@meridian/database";
+import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documents,
   linkAheadRefs,
   projects,
   threads,
+  treeNodes,
   uploadIntakes,
   users,
   works,
 } from "@meridian/database/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
-import { entryAt, moveTo } from "../../test-support/entry-ref.js";
+import { deleteAt, entryAt, moveTo } from "../../test-support/entry-ref.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { processDetachedWork } from "../runtime/detached-work.js";
 import { createInMemoryObjectStore, createObjectRelease } from "../storage/index.js";
-import { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
-import { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 import { createContextUploadContentPort } from "./uploads/context-upload-content.js";
 import { createDrizzleUploadIntakeRepository } from "./uploads/drizzle-upload-intake.js";
 import { createUploadIntake } from "./uploads/upload-intake.js";
@@ -34,11 +32,9 @@ const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS ===
 describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (postgres)", () => {
   // Registration and uploads commit in their own root transactions: committed-data isolation.
   const db = createDb(process.env.DATABASE_URL ?? "postgres://unused", { max: 6 });
-  const gate = createDb(process.env.DATABASE_URL ?? "postgres://unused", { max: 2 });
-  const probe = createDb(process.env.DATABASE_URL ?? "postgres://unused", { max: 2 });
   afterAll(async () => {
     await deleteDrizzleRows(db, [users]);
-    await Promise.all([db.close(), gate.close(), probe.close()]);
+    await db.close();
   });
 
   const settlement = async (aheadId: string) => {
@@ -108,10 +104,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       expect(await settlement(chapter)).toBeNull();
       const first = await create("manuscript://ch1");
       expect(await settlement(chapter)).toBe(first);
-      await db
-        .update(documents)
-        .set({ deletionReason: "deleted", deletedAt: new Date() })
-        .where(eq(documents.id, first));
+      const removed = await deleteAt(port, "manuscript://ch1", {
+        expected: { kind: "file", nodeId: first },
+      });
+      if (!removed.ok) throw new Error(JSON.stringify(removed.error));
       const second = await create("manuscript://ch1");
       expect(second).not.toBe(first);
       expect(await settlement(chapter)).toBe(first);
@@ -126,93 +122,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       });
       if (!upload.ok) throw new Error(JSON.stringify(upload.error));
       const [map] = await db
-        .select({ id: documents.id })
-        .from(documents)
-        .where(and(eq(documents.name, "map"), eq(documents.extension, "png")));
+        .select({ id: treeNodes.id })
+        .from(treeNodes)
+        .where(and(eq(treeNodes.name, "map.png")));
       expect(await settlement(image)).toBe(map?.id);
-
-      // The upload's first arrival keeps its ref when the document moves the moment it is live:
-      // membership and settlement publish together, so a move cannot slip in between.
-      const [manuscript] = await db
-        .select({ id: contextSources.id })
-        .from(contextSources)
-        .where(and(eq(contextSources.projectId, projectId), eq(contextSources.slug, "manuscript")));
-      if (!manuscript) throw new Error("Fixture Manuscript missing");
-      const realArrivals = createDrizzleDocumentArrivals(db, app.linkAheadRegistry);
-      const raced = await register("manuscript://race.png");
-      let published!: () => void;
-      const publication = new Promise<void>((resolve) => {
-        published = resolve;
-      });
-      let release!: () => void;
-      const gate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const racing = new DrizzleContextDocumentStore({
-        db,
-        contextSourceId: manuscript.id,
-        arrivals: {
-          lockNamespaces: (ids) => realArrivals.lockNamespaces(ids),
-          async settle(ids) {
-            published();
-            await gate;
-            return realArrivals.settle(ids);
-          },
-        },
-      });
-      const binary = { fileType: "image", mimeType: "image/png", sizeBytes: 1 } as const;
-      const raceId = crypto.randomUUID();
-      const uploading = racing.createBinaryDocument({
-        ...binary,
-        id: raceId,
-        folderId: null,
-        name: "race",
-        extension: "png",
-        storageUrl: "memory://race.png",
-      });
-      await publication;
-      let moveDone = false;
-      const moving = moveTo(port, "manuscript://race.png", "manuscript://raced.png", {
-        expected: { kind: "file", nodeId: raceId },
-      }).finally(() => {
-        moveDone = true;
-      });
-      // The move either finishes in the gap (the defect) or queues behind the upload.
-      await until(async () => moveDone || (await lockWaiters(probe)) > 0);
-      release();
-      const firstUpload = await uploading;
-      expect(await moving).toMatchObject({ ok: true });
-      expect(await settlement(raced)).toBe(firstUpload.id);
-
-      // A settlement failure fails the upload: nothing is live that a later occupant could
-      // take the ref from.
-      const failing = await register("manuscript://failure.png");
-      const unavailable = async () => {
-        throw new Error("settlement unavailable");
-      };
-      await expect(
-        new DrizzleContextDocumentStore({
-          db,
-          contextSourceId: manuscript.id,
-          arrivals: Object.assign({}, realArrivals, {
-            settle: unavailable,
-            settleCommitted: unavailable,
-          }),
-        }).createBinaryDocument({
-          ...binary,
-          folderId: null,
-          name: "failure",
-          extension: "png",
-          storageUrl: "memory://failure.png",
-        }),
-      ).rejects.toThrow("settlement unavailable");
-      expect(
-        await db
-          .select({ id: documents.id })
-          .from(documents)
-          .where(and(eq(documents.name, "failure"), eq(documents.extension, "png"))),
-      ).toEqual([]);
-      expect(await settlement(failing)).toBeNull();
 
       // Deleting a finalized upload keeps the identity it settled; a new upload at the same
       // address never captures the ref.
@@ -223,7 +136,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         objectStore: intakeStore,
         release: createObjectRelease({ objectStore: intakeStore, onFailure() {} }),
         eventSink: createNoopEventSink(),
-        catalog: { refreshSources: async () => "1" },
       });
       for (const [filename, mimeType] of [
         ["delete-target.toml", "application/toml"],
@@ -270,19 +182,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         expect.soft(await settlement(deletedRef), filename).toBe(firstUpload.documentId);
       }
 
-      // A personal document moved into the project arrives there: live in the project, and
-      // the ref waiting at the destination settles on it.
-      const castRef = await register("kb://cast.toml");
-      const cast = await create("user://cast.toml");
-      expect(
-        await moveTo(port, "user://cast.toml", "kb://cast.toml", {
-          expected: await entryAt(port, "user://cast.toml"),
-        }),
-      ).toMatchObject({
-        ok: true,
-      });
-      expect(await settlement(castRef)).toBe(cast);
-
       // Folder move-in settles against the moved tree; the ref at the vacated path stays put.
       const moved = await create("manuscript://branches/ch2.toml");
       const vacated = await register("manuscript://branches/ch2.toml");
@@ -312,32 +211,3 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
     }
   });
 });
-
-async function namespaceWaiters(db: Database, key: string): Promise<number> {
-  const rows = await db.execute<{ waiting: number }>(sql`
-    SELECT count(*)::int AS waiting FROM pg_locks l
-    WHERE l.locktype = 'advisory' AND NOT l.granted
-      AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
-      AND ((l.classid::bigint << 32) | l.objid::bigint) = hashtextextended(${key}, 0::bigint)`);
-  return rows[0]?.waiting ?? 0;
-}
-
-async function lockWaiters(db: Database): Promise<number> {
-  const rows = await db.execute<{ waiting: number }>(sql`
-    SELECT count(*)::int AS waiting FROM pg_locks
-    WHERE NOT granted
-      AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`);
-  return rows[0]?.waiting ?? 0;
-}
-
-async function until(condition: () => Promise<boolean>) {
-  for (let attempt = 0; attempt < 250; attempt++) {
-    if (await condition()) return;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("condition never held");
-}
-
-async function _waitForNamespaceWaiter(db: Database, key: string) {
-  await until(async () => (await namespaceWaiters(db, key)) > 0);
-}

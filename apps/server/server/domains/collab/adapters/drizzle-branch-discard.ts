@@ -3,81 +3,102 @@
  * it, and Work purge's disposal of a purged Work's branches (§2.6, F10), which runs the
  * same kernel inside purge's transaction after purge's own lifecycle proof.
  *
- * Lock order (§14), after the live scopes an item Discard holds: the Work (purge: threads,
- * then the Work), the branch, then the one verified tree scope (`acquireTreeScope`:
- * namespaces of every created document's source and the branch's location, re-read, then
- * the documents), then draft rows as the kernel writes them. A scope that moved aborts
- * the transaction and runs again under the callers' bounded attempts.
+ * The tree half is the package's `discardDraft`, run through `treeListStore.submit` in each
+ * list the Work spans: the Work's pending records are settled discarded with the command's id.
+ * A drafted create then is in no view, and its document and text stay until retention purges
+ * them; nothing here releases a document.
  *
- * Every draft the kernel closes retires after commit through the one close; the kernel
- * reconciles the catalog of every source it touched inside the transaction (F23), as Apply does.
+ * Lock order (§14), after the live scopes an item Discard holds: the Work (purge: threads,
+ * then the Work), the branch, the list's lock (inside `submit`), the item documents' mutexes
+ * in ID order, then draft rows as the kernel writes them.
+ *
+ * Every draft the kernel closes retires after commit through the one close.
  */
 
 import type { BranchId, UserId, WorkId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentDrafts } from "@meridian/database/schema";
+import { discardDraft, newId, pendingRecords } from "@meridian/project-tree";
 import { and, eq, inArray } from "drizzle-orm";
-import {
-  currentDrizzleDb,
-  deferUntilDrizzleCommit,
-  runInDrizzleTransaction,
-} from "../../../shared/drizzle-transaction.js";
-import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
-import type { DocumentRemoval } from "../../context/ports/document-removal.js";
-import { discardBranchTreeFacts } from "../../context/tree/branch-tree-changes.js";
-import { endUse, hiddenDocumentIds } from "../../context/tree/end-use.js";
-import {
-  acquireTreeScope,
-  readTreeScope,
-  TreeScopeChangedError,
-  type TreeScopeRequest,
-} from "../../context/tree/mutation-scope.js";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkBranchDisposal, WorkProjectionMutation } from "../../projects/index.js";
 import { BranchCommandExistsError } from "../domain/branch-commands.js";
 import {
   BranchDiscardApplicableStateChangedError,
   BranchDiscardDraftChangedError,
-  BranchDiscardScopeChangedError,
   type BranchDiscardStore,
   type DiscardKernelInput,
   type DiscardKernelResult,
 } from "../domain/branch-discard.js";
 import type { Branches } from "../domain/branches.js";
-import { NO_ATTEMPT_SCOPE, runBoundedAttempts } from "../domain/draft-attempts.js";
 import type { DraftCloseCause } from "../domain/draft-retirement.js";
 import { claimCommandWithinTx, settleCommandWithinTx } from "./drizzle-branch-commands.js";
+import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 
 type KernelDeps = {
-  removal: DocumentRemoval;
   close: Pick<DraftClose, "closeDrafts">;
   branches: Pick<Branches, "close">;
-  catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
+  treeLists: Pick<TreeListStore, "submit">;
 };
 
-/** End the branch's use of `request`'s documents, then reconcile the catalog of every source touched. */
-async function endUseReconciled(
+/**
+ * Settles the Work's pending tree records discarded, in every list it spans. With `documents`,
+ * the records of those documents' items (and what stands on a node they create); without, all
+ * of them. Returns the documents that had records, and the ones whose creation was discarded.
+ */
+async function discardTreeRecords(
   db: Database,
   deps: KernelDeps,
-  branchId: BranchId,
-  request: TreeScopeRequest,
-  userId?: UserId,
-) {
-  const scope = await readTreeScope(db, request);
-  const ended = await endUse(db, {
-    branchId,
-    documentIds: scope.documentIds,
-    removal: deps.removal,
-    actor: userId ? { userId } : { cause: "repair" },
-  });
-  if (ended.tombstoned.length > 0 && scope.sourceIds.length > 0) {
-    await deps.catalog.refreshSources(
-      scope.sourceIds,
-      ended.tombstoned.map((ref) => ref.id),
-    );
+  input: {
+    branchId: BranchId;
+    userId?: UserId;
+    commandId: string;
+    documents?: readonly DocumentId[];
+  },
+): Promise<{ had: Set<DocumentId>; created: Set<DocumentId> }> {
+  const had = new Set<DocumentId>();
+  const created = new Set<DocumentId>();
+  const by = input.userId ? `user:${input.userId}` : "system";
+  for (const list of await treeListsOfBranch(db, input.branchId)) {
+    const { result } = await deps.treeLists.submit({
+      list,
+      make: (writer) => {
+        const pending = pendingRecords(writer.doc, input.branchId);
+        const items = input.documents;
+        const only = items
+          ? pending.filter(
+              (record) =>
+                items.includes(record.node as DocumentId) ||
+                (record.type === "delete" &&
+                  record.cascade.some((id) => items.includes(id as DocumentId))),
+            )
+          : pending;
+        const discarded = new Set(
+          discardDraft(
+            writer,
+            input.branchId,
+            by,
+            input.commandId,
+            items ? only.map((r) => r.id) : undefined,
+          ),
+        );
+        return {
+          records: [],
+          result: pending.filter((record) => discarded.has(record.id)),
+        };
+      },
+    });
+    for (const record of result) {
+      had.add(record.node as DocumentId);
+      if (record.type === "create") created.add(record.node as DocumentId);
+      if (record.type === "delete") for (const id of record.cascade) had.add(id as DocumentId);
+    }
   }
-  return ended;
+  return { had, created };
 }
 
 /**
@@ -101,20 +122,18 @@ async function closeBranchDrafts(
 }
 
 /**
- * The kernel's whole-branch arm: every document the branch created ends its use (tombstoned
- * and released when no branch uses it), then the branch row closes after every draft (closed above) and its
- * settlements. The caller holds the branch and its verified scope.
+ * The kernel's whole-branch arm: every pending tree record of the Work is settled discarded in
+ * each list, its drafts close, then the branch row closes. The caller holds the branch.
  */
 async function discardWholeLocked(
   db: Database,
   deps: KernelDeps,
-  branchId: BranchId,
-  userId?: UserId,
+  input: { branchId: BranchId; userId?: UserId; commandId?: string },
 ): Promise<DiscardKernelResult> {
-  await closeBranchDrafts(db, deps, branchId, "branch_closed");
-  const ended = await endUseReconciled(db, deps, branchId, { branches: [{ branchId }] }, userId);
-  await deps.branches.close(branchId, new Date());
-  return { releasedObjects: ended.releasedObjects, closed: [] };
+  await discardTreeRecords(db, deps, { ...input, commandId: input.commandId ?? newId() });
+  await closeBranchDrafts(db, deps, input.branchId, "branch_closed");
+  await deps.branches.close(input.branchId, new Date());
+  return { closed: [] };
 }
 
 /** The branch's active text drafts on these documents, row-locked: each one's `updated_at`. */
@@ -138,16 +157,6 @@ async function lockActiveDrafts(
   return new Map(rows.map((row) => [row.documentId, row.updatedAt.toISOString()]));
 }
 
-/** The verified scope, as Discard's callers retry it: a moved scope is a changed branch. */
-async function acquireScope(db: Database, branchId: BranchId, request: TreeScopeRequest) {
-  try {
-    return await acquireTreeScope(db, request);
-  } catch (cause) {
-    if (cause instanceof TreeScopeChangedError) throw new BranchDiscardScopeChangedError(branchId);
-    throw cause;
-  }
-}
-
 export type DrizzleBranchDiscard = BranchDiscardStore & {
   /** The locked kernel: the caller holds §14's locks and proved the Work's state. */
   kernel(input: DiscardKernelInput): Promise<DiscardKernelResult>;
@@ -162,14 +171,21 @@ export function createDrizzleBranchDiscard(
 ): DrizzleBranchDiscard {
   async function kernel(input: DiscardKernelInput): Promise<DiscardKernelResult> {
     const { branchId } = input;
+    const commandId = input.commandId ?? newId();
     if (input.selection.kind === "whole")
-      return discardWholeLocked(db, deps, branchId, input.userId);
+      return discardWholeLocked(db, deps, { branchId, userId: input.userId, commandId });
     const { items } = input.selection;
-    const drafts = await lockActiveDrafts(
-      db,
+    const documents = items.map((item) => item.documentId);
+    // The Work's records on these documents settle discarded, in the list that holds them. A
+    // created document is then in no view; it and its text stay until retention purges them.
+    const { had, created } = await discardTreeRecords(db, deps, {
       branchId,
-      items.map((item) => item.documentId),
-    );
+      userId: input.userId,
+      commandId,
+      documents,
+    });
+    for (const id of [...documents].sort()) await lockDocumentMutation(currentDrizzleDb(db), id);
+    const drafts = await lockActiveDrafts(db, branchId, documents);
     for (const item of items)
       if (
         item.ends === "item" &&
@@ -177,55 +193,39 @@ export function createDrizzleBranchDiscard(
         (drafts.get(item.documentId) ?? null) !== item.draftSeenAt
       )
         throw new BranchDiscardDraftChangedError();
-    // Visibility is checked under the end-use locks: another Work may have revealed
-    // the creation after resolution. That is a changed action, never permission to reset text.
-    const withRows = items.filter((item) => item.origin === "created").map((i) => i.documentId);
-    const hiddenNow = await hiddenDocumentIds(db, withRows);
-    const created = items
-      .filter((item) => item.origin === "created" && hiddenNow.has(item.documentId))
-      .map((item) => item.documentId);
-    // Any other item is the branch's move or delete of a live document, its text draft, or
-    // both: its facts go (the hidden folders they prune were never in the live catalog), and a
-    // whole-item Discard closes its text draft too. A tree-only Discard leaves the text to the
-    // writer's own Discard in the room.
+    // A tree-only Discard leaves the text to the writer's own Discard in the room; a whole-item
+    // Discard closes the document's text draft too. Whatever the Work holds on the document
+    // after this is the item's text alone, so an item with neither a record nor a draft was
+    // already gone.
     const textClosed: DocumentId[] = [];
-    const closed: DocumentId[] = [...created];
+    const closed: DocumentId[] = [];
     for (const item of items) {
-      if (created.includes(item.documentId)) continue;
-      const ended = await discardBranchTreeFacts(db, {
-        branchId,
-        documentId: item.documentId,
-        userId: input.userId ?? null,
-      });
+      if (created.has(item.documentId)) {
+        closed.push(item.documentId);
+        continue;
+      }
       const hasText = drafts.has(item.documentId);
+      const hasTree = had.has(item.documentId);
       if (item.ends === "tree") {
-        if (!ended.discarded) throw new BranchDiscardApplicableStateChangedError();
+        if (!hasTree) throw new BranchDiscardApplicableStateChangedError();
         if (!hasText) closed.push(item.documentId);
         continue;
       }
-      if (!ended.discarded && !hasText) throw new BranchDiscardApplicableStateChangedError();
+      if (!hasTree && !hasText) throw new BranchDiscardApplicableStateChangedError();
       if (hasText) textClosed.push(item.documentId);
       closed.push(item.documentId);
     }
-    // A hidden create another branch still uses stays, but this branch's drafts on it end.
-    await closeBranchDrafts(db, deps, branchId, "document_discarded", [...created, ...textClosed]);
-    const ended = await endUseReconciled(
-      db,
-      deps,
-      branchId,
-      { branches: [{ branchId, documentIds: created }] },
-      input.userId,
-    );
-    return { releasedObjects: ended.releasedObjects, closed };
+    await closeBranchDrafts(db, deps, branchId, "document_discarded", [
+      ...new Set([...created, ...textClosed]),
+    ]);
+    return { closed };
   }
 
   return {
     kernel,
-    deferUntilCommit: deferUntilDrizzleCommit,
     async discardLocked({ kernel: input, command }) {
       return runInDrizzleTransaction(db, async () => {
-        // The branch's owner enters the Work boundary before the branch row and the scope
-        // locks.
+        // The branch's owner enters the Work boundary before the branch row and the list's lock.
         return deps.workProjection.mutate(
           { branches: [input.branchId] },
           async () => {
@@ -244,18 +244,12 @@ export function createDrizzleBranchDiscard(
               return ended;
             };
             if (!(await deps.branches.lockActive(input.branchId))) return settle(null);
-            const items = input.selection.kind === "items" ? input.selection.items : null;
-            const itemIds = items?.map((item) => item.documentId);
-            await acquireScope(db, input.branchId, {
-              branches: [
-                {
-                  branchId: input.branchId,
-                  ...(itemIds ? { documentIds: itemIds } : {}),
-                },
-              ],
-              documentIds: itemIds ?? [],
-            });
-            return settle(await kernel(input));
+            return settle(
+              await kernel({
+                ...input,
+                ...(command ? { commandId: command.envelope.commandId } : {}),
+              }),
+            );
           },
           { seam: true, requireActive: true, allowFrozenLineage: true },
         );
@@ -264,16 +258,12 @@ export function createDrizzleBranchDiscard(
   };
 }
 
-/** Purge transactions run again when a branch's tree scope moved under them. */
-const PURGE_ATTEMPTS = 3;
-
 /**
  * Work purge's disposal (§2.6): inside purge's transaction after its deleted/cutoff proof,
- * lock each of the Work's active branches, acquire the verified tree scope of every one,
- * and discard each whole through the kernel. A scope that moved rolls the purge transaction
- * back and runs it again, a bounded attempt each. The public command's active-Work fence is
- * never used. No pending projection: the Work is being deleted; its closed drafts retire after
- * commit like any others.
+ * lock each of the Work's active branches and discard each whole through the kernel. The
+ * public command's active-Work fence is never used. No pending projection: the Work is being
+ * deleted; its closed drafts retire after commit like any others. Its drafted creates are in
+ * no view afterwards and retention purges them.
  */
 export function createDrizzleWorkBranchDisposal(
   db: Database,
@@ -290,34 +280,16 @@ export function createDrizzleWorkBranchDisposal(
       ...(await deps.branches.activeByOriginLineages(lineageRootIds as ThreadId[])),
     ];
     const branchIds = owned.map((branch) => branch.id).sort();
-    const active: BranchId[] = [];
     for (const branchId of branchIds) {
-      if (await deps.branches.lockActive(branchId)) active.push(branchId);
+      if (await deps.branches.lockActive(branchId))
+        await discardWholeLocked(db, deps, { branchId });
     }
-    if (active.length === 0) return { releasedObjects: [] };
-    await acquireScope(db, active[0] as BranchId, {
-      branches: active.map((branchId) => ({ branchId })),
-    });
-    const releasedObjects: string[] = [];
-    for (const branchId of active) {
-      const ended = await discardWholeLocked(db, deps, branchId);
-      releasedObjects.push(...ended.releasedObjects);
-    }
-    return { releasedObjects };
+    return { releasedObjects: [] };
   }
 
   return {
     withDisposal(workId, run) {
-      return runBoundedAttempts({
-        bound: PURGE_ATTEMPTS,
-        // The purge transaction `run` opens is each attempt's one commit scope.
-        scope: NO_ATTEMPT_SCOPE,
-        isMiss: (cause) => cause instanceof BranchDiscardScopeChangedError,
-        run: (attempt) => attempt.commit(() => run((roots) => dispose(workId, roots))),
-        exhausted: (cause) => {
-          throw cause;
-        },
-      });
+      return run((roots) => dispose(workId, roots));
     },
   };
 }

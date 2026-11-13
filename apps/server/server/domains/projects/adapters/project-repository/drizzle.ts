@@ -9,7 +9,6 @@ import {
 } from "../../../../shared/drizzle-transaction.js";
 import { lockProjectLifecycleExclusive } from "../../../../shared/project-lifecycle-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
-import type { ContextCatalogLifecyclePort } from "../../ports/context-catalog-lifecycle.js";
 import type {
   CreateProjectInput,
   ListProjectsOptions,
@@ -36,7 +35,6 @@ function mapProject(row: ProjectRow): Project {
 }
 export interface DrizzleProjectRepositoryDeps {
   db: Database;
-  catalogLifecycle: ContextCatalogLifecyclePort;
   ensureNoWork: (projectId: ProjectId) => Promise<unknown>;
 }
 export function createDrizzleProjectRepository(
@@ -74,7 +72,6 @@ export function createDrizzleProjectRepository(
         if (!row) throw new Error("Failed to create project");
         await ensureManuscriptSource(db, row.id);
         await deps.ensureNoWork(row.id);
-        await deps.catalogLifecycle.refreshProject(row.id);
         return mapProject(row);
       });
     },
@@ -151,7 +148,6 @@ export function createDrizzleProjectRepository(
           .where(eq(projects.id, id))
           .returning();
         if (!row) throw new Error(`Project not found: ${id}`);
-        await deps.catalogLifecycle.refreshProject(row.id);
         return mapProject(row);
       });
     },
@@ -164,7 +160,6 @@ export function createDrizzleProjectRepository(
           .where(eq(projects.id, id))
           .returning();
         if (!row) throw new Error(`Project not found: ${id}`);
-        await deps.catalogLifecycle.refreshProject(row.id);
         return mapProject(row);
       });
     },

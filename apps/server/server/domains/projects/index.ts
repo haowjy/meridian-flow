@@ -16,7 +16,6 @@ import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 import { LIVE_TREE, visibleDocuments } from "../context/tree/tree-view.js";
 import { ensureManuscriptSource, nextProjectSlug } from "./adapters/project-repository/shared.js";
 import { NO_WORK_NAME } from "./adapters/work-repository/shared.js";
-import type { ContextCatalogLifecyclePort } from "./ports/context-catalog-lifecycle.js";
 
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
 
@@ -68,7 +67,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   db: Database;
   documents: Pick<MarkdownDocumentStore, "seedFromMarkdown" | "bindStatic"> &
     Pick<DocumentCreationAggregate, "createDocumentAtomically">;
-  catalogLifecycle: ContextCatalogLifecyclePort;
 }): ProjectBootstrapRepository {
   const { db } = deps;
   type BootstrapDb = Pick<Database, "execute" | "insert" | "select" | "update">;
@@ -252,7 +250,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         .where(eq(projects.id, projectId))
         .returning({ id: projects.id });
       if (!updated) throw new Error("Failed to mark default bootstrap ready");
-      await deps.catalogLifecycle.refreshProject(projectId);
       return result;
     });
     return bootstrap;

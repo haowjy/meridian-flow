@@ -1,244 +1,131 @@
-/** Tree mutation half of Apply. Text Apply and Un-Apply never enter this module. */
+/**
+ * Tree half of Apply: one document's drafted records become live copies in the list that holds
+ * them (`applyDraft`), in the click's transaction. Text Apply and Un-Apply never enter this module.
+ *
+ * Lock order: the caller holds the Work and the branch. The list's lock comes inside `submit`; the
+ * document's mutex only after it, as the order in `collab/.context/CONTEXT.md` says.
+ */
 
-import type { DocumentId, LiveTreeState, UserId } from "@meridian/contracts";
+import type { BranchId, DocumentId, UserId } from "@meridian/contracts";
 import { draftItemKey } from "@meridian/contracts";
 import type { AppliedReviewItem } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
+import { applyDraft, LIVE, pendingRecords } from "@meridian/project-tree";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
-import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
-import type { DocumentRemoval } from "../../context/ports/document-removal.js";
-import { branchSiblingIntent } from "../../context/tree/branch-sibling-order.js";
-import {
-  dropDocumentRows,
-  settleUndoneCreatesAfterReveal,
-} from "../../context/tree/branch-tree-store.js";
-import { tombstoneUnused } from "../../context/tree/end-use.js";
-import { moveToPlacement } from "../../context/tree/live-tree-state.js";
-import { place } from "../../context/tree/placement.js";
-import { restoreDocument } from "../../context/tree/removal.js";
-import { placeLiveRelative } from "../../context/tree/sibling-order.js";
-import type { TreeStateNode } from "../../context/tree/tree-view.js";
-import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
-import type { AgentTreeHistory } from "../contracts.js";
+import type { TreeListStore } from "../../context/ports/tree-list-store.js";
+import { LIVE_TREE, type TreeReader } from "../../context/tree/tree-view.js";
 import { ApplyClickRefused } from "../domain/apply-click.js";
+import type { BranchDocumentTree } from "../domain/ports/branch-tree-state.js";
+import { recordsOfItem, treeListOfNode } from "./drizzle-branch-tree-lists.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
+
+export type TreeApplyOutcome =
+  | { kind: "applied"; applied: AppliedReviewItem[]; restored: boolean }
+  | { kind: "changed" }
+  | { kind: "needs_restore" };
 
 export function createApplyTreeOperations(input: {
   db: Database;
-  branchId: import("@meridian/contracts").BranchId;
-  commandDocumentId: DocumentId;
-  userId: UserId;
-  removal: DocumentRemoval;
-  history: Pick<AgentTreeHistory, "recordAgentTreeChange">;
-  close: Pick<DraftClose, "closeDrafts">;
+  treeLists: Pick<TreeListStore, "submit">;
+  tree: Pick<TreeReader, "identityStatus">;
+  close: Pick<DraftClose, "closeDrafts" | "registerRemoved">;
   arrivals?: Pick<DocumentArrivals, "settle">;
-  catalog: ContextCatalogMutationPort;
-  releaseObjects(storageUrls: readonly string[]): Promise<void>;
   onCommitted(documentId: DocumentId): Promise<void>;
-  findLive(documentId: DocumentId): Promise<{ kind: string; document?: { path: string } }>;
-  resolveLivePath(path: string): Promise<"free" | "folder" | "blocked">;
-  renamedNote(node: TreeStateNode): Promise<AppliedReviewItem["renamed"]>;
-  displayedPath(node: TreeStateNode, path: string): string;
 }) {
-  const tx = currentDrizzleDb(input.db);
+  /**
+   * Applies what the Work has pending on `documentId`: its own records, the drafted creates they
+   * stand on, and the earlier records of the same facts. `item` is the Work's row on it as the
+   * click read it. With `cut`, the row must still be the revision the writer saw. Without it, the
+   * records land only when the document exists only in the Work (a creation is revealed whole);
+   * a document live has in Trash is restored first when the click carries `restore`.
+   */
+  async function apply(click: {
+    branchId: BranchId;
+    documentId: DocumentId;
+    userId: UserId;
+    commandId: string;
+    restore: boolean;
+    cut: { revision: string | null } | null;
+    item: BranchDocumentTree | null;
+  }): Promise<TreeApplyOutcome> {
+    const { branchId, documentId, item } = click;
+    if (click.cut && (!item?.change || item.revision !== click.cut.revision))
+      return { kind: "changed" };
+    // Only the writer's knowledge brings a deleted document back: a delete their view did not
+    // show leaves the click undone and the draft pending.
+    const restoring = item?.deletedLive === true && item.change !== "deleting";
+    if (restoring && !click.restore) return { kind: "needs_restore" };
+    const landing = click.cut !== null || item?.isNew === true;
+    if (!landing && !restoring) return { kind: "applied", applied: [], restored: false };
 
-  const committed = async (
-    node: TreeStateNode,
-    from: string | null,
-  ): Promise<AppliedReviewItem> => {
-    const renamed = await input.renamedNote(node);
-    const to =
-      node.branch?.state === "deleting"
-        ? null
-        : (renamed?.path ?? input.displayedPath(node, node.target.path));
-    return {
-      itemKey: draftItemKey(input.branchId, node.nodeId),
-      transition: { from, to },
-      ...(renamed ? { renamed } : {}),
-    };
-  };
+    const list = await treeListOfNode(input.db, documentId);
+    if (!list) throw new ApplyClickRefused("not_found");
+    const actor = `user:${click.userId}`;
+    // Where the document is in live now, to say where the Apply moved it.
+    const before = (await input.tree.identityStatus(LIVE_TREE, [documentId])).get(documentId);
 
-  const settle = async (node: TreeStateNode, from: string | null): Promise<AppliedReviewItem> => {
-    await dropDocumentRows(input.db, {
-      branchId: input.branchId,
-      documentIds: [node.nodeId],
-      settle: { as: "applied", userId: input.userId },
+    const { result } = await input.treeLists.submit({
+      list,
+      make: (writer) => {
+        const trashed = writer.view(LIVE).nodes.get(documentId)?.trashed === true;
+        if (restoring && trashed) writer.restore(LIVE, actor, documentId);
+        if (!landing) return { records: [], result: "restored" as const };
+        const chosen = recordsOfItem(pendingRecords(writer.doc, branchId), documentId);
+        if (chosen.length === 0) return { records: [], result: "changed" as const };
+        const applied = applyDraft(
+          writer,
+          branchId,
+          actor,
+          click.commandId,
+          chosen.map((record) => record.id),
+        );
+        // A record that cannot land (a move into itself, a change to what live has in Trash)
+        // lands nothing of this item: the click is refused and the draft stays pending.
+        if (recordsOfItem(applied.copies, documentId).length === 0)
+          throw new ApplyClickRefused("ancestor_taken");
+        return { records: [], result: "applied" as const };
+      },
     });
-    const item = await committed(node, from);
-    deferUntilDrizzleCommit(() => input.onCommitted(node.nodeId));
-    return item;
-  };
+    if (result === "changed") return { kind: "changed" };
 
-  const reveal = async (
-    node: TreeStateNode,
-    at: Pick<TreeStateNode["target"], "contextSourceId" | "parentFolderId" | "name" | "extension">,
-  ) => {
-    const placed = await place(input.db, {
-      targets: [{ node: { kind: "document", id: node.nodeId }, at }],
-    });
-    if (!placed.ok)
-      throw new ApplyClickRefused(
-        placed.error.code === "ancestor_taken" ? "ancestor_taken" : "not_found",
-      );
-    await settleUndoneCreatesAfterReveal(input.db, node.nodeId);
-    await input.arrivals?.settle([node.nodeId]);
-    if (!placed.value.landed[0]) throw new ApplyClickRefused("not_found");
-    await input.catalog.refreshSources(
-      placed.value.sourceIds,
-      placed.value.placed.map((ref) => ref.id),
-    );
-  };
+    const after = (await input.tree.identityStatus(LIVE_TREE, [documentId])).get(documentId);
+    const to = after?.kind === "visible" ? after.address.uri : null;
+    const renamed =
+      item?.uri && to && item.uri !== to
+        ? { code: "renamed" as const, wanted: item.uri, path: to }
+        : undefined;
+    const applied: AppliedReviewItem[] = [
+      {
+        itemKey: draftItemKey(branchId, documentId),
+        ...(result === "applied"
+          ? { transition: { from: before?.kind === "visible" ? before.address.uri : null, to } }
+          : {}),
+        ...(renamed ? { renamed } : {}),
+      },
+    ];
 
-  const apply = async (
-    node: TreeStateNode,
-  ): Promise<{ item: AppliedReviewItem; restored: boolean }> => {
-    const orderIntent =
-      node.target.rank == null
-        ? null
-        : await branchSiblingIntent(input.db, {
-            branchId: input.branchId,
-            documentId: node.nodeId,
-            sourceId: node.target.contextSourceId,
-            parentId: node.target.parentFolderId,
-          });
-    const before = await input.findLive(node.nodeId);
-    const from =
-      before.kind === "found" && before.document
-        ? input.displayedPath(node, before.document.path)
-        : null;
-    const [identity] = await loadDocumentIdentityRows(tx, [node.nodeId]);
-    if (!identity) throw new ApplyClickRefused("not_found");
-    if (node.branch?.state === "deleting") {
-      const before: LiveTreeState = {
-        living: true,
-        at: {
-          folderId: identity.folderId,
-          rootSourceId: identity.folderId ? null : identity.contextSourceId,
-          name: identity.name,
-          extension: identity.extension,
-          rank: identity.rank,
-        },
-      };
-      let removed = false;
-      if (!identity.deleted && !identity.hidden) {
-        removed = (
-          await input.removal.remove({
-            documentIds: [node.nodeId],
-            reason: "deleted",
-            userId: input.userId,
-          })
-        ).some(({ documentId }) => documentId === node.nodeId);
-        await input.catalog.refreshSources([identity.contextSourceId], [node.nodeId]);
-      }
+    // The text half takes the document's mutex next; draft rows come after it.
+    const tx = currentDrizzleDb(input.db);
+    await lockDocumentMutation(tx, documentId);
+    if (item?.change === "deleting") {
+      // Live rooms of a document the Apply took out of live close once this commits.
+      input.close.registerRemoved([documentId], {
+        reason: "deleted",
+        actor: { kind: "user", userId: click.userId, displayName: null },
+        time: new Date().toISOString(),
+      });
       await input.close.closeDrafts(
         tx,
-        { documentIds: [node.nodeId], branchId: input.branchId },
+        { documentIds: [documentId], branchId },
         "document_discarded",
       );
-      const settled = await dropDocumentRows(input.db, {
-        branchId: input.branchId,
-        documentIds: [node.nodeId],
-        settle: { as: "applied", userId: input.userId },
-      });
-      if (removed) {
-        const source = settled.applied.find(
-          (entry) => entry.documentId === node.nodeId && entry.tree.op === "delete",
-        );
-        if (!source) throw new Error(`Applied delete of ${node.nodeId} has no drafted origin`);
-        await input.history.recordAgentTreeChange({
-          documentId: node.nodeId,
-          materializes: source.editId,
-          op: "delete",
-          change: { destination: "live", before },
-        });
-      }
-      if (identity.hidden && !identity.deleted) {
-        const ended = await tombstoneUnused(input.db, [node.nodeId], {
-          actor: { userId: input.userId },
-          removal: input.removal,
-        });
-        if (ended.tombstoned.length)
-          await input.catalog.refreshSources(
-            [identity.contextSourceId],
-            ended.tombstoned.map((ref) => ref.id),
-          );
-        if (ended.releasedObjects.length)
-          deferUntilDrizzleCommit(() => input.releaseObjects(ended.releasedObjects));
-      }
-      const item = await committed(node, from);
-      deferUntilDrizzleCommit(() => input.onCommitted(node.nodeId));
-      return { item, restored: false };
     }
-    let restored = false;
-    if (identity.deleted) {
-      const outcome = await restoreDocument(
-        input.db,
-        {
-          documentId: node.nodeId,
-          ...(node.branch?.state === "moving" ? { at: liveLocation(node) } : {}),
-        },
-        { arrivals: input.arrivals, catalog: input.catalog },
-      );
-      if (outcome.kind === "ancestor_taken") throw new ApplyClickRefused("ancestor_taken");
-      if (outcome.kind === "refused") throw new ApplyClickRefused("not_found");
-      restored = node.nodeId === input.commandDocumentId && outcome.kind === "restored";
-    } else if (node.branch?.state === "moving" && !identity.hidden) {
-      const moved = await moveToPlacement(
-        input.db,
-        {
-          documentId: node.nodeId,
-          from: {
-            folderId: identity.folderId,
-            rootSourceId: identity.folderId ? null : identity.contextSourceId,
-            name: identity.name,
-            extension: identity.extension,
-            rank: identity.rank,
-          },
-          to: {
-            folderId: node.target.parentFolderId,
-            rootSourceId: node.target.parentFolderId ? null : node.target.contextSourceId,
-            name: node.target.name,
-            extension: node.target.extension,
-            rank: node.target.rank,
-          },
-        },
-        { arrivals: input.arrivals, catalog: input.catalog, deferOrder: orderIntent !== null },
-      );
-      if (moved.kind === "ancestor_taken") throw new ApplyClickRefused("ancestor_taken");
-      if (moved.kind === "folder_missing") {
-        for (let length = 1; length <= node.target.dir.length; length++) {
-          const occupant = await input.resolveLivePath(node.target.dir.slice(0, length).join("/"));
-          if (occupant === "free") break;
-          if (occupant === "blocked") throw new ApplyClickRefused("ancestor_taken");
-        }
-      }
-      if (moved.kind !== "moved") throw new ApplyClickRefused("not_found");
-    }
-    if (node.hidden && node.origin === "created") await reveal(node, node.target);
-    if (orderIntent) {
-      const [landed] = await loadDocumentIdentityRows(tx, [node.nodeId]);
-      if (!landed || landed.deleted || landed.hidden) throw new ApplyClickRefused("not_found");
-      await placeLiveRelative(input.db, {
-        documentId: node.nodeId,
-        sourceId: landed.contextSourceId,
-        parentId: landed.folderId,
-        ...orderIntent,
-      });
-      await input.catalog.refreshSources([landed.contextSourceId], [node.nodeId]);
-    }
-    return { item: await settle(node, from), restored };
-  };
+    await input.arrivals?.settle([documentId]);
+    deferUntilDrizzleCommit(() => input.onCommitted(documentId));
+    return { kind: "applied", applied, restored: click.restore && restoring };
+  }
 
-  return { apply, settle, reveal };
-}
-
-export function liveLocation(node: TreeStateNode) {
-  return {
-    contextSourceId: node.target.contextSourceId,
-    parentFolderId: node.target.parentFolderId,
-    name: node.target.name,
-    extension: node.target.extension,
-    rank: node.target.rank,
-  };
+  return { apply };
 }

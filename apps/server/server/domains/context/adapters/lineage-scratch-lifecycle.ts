@@ -9,11 +9,9 @@ import { contextSources, threads } from "@meridian/database/schema";
 import { and, eq, inArray, isNotNull, type SQL, type SQLWrapper, sql } from "drizzle-orm";
 import { lineageHasLiveMember, lockLineageOwners } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { lockProjectTreeList } from "../../../shared/tree-list-lock.js";
 import type { FileAccessChanges } from "../../file-policy/index.js";
-import type {
-  ContextCatalogMutationPort,
-  WorkAuthorityCatalogMutationPort,
-} from "../ports/context-catalog.js";
+import type { DraftOwnerHintPort } from "../ports/context-catalog.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
 import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import { lockContextNamespaces } from "./context-fs/document-locations.js";
@@ -33,12 +31,11 @@ export interface LineageScratchLifecycle {
 
 export function createDrizzleLineageScratchLifecycle(
   db: Database,
-  catalog?: ContextCatalogMutationPort,
   arrivals?: Pick<DocumentArrivals, "settle">,
   /** Who hears that a lineage froze or thawed: its live rooms, and its owner's draft lists. */
   liveness?: {
     fileAccessChanges: Pick<FileAccessChanges, "publish">;
-    draftOwnerHints: Pick<WorkAuthorityCatalogMutationPort, "publishDraftOwnerHints">;
+    draftOwnerHints: DraftOwnerHintPort;
   },
 ): LineageScratchLifecycle {
   // Use the Scratch namespace boundary already held by context commands. Taking
@@ -103,7 +100,11 @@ export function createDrizzleLineageScratchLifecycle(
         // trash or restore waits for a write in flight and the next write sees the new state.
         const rootIds = [...new Set(roots.map((root) => root.id))].sort();
         await lockLineageOwners(db, rootIds);
-        for (const projectId of [...new Set(roots.map((root) => root.projectId))].sort())
+        // The project's tree list next: a chat's end changes which sources the list's admissions
+        // may write, and they read that under this key.
+        const projectIds = [...new Set(roots.map((root) => root.projectId))].sort();
+        for (const projectId of projectIds) await lockProjectTreeList(db, projectId);
+        for (const projectId of projectIds)
           await lockContextNamespaces(db, { projectId, userId: "" }, [
             { scheme: "scratch", workId: null },
             { scheme: "uploads", workId: null },
@@ -167,6 +168,5 @@ export function createDrizzleLineageScratchLifecycle(
       // Reconciliation already holds the namespaces in this transaction.
       await arrivals.settle(content.map((document) => document.id as DocumentId));
     }
-    await catalog?.refreshSources(sources.map((source) => source.id));
   }
 }

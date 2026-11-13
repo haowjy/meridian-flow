@@ -5,20 +5,19 @@
  * AdapterFault is scope-free and gets URI-enriched at the ContextPort boundary.
  */
 
+import type { BranchId, BranchTreeFacts } from "@meridian/contracts";
 import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
 import type {
-  DeleteContextEntryResult,
+  ContextEntryRef,
+  ContextSiblingPosition,
   InvalidOperationReason,
   ParsedDocumentFilename,
   RetractionCause,
 } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
-import type { BranchChangeAuthor, RecordedBranchTreeChange } from "./branch-tree.js";
 import type { ContextCopyAdapter } from "./context-copy.js";
 import type {
-  AdapterCreateFolderOptions,
-  AdapterCreateUntitledOptions,
   ContextBinaryWriteResult,
   ContextCreateTrackedDocumentResult,
   ContextEnsureTrackedDocumentResult,
@@ -32,12 +31,8 @@ import type {
   FileRef,
   GrepFile,
   GrepQuery,
+  WriteProvenance,
 } from "./context-port.js";
-import type {
-  ContextLocationToken,
-  ContextTreeDeleteCommand,
-  PreparedContextMove,
-} from "./context-tree-mutation-store.js";
 
 /** The router resolves destination inheritance once; direct adapter callers may supply raw input. */
 export type ContextEnsureTrackedOptions = ContextWriteOptions & {
@@ -118,77 +113,61 @@ export type AdapterGrepResult = {
 export type AdapterContextReadResult = Omit<ContextReadResult, "uri">;
 export type AdapterContextWriteResult = Omit<ContextWriteResult, "uri">;
 
-export type AdapterUntitledDocumentResult = {
-  status: "created" | "already-exists" | "joined";
-  documentId: string;
+export type AdapterLocatedDocument = { documentId: string; path: string; name: string };
+
+/** A drafted tree write's branch and the node's facts in it on either side, for the edit history. */
+export type AdapterDraftedChange = {
+  branchId: BranchId;
+  before: BranchTreeFacts;
+  after: BranchTreeFacts;
+};
+
+export type AdapterMoved = {
+  /** False when the node already stood there: nothing was written. */
+  moved: boolean;
+  /** Source-relative path it stands at. */
   path: string;
-  name: string;
+  drafted?: AdapterDraftedChange;
 };
 
-export type AdapterCreatedFolder = {
-  status: "created" | "already-exists";
-  folderId: string;
+export type AdapterDeleted = {
+  /** Source-relative path it stood at. */
   path: string;
-  name: string;
+  /** The documents and files the delete took. */
+  documentIds: string[];
+  drafted?: AdapterDraftedChange;
 };
-
-export type AdapterLocatedDocument = Omit<AdapterUntitledDocumentResult, "status">;
-
-export type AdapterMoveResult = {
-  linkUpdate?: { links: number; documents: number };
-  path: string;
-  locationVersion?: string;
-};
-
-export type AdapterDeleteResult = {
-  removed: DeleteContextEntryResult["removed"];
-  availabilityGeneration: string;
-};
-
-export interface ContextTreeAdapter {
-  inspectMovable(path: string): Promise<Result<ContextLocationToken | null, AdapterFault>>;
-  /** The live node with this id, wherever it is now; null when it is gone. */
-  inspectNode(node: {
-    kind: ContextLocationToken["kind"];
-    id: string;
-  }): Promise<Result<ContextLocationToken | null, AdapterFault>>;
-  commitProvisionalGraduation(
-    source: Extract<ContextLocationToken, { kind: "file" }>,
-  ): Promise<Result<void, AdapterFault>>;
-  commitPreparedMove(
-    prepared: PreparedContextMove,
-  ): Promise<Result<AdapterMoveResult, AdapterFault>>;
-  commitRecursiveDelete(
-    command: ContextTreeDeleteCommand,
-  ): Promise<Result<AdapterDeleteResult, AdapterFault>>;
-}
 
 /**
- * A draft placement's moves and deletes in its Work's branch: facts on the branch's
- * row, never live. `record` runs in the same transaction, after the row is written.
+ * Moves and deletes in one source: records of the project's list, live or (`drafted`) of the
+ * Work's branch, which the command transaction ensures and locks. `afterWrite` runs inside the
+ * command's transaction once the records are made, so a caller's own entry commits with them.
  */
-export interface ContextBranchTreeAdapter {
+export interface ContextTreeAdapter {
   /** This adapter's source, provisioned. */
   sourceId(): Promise<string>;
-  /**
-   * Moves the document wherever the branch has it now; `moved: false` when it is already at
-   * `path`: nothing is written. `path` is the destination as stored (an extensionless name keeps
-   * the document's extension).
-   */
-  move(
-    path: string,
-    input: {
-      documentId: string;
-      changedBy: BranchChangeAuthor;
-      record(change: RecordedBranchTreeChange): Promise<void>;
-      position?: import("@meridian/contracts/protocol").ContextSiblingPosition;
-    },
-  ): Promise<Result<{ moved: boolean; path: string }, AdapterFault>>;
+  /** Moves and renames into `dir` of this adapter's source; null keeps the node's own folder. */
+  move(input: {
+    node: ContextEntryRef;
+    /** The source the caller found the node in. */
+    fromSourceId: string;
+    dir: readonly string[] | null;
+    /** The name the writer typed; omitted keeps the node's own. */
+    leaf?: string;
+    position?: ContextSiblingPosition;
+    origin?: WriteProvenance;
+    drafted?: boolean;
+    afterWrite?: (moved: AdapterMoved) => Promise<void>;
+  }): Promise<Result<AdapterMoved, AdapterFault>>;
   delete(input: {
-    documentId: string;
-    changedBy: BranchChangeAuthor;
-    record(change: RecordedBranchTreeChange): Promise<void>;
-  }): Promise<Result<void, AdapterFault>>;
+    node: ContextEntryRef;
+    fromSourceId: string;
+    /** Only while the node stands at this source-relative path. */
+    onlyAt?: string;
+    origin?: WriteProvenance;
+    drafted?: boolean;
+    afterWrite?: (deleted: AdapterDeleted) => Promise<void>;
+  }): Promise<Result<AdapterDeleted, AdapterFault>>;
 }
 
 /**
@@ -200,8 +179,6 @@ export interface ContextSchemeAdapter {
   readonly name: string;
   readonly capabilities: SchemeCapabilities;
   readonly tree?: ContextTreeAdapter;
-  /** Only a draft placement has one. */
-  readonly branchTree?: ContextBranchTreeAdapter;
   /** Copy's source read and destination insert (`context/copy/` orchestrates a drop). */
   readonly copy?: ContextCopyAdapter;
 
@@ -225,23 +202,12 @@ export interface ContextSchemeAdapter {
     options?: ContextWriteOptions,
   ): Promise<Result<Omit<ContextCreateTrackedDocumentResult, "uri">, AdapterFault>>;
   /** Find an active document owned by this adapter's source. */
-  /** `includeDeleted` also answers a soft-deleted document's last address. */
-  locateDocument(
-    documentId: string,
-    options?: { includeDeleted?: boolean },
-  ): Promise<Result<AdapterLocatedDocument | null, AdapterFault>>;
-  createUntitledDocument(
-    path: string,
-    options: AdapterCreateUntitledOptions,
-  ): Promise<Result<AdapterUntitledDocumentResult, AdapterFault>>;
+  locateDocument(documentId: string): Promise<Result<AdapterLocatedDocument | null, AdapterFault>>;
   ensureTrackedDocument(
     path: string,
     options?: ContextEnsureTrackedOptions,
   ): Promise<Result<Omit<ContextEnsureTrackedDocumentResult, "uri">, AdapterFault>>;
-  /**
-   * Reverse this adapter's create of `documentId` (contract §12.5): a draft placement
-   * retracts the branch's use itself; `live` asks the caller to delete the document.
-   */
+  /** Reverse this adapter's create of `documentId` (contract §12.5): live goes to Trash, a draft is discarded. */
   retractCreate(
     path: string,
     documentId: string,
@@ -255,11 +221,5 @@ export interface ContextSchemeAdapter {
     path: string,
     options?: ContextListOptions,
   ): Promise<Result<AdapterFileEntry[], AdapterFault>>;
-  mkdir(path: string, options?: ContextWriteOptions): Promise<Result<void, AdapterFault>>;
-  /** A folder under a device-minted id in the folder at `path`; see `AdapterCreateFolderOptions`. */
-  createFolder(
-    path: string,
-    options: AdapterCreateFolderOptions,
-  ): Promise<Result<AdapterCreatedFolder, AdapterFault>>;
   grep(query: GrepQuery): Promise<Result<AdapterGrepResult, AdapterFault>>;
 }

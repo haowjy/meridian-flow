@@ -7,14 +7,17 @@
 
 import { setTimeout as delay } from "node:timers/promises";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
+import type { DocumentId } from "@meridian/contracts/runtime";
+import { LIVE } from "@meridian/project-tree";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { waitForPostgresLock } from "../../test-support/lock-interleave.js";
+import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
 import { createPostgresWorkBranchDisposal } from "../collab/test-support/work-branch-disposal.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
+import { loadDocumentAddresses } from "../context/tree/tree-addresses.js";
 import { createLocalFileAccessChanges, type FileAccessChange } from "../file-policy/index.js";
 import { createTestDrizzleDelivery } from "../runtime/loop/__tests__/test-drizzle-delivery.js";
 
@@ -38,9 +41,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { HTTP_INTERRUPT_ENVELOPE_KEY } = await import("../../shared/interrupt-boundary.js");
     const { updateWorkMetadataForWriter } = await import("../../lib/work-metadata-route.js");
     const { createProjectRepositoryForTest } = await import("./test-support/project-repository.js");
-    const { createDrizzleProjectContextAvailability } = await import(
-      "../context/adapters/project-context-availability.js"
-    );
     const { createDrizzleContextCatalog } = await import("../context/adapters/context-catalog.js");
     const { createDrizzleRepositoriesForTest } = await import(
       "../threads/adapters/drizzle/repositories.js"
@@ -62,19 +62,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
     const control = postgres(DATABASE_URL, { max: 1 });
-    const availability = createDrizzleProjectContextAvailability(db);
-    const catalog = createDrizzleContextCatalog(db, undefined, {
-      availabilityMutations: availability,
-    });
+    const catalog = createDrizzleContextCatalog(db);
     const projectionMutation = createWorkProjectionMutation({
       db,
       pendingCounts: createDrizzleWorkBranchPendingStore(db),
-      availability,
-      catalog,
+      draftOwnerHints: catalog,
     });
     const fileAccessChanges = createLocalFileAccessChanges();
     const works = createDrizzleProjectWorkRepository({
-      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges,
@@ -458,12 +453,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const nameOwner = await works.create({ projectId: PROJECT_ID, name: "Reclaimed" });
       await works.softDelete(nameOwner.id);
       await works.create({ projectId: PROJECT_ID, name: "Reclaimed" });
-      await expect(works.restore(nameOwner.id)).rejects.toEqual(
-        new WorkRestoreConflictError("name"),
-      );
+      await expect(works.restore(nameOwner.id)).rejects.toEqual(new WorkRestoreConflictError());
     });
 
-    it("deletes content and restores only rows cascade-deleted by the Work deletion", async () => {
+    it("ends a Work's sources without touching its nodes, and restores them as they were", async () => {
       const empty = await works.create({ projectId: PROJECT_ID, name: "Empty source" });
       await db.insert(schema.contextSources).values({
         workId: empty.id,
@@ -481,144 +474,46 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({ workId: withFile.id, name: "Scratch", slug: "scratch", scope: "work" })
         .returning();
       if (!source) throw new Error("Expected context source");
-      const [document] = await db
-        .insert(schema.documents)
-        .values({
-          contextSourceId: source.id,
-          name: "reference",
-        })
-        .returning();
-      const [alreadyDeletedDocument] = await db
-        .insert(schema.documents)
-        .values({
-          contextSourceId: source.id,
-          name: "separately-deleted",
-          deletionReason: "deleted",
-          deletedAt: new Date("2025-01-01T00:00:00.000Z"),
-        })
-        .returning();
-      const [folder] = await db
-        .insert(schema.folders)
-        .values({
-          contextSourceId: source.id,
-          name: "Notes",
-        })
-        .returning();
-      const [alreadyDeletedFolder] = await db
-        .insert(schema.folders)
-        .values({
-          contextSourceId: source.id,
-          name: "separately-deleted",
-          deletedAt: new Date("2025-01-01T00:00:00.000Z"),
-        })
-        .returning();
-      if (!document || !folder || !alreadyDeletedFolder || !alreadyDeletedDocument) {
-        throw new Error("Expected context children");
-      }
-
-      async function versions() {
-        const documentRows = await db
-          .select({ id: schema.documents.id, version: schema.documents.locationVersion })
-          .from(schema.documents)
-          .where(eq(schema.documents.contextSourceId, source.id));
-        const folderRows = await db
-          .select({ id: schema.folders.id, version: schema.folders.locationVersion })
-          .from(schema.folders)
-          .where(eq(schema.folders.contextSourceId, source.id));
-        return Object.fromEntries(
-          [...documentRows, ...folderRows].map((row) => [row.id, row.version]),
-        );
-      }
-      const expectedVersions = (changed: bigint) => ({
-        [document.id]: changed,
-        [folder.id]: changed,
-        [alreadyDeletedDocument.id]: 0n,
-        [alreadyDeletedFolder.id]: 0n,
+      const seed = treeSeeder(db);
+      await seed.document(source.id, "reference");
+      const separatelyDeleted = await seed.document(source.id, "separately-deleted");
+      await seed.folder(source.id, "Notes");
+      await seed.store.submit({
+        list: await treeListOfSource(db, source.id),
+        make: (writer) => {
+          writer.delete(LIVE, "system", separatelyDeleted);
+          return { records: [], result: null };
+        },
       });
-      expect(await versions()).toEqual(expectedVersions(0n));
-      const deletion = await works.softDelete(withFile.id);
-      expect(await versions()).toEqual(expectedVersions(1n));
-      await works.softDelete(withFile.id);
-      expect(await versions()).toEqual(expectedVersions(1n));
-      expect(deletion.after?.deletedAt).toBeTruthy();
-      await expect(
+
+      const nodes = () =>
         db
           .select()
-          .from(schema.documents)
-          .where(eq(schema.documents.id, alreadyDeletedDocument.id)),
-      ).resolves.toMatchObject([
-        { deletedAt: new Date("2025-01-01T00:00:00.000Z"), deletedByWorkId: null },
-      ]);
+          .from(schema.treeNodes)
+          .where(eq(schema.treeNodes.contextSourceId, source.id))
+          .orderBy(schema.treeNodes.id);
+      const before = await nodes();
+      expect(before.filter((node) => node.trashRecord !== null)).toHaveLength(1);
+
+      const deletion = await works.softDelete(withFile.id);
+      expect(deletion.after?.deletedAt).toBeTruthy();
+      await expect(
+        db.select().from(schema.contextSources).where(eq(schema.contextSources.id, source.id)),
+      ).resolves.toMatchObject([{ deletedAt: expect.any(Date), deletedByWorkId: withFile.id }]);
+      // The cascade writes no node: the list's replay follows the source row.
+      expect(await nodes()).toEqual(before);
+      await works.softDelete(withFile.id);
+      expect(await nodes()).toEqual(before);
+
       await expect(works.restore(withFile.id)).resolves.toMatchObject({
         after: { deletedAt: null },
         changed: true,
       });
-      expect(await versions()).toEqual(expectedVersions(2n));
-      await works.restore(withFile.id);
-      expect(await versions()).toEqual(expectedVersions(2n));
       await expect(
         db.select().from(schema.contextSources).where(eq(schema.contextSources.id, source.id)),
       ).resolves.toMatchObject([{ deletedAt: null, deletedByWorkId: null }]);
-      await expect(
-        db
-          .select()
-          .from(schema.documents)
-          .where(eq(schema.documents.id, alreadyDeletedDocument.id)),
-      ).resolves.toMatchObject([
-        { deletedAt: new Date("2025-01-01T00:00:00.000Z"), deletedByWorkId: null },
-      ]);
-      await expect(
-        db.select().from(schema.folders).where(eq(schema.folders.id, folder.id)),
-      ).resolves.toMatchObject([{ deletedAt: null, deletedByWorkId: null }]);
-      await expect(
-        db.select().from(schema.folders).where(eq(schema.folders.id, alreadyDeletedFolder.id)),
-      ).resolves.toMatchObject([
-        { deletedAt: new Date("2025-01-01T00:00:00.000Z"), deletedByWorkId: null },
-      ]);
-    });
-
-    it("refuses an opposite-kind name reclaimed before Work restore without partially unhiding", async () => {
-      for (const folderArrives of [false, true]) {
-        const work = await works.create({
-          projectId: PROJECT_ID,
-          name: folderArrives ? "Folder restore clash" : "Document restore clash",
-        });
-        const [source] = await db
-          .insert(schema.contextSources)
-          .values({ workId: work.id, name: "Scratch", slug: "scratch", scope: "work" })
-          .returning();
-        if (!source) throw new Error("Source fixture missing");
-        const arriving = folderArrives ? schema.folders : schema.documents;
-        if (folderArrives) {
-          await db.insert(schema.folders).values({
-            contextSourceId: source.id,
-            name: "Lore",
-          });
-        } else {
-          await db.insert(schema.documents).values({ contextSourceId: source.id, name: "Lore" });
-        }
-        await works.softDelete(work.id);
-        // A historical/raw writer can leave opposite-kind occupancy: restore must guard
-        // both arriving tables before changing either one, not rely on their own indexes.
-        if (folderArrives) {
-          await db.insert(schema.documents).values({ contextSourceId: source.id, name: "Lore" });
-        } else {
-          await db.insert(schema.folders).values({
-            contextSourceId: source.id,
-            name: "Lore",
-          });
-        }
-        await expect(works.restore(work.id)).rejects.toEqual(
-          new WorkRestoreConflictError("content"),
-        );
-        expect(
-          (await db.select().from(schema.works).where(eq(schema.works.id, work.id)))[0]?.deletedAt,
-        ).not.toBeNull();
-        expect(
-          (await db.select().from(arriving).where(eq(arriving.contextSourceId, source.id)))[0]
-            ?.deletedByWorkId,
-        ).toBe(work.id);
-      }
+      // What was deleted on its own stays in Trash through the Work's delete and restore.
+      expect(await nodes()).toEqual(before);
     });
 
     it("cascade-deletes Work chats, branches, and context from their read surfaces, then restores them", async () => {
@@ -629,11 +524,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({ workId: work.id, name: "Scratch", slug: "scratch", scope: "work" })
         .returning();
       if (!source) throw new Error("Expected Work context source");
-      const [document] = await db
-        .insert(schema.documents)
-        .values({ contextSourceId: source.id, name: "outline" })
-        .returning();
-      if (!document) throw new Error("Expected Work document");
+      const document = { id: await treeSeeder(db).document(source.id, "outline") };
+      // The documents some view shows, at their addresses: a Work's delete takes them out.
+      const shown = async () =>
+        (await loadDocumentAddresses(db, { ids: [document.id as DocumentId] }))
+          .filter((address) => !address.deleted)
+          .map((address) => address.documentId);
       const [branch] = await db
         .insert(schema.branches)
         .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
@@ -729,7 +625,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: null,
         search: null,
       };
-      const scope = { kind: "work", projectId: PROJECT_ID, workId: work.id } as const;
       await expect(threadRepos.threads.findById(THREAD_ID as never)).resolves.toMatchObject({
         id: THREAD_ID,
       });
@@ -751,9 +646,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             ),
           ),
       ).resolves.toHaveLength(1);
-      expect((await catalog.snapshot(scope)).entries.map((entry) => entry.entryId)).toContain(
-        document.id,
-      );
+      expect(await shown()).toContain(document.id);
 
       await works.softDelete(work.id);
       await expect(
@@ -790,7 +683,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             ),
           ),
       ).resolves.toEqual([]);
-      expect((await catalog.snapshot(scope)).entries).toEqual([]);
+      expect(await shown()).toEqual([]);
       const { restoreOwnedThreadFromTrash } = await import("../threads/thread-access.js");
       const threadTrashDeps = {
         repos: threadRepos,
@@ -856,9 +749,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .from(schema.documentDrafts)
           .where(eq(schema.documentDrafts.id, "work-delete-draft")),
       ).resolves.toMatchObject([{ status: "active", closedCause: null }]);
-      expect((await catalog.snapshot(scope)).entries.map((entry) => entry.entryId)).toContain(
-        document.id,
-      );
+      expect(await shown()).toContain(document.id);
       await expect(
         db
           .select()
@@ -1245,16 +1136,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         })
         .returning();
       if (!source) throw new Error("Expected the chat's Uploads source");
-      const [document] = await db
-        .insert(schema.documents)
-        .values({
-          contextSourceId: source.id,
-          name: "reference",
-          extension: "png",
-          fileType: "png",
-        })
-        .returning();
-      if (!document) throw new Error("Expected uploaded document");
+      const document = {
+        id: await treeSeeder(db).file(source.id, "reference.png", {
+          storageKey: "memory://reference.png",
+          mime: "image/png",
+          size: 1,
+        }),
+      };
       const [branch] = await db
         .insert(schema.branches)
         .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
@@ -1309,15 +1197,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           slug: "scratch",
         })
         .returning();
-      const [lineageNote] = await db
-        .insert(schema.documents)
-        .values({
-          contextSourceId: lineageSource.id,
-          name: "outline",
-          extension: "",
-          fileType: "markdown",
-        })
-        .returning();
+      const lineageNote = { id: await treeSeeder(db).document(lineageSource.id, "outline") };
       await db
         .insert(schema.threadDocuments)
         .values({ threadId: THREAD_ID, documentId: lineageNote.id });
@@ -1337,6 +1217,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toEqual([]);
       expect(
         await db.select().from(schema.documents).where(eq(schema.documents.id, lineageNote.id)),
+      ).toEqual([]);
+      expect(
+        await db.select().from(schema.treeNodes).where(eq(schema.treeNodes.id, lineageNote.id)),
       ).toEqual([]);
       await expect(works.findById(other.id)).resolves.toMatchObject({ deletedAt: null });
       await expect(
@@ -1398,8 +1281,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("serializes Work content creation before deletion", async () => {
       const insertBarrier = 748_210_843;
       const work = await works.create({ projectId: PROJECT_ID, name: "Creation race" });
-      const { createWorkContextDocumentStore } = await import("../context/index.js");
-      const store = createWorkContextDocumentStore(db, work.id, "scratch");
+      const { ensureWorkContextSource } = await import("../context/context-source-provisioning.js");
+      const sourceId = await ensureWorkContextSource(db, work.id, "scratch");
       await control.unsafe(`
         CREATE FUNCTION test_block_work_document_insert() RETURNS trigger
         LANGUAGE plpgsql AS $$
@@ -1416,21 +1299,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let barrierHeld = true;
 
       try {
-        const creation = store.createBinaryDocument({
-          folderId: null,
-          name: "reference",
-          extension: "pdf",
-          fileType: "pdf",
-          storageUrl: "s3://test/reference.pdf",
-          mimeType: "application/pdf",
-          sizeBytes: 42,
+        const creation = treeSeeder(db).file(sourceId, "reference.pdf", {
+          storageKey: "s3://test/reference.pdf",
+          mime: "application/pdf",
+          size: 42,
         });
         await waitForLock("advisory");
+        // The create holds the project's list lock while it waits on the barrier: the Work's
+        // delete takes the same lock, so it waits behind the create.
         const deletion = works.softDelete(work.id).then(
           () => ({ status: "fulfilled" as const }),
           (reason: unknown) => ({ status: "rejected" as const, reason }),
         );
-        await waitForLock("transactionid");
+        await waitForLock("advisory", 2);
 
         await control`SELECT pg_advisory_unlock(${insertBarrier})`;
         barrierHeld = false;
@@ -1441,6 +1322,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await expect(works.findById(work.id)).resolves.toMatchObject({
           deletedAt: expect.any(String),
         });
+        // The file landed before the delete, and the source's end hides it without a node write.
+        await expect(
+          db.select().from(schema.treeNodes).where(eq(schema.treeNodes.contextSourceId, sourceId)),
+        ).resolves.toHaveLength(1);
       } finally {
         if (barrierHeld) await control`SELECT pg_advisory_unlock(${insertBarrier})`;
         await control.unsafe(`

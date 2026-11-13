@@ -1,20 +1,17 @@
-/** Table-driven soft-delete and restore cascade for rows owned by a Work. */
+/**
+ * Table-driven soft-delete and restore cascade for rows owned by a Work. A Work's Scratch is its
+ * sources: the cascade ends and restores the source rows, and the list's replay follows them, so
+ * it writes no node, and nothing of a document or a folder. The caller holds the project's tree
+ * list lock (`lockProjectTreeList`), after the Work rows.
+ */
 
 import type { ContextSourceId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { contextSources, folders, projectResults, threads } from "@meridian/database/schema";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { contextSources, projectResults, threads } from "@meridian/database/schema";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { lockContextNamespaces } from "../../context/adapters/context-fs/document-locations.js";
-import type { DocumentRemoval } from "../../context/ports/document-removal.js";
-import { lockDocuments } from "../../context/tree/node-rows.js";
-import { restoreWorkDocuments } from "../../context/tree/removal.js";
-import { loadLivingSourceDocumentIds } from "../../context/tree/tree-view-sql.js";
-import type { WorkProjectionMutation } from "./work-projection-mutation.js";
 
 type WorkCascadeInput = {
-  removal: DocumentRemoval;
-  projection: Pick<WorkProjectionMutation, "recountAfterCommit">;
   workId: WorkId;
   projectId: ProjectId;
   threadIds: readonly ThreadId[];
@@ -75,42 +72,6 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
     },
   },
   {
-    name: "documents",
-    async cascadeDelete({ db, workId, sourceIds, at, removal }) {
-      if (!sourceIds.length) return;
-      const documentIds = await loadLivingSourceDocumentIds(currentDrizzleDb(db), sourceIds);
-      await lockDocuments(db, documentIds);
-      await removal.remove({ documentIds, reason: "deleted", workId, at });
-    },
-    async cascadeRestore({ db, workId, projection }) {
-      projection.recountAfterCommit(await restoreWorkDocuments(db, workId));
-    },
-  },
-  {
-    name: "folders",
-    async cascadeDelete({ db, workId, sourceIds, at }) {
-      if (sourceIds.length === 0) return;
-      await currentDrizzleDb(db)
-        .update(folders)
-        .set({
-          deletedAt: at,
-          deletedByWorkId: workId,
-          locationVersion: sql`${folders.locationVersion} + 1`,
-        })
-        .where(and(inArray(folders.contextSourceId, [...sourceIds]), isNull(folders.deletedAt)));
-    },
-    async cascadeRestore({ db, workId }) {
-      await currentDrizzleDb(db)
-        .update(folders)
-        .set({
-          deletedAt: null,
-          deletedByWorkId: null,
-          locationVersion: sql`${folders.locationVersion} + 1`,
-        })
-        .where(eq(folders.deletedByWorkId, workId));
-    },
-  },
-  {
     name: "context sources",
     async cascadeDelete({ db, workId, sourceIds, at }) {
       if (sourceIds.length === 0) return;
@@ -144,9 +105,6 @@ export async function cascadeDelete(
   input: Omit<CascadeContext, "db" | "sourceIds">,
 ): Promise<void> {
   const context = await cascadeContext(db, input);
-  await lockContextNamespaces(db, { projectId: input.projectId, userId: "" }, [], {
-    sourceIds: context.sourceIds,
-  });
   for (const entry of WORK_CASCADE) await entry.cascadeDelete(context);
 }
 

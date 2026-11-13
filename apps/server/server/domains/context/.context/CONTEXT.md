@@ -45,8 +45,9 @@ document's rendered filename (folder `binary.md` beside a kept `binary.md`), and
 two folders or two documents clash the same way. Folder `Lore.md` and document `Lore`
 coexist; a link to `Lore.md` still reaches the document, because a document lookup skips the folder,
 while a path that names a folder acts on the folder: `ls` lists it and a reorder moves it. The model's `move` and `delete` refuse it with `source_is_folder`.
-A free name is chosen against `TreeReader.namesAt` (the rendered filenames under a parent) by the
-contracts' `firstFreeName`; nothing re-derives a name's parts from the rendered string.
+A free name is chosen by the list's writer against its own copy of the tree
+(`@meridian/project-tree`), never by a reader. A node's `name` in `tree_nodes` is its filename as
+shown, extension included; readers never render a filename from a name and an extension.
 
 ## Access, source capabilities, and transactions
 
@@ -122,9 +123,9 @@ writer text (`term`; the app's door finds the passage again with it).
 
 The tree module supplies `LIVE_TREE` and `{ kind: "branch", branchId }`. ContextFS
 uses that view for `stat`, `read`, `list`, `grep`, and `locate`; a branch's
-hidden document or folder appears only in that branch. A draft create has an
-empty live Y.Doc and text in its draft until Apply. The hidden predicate has
-one owner in [tree](../tree/AGENTS.md); callers never inspect hidden columns.
+document or folder that exists only in that Work's draft appears only there. A draft create has an
+empty live Y.Doc and text in its draft until Apply. Readers compose `visibleDocuments(view)` and
+`visibleFolders(view)` ([tree](../tree/AGENTS.md)); there is no hidden row to filter.
 
 `DocumentRevisions.current` resolves the thread's current primary Work and the
 chat's write mode, checks project-final availability, and delegates effective
@@ -433,18 +434,16 @@ reach the document by identity; an alias returns only when that identity is
 currently available to the request owner in the requested project.
 
 A link resolver is not a capability. A reader who cannot reach a ref receives
-`gone` without a location. A hidden document may answer `inBranch` with the
-selected branch and path. Holder binding is stable by document identity, and
+`gone` without a location. A document that exists only in the reader's Work draft answers `inBranch` with that branch and
+path; another Work's draft-only document is not shown to the reader. Holder binding is stable by document identity, and
 relative spelling uses only a holder the reader may name and read.
 
 Browser addresses normally resolve in the live tree. A review address may
 supply `reviewOwner` (a draft owner key) and an item key `${branchId}:${documentId}`; the server
 checks that item against active review items, then reads the branch tree, except
 for a drafted delete whose identity is intentionally absent there, which reads
-the live tree by the validated document identity. The item's own draft admits its document the way it admits writes
-(`survivingDraftDocuments`, availability's `admitDrafts`): a no-effect draft of a
-document deleted live is not listed, so its path finds it gone, but its review
-address still opens the open tab's draft. Stale,
+the live tree by the validated document identity. The branch's view decides whether the item's
+document is shown: one the Work's tree no longer shows reads as deleted there. Stale,
 foreign, or mismatched selectors return unavailable rather than falling back
 to live. The address resolver returns the canonical current locator; it never
 makes a path-only URL a capability.

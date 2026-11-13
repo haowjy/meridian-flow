@@ -18,7 +18,7 @@ import type { ContextDocument, ContextFolder } from "../../ports/context-documen
 import { LIVE_TREE } from "../../tree/tree-view.js";
 import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
 import { type CopyTreeDeps, insertCopiedTree, planCopyTree } from "./copy-tree.js";
-import { AMBIGUOUS_PATH_FAULT } from "./create-placement.js";
+import { AMBIGUOUS_PATH_FAULT } from "./placement.js";
 
 export interface ContextFsCopyDeps extends CopyTreeDeps {
   /** Why this placement cannot take a copy (a draft placement), or null. */

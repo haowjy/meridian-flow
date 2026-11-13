@@ -9,6 +9,7 @@ import { filetypeForMimeType } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
   branchTreeNodes,
+  contextSources,
   documentDrafts,
   documents,
   treeNodeIds,
@@ -172,7 +173,8 @@ export class NodeIdRefusedError extends Error {}
 /**
  * Claims the node ids the records create, in the admitting transaction: the claim table's key is
  * the claim, so two lists that admit one id at once cannot both hold it. An id a document or a
- * list's journal already has is taken too.
+ * list's journal already has is taken too. A document's own journal does not count: an import
+ * writes each text under the id its create will have, before the create.
  */
 export async function claimNodeIds(
   tx: DrizzleDb,
@@ -199,7 +201,7 @@ export async function claimNodeIds(
     );
     const used = await tx.execute(sql`
       SELECT 1 FROM documents WHERE id IN (${list})
-      UNION ALL SELECT 1 FROM document_yjs_heads WHERE document_id IN (${list}) LIMIT 1`);
+      UNION ALL SELECT 1 FROM document_yjs_heads WHERE kind = 'tree_list' AND document_id IN (${list}) LIMIT 1`);
     if (used.length > 0) throw new NodeIdRefusedError("a node id already in use");
   }
 }
@@ -239,7 +241,7 @@ async function writeLive(
   listId: string,
   next: ReadonlyMap<string, ProjectedRow>,
   trash: ReadonlyMap<string, string>,
-): Promise<void> {
+): Promise<string[]> {
   const prev = await loadLive(tx, listId);
   // The delete in force of each node the replay shows in Trash.
   const trashOf = (id: string) => (next.get(id)?.deleted ? (trash.get(id) ?? null) : null);
@@ -247,7 +249,7 @@ async function writeLive(
   const retrashed = [...next.keys()].filter(
     (id) => prev.has(id) && (prev.get(id)?.trashRecord ?? null) !== trashOf(id),
   );
-  if (upserts.length === 0 && gone.length === 0 && retrashed.length === 0) return;
+  if (upserts.length === 0 && gone.length === 0 && retrashed.length === 0) return [];
 
   const was = addresses(prev);
   const now = addresses(next);
@@ -325,6 +327,7 @@ async function writeLive(
   }
   if (vacated.length > 0 || claimed.length > 0)
     await recordLocationHistory(tx as unknown as Database, { vacated, claimed });
+  return [...changed.keys(), ...gone];
 }
 
 async function writeBranch(
@@ -333,7 +336,7 @@ async function writeBranch(
   branchId: string,
   prev: ReadonlyMap<string, BranchRow>,
   next: ReadonlyMap<string, BranchRow>,
-): Promise<void> {
+): Promise<string[]> {
   const { upserts, gone } = changedRows(prev, next);
   for (const batch of chunks(upserts))
     await tx
@@ -371,6 +374,50 @@ async function writeBranch(
           inArray(branchTreeNodes.id, batch),
         ),
       );
+  return [...upserts.map((row) => row.id), ...gone];
+}
+
+/**
+ * Nodes under a source whose row is gone (a purged Work's) have no row: a source's end is its
+ * row's, and an ended source's nodes are not shown. Drops them from the views' rows.
+ */
+async function dropEndedSources(
+  tx: DrizzleDb,
+  views: readonly Map<string, ProjectedRow>[],
+): Promise<void> {
+  const sources = new Set(views.flatMap((rows) => [...rows.values()].map((row) => row.sourceId)));
+  if (sources.size === 0) return;
+  const present = await tx
+    .select({ id: contextSources.id })
+    .from(contextSources)
+    .where(inArray(contextSources.id, [...sources]));
+  const kept = new Set(present.map((row) => row.id as string));
+  for (const rows of views)
+    for (const [id, row] of rows) if (!kept.has(row.sourceId)) rows.delete(id);
+}
+
+/**
+ * Keeps `documents.in_no_view_since` true to the rows: null while a view shows the document (a
+ * node row in live or in a Work's tree), the time it left the last view otherwise. Retention
+ * purges a document that has been in no view for the window (a Discard offers Undo, so its text
+ * waits).
+ */
+async function markUnviewed(tx: DrizzleDb, ids: readonly string[]): Promise<void> {
+  for (const batch of chunks([...new Set(ids)])) {
+    const list = sql.join(
+      batch.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
+    await tx.execute(sql`
+      UPDATE documents d SET in_no_view_since = v.since
+      FROM (
+        SELECT d2.id, CASE WHEN EXISTS (SELECT 1 FROM tree_nodes t WHERE t.id = d2.id)
+            OR EXISTS (SELECT 1 FROM branch_tree_nodes b WHERE b.id = d2.id)
+          THEN NULL ELSE coalesce(d2.in_no_view_since, now()) END AS since
+        FROM documents d2 WHERE d2.id IN (${list})
+      ) v
+      WHERE d.id = v.id AND d.in_no_view_since IS DISTINCT FROM v.since`);
+  }
 }
 
 /**
@@ -392,13 +439,14 @@ export async function syncRows(
 
   const open = [...(await openBranches(tx, list))];
   const text = await pendingText(tx, open);
-  const next = new Map<string, Map<string, BranchRow>>();
+  const drafted = new Map<string, Map<string, ProjectedRow>>();
   for (const branchId of open)
     if (text.has(branchId) || pendingRecords(doc, branchId).length > 0)
-      next.set(
-        branchId,
-        branchRows(liveRows, shownRows(replayView(doc, { draft: branchId }, text.get(branchId)))),
-      );
+      drafted.set(branchId, shownRows(replayView(doc, { draft: branchId }, text.get(branchId))));
+  await dropEndedSources(tx, [liveRows, ...drafted.values()]);
+  const next = new Map(
+    [...drafted].map(([branchId, rows]) => [branchId, branchRows(liveRows, rows)] as const),
+  );
 
   await insertDocumentRows(
     tx,
@@ -406,16 +454,19 @@ export async function syncRows(
     added,
     (id) => liveRows.has(id) || [...next.values()].some((view) => view.has(id)),
   );
-  await writeLive(tx, listId, liveRows, trashRecords(live));
+  const changed = await writeLive(tx, listId, liveRows, trashRecords(live));
   await testHook("treeList.afterLiveRows");
 
   const prev = await loadBranches(tx, listId);
   for (const branchId of new Set([...prev.keys(), ...next.keys()]))
-    await writeBranch(
-      tx,
-      listId,
-      branchId,
-      prev.get(branchId) ?? new Map(),
-      next.get(branchId) ?? new Map(),
+    changed.push(
+      ...(await writeBranch(
+        tx,
+        listId,
+        branchId,
+        prev.get(branchId) ?? new Map(),
+        next.get(branchId) ?? new Map(),
+      )),
     );
+  await markUnviewed(tx, changed);
 }

@@ -27,31 +27,11 @@ export interface ContextCatalog {
   lookup(input: CatalogLookupRequest): Promise<CatalogLookupResult>;
 }
 
-export interface ContextCatalogMutationPort {
-  /** Reconcile authoritative rows for each affected source in the ambient transaction. */
-  refreshSources(
-    sourceIds: readonly string[],
-    invalidatedRootIds?: readonly string[],
-  ): Promise<string>;
-}
-
-export interface ProjectCatalogLifecyclePort {
-  /** Reconcile project authority entries after a Work/project lifecycle mutation. */
-  refreshProject(projectId: string): Promise<void>;
-}
-
-export interface WorkAuthorityCatalogMutationPort {
-  /** Upsert only the named Work authority signals in their project scopes. */
-  upsertWorkAuthorities(workIds: readonly string[]): Promise<void>;
-  /** Wake the project's clients once the caller's transaction commits. Lossy, truth-free. */
+/** Wakes the project's clients once the caller's transaction commits. Lossy, truth-free. */
+export interface DraftOwnerHintPort {
   publishDraftOwnerHints(hints: readonly DraftOwnerHint[]): void;
 }
 
 export interface ContextCatalogWakePort {
   publish(hint: CatalogChannelMessage): void | Promise<void>;
-}
-
-/** Exact-document metadata/content changes, without a whole-tree rebuild. */
-export interface ContextCatalogFileMutationPort {
-  refreshFiles(documentIds: readonly string[]): Promise<void>;
 }

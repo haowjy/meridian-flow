@@ -238,7 +238,6 @@ export const DOCUMENT_RUNTIME_RESET_TABLES: readonly unknown[] = [
   schema.threadWorks,
   schema.turns,
   schema.threads,
-  schema.folders,
   schema.documents,
   schema.contextSources,
   schema.works,

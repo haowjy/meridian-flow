@@ -6,13 +6,14 @@
  */
 
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
+import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
+import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
-import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import {
   type AgentChain,
   createDrizzleFileFacts,
@@ -67,6 +68,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const ctx = { threadId: THREAD_ID as never, turnId: TURN_ID as never };
 
     const db = createDb(DATABASE_URL, { max: 6 });
+    const seeder = treeSeeder(db);
+    /** A live edit of a source's tree (move, rename), as a person's would be. */
+    async function liveEdit(sourceId: string, edit: (writer: TreeWriter) => unknown) {
+      await seeder.store.submit({
+        list: await treeListOfSource(db, sourceId),
+        make: (writer) => ({ records: [], result: edit(writer) }),
+      });
+    }
     // A backend in this database blocked on a row lock (the save behind the archive).
     const lockWaiting = async () =>
       (
@@ -142,7 +151,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...createTestRemovalDeps(db),
         fileAccess,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        catalogMutations: createDrizzleContextCatalog(db),
         threadContext: {
           requireThreadOwner: async () => ({ projectId: PROJECT_ID as never }),
         },
@@ -190,10 +198,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           scope: "work",
         },
       ]);
-      await db.insert(schema.documents).values([
-        { id: KB_ID, contextSourceId: KB_SOURCE_ID, name: "lore", extension: "" },
-        { id: SCRATCH_ID, contextSourceId: SCRATCH_SOURCE_ID, name: "notes", extension: "" },
-      ]);
+      await seeder.document(KB_SOURCE_ID, "lore", { id: KB_ID });
+      await seeder.document(SCRATCH_SOURCE_ID, "notes", { id: SCRATCH_ID });
       await db.insert(schema.threads).values({
         rootThreadId: THREAD_ID,
         id: THREAD_ID,
@@ -462,8 +468,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .set({ aiWriteMode: "direct" })
         .where(eq(schema.threads.id, THREAD_ID));
       const MANUSCRIPT_ID = "00000000-0000-4000-8000-000000000a20";
-      const ASSETS_ID = "00000000-0000-4000-8000-000000000a21";
-      const ART_ID = "00000000-0000-4000-8000-000000000a22";
       const MAP_ID = "00000000-0000-4000-8000-000000000a23";
       await db.insert(schema.contextSources).values({
         id: MANUSCRIPT_ID,
@@ -472,36 +476,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "manuscript",
         scope: "project",
       });
-      await db.insert(schema.folders).values([
-        {
-          id: ASSETS_ID,
-          contextSourceId: MANUSCRIPT_ID,
-          name: "assets",
-        },
-        {
-          id: ART_ID,
-          contextSourceId: MANUSCRIPT_ID,
-          name: "art",
-        },
-      ]);
-      await db.insert(schema.documents).values({
-        id: MAP_ID,
-        contextSourceId: MANUSCRIPT_ID,
-        folderId: ASSETS_ID,
-        name: "map",
-        extension: "png",
-        fileType: "image",
-        mimeType: "image/png",
-      });
+      await seeder.file(
+        MANUSCRIPT_ID,
+        "assets/map.png",
+        { storageKey: "test/map.png", mime: "image/png", size: 1 },
+        { id: MAP_ID },
+      );
+      const artFolder = await seeder.folder(MANUSCRIPT_ID, "art");
       await writeMarkdown(collab, {
         documentId: KB_ID as never,
         markdown: "![Map](assets/map.png)",
         origin: { type: "user", actorUserId: USER_ID as never },
       });
-      await db
-        .update(schema.documents)
-        .set({ folderId: ART_ID })
-        .where(eq(schema.documents.id, MAP_ID));
+      await liveEdit(MANUSCRIPT_ID, (writer) => writer.move(LIVE, "system", MAP_ID, artFolder));
 
       const agentEdit = collab.agentEdit();
       const lore = await context(direct(), KB_ID);
@@ -537,12 +524,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // A later reply removes a link whose target moved since it was written. Only
       // the receipt's before side still holds it, so the save loads it too.
       const CHAPTER_ID = "00000000-0000-4000-8000-000000000a24";
-      await db.insert(schema.documents).values({
-        id: CHAPTER_ID,
-        contextSourceId: MANUSCRIPT_ID,
-        name: "chapter",
-        extension: "",
-      });
+      await seeder.document(MANUSCRIPT_ID, "chapter", { id: CHAPTER_ID });
       const reply = async (sequence: number) => {
         const id = `00000000-0000-4000-8000-000000000a${30 + sequence}`;
         await db.insert(schema.modelResponses).values({
@@ -587,10 +569,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { providerResponseId: linking, editScopeId: linking },
         ctx,
       );
-      await db
-        .update(schema.documents)
-        .set({ name: "moved" })
-        .where(eq(schema.documents.id, CHAPTER_ID));
+      await liveEdit(MANUSCRIPT_ID, (writer) => writer.rename(LIVE, "system", CHAPTER_ID, "moved"));
       const unlinking = await reply(3);
       await expect(
         agentEdit.write(
@@ -753,12 +732,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "scratch",
         scope: "work",
       });
-      await db.insert(schema.documents).values({
-        id: SCRATCH_B_ID,
-        contextSourceId: SCRATCH_B_SOURCE_ID,
-        name: "notes",
-        extension: "",
-      });
+      await seeder.document(SCRATCH_B_SOURCE_ID, "notes", { id: SCRATCH_B_ID });
       await db.insert(schema.threads).values({
         rootThreadId: THREAD_B_ID,
         id: THREAD_B_ID,

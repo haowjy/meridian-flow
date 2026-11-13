@@ -15,7 +15,6 @@ import {
   resetThreadWorkRaceFixture,
   THREAD_WORK_RACE,
 } from "../domains/threads/test-support/thread-work-postgres-harness.js";
-import { createTestDocumentRemoval } from "../test-support/document-removal.js";
 import { createQuietDrizzleJournalWriter } from "../test-support/journal-writer.js";
 import { waitForPostgresLock } from "../test-support/lock-interleave.js";
 import { createTestWorkProjectionMutation } from "../test-support/work-projection.js";
@@ -53,7 +52,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 4 });
     const threads = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
-      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),

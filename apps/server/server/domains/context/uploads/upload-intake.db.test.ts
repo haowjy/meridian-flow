@@ -9,22 +9,21 @@ import { Hocuspocus } from "@hocuspocus/server";
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
-  contextCatalogEntries,
   contextSources,
   documents,
   projects,
   threads,
+  treeNodes,
   uploadIntakes,
   users,
 } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import {
-  createTestDocumentRemoval,
-  createTestRemovalDeps,
-} from "../../../test-support/document-removal.js";
+import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { treeSeeder } from "../../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { createDrizzleJournal } from "../../collab/adapters/drizzle-journal.js";
 import { createCollabDomain } from "../../collab/composition.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
 import {
@@ -39,7 +38,7 @@ import {
   incomingObjectKey,
   type ObjectStorePort,
 } from "../../storage/index.js";
-import { createDrizzleContextCatalog } from "../adapters/context-catalog.js";
+import { createDrizzleTreeListStore } from "../adapters/drizzle-tree-list-store.js";
 import { createProductionUnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import { createContextUploadContentPort } from "./context-upload-content.js";
 import { createDrizzleUploadIntakeRepository } from "./drizzle-upload-intake.js";
@@ -98,7 +97,6 @@ if (!RUN) {
         objectStore: intakeStore,
         release: createObjectRelease({ objectStore: intakeStore, onFailure() {} }),
         eventSink: createNoopEventSink(),
-        catalog: { refreshSources: async () => "1" },
       });
       return { removed, deleteDraft: intake.deleteDraft };
     }
@@ -124,15 +122,13 @@ if (!RUN) {
       objectStore: ObjectStorePort,
       collab = createInMemoryCollabDomain(),
     ) {
-      const catalog = createDrizzleContextCatalog(db);
       const contextPorts = createProductionUnifiedContextPortFactory({
+        treeLists: createDrizzleTreeListStore({ db: db, journal: createDrizzleJournal(db) }),
         pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
-        removal: createTestDocumentRemoval(db),
         documentSync: collab,
         branches: collab.branches,
-        catalogMutations: catalog,
       });
       return createUploadIntake({
         repository: createDrizzleUploadIntakeRepository(db),
@@ -140,7 +136,6 @@ if (!RUN) {
         objectStore,
         release: createObjectRelease({ objectStore, onFailure() {} }),
         eventSink: createNoopEventSink(),
-        catalog: { refreshSources: async () => "1" },
       });
     }
 
@@ -286,12 +281,8 @@ if (!RUN) {
         .from(uploadIntakes)
         .where(eq(uploadIntakes.documentId, documentId as never));
       if (!intake) throw new Error("intake missing");
-      await database.current.insert(documents).values({
-        id: documentId as never,
-        contextSourceId: intake.contextSourceId as never,
-        name: "chapter",
-        extension: "",
-        fileType: "markdown",
+      await treeSeeder(database.current).document(intake.contextSourceId as string, "chapter", {
+        id: documentId,
       });
       const identity = await repo.finalize(PROJECT, "delete", "chapter");
       const base = { intakeId: "delete", documentId, uri: identity.canonicalUri ?? "" };
@@ -333,14 +324,12 @@ if (!RUN) {
           slug: "manuscript",
           name: "Manuscript",
         });
-        const catalog = createDrizzleContextCatalog(db);
         const collab = createCollabDomain({
           ...testLinkDeps(db),
           db: db,
           ...createTestRemovalDeps(db),
           fileAccess: createAllowAllFileAccess(),
           workProjectionMutation: createTestWorkProjectionMutation(db),
-          catalogMutations: catalog,
         });
         collab.bindHocuspocus(
           new Hocuspocus({
@@ -350,13 +339,12 @@ if (!RUN) {
           }),
         );
         const contextPorts = createProductionUnifiedContextPortFactory({
+          treeLists: createDrizzleTreeListStore({ db: db, journal: createDrizzleJournal(db) }),
           pendingBranch: createTestWorkProjectionMutation(db),
           links: createTestDocumentLinkScopes(db),
           db: db,
-          removal: createTestDocumentRemoval(db),
           documentSync: collab,
           branches: collab.branches,
-          catalogMutations: catalog,
         });
         const intakeStore = createInMemoryObjectStore();
         const service = createUploadIntake({
@@ -365,7 +353,6 @@ if (!RUN) {
           objectStore: intakeStore,
           release: createObjectRelease({ objectStore: intakeStore, onFailure() {} }),
           eventSink: createNoopEventSink(),
-          catalog: { refreshSources: async () => "1" },
         });
         const text =
           "# Chapter One\n\nThe temperature was <10 degrees. {The crowd roared} *loudly*.";
@@ -401,8 +388,8 @@ if (!RUN) {
           if (!result.ok) throw new Error(result.error.code);
           const [document] = await db
             .select()
-            .from(documents)
-            .where(eq(documents.id, result.value.documentId as never));
+            .from(treeNodes)
+            .where(eq(treeNodes.id, result.value.documentId as never));
           expect(document).toMatchObject({ name, extension, fileType });
           const [intake] = await db
             .select()
@@ -425,15 +412,16 @@ if (!RUN) {
     it("finalizes tracked Yjs content and catalog identity in the authoritative boundary", async () => {
       await seed();
       const collab = createInMemoryCollabDomain();
-      const catalog = createDrizzleContextCatalog(database.current);
       const contextPorts = createProductionUnifiedContextPortFactory({
+        treeLists: createDrizzleTreeListStore({
+          db: database.current,
+          journal: createDrizzleJournal(database.current),
+        }),
         pendingBranch: createTestWorkProjectionMutation(database.current),
         links: createTestDocumentLinkScopes(database.current),
         db: database.current,
-        removal: createTestDocumentRemoval(database.current),
         documentSync: collab,
         branches: collab.branches,
-        catalogMutations: catalog,
       });
       const unusedStore = createInMemoryObjectStore();
       const service = createUploadIntake({
@@ -442,7 +430,6 @@ if (!RUN) {
         objectStore: unusedStore,
         release: createObjectRelease({ objectStore: unusedStore, onFailure() {} }),
         eventSink: createNoopEventSink(),
-        catalog,
       });
       const content = new TextEncoder().encode("# Chapter One\n\nIt began.");
       const result = await uploadBytes(service, unusedStore, {
@@ -461,18 +448,18 @@ if (!RUN) {
       });
       const [stored] = await database.current
         .select({ chatThreadId: contextSources.chatThreadId })
-        .from(documents)
-        .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-        .where(eq(documents.id, result.value.documentId as never));
+        .from(treeNodes)
+        .innerJoin(contextSources, eq(contextSources.id, treeNodes.contextSourceId))
+        .where(eq(treeNodes.id, result.value.documentId as never));
       expect(stored?.chatThreadId).toBe(NEW_CHAT);
 
-      // Consumption republishes the upload's facts, so a reader on the delta stream sees `used`.
+      // Consuming marks the upload used, and only for the chat that owns it.
       const publishedUsed = async () => {
         const [row] = await database.current
-          .select({ entry: contextCatalogEntries.entry })
-          .from(contextCatalogEntries)
-          .where(eq(contextCatalogEntries.entryId, result.value.documentId));
-        return row?.entry.kind === "file" ? row.entry.upload?.used : undefined;
+          .select({ consumedAt: uploadIntakes.consumedAt })
+          .from(uploadIntakes)
+          .where(eq(uploadIntakes.documentId, result.value.documentId as never));
+        return row?.consumedAt != null;
       };
       expect(await publishedUsed()).toBe(false);
       await service.consume([result.value.documentId], CHAT);
@@ -523,7 +510,6 @@ if (!RUN) {
           objectStore: hooked,
           release: createObjectRelease({ objectStore: store, onFailure() {} }),
           eventSink: createNoopEventSink(),
-          catalog: { refreshSources: async () => "1" },
         });
         const owner = { kind: "chat" as const, projectId: PROJECT, chatId: NEW_CHAT };
         const bytesOf = (size: number, text = "") =>

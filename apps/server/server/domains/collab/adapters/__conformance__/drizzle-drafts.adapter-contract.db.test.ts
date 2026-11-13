@@ -8,6 +8,7 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { treeSeeder } from "../../../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import { commitDraftRows } from "../../test-support/draft-update-writes.js";
 import { createDraftClose } from "../drizzle-draft-close.js";
@@ -26,7 +27,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       documentDrafts,
       documentYjsCheckpoints,
       documentYjsHeads,
-      documents,
       branches,
       projects,
       threadWorks,
@@ -103,13 +103,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           slug: "manuscript",
           scope: "project",
         });
-        await db.insert(documents).values({
-          id: DOC_ID,
-          contextSourceId: SOURCE_ID,
-          name: "chapter",
-          extension: "",
-          fileType: "markdown",
-        });
+        await treeSeeder(db).document(SOURCE_ID, "chapter", { id: DOC_ID });
         await db.insert(threads).values({
           rootThreadId: THREAD_ID,
           id: THREAD_ID,
@@ -270,21 +264,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { createWorkProjectionMutation } = await import(
         "../../../projects/adapters/work-projection-mutation.js"
       );
-      const { createDrizzleContextCatalog } = await import(
-        "../../../context/adapters/context-catalog.js"
-      );
-      const { createDrizzleProjectContextAvailability } = await import(
-        "../../../context/adapters/project-context-availability.js"
-      );
-      const availability = createDrizzleProjectContextAvailability(db);
-      const catalog = createDrizzleContextCatalog(db, undefined, {
-        availabilityMutations: availability,
-      });
       const projection = createWorkProjectionMutation({
         db,
         pendingCounts: createDrizzleWorkBranchPendingStore(db),
-        availability,
-        catalog,
+        draftOwnerHints: { publishDraftOwnerHints: () => {} },
       });
       const measuredStore = createDrizzleDraftStore(db, {
         close: createDraftClose(),

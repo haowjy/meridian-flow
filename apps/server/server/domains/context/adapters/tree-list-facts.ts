@@ -31,6 +31,29 @@ export async function listIdOf(db: DrizzleDb, list: TreeList): Promise<string | 
   return row?.id ?? null;
 }
 
+/**
+ * The list a source's nodes are in: the account's for its `user://` source (the personal
+ * project's source with slug `user`), else the list of the project that holds the source (a
+ * Work's source belongs to the Work's project).
+ */
+export async function treeListOfSource(db: DrizzleDb, sourceId: string): Promise<TreeList> {
+  const [row] = await currentDrizzleDb(db as Database).execute<{
+    project_id: string;
+    user_id: string;
+    account: boolean;
+  }>(sql`
+    SELECT p.id::text AS project_id, p.user_id::text AS user_id,
+      (s.scope = 'project' AND s.slug = 'user') AS account
+    FROM context_sources s
+      LEFT JOIN works w ON w.id = s.work_id
+      JOIN projects p ON p.id = COALESCE(s.project_id, w.project_id)
+    WHERE s.id = ${sourceId}::uuid`);
+  if (!row) throw new Error(`Context source ${sourceId} is gone`);
+  return row.account
+    ? { kind: "account", userId: row.user_id }
+    : { kind: "project", projectId: row.project_id };
+}
+
 /** The project that owns the documents a list's creates make: an account's list is its personal project's. */
 export async function projectOfList(db: DrizzleDb, list: TreeList): Promise<string> {
   if (list.kind === "project") return list.projectId;

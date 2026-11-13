@@ -22,7 +22,9 @@ import {
 } from "../domains/billing/index.js";
 import { createDrizzleDocumentRemovalCollab } from "../domains/collab/adapters/drizzle-document-removal.js";
 import { createDraftClose } from "../domains/collab/adapters/drizzle-draft-close.js";
+import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
+import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
   type CollabDomain,
@@ -33,8 +35,6 @@ import {
 } from "../domains/collab/index.js";
 import {
   type ContextCatalog,
-  type ContextCatalogFileMutationPort,
-  type ContextCatalogMutationPort,
   type ContextCatalogWakeHub,
   createContextCatalogWakeHub,
   createContextUploadContentPort,
@@ -61,7 +61,6 @@ import {
   createDrizzleUploadIntakeRepository,
   createFigureAssetService,
   createHiddenNodeRepair,
-  createInMemoryUnifiedContextPortFactory,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createRemovalRecords,
@@ -69,6 +68,7 @@ import {
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentArrivals,
+  type DraftOwnerHintPort,
   type DocumentLinkResolver,
   type DocumentPropertiesReader,
   type DocumentRemovals,
@@ -76,7 +76,6 @@ import {
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
-  type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
   type PromotionService,
   type RestoreRemovedDocuments,
@@ -84,6 +83,7 @@ import {
   type UploadIdentityPort,
   type UploadIntake,
 } from "../domains/context/index.js";
+import { emptyOwnerLookup } from "../domains/context/owner-lookup.js";
 import { createTreeReader, type TreeReader } from "../domains/context/tree/tree-view.js";
 import { createDrizzleExportSnapshotStore } from "../domains/export/adapters/drizzle-export-snapshot.js";
 import {
@@ -398,10 +398,7 @@ export type ProductionAppPorts = {
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
-  contextCatalog: ContextCatalog &
-    ContextCatalogMutationPort &
-    ContextCatalogFileMutationPort &
-    ProjectCatalogLifecyclePort;
+  contextCatalog: ContextCatalog & DraftOwnerHintPort;
   restoreRemovedDocuments: RestoreRemovedDocuments;
   documentTrash: DocumentTrash;
   projectContextAvailability: ProjectContextAvailabilityPort;
@@ -508,13 +505,10 @@ export async function createProductionAppPorts(input: {
   const backgroundTasks = input.backgroundTasks ?? createDetachedWorkTracker();
   const contextCatalogWakeHub = createContextCatalogWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
-  const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub, {
-    availabilityMutations: projectContextAvailability,
-  });
+  const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub);
   const workProjectionMutation = createWorkProjectionMutation({
     db,
-    availability: projectContextAvailability,
-    catalog: contextCatalog,
+    draftOwnerHints: contextCatalog,
     pendingCounts: createDrizzleWorkBranchPendingStore(db),
     eventSink,
   });
@@ -526,7 +520,7 @@ export async function createProductionAppPorts(input: {
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const organizeWake = createOrganizeWakeHub();
   const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
-  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals, {
+  const lineageScratch = createDrizzleLineageScratchLifecycle(db, arrivals, {
     fileAccessChanges,
     draftOwnerHints: contextCatalog,
   });
@@ -543,7 +537,6 @@ export async function createProductionAppPorts(input: {
   let workRepo: ProjectWorkRepository;
   const projectRepo = createDrizzleProjectRepository({
     db,
-    catalogLifecycle: contextCatalog,
     ensureNoWork: (projectId) => workRepo.ensureNoWork(projectId),
   });
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
@@ -598,11 +591,12 @@ export async function createProductionAppPorts(input: {
     observer: createLinkScopeObserver(eventSink),
     repair: hiddenNodeRepair,
   });
+  // The project's tree lists, composed once: every server write of the tree is a `submit` on one.
+  const treeLists = createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) });
   const documentSync = createCollabDomain({
     db,
     backgroundTasks,
     arrivals,
-    catalogMutations: contextCatalog,
     aheadRegistrations: linkAheadRegistry,
     fileAccess,
     links: documentLinks,
@@ -637,12 +631,8 @@ export async function createProductionAppPorts(input: {
     links: documentLinks,
     db,
     documentSync,
-    documentDerivations: documentSync.documentDerivations,
-    catalogMutations: contextCatalog,
-    eventSink,
+    treeLists,
     arrivals,
-    hiddenNodeRepair,
-    removal: documentRemoval,
     branches: documentSync.branches,
     pendingBranch: workProjectionMutation,
     copy: { documentSync, objectStore, release: objectRelease },
@@ -653,7 +643,6 @@ export async function createProductionAppPorts(input: {
     objectStore,
     release: objectRelease,
     eventSink,
-    catalog: contextCatalog,
   });
   const uploadIdentity = createDrizzleUploadIdentityPort(db);
   const figureAssets = createFigureAssetService({
@@ -668,7 +657,6 @@ export async function createProductionAppPorts(input: {
   const projects = createDrizzleProjectBootstrapRepository({
     db,
     documents: documentSync,
-    catalogLifecycle: contextCatalog,
   });
   workRepo = createDrizzleProjectWorkRepository({
     db,
@@ -1556,7 +1544,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     linkAheadRegistry,
-    contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
+    contextPorts: createInMemoryContextPorts(),
     openImports: async () => [],
     importOrganizer: {
       async runPass() {
@@ -1908,6 +1896,38 @@ export function createInMemoryAppServices(): AppServices {
     async shutdown() {
       await backgroundTasks.drain();
     },
+  };
+}
+
+/** The in-memory app has no tree: a port for any context is refused where it is asked for. */
+function createInMemoryContextPorts(): UnifiedContextPortFactory {
+  const unavailable = (): never => {
+    throw new Error("Context requires durable persistence");
+  };
+  return {
+    lineages: {
+      async byId() {
+        return null;
+      },
+      async rootForThreadRef() {
+        return null;
+      },
+      async byRef() {
+        return null;
+      },
+      async list() {
+        return [];
+      },
+    },
+    chats: {
+      async byRef() {
+        return null;
+      },
+    },
+    topPrimaryChats: { resolveTopPrimaryChat: async () => null },
+    chatFiles: emptyOwnerLookup,
+    forProject: unavailable,
+    forWork: unavailable,
   };
 }
 

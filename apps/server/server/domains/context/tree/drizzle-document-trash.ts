@@ -1,41 +1,36 @@
-/** Drizzle adapter for restorable document trash and permanent content purge. */
+/** Drizzle adapter for restorable document trash and retention: emptying Trash, and the purge window. */
 import { type DocumentId, type ProjectId, serializeRemovalIdentity } from "@meridian/contracts";
 import type { DocumentTrashEntry, GetDocumentTrashResponse } from "@meridian/contracts/protocol";
 import { deletionPurgeAt, deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
 import {
   branches,
+  branchTreeNodes,
   contextSources,
   documents,
   projects,
   threads,
+  treeNodes,
   works,
 } from "@meridian/database/schema";
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { descendantsOf, LIVE, listRecords, settlementsOf } from "@meridian/project-tree";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import { createObjectRelease, type ObjectStorePort } from "../../storage/index.js";
 import type { DocumentPurgeDraftDisposal, DocumentTrash } from "../ports/document-trash.js";
-import { releaseDocumentStorage } from "./node-rows.js";
-import { readRemovalRecords } from "./removal.js";
+import type { TreeList, TreeListStore } from "../ports/tree-list-store.js";
+import { pendingDocuments } from "./pending-documents.js";
+import { releaseDocumentContent } from "./release-document-content.js";
 import { loadDocumentAddresses } from "./tree-addresses.js";
-import { pendingDocuments } from "./tree-view-sql.js";
 
+/** Documents released in one run: bounds how long one run holds the database. */
 const DOCUMENT_PURGE_BATCH_LIMIT = 100;
+const ENTRY_PAGE = 100;
 const sourceProjects = alias(projects, "document_trash_source_projects");
 const requestProjects = alias(projects, "document_trash_request_projects");
-
-/** The one lifecycle gate shared by trash reads and both stages of purge. */
-function trashEligible() {
-  return sql<boolean>`${isNotNull(documents.deletedAt)}
-    AND ${eq(documents.deletionReason, "deleted")}
-    AND ${eq(documents.hidden, false)}
-    AND ${isNull(documents.deletedByWorkId)}
-    AND ${isNull(documents.contentPurgedAt)}
-    AND ${isNull(contextSources.deletedAt)}
-    AND ${isNull(sourceProjects.deletedAt)}`;
-}
 
 /** A project owns its own sources plus its account's personal user:// source. */
 function projectTrashMember() {
@@ -44,11 +39,17 @@ function projectTrashMember() {
       AND ${eq(sourceProjects.userId, requestProjects.userId)}))`;
 }
 
+/** A Work still has a change on the purge's nodes: the purge waits and its records are not kept. */
+class PurgeWaits extends Error {}
+
+type Released = { documentIds: DocumentId[]; storageUrls: string[] };
+
 export function createDrizzleDocumentTrash(deps: {
   db: Database;
   objectStore: Pick<ObjectStorePort, "delete">;
   eventSink: EventSink;
   drafts: DocumentPurgeDraftDisposal;
+  tree: Pick<TreeListStore, "submit">;
   /** The document's stored Yjs as markdown; the trash keeps no text of its own. */
   readMarkdown(documentId: DocumentId): Promise<string>;
 }): DocumentTrash {
@@ -64,18 +65,18 @@ export function createDrizzleDocumentTrash(deps: {
     },
   });
 
-  const rows = async (projectId: ProjectId, documentId?: DocumentId) => {
-    const tx = currentDrizzleDb(deps.db);
-    return tx
+  /** The Trash rows of a project: documents with a delete in force, in a living source. */
+  const rows = async (projectId: ProjectId, documentIds?: readonly DocumentId[]) =>
+    currentDrizzleDb(deps.db)
       .select({
-        documentId: documents.id,
-        name: documents.name,
-        extension: documents.extension,
-        deletedAt: sql<Date>`${documents.deletedAt}`.mapWith(documents.deletedAt),
-        locationVersion: documents.locationVersion,
+        documentId: treeNodes.id,
+        name: treeNodes.name,
+        trashedAt: sql<Date>`${treeNodes.trashedAt}`.mapWith(treeNodes.trashedAt),
+        locationVersion: treeNodes.locationVersion,
       })
-      .from(documents)
-      .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+      .from(treeNodes)
+      .innerJoin(documents, eq(documents.id, treeNodes.id))
+      .innerJoin(contextSources, eq(contextSources.id, treeNodes.contextSourceId))
       .leftJoin(works, eq(works.id, contextSources.workId))
       .innerJoin(
         sourceProjects,
@@ -84,24 +85,24 @@ export function createDrizzleDocumentTrash(deps: {
       .innerJoin(requestProjects, eq(requestProjects.id, projectId))
       .where(
         and(
-          projectTrashMember(),
+          eq(treeNodes.kind, "document"),
+          isNotNull(treeNodes.trashRecord),
+          isNull(documents.contentPurgedAt),
+          isNull(contextSources.deletedAt),
+          isNull(sourceProjects.deletedAt),
           isNull(requestProjects.deletedAt),
-          documentId ? eq(documents.id, documentId) : undefined,
-          trashEligible(),
+          projectTrashMember(),
+          documentIds ? inArray(treeNodes.id, [...documentIds]) : undefined,
         ),
       )
-      .orderBy(desc(documents.deletedAt), desc(documents.id));
-  };
+      .orderBy(desc(treeNodes.trashedAt), desc(treeNodes.id));
 
   const entries = async (
     result: Awaited<ReturnType<typeof rows>>,
   ): Promise<DocumentTrashEntry[]> => {
     const tx = currentDrizzleDb(deps.db);
     const ids = result.map(({ documentId }) => documentId as DocumentId);
-    const [addresses, removals] = await Promise.all([
-      loadDocumentAddresses(deps.db, { ids }),
-      readRemovalRecords(tx, ids),
-    ]);
+    const addresses = await loadDocumentAddresses(deps.db, { ids });
     const held = new Map<DocumentId, Array<{ id: string; name: string }>>();
     if (ids.length) {
       const pending = await tx.execute<{ document_id: string; id: string; name: string }>(sql`
@@ -128,117 +129,195 @@ export function createDrizzleDocumentTrash(deps: {
     return result.flatMap((row): DocumentTrashEntry[] => {
       const documentId = row.documentId as DocumentId;
       const address = addressesById.get(documentId);
-      const record = removals.get(documentId);
-      if (!address || !record || !row.deletedAt) return [];
+      if (!address || !row.trashedAt) return [];
       return [
         {
           documentId,
-          name: row.extension ? `${row.name}.${row.extension}` : row.name,
+          name: row.name,
           scheme: address.scheme,
           formerPath: address.path,
           removal: serializeRemovalIdentity({
-            time: row.deletedAt,
+            time: row.trashedAt,
             locationVersion: row.locationVersion,
           }),
-          actor: record.actor,
+          // The delete record's author lives in the list, which this reader does not open.
+          actor: null,
           retention: held.has(documentId)
             ? { kind: "held", works: held.get(documentId) ?? [] }
-            : { kind: "scheduled", purgeAt: deletionPurgeAt(row.deletedAt).toISOString() },
+            : { kind: "scheduled", purgeAt: deletionPurgeAt(row.trashedAt).toISOString() },
         },
       ];
     });
   };
 
-  async function purgeOne(
-    documentId: DocumentId,
-    cutoff: Date,
-  ): Promise<{ purged: boolean; storageUrl: string | null }> {
-    return deps.drafts.withDisposal(documentId, (disposeDrafts) =>
-      runInDrizzleTransaction(deps.db, async () => {
-        const tx = currentDrizzleDb(deps.db);
-        const [row] = await tx
-          .select({
-            deletedAt: documents.deletedAt,
-            storageUrl: documents.storageUrl,
-            eligible: trashEligible(),
-          })
-          .from(documents)
-          .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-          .leftJoin(works, eq(works.id, contextSources.workId))
-          .innerJoin(
-            sourceProjects,
-            eq(sourceProjects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
-          )
-          .where(eq(documents.id, documentId));
-        if (!row?.eligible || !row.deletedAt || row.deletedAt.getTime() > cutoff.getTime()) {
-          return { purged: false, storageUrl: null };
-        }
+  /**
+   * Releases the documents' content, after their rows are gone from every view: the journal and
+   * what hung on the text, then the row is marked and loses its bytes. The caller holds the
+   * documents' locks and has closed their drafts.
+   */
+  async function release(documentIds: DocumentId[]): Promise<Released> {
+    const tx = currentDrizzleDb(deps.db);
+    if (documentIds.length === 0) return { documentIds, storageUrls: [] };
+    const held = await tx
+      .select({ id: documents.id, storageUrl: documents.storageUrl })
+      .from(documents)
+      .where(and(inArray(documents.id, documentIds), isNull(documents.contentPurgedAt)));
+    const ids = held.map(({ id }) => id as DocumentId);
+    await releaseDocumentContent(deps.db, ids);
+    const purgedAt = new Date();
+    await tx
+      .update(documents)
+      .set({
+        contentPurgedAt: purgedAt,
+        storageUrl: null,
+        mimeType: null,
+        sizeBytes: null,
+        metadata: {},
+        updatedAt: purgedAt,
+      })
+      .where(inArray(documents.id, ids));
+    return {
+      documentIds: ids,
+      storageUrls: held.flatMap(({ storageUrl }) => (storageUrl ? [storageUrl] : [])),
+    };
+  }
 
-        const [pending] = await tx.execute<{ pending: boolean }>(sql`
-          SELECT EXISTS (
-            SELECT 1 FROM (${pendingDocuments(
-              sql`SELECT ${branches.id} FROM ${branches} WHERE ${branches.status} = 'active'`,
-              documentId,
-            )}) pending
-          ) AS pending
-        `);
-        if (pending?.pending) return { purged: false, storageUrl: null };
+  /**
+   * Empties one Trash entry: a `purge` record naming the delete, then the content of the
+   * documents it took. The whole subtree goes in one submission (a folder purged while a child's
+   * row stands fails the deferred foreign key). Null when the entry is not there, a node outside
+   * it stands inside it, or a Work still has a change on it: retention waits.
+   */
+  async function purgeEntry(list: TreeList, deleteId: string): Promise<Released | null> {
+    try {
+      return await runInDrizzleTransaction(deps.db, async () => {
+        const { result } = await deps.tree.submit({
+          list,
+          make(writer) {
+            const view = writer.view(LIVE);
+            const entry = view.trash.find((each) => each.id === deleteId || each.from === deleteId);
+            if (!entry) return { records: [], result: null };
+            const taken = new Set([entry.node, ...entry.cascade]);
+            const standing = [...taken].some((id) =>
+              descendantsOf(view, id).some(
+                (below) => !taken.has(below) && !view.nodes.get(below)?.purged,
+              ),
+            );
+            const settled = settlementsOf(writer.doc);
+            const changing = listRecords(writer.doc).some(
+              (record) =>
+                record.draft !== null &&
+                !settled.has(record.id) &&
+                (taken.has(record.node) ||
+                  ((record.type === "create" || record.type === "move") &&
+                    taken.has(record.parent))),
+            );
+            if (standing || changing) return { records: [], result: null };
+            writer.purge("system", { id: entry.id, node: entry.node });
+            return {
+              records: [],
+              result: [...taken].filter(
+                (id) => view.nodes.get(id)?.kind !== "folder",
+              ) as DocumentId[],
+            };
+          },
+        });
+        if (result === null) return null;
+        if ((await deps.drafts.settle(result)) === "pending") throw new PurgeWaits();
+        return release(result);
+      });
+    } catch (cause) {
+      if (cause instanceof PurgeWaits) return null;
+      throw cause;
+    }
+  }
 
-        await disposeDrafts();
-        await releaseDocumentStorage(deps.db, [documentId], { retainHistory: false });
-        const purgedAt = new Date();
-        const updated = await tx
-          .update(documents)
-          .set({
-            contentPurgedAt: purgedAt,
-            storageUrl: null,
-            mimeType: null,
-            sizeBytes: null,
-            description: null,
-            metadata: {},
-            updatedAt: purgedAt,
-          })
-          .where(
-            and(
-              eq(documents.id, documentId),
-              isNull(documents.contentPurgedAt),
-              lte(documents.deletedAt, cutoff),
-            ),
-          )
-          .returning({ id: documents.id });
-        return { purged: updated.length > 0, storageUrl: row.storageUrl };
-      }),
+  /** The Trash entries whose nodes have all been in Trash since `cutoff`, oldest first. */
+  async function dueEntries(cutoff: Date, after: { at: Date; id: string } | undefined) {
+    const rowsDue = await currentDrizzleDb(deps.db).execute<{
+      deleteId: string;
+      projectId: string | null;
+      userId: string | null;
+      at: Date;
+    }>(sql`
+      SELECT t.trash_record AS "deleteId", p.id::text AS "projectId", u.id::text AS "userId",
+        min(t.trashed_at) AS "at"
+      FROM tree_nodes t
+        JOIN context_sources cs ON cs.id = t.context_source_id
+        LEFT JOIN projects p ON p.tree_list_id = t.list_id
+        LEFT JOIN users u ON u.tree_list_id = t.list_id
+      WHERE t.trash_record IS NOT NULL
+      GROUP BY t.list_id, t.trash_record, p.id, p.deleted_at, u.id
+      HAVING max(t.trashed_at) <= ${cutoff.toISOString()}::timestamptz
+        AND bool_and(cs.deleted_at IS NULL) AND p.deleted_at IS NULL
+        ${after ? sql`AND (min(t.trashed_at), t.trash_record) > (${after.at.toISOString()}::timestamptz, ${after.id})` : sql``}
+      ORDER BY min(t.trashed_at), t.trash_record
+      LIMIT ${ENTRY_PAGE}`);
+    return rowsDue.map((row) => ({
+      deleteId: row.deleteId,
+      at: new Date(row.at),
+      list: (row.projectId
+        ? { kind: "project", projectId: row.projectId }
+        : { kind: "account", userId: row.userId as string }) as TreeList,
+    }));
+  }
+
+  /**
+   * A document no view shows: its drafted create was discarded, or refused and not kept, and
+   * it has been that way since `cutoff`. It has no node, so there is no record to append; the
+   * lists that can reshow it (an Undo of the Discard) are locked while its content is released.
+   */
+  async function purgeUnviewed(documentId: DocumentId, cutoff: Date): Promise<Released | null> {
+    const tx = () => currentDrizzleDb(deps.db);
+    return runInDrizzleTransaction(deps.db, async () => {
+      const [owner] = await tx().execute<{ project: string; account: string }>(sql`
+        SELECT p.tree_list_id::text AS project, u.tree_list_id::text AS account
+        FROM documents d JOIN projects p ON p.id = d.project_id JOIN users u ON u.id = p.user_id
+        WHERE d.id = ${documentId}::uuid`);
+      if (!owner) return null;
+      for (const list of [...new Set([owner.project, owner.account])].sort())
+        await lockDocumentMutation(tx(), list);
+      const [still] = await tx()
+        .select({ id: documents.id })
+        .from(documents)
+        .where(and(eq(documents.id, documentId), unviewedBefore(cutoff)))
+        .limit(1);
+      if (!still) return null;
+      if ((await deps.drafts.settle([documentId])) === "pending") return null;
+      return release([documentId]);
+    });
+  }
+
+  function unviewedBefore(cutoff: Date) {
+    return and(
+      isNull(documents.contentPurgedAt),
+      lte(documents.inNoViewSince, cutoff),
+      notExists(
+        currentDrizzleDb(deps.db)
+          .select({ one: sql`1` })
+          .from(treeNodes)
+          .where(eq(treeNodes.id, documents.id)),
+      ),
+      notExists(
+        currentDrizzleDb(deps.db)
+          .select({ one: sql`1` })
+          .from(branchTreeNodes)
+          .where(eq(branchTreeNodes.id, documents.id)),
+      ),
     );
   }
 
   return {
     async retained(projectId, documentIds): Promise<ReadonlySet<DocumentId>> {
       if (documentIds.length === 0) return new Set();
-      const rows = await currentDrizzleDb(deps.db)
-        .select({ id: documents.id })
-        .from(documents)
-        .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-        .leftJoin(works, eq(works.id, contextSources.workId))
-        .innerJoin(
-          sourceProjects,
-          eq(sourceProjects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
-        )
-        .innerJoin(requestProjects, eq(requestProjects.id, projectId))
-        .where(
-          and(
-            inArray(documents.id, documentIds),
-            projectTrashMember(),
-            isNull(requestProjects.deletedAt),
-            trashEligible(),
-          ),
-        );
-      return new Set(rows.map(({ id }) => id as DocumentId));
+      const found = await rows(projectId, documentIds);
+      return new Set(found.map(({ documentId }) => documentId as DocumentId));
     },
     async list(projectId): Promise<readonly DocumentTrashEntry[]> {
       return entries(await rows(projectId));
     },
     async read(projectId, documentId): Promise<GetDocumentTrashResponse | null> {
-      const entry = (await entries(await rows(projectId, documentId)))[0];
+      const entry = (await entries(await rows(projectId, [documentId])))[0];
       if (!entry) return null;
       return { ...entry, markdown: await deps.readMarkdown(documentId) };
     },
@@ -246,19 +325,15 @@ export function createDrizzleDocumentTrash(deps: {
       const [row] = await currentDrizzleDb(deps.db)
         .select({ id: documents.id })
         .from(documents)
-        .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-        .leftJoin(works, eq(works.id, contextSources.workId))
-        .innerJoin(
-          sourceProjects,
-          eq(sourceProjects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
-        )
+        .innerJoin(sourceProjects, eq(sourceProjects.id, documents.projectId))
         .innerJoin(requestProjects, eq(requestProjects.id, projectId))
         .where(
           and(
             eq(documents.id, documentId),
-            projectTrashMember(),
             isNull(requestProjects.deletedAt),
             isNotNull(documents.contentPurgedAt),
+            sql`(${eq(sourceProjects.id, requestProjects.id)}
+              OR (${eq(sourceProjects.userId, requestProjects.userId)} AND ${sourceProjects.isPersonal}))`,
           ),
         )
         .limit(1);
@@ -267,42 +342,35 @@ export function createDrizzleDocumentTrash(deps: {
     async purge(): Promise<number> {
       const cutoff = deletionPurgeCutoff(new Date());
       let count = 0;
-      let after: { id: DocumentId; deletedAt: Date } | undefined;
+      const finish = async (released: Released | null) => {
+        if (!released) return;
+        count += released.documentIds.length;
+        if (released.storageUrls.length) await objects.storageUrls(released.storageUrls);
+      };
+      let after: { at: Date; id: string } | undefined;
+      while (count < DOCUMENT_PURGE_BATCH_LIMIT) {
+        const due = await dueEntries(cutoff, after);
+        const last = due.at(-1);
+        if (!last) break;
+        after = { at: last.at, id: last.deleteId };
+        for (const entry of due) {
+          if (count >= DOCUMENT_PURGE_BATCH_LIMIT) break;
+          await finish(await purgeEntry(entry.list, entry.deleteId));
+        }
+      }
       while (count < DOCUMENT_PURGE_BATCH_LIMIT) {
         const candidates = await currentDrizzleDb(deps.db)
-          .select({
-            id: documents.id,
-            deletedAt: sql<Date>`${documents.deletedAt}`.mapWith(documents.deletedAt),
-          })
+          .select({ id: documents.id })
           .from(documents)
-          .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-          .leftJoin(works, eq(works.id, contextSources.workId))
-          .innerJoin(
-            sourceProjects,
-            eq(sourceProjects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
-          )
-          .where(
-            and(
-              lte(documents.deletedAt, cutoff),
-              trashEligible(),
-              after
-                ? or(
-                    gt(documents.deletedAt, after.deletedAt),
-                    and(eq(documents.deletedAt, after.deletedAt), gt(documents.id, after.id)),
-                  )
-                : undefined,
-            ),
-          )
-          .orderBy(asc(documents.deletedAt), asc(documents.id))
+          .where(unviewedBefore(cutoff))
+          .orderBy(asc(documents.inNoViewSince), asc(documents.id))
           .limit(DOCUMENT_PURGE_BATCH_LIMIT - count);
-        after = candidates.at(-1);
-        if (!after) break;
-        for (const candidate of candidates) {
-          const result = await purgeOne(candidate.id, cutoff);
-          if (!result.purged) continue;
-          count += 1;
-          if (result.storageUrl) await objects.storageUrls([result.storageUrl]);
-        }
+        if (candidates.length === 0) break;
+        const before = count;
+        for (const { id } of candidates)
+          await finish(await purgeUnviewed(id as DocumentId, cutoff));
+        // A candidate that waits stays a candidate: stop when a pass releases nothing.
+        if (count === before) break;
       }
       return count;
     },

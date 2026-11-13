@@ -7,7 +7,6 @@
 
 import type { CopyContextEntriesResult } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import type { ContextOperationReceipts } from "../context/context-operation-receipts.js";
 import type { ContextSchemeAdapter } from "../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../ports/context-command-transaction.js";
 import type { ContextCopyRequest, ContextError, ContextScheme } from "../ports/context-port.js";
@@ -30,7 +29,6 @@ export interface CopyEnd {
 export interface ContextCopyPortDeps {
   /** Absent compositions refuse Copy typed. */
   copy: ContextCopyCommandDeps | undefined;
-  receipts: ContextOperationReceipts | undefined;
   commandTransaction: ContextCommandTransaction | undefined;
   /** The router's one identity-destination resolver, re-run under the command's locks. */
   resolveIdentityDestination: (
@@ -58,8 +56,8 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
   return async function copy(
     request: ContextCopyRequest,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
-    const { receipts, commandTransaction } = deps;
-    if (!deps.copy || !receipts || !commandTransaction) {
+    const { commandTransaction } = deps;
+    if (!deps.copy || !commandTransaction) {
       return Err({
         code: "invalid_operation",
         uri: request.destinationUri,
@@ -104,7 +102,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
     const parent = request.destinationParent;
     const folderParent = parent?.kind === "folder" ? parent : null;
     return createContextCopyCommand(deps.copy).copy({
-      environment: { receipts, commandTransaction },
+      environment: { commandTransaction },
       request,
       sources,
       destination: destinationHandoff,

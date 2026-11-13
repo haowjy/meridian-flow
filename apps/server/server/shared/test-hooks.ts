@@ -11,7 +11,6 @@ const TEST_HOOK_POINTS = [
   "createInBranch.afterCandidateLock",
   "createLive.afterLease",
   "createLive.afterCandidateLock",
-  "endUse.afterRevalidate",
   "moves.beforeInstall",
   "place.afterRevalidate",
   /** A removal wrote its record and, for a discard, closed the drafts; not yet committed. */
@@ -41,8 +40,6 @@ const TEST_HOOK_POINTS = [
   "draft.beforeAccess",
   "apply.beforeCompile",
   "apply.beforeBoundary",
-  /** Apply chose its lock scope from an unlocked tree read and holds no tree lock yet. */
-  "apply.afterScopeGuess",
   "apply.afterLive",
   /** A created document's retraction read its drafts and holds no draft row yet. */
   "retract.beforeLocks",

@@ -14,11 +14,9 @@ import {
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
-import { formatParsedContextUri, parseContextUri } from "@meridian/contracts/context-uri";
-import { type ContextMoveResult, renderFilename } from "@meridian/contracts/protocol";
 import { contextPortForThread } from "../../domains/context/context-port-resolution.js";
 import { contextAreaOf } from "../../domains/context/index.js";
-import type { RecordedBranchTreeChange } from "../../domains/context/ports/branch-tree.js";
+import type { AdapterDraftedChange } from "../../domains/context/ports/context-adapter.js";
 import type { ContextError, FileRef } from "../../domains/context/ports/context-port.js";
 import {
   type FileGrant,
@@ -207,7 +205,7 @@ async function commitLive(
   // The port takes the folder and the leaf apart; the leaf is what the model typed.
   const typed = await canonicalPath(call, input.path);
   const slash = typed.lastIndexOf("/");
-  const moved = await port.commitWriterLocation(
+  const moved = await port.move(
     { kind: "file", nodeId: source.documentId },
     contextAreaOf(source.uri),
     {
@@ -215,7 +213,7 @@ async function commitLive(
       name: typed.slice(slash + 1),
       origin,
       ...(position ? { position } : {}),
-      inTransaction: (result: ContextMoveResult) => record(result.destinationUri),
+      inTransaction: (result) => record(result.destinationUri),
     },
   );
   if (!moved.ok) return refuse(moved.error);
@@ -229,8 +227,8 @@ async function commitLive(
 }
 
 /**
- * The drafted move or delete: the branch's facts, through the chat's own (draft-placed) port,
- * with its tree entry recorded in the same transaction. Never the mover; live is untouched.
+ * The drafted move or delete: records of the Work's branch, made through the chat's own
+ * (draft-placed) port, with its tree entry recorded in the same transaction. Live is untouched.
  */
 async function commitDrafted(
   deps: ToolWiringDeps,
@@ -242,31 +240,24 @@ async function commitDrafted(
   const history = deps.documentSync.treeHistory();
   const threadId = ctx.threadId as ThreadId;
   const turnId = ctx.turnId ? (ctx.turnId as TurnId) : undefined;
-  const wantedAt = input.command === "move" ? await canonicalPath(call, input.path) : undefined;
   const position = input.command === "move" ? await siblingPosition(call, input) : undefined;
   if (position && "output" in position) return position;
+  const origin = {
+    type: "agent" as const,
+    agentSlug: ctx.agentSlug,
+    threadId: ctx.threadId,
+    turnId: ctx.turnId,
+  };
   let recorded: string | undefined;
-  const record = async (change: RecordedBranchTreeChange) => {
-    const moved = change.after.moved;
-    const wanted = wantedAt ? parseContextUri(wantedAt) : null;
-    const landedAt =
-      moved && wanted?.ok
-        ? formatParsedContextUri(
-            wanted.value.scheme,
-            [
-              ...wanted.value.path.split("/").slice(0, -1),
-              renderFilename(moved.name, moved.extension),
-            ].join("/"),
-            wanted.value.authority,
-          )
-        : undefined;
+  const record = async (drafted: AdapterDraftedChange | undefined, landedAt?: string) => {
+    if (!drafted) throw new Error(`A drafted ${input.command} reported no branch change`);
     const common = {
       documentId: source.documentId,
       threadId,
       ...(turnId ? { turnId } : {}),
       ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
       ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
-      change: { destination: "draft" as const, ...change },
+      change: { destination: "draft" as const, ...drafted },
       shownAt: source.uri,
     };
     recorded = (
@@ -279,34 +270,40 @@ async function commitDrafted(
         : history.recordAgentTreeChange({ ...common, op: "delete" }))
     ).handle;
   };
-  const command = {
-    documentId: source.documentId,
-    area: contextAreaOf(source.uri),
-    changedBy: { threadId, ...(turnId ? { turnId } : {}) },
-    record,
-  };
-  const changed = await call.context.port.changeInBranch(
-    input.command === "move"
-      ? {
-          ...command,
-          op: "move",
-          destinationUri: input.path,
-          ...(position ? { position } : {}),
-        }
-      : { ...command, op: "delete" },
-  );
-  if (!changed.ok)
-    return namespaceContextRefusal(input.command, changed.error, {
+  const node = { kind: "file" as const, nodeId: source.documentId };
+  const area = contextAreaOf(source.uri);
+  const refuse = (error: ContextError) =>
+    namespaceContextRefusal(input.command, error, {
       path: source.uri,
       ...(input.command === "move" ? { destination: input.path } : {}),
     });
-  if (input.command === "move" && !changed.value.moved)
+  if (input.command === "delete") {
+    const deleted = await call.context.port.delete(node, area, {
+      origin,
+      drafted: true,
+      inTransaction: (result) => record(result.drafted),
+    });
+    if (!deleted.ok) return refuse(deleted.error);
+    if (!recorded) throw new Error("A drafted delete committed without its tree entry");
+    return { handle: recorded, uri: source.uri };
+  }
+  const typed = await canonicalPath(call, input.path);
+  const slash = typed.lastIndexOf("/");
+  const moved = await call.context.port.move(node, area, {
+    destination: { kind: "at", folderUri: typed.slice(0, slash + 1) },
+    name: typed.slice(slash + 1),
+    origin,
+    drafted: true,
+    ...(position ? { position } : {}),
+    inTransaction: (result) => record(result.drafted, result.destinationUri),
+  });
+  if (!moved.ok) return refuse(moved.error);
+  if (!recorded)
     return namespaceRefusal(input.command, "already_at_destination", {
       path: source.uri,
       destination: input.path,
     });
-  if (!recorded) throw new Error(`A drafted ${input.command} committed without its tree entry`);
-  return { handle: recorded, uri: input.command === "move" ? changed.value.uri : source.uri };
+  return { handle: recorded, uri: moved.value.destinationUri };
 }
 
 /**

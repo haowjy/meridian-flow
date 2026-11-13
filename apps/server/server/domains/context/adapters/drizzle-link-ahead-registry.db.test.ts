@@ -1,5 +1,5 @@
 /**
- * PostgreSQL proof for ahead registration, the namespace race with arrival, settlement CAS, and refs written in a draft: registered globally and left unbound until a live document arrives (12a), the writer's own links registered from the review room (L-3).
+ * PostgreSQL proof for ahead registration, settlement CAS, and refs written in a draft: registered globally and left unbound until a live document arrives (12a), the writer's own links registered from the review room (L-3).
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - global ahead registration, arrival settlement CAS, and draft-ref deferral (kb/wiki/architecture/documents/links.md#gone-missing-and-ahead)
@@ -9,13 +9,13 @@ import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documents,
   linkAheadRefs,
   projects,
   threads,
   users,
   works,
 } from "@meridian/database/schema";
+import { LIVE } from "@meridian/project-tree";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -24,17 +24,13 @@ import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js"
 import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import { createScopedDocumentLinks } from "../../collab/domain/document-links-port.js";
 import {
   createTestDocumentLinkScopes,
   createTestLinkAheadRegistry,
 } from "../../collab/test-support/document-link-scopes.js";
 import { RegistrationInsideTransactionError } from "../ports/link-ahead-registry.js";
-import {
-  contextNamespaceKey,
-  lockContextSources,
-  lockNamespaceKeys,
-} from "./context-fs/document-locations.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN =
@@ -68,8 +64,6 @@ if (!RUN) {
     const registration = registrationFor("manuscript");
     // Registration commits in its own root transaction, so no rollback fixture: reset by FK order.
     const database = createDb(DATABASE_URL, { max: 4 });
-    const arrivalConnection = createDb(DATABASE_URL, { max: 2 });
-    const gateConnection = createDb(DATABASE_URL, { max: 2 });
 
     async function seed() {
       await deleteDrizzleRows(database, [users]);
@@ -99,190 +93,12 @@ if (!RUN) {
       }
     }
     const insertDocument = (db: Database, scheme: Scheme = "manuscript", id = DOCUMENT) =>
-      db
-        .insert(documents)
-        .values({ id, contextSourceId: SOURCES[scheme], name: "chapter", extension: "toml" });
+      treeSeeder(db).document(SOURCES[scheme], "chapter.toml", { id });
     const settledIds = async () =>
       (await database.select({ id: linkAheadRefs.settledDocumentId }).from(linkAheadRefs)).map(
         (row) => row.id,
       );
     const newRegistry = (db: Database) => createTestLinkAheadRegistry(db);
-
-    /** The exact key real arrivals take for this scheme's source (Work: the persisted row id). */
-    const arrivalKey = (scheme: Scheme) =>
-      contextNamespaceKey({
-        projectId: PROJECT,
-        userId: USER,
-        scheme,
-        workId: scheme === "manuscript" ? null : NO_WORK,
-      });
-
-    /** Number of sessions blocked on exactly this namespace key in this database. */
-    async function waitersOn(key: string) {
-      const rows = await database.execute<{ waiting: number }>(sql`
-        SELECT count(*)::int AS waiting FROM pg_locks l
-        WHERE l.locktype = 'advisory' AND NOT l.granted
-          AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
-          AND ((l.classid::bigint << 32) | l.objid::bigint) = hashtextextended(${key}, 0::bigint)`);
-      return rows[0]?.waiting ?? 0;
-    }
-    // Every schedule wait is bounded well under the test timeout so cleanup always runs.
-    const WAIT_MS = 3_000;
-    async function waitForWaiters(key: string, count: number) {
-      for (let attempt = 0; attempt < WAIT_MS / 20; attempt++) {
-        if ((await waitersOn(key)) >= count) return;
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-      throw new Error(`expected ${count} session(s) queued behind ${key}`);
-    }
-
-    /**
-     * A one-shot signal from inside a producer's transaction. It fails as soon as its producer
-     * settles without signalling, or after WAIT_MS, so a failed producer rejects its owner.
-     */
-    function notification(label: string) {
-      let notify!: () => void;
-      let fail!: (error: unknown) => void;
-      const fired = new Promise<void>((resolve, reject) => {
-        notify = resolve;
-        fail = reject;
-      });
-      fired.catch(() => undefined); // an owner that already failed never waits
-      return {
-        notify: () => notify(),
-        /** Attach the producer at once so its failure is owned here, never left unhandled. */
-        from<T>(producer: Promise<T>) {
-          producer.then(() => fail(new Error(`${label}: producer finished without it`)), fail);
-          return producer;
-        },
-        async wait() {
-          let timer: ReturnType<typeof setTimeout> | undefined;
-          const deadline = new Promise<never>((_, reject) => {
-            timer = setTimeout(
-              () => reject(new Error(`${label}: not seen in ${WAIT_MS}ms`)),
-              WAIT_MS,
-            );
-          });
-          try {
-            await Promise.race([fired, deadline]);
-          } finally {
-            clearTimeout(timer);
-          }
-        },
-      };
-    }
-
-    /** Real arrival: source lock, insert, settle, in the arrival connection's transaction. */
-    const arrive = (scheme: Scheme, id = DOCUMENT, before?: () => Promise<void>) =>
-      runInDrizzleTransaction(arrivalConnection, async () => {
-        await lockContextSources(arrivalConnection, [SOURCES[scheme]]);
-        await insertDocument(arrivalConnection, scheme, id);
-        await before?.();
-        return newRegistry(arrivalConnection).settleArrivals([id as never]);
-      });
-
-    beforeEach(seed);
-    afterAll(async () => {
-      await deleteDrizzleRows(database, [users]);
-      await gateConnection.close();
-      await arrivalConnection.close();
-      await database.close();
-    });
-
-    /** Arrival holds its key; registration queues on the same key and sees the document. */
-    async function raceArrivalFirst(scheme: Scheme) {
-      let release!: () => void;
-      const held = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const lockTaken = notification("arrival lock");
-      const arrival = lockTaken.from(
-        arrive(scheme, DOCUMENT, async () => {
-          lockTaken.notify();
-          await held;
-        }),
-      );
-      try {
-        await lockTaken.wait();
-        const registering = newRegistry(database).register([registrationFor(scheme)]);
-        await waitForWaiters(arrivalKey(scheme), 1);
-        release();
-        const [arrivalSettled] = await Promise.all([arrival, registering]);
-        expect(arrivalSettled).toBe(0); // the row did not exist yet; registration saw the document
-        expect(await settledIds()).toEqual([DOCUMENT]);
-      } finally {
-        release();
-        await arrival.catch(() => undefined);
-      }
-    }
-
-    /** Registration queues ahead of the arrival, then the arrival's CAS settles it. */
-    async function raceRegistrationFirst(scheme: Scheme) {
-      // The gate holds the key so registration and then the arrival queue in a known order.
-      let release!: () => void;
-      const held = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const gateTaken = notification("gate lock");
-      const gate = gateTaken.from(
-        runInDrizzleTransaction(gateConnection, async () => {
-          // Namespace key only: a Work-row lock would queue the arrival on the row, not the key.
-          await lockNamespaceKeys(gateConnection, [
-            {
-              projectId: PROJECT,
-              userId: USER,
-              scheme,
-              workId: scheme === "manuscript" ? null : NO_WORK,
-            },
-          ]);
-          gateTaken.notify();
-          await held;
-        }),
-      );
-      // The arrival stops after its insert, before settling, so the unsettled row is observable.
-      let settle!: () => void;
-      const settling = new Promise<void>((resolve) => {
-        settle = resolve;
-      });
-      const inserted = notification("arrival insert");
-      let registering: Promise<void> | undefined;
-      let arrival: Promise<number> | undefined;
-      try {
-        await gateTaken.wait();
-        registering = newRegistry(database).register([registrationFor(scheme)]);
-        await waitForWaiters(arrivalKey(scheme), 1);
-        arrival = inserted.from(
-          arrive(scheme, DOCUMENT, async () => {
-            inserted.notify();
-            await settling;
-          }),
-        );
-        await waitForWaiters(arrivalKey(scheme), 2);
-        release();
-        await registering;
-        await inserted.wait();
-        expect(await settledIds()).toEqual([null]); // committed before the document existed
-        settle();
-        expect(await arrival).toBe(1);
-        expect(await settledIds()).toEqual([DOCUMENT]);
-      } finally {
-        release();
-        settle();
-        await Promise.allSettled([gate, registering, arrival]);
-      }
-    }
-
-    it("manuscript namespace race settles exactly once in both orders", async () => {
-      await raceArrivalFirst("manuscript");
-      await seed();
-      await raceRegistrationFirst("manuscript");
-    });
-
-    // Only the namespace key differs by scheme: scratch and uploads take the same Work key
-    // shape and neither is drafted, so one scratch arrival proves registration locks that key.
-    it("scratch registration queues on the Work key its arrival holds", async () => {
-      await raceArrivalFirst("scratch");
-    });
 
     it("settles an occupied address at registration, once: later occupants and re-registration never retarget", async () => {
       await insertDocument(database);
@@ -292,10 +108,13 @@ if (!RUN) {
       const [first] = await database.select().from(linkAheadRefs);
 
       // Delete and recreate the address: the compare-and-set must not move the target.
-      await database
-        .update(documents)
-        .set({ deletionReason: "deleted", deletedAt: new Date() })
-        .where(eq(documents.id, DOCUMENT));
+      await treeSeeder(database).store.submit({
+        list: await treeListOfSource(database, SOURCE),
+        make: (writer) => {
+          writer.delete(LIVE, "system", DOCUMENT);
+          return { records: [], result: null };
+        },
+      });
       await insertDocument(database, "manuscript", DOCUMENT_2);
       expect(await registry.settleArrivals([DOCUMENT_2 as never])).toBe(0);
       await registry.register([registration]);
@@ -356,9 +175,7 @@ if (!RUN) {
         { ...registration, address: "scratch://@c1/note.toml" },
         { ...registration, aheadId: DOCUMENT_2, address: "scratch://@c2/note.toml" },
       ]);
-      await database
-        .insert(documents)
-        .values({ id: DOCUMENT, contextSourceId: SOURCES[0], name: "note", extension: "toml" });
+      await treeSeeder(database).document(SOURCES[0], "note.toml", { id: DOCUMENT });
       await runInDrizzleTransaction(database, async () => {
         await lockContextSources(database, [SOURCES[0]]);
         expect(await registry.settleArrivals([DOCUMENT as never])).toBe(1);

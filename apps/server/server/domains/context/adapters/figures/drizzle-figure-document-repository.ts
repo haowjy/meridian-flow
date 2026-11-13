@@ -1,4 +1,3 @@
-import { renderFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { contextSources, works } from "@meridian/database/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
@@ -17,21 +16,13 @@ type DocumentRow = {
   fileType: string;
   sizeBytes: number | null;
   name: string;
-  extension: string;
   hasPreview: boolean;
 };
 
 function mapDocumentFile(
   row: Pick<
     DocumentRow,
-    | "id"
-    | "storageUrl"
-    | "mimeType"
-    | "fileType"
-    | "sizeBytes"
-    | "name"
-    | "extension"
-    | "hasPreview"
+    "id" | "storageUrl" | "mimeType" | "fileType" | "sizeBytes" | "name" | "hasPreview"
   >,
 ): DocumentFileRecord | null {
   if (!row.storageUrl || !row.mimeType) return null;
@@ -43,7 +34,7 @@ function mapDocumentFile(
     mimeType: row.mimeType,
     fileType,
     sizeBytes: row.sizeBytes === null ? 0 : Number(row.sizeBytes),
-    name: renderFilename(row.name, row.extension),
+    name: row.name,
     hasPreview: row.hasPreview,
   };
 }

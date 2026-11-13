@@ -5,17 +5,12 @@
  * - ordered ancestor, owner-Work, and branch-Work fact assembly (kb/wiki/architecture/documents/access.md)
  */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import {
-  contextSources,
-  documents,
-  folders,
-  projects,
-  users,
-  works,
-} from "@meridian/database/schema";
+import { contextSources, projects, users, works } from "@meridian/database/schema";
+import { LIVE } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleFileFacts } from "./drizzle-file-facts.js";
 
@@ -33,11 +28,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const scratch = "00000000-0000-4000-8000-000000000a11";
     const lineageScratch = "00000000-0000-4000-8000-000000000a12";
     const rootThread = "00000000-0000-4000-8000-000000000a13";
-    const chapters = "00000000-0000-4000-8000-000000000a20";
-    const arc = "00000000-0000-4000-8000-000000000a21";
-    const chapter = "00000000-0000-4000-8000-000000000a30";
-    const note = "00000000-0000-4000-8000-000000000a31";
-    const lineageNote = "00000000-0000-4000-8000-000000000a32";
+    let chapters = "";
+    let arc = "";
+    let chapter = "";
+    let note = "";
+    let lineageNote = "";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
@@ -62,24 +57,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           slug: "scratch",
         },
       ]);
-      await db.insert(folders).values([
-        {
-          id: chapters,
-          contextSourceId: manuscript,
-          name: "chapters",
-        },
-        {
-          id: arc,
-          contextSourceId: manuscript,
-          parentId: chapters,
-          name: "arc-1",
-        },
-      ]);
-      await db.insert(documents).values([
-        { id: chapter, contextSourceId: manuscript, folderId: arc, name: "ch1" },
-        { id: note, contextSourceId: scratch, name: "notes" },
-        { id: lineageNote, contextSourceId: lineageScratch, name: "notes" },
-      ]);
+      const seed = treeSeeder(db);
+      chapters = await seed.folder(manuscript, "chapters");
+      arc = await seed.folder(manuscript, "chapters/arc-1");
+      chapter = await seed.document(manuscript, "chapters/arc-1/ch1");
+      note = await seed.document(scratch, "notes");
+      lineageNote = await seed.document(lineageScratch, "notes");
     });
 
     it("loads documents, drafts and containers with their ancestors", async () => {
@@ -147,9 +130,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toBeNull();
     });
 
-    it("reads lifecycle through folders and Works", async () => {
+    it("reads lifecycle through Trash and Works", async () => {
       const db = database.current;
-      await db.update(folders).set({ deletedAt: new Date() }).where(eq(folders.id, chapters));
+      await treeSeeder(db).store.submit({
+        list: await treeListOfSource(db, manuscript),
+        make: (writer) => {
+          writer.delete(LIVE, "system", chapters);
+          return { records: [], result: null };
+        },
+      });
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, a));
       const facts = createDrizzleFileFacts(db, createTestWorkProjectionMutation(db));
       const ch1 = await facts.load({ target: { kind: "document", documentId: chapter } });

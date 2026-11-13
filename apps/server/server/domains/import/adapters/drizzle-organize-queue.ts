@@ -11,7 +11,6 @@ type ClaimRow = {
   import_id: string;
   project_id: string;
   token: string;
-  generation: number;
   lease_until: Date | string;
 };
 
@@ -20,7 +19,6 @@ function claimOf(row: ClaimRow): OrganizeClaim {
     importId: row.import_id,
     projectId: row.project_id,
     token: row.token,
-    generation: row.generation,
     leaseUntil: new Date(row.lease_until),
   };
 }
@@ -43,8 +41,7 @@ export function createDrizzleOrganizeQueue(db: Database): OrganizeQueue {
             lease_token = gen_random_uuid(),
             lease_until = clock_timestamp() + ${LEASE_SECONDS} * interval '1 second'
           from candidate c where i.id = c.id
-          returning i.id as import_id, i.project_id, i.lease_token as token,
-            i.placement_generation as generation, i.lease_until
+          returning i.id as import_id, i.project_id, i.lease_token as token, i.lease_until
         `);
         return row ? claimOf(row) : null;
       }),

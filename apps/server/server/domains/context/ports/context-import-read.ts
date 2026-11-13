@@ -6,7 +6,8 @@ export type ContextImportDestination = {
   folderId: string | null;
   uri: string;
   fellBack: boolean;
-  children: { kind: "folder" | "file"; name: string; extension: string }[];
+  /** `name` is the filename as the tree shows it. */
+  children: { kind: "folder" | "file"; name: string }[];
 };
 
 export type ContextImportLinkCandidate = {

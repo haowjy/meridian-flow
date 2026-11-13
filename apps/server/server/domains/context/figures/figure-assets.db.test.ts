@@ -2,18 +2,21 @@ import { createTestDocumentLinkScopes } from "../../collab/test-support/document
 
 /** Postgres-backed coverage for independent figure asset identity. */
 
+import type { DocumentId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import { contextSources, documents, folders, projects, users } from "@meridian/database/schema";
+import { contextSources, documents, projects, users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { treeSeeder } from "../../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
 import { createObjectStorageUrl } from "../../storage/object-storage-url.js";
 import type { ObjectStorePort } from "../../storage/ports/object-store.js";
 import { createDrizzleFigureDocumentRepository } from "../adapters/figures/drizzle-figure-document-repository.js";
+import { createTreeReader, LIVE_TREE } from "../tree/tree-view.js";
 import { createProductionUnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import { createFigureAssetService } from "./figure-assets.js";
 
@@ -57,7 +60,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       storedObjects.clear();
-      await deleteDrizzleRows(db, [documents, folders, contextSources, projects, users]);
+      await deleteDrizzleRows(db, [documents, contextSources, projects, users]);
       await db.insert(users).values(conformanceUserValues(USER_ID, "figure-asset-identity"));
       await db.insert(projects).values({
         id: PROJECT_ID,
@@ -72,15 +75,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "manuscript",
         scope: "project",
       });
-      await db.insert(documents).values({
-        id: HOST_DOCUMENT_ID,
-        contextSourceId: SOURCE_ID,
-        name: "chapter-one",
-        extension: "",
-        fileType: "markdown",
-        mimeType: "text/markdown",
-        sizeBytes: 23,
-      });
+      await treeSeeder(db).document(SOURCE_ID, "chapter-one", { id: HOST_DOCUMENT_ID });
     });
 
     afterAll(async () => db.$client.end());
@@ -100,13 +95,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documents: createDrizzleFigureDocumentRepository({ db }),
         signedUrlExpiresAt: () => "2030-01-01T00:00:00.000Z",
       });
-      const [before] = await db.select().from(documents).where(eq(documents.id, HOST_DOCUMENT_ID));
-      const hostBefore = {
-        fileType: before?.fileType,
-        storageUrl: before?.storageUrl,
-        mimeType: before?.mimeType,
-        sizeBytes: before?.sizeBytes,
+      const host = async () => {
+        const [row] = await db.select().from(documents).where(eq(documents.id, HOST_DOCUMENT_ID));
+        const found = await createTreeReader(db).findById(
+          LIVE_TREE,
+          HOST_DOCUMENT_ID as DocumentId,
+        );
+        return { row, fileType: found.kind === "found" ? found.document.fileType : null };
       };
+      const before = await host();
 
       const bytes = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
       const stored = await objectStore.put(`figures/${ASSET_KEY_ID}`, bytes, "image/png");
@@ -126,14 +123,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(uploaded.value.assetDocumentId).not.toBe(HOST_DOCUMENT_ID);
 
-      const [after] = await db.select().from(documents).where(eq(documents.id, HOST_DOCUMENT_ID));
-      expect(after).toEqual(before);
-      expect({
-        fileType: after?.fileType,
-        storageUrl: after?.storageUrl,
-        mimeType: after?.mimeType,
-        sizeBytes: after?.sizeBytes,
-      }).toEqual(hostBefore);
+      expect(await host()).toEqual(before);
 
       const context = contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
       await expect(context.stat("manuscript://chapter-one.md")).resolves.toMatchObject({

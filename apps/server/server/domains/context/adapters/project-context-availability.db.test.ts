@@ -1,14 +1,8 @@
 /**
- * PostgreSQL proof for project-final lookup authority and watermark atomicity.
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - separate availability and namespace clocks with transaction-scoped publisher fencing
+ * PostgreSQL proof for project-final lookup authority.
  */
-import { createDb, type Database } from "@meridian/database";
-import {
-  assertThrowawayDatabaseForRunDbTests,
-  conformanceUserValues,
-} from "@meridian/database/__test-support__/db-fixtures";
+import type { Database } from "@meridian/database";
+import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextAvailabilityHeads,
   contextSources,
@@ -18,13 +12,8 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import {
-  currentDrizzleDb,
-  runInDrizzleSavepoint,
-  runInDrizzleTransaction,
-} from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
@@ -124,10 +113,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("resolves every requested authority and does not disclose foreign or unknown identities", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
-      const catalog = createDrizzleContextCatalog(db, undefined, {
-        availabilityMutations: availability,
-      });
-      await catalog.refreshSources([PROJECT_SOURCE, NONE_SOURCE, WORK_SOURCE, USER_SOURCE]);
       const result = await availability.lookup(
         { projectId: PROJECT as never, documentIds: [...DOCS, DOCS[0]] as never },
         { userId: USER },
@@ -261,290 +246,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(result.resolutions).toMatchObject([{ kind: "not-visible" }]);
     });
 
-    it("advances affected heads once and rollback publishes no watermark", async () => {
-      const db = await seed();
-      const availability = createDrizzleProjectContextAvailability(db);
-      const first = await runInDrizzleTransaction(db, async () => {
-        const a = await availability.advance({ projectIds: [PROJECT], userIds: [USER] });
-        const b = await availability.advance({ projectIds: [PROJECT], userIds: [USER] });
-        expect(b).toBe(a);
-        return a;
-      });
-      const ownedAuthorityKeys = [
-        PROJECT_AUTHORITY_KEY,
-        FOREIGN_PROJECT_AUTHORITY_KEY,
-        USER_AUTHORITY_KEY,
-      ];
-      const before = await db
-        .select()
-        .from(contextAvailabilityHeads)
-        .where(inArray(contextAvailabilityHeads.authorityKey, ownedAuthorityKeys));
-      expect(before.map(({ authorityKey }) => authorityKey).sort()).toEqual(
-        [PROJECT_AUTHORITY_KEY, USER_AUTHORITY_KEY].sort(),
-      );
-      await expect(
-        runInDrizzleTransaction(db, async () => {
-          await availability.advance({ projectIds: [FOREIGN_PROJECT], userIds: [] });
-          throw new Error("rollback");
-        }),
-      ).rejects.toThrow("rollback");
-      expect(
-        await db
-          .select()
-          .from(contextAvailabilityHeads)
-          .where(inArray(contextAvailabilityHeads.authorityKey, ownedAuthorityKeys)),
-      ).toEqual(before);
-      const next = await availability.advance({ projectIds: [PROJECT], userIds: [] });
-      expect(BigInt(next)).toBeGreaterThan(BigInt(first));
-    });
-
-    it("advances availability without a namespace version and rolls back a failed namespace publication", async () => {
-      const db = await seed();
-      const availability = createDrizzleProjectContextAvailability(db);
-      const readHead = async () =>
-        (
-          await currentDrizzleDb(db)
-            .select()
-            .from(contextAvailabilityHeads)
-            .where(eq(contextAvailabilityHeads.authorityKey, PROJECT_AUTHORITY_KEY))
-        )[0];
-      await availability.publishNamespace({ projectIds: [PROJECT], userIds: [] });
-      const published = await readHead();
-      expect(published?.namespaceGeneration).toBeGreaterThan(0n);
-      const advanced = await availability.advance({ projectIds: [PROJECT], userIds: [] });
-      expect(await readHead()).toMatchObject({
-        generation: BigInt(advanced),
-        namespaceGeneration: published?.namespaceGeneration,
-      });
-      const captured = await readHead();
-      await expect(
-        runInDrizzleSavepoint(db, async () => {
-          await availability.publishNamespace({ projectIds: [PROJECT], userIds: [] });
-          throw new Error("namespace rollback");
-        }),
-      ).rejects.toThrow("namespace rollback");
-      expect(await readHead()).toEqual(captured);
-    });
-
-    it("orders namespace observations within one transaction even though availability groups them", async () => {
-      const db = await seed();
-      const availability = createDrizzleProjectContextAvailability(db);
-      await runInDrizzleTransaction(db, async () => {
-        const first = await availability.advance({ projectIds: [PROJECT], userIds: [] });
-        await availability.publishNamespace({ projectIds: [PROJECT], userIds: [] });
-        const readHead = async () =>
-          (
-            await currentDrizzleDb(db)
-              .select()
-              .from(contextAvailabilityHeads)
-              .where(eq(contextAvailabilityHeads.authorityKey, PROJECT_AUTHORITY_KEY))
-          )[0];
-        const firstHead = await readHead();
-        const second = await availability.advance({ projectIds: [PROJECT], userIds: [] });
-        expect(second).toBe(first);
-        expect((await readHead())?.namespaceGeneration).toBe(firstHead?.namespaceGeneration);
-        await availability.publishNamespace({ projectIds: [PROJECT], userIds: [] });
-        expect((await readHead())?.namespaceGeneration).toBeGreaterThan(
-          firstHead?.namespaceGeneration ?? 0n,
-        );
-      });
-    });
-
-    it("merges successful savepoint keys and discards failed savepoint keys", async () => {
-      const db = await seed();
-      const availability = createDrizzleProjectContextAvailability(db);
-      const generation = await runInDrizzleTransaction(db, async () => {
-        const child = await runInDrizzleSavepoint(db, () =>
-          availability.advance({ projectIds: [PROJECT], userIds: [] }),
-        );
-        const parent = await availability.advance({ projectIds: [FOREIGN_PROJECT], userIds: [] });
-        expect(parent).toBe(child);
-        return parent;
-      });
-      await runInDrizzleTransaction(db, async () => {
-        await availability.advance({ projectIds: [PROJECT], userIds: [] });
-        await expect(
-          runInDrizzleSavepoint(db, async () => {
-            await availability.advance({ projectIds: [], userIds: [OTHER] });
-            throw new Error("child rollback");
-          }),
-        ).rejects.toThrow("child rollback");
-        await availability.advance({ projectIds: [], userIds: [OTHER] });
-      });
-      const heads = new Map(
-        (
-          await currentDrizzleDb(db)
-            .select()
-            .from(contextAvailabilityHeads)
-            .where(
-              inArray(contextAvailabilityHeads.authorityKey, [
-                PROJECT_AUTHORITY_KEY,
-                FOREIGN_PROJECT_AUTHORITY_KEY,
-                OTHER_AUTHORITY_KEY,
-              ]),
-            )
-        ).map((row) => [row.authorityKey, row.generation]),
-      );
-      expect(heads.get(PROJECT_AUTHORITY_KEY)).toBeGreaterThanOrEqual(BigInt(generation));
-      expect(heads.get(FOREIGN_PROJECT_AUTHORITY_KEY)).toBe(BigInt(generation));
-      expect(heads.get(OTHER_AUTHORITY_KEY)).toBe(heads.get(PROJECT_AUTHORITY_KEY));
-    });
-
-    it("serializes same-head publishers before allocating their generations", async () => {
-      assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
-      const firstDb = createDb(DATABASE_URL, { max: 1 });
-      const secondDb = createDb(DATABASE_URL, { max: 1 });
-      const controlDb = createDb(DATABASE_URL, { max: 1 });
-      let releaseFirst: (() => void) | undefined;
-      const firstMayCommit = new Promise<void>((resolve) => {
-        releaseFirst = resolve;
-      });
-      try {
-        await deleteDrizzleRows(controlDb, [users]);
-        await seed(controlDb);
-        await createDrizzleProjectContextAvailability(controlDb).advance({
-          projectIds: [PROJECT],
-          userIds: [],
-        });
-        let announceFirst: ((generation: string) => void) | undefined;
-        const firstAllocated = new Promise<string>((resolve) => {
-          announceFirst = resolve;
-        });
-        const first = runInDrizzleTransaction(firstDb, async () => {
-          const generation = await createDrizzleProjectContextAvailability(firstDb).advance({
-            projectIds: [PROJECT],
-            userIds: [],
-          });
-          announceFirst?.(generation);
-          await firstMayCommit;
-          return generation;
-        });
-        const firstGeneration = await firstAllocated;
-        const [allocatedBeforeSecond] = await controlDb.execute<{ lastValue: string }>(
-          sql`select last_value::text as "lastValue" from context_availability_generation_seq`,
-        );
-        const second = createDrizzleProjectContextAvailability(secondDb).advance({
-          projectIds: [PROJECT],
-          userIds: [],
-        });
-        for (let attempt = 0; attempt < 200; attempt += 1) {
-          const waiting = await controlDb.execute<{ waiting: boolean }>(sql`
-            select exists (
-              select 1 from pg_stat_activity
-              where datname = current_database()
-                and wait_event_type = 'Lock'
-                and (query like '%context_availability_heads%' or query like '%1296387666%')
-            ) as waiting
-          `);
-          if (waiting[0]?.waiting) break;
-          if (attempt === 199) throw new Error("Second availability publisher did not block");
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
-        const whileBlocked = await controlDb.execute<{ lastValue: string }>(
-          sql`select last_value::text as "lastValue" from context_availability_generation_seq`,
-        );
-        expect(whileBlocked[0]?.lastValue).toBe(allocatedBeforeSecond?.lastValue);
-        expect(BigInt(whileBlocked[0]?.lastValue ?? "0")).toBeGreaterThanOrEqual(
-          BigInt(firstGeneration),
-        );
-        releaseFirst?.();
-        const [settledFirst, settledSecond] = await Promise.all([first, second]);
-        expect(BigInt(settledSecond)).toBeGreaterThan(BigInt(settledFirst));
-        const [head] = await controlDb
-          .select()
-          .from(contextAvailabilityHeads)
-          .where(eq(contextAvailabilityHeads.authorityKey, `project:${PROJECT}`));
-        expect(head?.generation).toBe(BigInt(settledSecond));
-      } finally {
-        releaseFirst?.();
-        await deleteDrizzleRows(controlDb, [users]);
-        await Promise.all([firstDb.close(), secondDb.close(), controlDb.close()]);
-      }
-    });
-
-    it("reads heads and identities from one repeatable-read snapshot across a committed move", async () => {
-      assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
-      const reader = createDb(DATABASE_URL, { max: 1 });
-      const writer = createDb(DATABASE_URL, { max: 1 });
-      await seed(reader);
-      const initialGeneration = await createDrizzleProjectContextAvailability(reader).advance({
-        projectIds: [PROJECT],
-        userIds: [],
-      });
-
-      let announceDocumentLock: (() => void) | undefined;
-      const documentLockHeld = new Promise<void>((resolve) => {
-        announceDocumentLock = resolve;
-      });
-
-      try {
-        const mutation = runInDrizzleTransaction(writer, async () => {
-          const tx = currentDrizzleDb(writer) as Database;
-          await tx.execute(sql`lock table documents in access exclusive mode`);
-          announceDocumentLock?.();
-          for (let attempt = 0; attempt < 200; attempt += 1) {
-            const result = await tx.execute<{ blocked: boolean }>(sql`
-              select exists (
-                select 1
-                from pg_locks
-                where relation = 'documents'::regclass
-                  and not granted
-              ) as blocked
-            `);
-            if (result[0]?.blocked) {
-              await tx
-                .update(documents)
-                .set({ contextSourceId: WORK_SOURCE })
-                .where(eq(documents.id, DOCS[0]));
-              return createDrizzleProjectContextAvailability(writer).advance({
-                projectIds: [PROJECT],
-                userIds: [],
-              });
-            }
-            await new Promise((resolve) => setTimeout(resolve, 10));
-          }
-          throw new Error("Lookup did not reach the post-head document-read barrier");
-        });
-        await documentLockHeld;
-        const lookup = createDrizzleProjectContextAvailability(reader).lookup(
-          { projectId: PROJECT as never, documentIds: [DOCS[0]] as never },
-          { userId: USER },
-        );
-        const newGeneration = await mutation;
-
-        await expect(lookup).resolves.toMatchObject({
-          resolutions: [
-            {
-              kind: "available",
-              generation: initialGeneration,
-              authority: { kind: "project", projectId: PROJECT },
-            },
-          ],
-        });
-        await expect(
-          createDrizzleProjectContextAvailability(reader).lookup(
-            { projectId: PROJECT as never, documentIds: [DOCS[0]] as never },
-            { userId: USER },
-          ),
-        ).resolves.toMatchObject({
-          resolutions: [
-            {
-              kind: "available",
-              generation: newGeneration,
-              authority: { kind: "work", projectId: PROJECT, workId: WORK },
-            },
-          ],
-        });
-      } finally {
-        await deleteDrizzleRows(reader, [users]);
-        await Promise.all([reader.close(), writer.close()]);
-      }
-    });
-
     it("keeps archived Work documents available and returns deleted authority tombstones", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
-      const generation = await availability.advance({ projectIds: [PROJECT], userIds: [] });
+      await db
+        .insert(contextAvailabilityHeads)
+        .values({ authorityKey: PROJECT_AUTHORITY_KEY, generation: 7n });
+      const generation = "7";
       await db
         .update(documents)
         .set({ deletionReason: "deleted", deletedAt: new Date() })
@@ -596,10 +304,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("fences and restores a user source with its personal backing project", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
-      const catalog = createDrizzleContextCatalog(db, undefined, {
-        availabilityMutations: availability,
-      });
-      await catalog.refreshSources([USER_SOURCE]);
+      const catalog = createDrizzleContextCatalog(db);
 
       await expect(
         catalog.snapshot({ kind: "user", userId: USER } as never),

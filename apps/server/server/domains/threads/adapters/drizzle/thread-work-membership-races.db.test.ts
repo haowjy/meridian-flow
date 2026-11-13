@@ -7,7 +7,6 @@
 
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createTestDocumentRemoval } from "../../../../test-support/document-removal.js";
 import { waitForPostgresLock } from "../../../../test-support/lock-interleave.js";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import { createDraftClose } from "../../../collab/adapters/drizzle-draft-close.js";
@@ -56,7 +55,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const control = postgres(DATABASE_URL, { max: 1 });
     const threads = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
-      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),

@@ -1,5 +1,4 @@
 /** Deterministic creation graph and placement derived only from durable import outcomes. */
-import { createHash } from "node:crypto";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import { firstFreeName, renderFilename } from "@meridian/contracts/protocol";
 import type { ImportEntry, ImportRecord } from "../../ports/import-repository.js";
@@ -11,7 +10,8 @@ export type DestinationSnapshot = {
   folderId: string | null;
   uri: string;
   fellBack: boolean;
-  children: readonly { kind: "folder" | "file"; name: string; extension: string }[];
+  /** What the destination holds, by the names it shows (a document's carries its extension). */
+  children: readonly { kind: "folder" | "file"; name: string }[];
 };
 
 export type OrganizedTree = {
@@ -33,25 +33,16 @@ function effectiveNode(node: PlannedNode, entries: ReadonlyMap<string, ImportEnt
   return { ...node, kind: "note", filetype: "markdown" };
 }
 
-function creationDigest(nodes: readonly PlannedNode[]): string {
-  const facts = nodes
-    .filter((node) => node.state === "planned")
-    .map(({ id, area, parentId, kind, name, extension, filetype }) => ({
-      id,
-      area,
-      parentId,
-      kind,
-      name,
-      extension,
-      filetype,
-    }));
-  return createHash("sha256").update(JSON.stringify(facts)).digest("hex");
-}
-
+/**
+ * The creation graph and the plan. The first pass plans against the destinations as they are and
+ * the plan is kept on the import (`imports.placement`); later passes pass it back as `fixed`, so
+ * the names the stored text spells its links with stay the ones planned.
+ */
 export async function buildOrganizedTree(input: {
   record: ImportRecord;
   entries: readonly ImportEntry[];
   destinations: readonly DestinationSnapshot[];
+  fixed?: ImportPlacement;
 }): Promise<OrganizedTree> {
   if (!input.record.projectId) throw new Error("Import project is unavailable");
   const parsed = parseContextUri(input.record.destinationUri);
@@ -106,11 +97,7 @@ export async function buildOrganizedTree(input: {
   for (const destination of input.destinations) {
     occupied.set(
       parentKey(destination.area, destination.folderId),
-      new Set(
-        destination.children.map((child) =>
-          renderFilename(child.name, child.kind === "file" ? child.extension : ""),
-        ),
-      ),
+      new Set(destination.children.map((child) => child.name)),
     );
   }
   for (const node of nodes) {
@@ -128,7 +115,14 @@ export async function buildOrganizedTree(input: {
     }
     const siblings = occupied.get(parentKey(node.area, node.parentId));
     if (!siblings) throw new Error(`Import tree has no sibling group for ${node.id}`);
-    const free = firstFreeName(node, siblings);
+    const planned = topLevel ? input.fixed?.topLevelNames[node.id] : undefined;
+    const free =
+      planned === undefined
+        ? firstFreeName(node, siblings)
+        : {
+            name: planned,
+            filename: renderFilename(planned, node.kind === "folder" ? "" : node.extension),
+          };
     node.name = free.name;
     node.filename = free.filename;
     if (topLevel) topLevelNames[node.id] = node.name;
@@ -143,7 +137,6 @@ export async function buildOrganizedTree(input: {
     placement: {
       destinations: input.destinations.map(({ children: _, ...destination }) => destination),
       topLevelNames,
-      creationSetDigest: creationDigest(nodes),
     },
   };
 }

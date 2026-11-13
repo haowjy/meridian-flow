@@ -516,6 +516,7 @@ CREATE TABLE "documents" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"content_purged_at" timestamp with time zone,
+	"in_no_view_since" timestamp with time zone,
 	CONSTRAINT "documents_stored_mime_type" CHECK ("documents"."storage_url" IS NULL OR "documents"."mime_type" IS NOT NULL),
 	CONSTRAINT "documents_size_bytes_nonneg" CHECK ("documents"."size_bytes" IS NULL OR "documents"."size_bytes" >= 0)
 );
@@ -1224,6 +1225,7 @@ CREATE INDEX "document_previous_locations_path" ON "document_previous_locations"
 CREATE INDEX "document_previous_locations_source" ON "document_previous_locations" USING btree ("context_source_id");--> statement-breakpoint
 CREATE INDEX "document_previous_locations_document" ON "document_previous_locations" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "documents_project" ON "documents" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX "documents_in_no_view" ON "documents" USING btree ("in_no_view_since") WHERE "documents"."in_no_view_since" IS NOT NULL AND "documents"."content_purged_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "link_ahead_refs_owner_unsettled" ON "link_ahead_refs" USING btree ("project_id","scheme","work_id","root_thread_id","chat_thread_id",md5("path")) WHERE "link_ahead_refs"."settled_document_id" IS NULL;--> statement-breakpoint
 CREATE INDEX "link_ahead_refs_settled_document" ON "link_ahead_refs" USING btree ("settled_document_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "projects_user_slug" ON "projects" USING btree ("user_id","slug");--> statement-breakpoint

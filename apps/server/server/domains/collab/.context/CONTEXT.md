@@ -14,8 +14,7 @@ thread-peer core and names its owner: the chat's Work, or for a chat with no Wor
 its lineage (the first chat, its forks and subagents; a handoff starts a new one).
 `shared/draft-owner.ts` is the one reader of a branch's owner and lifecycle
 (`branchOwnerSql`). A lineage is writable while some chat in it is live; with none,
-writes and Apply are refused and Discard still works. Scratch and upload content is always live;
-their placement can still be a Work branch fact.
+writes and Apply are refused and Discard still works. Scratch and upload content is always live.
 
 A reply may hold a live core and a thread core at once. Staged writes overlay
 only reads of the destination to which they were pinned. A live read never
@@ -65,7 +64,7 @@ with the document's agent edits (partial actor index) and joins parts by edit
 and immutable origin draft, so human typing history need not be scanned. Edited-text Discard belongs to the browser's local undoable edit.
 The per-document HTTP Discard says what it ends. `tree` ends only the branch's move or
 delete: a live chat's Discard, whose text the writer reverts in the room. `item` ends
-everything the branch holds on the document: a still-hidden creation (always ended
+everything the branch holds on the document: a creation only the Work shows (always ended
 whole), or a frozen lineage's draft, whose room drops the writer's text. An `item`
 Discard may carry `draftSeenAt`, the text draft's `updated_at` the writer decided on;
 the kernel compares it under the draft's row lock and refuses `draft_changed` when the
@@ -73,7 +72,11 @@ draft moved on (a chat restored elsewhere, then written to). `updated_at` and no
 `revision` is the fence because content-free folds keep it. The answer's `itemClosed`
 is what the kernel ended, and the command row is claimed pending and settled with that
 answer in the kernel's transaction. Nothing left to end answers `stale` without changing
-text or claiming a command. Work Discard all and purge keep the shared close/end-use kernel.
+text or claiming a command. The tree half of every Discard is the package's `discardDraft`,
+run with `treeListStore.submit` in each list the Work spans (`adapters/drizzle-branch-discard.ts`): the
+pending records are settled `discarded` with the command's id. A discarded drafted create is in
+no view, and its `documents` row and text stay until the retention job purges them; Discard
+releases nothing. Work Discard all and purge share the same kernel.
 
 ## Revision and review authority
 
@@ -99,8 +102,8 @@ leave with it). After the root commits the batch retires once
 (`domain/draft-retirement.ts`): a draft whose document the same transaction
 removed retires as a removal whatever its own cause (its rooms close `4208`,
 its peers' staged writes are refused `{ removed: record }`), so a Discard that
-closes a created document's drafts and then tombstones it still closes their
-rooms `4208`; any other closed draft's room closes stale and its peers are
+closes a created document's drafts closes their rooms stale, and one that Apply took out of
+live closes them `4208`; any other closed draft's room closes stale and its peers are
 refused with their cause's `discarded_*` reason. Every removal registers its
 documents with the batch (`DraftClose.registerRemoved`); only a discard also
 closes their drafts. A live delete closes no draft: the drafts stay
@@ -484,8 +487,7 @@ one scope: the live mutexes of its live destinations, then a seam boundary
 (`mutate` with `seam`): the captured drafts' Works and the bound
 grants' Works in id order, the grants confirmed, before any other lock (a
 live-only inverse such as a named Work's Scratch reaches its Work only as a
-grant Work). Tree inverses use the context domain's shared tree-edit admission;
-the inverse still owns retry so a moved tree scope causes a complete recapture.
+grant Work).
 Then its documents' mutation locks in id order,
 the live head check, and each draft destination's exact checkpoint rewrite at
 its captured revision. Those captured fences, not a lock of the inverse's own,
@@ -537,19 +539,18 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
 live `withDocument` mutexes (sorted) before any transaction, then inside the
 database Work rows (only through the Works mutation boundary, in ID order, with the
 lifecycle and grant locks `lockSeamWorks` takes), the branch row, a project's or an
-account's tree list key, then the sorted namespace and document advisory keys
+account's tree list key, then the sorted document advisory keys
 (`lockDocumentMutation`'s keys in ID order), then draft rows, an
 upstream before its peer, otherwise ID order. The list's key sorts before every
-document and namespace key, not among them by ID: a path that needs a list and
-documents takes the list first (several lists: by list ID). A tree list's write
+document key, not among them by ID: a path that needs a list and
+documents takes the list first (several lists: by list ID). Apply and Discard reach the list
+through `treeListStore.submit` inside their transaction and take the documents' keys after it. A tree list's write
 (`withList`) takes the seam's Work locks first, so the append under the key takes no lock
 it lacks; a Work's close, archive, restore and delete takes the project's list key
-after its Work row and before its namespaces (`lockProjectTreeList`), so the open Works
+after its Work row and before its document keys (`lockProjectTreeList`), so the open Works
 an admission reads under that key are current.
-No path takes a Work row, a
-live lock or a namespace lock after a draft row, and none takes a namespace
-lock while holding a document lock: it computes the complete namespace set
-first and revalidates. Live mutexes are held around a commit scope (an
+No path takes a Work row, a live lock or a list's key after a draft row, and none takes a
+list's key while holding a document key. Live mutexes are held around a commit scope (an
 inverse's live destinations). No writer-ingress epoch barrier remains.
 No process-level draft lease or mutex exists: no save, frame, pull, Discard,
 inverse or compaction takes one. Background timers remain armed across failed

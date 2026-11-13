@@ -5,21 +5,60 @@
  * deleted away from a path, so `undo`, `redo` and `revert` can still name it there.
  */
 import { editHandle, type UpdateJournal } from "@meridian/agent-edit/integration";
-import { type DocumentId, matchDocumentPath, type TreeTransition } from "@meridian/contracts";
+import {
+  type DocumentId,
+  type LiveTreeState,
+  matchDocumentPath,
+  type TreeTransition,
+} from "@meridian/contracts";
 import { type Database, documentEdits } from "@meridian/database";
-import { branches, documentDrafts, works } from "@meridian/database/schema";
+import { branches, documentDrafts, treeNodes, works } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { nextEditSeq } from "../../../shared/edit-history-seq.js";
-import { readLiveTreeStates } from "../../context/tree/live-tree-state.js";
-import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
 import type { AgentTreeHistory } from "../contracts.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 
-type DirectTreeChange = Extract<
-  Parameters<AgentTreeHistory["recordAgentTreeChange"]>[0],
-  { threadId: unknown }
->;
+type DirectTreeChange = Parameters<AgentTreeHistory["recordAgentTreeChange"]>[0];
+
+/**
+ * Live's state of each document as a tree entry records it: living at a placement, or in Trash
+ * with the delete that put it there; absent while no list shows it (a drafted create).
+ */
+async function readLiveStates(
+  tx: ReturnType<typeof currentDrizzleDb>,
+  ids: readonly DocumentId[],
+): Promise<Map<DocumentId, LiveTreeState>> {
+  const states = new Map<DocumentId, LiveTreeState>();
+  if (!ids.length) return states;
+  const rows = await tx
+    .select()
+    .from(treeNodes)
+    .where(inArray(treeNodes.id, [...ids]));
+  for (const row of rows)
+    states.set(
+      row.id,
+      row.trashedAt
+        ? {
+            living: false,
+            removal: {
+              time: row.trashedAt.toISOString(),
+              locationVersion: row.locationVersion.toString(),
+            },
+          }
+        : {
+            living: true,
+            at: {
+              folderId: row.parentId,
+              rootSourceId: row.parentId ? null : row.contextSourceId,
+              name: row.name,
+              extension: row.extension,
+              rank: row.rank,
+            },
+          },
+    );
+  return states;
+}
 
 function directProvenance(input: DirectTreeChange) {
   return {
@@ -38,57 +77,20 @@ export function createDrizzleTreeHistory(
 ): AgentTreeHistory {
   const tx = () => currentDrizzleDb(db);
   async function liveAfter(input: { documentId: DocumentId; op: string }) {
-    const after = (await readLiveTreeStates(tx(), [input.documentId])).get(input.documentId);
-    if (!after) throw new Error(`A ${input.op} left ${input.documentId} hidden`);
+    const after = (await readLiveStates(tx(), [input.documentId])).get(input.documentId);
+    if (!after) throw new Error(`A ${input.op} left ${input.documentId} with no live row`);
     return after;
   }
   return {
     async liveState(documentId) {
-      return (await readLiveTreeStates(tx(), [documentId])).get(documentId) ?? null;
+      return (await readLiveStates(tx(), [documentId])).get(documentId) ?? null;
     },
 
     async recordAgentTreeChange(input) {
       if (input.op === "move" && !input.landedAt)
         throw new Error("A recorded move requires its committed destination");
       const { change } = input;
-      const materialized = input.materializes
-        ? await tx()
-            .select({
-              documentId: documentEdits.documentId,
-              actor: documentEdits.actor,
-              threadId: documentEdits.threadId,
-              turnId: documentEdits.turnId,
-              responseId: documentEdits.responseId,
-              editScopeId: documentEdits.editScopeId,
-              toolCallId: documentEdits.toolCallId,
-              tree: documentEdits.treeChange,
-            })
-            .from(documentEdits)
-            .where(eq(documentEdits.id, input.materializes))
-            .limit(1)
-        : [];
-      const source = materialized[0];
-      if (
-        input.materializes &&
-        (!source ||
-          source.documentId !== input.documentId ||
-          source.actor !== "agent" ||
-          !source.threadId ||
-          !source.tree ||
-          source.tree.op !== "delete" ||
-          source.tree.destination.kind !== "draft")
-      )
-        throw new Error("Applied delete must materialize its exact drafted agent entry");
-      const provenance = source
-        ? {
-            threadId: source.threadId as import("@meridian/contracts").ThreadId,
-            turnId: source.turnId,
-            responseId: source.responseId,
-            editScopeId: source.editScopeId,
-            toolCallId: source.toolCallId,
-            shownAt: source.tree?.shownAt ?? null,
-          }
-        : directProvenance(input as DirectTreeChange);
+      const provenance = directProvenance(input);
       const transition: TreeTransition =
         change.destination === "draft"
           ? {
@@ -114,7 +116,6 @@ export function createDrizzleTreeHistory(
           ...transition,
           shownAt: provenance.shownAt,
           ...(input.landedAt ? { landedAt: input.landedAt } : {}),
-          ...(input.materializes ? { materializes: input.materializes } : {}),
           seq: await nextEditSeq(tx()),
           targets: [],
         },
@@ -163,10 +164,10 @@ export function createDrizzleTreeHistory(
       );
       // A document still deleted wins over one only moved away: restoring it can allocate a free
       // leaf name, while undoing the newer move first would target a different history entry.
-      const identities = await loadDocumentIdentityRows(tx(), [
+      const states = await readLiveStates(tx(), [
         ...new Set(away.map((row) => row.documentId as DocumentId)),
       ]);
-      const deleted = new Set(identities.filter((row) => row.deleted).map((row) => row.id));
+      const deleted = new Set([...states].flatMap(([id, state]) => (state.living ? [] : [id])));
       return (
         (away.find((row) => deleted.has(row.documentId as DocumentId)) ?? away[0])?.documentId ??
         null

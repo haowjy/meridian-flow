@@ -1,4 +1,4 @@
-/** End a hidden creation's branch use, or close a whole Work branch, with post-commit retirement. */
+/** Settle a Work's drafted tree records discarded, for chosen items or the whole branch, and close the drafts they end. */
 import type { BranchId, UserId } from "@meridian/contracts";
 import type { BranchCommandResult } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -46,7 +46,7 @@ export type DiscardItem = {
   /**
    * What ends: `tree`, only the branch's move or delete (a live chat's Discard, whose text the
    * writer reverts in the room), or `item`, everything the branch holds on the document. A
-   * hidden creation always ends whole.
+   * creation only the Work shows always ends whole.
    */
   ends: "tree" | "item";
   /**
@@ -58,13 +58,15 @@ export type DiscardItem = {
 
 export type DiscardKernelInput = {
   userId?: UserId;
+  /** The command that settles the tree records; the kernel mints one when none claimed it. */
+  commandId?: string;
   branchId: BranchId;
   selection: DiscardSelection;
 };
 
 export class BranchDiscardApplicableStateChangedError extends Error {
   constructor() {
-    super("This document is no longer a hidden creation");
+    super("The Work has nothing left to discard on this document");
     this.name = "BranchDiscardApplicableStateChangedError";
   }
 }
@@ -78,8 +80,6 @@ export class BranchDiscardDraftChangedError extends Error {
 }
 
 export type DiscardKernelResult = {
-  /** Storage URLs of tombstoned binaries: deleted after commit, best effort. */
-  releasedObjects: readonly string[];
   /** The selected documents whose item left review: nothing of the branch remains on them. */
   closed: readonly DocumentId[];
 };
@@ -100,19 +100,6 @@ export interface BranchDiscardStore {
     kernel: DiscardKernelInput;
     command?: DiscardCommandClaim;
   }): Promise<DiscardKernelResult | null>;
-  /**
-   * Runs `callback` once the ambient transaction's root commits, never after a rollback
-   * (a savepoint's rolls back with it); false, with nothing deferred, outside a transaction.
-   */
-  deferUntilCommit(callback: () => Promise<void>): boolean;
-}
-
-/** One of the branch's created documents moved to another source before the locks: run again. */
-export class BranchDiscardScopeChangedError extends Error {
-  constructor(readonly branchId: BranchId) {
-    super(`Branch ${branchId} changed while its Discard was taking its locks`);
-    this.name = "BranchDiscardScopeChangedError";
-  }
 }
 
 const ATTEMPTS = 4;
@@ -139,8 +126,6 @@ export function createBranchDiscard(deps: {
    * racing the retirement may need them.
    */
   holdRetirement<T>(run: () => Promise<T>): Promise<T>;
-  /** After commit: delete tombstoned binaries' objects, best effort. */
-  releaseObjects(storageUrls: readonly string[]): Promise<void>;
   /** Each attempt's rollback boundary: a root transaction, or a savepoint in an ambient one. */
   attemptScope?: AttemptScope;
 }): BranchDiscard {
@@ -156,8 +141,7 @@ export function createBranchDiscard(deps: {
     return runBoundedAttempts({
       bound: ATTEMPTS,
       scope: deps.attemptScope ?? NO_ATTEMPT_SCOPE,
-      isMiss: (cause) =>
-        cause instanceof DraftCasConflictError || cause instanceof BranchDiscardScopeChangedError,
+      isMiss: (cause) => cause instanceof DraftCasConflictError,
       run,
       exhausted: (cause) => {
         throw cause;
@@ -165,15 +149,15 @@ export function createBranchDiscard(deps: {
     });
   }
 
-  /** `discardLocked` in the attempt's scope, its objects released once that transaction commits. */
+  /** `discardLocked` in the attempt's scope. */
   async function commitDiscard(
     attempt: Attempt,
     kernel: DiscardKernelInput,
     command: CommandClaim | undefined,
   ): Promise<DiscardKernelResult | null> {
     await testHook("discard.beforeCommitScope");
-    return attempt.commit(async () => {
-      const ended = await deps.store.discardLocked({
+    return attempt.commit(() =>
+      deps.store.discardLocked({
         kernel,
         ...(command
           ? {
@@ -184,11 +168,8 @@ export function createBranchDiscard(deps: {
               },
             }
           : {}),
-      });
-      if (ended && !deps.store.deferUntilCommit(() => deps.releaseObjects(ended.releasedObjects)))
-        throw new Error("Discard must run inside its attempt's transaction");
-      return ended;
-    });
+      }),
+    );
   }
 
   return {

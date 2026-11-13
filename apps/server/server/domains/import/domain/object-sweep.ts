@@ -12,7 +12,8 @@ export async function sweepImportObjects(
   objects: ObjectStorePort,
   input: {
     importId?: string;
-    staged?: { discardStaged(stagingId: string, limit?: number): Promise<{ remaining: boolean }> };
+    /** Deletes the first texts a batch wrote under ids whose documents were never created. */
+    journals?: { discardUnborn(documentIds: readonly string[]): Promise<void> };
   } = {},
 ): Promise<ImportSweepResult> {
   const now = await repository.now();
@@ -107,9 +108,10 @@ export async function sweepImportObjects(
       }
     }
     if (failed) continue;
-    if (record.state === "cancelled" && input.staged) {
-      const staged = await input.staged.discardStaged(record.id, 500);
-      if (staged.remaining) continue;
+    if (record.state === "cancelled" && input.journals) {
+      const ids = entries.map((entry) => entry.id);
+      for (let offset = 0; offset < ids.length; offset += 500)
+        await input.journals.discardUnborn(ids.slice(offset, offset + 500));
     }
     await repository.transaction(async () => {
       const current = await repository.lock(record.id);

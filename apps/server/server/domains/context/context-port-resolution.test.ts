@@ -10,11 +10,7 @@ import { describe, expect, it } from "vitest";
 import { testWorkHandle } from "../../test-support/work-handle.js";
 import { resolvedWorkAuthority } from "../projects/domain/work-authority.js";
 import type { ProjectWorkAuthorityResolver } from "../projects/index.js";
-import {
-  contextPortForProjectRecovery,
-  contextPortForThread,
-  resolveThreadContext,
-} from "./context-port-resolution.js";
+import { contextPortForThread, resolveThreadContext } from "./context-port-resolution.js";
 import { createOwnerLookup, emptyOwnerLookup, type WorkOwner } from "./owner-lookup.js";
 import type { ContextPort } from "./ports/context-port.js";
 import type { UnifiedContextPortFactory } from "./unified-context-port-factory.js";
@@ -118,38 +114,6 @@ describe("thread context-port resolution", () => {
     contextPortForThread(contextPorts, resolution);
 
     expect(calls).toEqual([{ workId: WORK_ID, projectId: CUSTOM_PROJECT_ID, threadId: THREAD_ID }]);
-  });
-});
-
-describe("project recovery context-port resolution", () => {
-  it("authorizes every active Work while keeping the requested Work primary", async () => {
-    const calls: Array<{ workId: string; authorities: string[] }> = [];
-    const contextPorts = {
-      forWork: (
-        authority: { workId: string },
-        _projectId: string,
-        _userId: string,
-        authorities: ReadonlyMap<string, unknown>,
-      ) => {
-        calls.push({ workId: authority.workId, authorities: [...authorities.keys()] });
-        return {} as ContextPort;
-      },
-      forProject: () => {
-        throw new Error("active Works must use a Work-scoped recovery port");
-      },
-    } as unknown as UnifiedContextPortFactory;
-
-    await contextPortForProjectRecovery({
-      deps: {
-        contextPorts,
-        workAuthorityResolver: resolver({ "work-1": "w1", "work-2": "w2" }),
-      },
-      projectId: CUSTOM_PROJECT_ID,
-      userId: "user-1",
-      requestedWorkId: "work-1",
-    });
-
-    expect(calls).toEqual([{ workId: "work-1", authorities: ["w1", "w2"] }]);
   });
 });
 

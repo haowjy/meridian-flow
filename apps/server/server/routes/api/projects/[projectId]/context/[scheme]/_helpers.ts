@@ -16,11 +16,7 @@ import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { H3Event } from "nitro/h3";
 import { createError, getQuery, getRouterParam } from "nitro/h3";
-import { projectBrowseContextUri } from "../../../../../../domains/context/browse-layer-scheme.js";
-import {
-  contextPortForProjectBrowse,
-  contextPortForProjectRecovery,
-} from "../../../../../../domains/context/context-port-resolution.js";
+import { contextPortForProjectBrowse } from "../../../../../../domains/context/context-port-resolution.js";
 import type { ContextPort } from "../../../../../../domains/context/index.js";
 import type { FileTarget } from "../../../../../../domains/file-policy/index.js";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
@@ -32,27 +28,15 @@ import {
   withEditGrants,
 } from "../../../../../../lib/file-access-http.js";
 
-export { contextErrorToHttp } from "../../../../../../lib/context-error-http.js";
-export { documentTarget } from "../../../../../../lib/file-access-http.js";
-
 export function parseScheme(value: string): ProjectContextTreeScheme {
   if (isProjectContextTreeScheme(value)) return value;
   throw createError({ statusCode: 400, message: `Unsupported context scheme: ${value}` });
 }
 
-export const toUri = projectBrowseContextUri;
-
-/** Auth and project ownership, before anything that depends on the route's Work authority. */
-export type ProjectRouteContext = { app: AppServices; userId: string; projectId: string };
-
-export async function requireProjectRouteContext(event: H3Event): Promise<ProjectRouteContext> {
-  const { app, user } = await requireAppUser(event);
-  const projectId = getRouterParam(event, "projectId") ?? "";
-  await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
-  return { app, userId: user.userId, projectId };
-}
-
-export type ResolvedContextRoute = ProjectRouteContext & {
+export type ResolvedContextRoute = {
+  app: AppServices;
+  userId: string;
+  projectId: string;
   scheme: ProjectContextTreeScheme;
   workId: string | null;
   authority: CanonicalContextAuthority;
@@ -64,23 +48,11 @@ export type ResolvedContextRoute = ProjectRouteContext & {
 };
 
 /** Common preamble: auth → project ownership → scheme → workId → context port. */
-export async function resolveContextRoute(
-  event: H3Event,
-  options: { recoverAcrossProject?: boolean } = {},
-): Promise<ResolvedContextRoute> {
-  return resolveContextRouteFor(event, await requireProjectRouteContext(event), options);
-}
-
-/**
- * The rest of a route for a caller that already authenticated: a create reads its held id first,
- * because a destination in a deleted Work refuses the route while a replay must still answer.
- */
-export async function resolveContextRouteFor(
-  event: H3Event,
-  context: ProjectRouteContext,
-  options: { recoverAcrossProject?: boolean } = {},
-): Promise<ResolvedContextRoute> {
-  const { app, userId: authenticatedUserId, projectId } = context;
+export async function resolveContextRoute(event: H3Event): Promise<ResolvedContextRoute> {
+  const { app, user } = await requireAppUser(event);
+  const projectId = getRouterParam(event, "projectId") ?? "";
+  await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
+  const userId = user.userId;
   const scheme = parseScheme(getRouterParam(event, "scheme") ?? "");
   const query = getQuery(event);
   const rootThreadId = typeof query.rootThreadId === "string" ? query.rootThreadId : null;
@@ -90,27 +62,19 @@ export async function resolveContextRouteFor(
   if (chatId && (scheme !== "uploads" || query.workId || rootThreadId))
     throw createError({ statusCode: 400, message: "Choose one uploads owner" });
   const workId = typeof query.workId === "string" ? query.workId : null;
-  const userId = authenticatedUserId;
   const deps = {
     contextPorts: app.contextPorts,
     works: app.workRepo,
     workAuthorityResolver: app.workAuthorityResolver,
   };
-  const port = options.recoverAcrossProject
-    ? await contextPortForProjectRecovery({
-        deps,
-        projectId,
-        userId,
-        requestedWorkId: workId,
-      })
-    : await contextPortForProjectBrowse({
-        deps,
-        projectId,
-        userId,
-        workId,
-        rootThreadId,
-        chatId,
-      });
+  const port = await contextPortForProjectBrowse({
+    deps,
+    projectId,
+    userId,
+    workId,
+    rootThreadId,
+    chatId,
+  });
   if (!port) throwContextWorkUnavailableHttpError("work_missing");
   let authority: CanonicalContextAuthority = { kind: "contextual" };
   if (rootThreadId) {

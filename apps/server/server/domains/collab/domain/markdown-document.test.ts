@@ -44,9 +44,7 @@ function setup(filetype = "typescript") {
     initialDocumentSeeds: {
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
       seedInitialDocuments: async () => {},
-      stageInitialStates: async () => {},
-      commitStagedStates: async () => [],
-      discardStagedStates: async () => ({ remaining: false }),
+      discardUnbornDocuments: async () => {},
       async lacksAuthority(documentId) {
         const snapshot = await journal.read(documentId);
         return !snapshot.checkpoint && snapshot.updates.length === 0;

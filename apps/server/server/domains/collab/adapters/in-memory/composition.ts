@@ -81,15 +81,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     coordinator,
     agentCoordinator: coordinator,
     initialDocumentSeeds: {
-      async stageInitialStates() {
-        throw new Error("Staged creation requires Postgres");
-      },
-      async commitStagedStates() {
-        throw new Error("Staged creation requires Postgres");
-      },
-      async discardStagedStates() {
-        throw new Error("Staged creation requires Postgres");
-      },
+      async discardUnbornDocuments() {},
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
       async seedInitialDocuments(seeds) {
         for (const { documentId, state } of seeds)
@@ -218,16 +210,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       readFrozenMarkdown: runtime.markdownDocuments.readFrozenMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
-      prepareSeed: runtime.markdownDocuments.prepareSeed,
-      async stageInitialStates() {
-        throw new Error("Staged creation requires Postgres");
-      },
-      async commitStagedStates() {
-        throw new Error("Staged creation requires Postgres");
-      },
-      async discardStagedStates() {
-        throw new Error("Staged creation requires Postgres");
-      },
+      async discardUnbornDocuments() {},
       encodeSeed: runtime.markdownDocuments.encodeSeed,
       installSeeds: runtime.markdownDocuments.installSeeds,
       writeDocument: runtime.markdownDocuments.writeDocument,
@@ -283,9 +266,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       workBranchDisposal: {
         withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [] })),
       },
-      documentPurgeDraftDisposal: {
-        withDisposal: (_documentId, run) => run(async () => undefined),
-      },
+      documentPurgeDraftDisposal: { settle: async () => "closed" },
       // No document drafts in memory: nothing to register.
       draftLinks: { flush: async () => {} },
     },

@@ -78,7 +78,6 @@ export function createImportUploadService(deps: {
             folderId,
             roots,
             placement: null,
-            placementGeneration: 0,
             fingerprint,
             state: entries.some((e) => e.state === "awaiting") ? "uploading" : "organizing",
             counts: {

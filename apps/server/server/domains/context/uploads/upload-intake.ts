@@ -39,7 +39,6 @@ import {
   type ObjectStorePort,
 } from "../../storage/index.js";
 import { projectBrowseContextUri } from "../browse-layer-scheme.js";
-import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { ContextPort } from "../ports/context-port.js";
 
 /** Bytes of the file's start that classification looks at. */
@@ -180,7 +179,7 @@ export interface UploadIntakeRepository {
    * Marks the chat's own finalized uploads among `documentIds` as used by a sent message and
    * returns the sources whose rows changed. Another chat's file named here is left alone.
    */
-  consume(documentIds: readonly string[], chatId: string): Promise<string[]>;
+  consume(documentIds: readonly string[], chatId: string): Promise<void>;
   /** Intakes never finalized and untouched since `cutoff`, oldest first. */
   listAbandoned(
     cutoff: Date,
@@ -255,7 +254,7 @@ export interface UploadIntake {
     actorUserId: string,
     owner: ChatUploadOwner,
   ): Promise<DeleteDraftUploadResult>;
-  /** Runs in the sending transaction; republishes the catalog rows whose `used` it changed. */
+  /** Runs in the sending transaction: marks the chat's uploads in these documents used. */
   consume(documentIds: readonly string[], chatId: string): Promise<void>;
   /** Drops uploads untouched for a day, objects and row. Returns how many it dropped. */
   sweepAbandoned(now?: Date): Promise<number>;
@@ -366,7 +365,6 @@ export function createUploadIntake<Bound>(deps: {
   /** Deletes objects (and their previews) the intake no longer needs. */
   release: ObjectRelease;
   eventSink: EventSink;
-  catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
 }): UploadIntake {
   const conflict = { ok: false, error: { code: "idempotency_conflict" } } as const;
   const storageFailed = { ok: false, error: { code: "storage_failed" } } as const;
@@ -663,8 +661,7 @@ export function createUploadIntake<Bound>(deps: {
     },
 
     async consume(documentIds, chatId) {
-      const sourceIds = await deps.repository.consume(documentIds, chatId);
-      if (sourceIds.length > 0) await deps.catalog.refreshSources(sourceIds);
+      await deps.repository.consume(documentIds, chatId);
     },
 
     async sweepAbandoned(now = new Date()) {

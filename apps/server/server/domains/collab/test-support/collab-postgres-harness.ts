@@ -20,8 +20,6 @@ import { createTestRemovalDeps } from "../../../test-support/document-removal.js
 import { closeTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
-import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
-import { createRemovalRecords } from "../../context/tree/removal.js";
 import type { FileGrant } from "../../file-policy/index.js";
 import { createDrizzleBranchCommands } from "../adapters/drizzle-branch-commands.js";
 import { createDrizzleBranchDiscard } from "../adapters/drizzle-branch-discard.js";
@@ -73,6 +71,9 @@ const { createDrizzleWorkBranchPendingStore } = await import(
 );
 const { createBranchReviewItems } = await import("../domain/branch-review-items.js");
 const { createTreeReader } = await import("../../context/tree/tree-view.js");
+const { createDrizzleBranchTreeState } = await import("../adapters/drizzle-branch-tree-state.js");
+const { createDrizzleBranchTreeActors } = await import("../adapters/drizzle-branch-tree-actors.js");
+const { treeSeeder } = await import("../../../test-support/tree-seed.js");
 const { createFixtureDraftStore } = await import("./fixture-draft-store.js");
 const { documentAuthority } = await import("../domain/document-handle.js");
 const { readDocumentAuthorityHead, replaceGeneration } = await import(
@@ -198,29 +199,10 @@ export async function seedDatabase(
     slug: "manuscript",
     scope: "project",
   });
-  await db.insert(schema.documents).values([
-    {
-      id: ALPHA_ID,
-      contextSourceId: SOURCE_ID,
-      name: "alpha",
-      extension: "",
-      fileType: "markdown",
-    },
-    {
-      id: BETA_ID,
-      contextSourceId: SOURCE_ID,
-      name: "beta",
-      extension: "",
-      fileType: "markdown",
-    },
-    {
-      id: GAMMA_ID,
-      contextSourceId: SOURCE_ID,
-      name: "third",
-      extension: "md",
-      fileType: "markdown",
-    },
-  ]);
+  const seed = treeSeeder(db);
+  await seed.document(SOURCE_ID, "alpha", { id: ALPHA_ID });
+  await seed.document(SOURCE_ID, "beta", { id: BETA_ID });
+  await seed.document(SOURCE_ID, "third.md", { id: GAMMA_ID });
   await db.insert(schema.threads).values({
     rootThreadId: THREAD_ID,
     id: THREAD_ID,
@@ -265,8 +247,6 @@ export type CollabHarnessOptions = {
   fileAccess?: import("../../file-policy/index.js").FileAccess;
   /** Default: a static scope, whose tokens ignore the tree. */
   links?: DocumentLinkScopes;
-  /** Ahead-ref settlement at Apply's arrivals; absent, completions settle nothing. */
-  arrivals?: DocumentArrivals;
 };
 
 export type MatrixDraftStep = {
@@ -301,7 +281,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
   // One closer for the harness's drafts, Discard and removals; its retirement binds below.
-  const { draftClose, documentRemoval } = createTestRemovalDeps(db);
+  const { draftClose, treeLists, removals } = createTestRemovalDeps(db);
   const realDraftStore = createFixtureDraftStore(db, {
     close: draftClose,
     workProjection: createTestWorkProjectionMutation(db),
@@ -449,7 +429,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       documentEdits: modelDocumentEdits,
       branches: workBranches,
       fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
-      removals: createRemovalRecords(db),
+      removals,
       lockOwners: async () => {},
       lockLiveDocuments: async () => {},
       liveUtilityCore: runtime.liveUtilityCore,
@@ -494,9 +474,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       diagnostics: createReversalNoticeDiagnostics(eventSink),
     }),
     workProjection: createTestWorkProjectionMutation(db),
-    removal: documentRemoval,
-    ...(options.arrivals ? { arrivals: options.arrivals } : {}),
-    catalog: { refreshSources: async () => "" },
+    removals,
     fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
   });
   const responseFinalizer = createResponseWriteFinalizer({
@@ -515,12 +493,11 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     resolveDocumentUri,
   });
   const reviewItems = createBranchReviewItems({
-    tree: createTreeReader(db),
+    tree: createDrizzleBranchTreeState(db, createTreeReader(db)),
     drafts: (branchId, documentIds) =>
       durableWorkBranchPendingStore.listBranchDraftMetadata(branchId, documentIds),
     pendingThreadIds: durableWorkBranchPendingStore.pendingThreadIds,
-    treeActors: (branchId, documentIds) =>
-      durableWorkBranchPendingStore.listTreeActors(branchId, documentIds),
+    treeActors: createDrizzleBranchTreeActors(db, treeLists),
   });
   // The harness keeps no draft rooms but the fake hocuspocus's: retirement closes those and
   // the pooled cores' thread state.
@@ -561,14 +538,12 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
       // No Work projection in this harness: pending counts aren't under test.
       store: createDrizzleBranchDiscard(db, {
-        removal: documentRemoval,
         close: draftClose,
         branches: workBranches,
         workProjection: createTestWorkProjectionMutation(db),
-        catalog: { refreshSources: async () => "" },
+        treeLists,
       }),
       holdRetirement: draftClose.holdRetirement,
-      releaseObjects: async () => {},
     }),
     commands: createDrizzleBranchCommands(db),
     resolveThreadTitles: lookups.resolveThreadTitles,

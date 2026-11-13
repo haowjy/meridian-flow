@@ -12,7 +12,7 @@
 import type { BranchId } from "@meridian/contracts";
 import { type DraftItemKey, draftItemKey } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { TreeReader, TreeStateNode } from "../../context/tree/tree-view.js";
+import type { BranchDocumentTree, BranchTreeStateReader } from "./ports/branch-tree-state.js";
 import type { WorkBranchDraftMetadata } from "./ports/work-branch-pending-store.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
 
@@ -26,7 +26,7 @@ export type DraftReviewItem = {
   hasDraft: boolean;
   /** created: the branch has a `created` row; edited: draft rows only. */
   origin: "created" | "edited";
-  /** Created and still hidden: derived on read, nothing rewrites it. */
+  /** A creation only the Work shows: derived on read, nothing rewrites it. */
   isNew: boolean;
   binary: boolean;
   documentName: string | null;
@@ -64,7 +64,7 @@ export interface BranchReviewItems {
 }
 
 export function createBranchReviewItems(deps: {
-  tree: Pick<TreeReader, "treeState">;
+  tree: BranchTreeStateReader;
   /**
    * The branch's active `work_draft` drafts (only these documents' when given), each
    * metadata only.
@@ -87,15 +87,15 @@ export function createBranchReviewItems(deps: {
   ): Promise<ResolvedDraftItem[]> {
     const drafts = await deps.drafts(branchId, documentIds);
     const draftOf = new Map(drafts.map((evidence) => [evidence.documentId, evidence]));
-    const nodes = await deps.tree.treeState(
+    const nodes = await deps.tree.read(
       branchId,
       drafts.map((evidence) => evidence.documentId),
       documentIds,
     );
     const treeActors = await deps.treeActors(branchId, documentIds);
     const resolved = nodes.map((node) => {
-      const evidence = draftOf.get(node.nodeId);
-      const item = toItem(branchId, node, evidence, treeActors.get(node.nodeId) ?? []);
+      const evidence = draftOf.get(node.documentId);
+      const item = toItem(branchId, node, evidence, treeActors.get(node.documentId) ?? []);
       return { item, listed: node.pending };
     });
     return resolved.sort((a, b) => (a.item.path ?? "").localeCompare(b.item.path ?? ""));
@@ -120,34 +120,32 @@ export function createBranchReviewItems(deps: {
 
 function toItem(
   branchId: BranchId,
-  node: TreeStateNode,
+  node: BranchDocumentTree,
   evidence: WorkBranchDraftMetadata | undefined,
   treeActorThreadIds: readonly string[],
 ): DraftReviewItem {
-  const deletedLive = !node.hidden && node.deleted;
-  const isNew = node.origin === "created" && node.hidden;
-  const path = node.target.uri;
+  const path = node.uri;
   return {
     branchId,
-    itemKey: draftItemKey(branchId, node.nodeId),
-    documentId: node.nodeId,
+    itemKey: draftItemKey(branchId, node.documentId),
+    documentId: node.documentId,
     draftId: evidence?.draftId ?? null,
     origin: node.origin,
-    isNew,
+    isNew: node.isNew,
     binary: node.binary,
     // A document deleted live takes per-change Apply too: any Apply restores it first.
-    wholeItem: isNew || node.binary,
-    tree: node.branch
+    wholeItem: node.isNew || node.binary,
+    tree: node.change
       ? {
-          revision: node.branch.revision?.toString() ?? null,
-          movedFrom: node.branch.state === "moving" ? (node.from?.uri ?? null) : null,
-          deleted: node.branch.state === "deleting",
+          revision: node.revision,
+          movedFrom: node.change === "moving" ? node.movedFromUri : null,
+          deleted: node.change === "deleting",
         }
       : null,
     hasDraft: !!evidence,
     documentName: documentTitleFromUri(path),
     path,
-    deletedLive,
+    deletedLive: node.deletedLive,
     actorThreadIds: [...treeActorThreadIds],
     updatedAt: evidence?.updatedAt ?? new Date(),
   };

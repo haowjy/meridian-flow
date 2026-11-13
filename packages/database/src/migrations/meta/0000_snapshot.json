@@ -5097,6 +5097,12 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "in_no_view_since": {
+          "name": "in_no_view_since",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -5111,6 +5117,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "documents_in_no_view": {
+          "name": "documents_in_no_view",
+          "columns": [
+            {
+              "expression": "in_no_view_since",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"documents\".\"in_no_view_since\" IS NOT NULL AND \"documents\".\"content_purged_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

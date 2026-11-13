@@ -1,6 +1,6 @@
 /** Shared authoritative row-to-file mapping for catalog and project availability. */
 
-import { type DocumentId, hasDisplayableProperties } from "@meridian/contracts";
+import { hasDisplayableProperties } from "@meridian/contracts";
 import {
   type CanonicalContextAuthority,
   type ContextUriScheme,
@@ -26,17 +26,15 @@ export type CatalogFileRow = {
   id: string;
   contextSourceId: string;
   folderId: string | null;
+  /** The filename as the tree shows it, extension included. */
   name: string;
   extension: string;
   fileType: string;
   storageUrl: string | null;
   mimeType: string | null;
   metadata: unknown;
-  provisionalName: boolean;
   rank: string | null;
   locationVersion?: bigint;
-  /** Ids a device's create forwarded into this document (a join). */
-  joinedFrom?: readonly string[];
 };
 
 export function catalogSourceAuthority(
@@ -74,7 +72,7 @@ export function mapAuthoritativeFile(input: {
   upload?: { attachedAt: Date; consumed: boolean; intakeId: string; locationRevision: string };
 }): CatalogFileEntry {
   const { document, scope, scheme } = input;
-  const filename = document.extension ? `${document.name}.${document.extension}` : document.name;
+  const filename = document.name;
   const path = [...input.parentPath, filename];
   const classification = classifyFiletype(document.fileType);
   const storageBacked = isStorageBackedDocument(document);
@@ -134,7 +132,8 @@ export function mapAuthoritativeFile(input: {
     ),
     extension: document.extension,
     ...persistedClassification,
-    provisionalName: document.provisionalName,
+    // No name is provisional: the list names every node when it is made.
+    provisionalName: false,
     rank: document.rank,
     ...(input.upload
       ? {
@@ -146,6 +145,5 @@ export function mapAuthoritativeFile(input: {
           },
         }
       : {}),
-    ...(document.joinedFrom?.length ? { joinedFrom: document.joinedFrom as DocumentId[] } : {}),
   };
 }

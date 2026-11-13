@@ -9,7 +9,6 @@ import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documents,
   projects,
   threads,
   threadWorks,
@@ -19,6 +18,7 @@ import {
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { afterAll, expect, it } from "vitest";
 import * as Y from "yjs";
+import { treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
   createDrizzleBranchStore,
@@ -73,13 +73,7 @@ it("ensureThreadPeerDraft from more callers than connections completes", async (
   for (let i = 0; i < POOL * 2; i += 1) {
     const documentId = randomUUID();
     const threadId = randomUUID();
-    await db.insert(documents).values({
-      id: documentId,
-      contextSourceId: sourceId,
-      name: `d${i}`,
-      extension: "",
-      fileType: "markdown",
-    });
+    await treeSeeder(db).document(sourceId, `d${i}`, { id: documentId });
     await db.insert(threads).values({
       rootThreadId: threadId,
       id: threadId,

@@ -227,6 +227,12 @@ export const documents = pgTable(
     updatedAt: updatedAt(),
     /** Content was permanently released after the trash retention window; the row remains a tombstone. */
     contentPurgedAt: timestamp("content_purged_at", { withTimezone: true, mode: "date" }),
+    /**
+     * Null while a `tree_nodes` or `branch_tree_nodes` row shows the document; otherwise when the
+     * last row went (a discarded or refused-and-not-kept create). Written only by the row sync;
+     * retention purges it on the Trash window.
+     */
+    inNoViewSince: timestamp("in_no_view_since", { withTimezone: true, mode: "date" }),
   },
   (table) => [
     check(
@@ -238,6 +244,9 @@ export const documents = pgTable(
       sql`${table.sizeBytes} IS NULL OR ${table.sizeBytes} >= 0`,
     ),
     index("documents_project").on(table.projectId),
+    index("documents_in_no_view")
+      .on(table.inNoViewSince)
+      .where(sql`${table.inNoViewSince} IS NOT NULL AND ${table.contentPurgedAt} IS NULL`),
   ],
 );
 

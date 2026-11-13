@@ -1,8 +1,9 @@
 /** Drizzle document projection and activity read-model effects. */
 import type { Database } from "@meridian/database";
-import { contextSources, documents, projects, threadDocuments, works } from "@meridian/database";
+import { contextSources, documents, projects, threadDocuments } from "@meridian/database";
 import { and, eq } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { loadDocumentPlacement } from "../../context/tree/tree-addresses.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { DocumentProjectionEffects } from "../domain/ports/document-projection-effects.js";
 
@@ -13,17 +14,19 @@ export function createDrizzleDocumentProjectionEffects(
   return {
     async touchDocumentActivity(input) {
       const activeDb = currentDrizzleDb(db);
-      const [scope] = await activeDb
-        .select({
-          workId: contextSources.workId,
-          sourceProjectId: contextSources.projectId,
-          workProjectId: works.projectId,
-        })
+      const [owner] = await activeDb
+        .select({ projectId: documents.projectId })
         .from(documents)
-        .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-        .leftJoin(works, eq(works.id, contextSources.workId))
         .where(eq(documents.id, input.documentId))
         .limit(1);
+      const placed = await loadDocumentPlacement(activeDb, input.documentId);
+      const [source] = placed
+        ? await activeDb
+            .select({ workId: contextSources.workId })
+            .from(contextSources)
+            .where(eq(contextSources.id, placed.contextSourceId))
+            .limit(1)
+        : [];
 
       if (input.threadId) {
         await activeDb
@@ -36,10 +39,10 @@ export function createDrizzleDocumentProjectionEffects(
             ),
           );
       }
-      if (scope?.workId) {
-        await workProjection.touchWorks([scope.workId], input.at);
+      if (source?.workId) {
+        await workProjection.touchWorks([source.workId], input.at);
       }
-      const projectId = scope?.sourceProjectId ?? scope?.workProjectId;
+      const projectId = owner?.projectId;
       if (projectId) {
         await activeDb
           .update(projects)

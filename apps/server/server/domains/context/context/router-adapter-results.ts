@@ -1,13 +1,13 @@
 /** Translation from scheme-adapter results into canonical ContextPort results. */
 import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { NodeIdRefusedError } from "../adapters/tree-list-rows.js";
 import type {
   AdapterFault,
   AdapterFileEntry,
   AdapterFileRef,
   AdapterGrepFile,
 } from "../ports/context-adapter.js";
-import { ContextEntryConflictError } from "../ports/context-document-store.js";
 import type {
   ContextError,
   ContextScheme,
@@ -72,8 +72,8 @@ export async function callAdapter<T>(
   try {
     result = await op();
   } catch (error) {
-    if (error instanceof ContextEntryConflictError)
-      return Err({ code: "conflict", uri, occupantKind: error.occupantKind });
+    // A node id the caller reserved (an upload's) is already in use.
+    if (error instanceof NodeIdRefusedError) return Err({ code: "conflict", uri });
     return Err({
       code: "io_error",
       uri,

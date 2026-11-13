@@ -1,4 +1,5 @@
 /** Durable selection and receipt storage. Mutations join the caller's import-row transaction. */
+import type { AheadMint } from "@meridian/agent-edit/integration";
 import type {
   ImportCounts,
   ImportEntryReason,
@@ -8,6 +9,7 @@ import type {
   ImportSummary,
   ImportUnreadableReason,
 } from "@meridian/contracts";
+import type { StoredDocumentProperties } from "@meridian/contracts";
 import type { ImportMaintenanceCutoffs } from "../domain/maintenance-policy.js";
 import type { ImportPlacement } from "../domain/placement.js";
 import type { FileReceipt } from "../domain/receipt.js";
@@ -20,7 +22,6 @@ export interface ImportRecord {
   folderId: string | null;
   roots: ImportRoot[];
   placement: ImportPlacement | null;
-  placementGeneration: number;
   fingerprint: string;
   state: ImportState;
   counts: ImportCounts;
@@ -36,6 +37,16 @@ export interface ImportRecord {
   acknowledgedAt: Date | null;
   objectsSweptAt: Date | null;
   finalSweepAt: Date | null;
+}
+/**
+ * What a batch worked out for a file's document and cannot work out twice: its properties and
+ * aliases, and the links it made to documents that do not exist yet (their random ids are
+ * inside the text the journal holds). The import's last step reads it.
+ */
+export interface EntryAhead {
+  properties?: StoredDocumentProperties;
+  aliases?: string[];
+  aheadMints: AheadMint[];
 }
 export interface ImportEntrySelection {
   rootId: number;
@@ -70,7 +81,7 @@ export type ImportEntryPatch = Partial<
 >;
 export interface ImportRepository {
   organizeTransaction<T>(
-    fence: { importId: string; token: string; generation?: number },
+    fence: { importId: string; token: string },
     run: (record: ImportRecord) => Promise<T>,
   ): Promise<{ kind: "committed"; value: T } | { kind: "stale_owner" | "project_unavailable" }>;
   transaction<T>(run: () => Promise<T>): Promise<T>;
@@ -102,6 +113,9 @@ export interface ImportRepository {
     patch: Pick<ImportEntryPatch, "state"> & Partial<Pick<ImportEntryPatch, "reason">>,
     ids?: string[],
   ): Promise<void>;
+  /** Keeps what a batch worked out for these entries' documents (`import_entries.ahead`). */
+  writeAhead(importId: string, rows: { id: string; ahead: EntryAhead }[]): Promise<void>;
+  readAhead(importId: string): Promise<Map<string, EntryAhead>>;
   refreshCounts(id: string): Promise<ImportCounts>;
   hasAwaiting(id: string): Promise<boolean>;
   listOpen(userId: string): Promise<ImportRecord[]>;

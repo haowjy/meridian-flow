@@ -3,12 +3,13 @@
  * `user://` source of the account that owns its project. A `user://` source lives in that
  * account's personal project, so "same project" alone would refuse it; never widen this to
  * another account's source or another project's documents. Every check that pairs a branch
- * with a document (draft admission, file facts, reveal identity, move splits) asks here.
+ * with a document (draft admission, file facts) asks here.
  */
 import type { BranchId, ContextSourceId, DocumentId, ProjectId, UserId } from "@meridian/contracts";
-import { branches, contextSources, documents, projects, works } from "@meridian/database/schema";
+import { branches, contextSources, projects, works } from "@meridian/database/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { loadDocumentPlacement } from "./tree-addresses.js";
 
 /** A branch as ownership sees it: its project and the account that owns that project. */
 export type BranchHolder = { projectId: ProjectId; accountId: UserId };
@@ -22,16 +23,6 @@ export function branchMayHold(branch: BranchHolder, source: SourceOwner): boolea
     source.projectId === branch.projectId ||
     (source.scheme === "user" && source.accountId === branch.accountId)
   );
-}
-
-/**
- * Whether every branch that may hold a node in `from` may still hold it in `to`: a move
- * that narrows that reach splits its hidden contents off (contract §8.3).
- */
-export function branchReachKept(from: SourceOwner, to: SourceOwner): boolean {
-  return from.scheme === "user"
-    ? to.scheme === "user" && to.accountId === from.accountId
-    : branchMayHold(from, to);
 }
 
 const effectiveProjectId = sql<ProjectId>`coalesce(${contextSources.projectId}, ${works.projectId})`;
@@ -63,17 +54,18 @@ export async function loadSourceOwners(
   );
 }
 
-/** The owner of a document's physical source, whatever the row's lifecycle. */
+/**
+ * The owner of the source a document is placed in (live's row, else any Work's). A document no
+ * view places has no source and no owner.
+ */
 export async function loadDocumentOwner(
   db: DrizzleDb,
   documentId: DocumentId,
 ): Promise<SourceOwner | null> {
-  const [row] = await currentDrizzleDb(db)
-    .select({ sourceId: documents.contextSourceId })
-    .from(documents)
-    .where(eq(documents.id, documentId))
-    .limit(1);
-  return row ? ((await loadSourceOwners(db, [row.sourceId])).get(row.sourceId) ?? null) : null;
+  const placed = await loadDocumentPlacement(db, documentId);
+  return placed
+    ? ((await loadSourceOwners(db, [placed.contextSourceId])).get(placed.contextSourceId) ?? null)
+    : null;
 }
 
 export async function loadBranchHolder(

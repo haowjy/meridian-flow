@@ -8,6 +8,7 @@
 import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -16,8 +17,8 @@ import {
   runInDrizzleTransaction,
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
-import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
@@ -44,6 +45,7 @@ import {
   createTestDatabase,
   PROJECT_ID,
   resetDatabase,
+  SOURCE_ID,
   schema,
   THREAD_ID,
   TURN_ID,
@@ -52,6 +54,14 @@ import {
 } from "./test-support/collab-postgres-harness.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import { readResolvedDraft } from "./test-support/draft-store-seam.js";
+
+/** A live edit of the tree (rename, delete), as a person's would be. */
+async function liveEdit(db: Database, edit: (writer: TreeWriter) => unknown) {
+  await treeSeeder(db).store.submit({
+    list: await treeListOfSource(db, SOURCE_ID),
+    make: (writer) => ({ records: [], result: edit(writer) }),
+  });
+}
 
 /** The grant names this project and its owner, as the file policy would: the read's scope key. */
 function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
@@ -124,7 +134,6 @@ async function fixture(
     documents: effective,
     branches,
     works: createDrizzleProjectWorkRepository({
-      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),
@@ -257,10 +266,7 @@ describe("document revisions (postgres and collab)", () => {
     expect((await f.read()).revision).toBe(shown);
 
     // Nothing in alpha changes; only where its link's target sits.
-    await db
-      .update(schema.documents)
-      .set({ name: "gamma" })
-      .where(eq(schema.documents.id, BETA_ID));
+    await liveEdit(db, (writer) => writer.rename(LIVE, "system", BETA_ID, "gamma"));
     const moved = await f.current();
     expect(moved).not.toBe(shown);
     expect((await f.read()).revision).toBe(moved);
@@ -332,10 +338,7 @@ describe("document revisions (postgres and collab)", () => {
   it("does not treat a deleted document's still-loaded room as a readable source", async () => {
     const f = await fixture(db, harnesses, "direct");
     expect((await f.read()).revision).toMatch(/^y2:/);
-    await db
-      .update(schema.documents)
-      .set({ deletionReason: "deleted", deletedAt: new Date() })
-      .where(eq(schema.documents.id, ALPHA_ID));
+    await liveEdit(db, (writer) => writer.delete(LIVE, "system", ALPHA_ID));
     expect(f.hocuspocus.documents.has(ALPHA_ID)).toBe(true);
     expect(await f.current()).toBeNull();
   });

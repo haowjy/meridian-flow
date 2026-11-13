@@ -20,23 +20,13 @@ import {
 } from "../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
 import { nextProjectSlug } from "../projects/adapters/project-repository/shared.js";
-import { lockContextSources } from "./adapters/context-fs/document-locations.js";
 import {
   DrizzleContextDocumentStore,
   locateDocumentById,
 } from "./adapters/context-fs/drizzle-store.js";
 import { createDrizzleLineageScratchLifecycle } from "./adapters/lineage-scratch-lifecycle.js";
-import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
-import type {
-  ContextDocumentStore,
-  CreateBinaryDocumentInput,
-  CreateDocumentInput,
-} from "./ports/context-document-store.js";
+import type { ContextDocumentStore } from "./ports/context-document-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
-import type { DocumentArrivals } from "./ports/document-arrivals.js";
-import { findForward } from "./tree/forwards.js";
-import type { HiddenNodeRepair } from "./tree/hidden-node-repair.js";
-import type { LiveClaim } from "./tree/hidden-node-types.js";
 import type { TreeView } from "./tree/tree-view.js";
 
 const CONTEXT_SOURCE_NAMES: Record<
@@ -135,7 +125,7 @@ async function findProjectContextSource(
   return row?.id ?? null;
 }
 
-async function ensureProjectContextSource(
+export async function ensureProjectContextSource(
   db: Database,
   projectId: string,
   scheme: ProjectContextFsScheme,
@@ -235,23 +225,11 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     private readonly ensureSourceId: () => Promise<string>,
     private readonly findSourceId: () => Promise<string | null>,
     private readonly workId?: string | (() => Promise<string>),
-    private readonly catalogMutations?: ContextCatalogMutationPort,
     private readonly beforeWrite?: () => Promise<void>,
-    private readonly arrivals?: DocumentArrivals,
-    private readonly repair?: HiddenNodeRepair,
   ) {}
 
   private async resolvedWorkId(): Promise<string | undefined> {
     return typeof this.workId === "function" ? this.workId() : this.workId;
-  }
-
-  private async mutate<T>(operation: (store: DrizzleContextDocumentStore) => Promise<T>) {
-    return runInDrizzleTransaction(this.db, async () => {
-      const workId = await this.resolvedWorkId();
-      if (workId) await requireLockedActiveWorks(this.db, [workId]);
-      await this.beforeWrite?.();
-      return operation(await this.sourceStore());
-    });
   }
 
   private async sourceStore(): Promise<DrizzleContextDocumentStore> {
@@ -260,10 +238,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
       let pending = getDrizzleTransactionLocal<Promise<string>>(this.transactionSourceIdKey);
       if (!pending) {
         pending = (async () => {
-          const resolved = await this.ensureSourceId();
-          await lockContextSources(this.db, [resolved]);
-          await this.catalogMutations?.refreshSources([resolved]);
-          return resolved;
+          return this.ensureSourceId();
         })();
         setDrizzleTransactionLocal(this.transactionSourceIdKey, pending);
         runAfterDrizzleCommit(() => {
@@ -279,9 +254,6 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return new DrizzleContextDocumentStore({
       db: this.db,
       contextSourceId: sourceId,
-      catalogMutations: this.catalogMutations,
-      arrivals: this.arrivals,
-      ...(this.repair ? { repair: this.repair } : {}),
     });
   }
 
@@ -307,65 +279,13 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
       : { kind: "not_found" as const };
   }
 
-  async findDocument(folderId: string | null, name: string, extension: string) {
-    return (await this.readableSourceStore())?.findDocument(folderId, name, extension) ?? null;
-  }
-
   /** A document by id is the project's, not this source's: it never waits on the source. */
   findDocumentById(view: TreeView, documentId: string) {
     return locateDocumentById(this.db, view, documentId);
   }
 
-  /** A forward is the project's, not this source's: it never waits on the source. */
-  findForward(fromId: string, projectId: ProjectId) {
-    return findForward(this.db, fromId, projectId);
-  }
-
-  async listHiddenNames(folderId: string | null) {
-    return (await this.readableSourceStore())?.listHiddenNames(folderId) ?? [];
-  }
-
-  async findDocumentLastLocation(documentId: string) {
-    return (await this.readableSourceStore())?.findDocumentLastLocation(documentId) ?? null;
-  }
-
   async listTree(view: TreeView) {
     return (await this.readableSourceStore())?.listTree(view) ?? { folders: [], documents: [] };
-  }
-
-  async ensureFolderPath(dir: readonly string[]) {
-    // The source root always exists.
-    if (dir.length === 0) return null;
-    return this.mutate((store) => store.ensureFolderPath(dir));
-  }
-
-  async createFolderIfAbsent(input: {
-    parentId: string | null;
-    name: string;
-    id: string;
-    position?: import("@meridian/contracts/protocol").ContextSiblingPosition;
-  }) {
-    return this.mutate((store) => store.createFolderIfAbsent(input));
-  }
-
-  async insertNewTree(input: Parameters<ContextDocumentStore["insertNewTree"]>[0]) {
-    return this.mutate((store) => store.insertNewTree(input));
-  }
-
-  async findLiveCreateCandidate(dir: readonly string[], name: string, extension: string) {
-    return (
-      (await this.readableSourceStore())?.findLiveCreateCandidate(dir, name, extension) ?? {
-        kind: "none" as const,
-      }
-    );
-  }
-
-  async createDocumentRecordIfAbsent(input: CreateDocumentInput, claim?: LiveClaim) {
-    return this.mutate((store) => store.createDocumentRecordIfAbsent(input, claim));
-  }
-
-  async createBinaryDocument(input: CreateBinaryDocumentInput) {
-    return this.mutate((store) => store.createBinaryDocument(input));
   }
 
   async contextSourceId() {
@@ -422,19 +342,11 @@ export function createProjectContextDocumentStore(
   projectId: string,
   scheme: ProjectContextFsScheme,
   userId: string,
-  catalogMutations?: ContextCatalogMutationPort,
-  arrivals?: DocumentArrivals,
-  repair?: HiddenNodeRepair,
 ): ContextDocumentStore {
   return new SourceResolvedContextDocumentStore(
     db,
     () => ensureProjectContextSource(db, projectId, scheme, userId),
     () => findProjectContextSource(db, projectId, scheme, userId),
-    undefined,
-    catalogMutations,
-    undefined,
-    arrivals,
-    repair,
   );
 }
 
@@ -442,19 +354,12 @@ export function createWorkContextDocumentStore(
   db: Database,
   workId: string,
   scheme: WorkScopedContextFsScheme,
-  catalogMutations?: ContextCatalogMutationPort,
-  arrivals?: DocumentArrivals,
-  repair?: HiddenNodeRepair,
 ): ContextDocumentStore {
   return new SourceResolvedContextDocumentStore(
     db,
     () => ensureWorkContextSource(db, workId, scheme),
     () => findWorkContextSource(db, workId, scheme),
     workId,
-    catalogMutations,
-    undefined,
-    arrivals,
-    repair,
   );
 }
 
@@ -463,11 +368,8 @@ export function createLineageContextDocumentStore(
   db: Database,
   projectId: string,
   rootThreadId: string,
-  catalogMutations?: ContextCatalogMutationPort,
-  arrivals?: DocumentArrivals,
-  repair?: HiddenNodeRepair,
 ): ContextDocumentStore {
-  const lifecycle = createDrizzleLineageScratchLifecycle(db, catalogMutations, arrivals);
+  const lifecycle = createDrizzleLineageScratchLifecycle(db);
   const find = async () => {
     const [row] = await currentDrizzleDb(db)
       .select({ id: contextSources.id })
@@ -488,10 +390,7 @@ export function createLineageContextDocumentStore(
     () => lifecycle.ensureSource(projectId, rootThreadId),
     find,
     undefined,
-    catalogMutations,
     () => lifecycle.requireLive(projectId, rootThreadId),
-    arrivals,
-    repair,
   );
 }
 
@@ -554,18 +453,10 @@ export function createChatContextDocumentStore(
   projectId: string,
   chatId: string,
   scheme: "uploads",
-  catalogMutations?: ContextCatalogMutationPort,
-  arrivals?: DocumentArrivals,
-  repair?: HiddenNodeRepair,
 ): ContextDocumentStore {
   return new SourceResolvedContextDocumentStore(
     db,
     () => ensureChatContextSource(db, projectId, chatId, scheme),
     () => findChatContextSource(db, projectId, chatId, scheme),
-    undefined,
-    catalogMutations,
-    undefined,
-    arrivals,
-    repair,
   );
 }

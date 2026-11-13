@@ -4,13 +4,12 @@ import type { DocumentTrashEntry, GetDocumentTrashResponse } from "@meridian/con
 
 export type DocumentPurgeDraftDisposal = {
   /**
-   * Runs one purge attempt after locking every active branch and draft that can still write
-   * the document. The caller checks eligibility before invoking `disposeDrafts`.
+   * Inside the caller's transaction, which already holds the tree list's lock: takes the
+   * documents' keys, then every active draft row that can write them, and answers `pending` when
+   * a Work still has a reviewable change to one of them (the purge waits). Otherwise closes the
+   * drafts that remain, so nothing writes the documents once their content is released.
    */
-  withDisposal<T>(
-    documentId: DocumentId,
-    run: (disposeDrafts: () => Promise<void>) => Promise<T>,
-  ): Promise<T>;
+  settle(documentIds: readonly DocumentId[]): Promise<"pending" | "closed">;
 };
 
 export type DocumentTrash = {
@@ -25,6 +24,10 @@ export type DocumentTrash = {
   read(projectId: ProjectId, documentId: DocumentId): Promise<GetDocumentTrashResponse | null>;
   /** Whether a missing trash entry belonged here and has since been permanently purged. */
   wasPurged(projectId: ProjectId, documentId: DocumentId): Promise<boolean>;
-  /** Permanently releases the content of eligible deleted documents. */
+  /**
+   * Retention: empties each Trash entry whose nodes have been in Trash for the retention window
+   * (a `purge` record per entry, then the purged documents' content is released), and releases
+   * a drafted create that left every view that long ago. Returns the documents released.
+   */
   purge(): Promise<number>;
 };

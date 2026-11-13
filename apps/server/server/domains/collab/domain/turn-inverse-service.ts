@@ -17,8 +17,6 @@ import type {
   DocumentRemovalRecord,
   DocumentReversalResult,
   ReversalOutcome,
-  TreeReversalFault,
-  TreeReversalLanding,
   TurnInverseSkip,
   TurnInverseSkipCause,
   TurnReceiptChip,
@@ -29,18 +27,9 @@ import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
 import { effectiveActionIndex, partKey } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
-import { type InverseStep, simulateInverse } from "./inverse-stream.js";
+import type { InverseStep } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
-import {
-  isTransitionEntry,
-  materializedTreeEditIds,
-  type PlannedTreeInverse,
-  type StoredTreeEntry,
-  type TransitionEntry,
-  type TreeStates,
-  treeKey,
-} from "./tree-inverse.js";
 
 export type StoredInversePart = InversePart & {
   documentId: DocumentId;
@@ -77,10 +66,6 @@ export type InverseDocument = {
   /** Removed documents are skipped with the record, never planned against. */
   removal: DocumentRemovalRecord | null;
   history: StoredInversePart[];
-  /** Its tree entries (moves, deletes, restores, settlements), ordered by `seq`. */
-  tree: StoredTreeEntry[];
-  /** What each destination holds now, for judging tree entries by state. */
-  treeStates: TreeStates;
   drafts: ReadonlyMap<
     string,
     { documentDraft: DraftSnapshot; doc: Y.Doc; name: string; frozen: boolean }
@@ -89,8 +74,6 @@ export type InverseDocument = {
   excerptViews: Map<Y.Doc, Y.Doc>;
   /** The sole captured destination resolution used by planning and presentation. */
   destinationOf(origin: EditOrigin): InverseDestination;
-  /** The active draft in a tree step's branch, or a gone destination. */
-  destinationForBranch(branchId: BranchId): InverseDestination;
 };
 export type PreparedDocumentInverse = {
   document: InverseDocument;
@@ -99,7 +82,6 @@ export type PreparedDocumentInverse = {
   consumes: string[];
   skips: TurnInverseSkip[];
 };
-export type CommittedTreeLanding = TreeReversalLanding & { handle: string };
 export interface TurnInverseStore {
   /**
    * The inverse's attempts: `run` plans on a lock-free capture and commits through `commit`;
@@ -120,17 +102,9 @@ export interface TurnInverseStore {
   }): Promise<{
     handles: string[];
     updates: Uint8Array[];
-    /**
-     * Steps that couldn't run (a blocked or missing folder, text in a document whose
-     * restore couldn't run); the rest ran. A model inverse refuses whole instead.
-     */
+    /** Steps that couldn't run; the rest ran. A model inverse refuses whole instead. */
     skips: TurnInverseSkip[];
-    /** Tree steps whose committed address differs from the recorded destination. */
-    landings: CommittedTreeLanding[];
-    /**
-     * Text parts and tree steps committed, by document and then by where they landed: the
-     * branch whose text draft or tree facts took them, null for live.
-     */
+    /** Text parts committed, by document and then by where they landed: the branch whose draft took them, null for live. */
     reversed: ReadonlyMap<DocumentId, ReadonlyMap<BranchId | null, number>>;
     /** The destinations that actually committed. */
     outcomes: readonly {
@@ -154,11 +128,10 @@ const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
   (!query.responseIdentity || part.editScopeId === query.responseIdentity.editScopeId);
 
 /**
- * Each document's ordered steps, for both command and dry run; each text step lands where its
- * original did, live or in its draft. Each of
- * the turn's original edits is one step, newest first for an undo and oldest first for a redo,
- * judged on what the steps before it leave: a restore lets later text land, a reversed undo
- * puts the edit it undid back on the stack.
+ * Each document's ordered steps, for both command and dry run; each step lands where its
+ * original did, live or in its draft. Each of the turn's original edits is one step, newest
+ * first for an undo and oldest first for a redo, judged on what the steps before it leave: a
+ * reversed undo puts the edit it undid back on the stack.
  */
 function prepare(
   store: TurnInverseStore,
@@ -168,81 +141,28 @@ function prepare(
   actionId: string,
 ): PreparedDocumentInverse[] {
   const direction = kind === "redo" ? "redo" : "undo";
-  const inTurn = (_document: InverseDocument, row: StoredInversePart | StoredTreeEntry) =>
-    targetsTurn(row, query);
-  const materialized = new Map(
-    documents.map((document) => [document.documentId, materializedTreeEditIds(document.tree)]),
-  );
-  const turnTree = (document: InverseDocument) =>
-    document.tree.filter(
-      (row): row is TransitionEntry =>
-        isTransitionEntry(row) &&
-        inTurn(document, row) &&
-        !materialized.get(document.documentId)?.has(row.editId) &&
-        // Response rollback already owns create retraction: it preserves a creation another
-        // committed contribution made stand, then removes only the reply's use.
-        !(kind === "rollback" && row.tree.op === "create"),
-    );
-  const keys = new Set([
-    ...documents.flatMap((document) =>
-      document.history.filter((part) => inTurn(document, part)).map(partKey),
+  const keys = new Set(
+    documents.flatMap((document) =>
+      document.history.filter((part) => targetsTurn(part, query)).map(partKey),
     ),
-    ...documents.flatMap((document) => turnTree(document).map((row) => treeKey(row.editId))),
-  ]);
-  const all = documents
-    .flatMap((document): (StoredInversePart | StoredTreeEntry)[] => [
-      ...document.history,
-      ...document.tree,
-    ])
-    .sort((a, b) => a.id - b.id);
+  );
+  const all = documents.flatMap((document) => document.history).sort((a, b) => a.id - b.id);
   const index = effectiveActionIndex(all, keys);
   const selected = direction === "redo" ? index.actions[0] : undefined;
   const selectedAction = selected?.id;
   const accepted = selected?.targets ?? new Set<string>();
   const consumes = selectedAction ? [selectedAction] : [];
   return documents.map((document) => {
-    const selectedTrees = turnTree(document).filter(
-      (row) => direction === "undo" || accepted.has(treeKey(row.editId)),
+    const targets = document.history.filter(
+      (part) => targetsTurn(part, query) && (direction !== "redo" || accepted.has(partKey(part))),
     );
-    const hiddenCreateBranches = new Set(
-      selectedTrees.flatMap((row) =>
-        row.tree.op === "create" && row.tree.destination.kind === "draft"
-          ? [row.tree.destination.branchId]
-          : [],
-      ),
-    );
-    const targets = document.history.filter((part) => {
-      if (!inTurn(document, part) || (direction === "redo" && !accepted.has(partKey(part))))
-        return false;
-      const destination = document.destinationOf(part.origin);
-      return destination.kind !== "draft" || !hiddenCreateBranches.has(destination.branchId);
-    });
     const rolledBack = (part: StoredInversePart) => index.rolledBack.has(partKey(part));
     const reversals =
       direction === "undo"
         ? targets.filter((part) => !rolledBack(part))
         : document.history.filter((part) => part.actionId === selectedAction && !rolledBack(part));
     const skips: TurnInverseSkip[] = [];
-    const simulation = simulateInverse(document, {
-      rolledBack: index.rolledBack,
-      identity: {
-        threadId: null,
-        turnId: null,
-        responseId: null,
-        editScopeId: null,
-        toolCallId: null,
-        actor: kind === "rollback" ? "system" : "human",
-      },
-    });
     const entryPlanner = createCapturedReversalPlanner(document, query);
-    const skipTree = (row: StoredTreeEntry, cause: TurnInverseSkipCause) =>
-      skips.push({
-        kind: "tree",
-        documentId: document.documentId,
-        uri: document.uri,
-        at: row.tree.shownAt,
-        cause,
-      });
     const skip = (part: StoredInversePart, cause: TurnInverseSkipCause) =>
       skips.push({
         kind: "text",
@@ -251,55 +171,23 @@ function prepare(
         uri: document.uri,
         cause,
       });
-    // The originals in step order: a tree entry, or one edit's targeted text parts.
+    // The originals in step order: one edit's targeted parts each.
     const byEdit = new Map<string, StoredInversePart[]>();
     for (const part of targets) byEdit.set(part.editId, [...(byEdit.get(part.editId) ?? []), part]);
-    const originals = [
-      ...selectedTrees.map((row) => ({ at: row.id, row, parts: [] as StoredInversePart[] })),
-      ...[...byEdit.values()].map((parts) => ({
+    const originals = [...byEdit.values()]
+      .map((parts) => ({
         at: Math.max(...parts.map((part) => part.id)),
-        row: undefined,
         parts: parts.sort((a, b) => (direction === "undo" ? b.id - a.id : a.id - b.id)),
-      })),
-    ].sort((a, b) => (direction === "undo" ? b.at - a.at : a.at - b.at));
-    const order: (
-      | { kind: "tree"; planned: PlannedTreeInverse; at: number }
-      | {
-          kind: "text";
-          editId: string;
-          destination: InverseDestination;
-          actionKind: "undo" | "redo" | "revert" | "rollback";
-          at: number;
-        }
-    )[] = [];
+      }))
+      .sort((a, b) => (direction === "undo" ? b.at - a.at : a.at - b.at));
+    const order: {
+      editId: string;
+      destination: InverseDestination;
+      actionKind: "undo" | "redo" | "revert" | "rollback";
+      at: number;
+    }[] = [];
     const selection = new Map<InverseDestination, InverseSelection[]>();
-    for (const { at, row, parts } of originals) {
-      if (row) {
-        if (simulation.rolledBack.has(treeKey(row.editId))) {
-          skipTree(row, "rolled_back");
-          continue;
-        }
-        const planned = entryPlanner.treePlan(
-          {
-            id: row.editId,
-            handle: row.wId === null ? "" : editHandle(row.wId),
-            parts: [],
-            tree: row,
-          },
-          direction,
-          simulation.tree,
-          simulation.states,
-          simulation.rolledBack,
-          simulation.nextStep,
-        );
-        if ("cause" in planned) {
-          skipTree(row, planned.cause);
-          continue;
-        }
-        simulation.recordTree(planned, { kind, actionId, consumes });
-        order.push({ kind: "tree", planned, at });
-        continue;
-      }
+    for (const { at, parts } of originals) {
       let chosen = 0;
       const inverseParts =
         direction === "redo"
@@ -314,14 +202,7 @@ function prepare(
         handle: parts[0]?.wId === null ? "" : editHandle(parts[0]?.wId ?? 0),
         parts,
       };
-      const planned = entryPlanner.turnTextPlan(
-        entry,
-        direction,
-        kind,
-        query,
-        simulation.liveRemoved(),
-        inverseParts,
-      );
+      const planned = entryPlanner.turnTextPlan(entry, direction, kind, query, inverseParts);
       if ("causes" in planned) {
         for (const [i, part] of parts.entries())
           skip(part, planned.causes[i] as TurnInverseSkipCause);
@@ -341,16 +222,15 @@ function prepare(
       }
       if (chosen && parts[0])
         order.push({
-          kind: "text",
           editId: parts[0].editId,
           destination: planned.destination,
           actionKind: planned.actionKind as "undo" | "redo" | "revert" | "rollback",
           at,
         });
     }
-    // Text never moves or deletes a document, so each destination's parts compute as one
-    // selection in step order over that destination's view; one edit lands in one
-    // destination. Review membership does not decide inverse eligibility, including rollback.
+    // Each destination's parts compute as one selection in step order over that destination's
+    // view; one edit lands in one destination. Review membership does not decide inverse
+    // eligibility, including rollback.
     const computed = new Map<InverseDestination, ReturnType<typeof entryPlanner.compute>>(
       [...selection].map(([destination, parts]) => {
         return [destination, entryPlanner.compute(destination, parts, actionId)];
@@ -375,14 +255,12 @@ function prepare(
         skip(target, entryPlanner.turnSkipCause(target, direction, reversals, null));
     }
     const steps = order.flatMap((step): InverseStep[] => {
-      if (step.kind === "tree") return [{ ...step, actionId, actionKind: kind }];
       const edit = computed
         .get(step.destination)
         ?.edits.find((edit) => edit.targetEditId === step.editId);
       return edit
         ? [
             {
-              kind: "text",
               edit,
               destination: step.destination,
               actionId,
@@ -408,27 +286,9 @@ function inSequence(plans: readonly PreparedDocumentInverse[], direction: "undo"
 }
 const countAccepted = (plans: PreparedDocumentInverse[]) =>
   plans.reduce(
-    (count, plan) =>
-      count +
-      plan.steps.reduce((n, step) => n + (step.kind === "tree" ? 1 : step.edit.parts.length), 0),
+    (count, plan) => count + plan.steps.reduce((n, step) => n + step.edit.parts.length, 0),
     0,
   );
-
-/**
- * Why a reversal that reversed nothing failed, when a move or delete met its destination
- * unable to take it: a blocked folder path first, then a missing folder, then a document moved
- * or deleted again since. Not a dependency on later edits.
- */
-function treeFault(skips: readonly TurnInverseSkip[]): TreeReversalFault | null {
-  const causes = new Set(skips.flatMap((skip) => (skip.kind === "tree" ? [skip.cause] : [])));
-  if (causes.has("ancestor_taken")) return "ancestor_taken";
-  if (causes.has("folder_missing")) return "folder_missing";
-  return ["superseded", "deleted_since", "moved_since"].some((cause) =>
-    causes.has(cause as TurnInverseSkipCause),
-  )
-    ? "superseded"
-    : null;
-}
 
 export function createTurnInverseService(store: TurnInverseStore) {
   return {
@@ -476,7 +336,6 @@ export function createTurnInverseService(store: TurnInverseStore) {
             })
           : {
               skips: [],
-              landings: [],
               reversed: new Map<DocumentId, ReadonlyMap<BranchId | null, number>>(),
             };
         const reversedAt = (plan: PreparedDocumentInverse) =>
@@ -493,14 +352,14 @@ export function createTurnInverseService(store: TurnInverseStore) {
             ? skips.length
               ? "partial"
               : "reversed"
-            : (treeFault(skips) ??
-              (plans.length &&
-              plans.every(
-                (plan) =>
-                  plan.skips.length && plan.skips.every((skip) => skip.cause === "draft_archived"),
-              )
-                ? "permission_denied"
-                : "expired")),
+            : plans.length &&
+                plans.every(
+                  (plan) =>
+                    plan.skips.length &&
+                    plan.skips.every((skip) => skip.cause === "draft_archived"),
+                )
+              ? "permission_denied"
+              : "expired",
           // One row per destination a document's steps reversed in, or one for its refusal.
           documents: plans.flatMap((plan): DocumentReversalResult[] => {
             const reversed = reversedAt(plan);
@@ -508,11 +367,6 @@ export function createTurnInverseService(store: TurnInverseStore) {
               return reversed.map((branchId) => ({
                 documentId: plan.document.documentId,
                 uri: plan.document.uri,
-                ...(plan.steps.some(
-                  (step) => step.kind === "tree" && step.planned.entry.tree.op === "create",
-                )
-                  ? { created: true }
-                  : {}),
                 destination: branchId
                   ? { kind: "draft" as const, branchId }
                   : { kind: "live" as const },
@@ -525,18 +379,11 @@ export function createTurnInverseService(store: TurnInverseStore) {
                 status:
                   plan.skips.length && plan.skips.every((skip) => skip.cause === "draft_archived")
                     ? ("permission_denied" as const)
-                    : (treeFault(
-                        skips.filter((skip) => skip.documentId === plan.document.documentId),
-                      ) ?? ("expired" as const)),
+                    : ("expired" as const),
               },
             ];
           }),
           skips,
-          ...(committed.landings.length
-            ? {
-                landings: committed.landings.map(({ handle: _handle, ...landing }) => landing),
-              }
-            : {}),
           acceptedParts: accepted,
         };
       });

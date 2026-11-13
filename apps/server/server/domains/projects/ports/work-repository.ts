@@ -39,13 +39,10 @@ export class WorkNameConflictError extends Error {
   }
 }
 
+/** A Work cannot be restored because another Work now has its name. */
 export class WorkRestoreConflictError extends Error {
-  constructor(public readonly reason: "name" | "content") {
-    super(
-      reason === "name"
-        ? "Work cannot be restored because its name is now in use"
-        : "Work cannot be restored because a file or folder name is now in use",
-    );
+  constructor() {
+    super("Work cannot be restored because its name is now in use");
     this.name = "WorkRestoreConflictError";
   }
 }
