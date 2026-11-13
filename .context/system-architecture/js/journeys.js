@@ -90,7 +90,7 @@ function select() {
       ),
     ];
   });
-  panel.replaceChildren(el("div", { class: "panel-body" }, el("h2", null, section.id), el("p", { class: "sub" }, journey.page.title), field(section, "Source") && paragraph(`Source: ${field(section, "Source")}`, journey.path), ...groups));
+  panel.replaceChildren(el("div", { class: "panel-body" }, el("h2", null, section.id), el("p", { class: "sub" }, journey.page.title), ...groups));
 }
 
 function link(journey, key, { label, href }) {
