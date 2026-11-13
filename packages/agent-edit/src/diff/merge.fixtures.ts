@@ -178,6 +178,10 @@ export type GBlock =
       units: Word[][];
       cols: number;
       origins: number[];
+      /** A list's nested list under its last item. */
+      sub: Word[][];
+      /** Container attributes: a list's `tight` and first item's `checked`, a table's `align`. */
+      attrs: { tight: boolean; checked: boolean | null; align: "center" | null };
     };
 
 export type OpName =
@@ -196,6 +200,8 @@ export type OpName =
   | "editUnit"
   | "addUnit"
   | "dropUnit"
+  | "editAttr"
+  | "editSub"
   | "repeatBlock";
 
 export interface Script {
@@ -258,7 +264,16 @@ function container(rng: Rng, origins: number[]): GBlock {
   const cols = type === "table" ? 2 + rng.int(2) : 1;
   const rows = 1 + rng.int(3);
   const units = Array.from({ length: rows * cols }, () => unit(rng));
-  return { kind: "container", type, units, cols, origins };
+  const sub = type === "list" && rng.chance(0.3) ? [unit(rng)] : [];
+  return {
+    kind: "container",
+    type,
+    units,
+    cols,
+    origins,
+    sub,
+    attrs: { tight: false, checked: null, align: null },
+  };
 }
 
 const unit = (rng: Rng): Word[] =>
@@ -293,7 +308,13 @@ const clone = (bs: GBlock[]): GBlock[] =>
     b.kind === "text"
       ? { ...b, words: b.words.map((w) => ({ ...w })), origins: [...b.origins] }
       : b.kind === "container"
-        ? { ...b, units: b.units.map((u) => u.map((w) => ({ ...w }))), origins: [...b.origins] }
+        ? {
+            ...b,
+            units: b.units.map((u) => u.map((w) => ({ ...w }))),
+            sub: b.sub.map((u) => u.map((w) => ({ ...w }))),
+            attrs: { ...b.attrs },
+            origins: [...b.origins],
+          }
         : { ...b, origins: [...b.origins] },
   );
 
@@ -313,6 +334,8 @@ const ALL_OPS: OpName[] = [
   "editUnit",
   "addUnit",
   "dropUnit",
+  "editAttr",
+  "editSub",
 ];
 
 /** Applies one random op in place; returns the op name or null if it didn't apply. */
@@ -356,6 +379,8 @@ function applyOpInner(
     editUnit: 1.5,
     addUnit: 0.6,
     dropUnit: 0.6,
+    editAttr: 0.6,
+    editSub: 0.8,
     repeatBlock: 1,
   };
   const total = mix.reduce((s, o) => s + (weights[o] ?? 1), 0);
@@ -526,6 +551,32 @@ function applyOpInner(
       touch(b);
       return op;
     }
+    case "editAttr": {
+      if (!containers.length) return null;
+      const b = rng.pick(containers);
+      if (b.type === "list") {
+        if (rng.chance(0.5)) b.attrs.tight = !b.attrs.tight;
+        else b.attrs.checked = b.attrs.checked === null ? rng.chance(0.5) : null;
+      } else if (b.type === "table") b.attrs.align = b.attrs.align ? null : "center";
+      else return null;
+      touch(b);
+      return op;
+    }
+    case "editSub": {
+      const lists = containers.filter((b) => b.type === "list");
+      if (!lists.length) return null;
+      const b = rng.pick(lists);
+      if (!b.sub.length) b.sub.push(unit(rng));
+      else if (rng.chance(0.4)) b.sub.splice(rng.int(b.sub.length + 1), 0, unit(rng));
+      else if (rng.chance(0.3) && b.sub.length > 1) b.sub.splice(rng.int(b.sub.length), 1);
+      else {
+        const u = rng.pick(b.sub);
+        if (rng.chance(0.5) && u.length) u[rng.int(u.length)] = fresh();
+        else u.splice(rng.int(u.length + 1), 0, fresh());
+      }
+      touch(b);
+      return op;
+    }
     case "insertFigure": {
       doc.splice(rng.int(doc.length + 1), 0, {
         kind: "figure",
@@ -598,11 +649,20 @@ export function toPM(schema: Schema, doc: GBlock[]): PMNode[] {
     if (b.kind === "container") {
       const { nodes } = schema;
       const para = (u: Word[]) => nodes.paragraph.create(null, wordNodes(schema, u));
+      const subList = (c: Extract<GBlock, { kind: "container" }>) =>
+        nodes.bullet_list.create(
+          null,
+          c.sub.map((u) => nodes.list_item.create(null, para(u))),
+        );
       if (b.type === "quote") return nodes.blockquote.create(null, b.units.map(para));
       if (b.type === "list")
         return nodes.bullet_list.create(
-          null,
-          b.units.map((u) => nodes.list_item.create(null, para(u))),
+          { tight: b.attrs.tight },
+          b.units.map((u, i) => {
+            const item =
+              i === b.units.length - 1 && b.sub.length ? [para(u), subList(b)] : [para(u)];
+            return nodes.list_item.create({ checked: i === 0 ? b.attrs.checked : null }, item);
+          }),
         );
       const rows: PMNode[] = [];
       for (let r = 0; r < b.units.length; r += b.cols)
@@ -612,7 +672,7 @@ export function toPM(schema: Schema, doc: GBlock[]): PMNode[] {
             b.units.slice(r, r + b.cols).map((u) => nodes.table_cell.create(null, para(u))),
           ),
         );
-      return nodes.table.create(null, rows);
+      return nodes.table.create({ align: b.attrs.align }, rows);
     }
     const content = wordNodes(schema, b.words);
     return b.type === "heading"
