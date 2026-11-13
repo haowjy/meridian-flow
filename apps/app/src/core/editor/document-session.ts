@@ -272,6 +272,20 @@ export class DocumentSession {
   private schemaRepairWitness: SchemaRepairWitness | null = null;
   private readonly persistSchemaFence: ((fence: SchemaFence) => void) | undefined;
   private readonly localPresence: LocalPresence;
+  /** `detachTransport` holds one presence suspension until the next transport attaches. */
+  private presenceHeldForTransport = false;
+  /** Page hide is a presence suspension; `pageshow` releases it only if this listener took it. */
+  private presenceHeldForPageHide = false;
+  private readonly onPageHide = () => {
+    if (this.presenceHeldForPageHide) return;
+    this.presenceHeldForPageHide = true;
+    this.localPresence.suspend();
+  };
+  private readonly onPageShow = () => {
+    if (!this.presenceHeldForPageHide) return;
+    this.presenceHeldForPageHide = false;
+    this.localPresence.resume();
+  };
   private readonly localPersistenceSyncedPromise: Promise<void>;
   private readonly transportAttachedPromise: Promise<void>;
   private resolveTransportAttached!: () => void;
@@ -296,6 +310,10 @@ export class DocumentSession {
     this.markerStore = new SessionMarkerStore(ownUserId);
     this.awareness = new Awareness(this.document);
     this.localPresence = createLocalPresence(this.awareness);
+    if (typeof window !== "undefined") {
+      window.addEventListener("pagehide", this.onPageHide);
+      window.addEventListener("pageshow", this.onPageShow);
+    }
     if (persistence.kind === "indexeddb") {
       this.persistence = new IndexeddbPersistence(persistence.key, this.document);
     } else {
@@ -340,6 +358,8 @@ export class DocumentSession {
   }
 
   private connectTransport(transportFactory: DocumentSessionTransportFactory): void {
+    // Before the factory, so the new provider's first handshake carries this client's presence.
+    this.resumePresenceForTransport();
     try {
       this.transportProvider = transportFactory({
         roomKey: this.roomKey,
@@ -406,6 +426,12 @@ export class DocumentSession {
     this.unsubscribeTransportAccess = null;
     this.unsubscribeChangeEvents = null;
     this.unsubscribeAcknowledgement = null;
+    // The provider never destroys this session's Awareness, so presence is held here and put
+    // back on attach.
+    if (!this.presenceHeldForTransport) {
+      this.presenceHeldForTransport = true;
+      this.localPresence.suspend();
+    }
     this.transportProvider = null;
     this.transportState = null;
     this.transportInitialSyncComplete = false;
@@ -715,6 +741,12 @@ export class DocumentSession {
     return this.localPresence;
   }
 
+  private resumePresenceForTransport(): void {
+    if (!this.presenceHeldForTransport) return;
+    this.presenceHeldForTransport = false;
+    this.localPresence.resume();
+  }
+
   /** Take this client off the wire. Field writes made meanwhile still count. */
   suspendPresence(): void {
     if (this.destroyed) return;
@@ -748,6 +780,14 @@ export class DocumentSession {
       this.destroyStages = [
         { settled: false, run: () => this.emit() },
         { settled: false, run: () => this.markerStore.clear() },
+        {
+          settled: false,
+          run: () => {
+            if (typeof window === "undefined") return;
+            window.removeEventListener("pagehide", this.onPageHide);
+            window.removeEventListener("pageshow", this.onPageShow);
+          },
+        },
         { settled: false, run: () => this.localPresence.release() },
         {
           settled: false,
