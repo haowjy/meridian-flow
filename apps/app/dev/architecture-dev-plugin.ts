@@ -28,7 +28,8 @@ export type ArchitectureRequest =
  * What the dev server does with a request path. Served, at their repo paths: the map directory,
  * and any `.md` under a `.context/` directory (the state machine pages the map renders).
  * Everything else, source and `.env` included, passes to the app; a path that climbs
- * (`..`, an encoded one, a backslash or NUL) is rejected.
+ * (`..`, an encoded one, a backslash or NUL) is rejected. A symlink is followed only if the
+ * file it points at is also in the repo and would be served at its own path.
  */
 export function resolveArchitectureRequest(rawPath: string, repoRoot: string): ArchitectureRequest {
   let pathname: string;
@@ -40,27 +41,35 @@ export function resolveArchitectureRequest(rawPath: string, repoRoot: string): A
   if (pathname === ARCHITECTURE_ENTRY.slice(0, -1) || pathname === ARCHITECTURE_ENTRY) {
     return { kind: "redirect", to: `${MAP_DIR}index.html` };
   }
-  const inMap = pathname.startsWith(MAP_DIR);
-  if (!inMap && !pathname.endsWith(".md")) return { kind: "pass" };
-  if (/(^|\/)\.\.(\/|$)|\\|\0/.test(pathname)) return { kind: "reject" };
+  if (/(^|\/)\.\.(\/|$)|\\|\0/.test(pathname))
+    return pathname.startsWith(MAP_DIR) || pathname.endsWith(".md")
+      ? { kind: "reject" }
+      : { kind: "pass" };
+  const type = servedType(pathname);
+  if (!type) return { kind: "pass" };
 
-  const extension = path.extname(pathname);
-  const type = inMap ? MAP_EXTENSIONS[extension] : extension === ".md" ? MARKDOWN : undefined;
-  const segments = pathname.split("/");
-  const isPage = !inMap && segments.includes(".context") && !segments.includes("node_modules");
-  if (!type || (!inMap && !isPage)) return { kind: "pass" };
-
-  const file = path.join(repoRoot, pathname);
-  // A symlink inside the allowed paths must not lead out of the repo.
+  // A symlink inside the allowed paths must not lead out of the repo or to a file the rules wouldn't serve.
   let real: string;
   try {
-    real = fs.realpathSync(file);
+    real = fs.realpathSync(path.join(repoRoot, pathname));
   } catch {
     return { kind: "pass" };
   }
   const root = fs.realpathSync(repoRoot);
-  if (!real.startsWith(root + path.sep) || !fs.statSync(real).isFile()) return { kind: "pass" };
+  const realPathname = `/${path.relative(root, real).split(path.sep).join("/")}`;
+  if (!real.startsWith(root + path.sep) || !servedType(realPathname) || !fs.statSync(real).isFile())
+    return { kind: "pass" };
   return { kind: "file", file: real, type };
+}
+
+/** The content type a repo path is served as, or undefined: the map directory by extension, any `.md` under a `.context/` directory. */
+function servedType(pathname: string): string | undefined {
+  const extension = path.extname(pathname);
+  if (pathname.startsWith(MAP_DIR)) return MAP_EXTENSIONS[extension];
+  const segments = pathname.split("/");
+  return extension === ".md" && segments.includes(".context") && !segments.includes("node_modules")
+    ? MARKDOWN
+    : undefined;
 }
 
 /**
@@ -93,7 +102,12 @@ export function architectureDevPlugin(repoRoot: string): Plugin {
           res.setHeader("cache-control", "no-cache");
           res.setHeader("x-content-type-options", "nosniff");
           if (req.method === "HEAD") res.end();
-          else fs.createReadStream(result.file).pipe(res);
+          else {
+            const stream = fs.createReadStream(result.file);
+            // The file can vanish between the stat and the read.
+            stream.on("error", () => res.destroy());
+            stream.pipe(res);
+          }
         }
       });
     },
