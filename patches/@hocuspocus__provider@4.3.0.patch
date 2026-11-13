@@ -1,5 +1,5 @@
 diff --git a/dist/hocuspocus-provider.cjs b/dist/hocuspocus-provider.cjs
-index b30f2448f38be438af48b80bb85f7b5a4541f0f0..4d9079a375732c34dfeada83a0977fc7fd88861d 100644
+index b30f2448f38be438af48b80bb85f7b5a4541f0f0..deb4c9f073c8d169cf0e66ccda1c0191edec262c 100644
 --- a/dist/hocuspocus-provider.cjs
 +++ b/dist/hocuspocus-provider.cjs
 @@ -690,7 +690,9 @@ var HocuspocusProvider = class extends EventEmitter {
@@ -32,6 +32,15 @@ index b30f2448f38be438af48b80bb85f7b5a4541f0f0..4d9079a375732c34dfeada83a0977fc7
  		this.document.on("update", this.boundDocumentUpdateHandler);
  		this.awareness?.on("update", this.boundAwarenessUpdateHandler);
  		this.registerEventListeners();
+@@ -757,7 +761,7 @@ var HocuspocusProvider = class extends EventEmitter {
+ 		});
+ 	}
+ 	pageHide() {
+-		if (this.awareness) (0, y_protocols_awareness.removeAwarenessStates)(this.awareness, [this.document.clientID], "page hide");
++		if (this.awareness && this.ownsAwareness) (0, y_protocols_awareness.removeAwarenessStates)(this.awareness, [this.document.clientID], "page hide");
+ 	}
+ 	registerEventListeners() {
+ 		if (typeof window === "undefined" || !("addEventListener" in window)) return;
 @@ -870,9 +874,13 @@ var HocuspocusProvider = class extends EventEmitter {
  		this.emit("destroy");
  		if (this.intervals.forceSync) clearInterval(this.intervals.forceSync);
@@ -49,7 +58,7 @@ index b30f2448f38be438af48b80bb85f7b5a4541f0f0..4d9079a375732c34dfeada83a0977fc7
  		this.document.off("update", this.boundDocumentUpdateHandler);
  		this.removeAllListeners();
 diff --git a/dist/hocuspocus-provider.esm.js b/dist/hocuspocus-provider.esm.js
-index 2668e691cde03d717354ed273ef70ae1034c5ece..72a787e40f0d9203067ba417b148db00317aab40 100644
+index 2668e691cde03d717354ed273ef70ae1034c5ece..c54005cf908a565cc338a987dc5a36841189ccb6 100644
 --- a/dist/hocuspocus-provider.esm.js
 +++ b/dist/hocuspocus-provider.esm.js
 @@ -660,7 +660,9 @@ var HocuspocusProvider = class extends EventEmitter {
@@ -82,6 +91,15 @@ index 2668e691cde03d717354ed273ef70ae1034c5ece..72a787e40f0d9203067ba417b148db00
  		this.document.on("update", this.boundDocumentUpdateHandler);
  		this.awareness?.on("update", this.boundAwarenessUpdateHandler);
  		this.registerEventListeners();
+@@ -727,7 +731,7 @@ var HocuspocusProvider = class extends EventEmitter {
+ 		});
+ 	}
+ 	pageHide() {
+-		if (this.awareness) removeAwarenessStates(this.awareness, [this.document.clientID], "page hide");
++		if (this.awareness && this.ownsAwareness) removeAwarenessStates(this.awareness, [this.document.clientID], "page hide");
+ 	}
+ 	registerEventListeners() {
+ 		if (typeof window === "undefined" || !("addEventListener" in window)) return;
 @@ -840,9 +844,13 @@ var HocuspocusProvider = class extends EventEmitter {
  		this.emit("destroy");
  		if (this.intervals.forceSync) clearInterval(this.intervals.forceSync);

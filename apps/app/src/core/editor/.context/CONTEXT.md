@@ -115,11 +115,13 @@ desired map, nested suspension republished only at the outer boundary. Draft
 review rotates the document client while migrating suspended fields. A second
 presence write path or cached client ID creates ghost carets.
 
-The session is the only owner of Awareness. A transport's provider is patched
-to leave a supplied Awareness alive, so detaching or replacing a transport
-cannot kill presence or the editor's cursor listener. `detachTransport` holds
-one suspension (departure reaches the wire before the provider closes) and the
-next attach releases it.
+The session is the only writer of local presence. A transport's provider is
+patched never to write local state on an Awareness it did not create: no clear
+on destroy, none on `pagehide`. `detachTransport` holds one suspension
+and the next attach releases it. The session also suspends on `pagehide` and resumes on `pageshow`
+only if it holds that suspension, so a page restored from the back/forward cache
+republishes its caret. Peers drop a closed tab when the server sees its socket
+close: Hocuspocus 4.3.0 relays no explicit null awareness update.
 
 Peer marks, session markers, and review decorations are projections, never
 manuscript content. Peer marks are dormant: no server code sends `change_event`,
