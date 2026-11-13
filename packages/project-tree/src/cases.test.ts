@@ -5,6 +5,7 @@ import {
   childrenOf,
   fingerprint,
   LIVE,
+  recordsOf,
   replayView,
   sourceRoot,
   TreeWriter,
@@ -364,5 +365,26 @@ describe("file tree log: cases found in review", () => {
     expect(a.undoDiscard("cmd-1", W, "cmd-2")).toHaveLength(1);
     expect(names(a, ROOT, "w")).toEqual(["Draft name"]);
     expect(a.undoDiscard("cmd-1", W, "cmd-3")).toEqual([]);
+  });
+
+  it("a record id counts once: two copies that appended the same record merge to one act", () => {
+    const { a, b } = pair();
+    const again = {
+      id: "same-record",
+      actor: W,
+      draft: null,
+      type: "create",
+      node: "n",
+      kind: "document",
+      name: "Ch",
+      parent: ROOT,
+      source: "manuscript",
+      rank: "a0",
+    };
+    for (const copy of [a, b]) copy.doc.getArray("ops").push([again]);
+    sync(a, b);
+    expect(recordsOf(a.doc).length).toBe(2);
+    expect(replayView(a.doc, LIVE).skipped).toEqual([]);
+    expect(names(a, ROOT)).toEqual(["Ch"]);
   });
 });
