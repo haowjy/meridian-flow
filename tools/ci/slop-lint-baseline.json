@@ -438,22 +438,22 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/runtime/gateway/adapters/provider-http-error.ts",
+        "path": "packages/gateway/src/adapters/provider-http-error.ts",
         "line": "} catch {",
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/runtime/gateway/attempt-stream.ts",
+        "path": "packages/gateway/src/attempt-stream.ts",
         "line": "void Promise.resolve()",
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/runtime/gateway/helpers/serialize.ts",
+        "path": "packages/gateway/src/helpers/serialize.ts",
         "line": "} catch {",
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/runtime/gateway/instrumented-gateway.ts",
+        "path": "apps/server/server/lib/gateway/instrumented-gateway.ts",
         "line": "} catch {",
         "count": 1
       },
@@ -615,17 +615,17 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/runtime/gateway/adapters/anthropic/request-map.ts",
+        "path": "packages/gateway/src/adapters/anthropic/request-map.ts",
         "line": "// biome-ignore-all lint/suspicious/noExplicitAny: Adapter request-map bridges canonical ↔ SDK types; casts are intentional.",
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/runtime/gateway/adapters/anthropic/stream-collect.ts",
+        "path": "packages/gateway/src/adapters/anthropic/stream-collect.ts",
         "line": "// biome-ignore-all lint/suspicious/noExplicitAny: Stream accumulator bridges canonical ↔ SDK types; casts are intentional.",
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/runtime/gateway/adapters/openai/request-map.ts",
+        "path": "packages/gateway/src/adapters/openai/request-map.ts",
         "line": "// biome-ignore-all lint/suspicious/noExplicitAny: Adapter request-map bridges canonical ↔ SDK types; casts are intentional.",
         "count": 1
       }

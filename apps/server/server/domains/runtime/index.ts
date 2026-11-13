@@ -44,7 +44,6 @@ export {
 export { createWriterTurnProducer } from "./admission/writer-turn-producer.js";
 export type { DetachedWorkTracker } from "./detached-work.js";
 export { createDetachedWorkTracker } from "./detached-work.js";
-export * from "./gateway/index.js";
 export {
   createHandoffBriefs,
   type HandoffBriefs,

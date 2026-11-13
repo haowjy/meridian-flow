@@ -1,18 +1,35 @@
 /**
  * Purpose: Owns deterministic conversion from provider token usage into Meridian
  * millicredits via a layered token-rate source.
- * Key decisions: pinned rates come from the gateway registry (extractPinnedRates);
- * mock/stub fixtures live in an explicit override layer.
+ * Key decisions: pinned rates are injected by the composition root (built from the
+ * model registry in lib/gateway); mock/stub fixtures live in an explicit override layer.
  * 1 credit = 1¢ = 1,000 millicredits.
  */
 
 import { assertValidUsage, type Usage } from "@meridian/contracts/runtime";
 import type { JsonObject, PriceSource } from "@meridian/contracts/threads";
-import {
-  extractPinnedRates,
-  MODEL_REGISTRY,
-  type ModelTokenRate,
-} from "../gateway/config/registry.js";
+
+export interface ModelPricing {
+  /** Input size above which the provider reprices the whole request. */
+  inputTierTokens?: number;
+  /** Whole-request multipliers above `inputTierTokens`: `input` scales every input-side rate, `output` the output rate. */
+  aboveTierMultipliers?: { input: number; output: number };
+  /** USD per 1,000,000 uncached input tokens. */
+  inputUsdPerMillionTokens: string;
+  /** USD per 1,000,000 output tokens. */
+  outputUsdPerMillionTokens: string;
+  /** USD per 1,000,000 cache-read input tokens, when published separately. */
+  cachedInputUsdPerMillionTokens?: string;
+  /** USD per 1,000,000 cache-write input tokens, when published separately (the short-TTL rate when a long-TTL rate is also set). */
+  cacheWriteUsdPerMillionTokens?: string;
+  /** USD per 1,000,000 long-TTL cache-write tokens (Anthropic 1h, OpenAI 12h), for providers that bill writes by TTL. */
+  cacheWriteLongUsdPerMillionTokens?: string;
+  /** Human-readable attribution for the pinned price. */
+  source: string;
+}
+
+/** A model's pinned price tagged with the provider and model it applies to. */
+export type ModelTokenRate = ModelPricing & { provider: string; model: string };
 
 export type ModelTokenRateLayer = "pinned" | "override" | "unmetered";
 
@@ -83,20 +100,6 @@ export function createLayeredTokenRateSource(
   };
 }
 
-export function createDefaultModelTokenRateSource(): ModelTokenRateSource {
-  return createLayeredTokenRateSource({
-    pinnedRates: extractPinnedRates(MODEL_REGISTRY),
-    overrideRates: MOCK_FIXTURE_TOKEN_RATES,
-  });
-}
-
-let defaultRateSource: ModelTokenRateSource | undefined;
-
-export function modelTokenRateSource(): ModelTokenRateSource {
-  defaultRateSource ??= createDefaultModelTokenRateSource();
-  return defaultRateSource;
-}
-
 function parseUsdPerMillion(decimal: string): bigint {
   const [whole, fraction = ""] = decimal.split(".");
   const paddedFraction = `${fraction}000000`.slice(0, 6);
@@ -150,7 +153,7 @@ function computeMissingUsageCost(input: { provider: string; model: string }): Co
 function findModelTokenRate(
   provider: string,
   model: string,
-  rateSource: ModelTokenRateSource = modelTokenRateSource(),
+  rateSource: ModelTokenRateSource,
 ): ResolvedModelTokenRate {
   const rate = rateSource.findRate(provider, model);
   if (!rate) {
@@ -164,7 +167,7 @@ export function computeModelCost(input: {
   model: string;
   usage: Usage;
   meteringStatus?: "missing_usage";
-  rateSource?: ModelTokenRateSource;
+  rateSource: ModelTokenRateSource;
 }): ComputedModelCost {
   assertValidUsage(input.usage);
 

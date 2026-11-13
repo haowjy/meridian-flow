@@ -22,7 +22,7 @@ server, or a reused database, produces regressions that vanish on a clean
 stack.
 
 - [Signed-out redirects](../../apps/www/.context/qa/signed-out-redirects.md): the circle between the landing page, sign-in, sign-up and log out, with the auth bypass off.
-- [Rich mock provider](../../apps/server/server/domains/runtime/gateway/.context/qa/mock-provider.md): samples, large output, thinking, pacing, cancellation, tool scripts and startup defaults.
+- [Rich mock provider](../../packages/gateway/.context/qa/mock-provider.md): samples, large output, thinking, pacing, cancellation, tool scripts and startup defaults.
 - [The model's move and delete](../../apps/server/server/domains/collab/.context/qa/model-move-delete.md): tool rows, the turn card's lines and Undo at a free name, absorbed-folder Undo, and a stopped reply's rollback, in the browser on the mock model.
 - [Model-owned chat actions](../../apps/server/server/domains/runtime/.context/qa/model-agent-actions.md): Work switch during a reply, next-reply write mode, out-of-lineage background messaging, and read-Agent refusals.
 - [Atomic frozen Apply](../../apps/server/server/domains/collab/.context/qa/atomic-apply.md): production API-core command, merge, rollback and lifecycle probes over a scratch database.

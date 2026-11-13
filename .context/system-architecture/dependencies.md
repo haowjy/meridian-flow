@@ -9,7 +9,7 @@ These are the rules the repo writes down ([root CONTEXT](../CONTEXT.md)). Everyt
 ordinary imports between apps, packages and features, is not listed anywhere.
 
 - **Apps import packages; no package imports an app.** Nothing breaks it today.
-- **A package imports only packages lower in the list on the [code](code.md) page.** `contracts`, `prosemirror-schema`, `yjs-inspect` and `design-tokens` import no workspace code.
+- **A package imports only packages lower in the list on the [code](code.md) page.** `gateway`, `prosemirror-schema`, `yjs-inspect` and `design-tokens` import no workspace code.
 - **Server domains are meant to be acyclic.** A domain reaches another through its public `index.ts` and ports, and threads reference project and Work ownership, never the reverse. Six domains (`runtime`, `threads`, `projects`, `file-policy`, `context`, `collab`) import each other in a cycle today.
 - **Domains do not import `lib/`.** `lib/` is the composition root: it may import every domain and wire them together.
 - **The app's layers (`routes`, features, `client`, `components`, `core`, `lib`) have no written rule**, and imports run both ways between them, so a feature importing another feature is not a break.
@@ -45,7 +45,6 @@ with no row and on a row with no break.
 | `runtime` | `threads` | domains are acyclic | `apps/server/server/domains/runtime/adapters/drizzle/permission-grants.ts` |
 | `threads` | `context` | domains are acyclic | `apps/server/server/domains/threads/adapters/drizzle/repositories.ts` |
 | `threads` | `projects` | domains are acyclic | `apps/server/server/domains/threads/adapters/drizzle/thread-works-repository.ts` |
-| `runtime` | `lib` | domains do not import lib/ | `apps/server/server/domains/runtime/gateway/config/create-from-env.ts` |
 
 ## Reading the table
 

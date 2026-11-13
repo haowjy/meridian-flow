@@ -19,6 +19,7 @@ import type {
   HandoffBriefLauncher,
 } from "../../threads/ports/handoff-brief-launcher.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
+import type { ModelTokenRateSource } from "../costing/pricing.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { recordEnded } from "../loop/failure-detection.js";
 import { historyReadableAt } from "../loop/history-tool-availability.js";
@@ -67,6 +68,7 @@ type HandoffBriefServiceDeps = {
   runClaim: Pick<RunClaim, "hold">;
   wakeIfRunnable(threadId: ThreadId): Promise<void>;
   billingUsage: Pick<BillingUsagePolicy, "canStartTurn">;
+  rateSource: ModelTokenRateSource;
   toolRegistry?: Pick<import("../tools/types.js").ToolRegistry, "getRegistration">;
   generate: BriefGeneration;
   publishStatus(threadId: ThreadId): Promise<void>;
@@ -90,6 +92,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
   const shutdown = deps.shutdown;
   const accounting = createTurnAccounting({
     billingUsage: deps.billingUsage as BillingUsagePolicy,
+    rateSource: deps.rateSource,
   });
   const treeBudget = createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) });
 

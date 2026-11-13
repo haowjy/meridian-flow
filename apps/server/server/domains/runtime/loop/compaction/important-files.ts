@@ -7,7 +7,7 @@ import {
 import { documentPathKey, parseContextUri } from "@meridian/contracts";
 import type { DocumentRevisionEvidence, ReferenceOccurrence } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
-import type { TokenizerFamily } from "../../gateway/index.js";
+import type { TokenizerFamily } from "@meridian-flow/gateway";
 import { modelToolSchema } from "../../tools/model-tool-schema.js";
 import type { RecordedDocuments } from "./elide.js";
 import { estimateModelPartTokens } from "./estimate.js";

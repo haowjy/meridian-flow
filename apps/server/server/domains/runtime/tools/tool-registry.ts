@@ -1,5 +1,5 @@
 /** Name-keyed tool registrations; duplicate names are rejected and only advertised server tools are published. */
-import type { Tool } from "../gateway/index.js";
+import type { Tool } from "@meridian-flow/gateway";
 
 import type { ToolRegistration, ToolRegistry } from "./types.js";
 

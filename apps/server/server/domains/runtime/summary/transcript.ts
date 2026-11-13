@@ -1,7 +1,7 @@
 /** Model-visible transcript with preflight sizing, document excerpts and block-boundary splits. */
 import type { Block } from "@meridian/contracts/threads";
+import type { ContentPart, TokenizerFamily, ToolUsePart } from "@meridian-flow/gateway";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
-import type { ContentPart, TokenizerFamily, ToolUsePart } from "../gateway/index.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
 import type { ProjectedActiveHistory } from "../loop/compaction/index.js";
 import { turnContextMessages } from "../loop/context-builder.js";

@@ -1,13 +1,13 @@
 /** Plans the pinned request and longest tool-group-aligned retained suffix. */
 
 import type { Block, Turn } from "@meridian/contracts/threads";
+import type { TokenizerFamily } from "@meridian-flow/gateway";
 import {
   CompactionPlanMetadataCodec,
   classifyHistoryItem,
   isSystemUpdateMetadata,
 } from "../../../threads/index.js";
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
-import type { TokenizerFamily } from "../../gateway/index.js";
 import { estimateTurnTokens } from "./estimate.js";
 import { type CompactionCut, type RetainedTurnSlice, resolveCut, retainedTail } from "./tail.js";
 

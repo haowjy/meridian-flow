@@ -1,6 +1,8 @@
 /** One runtime composition: resolve ports first, then derive delivery, producer and loop. */
 
 import { type AGUIEvent, EventType, type UserMessageBlock } from "@meridian/contracts/protocol";
+import type { Gateway, StreamEvent } from "@meridian-flow/gateway";
+import { registryTokenRateSource } from "../../../../lib/gateway/registry.js";
 import {
   InMemoryTransactionOwner,
   noTransactionOwner,
@@ -36,7 +38,6 @@ import { createInMemoryShownLinkStore } from "../../adapters/in-memory/shown-lin
 import { createWriterTurnProducer } from "../../admission/writer-turn-producer.js";
 import { createAskService, refusingPermissionExecutor } from "../../asks/ask-service.js";
 import { createDetachedWorkTracker, type DetachedWorkTracker } from "../../detached-work.js";
-import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
 import type { ChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
@@ -156,6 +157,7 @@ export function createRuntimeHarness(
     accountSkillInstalls: createInMemoryAccountSkillInstallStore(),
     toolRegistry,
     billingUsage: overrides.billingUsage ?? createBillingUsagePolicy(creditLedger),
+    rateSource: registryTokenRateSource(),
     childRunCoordinator: noopChildRunCoordinator(),
     eventSink: createInMemoryEventSink(),
     wakeIfRunnable: (threadId) => wakeIfRunnable(threadId),

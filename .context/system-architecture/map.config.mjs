@@ -62,6 +62,7 @@ export default {
       { rule: "domains are acyclic", cycle: "apps/server/server/domains/*" },
       { rule: "domains do not import lib/", from: "apps/server/server/domains/*", to: "apps/server/server/lib" },
       { rule: "packages do not import apps", from: "packages/*", to: "apps/*" },
+      { rule: "gateway imports no workspace code", from: "packages/gateway", to: "packages/*" },
       {
         rule: "the runtime does not import document, billing or Work code",
         files: "apps/server/server/domains/runtime",

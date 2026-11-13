@@ -6,7 +6,7 @@
  */
 import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
-import type { Tool } from "../../gateway/index.js";
+import type { Tool } from "@meridian-flow/gateway";
 
 /** Every model tool Flow publishes. Authoring tool lists may name only these. */
 export const TOOL_CATALOG = [

@@ -33,8 +33,8 @@
  *   are converted to `null` because `undefined` is not a valid JSON value.
  */
 import type { JsonValue, Turn } from "@meridian/contracts/threads";
+import type { ContentPart, GenerateResult, StreamEvent, ToolCall } from "@meridian-flow/gateway";
 import type { BlockRepository } from "../../threads/index.js";
-import type { ContentPart, GenerateResult, StreamEvent, ToolCall } from "../gateway/index.js";
 
 export function toJsonValue(value: unknown): JsonValue {
   // JSON round-trip: strips functions, symbols, BigInts, and cyclic refs;
