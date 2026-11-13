@@ -30,7 +30,6 @@ separate explicit operation. `db:migrate` applies the generated baseline and its
 ledger row in one locked transaction. Extensions, functions and triggers are
 included in the baseline; there is no post-install sync or code companion.
 
-
 Managed DB tests provision owned databases and route each worker to its own
 clone. Cleanup hands only this invocation's databases to the detached cleanup
 child, verifies owner liveness, and leaves failures for GC. Suite-owned

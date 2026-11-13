@@ -42,7 +42,7 @@ async function main(): Promise<void> {
     console.log(`▸ ${db.label} schema reset in "${resetDb}"`);
   }
 
-  console.log("▸ Preparing database (extensions + migrations + SQL functions)…");
+  console.log("▸ Installing database baseline…");
   execFileSync("tsx", [path.join(repoRoot, "tools/dev/prepare-db.ts")], {
     cwd: repoRoot,
     stdio: "inherit",
