@@ -326,7 +326,7 @@ export function createMap(host, { page, path, parent, nav }) {
         "p",
         { class: "how-to" },
         el("strong", null, "How to read this: "),
-        "follow the numbered arrows, left to right. Click a box for its detail; a box marked ▸ opens its own page. Drag boxes to rearrange them.",
+        "follow the numbered arrows in order; thin arrows are side paths. Click a box for its detail. A box marked ▸ opens its own page. Drag a box to move it.",
       ),
     );
   }
