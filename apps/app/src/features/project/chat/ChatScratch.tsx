@@ -19,9 +19,8 @@ import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { ListLine, ListRow } from "@/components/ui/list-row";
-import { ListSectionHeader } from "@/components/ui/list-section";
 import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
-import { schemeLabel } from "../context/context-schemes";
+import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import type { DragEntry } from "../context/entry-drag/entry";
 import type { MoveArea } from "../context/entry-drag/move-plan";
 import { EntryList, useEntryList } from "../context/entry-drag/use-entry-list";
@@ -128,19 +127,22 @@ export function RailScratchSection({
             catalogRootId={scratch.primary.catalog?.root.entryId ?? null}
             reveal={() => !expanded && setExpanded(true)}
             className="flex min-h-0 flex-col"
+            // A row like Unfiled and Trash below it, not a list heading: it opens and closes
+            // the notes above them.
             header={(dropProps) => (
-              <ListSectionHeader
-                level={2}
-                label={schemeLabel("scratch")}
-                title={source.heading}
-                fold={{ open: expanded, onToggle: setExpanded }}
-                headerProps={dropProps}
-              />
+              <div {...dropProps} className="shrink-0">
+                <ListRow
+                  icon={schemeIcon("scratch")}
+                  title={schemeLabel("scratch")}
+                  onOpen={() => setExpanded(!expanded)}
+                  controlProps={{ "aria-expanded": expanded, title: source.heading }}
+                />
+              </div>
             )}
           >
             {expanded ? (
               <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
-                <div className="px-2">
+                <div>
                   <TreeGroup depth={1}>
                     <ChatScratchTree
                       projectId={projectId}
@@ -201,11 +203,7 @@ function ChatScratchStatus({ scratch }: { scratch: ChatScratch }) {
     return <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.retry} />;
   if (scratch.hasRows) return null;
   if (!scratch.ready) return <div aria-busy className="min-h-8" />;
-  return (
-    <div className="px-2">
-      <ListLine depth={1} iconSlot>{t`No scratch notes yet.`}</ListLine>
-    </div>
-  );
+  return <ListLine depth={1} iconSlot>{t`No scratch notes yet.`}</ListLine>;
 }
 
 /** A chat's Scratch rows: Earlier notes first, then the current notes, starting at `depth`. */

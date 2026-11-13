@@ -129,12 +129,27 @@ export function normalizeDocumentPrefs(prefs?: Partial<DocumentPrefs> | null): D
 }
 
 export type RailSectionId = "scratch";
-export type RailPrefs = { scratchExpanded: boolean };
-export const DEFAULT_RAIL_PREFS: RailPrefs = { scratchExpanded: false };
+/** The rail sections docked under a list, each trading height with it. */
+export type DockedRailSectionId = "scratch";
+export type RailPrefs = {
+  scratchExpanded: boolean;
+  scratchHeight: number | null;
+};
+export const DEFAULT_RAIL_PREFS: RailPrefs = {
+  scratchExpanded: false,
+  scratchHeight: null,
+};
+
+function savedHeight(height: unknown): number | null {
+  return typeof height === "number" && Number.isFinite(height) && height > 0
+    ? Math.round(height)
+    : null;
+}
 
 export function normalizeRailPrefs(prefs?: Partial<RailPrefs> | null): RailPrefs {
   return {
     scratchExpanded: typeof prefs?.scratchExpanded === "boolean" ? prefs.scratchExpanded : false,
+    scratchHeight: savedHeight(prefs?.scratchHeight),
   };
 }
 
@@ -149,6 +164,7 @@ export type SurfacePrefsActions = {
   setSlotWidth: (slot: PanelSlotId, widthPx: number) => void;
   setSlotOpen: (slot: PanelSlotId, open: boolean) => void;
   setRailExpanded: (id: RailSectionId, expanded: boolean) => void;
+  setRailHeight: (id: DockedRailSectionId, height: number | null) => void;
   setPropertiesOpen: (open: boolean) => void;
   setHydrated: () => void;
 };
@@ -186,6 +202,10 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
           set((state) => ({ panels: { ...state.panels, [openKey(slot)]: open } })),
         setRailExpanded: (id, expanded) =>
           set((state) => ({ railPrefs: { ...state.railPrefs, [`${id}Expanded`]: expanded } })),
+        setRailHeight: (id, height) =>
+          set((state) => ({
+            railPrefs: normalizeRailPrefs({ ...state.railPrefs, [`${id}Height`]: height }),
+          })),
         setPropertiesOpen: (propertiesOpen) =>
           set((state) => ({ documentPrefs: { ...state.documentPrefs, propertiesOpen } })),
         setHydrated: () => set({ _hydrated: true }),
@@ -247,6 +267,7 @@ export function useProjectSurfacePrefsActions(): SurfacePrefsActions {
       setSlotWidth: state.setSlotWidth,
       setSlotOpen: state.setSlotOpen,
       setRailExpanded: state.setRailExpanded,
+      setRailHeight: state.setRailHeight,
       setPropertiesOpen: state.setPropertiesOpen,
       setHydrated: state.setHydrated,
     })),
