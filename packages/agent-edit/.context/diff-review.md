@@ -155,6 +155,15 @@ same function plans a content Apply's live update, with the patch as the draft s
 insertions at either edge of an adjacent replacement peel off before clustering, so
 `The → A big black` and `+big black` keep one copy.
 
+A list, quote or table is one token to `align`, so a cluster in which both sides changed
+containers is merged over their children (`mergeContainers`), pairwise when each side replaced
+a run of the same containers, and at every depth. It falls back to a clash of the whole block
+when the types or counts differ, when the merged node fails `check()`, or when a merged table
+is ragged. `align` pairs the blocks of a replaced run in order, which review reads as
+"paragraph became figure"; the merge pairs them again by type (`pairBlocksByType`) so a deleted
+paragraph beside a changed figure or list is a deletion plus that change, not a rewrite of the
+paragraph into the figure. Review's hunks do not go through it.
+
 Move-text matching checks whether the other side touched a source or pasted the same text
 only after selecting the globally longest run. Filtering sources first would change the
 winner and can silently lose moved words. Both the modifying and report-only passes use this

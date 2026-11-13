@@ -25,6 +25,7 @@ import {
   type MergedTok,
   mergeMarks,
   overlaps,
+  pairBlocksByType,
   peel,
   reslide,
   sameTokens,
@@ -284,6 +285,13 @@ export function rebase(
     });
   }
 
+  for (const [alignment, side] of [
+    [liveAlignment, liveSide],
+    [draftAlignment, draftSide],
+  ] as const) {
+    alignment.hunks = pairBlocksByType(alignment.hunks, baseToks, side.toks);
+    alignment.pos = posMap(baseToks.length, alignment.hunks);
+  }
   if (reslide(baseToks, liveSide.toks, liveAlignment.hunks, draftAlignment.hunks))
     liveAlignment.pos = posMap(baseToks.length, liveAlignment.hunks);
   if (reslide(baseToks, draftSide.toks, draftAlignment.hunks, liveAlignment.hunks))
