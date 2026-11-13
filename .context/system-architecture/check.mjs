@@ -214,7 +214,7 @@ for (const { path, page } of levels)
       for (const l of linksOf(it.value)) attached.add(resolveHref(path, l.href).path);
 for (const page of indexed) {
   if (!existsSync(join(repo, page))) fail(STATE_MACHINES_INDEX, `links ${page}, which doesn't exist.`);
-  else if (posix.dirname(page) !== posix.dirname(STATE_MACHINES_INDEX) && !attached.has(page))
+  else if (/state-machine[^/]*\.md$/.test(page) && !attached.has(page))
     fail(STATE_MACHINES_INDEX, `${page} is on no box: add it to a box's Machines.`);
 }
 const written = execFileSync(

@@ -143,7 +143,7 @@ the items `Map` (links to `#<box id>` on a level page), `Machines` and later `Sh
   steps.
 - An app, package (with a `package.json`), server domain or app feature directory that no box's
   `Paths` reaches: a new one needs a box, or a path on the box that holds it.
-- A state machine page the index links that is on no box; a `*state-machine*.md` the index doesn't link.
+- A `*state-machine*.md` page the index links that is on no box (the index's other links, such as the pattern pages and the glossary, are exempt); a `*state-machine*.md` the index doesn't link.
 - A `dependencies.md` row with no import behind it: nothing under `from` imports `to`, or the
   example file isn't such an importer. The check reads source (relative imports, `@/` in `apps/app`,
   `~/` in `apps/www`, `@meridian/*` package names, stylesheet `@import`), leaves out tests and
