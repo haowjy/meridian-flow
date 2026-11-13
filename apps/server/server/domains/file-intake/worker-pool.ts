@@ -37,7 +37,7 @@ export type WorkerPool<In, Out> = {
 };
 
 export function createWorkerPool<In, Out>(options: {
-  /** The worker file, written `new URL("./x.ts", import.meta.url)` where the pool is made. */
+  /** The worker file, as a URL relative to the file that makes the pool (`nitro.config.ts` bundles it). */
   entry: URL;
   size: number;
   /** Each worker's JS heap cap; buffers outside the heap are bounded by what the job reads. */
