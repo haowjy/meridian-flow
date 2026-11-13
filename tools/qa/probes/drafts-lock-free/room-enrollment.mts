@@ -112,6 +112,7 @@ export function openGateway(
   const services = {
     documentSync: { ...persistence, bindHocuspocus: binding.bind },
     eventSink: { emit() {} },
+    treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} },
   } as never;
   const hocuspocus = createHocuspocus(services, {} as never);
   binding.bind(hocuspocus);
