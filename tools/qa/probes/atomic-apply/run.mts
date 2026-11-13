@@ -989,7 +989,7 @@ try {
     const click = f.click();
     assert.equal(click.request.groupIds.length, 2);
     await applied(f, click);
-    // Text typed after the applied text depends on it; text typed before it does not (#1309).
+    // Text typed after the applied text depends on it; text typed before it does not.
     await f.liveWrite(["The big very cat sat.", "The small dog slept."]);
     const answer = await f.unapply(click);
     assert.equal(answer.status, "unapplied", JSON.stringify(answer));

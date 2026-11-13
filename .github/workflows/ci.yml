@@ -18,12 +18,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Every job sets timeout-minutes (several times its usual run) so a hang fails the PR instead of
+  # holding it for GitHub's six-hour default.
   # scripts.check remains the inventory; keep explicit jobs so the required
   # aggregate checks each result directly, including after partial reruns.
   quality-static:
     name: quality-static
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -38,6 +41,7 @@ jobs:
     name: quality-typecheck
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -54,6 +58,7 @@ jobs:
     name: quality-test-1
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -72,6 +77,7 @@ jobs:
     name: quality-test-2
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -93,6 +99,7 @@ jobs:
     # fails/cancels/skips, but retain the workflow's deliberate draft-PR skip.
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Require every quality group to succeed
         env:
@@ -106,6 +113,7 @@ jobs:
     # Skip draft PRs; every non-PR caller runs.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       # `drizzle-kit check` validates the snapshot chain offline and never
       # connects, but the shared drizzle.config.ts requires DATABASE_URL to be
@@ -134,6 +142,7 @@ jobs:
     # the major version changes only when this label does. `ubuntu-latest` moves
     # to a newer Ubuntu that ships a different major.
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/meridian_test_ci
       PGPASSWORD: postgres
@@ -188,6 +197,7 @@ jobs:
     # Skip draft PRs; pushes and workflow_call always run.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -207,6 +217,7 @@ jobs:
     # Skip draft PRs; pushes and workflow_call always run.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

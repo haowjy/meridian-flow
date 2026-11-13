@@ -21,8 +21,8 @@ script; static and typecheck reject them. New steps automatically join `quality-
 Unsupported chain syntax or a missing isolated/DB step fails explicitly.
 `check:db` stays local; CI's separate `db-tests` job provisions Postgres,
 forces the DB suite, then runs `pnpm test:probes`, the self-contained database probes in
-`tools/qa/probes/` (about 1 to 2 minutes, one scratch database each, inside the job's
-10-minute reference). It starts the Postgres server preinstalled on its pinned
+`tools/qa/probes/` (under a minute, each killed and failed after five), inside the job's
+10-minute reference. Every job sets `timeout-minutes`, several times its usual run. It starts the Postgres server preinstalled on its pinned
 runner image, so it pulls nothing from a registry. Migration checks and the two app boot jobs are unchanged.
 
 Do not cache `.nx` outputs across Actions runs. The pnpm dependency cache is

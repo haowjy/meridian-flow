@@ -50,8 +50,7 @@
     "test:db": "tsx tools/dev/run-db-tests.ts",
     "test:probes": "tsx tools/qa/run-db-probes.ts",
     "test:all": "tsx tools/dev/run-db-tests.ts --all",
-    "check:tree-visibility": "node tools/ci/check-tree-visibility.mjs",
-    "probe:db": "tsx tools/dev/run-db-probe.ts"
+    "check:tree-visibility": "node tools/ci/check-tree-visibility.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",

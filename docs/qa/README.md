@@ -85,12 +85,13 @@ A probe that runs on every PR is current; any other recipe is not a claim that i
 passed on the current commit. `pnpm test:probes` runs every
 `tools/qa/probes/<name>/run.mts` in turn, and CI's `db-tests` job runs it after the
 DB suite, so a stale one fails the PR that made it stale. That is why a file named
-`run.mts` there must be self-contained: it creates, migrates and drops its own
-`lfd_probe_*` database, needs no browser, model or running stack, and exits nonzero
+`run.mts` there must be self-contained: it makes and drops any database it uses
+(`lfd_probe_*`), needs no browser, model or running stack, and exits nonzero
 on failure. A probe that needs any of those is not named `run.mts` (see
 `draft-generations/live.mts`) and stays a manual recipe. A probe whose subject no
 longer exists is deleted, not left red or skipped. Locally, `pnpm dev:infra` provides
-the Postgres; `pnpm test:probes <name> ...` runs some.
+the Postgres; `pnpm test:probes <name> ...` runs some, and an unknown name fails. A probe
+that has not exited after five minutes (`PROBE_TIMEOUT_MS`) is killed and counted as failed.
 
 - `pnpm smoke:app-dev-transform`: [dev startup and public routes](../../tools/dev/smoke-app-dev-transform.ts).
 - [Dev route ownership](../../tools/dev/.context/qa/dev-route-ownership.md): detached-checkout names, conflict refusal and explicit takeover without disturbing sibling stacks.

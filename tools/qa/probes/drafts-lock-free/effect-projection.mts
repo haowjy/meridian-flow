@@ -16,15 +16,17 @@
  *    within 1 s;
  * 3. two processes typing inside one debounce: the stored value equals the materialized
  *    comparison and `has_effect_revision = revision`;
- * 4. a membership change under `lockWorks` alone, as Discard's close makes one: the Work is
+ * 4. a membership change under `lockWorks` alone, as the agent-edit core's `lockOwners` and
+ *    `withActiveOwnerLocked` run their writes (a close stands in for the write): the Work is
  *    recounted at commit (pending 1 → 0 with a revision), with no append to trigger it.
  *
  * Negative control on `586e58ae1e` (inline effect, no job, no watermark): arms 1, 2 and 3 fail
  * on the watermark.
  *
- * The old arm 3 (rows `pushed` under Apply staging, `has_effect` still true) is gone: frozen
- * Apply left no row status, so membership is a function of `has_effect` and the draft's status
- * and cannot flip without one of them changing.
+ * The old arm 3 (rows `pushed` under Apply staging, `has_effect` still true) is gone: it ran SQL
+ * on a journal status and column frozen Apply removed. The membership inputs left besides
+ * `has_effect` and draft status (tree changes, document existence) are written by tree
+ * operations through the same boundary, which arm 4 and the DB suite exercise.
  */
 import assert from "node:assert/strict";
 import { sql } from "drizzle-orm";
@@ -201,8 +203,8 @@ export const effectProjection: Probe = {
               () => workBadge(harness, draft.workId),
               (b) => b.pending === 1,
             );
-            // Discard's close locks its Works through `lockWorks`, not `mutate`, and changes
-            // membership under them; no append follows to recount.
+            // `lockOwners` and `withActiveOwnerLocked` lock through `lockWorks`, not `mutate`,
+            // and write under it; no append follows to recount. The close is the stand-in write.
             await runInDrizzleTransaction(harness.db, async () => {
               await harness.projection.lockWorks({ drafts: [draft.draftId] });
               await currentDrizzleDb(harness.db).execute(
