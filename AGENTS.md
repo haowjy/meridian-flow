@@ -97,13 +97,14 @@ decision, change the test.
 
 Documentation-only and comment-only changes need no PR: push them straight to `main`.
 
-A human merges into `main`, or a model the global grant covers. A feature built
+Any model may merge into `main` or an integration branch without asking the owner, features and
+big refactors included; what turns out broken is fixed by a new PR. A feature built
 in several pieces gets one integration branch: each finished piece bases on it and merges into
 it, instead of PRs stacked on each other, and the piece's worktree, stack and processes go as
 soon as it's in. One PR carries the integration branch into `main`.
 
-Once a PR is complete and a reviewer (another model, or the owner) has approved it, whoever
-may merge it merges it at once. Before the merge, CI is green, the prober's browser run is done
+Once a PR is complete and a reviewer (another model, or the owner) has approved it, its author
+merges it at once. Before the merge, CI is green, the prober's browser run is done
 where "Debug with `./mf`" asks for one, the regressions the change could cause are exercised on
 the real system (`/testing`), and the PR body is reread against the final diff, with evidence
 from the commit being merged. Don't hold a finished PR for the owner to try first: he uses the
