@@ -28,7 +28,9 @@ export function useTurnLiveLineage(
   const query = useQuery<ListTurnLiveLineageResponse>({
     queryKey: threadQueryKeys.liveLineage(threadId ?? "", turnId ?? ""),
     queryFn: () => listTurnLiveLineage(threadId as string, turnId as string),
-    staleTime: 15_000,
+    // A settled turn's lineage changes only through Apply and Undo, which invalidate the thread's
+    // `liveLineageRoot`; a remount must not refetch one query per mounted row.
+    staleTime: Number.POSITIVE_INFINITY,
     enabled,
   });
 
