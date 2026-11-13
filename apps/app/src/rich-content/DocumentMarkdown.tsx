@@ -193,9 +193,11 @@ function renderDocumentNode(
     case "doc":
       return content;
     case "paragraph":
-      return <p style={alignment}>{content}</p>;
-    case "heading":
-      return createElement(`h${node.attrs.level}`, { style: alignment }, content);
+      return createElement(
+        node.attrs.level === null ? "p" : `h${node.attrs.level}`,
+        { style: alignment },
+        content,
+      );
     case "blockquote":
       return <blockquote>{content}</blockquote>;
     case "bullet_list":

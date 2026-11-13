@@ -55,7 +55,7 @@ describe("tables and Layout round-trip corpus", () => {
     ).toBe('<Layout align="center">\n  The sword remembers.\n</Layout>');
     expect(
       codec.serializeBlock(
-        schema.node("heading", { level: 2, align: "right" }, [t("Dateline")]),
+        schema.node("paragraph", { level: 2, align: "right" }, [t("Dateline")]),
         UNSCOPED_DOCUMENT_LINKS,
       ),
     ).toBe('<Layout align="right">\n  ## Dateline\n</Layout>');
@@ -251,7 +251,7 @@ describe("tables and Layout round-trip corpus", () => {
     ...[1].map((level) => ({
       block: `heading ${level}`,
       tag: `h${level}`,
-      node: schema.node("heading", { level }, [t(`Heading ${level}`)]),
+      node: schema.node("paragraph", { level }, [t(`Heading ${level}`)]),
     })),
     {
       block: "ordered list",

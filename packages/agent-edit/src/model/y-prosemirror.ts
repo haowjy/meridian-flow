@@ -66,9 +66,9 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
 
     getHeadingLevel(block) {
       const element = unwrapBlock(block);
-      return element.nodeName === "heading"
-        ? Number(element.getAttribute("level") ?? 1)
-        : undefined;
+      if (element.nodeName !== "paragraph") return undefined;
+      const level = element.getAttribute("level");
+      return level == null ? undefined : Number(level);
     },
 
     getText(block) {

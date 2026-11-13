@@ -196,7 +196,13 @@ export function deleteBlockTransaction(
   if (doc.childCount === 1) {
     const paragraph = schema.nodes.paragraph;
     if (!paragraph) return null;
-    if (source.node.type === paragraph && source.node.content.size === 0) return null;
+    // An empty heading is not "already empty": deleting it leaves body text.
+    if (
+      source.node.type === paragraph &&
+      source.node.attrs.level == null &&
+      source.node.content.size === 0
+    )
+      return null;
     const tr = state.tr.replaceWith(source.pos, end, paragraph.create());
     return tr.setSelection(TextSelection.near(tr.doc.resolve(source.pos + 1))).scrollIntoView();
   }
