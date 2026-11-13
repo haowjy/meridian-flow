@@ -9,7 +9,6 @@ import type {
   WorkContextProjectionSignal,
 } from "@meridian/contracts/works";
 import { notifyManager, type QueryClient } from "@tanstack/react-query";
-import { listProjectThreads } from "@/client/api/projects-api";
 import { invalidateProjectChatFeed } from "./project-invalidation";
 import {
   isProjectContextCatalogKey,
@@ -19,11 +18,11 @@ import {
 } from "./project-query-keys";
 import { patchThreadInProjectCaches } from "./project-thread-cache";
 import { threadQueryKeys } from "./thread-query-keys";
+import { projectThreadsQueryOptions } from "./useProjectThreads";
 import { convergeWorkProjection } from "./work-projection-cache";
 import {
   refreshWorksSnapshot,
   repairWorksSnapshot,
-  seedWorksSnapshot,
   workFromSnapshot,
 } from "./works-projection-acquisition";
 
@@ -37,8 +36,8 @@ export type ThreadWorkConvergence =
       projectId: string;
       threadId: string;
       previousWorkId: string | null;
-      threads: ThreadListItem[];
-      catalog: ListWorksResponse;
+      /** The thread's `workId` on a list read just made, which also refreshed the list and Works. */
+      workId: string | null;
     };
 
 export type ThreadProjectionInvalidation = {
@@ -170,12 +169,9 @@ export function convergeThreadWorkBinding(
       return;
     }
 
-    client.setQueryData(projectQueryKeys.threads(projectId), transition.threads);
-    seedWorksSnapshot(client, transition.catalog);
-    const row = transition.threads.find(({ id }) => id === threadId);
-    const workId = row?.workId ?? null;
-    // A mount reads the binding on every chat switch, and nearly always finds it unchanged. A
-    // caller that knows the binding it started from names it; otherwise the snapshot is the
+    const workId = transition.workId;
+    // The acknowledgment reads the binding on every chat switch, and nearly always finds it
+    // unchanged. A caller that knows the binding it started from names it; otherwise the snapshot is the
     // record, and a chat without one yet has nothing cached to correct.
     const snapshotWorkId = client.getQueryData<ThreadSnapshotResponse>(
       threadQueryKeys.snapshot(threadId),
@@ -214,63 +210,27 @@ export async function readStableThreadWorkBinding(
   client: QueryClient,
   input: { projectId: string; threadId: string; previousWorkId: string | null },
   accountSignal?: AbortSignal,
-  /** Reads the thread list and Works from cache when both were loaded this recently. */
-  maxAgeMs?: number,
 ): Promise<{ threads: ThreadListItem[]; catalog: ListWorksResponse; workId: string | null }> {
   const cursorKey = threadQueryKeys.workProjectionCursor(input.threadId);
-  if (maxAgeMs !== undefined) {
-    const cachedThreads = client.getQueryState<ThreadListItem[]>(
-      projectQueryKeys.threads(input.projectId),
-    );
-    const cachedWorks = client.getQueryState<ListWorksResponse>(
-      projectQueryKeys.works(input.projectId),
-    );
-    if (
-      cachedThreads?.data &&
-      cachedWorks?.data &&
-      Date.now() - Math.min(cachedThreads.dataUpdatedAt, cachedWorks.dataUpdatedAt) < maxAgeMs
-    ) {
-      convergeThreadWorkBinding(
-        client,
-        {
-          source: "reconciled",
-          ...input,
-          threads: cachedThreads.data,
-          catalog: cachedWorks.data,
-        },
-        accountSignal,
-      );
-      return {
-        threads: cachedThreads.data,
-        catalog: cachedWorks.data,
-        workId: cachedThreads.data.find(({ id }) => id === input.threadId)?.workId ?? null,
-      };
-    }
-  }
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (accountSignal?.aborted) throw new ThreadWorkOutcomeUnconfirmedError(accountSignal.reason);
     const before = client.getQueryData<ThreadWorkProjectionCursor>(cursorKey)?.seq ?? null;
     try {
-      await Promise.all([
-        client.cancelQueries({ queryKey: projectQueryKeys.threads(input.projectId), exact: true }),
-      ]);
+      await client.cancelQueries({
+        queryKey: projectQueryKeys.threads(input.projectId),
+        exact: true,
+      });
+      // Both reads land in their caches, so the common unchanged case leaves them fresh.
       const [threads, catalog] = await Promise.all([
-        listProjectThreads(input.projectId, { signal: accountSignal }),
+        client.fetchQuery({ ...projectThreadsQueryOptions(client, input.projectId), staleTime: 0 }),
         refreshWorksSnapshot(client, input.projectId),
       ]);
       if (accountSignal?.aborted) throw accountSignal.reason;
       const after = client.getQueryData<ThreadWorkProjectionCursor>(cursorKey)?.seq ?? null;
       if (before !== after) continue;
-      convergeThreadWorkBinding(
-        client,
-        { source: "reconciled", ...input, threads, catalog },
-        accountSignal,
-      );
-      return {
-        threads,
-        catalog,
-        workId: threads.find(({ id }) => id === input.threadId)?.workId ?? null,
-      };
+      const workId = threads.find(({ id }) => id === input.threadId)?.workId ?? null;
+      convergeThreadWorkBinding(client, { source: "reconciled", ...input, workId }, accountSignal);
+      return { threads, catalog, workId };
     } catch (cause) {
       throw new ThreadWorkOutcomeUnconfirmedError(cause);
     }

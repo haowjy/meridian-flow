@@ -4,13 +4,13 @@ import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { dropMainTabChat, readMainTabs } from "./main-tabs";
 
 /**
- * Closes the chat tabs of chats deleted somewhere else (another window or device). The project's
- * chat list lists primary chats only, so it cannot say a tab's chat is gone; the owner gate can.
- * The probe runs for the chat tabs main isn't showing (the shown chat has its own verdict) once
- * at mount, and again on the catalog channel's `project-chats-hint`, which the server publishes
- * after a chat delete or restore and the socket client replays after a reconnect. Nothing polls:
- * idle tabs cost no request. Only a definitive "deleted" closes a tab: a chat the server does not
- * know yet (a first send still in flight) and a failed probe leave it open.
+ * Closes the chat tabs of chats deleted somewhere else (another window or device). A delete's
+ * `project-chats-hint` names the chat ids it removed, so those tabs close without a request. The
+ * owner-gate probe covers only what no hint can name: once at mount, and on a hint with
+ * `recheckTabs` (a deleted Work, or a reconnect after which hints may have been lost). It skips
+ * the chat main is showing (that chat has its own verdict) and runs one batch at a time. Only a
+ * definitive "deleted" closes a tab: a chat the server does not know yet (a first send still in
+ * flight) and a failed probe leave it open. Ordinary lifecycle hints do nothing here.
  */
 export function useDropGoneChatTabs(
   accountId: string,
@@ -22,18 +22,29 @@ export function useDropGoneChatTabs(
   shown.current = shownChatId;
   useEffect(() => {
     let active = true;
-    const check = () => {
-      for (const tab of readMainTabs(accountId, projectId).chat.tabs) {
-        if (tab.chatId === shown.current) continue;
-        void probeChatDestination(accountId, tab.chatId).then((verdict) => {
+    let probing = false;
+    const probe = () => {
+      if (probing) return;
+      probing = true;
+      const tabs = readMainTabs(accountId, projectId).chat.tabs.filter(
+        (tab) => tab.chatId !== shown.current,
+      );
+      void Promise.all(
+        tabs.map(async (tab) => {
+          const verdict = await probeChatDestination(accountId, tab.chatId);
           if (active && (verdict === "deleted" || verdict === "project-deleted"))
             dropMainTabChat(accountId, projectId, tab.chatId);
-        });
-      }
+        }),
+      ).finally(() => {
+        probing = false;
+      });
     };
-    check();
+    probe();
     const unsubscribe = transport.subscribeCatalog(projectId, (hint) => {
-      if (hint.type === "project-chats-hint") check();
+      if (hint.type !== "project-chats-hint") return;
+      for (const chatId of hint.removedChatIds ?? [])
+        if (chatId !== shown.current) dropMainTabChat(accountId, projectId, chatId);
+      if (hint.recheckTabs) probe();
     });
     return () => {
       active = false;

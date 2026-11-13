@@ -70,7 +70,7 @@ export function SlotGrid({
   children,
 }: SlotGridProps) {
   const slotsById = useMemo(() => new Map(slots.map((slot) => [slot.id, slot])), [slots]);
-  useGlide(gridRef, hosts.map((host) => `${host.key}:${host.slot}`).join());
+  const sizes = useGlide(gridRef, hosts.map((host) => `${host.key}:${host.slot}`).join());
 
   return (
     // Hosts are in key order, not place order (see DesktopProject), so Tab would follow ids.
@@ -90,7 +90,12 @@ export function SlotGrid({
       {hosts.map((host) => {
         const slot = host.slot ? slotsById.get(host.slot) : undefined;
         return (
-          <HostWrapper key={host.key} hostKey={host.key} slot={slot}>
+          <HostWrapper
+            key={host.key}
+            hostKey={host.key}
+            slot={slot}
+            parkedSize={sizes.current.get(host.key)}
+          >
             {host.children}
           </HostWrapper>
         );
@@ -103,34 +108,25 @@ export function SlotGrid({
 function HostWrapper({
   hostKey,
   slot,
+  parkedSize,
   children,
 }: {
   hostKey: string;
   slot: SlotDefinition | undefined;
+  /** The box the host had in its last slot. */
+  parkedSize: Size | undefined;
   children: ReactNode;
 }) {
   const active = slot !== undefined;
-  const ref = useRef<HTMLElement>(null);
-  const leftSize = useRef({ width: 0, height: 0 });
-  useEffect(() => {
-    const host = ref.current;
-    if (!active || !host) return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry) leftSize.current = { width: host.offsetWidth, height: host.offsetHeight };
-    });
-    observer.observe(host);
-    return () => observer.disconnect();
-  }, [active]);
   return (
     <section
-      ref={ref}
       aria-hidden={!active}
       inert={!active}
       className={cn("relative flex min-h-0 min-w-0 flex-col overflow-hidden", slot?.className)}
       style={
         slot
           ? { gridArea: slot.area ?? slot.id, ...slot.style }
-          : { ...PARKED_SURFACE_STYLE, ...leftSize.current }
+          : { ...PARKED_SURFACE_STYLE, ...parkedSize }
       }
       data-project-host={hostKey}
       data-project-slot={slot?.id}
@@ -150,6 +146,7 @@ const PARKED_GLIDE_MS = 1000;
 
 /** A host's layout box in the grid, without the transform a running glide adds. */
 type Box = { left: number; top: number; width: number; height: number };
+type Size = { width: number; height: number };
 type Placed = { slot: string; box: Box; leftAt?: number };
 
 const boxOf = (host: HTMLElement): Box => ({
@@ -166,6 +163,8 @@ const boxOf = (host: HTMLElement): Box => ({
  */
 function useGlide(grid: RefObject<HTMLDivElement | null>, placement: string) {
   const placed = useRef(new Map<string, Placed>());
+  /** Each host's last slotted size, kept after it parks (`placed` forgets a host after a second). */
+  const sizes = useRef(new Map<string, Size>());
   const hostsOf = (node: HTMLDivElement) =>
     node.querySelectorAll<HTMLElement>(":scope > [data-project-host][data-project-slot]");
 
@@ -175,8 +174,10 @@ function useGlide(grid: RefObject<HTMLDivElement | null>, placement: string) {
     const observer = new ResizeObserver(() => {
       for (const host of hostsOf(node)) {
         const key = host.dataset.projectHost ?? "";
+        const box = boxOf(host);
+        sizes.current.set(key, { width: box.width, height: box.height });
         const record = placed.current.get(key);
-        if (record) placed.current.set(key, { ...record, box: boxOf(host) });
+        if (record) placed.current.set(key, { ...record, box });
       }
     });
     observer.observe(node);
@@ -205,6 +206,7 @@ function useGlide(grid: RefObject<HTMLDivElement | null>, placement: string) {
         next.set(key, { ...was, leftAt: was.leftAt ?? now });
     placed.current = next;
   }, [grid, placement]);
+  return sizes;
 }
 
 function glide(host: HTMLElement, from: Box, to: Box) {

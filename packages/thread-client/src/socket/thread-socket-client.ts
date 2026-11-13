@@ -229,10 +229,11 @@ export class ThreadSocketClient implements ThreadTransport {
         this.subscriptions.connected();
         for (const [projectId, listeners] of this.catalogSubscriptions) {
           this.send({ type: "catalog.subscribe", requestId: this.nextRequestId(), projectId });
-          // Hints sent while the socket was down are gone. Tell the listeners the project's chats
-          // may have moved, as the server's own hint would.
+          // Hints sent while the socket was down are gone, deletions among them: tell the
+          // listeners to recheck their chat tabs.
           if (this.hasConnected)
-            for (const listener of listeners) listener({ type: "project-chats-hint", projectId });
+            for (const listener of listeners)
+              listener({ type: "project-chats-hint", projectId, recheckTabs: true });
         }
         this.hasConnected = true;
       },

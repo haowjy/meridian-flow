@@ -70,7 +70,7 @@ same rule (`placeIn(kind, main)`); only the sidebar, outside every pane, opens i
 | Write or Chat switch to kind k | `openMain(slot of k ?? current of k ?? empty page of k)`: the panes swap kinds, the side's item first |
 | Close main's tab | main shows the next tab of its kind, else its empty page; the side stays |
 | Delete or remove the side's item | the side shows its empty state |
-| A chat tab's chat is deleted (here or in another window) | its tab closes; the owner-gate probe of the tabs main isn't showing finds a delete elsewhere at mount, on the server's `project-chats-hint` (published after a chat or Work delete or restore) and after a catalog-channel reconnect; nothing polls |
+| A chat tab's chat is deleted (here or in another window) | its tab closes; a chat delete's `project-chats-hint` names the chat ids, so those tabs close with no request; a Work delete (ids unknown) and a catalog-channel reconnect (hints may be lost) send `recheckTabs`, and mount does the same, each running the owner-gate probe over the tabs main isn't showing as one batch. Ordinary lifecycle hints and a restore leave tabs alone. The hub is in process: with several server instances a delete's hint reaches only windows on the same instance until their next reconnect; nothing polls |
 
 Home is the new-chat composer: it suggests what to continue and documents to open beside it, and a
 suggested document is the other kind, so it opens in the side.

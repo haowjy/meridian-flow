@@ -25,7 +25,10 @@ export default defineEventHandler(async (event) => {
     threadId,
     userId,
   );
-  // The list rows changed, so open windows recheck their chat tabs.
-  app.contextCatalogWakeHub.publish({ type: "project-chats-hint", projectId: thread.projectId });
+  app.contextCatalogWakeHub.publish({
+    type: "project-chats-hint",
+    projectId: thread.projectId,
+    removedChatIds: [thread.id],
+  });
   setResponseStatus(event, 204);
 });

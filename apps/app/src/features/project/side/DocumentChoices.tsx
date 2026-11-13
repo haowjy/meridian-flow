@@ -40,7 +40,7 @@ export function DocumentChoices({
   const shown = useSideItem().item;
   const current = shown?.kind === "document" ? shown.documentId : null;
   const { lanes } = useLiveTabs();
-  const openTabs = lanes.document.tabs.flatMap((tab) => (tab.kind === "document" ? [tab] : []));
+  const openTabs = lanes.document.tabs;
   const recent = useRecentDocuments(projectId);
   const catalogs = useContextCatalogViews(projectId, FIND_SCHEMES, {});
   const files = FIND_SCHEMES.flatMap((scheme) =>

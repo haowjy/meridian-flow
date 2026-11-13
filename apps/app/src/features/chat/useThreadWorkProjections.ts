@@ -18,12 +18,6 @@ import { repairWorksSnapshot } from "@/client/query/works-projection-acquisition
 import { useIsThreadPendingCreation } from "@/client/stores";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 
-/**
- * The thread list's own freshness window. A mount or acknowledgment read inside it reuses the
- * list instead of fetching, so switching between chats costs no request; a gap reads fresh.
- */
-const BINDING_READ_MAX_AGE_MS = 30_000;
-
 function decodeWorkProjection(
   threadId: string,
   seq: string,
@@ -91,42 +85,34 @@ export function useThreadWorkProjections({
    */
   const generation = useRef(0);
   /**
-   * The Work-binding resync reads threads + works and converges only if the binding moved.
-   * A gap burst must not run it per gap, so it coalesces: one in flight, one follow-up (fresh
-   * if any request in the burst asked for a fresh read).
+   * The Work-binding resync reads threads + works fresh and converges only if the binding moved.
+   * A gap burst must not run it per gap, so it coalesces: one in flight, one follow-up.
    */
   const bindingInFlight = useRef(false);
-  const bindingAgain = useRef<"cached" | "fresh" | null>(null);
+  const bindingAgain = useRef(false);
   const resyncBinding = useCallback(
-    async (requestGeneration: number, fresh = false) => {
+    async (requestGeneration: number) => {
       if (!projectId || generation.current !== requestGeneration) return;
       if (bindingInFlight.current) {
-        if (fresh || bindingAgain.current === null)
-          bindingAgain.current = fresh ? "fresh" : "cached";
+        bindingAgain.current = true;
         return;
       }
       bindingInFlight.current = true;
       try {
         await readStableThreadWorkBinding(
           queryClient,
-          {
-            projectId,
-            threadId,
-            previousWorkId: null,
-          },
+          { projectId, threadId, previousWorkId: null },
           accountSignal ?? undefined,
-          fresh ? undefined : BINDING_READ_MAX_AGE_MS,
         );
       } catch {
-        // Best effort: the next mount, acknowledgment or gap re-runs the resync.
+        // Best effort: the next acknowledgment or gap re-runs the resync.
       } finally {
         bindingInFlight.current = false;
       }
       if (generation.current !== requestGeneration) return;
-      const again = bindingAgain.current;
-      if (again) {
-        bindingAgain.current = null;
-        void resyncBinding(requestGeneration, again === "fresh");
+      if (bindingAgain.current) {
+        bindingAgain.current = false;
+        void resyncBinding(requestGeneration);
       }
     },
     [accountSignal, projectId, queryClient, threadId],
@@ -135,13 +121,13 @@ export function useThreadWorkProjections({
   useEffect(() => {
     if (isPendingCreation) return;
     bindingInFlight.current = false;
-    bindingAgain.current = null;
+    bindingAgain.current = false;
     const threadGeneration = ++generation.current;
-    void resyncBinding(threadGeneration);
     const unsubscribe = transport.subscribe(threadId, {
       onLiveState: () => {
         if (accountSignal?.aborted) return;
-        // Head subscriptions omit events between the mount reads and acknowledgment.
+        // Head subscriptions omit events between mount and acknowledgment, and a rebind made in
+        // another window pushes nothing: this one fresh read catches both.
         void resyncBinding(threadGeneration);
       },
       onEvent: ({ seq, event }) => {
@@ -166,7 +152,7 @@ export function useThreadWorkProjections({
       },
       onGap: () => {
         if (accountSignal?.aborted) return;
-        void resyncBinding(threadGeneration, true);
+        void resyncBinding(threadGeneration);
       },
     });
     return () => {

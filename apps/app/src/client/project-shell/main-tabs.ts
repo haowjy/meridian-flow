@@ -29,7 +29,7 @@ export type Lane<K extends MainTabKind = MainTabKind> = Readonly<{
   selected: string | null;
 }>;
 
-export type MainTabs = Readonly<{ document: Lane<"document">; chat: Lane<"chat"> }>;
+export type MainTabs = Readonly<{ [K in MainTabKind]: Lane<K> }>;
 
 const EMPTY_LANE = { tabs: [], selected: null } as const;
 const EMPTY: MainTabs = { document: EMPTY_LANE, chat: EMPTY_LANE };
@@ -120,8 +120,13 @@ function write(accountId: string, projectId: string, next: MainTabs): void {
   for (const listener of listeners.get(key) ?? []) listener();
 }
 
-function writeLane(accountId: string, projectId: string, kind: MainTabKind, lane: Lane): void {
-  write(accountId, projectId, { ...readMainTabs(accountId, projectId), [kind]: lane } as MainTabs);
+function writeLane<K extends MainTabKind>(
+  accountId: string,
+  projectId: string,
+  kind: K,
+  lane: Lane<K>,
+): void {
+  write(accountId, projectId, { ...readMainTabs(accountId, projectId), [kind]: lane });
 }
 
 /**
@@ -200,7 +205,7 @@ function dropTabs<K extends MainTabKind>(
   kind: K,
   gone: (tab: TabOf<K>) => boolean,
 ): void {
-  const current = readMainTabs(accountId, projectId)[kind] as Lane<K>;
+  const current = readMainTabs(accountId, projectId)[kind];
   const tabs = current.tabs.filter((tab) => !gone(tab));
   if (tabs.length === current.tabs.length) return;
   const selected = tabs.some((tab) => mainTabKey(tab) === current.selected)
