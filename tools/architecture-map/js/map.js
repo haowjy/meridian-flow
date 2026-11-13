@@ -5,8 +5,9 @@
  * for this page on this computer.
  */
 import { layoutLevel, READABLE_ZOOM, fitZoom } from "./layout.js";
-import { paintInline, route } from "./markdown.js";
-import { item, linksOf, NODE_KINDS, pathsOf, sourceUrl } from "./pages.js";
+import { storageKey } from "./config.js";
+import { paintInline, pathLink, route } from "./markdown.js";
+import { item, linksOf, NODE_KINDS, pathsOf } from "./pages.js";
 import { routeLevel } from "./routes.js";
 import { el } from "./shell.js";
 
@@ -19,7 +20,7 @@ const { createContext, Fragment, useContext, useEffect, useMemo, useRef, useStat
 const MAX_FIT_ZOOM = 1.1;
 /** Text width at which an arrow's label wraps. */
 const LABEL_WRAP = 124;
-const LAYOUT_KEY = "meridian-architecture-layout-v2:";
+const LAYOUT_KEY = `${storageKey("layout-v2")}:`;
 
 const parts = (label) => {
   const [name, ...role] = label.split(/<br\s*\/?>/);
@@ -403,7 +404,7 @@ export function createMap(host, { page, path, nav }) {
       ...section.items
         .filter((it) => it.key === "Breaks" || it.key === "Drift")
         .map((it) => el("div", { class: `callout is-${it.key.toLowerCase()}` }, el("strong", null, it.key === "Breaks" ? "Breaks a rule: " : "Docs and code disagree: "), inline(it.value))),
-      paths.length ? el("section", null, el("h3", null, "Paths"), el("ul", { class: "paths" }, paths.map((p) => el("li", null, el("a", { class: "path", href: sourceUrl(p), target: "_blank", rel: "noreferrer" }, p))))) : null,
+      paths.length ? el("section", null, el("h3", null, "Paths"), el("ul", { class: "paths" }, paths.map((p) => el("li", null, pathLink(p))))) : null,
       connections(id),
       links("See", value("See")),
       links("Opens", value("Opens")),

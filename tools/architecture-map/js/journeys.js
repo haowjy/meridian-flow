@@ -5,8 +5,9 @@
  * doc view; a link to a flow page opens the flow. Under the journeys, "What happens underneath"
  * lists the flows (the list items of flows/index.md). The route is `#journeys[/<journey>[/<step number>]]`.
  */
+import { MAP_DIR } from "./config.js";
 import { paintInline, route } from "./markdown.js";
-import { item, JOURNEY_KEYS, linksOf, MAP_DIR } from "./pages.js";
+import { item, JOURNEY_KEYS, linksOf } from "./pages.js";
 import { el, fetchPage, fetchRepoFile } from "./shell.js";
 
 const JOURNEYS = `${MAP_DIR}/journeys`;
@@ -17,7 +18,8 @@ export async function createJourneys(host, { nav }) {
   const content = el("div", { class: "journeys" });
   const panel = el("aside", { class: "panel", "aria-label": "Selected step" });
   host.replaceChildren(content, panel);
-  const flowLines = (await fetchRepoFile(FLOWS_INDEX)).split("\n").filter((l) => l.startsWith("- "));
+  // A project may have no flows; the check holds the flows page to what exists.
+  const flowLines = (await fetchRepoFile(FLOWS_INDEX).catch(() => "")).split("\n").filter((l) => l.startsWith("- "));
   const hrefs = [...new Set(linksOf(await fetchRepoFile(`${JOURNEYS}/index.md`)).map((l) => l.href))];
   const journeys = await Promise.all(
     hrefs.filter((h) => /^[\w-]+\.md$/.test(h) && h !== "index.md").map(async (href) => ({ id: href.slice(0, -3), path: `${JOURNEYS}/${href}`, page: await fetchPage(`${JOURNEYS}/${href}`) })),
@@ -33,14 +35,15 @@ export async function createJourneys(host, { nav }) {
       ),
     ),
   );
-  content.append(
-    el(
-      "section",
-      { class: "journey underneath" },
-      el("h2", null, "What happens underneath"),
-      el("ul", null, flowLines.map((l) => { const li = el("li"); paintInline(li, l.slice(2), FLOWS_INDEX); return li; })),
-    ),
-  );
+  if (flowLines.length)
+    content.append(
+      el(
+        "section",
+        { class: "journey underneath" },
+        el("h2", null, "What happens underneath"),
+        el("ul", null, flowLines.map((l) => { const li = el("li"); paintInline(li, l.slice(2), FLOWS_INDEX); return li; })),
+      ),
+    );
   enablePan();
 
   function paragraph(markdown, path) {

@@ -3,7 +3,8 @@
  * A page is fetched at its repo path, so there is no copy of it. Every link in a rendered page
  * becomes a `#` route that app.js handles (`route` below), or a GitHub URL.
  */
-import { MAP_DIR, resolveHref, slug, sourceUrl, STATE_MACHINES_INDEX } from "./pages.js";
+import { MAP_DIR, opensLocally, sourceUrl, STATE_MACHINES_INDEX } from "./config.js";
+import { resolveHref, slug } from "./pages.js";
 import { el, fetchRepoFile } from "./shell.js";
 
 // Pinned like the other scripts: marked in the HTML, Mermaid here because it is 3.5 MB and
@@ -137,15 +138,23 @@ function addZoom(holder) {
   set(kind === "sequence" ? Math.min(Math.max(wide, 0.6), 1.6) : kind.startsWith("flowchart") ? Math.min(wide, 1) : 1);
 }
 
-const isContextPage = (path) => path.endsWith(".md") && path.split("/").includes(".context");
-
-/** What the doc view can open and the dev server serves: a .context page with no `..`, `.` or empty segment. */
-export const isDocPath = (path) => isContextPage(path) && !path.includes("\\") && path.split("/").every((s) => s && s !== "." && s !== "..");
+/** What the doc view can open: a repo path with no `..`, `.` or empty segment. The dev server decides which of them it serves. */
+export const isDocPath = (path) => !path.includes("\\") && path.split("/").every((s) => s && s !== "." && s !== "..");
 
 /** The hash that opens a repo page in the doc view. */
 export const docHash = (path, fragment) => `#doc/${encodeURIComponent(path)}${fragment ? `/${encodeURIComponent(fragment)}` : ""}`;
 
-/** Where a link in the page at `path` goes: { href, external? }, or null to leave it. Map pages are `#<page>[/<box>]`, `#flows/<id>` (a flow, under Journeys), `#journeys/<id>`, `#machines`; other .context pages open in the doc view. */
+/** Where a repo path opens: the doc view when the dev server shows it, else GitHub. { href, external? }. */
+export const repoRoute = (path, fragment) =>
+  opensLocally(path) && isDocPath(path) ? { href: docHash(path, fragment) } : { href: sourceUrl(path), external: true };
+
+/** A link to a repo path, labelled with the path. */
+export function pathLink(path) {
+  const to = repoRoute(path);
+  return el("a", { class: "path", href: to.href, target: to.external ? "_blank" : null, rel: to.external ? "noreferrer" : null }, path);
+}
+
+/** Where a link in the page at `path` goes: { href, external? }, or null to leave it. Map pages are `#<page>[/<box>]`, `#flows/<id>` (a flow, under Journeys), `#journeys/<id>`, `#machines`; any other repo path opens in the doc view. */
 export function route(path, href) {
   const { path: target, fragment, url } = resolveHref(path, href);
   if (url) return { href: url, external: true };
@@ -158,8 +167,7 @@ export function route(path, href) {
   if (inMap?.startsWith("journeys/") && id(inMap.slice(9))) return { href: `#journeys/${id(inMap.slice(9))}` };
   if (inMap && id(inMap) && !["README.md", "AGENTS.md"].includes(inMap)) return { href: `#${id(inMap)}${fragment ? `/${fragment}` : ""}` };
   if (target === STATE_MACHINES_INDEX) return { href: "#machines" };
-  if (isDocPath(target)) return { href: docHash(target, fragment) };
-  return { href: sourceUrl(target), external: true };
+  return repoRoute(target, fragment);
 }
 
 /** Points the links under `root` (from the page at `path`) where `route` says. */

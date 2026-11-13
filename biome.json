@@ -29,6 +29,7 @@
       "!.opencode",
       "!.cursor",
       "!**/.context",
+      "!tools/architecture-map",
       "!packages/database/src/migrations/meta/*_snapshot.json"
     ]
   },

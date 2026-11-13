@@ -59,7 +59,9 @@ changes a writer journey, or changes a machine's states or transitions updates i
 the same commit. `pnpm check:architecture` catches a path that disappeared, not a picture that
 went wrong: passing it is not the test. Keep machines simple: before adding a state, check
 whether an existing one already covers the case. The map opens at the `map` URL `pnpm dev`
-prints.
+prints. The pages and `map.config.mjs` (everything Meridian-specific: the coverage globs, dependency
+rules, nav) live in `.context/system-architecture/`; the viewer, the check and the dev server are the
+reusable engine in [tools/architecture-map](tools/architecture-map/README.md), which names no project.
 
 **Tooling.** `pnpm`, Biome and Nx, never npm. No raw colors outside
 `packages/design-tokens`.

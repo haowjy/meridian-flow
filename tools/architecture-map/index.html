@@ -1,21 +1,21 @@
 <!doctype html>
 <meta charset="utf-8" />
-<title>Meridian architecture</title>
+<title>Architecture</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <!--
-  A viewer over the Markdown pages in this directory (README.md says how to read and edit them).
-  It holds no content and no colours: pages come from the repo, colours from styles/tokens.css.
-  Open it through `pnpm dev` (the printed `map` URL); from disk it can't read the pages. Every script is pinned here with its integrity hash, except Mermaid (js/markdown.js), which loads with the first diagram. React stays on 18: 19 ships no UMD build, and @xyflow/react's UMD build needs React and ReactDOM as globals; js/jsx-runtime.js gives it the jsx runtime it expects.
+  A viewer over a project's Markdown pages (README.md here says how to adopt it). It holds no content
+  and no colours: the dev server serves the project's map.config.mjs beside this page, and the pages
+  and the colour variables (the config's `styles`) come from the project's files at repo/<path>.
+  Open it through the dev server; from disk it can't read the pages. Every script is pinned here with its integrity hash, except Mermaid (js/markdown.js), which loads with the first diagram. React stays on 18: 19 ships no UMD build, and @xyflow/react's UMD build needs React and ReactDOM as globals; js/jsx-runtime.js gives it the jsx runtime it expects.
 -->
 <link rel="stylesheet" href="vendor/xyflow-react-12.12.0-base.css" />
-<link rel="stylesheet" href="styles/tokens.css" />
 <link rel="stylesheet" href="styles/page.css" />
 
 <!-- Module scripts don't run from file://, so this note is what a page opened from disk shows. -->
 <div id="root" class="app">
   <div class="doc-note pad">
     <p>A browser won't read the map's pages from disk (file://).</p>
-    <p>Run <code>pnpm dev</code> and open the printed <code>map</code> URL.</p>
+    <p>Open the map through the dev server that serves it.</p>
   </div>
 </div>
 <script>

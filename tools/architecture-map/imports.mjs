@@ -1,8 +1,8 @@
 /**
  * The real import graph of the source under the paths the map names, for check.mjs. Reads
  * source text, not types: it sees `import`/`export ... from`/dynamic `import()`/`require()` and a stylesheet's `@import`,
- * resolves relative paths, the `@/` alias (apps/app/src), the `~/` alias (apps/www/src) and
- * workspace package names (`@meridian/x[/sub]` is the package's directory). Test files are
+ * resolves relative paths, the configured aliases and workspace package names (`name[/sub]` is
+ * the package's directory). Test files are
  * left out (with `test-support` directories and files): the map describes what the code does, not what its tests reach into.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -59,29 +59,22 @@ function sourceFiles(repo, path, out) {
   }
 }
 
-function workspacePackages(repo) {
-  const out = new Map();
-  for (const group of ["apps", "packages"]) {
-    for (const entry of readdirSync(join(repo, group), { withFileTypes: true })) {
-      const manifest = join(repo, group, entry.name, "package.json");
-      if (entry.isDirectory() && existsSync(manifest)) {
-        out.set(JSON.parse(readFileSync(manifest, "utf8")).name, `${group}/${entry.name}`);
-      }
-    }
-  }
-  return out;
+/** Package name → directory, for the workspace directories that hold a package.json. */
+function workspacePackages(repo, workspaceDirs) {
+  return new Map(workspaceDirs.map((dir) => [JSON.parse(readFileSync(join(repo, dir, "package.json"), "utf8")).name, dir]));
 }
 
 /**
  * Imports out of the source under `roots` (repo-relative paths): [{ from, to, typeOnly }],
  * `to` a repo-relative file when the import resolves to one, else the path it points at; a
- * workspace package import has `to` the package directory. External packages
- * are left out.
+ * workspace package import has `to` the package directory. External packages are left out.
+ * `workspaceDirs` are the directories of the workspace packages; `aliases` are
+ * [{ prefix, within, to }]: a `prefix` import from a file under `within` reads from `to`.
  */
-export function readImports(repo, roots) {
+export function readImports(repo, roots, { workspaceDirs, aliases }) {
   const files = new Set();
   for (const root of roots) sourceFiles(repo, root, files);
-  const packages = workspacePackages(repo);
+  const packages = workspacePackages(repo, workspaceDirs);
   const isFile = (path) => {
     try {
       return statSync(join(repo, path)).isFile();
@@ -99,8 +92,8 @@ export function readImports(repo, roots) {
   };
   const resolve = (from, spec) => {
     if (spec.startsWith(".")) return { to: settle(posix.normalize(posix.join(posix.dirname(from), spec))) };
-    if (spec.startsWith("@/") && from.startsWith("apps/app/")) return { to: settle(`apps/app/src/${spec.slice(2)}`) };
-    if (spec.startsWith("~/") && from.startsWith("apps/www/")) return { to: settle(`apps/www/src/${spec.slice(2)}`) };
+    const alias = aliases.find((a) => spec.startsWith(a.prefix) && from.startsWith(a.within));
+    if (alias) return { to: settle(alias.to + spec.slice(alias.prefix.length)) };
     const name = spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0];
     return packages.has(name) ? { to: packages.get(name) } : null;
   };

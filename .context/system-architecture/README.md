@@ -6,7 +6,9 @@ Product words are in the [glossary](../glossary.md).
 
 Every page is Markdown with a Mermaid diagram, so it reads on GitHub and in an editor as it
 does in the viewer. `pnpm dev` prints a `map` URL that opens the same pages in a viewer; the HTML
-holds no content.
+holds no content. The viewer and the check are an engine, [tools/architecture-map](../../tools/architecture-map/README.md);
+everything about Meridian that they use is in [map.config.mjs](map.config.mjs) (the repo, the globs that say
+what must be covered, the dependency rules, the nav labels) and in the pages here.
 
 ## The pages
 
@@ -128,8 +130,8 @@ boxes and state machines. [flows/index.md](flows/index.md) lists every flow.
 
 The rules in prose, then one table of the places the code breaks them today, one row per
 break: `| from | to | rule | example file |`. `from` and `to` are single domains, a domain and `lib`, or a
-package and an app. `rule` is one of `domains are acyclic`, `domains do not import lib/`, `packages do
-not import apps` ([CONTEXT.md](../CONTEXT.md) writes the rules). The example file is an importing file.
+package and an app, each named by its last path segment (`runtime`, `lib`, `contracts`, `server`). `rule` is one of the rules in `map.config.mjs` (`domains are acyclic`, `domains do not import lib/`, `packages do
+not import apps`; [CONTEXT.md](../CONTEXT.md) writes them). A new rule is a new entry there. The example file is an importing file.
 Only value imports count; a type-only import is not run-time coupling.
 
 ### A journey page
@@ -158,7 +160,7 @@ the items `Map` (links to `#<box id>` on a level page), `Machines` and later `Sh
 - A break of a written rule with no row: a domain's value import of another domain inside an import
   cycle (one row per direction), a domain's value import of `apps/server/server/lib/`, a package's
   import of an app. The failure names the importing and imported files.
-- The viewer's colours: `styles/tokens.css` must match `packages/design-tokens`, and `styles/page.css`
+- The viewer's colours: `styles/tokens.css` must match `packages/design-tokens`, and the engine's `page.css`
   holds no raw colour.
 
 It doesn't catch: whether a box's words or an arrow are still true; an ordinary import (none is
@@ -168,9 +170,12 @@ the checker can't see in source text, such as a path built at run time.
 
 ## The viewer
 
-`index.html` needs the pages served from the repo: `pnpm dev` does that
-(`apps/app/dev/architecture-dev-plugin.ts`), opened from disk it says so. A level page opens as Map
-(boxes you can drag; where you put them is remembered for that page on this computer, and "Reset
-layout" undoes it) or Read (the Markdown with its diagram); the header toggles. Scripts come from a
-CDN with pinned versions and integrity hashes. See [AGENTS.md](AGENTS.md) for how the
-viewer is built.
+`pnpm dev` serves it at `/architecture/` (the `map` URL it prints; `apps/app/vite.config.ts` registers the engine's
+plugin with this directory's config). Opened from disk it says so. A level page opens as Map (boxes you can drag;
+where you put them is remembered for that page on this computer, and "Reset layout" undoes it) or Read (the
+Markdown with its diagram); the header toggles. Every repo path in it, a box's `Paths` (files and directories),
+its `Docs`, `AGENTS.md`, a link inside Markdown, opens in the viewer: Markdown rendered, source with line
+numbers, a directory as its tracked entries; each view links "on GitHub". The dev server serves only files git
+tracks (and new unignored files in this directory), so `.env` and `node_modules` are never shown; `pnpm dev:funnel`
+publishes the dev server, and with it the tracked source, which is public here. Scripts come from a CDN with pinned
+versions and integrity hashes. See [AGENTS.md](AGENTS.md).

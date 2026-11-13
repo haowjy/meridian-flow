@@ -1,29 +1,37 @@
 #!/usr/bin/env node
 /**
- * Keeps the architecture map from drifting silently. `pnpm check:architecture` runs it, and
- * `pnpm check` includes it. README.md says what each check catches and what it can't. Prints
- * one line per problem, naming the page and the entry, and exits 1 when there are any.
+ * Keeps an architecture map from drifting silently: `node check.mjs <path to map.config.mjs>`.
+ * The project's own README.md says what each check catches and what it can't; this directory's
+ * README.md has the config reference. Prints one line per problem, naming the page and the entry,
+ * and exits 1 when there are any.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join, posix } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join, posix, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { readImports, under } from "./imports.mjs";
-import { item, JOURNEY_KEYS, linksOf, loadLevelPages, MAP_DIR, MAP_KEYS, NODE_KINDS, parsePage, pathsOf, resolveHref, resolveParticipant, slug, STATE_MACHINES_INDEX, withoutFences } from "./js/pages.js";
+import { item, JOURNEY_KEYS, linksOf, loadLevelPages, MAP_KEYS, NODE_KINDS, parsePage, pathsOf, resolveHref, resolveParticipant, slug, unitOf, withoutFences } from "./js/pages.js";
 import { blocks, expectedTokens, MIRRORED } from "./tokens.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repo = join(here, "../..");
+const configFile = resolve(process.argv[2] ?? "");
+const config = (await import(pathToFileURL(configFile).href)).default;
+const repo = resolve(dirname(configFile), config.root ?? ".");
+const MAP_DIR = config.pagesDir;
+const STATE_MACHINES_INDEX = config.stateMachines?.index;
+const DEPENDENCIES = config.nav?.dependencies ? config.dependencies.page : null;
+const JOURNEYS_ON = Boolean(config.nav?.journeys);
 const problems = [];
 const fail = (where, message) => problems.push(`${where}: ${message}`);
 const read = (path) => readFileSync(join(repo, path), "utf8");
 
 // ---- The pages ----
 
-const dir = (path) => readdirSync(join(repo, path)).filter((f) => f.endsWith(".md")).sort();
-const levelFiles = dir(MAP_DIR).filter((f) => !["README.md", "AGENTS.md", "dependencies.md"].includes(f));
-const flowFiles = dir(`${MAP_DIR}/flows`).filter((f) => f !== "index.md");
-const journeyFiles = dir(`${MAP_DIR}/journeys`).filter((f) => f !== "index.md");
+const dir = (path) => (existsSync(join(repo, path)) ? readdirSync(join(repo, path)).filter((f) => f.endsWith(".md")).sort() : []);
+const levelFiles = dir(MAP_DIR).filter((f) => !["README.md", "AGENTS.md", DEPENDENCIES].includes(f));
+const flowFiles = JOURNEYS_ON ? dir(`${MAP_DIR}/flows`).filter((f) => f !== "index.md") : [];
+const journeyFiles = JOURNEYS_ON ? dir(`${MAP_DIR}/journeys`).filter((f) => f !== "index.md") : [];
+const hasFlows = flowFiles.length > 0;
 
 /** @type {Map<string, ReturnType<typeof parsePage>>} repo path → parsed page */
 const pages = new Map();
@@ -35,7 +43,7 @@ const load = (path) => {
 const levels = levelFiles.map((f) => ({ file: f, path: `${MAP_DIR}/${f}`, page: load(`${MAP_DIR}/${f}`) }));
 const flows = flowFiles.map((f) => ({ file: `flows/${f}`, path: `${MAP_DIR}/flows/${f}`, page: load(`${MAP_DIR}/flows/${f}`) }));
 const journeys = journeyFiles.map((f) => ({ file: `journeys/${f}`, path: `${MAP_DIR}/journeys/${f}`, page: load(`${MAP_DIR}/journeys/${f}`) }));
-for (const extra of ["README.md", "dependencies.md", "flows/index.md", "journeys/index.md"]) load(`${MAP_DIR}/${extra}`);
+for (const extra of ["README.md", DEPENDENCIES, ...(JOURNEYS_ON ? ["journeys/index.md"] : []), ...(hasFlows ? ["flows/index.md"] : [])]) if (extra) load(`${MAP_DIR}/${extra}`);
 const nameOf = (path) => path.slice(MAP_DIR.length + 1);
 
 for (const [path, page] of pages) for (const p of page.problems) fail(`${nameOf(path)}:${p.line}`, p.message);
@@ -111,7 +119,7 @@ for (const { file, path, page } of levels) {
     for (const end of [e.from, e.to]) if (kindOf.get(end) === "note") fail(`${file}:${e.line}`, `arrow ${e.from} to ${e.to} touches note ${end}: a note joins a box only by "-.-".`);
     for (const end of [e.from, e.to]) if (!nodeIds.has(end)) fail(`${file}:${e.line}`, `arrow ${e.from} to ${e.to} names ${end}, which isn't a box.`);
     const kind = /^(http|ws|sql|model|files|call|port|import): /.exec(e.label);
-    if (kind) fail(`${file}:${e.line}`, `arrow ${e.from} to ${e.to} starts with "${kind[1]}:": arrows carry words, not kinds, and none says "import" (dependencies.md lists the broken rules).`);
+    if (kind) fail(`${file}:${e.line}`, `arrow ${e.from} to ${e.to} starts with "${kind[1]}:": arrows carry words, not kinds, and none says "import" (${DEPENDENCIES ?? "the dependencies page"} lists the broken rules).`);
   }
   const steps = edges.filter((e) => e.step !== null);
   steps.forEach((e, i) => {
@@ -155,14 +163,14 @@ const levelNodes = levels.map((l) => ({ id: l.file.slice(0, -3), nodes: l.page.m
 
 // ---- Journeys ----
 
-const indexLinks = linksOf(read(`${MAP_DIR}/journeys/index.md`)).map((l) => resolveHref(`${MAP_DIR}/journeys/index.md`, l.href).path);
+const indexLinks = JOURNEYS_ON ? linksOf(read(`${MAP_DIR}/journeys/index.md`)).map((l) => resolveHref(`${MAP_DIR}/journeys/index.md`, l.href).path) : [];
 for (const j of journeys) if (!indexLinks.includes(j.path)) fail("journeys/index.md", `doesn't link ${j.file}.`);
 const readme = read(`${MAP_DIR}/README.md`);
 // The viewer's own loader, so both agree on which level pages exist and what opens them.
-const reachable = (await loadLevelPages(async (p) => (existsSync(join(repo, p)) ? read(p) : ""))).levels;
+const reachable = (await loadLevelPages(async (p) => (existsSync(join(repo, p)) ? read(p) : ""), MAP_DIR)).levels;
 for (const l of levels)
   if (![...reachable.values()].some((r) => r.path === l.path)) fail(l.file, "is neither listed in README.md's pages nor opened by a box's Opens.");
-for (const target of ["flows/index.md", "dependencies.md", "journeys/index.md"])
+for (const target of [hasFlows && "flows/index.md", DEPENDENCIES, JOURNEYS_ON && "journeys/index.md"].filter(Boolean))
   if (!linksOf(readme).some((l) => l.href === target)) fail("README.md", `doesn't link ${target}.`);
 
 const traced = new Set();
@@ -192,7 +200,7 @@ for (const { file, path, page } of journeys) {
 
 // ---- Flows ----
 
-const flowIndexLinks = linksOf(read(`${MAP_DIR}/flows/index.md`)).map((l) => resolveHref(`${MAP_DIR}/flows/index.md`, l.href).path);
+const flowIndexLinks = hasFlows ? linksOf(read(`${MAP_DIR}/flows/index.md`)).map((l) => resolveHref(`${MAP_DIR}/flows/index.md`, l.href).path) : [];
 for (const f of flows) {
   if (!flowIndexLinks.includes(f.path)) fail("flows/index.md", `doesn't link ${f.file}.`);
   if (!traced.has(f.path)) fail(f.file, "is not linked from any journey step's Map line, so the viewer can't reach it from Journeys.");
@@ -208,146 +216,143 @@ for (const f of flows) {
 // ---- State machine pages ----
 
 const indexed = new Set();
-if (!existsSync(join(repo, STATE_MACHINES_INDEX))) fail(STATE_MACHINES_INDEX, "doesn't exist.");
-else {
-  for (const match of read(STATE_MACHINES_INDEX).matchAll(/\]\(([^)\s#]+\.md)(?:#[^)]*)?\)/g)) {
-    if (!/^[a-z]+:/i.test(match[1])) indexed.add(posix.join(posix.dirname(STATE_MACHINES_INDEX), match[1]));
+const attached = new Set();
+let written = [];
+if (config.stateMachines) {
+  if (!existsSync(join(repo, STATE_MACHINES_INDEX))) fail(STATE_MACHINES_INDEX, "doesn't exist.");
+  else {
+    for (const match of read(STATE_MACHINES_INDEX).matchAll(/\]\(([^)\s#]+\.md)(?:#[^)]*)?\)/g)) {
+      if (!/^[a-z]+:/i.test(match[1])) indexed.add(posix.join(posix.dirname(STATE_MACHINES_INDEX), match[1]));
+    }
+  }
+  for (const { path, page } of levels)
+    for (const s of page.sections)
+      for (const it of s.items.filter((i) => i.key === "Machines"))
+        for (const l of linksOf(it.value)) attached.add(resolveHref(path, l.href).path);
+  for (const page of indexed) {
+    if (!existsSync(join(repo, page))) fail(STATE_MACHINES_INDEX, `links ${page}, which doesn't exist.`);
+    else if (/state-machine[^/]*\.md$/.test(page) && !attached.has(page))
+      fail(STATE_MACHINES_INDEX, `${page} is on no box: add it to a box's Machines.`);
+  }
+  written = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "--", config.stateMachines.pages], { cwd: repo, encoding: "utf8" })
+    .split("\n")
+    .filter(Boolean);
+  for (const page of written) {
+    if (page !== STATE_MACHINES_INDEX && existsSync(join(repo, page)) && !indexed.has(page)) fail(page, `isn't linked by ${STATE_MACHINES_INDEX}: add it to the index.`);
   }
 }
-const attached = new Set();
-for (const { path, page } of levels)
-  for (const s of page.sections)
-    for (const it of s.items.filter((i) => i.key === "Machines"))
-      for (const l of linksOf(it.value)) attached.add(resolveHref(path, l.href).path);
-for (const page of indexed) {
-  if (!existsSync(join(repo, page))) fail(STATE_MACHINES_INDEX, `links ${page}, which doesn't exist.`);
-  else if (/state-machine[^/]*\.md$/.test(page) && !attached.has(page))
-    fail(STATE_MACHINES_INDEX, `${page} is on no box: add it to a box's Machines.`);
-}
-const written = execFileSync(
-  "git",
-  ["ls-files", "--cached", "--others", "--exclude-standard", "--", "*.context/*state-machine*.md"],
-  { cwd: repo, encoding: "utf8" },
-)
+
+// ---- Coverage ----
+// From git, not the disk: a branch switch leaves untracked node_modules or build output behind.
+
+const roots = [...new Set(boxes.flatMap((b) => b.paths))];
+const gitFiles = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
   .split("\n")
   .filter(Boolean);
-for (const page of written) {
-  if (page !== STATE_MACHINES_INDEX && existsSync(join(repo, page)) && !indexed.has(page)) fail(page, `isn't linked by ${STATE_MACHINES_INDEX}: add it to the index.`);
+/** Directories matching a segment glob that hold tracked files (a file directly in the pattern's depth is not one). */
+const directoriesMatching = (glob) => [...new Set(gitFiles.filter((f) => f.split("/").length > glob.split("/").length).map((f) => unitOf(f, glob)).filter(Boolean))];
+
+// A service is a directory matching the services glob: the top page has a box whose Paths are inside it and whose Opens is
+// the page named after it (apps/www → www.md).
+if (config.services) {
+  for (const directory of directoriesMatching(config.services.glob)) {
+    const name = directory.split("/").at(-1);
+    const page = `${MAP_DIR}/${name}.md`;
+    if (!boxes.some((b) => b.page === config.services.page && b.opens.includes(page) && b.paths.some((p) => under(p, directory))))
+      fail(config.services.page, `${directory} needs a box on ${config.services.page} whose Paths are inside it and whose "Opens" is ${name}.md, a page of its own boxes (the project's README.md says how to add a service).`);
+  }
+}
+for (const { glob, needs } of config.coverage ?? []) {
+  for (const directory of directoriesMatching(glob)) {
+    if (needs && !existsSync(join(repo, directory, needs))) continue;
+    if (!roots.some((p) => under(p, directory))) fail("map", `${directory} is in no box's Paths: add a box for it, or a path to the box that holds it.`);
+  }
 }
 
 // ---- Dependencies ----
-// dependencies.md lists the places the code breaks CONTEXT.md's rules, one row per break. The rows and the
-// breaks the check computes from value imports must match one to one; ordinary imports are listed nowhere.
+// The dependencies page lists the places the code breaks the configured rules, one row per break. The rows and
+// the breaks the check computes from value imports must match one to one; ordinary imports are listed nowhere.
 
-const DEPENDENCIES = "dependencies.md";
-const roots = [...new Set(boxes.flatMap((b) => b.paths))];
-
-// Coverage: every app, package, domain and feature has a box with a path inside it.
-// From git, not the disk: a branch switch leaves untracked node_modules or build output behind.
-const gitFiles = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
-  cwd: repo,
-  encoding: "utf8",
-})
-  .split("\n")
-  .filter(Boolean);
-const subdirectories = (path) => [
-  ...new Set(
-    gitFiles
-      .filter((f) => f.startsWith(`${path}/`) && f.slice(path.length + 1).includes("/"))
-      .map((f) => `${path}/${f.slice(path.length + 1).split("/")[0]}`),
-  ),
-];
-const hasManifest = (path) => existsSync(join(repo, path, "package.json"));
-// A service is an app directory: system.md has a box whose Paths are inside it and whose Opens is the
-// page named after it (apps/www → www.md). tools/ holds no services and is outside this rule.
-for (const directory of subdirectories("apps")) {
-  const name = directory.slice("apps/".length);
-  const page = `${MAP_DIR}/${name}.md`;
-  if (!boxes.some((b) => b.page === "system.md" && b.opens.includes(page) && b.paths.some((p) => p.startsWith(`${directory}/`) || p === directory)))
-    fail("system.md", `${directory} needs a box on system.md whose Paths are inside it and whose "Opens" is ${name}.md, a page of its own boxes (README.md says how to add a service).`);
-}
-for (const directory of [
-  ...subdirectories("apps"),
-  ...subdirectories("packages").filter(hasManifest),
-  ...subdirectories("apps/server/server/domains"),
-  ...subdirectories("apps/app/src/features"),
-]) {
-  if (!roots.some((p) => under(p, directory))) fail("map", `${directory} is in no box's Paths: add a box for it, or a path to the box that holds it.`);
-}
-const imports = readImports(repo, roots);
-
-const DOMAINS = "apps/server/server/domains";
-const LIB = "apps/server/server/lib";
-const domainOf = (path) => (under(path, DOMAINS) ? path.slice(DOMAINS.length + 1).split("/")[0] : null);
-const first = (path, n) => path.split("/").slice(0, n).join("/");
-
-/** The kinds of break a row's rule cell may name: the cell text, and how a break of that kind reads. */
-const RULES = {
-  "domains are acyclic": (from, to) => `domain ${from} importing domain ${to} inside a cycle`,
-  "domains do not import lib/": (from) => `domain ${from} importing lib/`,
-  "packages do not import apps": (from, to) => `${from} importing ${to}`,
-};
+const rules = config.dependencies?.rules ?? [];
+const rows = [];
+let tableSeen = false;
 /** One entry per break the code has: key → { rule, from, to, files: the importing files }. Type-only imports are no run-time coupling and don't count. */
 const breaks = new Map();
-const addBreak = (rule, from, to, file) => {
-  const key = `${rule}|${from}|${to}`;
-  if (!breaks.has(key)) breaks.set(key, { rule, from, to, files: new Set() });
-  breaks.get(key).files.add(file);
-};
-const graph = new Map();
-const domainEdges = new Map();
-for (const i of imports) {
-  if (i.typeOnly) continue;
-  const from = domainOf(i.from);
-  const to = domainOf(i.to);
-  if (from && to && from !== to) {
-    if (!graph.has(from)) graph.set(from, new Set());
-    graph.get(from).add(to);
-    domainEdges.set(`${from}|${to}`, [...(domainEdges.get(`${from}|${to}`) ?? []), i.from]);
-  }
-  if (from && under(i.to, LIB)) addBreak("domains do not import lib/", from, "lib", i.from);
-  if (i.from.startsWith("packages/") && i.to.startsWith("apps/")) addBreak("packages do not import apps", first(i.from, 2), first(i.to, 2), i.from);
-}
-const component = stronglyConnected(graph);
-for (const [from, targets] of graph)
-  for (const to of targets)
-    if (component.get(from) === component.get(to)) for (const file of domainEdges.get(`${from}|${to}`)) addBreak("domains are acyclic", from, to, file);
+let imports = [];
+if (DEPENDENCIES) {
+  const workspaceDirs = (config.imports?.workspaces ?? []).flatMap(directoriesMatching).filter((d) => existsSync(join(repo, d, "package.json")));
+  imports = readImports(repo, roots, { workspaceDirs, aliases: config.imports?.aliases ?? [] });
 
-const rows = [];
-withoutFences(read(`${MAP_DIR}/${DEPENDENCIES}`)).split("\n").forEach((text, i) => {
-  if (!text.trim().startsWith("|")) return;
-  const cells = text.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim().replaceAll("`", ""));
-  if (cells.every((c) => /^:?-+:?$/.test(c))) return;
-  if (cells[0].toLowerCase() === "from") {
-    if (cells.map((c) => c.toLowerCase()).join("|") !== "from|to|rule|example file") fail(`${DEPENDENCIES}:${i + 1}`, "the table header must be: | from | to | rule | example file |");
-    return;
+  const addBreak = (rule, from, to, file) => {
+    const key = `${rule}|${from}|${to}`;
+    if (!breaks.has(key)) breaks.set(key, { rule, from, to, files: new Set() });
+    breaks.get(key).files.add(file);
+  };
+  const nameOf = (unit) => unit.split("/").at(-1);
+  /** How a break of each rule reads in a failure. */
+  const describe = (b) => (rules.find((r) => r.rule === b.rule).cycle ? `${b.from} importing ${b.to} inside a cycle` : `${b.from} importing ${b.to}`);
+  for (const rule of rules) {
+    if (rule.cycle) {
+      const graph = new Map();
+      const edgeFiles = new Map();
+      for (const i of imports) {
+        if (i.typeOnly) continue;
+        const from = unitOf(i.from, rule.cycle);
+        const to = unitOf(i.to, rule.cycle);
+        if (!from || !to || from === to) continue;
+        if (!graph.has(from)) graph.set(from, new Set());
+        graph.get(from).add(to);
+        edgeFiles.set(`${from}|${to}`, [...(edgeFiles.get(`${from}|${to}`) ?? []), i.from]);
+      }
+      const component = stronglyConnected(graph);
+      for (const [from, targets] of graph)
+        for (const to of targets)
+          if (component.get(from) === component.get(to)) for (const file of edgeFiles.get(`${from}|${to}`)) addBreak(rule.rule, nameOf(from), nameOf(to), file);
+    } else {
+      for (const i of imports) {
+        const from = unitOf(i.from, rule.from);
+        const to = unitOf(i.to, rule.to);
+        if (!i.typeOnly && from && to) addBreak(rule.rule, nameOf(from), nameOf(to), i.from);
+      }
+    }
   }
-  rows.push({ cells, line: i + 1 });
-});
-if (!rows.length) fail(DEPENDENCIES, "has no table of broken rules (| from | to | rule | example file |).");
 
-const matched = new Set();
-for (const row of rows) {
-  const where = `${DEPENDENCIES}:${row.line}`;
-  if (row.cells.length !== 4) {
-    fail(where, "a row has four cells: from, to, rule, example file.");
-    continue;
+  withoutFences(read(`${MAP_DIR}/${DEPENDENCIES}`)).split("\n").forEach((text, i) => {
+    if (!text.trim().startsWith("|")) return;
+    const cells = text.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim().replaceAll("`", ""));
+    if (cells.every((c) => /^:?-+:?$/.test(c))) return;
+    if (cells[0].toLowerCase() === "from") {
+      tableSeen = true;
+      if (cells.map((c) => c.toLowerCase()).join("|") !== "from|to|rule|example file") fail(`${DEPENDENCIES}:${i + 1}`, "the table header must be: | from | to | rule | example file |");
+      return;
+    }
+    rows.push({ cells, line: i + 1 });
+  });
+  if (!tableSeen) fail(DEPENDENCIES, "has no table of broken rules (| from | to | rule | example file |).");
+
+  const known = rules.map((r) => r.rule);
+  const matched = new Set();
+  for (const row of rows) {
+    const where = `${DEPENDENCIES}:${row.line}`;
+    if (row.cells.length !== 4) {
+      fail(where, "a row has four cells: from, to, rule, example file.");
+      continue;
+    }
+    const [from, to, rule, example] = row.cells;
+    if (!known.includes(rule)) {
+      fail(where, `rule "${rule}" isn't one of: ${known.join("; ")}.`);
+      continue;
+    }
+    const key = `${rule}|${from}|${to}`;
+    const found = breaks.get(key);
+    if (matched.has(key)) fail(where, `${from} to ${to} (${rule}) has two rows.`);
+    else if (!found) fail(where, `stale row: ${from} to ${to} is no break of "${rule}" today. Delete the row; \`from\` and \`to\` name the last segment of the directory (a single unit).`);
+    else if (!found.files.has(example)) fail(where, `example file ${example} doesn't break "${rule}" from ${from} to ${to}${existsSync(join(repo, example)) ? "" : " (it doesn't exist)"}; one that does: ${[...found.files][0]}.`);
+    matched.add(key);
   }
-  const [from, to, rule, example] = row.cells;
-  if (!RULES[rule]) {
-    fail(where, `rule "${rule}" isn't one of: ${Object.keys(RULES).join("; ")}.`);
-    continue;
-  }
-  const key = `${rule}|${from}|${to}`;
-  const found = breaks.get(key);
-  if (matched.has(key)) fail(where, `${from} to ${to} (${rule}) has two rows.`);
-  else if (!found) fail(where, `stale row: ${from} to ${to} is no break of "${rule}" today. Delete the row; \`from\` and \`to\` name single domains, \`lib\`, or a package and an app.`);
-  else if (!found.files.has(example)) fail(where, `example file ${example} doesn't break "${rule}" from ${from} to ${to}${existsSync(join(repo, example)) ? "" : " (it doesn't exist)"}; one that does: ${[...found.files][0]}.`);
-  matched.add(key);
+  for (const [key, b] of breaks)
+    if (!matched.has(key)) fail(DEPENDENCIES, `new break, a regression of "${b.rule}": ${describe(b)} (${[...b.files][0]}). Remove the import first; add a row only if the break is accepted.`);
 }
-for (const [key, b] of breaks)
-  if (!matched.has(key))
-    fail(DEPENDENCIES, `new break, a regression: ${RULES[b.rule](b.from, b.to)} (${[...b.files][0]}). Remove the import first; add a row only if the break is accepted.`);
 
 /** Tarjan: node → component number; nodes in one cycle share one, and a lone node gets its own. */
 function stronglyConnected(adjacency) {
@@ -385,36 +390,37 @@ function stronglyConnected(adjacency) {
 
 // ---- Tokens ----
 
-const { light, dark } = expectedTokens(repo);
-const mirror = blocks(readFileSync(join(here, "styles/tokens.css"), "utf8"));
-for (const [selector, expected] of [
-  [':root, [data-theme="light"]', light],
-  [':root:not([data-theme="light"])', dark],
-  [':root[data-theme="dark"]', dark],
+const expected = config.tokens ? expectedTokens(repo, config.tokens) : null;
+const mirror = blocks(readFileSync(join(repo, config.styles), "utf8"));
+const stylesName = config.styles;
+for (const [selector, values] of [
+  [':root, [data-theme="light"]', expected?.light],
+  [':root:not([data-theme="light"])', expected?.dark],
+  [':root[data-theme="dark"]', expected?.dark],
 ]) {
   const props = mirror.get(selector);
   if (!props) {
-    fail("styles/tokens.css", `has no ${selector} block.`);
+    fail(stylesName, `has no ${selector} block.`);
     continue;
   }
   for (const name of MIRRORED) {
-    if (props[name] === undefined) fail("styles/tokens.css", `${selector} lacks --${name}.`);
-    else if (props[name] !== expected[name])
-      fail("styles/tokens.css", `${selector} --${name} is ${props[name]}; packages/design-tokens says ${expected[name]}.`);
+    if (props[name] === undefined) fail(stylesName, `${selector} lacks --${name}.`);
+    else if (values && props[name] !== values[name])
+      fail(stylesName, `${selector} --${name} is ${props[name]}; the token source says ${values[name]}.`);
   }
   for (const name of Object.keys(props))
-    if (!MIRRORED.includes(name)) fail("styles/tokens.css", `${selector} sets --${name}, which tokens.mjs doesn't list.`);
+    if (!MIRRORED.includes(name)) fail(stylesName, `${selector} sets --${name}, which tokens.mjs doesn't list.`);
 }
 
-// Only tokens.css may hold a colour; the page sheet uses its variables.
+// Only the project's styles file may hold a colour; the page sheet uses its variables.
 const defined = new Set([...mirror.values()].flatMap((props) => Object.keys(props)));
 {
   const css = readFileSync(join(here, "styles/page.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   for (const match of css.matchAll(/(--[\w-]+)\s*:/g)) defined.add(match[1].slice(2));
   const raw = css.match(/#[0-9a-fA-F]{3,8}\b|\b(?:oklch|oklab|rgba?|hsla?|hwb|lab|lch)\(/g);
-  if (raw) fail("styles/page.css", `holds a raw colour (${raw[0]}): use a variable from tokens.css.`);
+  if (raw) fail("styles/page.css", `holds a raw colour (${raw[0]}): use a variable from the styles file.`);
   for (const match of css.matchAll(/var\(\s*--([\w-]+)\s*(,)?/g))
-    if (!defined.has(match[1]) && !match[2]) fail("styles/page.css", `uses --${match[1]}, which no stylesheet here defines.`);
+    if (!defined.has(match[1]) && !match[2]) fail("styles/page.css", `uses --${match[1]}, which no stylesheet defines.`);
 }
 
 if (problems.length) {

@@ -158,6 +158,8 @@ button {
 }
 
 .view {
+  /* The row stays the tall one when the hidden breadcrumb leaves no element in the second. */
+  grid-row: 3;
   min-height: 0;
   min-width: 0;
 }
@@ -938,4 +940,64 @@ button {
   .step {
     width: 220px;
   }
+}
+
+/* ---- A file or directory in the doc view ---- */
+
+.doc-path {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+
+.dir-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dir-list li {
+  padding: 3px 0;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.dir-list .is-dir a {
+  font-weight: 600;
+}
+
+.doc-image {
+  max-width: 100%;
+}
+
+.code {
+  min-width: max-content;
+  padding: 8px 0;
+  border: 1px solid var(--color-code-border);
+  border-radius: 6px;
+  background: var(--color-code-surface);
+  color: var(--color-code-foreground);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  counter-reset: line;
+}
+
+.code .line {
+  padding: 0 16px 0 0;
+  white-space: pre;
+  counter-increment: line;
+}
+
+.code .line::before {
+  display: inline-block;
+  width: 5ch;
+  margin-right: 14px;
+  color: var(--color-muted-foreground);
+  text-align: right;
+  content: counter(line);
+  user-select: none;
+}
+
+.code .line.is-target {
+  background: var(--color-warning-bg);
 }

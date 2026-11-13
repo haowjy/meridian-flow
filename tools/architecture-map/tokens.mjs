@@ -1,12 +1,13 @@
 /**
- * The design tokens the page mirrors, resolved from packages/design-tokens (the only source of
- * these values). Light lives in `ink-jade.css`'s `@theme` block, which a browser ignores, so the
- * page carries a mirror (`styles/tokens.css`) and `check.mjs` fails when a value there differs.
+ * The design tokens the page mirrors, resolved from the project's token source (the only source of
+ * these values; the config's `tokens` says where). A source may keep its light palette in a block
+ * a browser ignores (Tailwind's `@theme`), so the page carries a mirror (the config's `styles`)
+ * and `check.mjs` fails when a value there differs.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** The tokens the page uses; add one here, then copy its resolved value into styles/tokens.css. */
+/** The tokens page.css uses; add one here, then copy its resolved value into the project's styles file. */
 export const MIRRORED = [
   "color-background",
   "color-foreground",
@@ -33,8 +34,6 @@ export const MIRRORED = [
   "shadow-card",
   "font-sans",
 ];
-
-export const TOKENS_DIR = "packages/design-tokens/src";
 
 /** Custom properties by block, from a CSS file: selector text (whitespace-collapsed) to {name without `--`: value}. */
 export function blocks(css) {
@@ -64,19 +63,15 @@ function resolve(value, scope) {
   return out;
 }
 
-/** { light, dark }: each the mirrored tokens by name (without `--`), resolved. */
-export function expectedTokens(repo) {
-  const read = (file) => readFileSync(join(repo, TOKENS_DIR, file), "utf8");
-  const inkJade = read("ink-jade.css");
-  const light = {
-    ...declarations(inkJade, (s) => s === ":root" || s === "@theme"),
-  };
-  const darkOverrides = declarations(
-    read("themes.css"),
-    (s) => s.startsWith(':root[data-ui-theme="dark"]'),
-  );
-  const dark = { ...light, ...darkOverrides };
-  const pick = (scope) =>
-    Object.fromEntries(MIRRORED.map((name) => [name, resolve(scope[name] ?? "", scope)]));
+/**
+ * { light, dark }: each the mirrored tokens by name (without `--`), resolved.
+ * `source.light` = { file, selectors } (blocks whose selector is one of them);
+ * `source.dark` = { file, selectorPrefix } (blocks whose selector starts with it), overriding light.
+ */
+export function expectedTokens(repo, source) {
+  const read = (file) => readFileSync(join(repo, file), "utf8");
+  const light = declarations(read(source.light.file), (s) => source.light.selectors.includes(s));
+  const dark = { ...light, ...declarations(read(source.dark.file), (s) => s.startsWith(source.dark.selectorPrefix)) };
+  const pick = (scope) => Object.fromEntries(MIRRORED.map((name) => [name, resolve(scope[name] ?? "", scope)]));
   return { light: pick(light), dark: pick(dark) };
 }

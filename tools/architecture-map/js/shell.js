@@ -1,8 +1,9 @@
 /* What both viewers share: DOM helper, theme, page fetching, and the top bar. */
+import { storageKey } from "./config.js";
 import { parsePage } from "./pages.js";
 
-/** Where the repo root is, from the map's directory (`.context/system-architecture/`). */
-export const REPO_ROOT = "../../";
+/** Where the dev server serves the repo's files, relative to index.html. */
+const REPO_ROOT = "repo/";
 
 /** el("a", { href, class }, child, ...): children are nodes or strings; false/null are skipped. */
 export function el(tag, attrs, ...children) {
@@ -16,11 +17,14 @@ export function el(tag, attrs, ...children) {
   return node;
 }
 
-/** A repo file's text, served by `pnpm dev` at its repo path. */
-export async function fetchRepoFile(path) {
+/**
+ * A repo path as the dev server answers it: { kind: "dir", entries: [{ name, dir }] },
+ * { kind: "image", url }, or { kind: "text", text }.
+ */
+export async function fetchRepoEntry(path) {
   const root = new URL(REPO_ROOT, location.href);
-  const url = new URL(REPO_ROOT + path, location.href);
-  // `path` can come from the address bar (?doc=). Check the URL the browser will request, not
+  const url = new URL(REPO_ROOT + path.split("/").map(encodeURIComponent).join("/"), location.href);
+  // `path` can come from the address bar (#doc/). Check the URL the browser will request, not
   // the string: URL parsing turns %2e%2e into .. and moves a ? tail into the query.
   const requested = url.pathname.startsWith(root.pathname)
     ? decodeURIComponent(url.pathname.slice(root.pathname.length))
@@ -30,14 +34,24 @@ export async function fetchRepoFile(path) {
   }
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${path}: ${response.status} ${response.statusText}`.trim());
-  return response.text();
+  const type = response.headers.get("content-type") ?? "";
+  if (type.startsWith("application/json")) return { kind: "dir", entries: await response.json() };
+  if (type.startsWith("image/")) return { kind: "image", url: url.href };
+  return { kind: "text", text: await response.text() };
+}
+
+/** A repo file's text. */
+export async function fetchRepoFile(path) {
+  const entry = await fetchRepoEntry(path);
+  if (entry.kind !== "text") throw new Error(`${path}: not a text file`);
+  return entry.text;
 }
 
 export const fetchPage = async (path) => parsePage(await fetchRepoFile(path));
 
 // ---- Theme: follows the system until the reader pins one ----
 
-const THEME_KEY = "meridian-architecture-theme";
+const THEME_KEY = storageKey("theme");
 const themeListeners = new Set();
 const systemDark = matchMedia("(prefers-color-scheme: dark)");
 export const currentTheme = () => document.documentElement.dataset.theme ?? (systemDark.matches ? "dark" : "light");

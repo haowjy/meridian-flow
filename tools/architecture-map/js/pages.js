@@ -3,9 +3,6 @@
  * check.mjs parse pages with the same code and cannot disagree about what a page says.
  */
 
-export const REPO = "haowjy/meridian-flow";
-export const BRANCH = "main";
-
 export const NODE_KINDS = [
   "person",
   "client",
@@ -211,12 +208,21 @@ export const slug = (text) =>
     .trim()
     .replace(/\s/g, "-");
 
-export const sourceUrl = (path) => `https://github.com/${REPO}/blob/${BRANCH}/${path}`;
+/** A glob as a RegExp over repo paths: `*` is part of one segment, `**` any depth (`**` + `/` also matches none). */
+export function globRegExp(glob) {
+  const source = glob
+    .split(/(\*\*\/|\*\*|\*)/)
+    .map((part) => (part === "**/" ? "(?:.*/)?" : part === "**" ? ".*" : part === "*" ? "[^/]*" : part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")))
+    .join("");
+  return new RegExp(`^${source}$`);
+}
 
-export const MAP_DIR = ".context/system-architecture";
-
-/** The index of the state machine pages. */
-export const STATE_MACHINES_INDEX = ".context/state-machines/index.md";
+/** The directory at the start of `path` that a segment glob (`apps/*`, only `*`) matches, or null: the "unit" a file belongs to. */
+export function unitOf(path, glob) {
+  const depth = glob.split("/").length;
+  const unit = path.split("/").slice(0, depth).join("/");
+  return unit.split("/").length === depth && globRegExp(glob).test(unit) ? unit : null;
+}
 
 /** The text with the lines inside fenced code blocks blanked, so line numbers stay. */
 export function withoutFences(text) {
@@ -252,27 +258,29 @@ export function levelLinks(readme) {
 
 /**
  * Every level page, the one set the viewer and check.mjs both use: the README's top levels, then
- * the page each box's `Opens` names. `read(path)` returns a repo file's text. A page opened from
+ * the page each box's `Opens` names, all in `mapDir`. `read(path)` returns a repo file's text. A page opened from
  * two places keeps the first parent in breadth-first order, so System wins over Code.
  * Returns { roots: [{ id, title }], levels: Map id → { id, title, path, page, trail } } where
- * `title` is the name the nav and breadcrumb show (a root's README label; a child's page title
- * without its parent's "Server: " prefix) and `trail` is the ancestors, root first: [{ title, hash }].
+ * `title` is the name the nav and breadcrumb show (a root's README label; a child's page title,
+ * which loses its parent's "Server: " prefix here, as the heading the viewer shows does) and `trail` is the ancestors, root first: [{ title, hash }].
  */
-export async function loadLevelPages(read) {
-  const roots = levelLinks(await read(`${MAP_DIR}/README.md`));
+export async function loadLevelPages(read, mapDir) {
+  const roots = levelLinks(await read(`${mapDir}/README.md`));
   const levels = new Map();
-  const queue = roots.map((r) => ({ id: r.id, path: `${MAP_DIR}/${r.href}`, trail: [], label: r.title }));
+  const queue = roots.map((r) => ({ id: r.id, path: `${mapDir}/${r.href}`, trail: [], label: r.title }));
   while (queue.length) {
     const { id, path, trail, label } = queue.shift();
     if (levels.has(id)) continue;
     const page = parsePage(await read(path));
-    const title = label ?? page.title.replace(`${trail.at(-1).page}: `, "");
+    // The breadcrumb names the parent, so a child's shown title drops the "Server: " the .md heading keeps for GitHub readers.
+    if (!label) page.title = page.title.replace(`${trail.at(-1).page}: `, "");
+    const title = label ?? page.title;
     levels.set(id, { id, title, path, page, trail });
     for (const s of page.sections) {
       const opens = linksOf(item(s, "Opens")?.value ?? "")[0];
       const target = opens && resolveHref(path, opens.href).path;
-      if (!target?.startsWith(`${MAP_DIR}/`) || !target.endsWith(".md")) continue;
-      queue.push({ id: target.slice(MAP_DIR.length + 1, -3), path: target, trail: [...trail, { title, page: page.title, hash: `#${id}` }] });
+      if (!target?.startsWith(`${mapDir}/`) || !target.endsWith(".md")) continue;
+      queue.push({ id: target.slice(mapDir.length + 1, -3), path: target, trail: [...trail, { title, page: page.title, hash: `#${id}` }] });
     }
   }
   return { roots: roots.map((r) => ({ id: r.id, title: r.title })), levels };
