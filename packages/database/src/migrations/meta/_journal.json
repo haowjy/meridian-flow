@@ -883,13 +883,6 @@
       "when": 1794250040441,
       "tag": "0131_lineage_owned_drafts",
       "breakpoints": true
-    },
-    {
-      "idx": 126,
-      "version": "7",
-      "when": 1794292284866,
-      "tag": "0132_document_edits_thread_index",
-      "breakpoints": true
     }
   ]
 }
