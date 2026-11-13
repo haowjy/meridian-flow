@@ -42,8 +42,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.106.0",
-    "jsonrepair": "^3.14.1",
+    "@anthropic-ai/sdk": "catalog:",
+    "jsonrepair": "catalog:",
     "openai": "^6.45.0",
     "zod": "^4.4.3"
   },

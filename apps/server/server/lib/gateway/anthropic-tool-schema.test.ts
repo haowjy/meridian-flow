@@ -4,13 +4,10 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Anthropic advertises one object envelope for a root `oneOf`/`anyOf`
  */
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { WriteToolInputSchema } from "@meridian/agent-edit/integration";
-import {
-  type GenerateRequest,
-  resolveReasoning,
-  toAnthropicMessageParams,
-  user,
-} from "@meridian-flow/gateway";
+import { createGateway, type GenerateRequest, user } from "@meridian-flow/gateway";
 import { expect, it } from "vitest";
 import { WorkCommandSchema } from "../../domains/runtime/tools/core-tools.js";
 import { modelToolSchema } from "../../domains/runtime/tools/model-tool-schema.js";
@@ -21,57 +18,88 @@ const skillTool = {
   description: "Load a skill",
 };
 
-function toParams(
-  request: GenerateRequest,
+type WireTool = { input_schema: { properties: Record<string, { description: string }> } };
+
+/** Sends the request through the gateway to a local Anthropic-wire endpoint and returns what arrived. */
+async function wireTools(
+  request: Omit<GenerateRequest, "model" | "messages">,
   model: { id: string; maxOutputTokens: number },
   providerId: string,
-) {
-  const reasoning =
-    providerId === "deepseek"
-      ? {
-          efforts: ["low", "high", "max"] as const,
-          canDisable: true as const,
-          thinksByDefault: true as const,
-        }
-      : { efforts: ["low", "medium", "high", "max"] as const };
-  return toAnthropicMessageParams(
-    request,
-    {
-      ...model,
-      provider: providerId,
-      ...(providerId === "anthropic" ? { projectToolSchema: true as const } : {}),
-      reasoning,
-      promptCache: {
-        kind: providerId === "deepseek" ? ("automatic" as const) : ("explicit" as const),
-        shortTtlSeconds: null,
-        longTtlSeconds: null,
-      },
-    },
-    {
-      cacheTtlSeconds: null,
-      longCacheWrites: false,
-      reasoning: resolveReasoning(request.reasoning, reasoning),
-    },
-  );
+): Promise<WireTool[]> {
+  const bodies: { tools: WireTool[] }[] = [];
+  const server = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += chunk;
+    });
+    req.on("end", () => {
+      bodies.push(JSON.parse(raw));
+      res.statusCode = 400;
+      res.end('{"error":{"message":"captured"}}');
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const reasoning =
+      providerId === "deepseek"
+        ? {
+            efforts: ["low", "high", "max"] as const,
+            canDisable: true as const,
+            thinksByDefault: true as const,
+          }
+        : { efforts: ["low", "medium", "high", "max"] as const };
+    const gateway = createGateway({
+      providers: [
+        {
+          id: providerId,
+          adapter: "anthropic",
+          baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+          models: [
+            {
+              ...model,
+              provider: providerId,
+              tokenizer: "anthropic",
+              displayName: model.id,
+              contextWindow: 200_000,
+              ...(providerId === "anthropic" ? { projectToolSchema: true as const } : {}),
+              reasoning,
+              promptCache:
+                providerId === "deepseek"
+                  ? { kind: "automatic" as const, shortTtlSeconds: null, longTtlSeconds: null }
+                  : { kind: "explicit" as const, shortTtlSeconds: 300, longTtlSeconds: 3600 },
+              capabilities: new Set(),
+            },
+          ],
+        },
+      ],
+      defaultModel: model.id,
+    });
+    // The endpoint refuses the request; only what it received matters.
+    for await (const _ of gateway.stream({
+      ...request,
+      model: model.id,
+      messages: [user("Hello")],
+    }));
+    return bodies[0].tools;
+  } finally {
+    server.close();
+  }
 }
 
-it("preserves real Work and Write command instructions only when projecting for Anthropic", () => {
+it("preserves real Work and Write command instructions only when projecting for Anthropic", async () => {
   for (const input of [WorkCommandSchema, WriteToolInputSchema]) {
     const inputSchema = modelToolSchema(input);
     const original = structuredClone(inputSchema);
     const request = {
       promptCacheRetention: "short" as const,
-      messages: [user("Hello")],
       tools: [{ ...skillTool, inputSchema }],
     };
-    const params = toParams(
+    const tools = await wireTools(
       request,
       { id: "claude-sonnet-5-5", maxOutputTokens: 128_000 },
       "anthropic",
     );
-    const advertised = params.tools?.[0] as {
-      input_schema: { properties: Record<string, { description: string }>; required: string[] };
-    };
+    const advertised = tools[0];
     const branches = inputSchema.oneOf as Array<{
       description: string;
       required: string[];
@@ -97,13 +125,18 @@ it("preserves real Work and Write command instructions only when projecting for 
       ...request,
       tools: [{ ...skillTool, inputSchema: { ...root, anyOf: oneOf } }],
     };
-    expect(
-      toParams(anyOfRequest, { id: "claude-sonnet-5-5", maxOutputTokens: 128_000 }, "anthropic")
-        .tools?.[0],
-    ).toHaveProperty("input_schema", advertised.input_schema);
-    expect(
-      toParams(request, { id: "deepseek-flash", maxOutputTokens: 65_536 }, "deepseek").tools?.[0],
-    ).toHaveProperty("input_schema", original);
+    const anyOfTools = await wireTools(
+      anyOfRequest,
+      { id: "claude-sonnet-5-5", maxOutputTokens: 128_000 },
+      "anthropic",
+    );
+    expect(anyOfTools[0]).toHaveProperty("input_schema", advertised.input_schema);
+    const deepseekTools = await wireTools(
+      request,
+      { id: "deepseek-flash", maxOutputTokens: 65_536 },
+      "deepseek",
+    );
+    expect(deepseekTools[0]).toHaveProperty("input_schema", original);
     expect(inputSchema).toEqual(original);
   }
 });

@@ -4,11 +4,13 @@
  * is the decision alone are `stop-rule.test.ts`. Every case also runs the publication parity check.
  */
 
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import type { HandBackRequest, StopResponse } from "@meridian/contracts/threads";
 import type { GenerateRequest, ModelInfo, StreamEvent } from "@meridian-flow/gateway";
-import { streamProvider, streamWithRetry } from "@meridian-flow/gateway";
+import { createGateway } from "@meridian-flow/gateway";
 import { and, eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
@@ -972,7 +974,7 @@ else
     });
 
     it("a stop before the provider output leaves a response row with no finish reason and missing usage", async () => {
-      // Risk: the stop stamp lives in streamWithRetry, so only the real envelope and retry driver show it.
+      // Risk: the stop stamp lives in the gateway's retry driver, so only a real gateway against an endpoint that never answers shows it.
       const arrived = gate();
       const model: ModelInfo = {
         id: "gpt-5.6-luna",
@@ -986,23 +988,26 @@ else
         capabilities: new Set(),
       };
       const base = scriptedGateway({ usage: lowUsage });
-      const adapter = {
-        stream: (request: GenerateRequest) =>
-          streamProvider<never>({
-            start: { type: "start", provider: "openai", model: "gpt-5.6-luna" },
-            signal: request.signal,
-            open: () => new Promise(() => {}),
-            events: () => [],
-            result: () => ({
-              content: [],
-              toolCalls: [],
-              finishReason: "end_turn",
-              usage: { inputTokens: 0, outputTokens: 0 },
-              model: "gpt-5.6-luna",
-              provider: "openai",
-            }),
-          }),
-      };
+      // An endpoint that accepts the request and never answers: the provider output never starts.
+      const silent = createServer(() => {});
+      await new Promise<void>((resolve) => silent.listen(0, "127.0.0.1", resolve));
+      onTestFinished(() => {
+        silent.closeAllConnections();
+        silent.close();
+      });
+      const realGateway = createGateway({
+        providers: [
+          {
+            id: "openai",
+            adapter: "openai-compatible",
+            baseUrl: `http://127.0.0.1:${(silent.address() as AddressInfo).port}/v1`,
+            models: [model],
+          },
+        ],
+        defaultModel: model.id,
+        attemptStallMs: 0,
+        attemptCeilingMs: 0,
+      });
       const rig = await rigWith({
         gateway: {
           ...base,
@@ -1010,10 +1015,7 @@ else
           async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
             base.requests.push(request);
             arrived.open();
-            yield* streamWithRetry(adapter, request, model, undefined, {
-              stallMs: 0,
-              ceilingMs: 0,
-            });
+            yield* realGateway.stream(request);
           },
         },
       });

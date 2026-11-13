@@ -6,6 +6,9 @@ settings:
 
 catalogs:
   default:
+    '@anthropic-ai/sdk':
+      specifier: ^0.106.0
+      version: 0.106.0
     '@types/node':
       specifier: ^24
       version: 24.13.2
@@ -24,6 +27,9 @@ catalogs:
     drizzle-orm:
       specifier: ^0.45.2
       version: 0.45.2
+    jsonrepair:
+      specifier: ^3.14.1
+      version: 3.14.1
     nitro:
       specifier: 3.0.260610-beta
       version: 3.0.260610-beta
@@ -761,10 +767,10 @@ importers:
   packages/gateway:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: ^0.106.0
+        specifier: 'catalog:'
         version: 0.106.0(zod@4.4.3)
       jsonrepair:
-        specifier: ^3.14.1
+        specifier: 'catalog:'
         version: 3.14.1
       openai:
         specifier: ^6.45.0

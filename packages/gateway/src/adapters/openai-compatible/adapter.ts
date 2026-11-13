@@ -9,7 +9,7 @@
 import OpenAI from "openai";
 import type { ProviderConfig } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
-import { providerClientOptions } from "../provider-http-error.js";
+import { OPENAI_ENV_OPTOUT, providerClientOptions } from "../provider-http-error.js";
 import { streamProvider } from "../provider-stream.js";
 import { toOpenAIChatCompletionParams } from "./request-map.js";
 import {
@@ -19,7 +19,10 @@ import {
 } from "./stream-collect.js";
 
 export function createOpenAICompatibleAdapter(config: ProviderConfig): ProviderAdapter {
-  const client = new OpenAI(providerClientOptions(config));
+  const client = new OpenAI({
+    ...providerClientOptions(config, "https://api.openai.com/v1"),
+    ...OPENAI_ENV_OPTOUT,
+  });
   const providerId = config.id;
 
   return {

@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 
-import type { Gateway, GenerateRequest, StreamEvent } from "@meridian-flow/gateway";
+import type { Gateway, GenerateRequest, StreamEvent } from "../../apps/server/server/lib/app.js";
 import { createGatewayFromEnv } from "../../apps/server/server/lib/gateway/create-from-env.js";
 
 import { applyDevEnvToProcess } from "../../tools/dev/lib/dev-env.js";

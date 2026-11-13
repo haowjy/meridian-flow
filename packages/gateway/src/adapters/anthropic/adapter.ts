@@ -7,7 +7,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ProviderConfig } from "../../domain/index.js";
 import type { ProviderAdapter } from "../../ports/provider-adapter.js";
-import { type ProviderErrorPatterns, providerClientOptions } from "../provider-http-error.js";
+import {
+  ANTHROPIC_ENV_OPTOUT,
+  type ProviderErrorPatterns,
+  providerClientOptions,
+} from "../provider-http-error.js";
 import { streamProvider } from "../provider-stream.js";
 import { toAnthropicMessageParams } from "./request-map.js";
 import {
@@ -25,7 +29,10 @@ export const ANTHROPIC_ERROR_PATTERNS: Partial<ProviderErrorPatterns> = {
 };
 
 export function createAnthropicAdapter(config: ProviderConfig): ProviderAdapter {
-  const client = new Anthropic(providerClientOptions(config));
+  const client = new Anthropic({
+    ...providerClientOptions(config, "https://api.anthropic.com"),
+    ...ANTHROPIC_ENV_OPTOUT,
+  });
   const providerId = config.id;
 
   return {

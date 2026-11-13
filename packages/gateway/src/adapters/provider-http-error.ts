@@ -103,17 +103,35 @@ export const providerFetch: typeof fetch = async (input, init) => {
 /**
  * Constructor options every adapter's SDK client shares. `maxRetries: 0` because the
  * gateway owns retries (`streamWithRetry`); SDK retries would multiply them.
+ *
+ * Both SDKs fill every option left `undefined` from process environment variables
+ * (`*_BASE_URL`, `*_AUTH_TOKEN`, `*_ORG_ID`, `*_LOG`, ...), which would redirect requests or add
+ * credentials the config never named. So each option is passed explicitly: the adapter
+ * adds the SDK-specific ones with `null` (see `ANTHROPIC_ENV_OPTOUT`, `OPENAI_ENV_OPTOUT`).
+ * The SDKs' `*_CUSTOM_HEADERS` has no opt-out option and still applies.
  */
-export function providerClientOptions(config: ProviderConfig) {
+export function providerClientOptions(config: ProviderConfig, defaultBaseUrl: string) {
   return {
     // Self-hosted and mock endpoints need no key, but the SDKs require one.
     apiKey: config.auth?.apiKey || "not-needed",
-    baseURL: config.baseUrl,
+    baseURL: config.baseUrl ?? defaultBaseUrl,
     defaultHeaders: config.auth?.headers,
+    logLevel: "warn" as const,
     maxRetries: 0,
     fetch: providerFetch,
   };
 }
+
+/** Anthropic client options that default from the environment, set to "none". */
+export const ANTHROPIC_ENV_OPTOUT = { authToken: null, webhookKey: null };
+
+/** OpenAI client options that default from the environment, set to "none". */
+export const OPENAI_ENV_OPTOUT = {
+  adminAPIKey: null,
+  organization: null,
+  project: null,
+  webhookSecret: null,
+};
 
 function exactFailureBody(err: unknown): string | undefined {
   const headers = record(err)?.headers;

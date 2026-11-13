@@ -5,7 +5,6 @@
  * - Gateway price-source precedence and missing-price refusal (kb/wiki/architecture/model-gateway.md#one-registry-owns-models-and-prices)
  */
 
-import { mapAnthropicUsage, mapOpenAIUsage } from "@meridian-flow/gateway";
 import { describe, expect, it } from "vitest";
 import {
   extractPinnedRates,
@@ -37,23 +36,9 @@ describe("model pricing", () => {
     );
   });
 
-  it("prices OpenAI's inclusive cache counters without double-counting input", () => {
-    const usage = mapOpenAIUsage(
-      {
-        input_tokens: 1_903,
-        input_tokens_details: { cached_tokens: 1_792 },
-        output_tokens: 74,
-        output_tokens_details: { reasoning_tokens: 0 },
-        total_tokens: 1_977,
-      },
-      false,
-    );
+  it("prices inclusive cache counters without double-counting input", () => {
+    const usage = { inputTokens: 1_903, outputTokens: 74, cacheReadTokens: 1_792 };
 
-    expect(usage).toEqual({
-      inputTokens: 1_903,
-      outputTokens: 74,
-      cacheReadTokens: 1_792,
-    });
     expect(
       computeModelCost({
         provider: "deepseek",
@@ -84,16 +69,7 @@ describe("model pricing", () => {
       computeModelCost({
         provider: "deepseek",
         model: "deepseek-flash",
-        usage: mapAnthropicUsage(
-          {
-            input_tokens: inputTokens,
-            output_tokens: outputTokens,
-            cache_read_input_tokens: cacheReadTokens,
-            cache_creation_input_tokens: 0,
-            output_tokens_details: null,
-          } as Parameters<typeof mapAnthropicUsage>[0],
-          false,
-        ),
+        usage: { inputTokens: inputTokens + cacheReadTokens, outputTokens, cacheReadTokens },
         rateSource,
       }),
     );
@@ -105,36 +81,6 @@ describe("model pricing", () => {
     const totalMillicredits = costs.reduce((total, cost) => total + BigInt(cost.millicredits), 0n);
     expect(totalUsdMicros).toBe(8_971n);
     expect(totalMillicredits).toBe(1_035n);
-  });
-
-  it("retains Anthropic input categories when the terminal delta only updates output", () => {
-    const initial = mapAnthropicUsage(
-      {
-        input_tokens: 111,
-        output_tokens: 1,
-        cache_read_input_tokens: 1_792,
-        cache_creation_input_tokens: 0,
-        output_tokens_details: null,
-      } as Parameters<typeof mapAnthropicUsage>[0],
-      false,
-    );
-    const terminal = mapAnthropicUsage(
-      {
-        input_tokens: null,
-        output_tokens: 74,
-        cache_read_input_tokens: null,
-        cache_creation_input_tokens: null,
-        output_tokens_details: null,
-      } as Parameters<typeof mapAnthropicUsage>[0],
-      false,
-      initial,
-    );
-
-    expect(terminal).toEqual({
-      inputTokens: 1_903,
-      outputTokens: 74,
-      cacheReadTokens: 1_792,
-    });
   });
 
   it("rejects cache counters that exceed the canonical inclusive input total", () => {

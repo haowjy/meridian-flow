@@ -4,8 +4,6 @@
  */
 import { z } from "zod";
 
-export const API_DEBUG_MOCK_MODEL_SCRIPT_PATH = "/api/debug/mock-model/script";
-
 const toolCallSchema = z
   .strictObject({
     name: z.string().min(1),
