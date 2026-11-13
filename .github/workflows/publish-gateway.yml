@@ -1,0 +1,93 @@
+# Publishes @meridian-flow/gateway to npm when packages/gateway/package.json's version on main
+# is not on the registry yet. Release = bump the version in a PR and merge it.
+# Trusted publishing (OIDC) with provenance: no token secret. The trusted publisher on npmjs.com
+# names this file and the `npm` environment.
+#
+# Two jobs so the OIDC token never reaches code that installs dependencies: `verify` builds and
+# tests the tarball with no id-token; `publish` holds id-token and only runs npm on that tarball.
+name: Publish gateway
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - packages/gateway/package.json
+  workflow_dispatch:
+
+concurrency:
+  group: publish-gateway
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      publish: ${{ steps.version.outputs.publish }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.17.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Skip a version that is already published
+        id: version
+        run: |
+          NAME=$(node -p "require('./packages/gateway/package.json').name")
+          VERSION=$(node -p "require('./packages/gateway/package.json').version")
+          if npm view "${NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "${NAME}@${VERSION} is already on npm; nothing to publish"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+          # Versions with a pre-release part (0.2.0-rc.1) go to `next`, never `latest`.
+          if [[ "$VERSION" == *-* ]]; then echo "tag=next" >> "$GITHUB_OUTPUT"; else echo "tag=latest" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Pack, and check the tarball works for a consumer
+        if: steps.version.outputs.publish == 'true'
+        run: node tools/ci/check-gateway-package.mjs "$RUNNER_TEMP/gateway-pack"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.version.outputs.publish == 'true'
+        with:
+          name: gateway-tarball
+          path: ${{ runner.temp }}/gateway-pack/*.tgz
+          if-no-files-found: error
+
+  publish:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && needs.verify.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.17.0
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Ensure npm supports trusted publishing
+        run: |
+          # npm 12.0.0 omits sigstore from its published bundle (npm/cli#9722).
+          # Keep provenance publishing on the latest verified npm 11 release.
+          npm install -g npm@11.18.0
+          npm --version
+          test -f "$(npm root -g)/npm/node_modules/sigstore/package.json"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: gateway-tarball
+          path: ${{ runner.temp }}/gateway-pack
+
+      - name: Publish
+        env:
+          NPM_DIST_TAG: ${{ needs.verify.outputs.tag }}
+        run: npm publish "$RUNNER_TEMP"/gateway-pack/*.tgz --provenance --access public --tag "$NPM_DIST_TAG"
