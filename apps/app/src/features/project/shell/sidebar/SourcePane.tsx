@@ -22,6 +22,7 @@ export function SourcePane({
   label,
   title,
   actions,
+  search,
   bar,
   drop,
   children,
@@ -30,6 +31,8 @@ export function SourcePane({
   /** Tooltip and accessible name, for a list whose full name is longer than its label. */
   title?: string;
   actions?: ReactNode;
+  /** The list's search, above its heading. */
+  search?: ReactNode;
   /** Controls too wide for the heading's line, held still on their own line under it. */
   bar?: ReactNode;
   drop?: SourceDrop;
@@ -39,6 +42,7 @@ export function SourcePane({
   return (
     <DropRegion state={drop?.dropState ?? "idle"} className="flex min-h-0 flex-1 flex-col">
       <div {...drop?.dropProps} className="flex min-h-0 flex-1 flex-col">
+        {search ? <div className="shrink-0 px-2 pb-1">{search}</div> : null}
         <ListSectionHeader level={2} label={label} title={title} actions={actions} />
         {bar ? <div className="mx-2 flex shrink-0 items-center justify-end pb-1">{bar}</div> : null}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: scrolling at the edges while dragging. slop-lint: allow suppression the reason is stated in this comment */}

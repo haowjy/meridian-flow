@@ -1,6 +1,7 @@
 /**
  * Browser project addresses. After `/p/<projectId>` the first segment is the kind of main's item
- * (`chats`, `editor` or `trash`) and the rest names it. The Work scope is not in the address; the
+ * (`chats`, `editor` or `trash`) and the rest names it: a chat by id, or `chats/recent`, the chat
+ * lane's Recent chats page. The Work scope is not in the address; the
  * query holds the owner of a Scratch document or of a draft, and overlays.
  */
 import {
@@ -16,7 +17,7 @@ import {
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
 
 export type ProjectDestination =
-  | { kind: "new-chat" | "editor" }
+  | { kind: "new-chat" | "chat-recents" | "editor" }
   | { kind: "chat"; chatId: string }
   | { kind: "document"; scheme: ProjectContextTreeScheme; path: string }
   /** A document in Trash, by identity: it has no path while deleted. */
@@ -88,6 +89,7 @@ function parseDestination(parts: string[]): ProjectDestination | null {
   if (screen === undefined) return { kind: "new-chat" };
   if (screen === "chats") {
     if (rest.length === 0) return { kind: "new-chat" };
+    if (rest.length === 1 && rest[0] === "recent") return { kind: "chat-recents" };
     const chatId = rest.length === 1 ? uuid(rest[0]) : null;
     return chatId ? { kind: "chat", chatId } : null;
   }
@@ -169,6 +171,9 @@ export function projectAddressHref(address: ProjectAddress): string {
       break;
     case "chat":
       push("chats", d.chatId);
+      break;
+    case "chat-recents":
+      push("chats", "recent");
       break;
     case "editor":
       push("editor");

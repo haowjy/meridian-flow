@@ -73,12 +73,12 @@ Main shows what the address names, resolved by `resolveMainDocument` / `useMainD
 (`client/project-shell/store.ts`, per account and project in each browser tab, seeded from the
 device, never in history): the last chat and the last document on screen in either pane, or none.
 `useMainArrival` (`use-main-arrival.ts`) is the one writer for main: every arrival of main, a
-document or a chat, writes its kind's slot (none on the landing and on the new-chat composer, main's
-empty pages), so the side never holds what main left empty. A pick or link into the side writes the
+document or a chat, writes its kind's slot (none on main's empty pages: the landing, the new-chat composer and
+Recent chats), so the side never holds what main left empty. A pick or link into the side writes the
 other kind's slot. `resolveSide` (`side/side-item.ts`) is then only a read: the side shows the slot
 of the kind main is not, and a change of kind needs no swap code, because the slot of the kind
 main left already holds main's last item. Beside a document or the landing: the chat slot, else a
-new chat about main's document. Beside a chat or the new-chat composer: the document slot if it
+new chat about main's document. Beside a chat, the new-chat composer or Recent chats: the document slot if it
 opens, else nothing (the side's empty state). Nothing else is a source: not recents, not main's
 open tabs, so a document the writer closed does not come back. While main's document is opening,
 the side keeps what it showed. Nothing derives the side from activity (the chat that last edited
@@ -153,18 +153,21 @@ Slot wrappers paint their material, and document shells stay transparent. Every 
 the page and its ink), documents and chats alike, the phone's page uses `paper` directly, and an
 active tab chip takes the same surface.
 
-The Write | Chat switch (`shell/MainModeSwitch.tsx`) is main's mode, read from main's item (a chat
-or the new-chat composer is Chat, anything else Write) and never stored. Pressing it swaps the
+The Write | Chat switch (`shell/MainModeSwitch.tsx`) is main's mode, read from main's item (a chat,
+the new-chat composer or Recent chats is Chat, anything else Write) and never stored. Pressing it swaps the
 panes: main navigates to what the side holds of the pressed kind, else that lane's selected tab, else
 the lane's empty page (Recently opened; a new chat); the side then shows what main left, by the slot
 rule. The pressed side shows until main's item agrees.
 
 Under it, the sidebar's sources (`shell/sidebar/SourcesBody.tsx`, also the phone drawer's) are one
-strip, Chat, then the tree tabs the writer chose with + (`sidebar-tabs-store.ts`: Manuscript and
-Knowledge by default; + adds Your files), then Changes while it has something to offer; Unfiled (with its
-count) and Trash are quiet rows at the foot. The shown pane follows main's item: a document's tree,
-Unfiled, Trash for a deleted one, the Chat list for a chat or a Scratch note, unless Changes is on
-show. Scratch docks under the Chat list. Widths are per slot; the sidebar and the side panel each have one open/closed
+strip, Chat, then the tree tabs the writer chose with ⋯ (`sidebar-tabs-store.ts`: Manuscript and
+Knowledge by default; ⋯ adds Your files), then Changes while it has something to offer; Scratch,
+Unfiled (with its count) and Trash are quiet rows at the foot. Scratch is the picked named Work's
+notes, one more tree source over that Work's catalog; under No Work there is none, and a chat's
+notes stay in its Files menu. The shown pane follows main's item: a document's tree, Unfiled,
+Scratch for a note of the picked Work, Trash for a deleted one, the Chat list for a chat, unless
+Changes is on show. A document the sidebar doesn't list (another Work's note, a chat's) leaves the
+pane where it is. Widths are per slot; the sidebar and the side panel each have one open/closed
 preference for every kind of main. Preferences hydrate before the desktop component
 mounts, and `ProjectView` gates the mount rather than placing a conditional between hooks. One
 merged layout subscription is the only whole-preferences subscription.
@@ -234,9 +237,10 @@ on refusal, returns to the origin tab if the user hasn't moved focus elsewhere.
 ## Navigation and chat
 
 `routing/chat-navigation.tsx` is the single command seam for main: `openChat` navigates main to the
-chat, and `openNewChat` to `/chats`, main's new-chat composer. The side chooses its own chat only
+chat, `openNewChat` to `/chats`, main's new-chat composer, and `openChatRecents` to `/chats/recent`, Recent
+chats (the band's clock door in Chat; in Write it opens Recently opened). The side chooses its own chat only
 through the chat slot (the side's picker, or a chat created from the side's composer). `display` is
-the chat main shows (`new` or one thread), null when main holds no chat; `lastShownChatId` is the
+the chat lane's page main shows (`new`, `chat-recents` or one thread), null when main holds no chat; `lastShownChatId` is the
 chat slot (`readLastShownChat` in `client/project-shell/store.ts`). A chat created from `/chats`
 takes main and its arrival fills the slot; one created from the side's composer fills the slot
 and stays beside. A link or door to a page that

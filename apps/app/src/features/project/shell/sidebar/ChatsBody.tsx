@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { THREAD_TITLE_MAX_LENGTH, type ThreadListItem } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { Pin, Plus } from "lucide-react";
+import { Pin } from "lucide-react";
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { runFavoriteCommand } from "@/client/query/thread-user-state-commands";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
@@ -11,8 +11,8 @@ import { announce, announceError } from "@/client/stores";
 import { ActionNotice } from "@/components/app/ActionNotice";
 import { AskOnce } from "@/components/app/AskOnce";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { Button } from "@/components/ui/button";
 import { DropdownMenuItem, useMenuActionDispatch } from "@/components/ui/dropdown-menu";
-import { IconButton } from "@/components/ui/icon-button";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { ListSection } from "@/components/ui/list-section";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
@@ -61,7 +61,6 @@ export function ChatsBody({
   currentThreadId,
   onOpenChat,
   onNewChat,
-  footer,
 }: {
   projectId: string;
   scopeWorkId: string | null;
@@ -69,7 +68,6 @@ export function ChatsBody({
   currentThreadId: string | null;
   onOpenChat: (threadId: string) => void;
   onNewChat: () => void;
-  footer?: ReactNode;
 }) {
   const {
     threads,
@@ -163,15 +161,15 @@ export function ChatsBody({
     <div ref={root} className="flex min-h-0 flex-1 flex-col">
       <SourcePane
         label={t`Chats`}
+        search={
+          <SettledSearchField quiet label={t`Find a chat`} value={search} onSettle={setSearch} />
+        }
         actions={
-          <IconButton label={t`New chat`} onClick={onNewChat}>
-            <Plus aria-hidden />
-          </IconButton>
+          <Button variant="quiet" size="xs" onClick={onNewChat}>
+            <Trans>New chat</Trans>
+          </Button>
         }
       >
-        <div className="px-2 pt-1 pb-1">
-          <SettledSearchField label={t`Find a chat`} value={search} onSettle={setSearch} />
-        </div>
         {notice ? (
           <DeletedLine
             key={notice.id}
@@ -234,7 +232,6 @@ export function ChatsBody({
           </>
         )}
       </SourcePane>
-      {footer}
     </div>
   );
 }

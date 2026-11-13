@@ -1,6 +1,7 @@
 /** Pure normalized-catalog projection and ranking for file suggestion hosts. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { CatalogCacheView } from "@meridian/resource-replica";
+import type { CatalogFile } from "@/client/query/context-catalog-projection";
 
 export type FileSuggestionKind = "file" | "dir";
 
@@ -55,6 +56,21 @@ export function catalogFileSuggestions(views: readonly CatalogCacheView[]): File
     }
   }
   return suggestions;
+}
+
+/** One catalog file as a suggestion, keyed by its document. */
+export function fileSuggestion(
+  scheme: ProjectContextTreeScheme,
+  file: CatalogFile,
+): FileSuggestion {
+  return {
+    entryId: file.documentId,
+    scheme,
+    path: file.path,
+    name: file.name,
+    kind: "file",
+    parents: file.path.split("/").filter(Boolean).slice(0, -1),
+  };
 }
 
 /**
@@ -125,8 +141,8 @@ function matchRank(entry: FileSuggestion, query: string): number | null {
   const name = entry.name.toLocaleLowerCase();
   if (name.startsWith(query)) return 0;
   if (nameBoundaryIndexes(name).some((index) => name.startsWith(query, index))) return 1;
-  const fullPath = `${entry.scheme} ${entry.parents.join(" ")} ${entry.path}`.toLocaleLowerCase();
-  return fullPath.includes(query) ? 2 : null;
+  // Not the scheme: "man" would otherwise match every Manuscript file.
+  return entry.path.toLocaleLowerCase().includes(query) ? 2 : null;
 }
 
 function nameBoundaryIndexes(name: string): number[] {

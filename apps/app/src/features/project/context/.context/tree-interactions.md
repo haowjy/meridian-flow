@@ -248,7 +248,7 @@ and dialog serve all Scratch rows, retaining each target's owner. The actual own
 
 ## Selecting and dragging rows
 
-The sidebar's sources, the Chat list's Scratch and a Work's Files are each one list:
+The sidebar's sources, a chat's Files-menu Scratch and a Work's Files are each one list:
 `useEntryList` owns its selection, its entries route and, through `EntryList`,
 its drop scope. Recently opened (main's landing) is a list too, with its own
 `useEntrySelection` and no drop: its rows are `ListRow` links whose drag carries the selection as
@@ -324,14 +324,15 @@ selection of one), not the open row.
 
 ### Dropping across systems, and dropping references
 
-In the sidebar the sources sit behind icon tabs, with Unfiled and Trash as rows at its foot
+In the sidebar the sources sit behind icon tabs, with Scratch (under a named Work), Unfiled and
+Trash as rows at its foot
 (`shell/sidebar/SourcesBody.tsx`). Each source in its `SOURCES` table has one root drop, used
 by its tab or foot row and by its pane (`SourcePane`), and the strip, the foot and the pane
 share the sidebar's one drop scope. Dropping on a source's tab lands at that source's root
 ("Move to Knowledge"), and so does its heading or the space below its last row; the usual
 crossing-system rules apply, so Your files still asks. A drag that rests on a tab for 600 ms
-opens it, as on a closed folder, for a drop into a folder inside. Scratch is no tab: it docks
-under the Chat list with its own list and drop (`RailScratchSection`). Trash is a source too,
+opens it, as on a closed folder, for a drop into a folder inside. Scratch's foot row and pane are
+the picked Work's Scratch root, a system of its own, so a drop there asks Move or Copy. Trash is a source too,
 not a scheme: rows dropped on its row or its pane are deleted at once, with no menu, through
 `useDeleteContextEntries`, and its rows drag out to be restored where
 they land.

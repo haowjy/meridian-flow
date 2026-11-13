@@ -4,7 +4,7 @@ import { persist } from "zustand/middleware";
 /** A tree source the writer can put in the middle of the strip, between Chat and Changes. */
 export type TreeTab = "manuscript" | "kb" | "user";
 
-/** Every tree source the + menu offers, in strip order. */
+/** Every tree source the ⋯ menu offers, in strip order. */
 export const TREE_TABS: readonly TreeTab[] = ["manuscript", "kb", "user"];
 
 const DEFAULT_TREE_TABS: readonly TreeTab[] = ["manuscript", "kb"];

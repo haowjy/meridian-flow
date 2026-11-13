@@ -1,8 +1,8 @@
 /**
  * Every arrival of main, for both kinds, in one place. Main shows what its address names; when it
  * arrives at an item this writes the kind's slot (`client/project-shell/store.ts`), which is all
- * the side reads, so a change of kind needs no swap code. Main's empty pages (the landing, the
- * new-chat composer) null their slot: the side never holds what main left empty.
+ * the side reads, so a change of kind needs no swap code. Main's empty pages (Recently opened, the
+ * new-chat composer, Recent chats) null their slot: the side never holds what main left empty.
  *
  * It also closes the chat tabs of chats deleted elsewhere (`useDropGoneChatTabs`).
  *
@@ -71,14 +71,14 @@ export function useMainArrival({
   }, [accountId, projectId, locationKey, document, recorded]);
 
   const chatId = main.kind === "chat" ? main.chatId : null;
-  const onNewChat = main.kind === "new-chat";
+  const onChatPage = main.kind === "new-chat" || main.kind === "chat-recents";
   const onLanding = main.kind === "landing";
   useEffect(() => {
     if (chatId) {
       arriveMainTab(accountId, projectId, { kind: "chat", chatId });
       writeLastShownChat(accountId, projectId, chatId);
-    } else if (onNewChat) writeLastShownChat(accountId, projectId, null);
-  }, [accountId, projectId, chatId, onNewChat]);
+    } else if (onChatPage) writeLastShownChat(accountId, projectId, null);
+  }, [accountId, projectId, chatId, onChatPage]);
   useEffect(() => {
     if (onLanding) writeLastShownDocument(accountId, projectId, null);
   }, [accountId, projectId, onLanding]);

@@ -12,7 +12,6 @@ import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { RemovedDocumentChip, RemovedNoticeSlot } from "../context/RemovedDocumentNotice";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
-import type { ProjectRouteCommands } from "../routing/project-route";
 import { BandIconButton } from "./BandIconButton";
 import { MainTabMenu, MainTabStrip } from "./MainTabStrip";
 import { PaneHeader, type PaneHeaderRailToggle } from "./PaneHeader";
@@ -37,13 +36,14 @@ export function MainHeader({
   kind: MainTabKind;
   /** The item main shows in that lane, if any. */
   mainTab?: MainTab;
-  /** Main is the Recently opened landing: the door is the current place. */
+  /** Main is its lane's recent page: the door is the current place. */
   landing?: boolean;
   /** Main is on its lane's empty page (the new-chat composer): Close all leaves it there. */
   keepMain?: boolean;
   /** Main's item when it takes no tab (an address that names nothing, the Trash). */
   current?: ReactNode;
-  onShowRecents: ProjectRouteCommands["showEditorRecents"];
+  /** The door: the lane's recent page (Recently opened documents, Recent chats). */
+  onShowRecents: () => void;
   /** Absent while no Work is ready to hold an Untitled document. */
   onNew?: () => void;
   sidebarToggle: PaneHeaderRailToggle;
@@ -58,7 +58,7 @@ export function MainHeader({
       leading={
         <>
           <ModeLabel kind={kind} />
-          <RecentlyOpenedDoor active={landing} onClick={() => onShowRecents({ replace: false })} />
+          <RecentlyOpenedDoor kind={kind} active={landing} onClick={onShowRecents} />
         </>
       }
       title={
@@ -69,7 +69,6 @@ export function MainHeader({
             open={open}
             mainTab={mainTab}
             current={current}
-            onShowRecents={onShowRecents}
             onNew={onNew}
           />
           <RemovedNoticeSlot>
@@ -81,7 +80,6 @@ export function MainHeader({
             open={open}
             mainTab={mainTab}
             keepMain={keepMain || landing}
-            onShowRecents={onShowRecents}
           />
         </div>
       }
@@ -105,13 +103,21 @@ function ModeLabel({ kind }: { kind: MainTabKind }) {
 }
 
 /**
- * The door to Recently opened, icon only, right after the sidebar toggle. Current while the
- * landing is the page below (the page rises into it).
+ * The door to the lane's recent page (Recently opened documents, Recent chats), icon only, right
+ * after the sidebar toggle. Current while that page is the page below (the page rises into it).
  */
-function RecentlyOpenedDoor({ active, onClick }: { active: boolean; onClick: () => void }) {
+function RecentlyOpenedDoor({
+  kind,
+  active,
+  onClick,
+}: {
+  kind: MainTabKind;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
     <BandIconButton
-      label={t`Recently opened`}
+      label={kind === "chat" ? t`Recent chats` : t`Recently opened`}
       active={active}
       data-recents-door
       onClick={(event) => {

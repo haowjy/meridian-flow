@@ -48,8 +48,10 @@ import { useReferenceDrag } from "../context/entry-drag/reference-source";
 import { tabSubject } from "../context/tab-subject";
 import { useIsDraftOnly } from "../context/use-is-draft-only";
 import { useChatNavigation } from "../routing/chat-navigation";
-import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
-import type { ProjectRouteCommands } from "../routing/project-route";
+import {
+  type OpenContextRoute,
+  useProjectRouteCommands,
+} from "../routing/ProjectNavigationContext";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
 import { useDocumentPaint } from "../views";
 import { BandIconButton } from "./BandIconButton";
@@ -64,15 +66,14 @@ export function useMainTabCommands({
   kind,
   open,
   mainKey,
-  onShowRecents,
 }: {
   projectId: string;
   kind: MainTabKind;
   open: OpenContextRoute;
   /** The tab main shows; null while main holds no tab. */
   mainKey: string | null;
-  onShowRecents: ProjectRouteCommands["showEditorRecents"];
 }) {
+  const { showEditorRecents } = useProjectRouteCommands();
   const accountId = useAccountId();
   const openInMain = useOpenInMain(projectId, open);
   const chat = useChatNavigation();
@@ -87,8 +88,10 @@ export function useMainTabCommands({
   );
   const showEmpty = useCallback(
     () =>
-      kind === "document" ? onShowRecents({ replace: true }) : chat.openNewChat({ replace: true }),
-    [kind, onShowRecents, chat],
+      kind === "document"
+        ? showEditorRecents({ replace: true })
+        : chat.openNewChat({ replace: true }),
+    [kind, showEditorRecents, chat],
   );
   const show = useCallback(
     (tab: MainTab | null) => (tab ? select(tab, { replace: true }) : void showEmpty()),
@@ -122,7 +125,6 @@ export function MainTabStrip({
   open,
   mainTab,
   current,
-  onShowRecents,
   onNew,
 }: {
   projectId: string;
@@ -133,13 +135,12 @@ export function MainTabStrip({
   mainTab?: MainTab;
   /** Main's item when it takes no tab (a removed page, the Trash), drawn as the active chip after the tabs. */
   current?: ReactNode;
-  onShowRecents: ProjectRouteCommands["showEditorRecents"];
   /** Absent while nothing can be created (documents: no Work is ready to hold an Untitled one). */
   onNew?: () => void;
 }) {
   const mainKey = mainTab ? mainTabKey(mainTab) : null;
   const { tabs, unrecorded } = useDrawnTabs(kind, mainTab);
-  const commands = useMainTabCommands({ projectId, kind, open, mainKey, onShowRecents });
+  const commands = useMainTabCommands({ projectId, kind, open, mainKey });
   const stripRef = useRef<HTMLDivElement>(null);
   const more = useScrollEdges(stripRef);
   useActiveTabVisibility(stripRef, mainKey ?? (current ? "current" : null));
@@ -238,7 +239,6 @@ export function MainTabMenu({
   open,
   mainTab,
   keepMain,
-  onShowRecents,
 }: {
   projectId: string;
   kind: MainTabKind;
@@ -246,11 +246,10 @@ export function MainTabMenu({
   mainTab?: MainTab;
   /** Close all leaves main's item where it is: the lane's empty page is the goal. */
   keepMain: boolean;
-  onShowRecents: ProjectRouteCommands["showEditorRecents"];
 }) {
   const mainKey = mainTab ? mainTabKey(mainTab) : null;
   const { tabs, unrecorded } = useDrawnTabs(kind, mainTab);
-  const commands = useMainTabCommands({ projectId, kind, open, mainKey, onShowRecents });
+  const commands = useMainTabCommands({ projectId, kind, open, mainKey });
   // Each document's page has its own band, so the trigger Radix would refocus is gone.
   const focusAfter = useRef<(() => HTMLElement | null) | null>(null);
   const listed = unrecorded ? [...tabs, unrecorded] : tabs;
