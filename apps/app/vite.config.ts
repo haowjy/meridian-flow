@@ -9,6 +9,7 @@ import { nitro } from "nitro/vite";
 import { defineConfig, loadEnv } from "vite";
 
 import { apiHttpDevProxyPlugin } from "./dev/api-http-dev-proxy-plugin";
+import { architectureDevPlugin } from "./dev/architecture-dev-plugin";
 import { createPortlessHttpsAgent, resolvePortlessServerOrigin } from "./dev/portless-dev-helpers";
 import { linguiMacroBabelPlugin } from "./dev/vite-plugins";
 import { readOptionalEnvString } from "./src/core/env";
@@ -76,6 +77,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       apiHttpDevProxyPlugin(apiDevOrigin, portlessHttpsAgent),
+      architectureDevPlugin(repoRoot),
       linguiMacroBabelPlugin(),
       tailwindcss(),
       tanstackStart({
