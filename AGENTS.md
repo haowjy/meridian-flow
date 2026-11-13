@@ -32,9 +32,9 @@ testing shows something better.
 ## Engineering
 
 **Choose the simpler system, not the smaller change.** When a case doesn't fit, change the
-design so it does, instead of adding a branch, flag or special case to the old one. Judge a
-choice by the code left afterwards: a bigger change or more deletion that leaves less to
-understand wins, and the next change should be easier than this one was.
+design so it does instead of adding a branch, flag or special case to the old one. Judge a
+choice by the code it leaves: a bigger change, or more deletion, is the right one when less is
+left to understand and the next change gets easier.
 
 **Fix structural debt in the same PR,** whatever the PR's size: refactor, delete dead
 code and simplify without asking. A found fix too large for the PR gets its own PR now;
@@ -67,11 +67,12 @@ rules, nav) live in `.context/system-architecture/`; the viewer, the check and t
 reusable engine in [tools/architecture-map](tools/architecture-map/README.md), which names no project.
 
 **One way to do one thing, so the app feels consistent.** The same situation behaves and
-looks the same wherever the writer meets it: an action waiting on the server, a failure, an
-Undo, a list, a picker. A state machine takes one of the shapes in the index's patterns, and a
-screen uses the shared component where one exists. Before adding a state or a component, check
-whether an existing one already covers the case; a second way to do the same thing is
-structural debt, fixed by moving the cases onto one.
+looks the same wherever the writer meets it: an action the server hasn't answered yet, a
+failure, an Undo, a list, a picker. A state machine takes one of the shapes under Patterns in
+[the index](.context/state-machines/index.md), and a screen uses the shared component where one
+exists. Before adding a state or a component, check whether an existing one already covers the
+case. A second way to do the same thing is structural debt: fix it by moving every use onto
+one.
 
 **Tooling.** `pnpm`, Biome and Nx, never npm. No raw colors outside
 `packages/design-tokens`.
