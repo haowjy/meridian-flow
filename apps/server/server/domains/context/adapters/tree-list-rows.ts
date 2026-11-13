@@ -173,7 +173,15 @@ async function pendingText(tx: DrizzleDb, drafts: readonly string[]) {
 }
 
 /** An admitted `create`'s node id is refused: another node, a document or a list has it. */
-export class NodeIdRefusedError extends Error {}
+export class NodeIdRefusedError extends Error {
+  /** The node id at fault, when the claim could tell which. */
+  constructor(
+    message: string,
+    readonly nodeId?: string,
+  ) {
+    super(message);
+  }
+}
 
 /**
  * Claims the node ids the records create, in the admitting transaction: the claim table's key is
@@ -198,16 +206,23 @@ export async function claimNodeIds(
         .onConflictDoNothing({ target: treeNodeIds.id })
         .returning({ id: treeNodeIds.id })),
     );
-  if (claimed.length !== ids.length) throw new NodeIdRefusedError("a node id already in use");
+  if (claimed.length !== ids.length) {
+    const won = new Set(claimed.map((row) => row.id as string));
+    throw new NodeIdRefusedError(
+      "a node id already in use",
+      ids.find((id) => !won.has(id)),
+    );
+  }
   for (const batch of chunks(ids)) {
     const list = sql.join(
       batch.map((id) => sql`${id}::uuid`),
       sql`, `,
     );
     const used = await tx.execute(sql`
-      SELECT 1 FROM documents WHERE id IN (${list})
-      UNION ALL SELECT 1 FROM document_yjs_heads WHERE kind = 'tree_list' AND document_id IN (${list}) LIMIT 1`);
-    if (used.length > 0) throw new NodeIdRefusedError("a node id already in use");
+      SELECT id::text AS id FROM documents WHERE id IN (${list})
+      UNION ALL SELECT document_id::text FROM document_yjs_heads WHERE kind = 'tree_list' AND document_id IN (${list}) LIMIT 1`);
+    if (used.length > 0)
+      throw new NodeIdRefusedError("a node id already in use", (used[0] as { id: string }).id);
   }
 }
 

@@ -519,6 +519,7 @@ describe("a record is judged against the list it joins", () => {
     expect(admit(doc, update, connection)).toEqual({
       ok: false,
       reason: "a record id already in the list",
+      record: "alice-delete",
     });
     expect(state(doc)).toBe(before);
     expect(replayView(doc, LIVE).nodes.get("ch1")?.trashed).toBe(true);
@@ -559,6 +560,7 @@ describe("a record is judged against the list it joins", () => {
     expect(admit(doc, again.update, connection)).toEqual({
       ok: false,
       reason: "a node id already in use",
+      record: expect.any(String),
     });
     const foreign = client(
       doc,
@@ -569,7 +571,7 @@ describe("a record is judged against the list it joins", () => {
         ...connection,
         takenElsewhere: (id) => id === "another-projects-document",
       }),
-    ).toEqual({ ok: false, reason: "a node id already in use" });
+    ).toEqual({ ok: false, reason: "a node id already in use", record: expect.any(String) });
     expect(state(doc)).toBe(before);
   });
 

@@ -10,7 +10,7 @@
  * with the verdicts the server appended after them), delivered from `onCommitted`.
  */
 
-import { treeRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
+import { listRebuildClose, treeRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import type { TreeList, TreeListStore } from "../domains/context/ports/tree-list-store.js";
@@ -163,7 +163,7 @@ export function createTreeRooms(services: TreeRoomServices) {
       name: "update.refused",
       payload: { listId: tree.listId, reason: result.reason },
     });
-    throw refusal(tree, WS_CLOSE.LIST_REBUILD);
+    throw refusal(tree, listRebuildClose(result.record));
   }
 
   return {

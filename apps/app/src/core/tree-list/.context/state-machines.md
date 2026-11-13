@@ -38,8 +38,8 @@ stateDiagram-v2
   Access that ended is then refused on the reconnect.
 - A rebuild stores the records it carries in the next stored database before the old one goes,
   so an owner that closes mid-rebuild leaves them to the next owner, which appends again
-  whatever the server lacks. After a second rebuild in a minute the records go one admission each,
-  to find the one the server refuses; the one given up on is in the snapshot's `rejected`.
+  whatever the server lacks. The server's close names the record it refused;
+  that one is given up on (the snapshot's `rejected`) and the rest go in one update.
 
 ## Connection owner
 

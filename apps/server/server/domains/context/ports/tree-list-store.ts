@@ -51,7 +51,7 @@ export const NO_WRITE_ACCESS = "no write access";
 
 export type AdmitResult =
   | { ok: true; committed: CommittedTreeUpdate | null }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; record?: string };
 
 /** What an account may do in a list's room: write, or only read. */
 export type TreeListAccess = { listId: string; level: "edit" | "read" };
@@ -74,7 +74,7 @@ export interface TreeListStore {
   /**
    * Admits a client's Yjs update for the connection of `accountId`: checks it, appends the
    * server's verdicts, journals it and writes the rows it changes. A refused whole update stores
-   * nothing. `committed` is null when the list already held every item.
+   * nothing, and names the record that earned the refusal when one did. `committed` is null when the list already held every item.
    */
   admit(input: { list: TreeList; accountId: string; update: Uint8Array }): Promise<AdmitResult>;
   /**

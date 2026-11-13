@@ -12,8 +12,9 @@ the browser (`apps/app/src/core/tree-list`) and by the server's room tests.
 - The state follows the code of the socket's close: `4210` (the server refused the copy whole)
   replaces the copy, the new one syncs under a new Yjs client id, and the records it lacks are
   appended again in one update. `4401` and `4403` are `denied`; any other close reconnects.
-  After a second rebuild in a minute the records go one admission each, and a record refused
-  again and again is dropped (`onRejected`), never looped on.
+  The server's close names the record it refused (`list-rebuild:<record id>`): that record is
+  dropped (`onRejected`) and the rest go again in one update. A refusal that names none,
+  repeated more than three times in a minute, drops them all, so a copy never rebuilds forever.
 - The records a rebuild carries live in the `ListCopy` (`carried`, `settleCarried`), stored
   durably by the browser's copy: the connection forgets them once the rebuilt copy holds them.
 
