@@ -70,7 +70,7 @@ same rule (`placeIn(kind, main)`); only the sidebar, outside every pane, opens i
 | Write or Chat switch to kind k | `openMain(slot of k ?? current of k ?? empty page of k)`: the panes swap kinds, the side's item first |
 | Close main's tab | main shows the next tab of its kind, else its empty page; the side stays |
 | Delete or remove the side's item | the side shows its empty state |
-| A chat tab's chat is deleted (here or in another window) | its tab closes; the probe of the owner gate finds a delete elsewhere on a return to the window, or within 30s |
+| A chat tab's chat is deleted (here or in another window) | its tab closes; the owner-gate probe of the tabs main isn't showing finds a delete elsewhere at mount, on the server's `project-chats-hint` (published after a chat or Work delete or restore) and after a catalog-channel reconnect; nothing polls |
 
 Home is the new-chat composer: it suggests what to continue and documents to open beside it, and a
 suggested document is the other kind, so it opens in the side.

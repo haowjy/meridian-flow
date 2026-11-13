@@ -35,7 +35,7 @@ export function useMainArrival({
   document: OpenDocument | null;
   locationKey: string | undefined;
 }) {
-  useDropGoneChatTabs(accountId, projectId);
+  useDropGoneChatTabs(accountId, projectId, main.kind === "chat" ? main.chatId : null);
   // A document's arrival opens or selects its tab once per arrival at an address; after that its
   // descriptor only refreshes the tab while it is open.
   const arrivedAt = useRef<string | undefined>(undefined);

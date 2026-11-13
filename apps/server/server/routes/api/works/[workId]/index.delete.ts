@@ -20,5 +20,7 @@ export default defineEventHandler(async (event) => {
     },
     work.id,
   );
+  // The Work's chats left the project list with it.
+  app.contextCatalogWakeHub.publish({ type: "project-chats-hint", projectId: work.projectId });
   setResponseStatus(event, 204);
 });

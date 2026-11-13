@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   const { userId } = user;
   const threadId = getRouterParam(event, "threadId") ?? "";
 
-  await deleteOwnedThreadToTrash(
+  const thread = await deleteOwnedThreadToTrash(
     {
       repos: threadRepos,
       projects: projectRepo,
@@ -25,5 +25,7 @@ export default defineEventHandler(async (event) => {
     threadId,
     userId,
   );
+  // The list rows changed, so open windows recheck their chat tabs.
+  app.contextCatalogWakeHub.publish({ type: "project-chats-hint", projectId: thread.projectId });
   setResponseStatus(event, 204);
 });

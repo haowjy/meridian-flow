@@ -52,6 +52,7 @@ export class ThreadSocketClient implements ThreadTransport {
     send: (message) => this.send(message),
   });
   private readonly connectionListeners = new Set<(state: ConnectionState) => void>();
+  private hasConnected = false;
   private readonly catalogSubscriptions = new Map<
     string,
     Set<(hint: CatalogChannelMessage) => void>
@@ -226,9 +227,14 @@ export class ThreadSocketClient implements ThreadTransport {
       onConnected: () => {
         this.socket.markConnected();
         this.subscriptions.connected();
-        for (const projectId of this.catalogSubscriptions.keys()) {
+        for (const [projectId, listeners] of this.catalogSubscriptions) {
           this.send({ type: "catalog.subscribe", requestId: this.nextRequestId(), projectId });
+          // Hints sent while the socket was down are gone. Tell the listeners the project's chats
+          // may have moved, as the server's own hint would.
+          if (this.hasConnected)
+            for (const listener of listeners) listener({ type: "project-chats-hint", projectId });
         }
+        this.hasConnected = true;
       },
       onAskAnswerReply: (reply) => this.settleAskAnswer(reply.requestId, reply),
       onRequestError: (requestId, error, retryable) => {
