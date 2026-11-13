@@ -5,15 +5,14 @@
  */
 
 import type { HandBackRequest, StopResponse } from "@meridian/contracts/threads";
+import type { GenerateRequest, ModelInfo, StreamEvent } from "@meridian-flow/gateway";
+import { streamProvider, streamWithRetry } from "@meridian-flow/gateway";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { markRunStateChanged, readRunStateAtHead } from "../adapters/drizzle-run-state.js";
-import { streamProvider } from "../gateway/adapters/provider-stream.js";
-import { streamWithRetry } from "../gateway/attempt-stream.js";
-import type { GenerateRequest, ModelInfo, StreamEvent } from "../gateway/domain/index.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";

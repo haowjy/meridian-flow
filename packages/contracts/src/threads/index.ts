@@ -4,6 +4,7 @@
  * MULTIPLE PURPOSES: thread DTOs, JSON value primitives, journal event vocabulary, and submodule re-exports.
  */
 
+import type { JsonValue, ProviderErrorResponse } from "@meridian-flow/gateway/shapes";
 import type { PromptBakeId, ThreadId } from "../runtime/ids.js";
 
 import type { ControlBody } from "./control-body.js";
@@ -22,13 +23,7 @@ export type {
   WorkId,
 } from "../runtime/ids.js";
 
-export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+export type { JsonValue };
 
 export type JsonObject = { [key: string]: JsonValue };
 
@@ -334,7 +329,7 @@ export type {
 } from "./prefix-cache-prediction.js";
 export * from "./project-chat-feed.js";
 export type { ThreadListItem, ThreadListWork } from "./projections.js";
-export { type ProviderErrorResponse, replyProviderError } from "./provider-error.js";
+export { replyProviderError } from "./provider-error.js";
 export type {
   HandBackRequest,
   HandBackResponse,
@@ -352,6 +347,7 @@ export type {
   TurnContextPreviewFunctionTool,
 } from "./turn-context-preview.js";
 export * from "./turn-readers.js";
+export type { ProviderErrorResponse };
 
 /** Attested HTTP 404 proofs. WebSocket not_found frames are not availability proofs. */
 export type ThreadAvailabilityCode = "thread_not_found" | "thread_deleted";

@@ -3,6 +3,8 @@
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
+import type { ContentPart, Message, Tool, ToolUsePart } from "@meridian-flow/gateway";
+import { assistant, system, text, toolResult } from "@meridian-flow/gateway";
 import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import {
@@ -10,8 +12,6 @@ import {
   ChildCompletionMetadataTagCodec,
 } from "../../threads/index.js";
 import { orderTurnsByPosition } from "../../threads/order-turns.js";
-import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
-import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
 import { componentModelText } from "./component-model-text.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
 import { referenceReadText } from "./reference-context.js";

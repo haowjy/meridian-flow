@@ -9,8 +9,7 @@ The running system, the code's boxes (with the broken dependency rules in a tabl
 
 - **Domains are meant to be acyclic, and today are not.** Threads reference
   project and Work ownership, never the reverse. But runtime, threads, projects,
-  file-policy, context and collab import each other in a cycle, and
-  `runtime/gateway/config` imports `lib/`; the [dependencies page](system-architecture/dependencies.md)
+  file-policy, context and collab import each other in a cycle; the [dependencies page](system-architecture/dependencies.md)
   lists each break as a row, and `pnpm check:architecture` compares the rows with the value imports
   one to one: a new break (a cycle edge or a domain import of `lib/`) or a stale row fails. A type-only
   import is no break.

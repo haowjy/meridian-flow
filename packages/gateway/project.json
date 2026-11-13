@@ -1,0 +1,35 @@
+{
+  "name": "@meridian-flow/gateway",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/gateway",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/gateway",
+        "command": "pnpm run build"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/gateway",
+        "command": "tsc --noEmit -p tsconfig.json"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/gateway",
+        "command": "vitest run"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    }
+  }
+}

@@ -4,20 +4,20 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Gateway price-source precedence and missing-price refusal (kb/wiki/architecture/model-gateway.md#one-registry-owns-models-and-prices)
  */
+
+import { mapAnthropicUsage, mapOpenAIUsage } from "@meridian-flow/gateway";
 import { describe, expect, it } from "vitest";
-import { mapUsage as mapAnthropicUsage } from "../gateway/adapters/anthropic/stream-collect.js";
-import { mapUsage as mapOpenAIUsage } from "../gateway/adapters/openai/stream-collect.js";
-import { extractPinnedRates, MODEL_REGISTRY } from "../gateway/config/registry.js";
 import {
-  computeModelCost,
-  createDefaultModelTokenRateSource,
-  createLayeredTokenRateSource,
-} from "./pricing.js";
+  extractPinnedRates,
+  MODEL_REGISTRY,
+  registryTokenRateSource,
+} from "../../../lib/gateway/registry.js";
+import { computeModelCost, createLayeredTokenRateSource } from "./pricing.js";
 
 const REGISTRY_PINNED_RATES = extractPinnedRates(MODEL_REGISTRY);
 
 describe("model pricing", () => {
-  const rateSource = createDefaultModelTokenRateSource();
+  const rateSource = registryTokenRateSource();
 
   it("prices Anthropic cache writes by the TTL written: 5m at 1.25x input, 1h at 2x", () => {
     const price = (usage: { cacheWriteTokens: number; cacheWriteLongTokens?: number }) =>

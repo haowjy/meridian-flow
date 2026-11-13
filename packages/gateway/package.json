@@ -1,0 +1,55 @@
+{
+  "name": "@meridian-flow/gateway",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Provider-neutral streaming model gateway: Anthropic, OpenAI and OpenAI-compatible adapters with retry, deadlines and usage normalization.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./shapes": "./src/shapes/index.ts",
+    "./mock": "./src/mock.ts",
+    "./mock-script": "./src/mock-script.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./shapes": {
+        "types": "./dist/shapes/index.d.ts",
+        "default": "./dist/shapes/index.js"
+      },
+      "./mock": {
+        "types": "./dist/mock.d.ts",
+        "default": "./dist/mock.js"
+      },
+      "./mock-script": {
+        "types": "./dist/mock-script.d.ts",
+        "default": "./dist/mock-script.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.106.0",
+    "jsonrepair": "^3.14.1",
+    "openai": "^6.45.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

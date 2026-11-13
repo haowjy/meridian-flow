@@ -61,7 +61,7 @@ functions, no imports. Paths are repo-relative; a glob's `*` is one path segment
 | `services` | optional: `{ glob, page }`. Each directory matching `glob` needs a box on `page` whose Paths are inside it and whose Opens is the page named after the directory |
 | `coverage` | `[{ glob, needs? }]`: each directory matching `glob` (that holds `needs`, if given) must lie under some box's Paths |
 | `imports` | `{ workspaces, aliases }`: `workspaces` are globs of package directories, resolved by their `package.json` name; `aliases` are `{ prefix, within, to }` |
-| `dependencies` | `{ page, rules }`, read when `nav.dependencies` is set. A rule is `{ rule, cycle: glob }` (units that import each other in a loop) or `{ rule, from: glob, to: glob }` (a unit of `from` importing under `to`). A unit is a directory matching the glob, named by its last segment; the `rule` text is the row's third cell |
+| `dependencies` | `{ page, rules }`, read when `nav.dependencies` is set. A rule is `{ rule, cycle: glob }` (units that import each other in a loop) or `{ rule, from: glob, to: glob }` (a unit of `from` importing under another unit of `to`). A unit is a directory matching the glob, named by its last segment; the `rule` text is the row's third cell |
 | `stateMachines` | optional: `{ index, pages }`: the index page the viewer opens, and a git pathspec for every state machine page the index must list |
 | `nav` | `{ journeys, machines, dependencies }`: the label of each optional section; leave one out and it is off |
 | `serveSource` | default `true`: the dev server shows any tracked file. `false`: only the pages directory and `docs` |

@@ -6,10 +6,10 @@ import {
   type ResolvedAgentConfiguration,
 } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
+import type { GenerateRequest, Tool } from "@meridian-flow/gateway";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import type { ThreadRepository } from "../../threads/index.js";
 import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";
-import type { GenerateRequest, Tool } from "../gateway/index.js";
 import { bindingNamesSkills } from "../loop/available-skills.js";
 import { readChainPermission } from "../loop/permissions/agent-chain.js";
 import {

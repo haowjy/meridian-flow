@@ -1,7 +1,7 @@
 /** Shared per-part and request-level token estimates for planning and delivery checks. */
 
 import type { Block, Turn } from "@meridian/contracts/threads";
-import type { GenerateRequest, TokenizerFamily } from "../../gateway/index.js";
+import type { GenerateRequest, TokenizerFamily } from "@meridian-flow/gateway";
 
 const TOKEN_BYTES_PER_TOKEN = 3;
 const encoder = new TextEncoder();

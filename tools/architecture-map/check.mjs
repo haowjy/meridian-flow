@@ -513,7 +513,8 @@ if (DEPENDENCIES) {
       for (const i of imports) {
         const from = unitOf(i.from, rule.from);
         const to = unitOf(i.to, rule.to);
-        if (!i.typeOnly && from && to) addBreak(rule.rule, nameOf(from), nameOf(to), i.from);
+        if (!i.typeOnly && from && to && from !== to)
+          addBreak(rule.rule, nameOf(from), nameOf(to), i.from);
       }
     }
   }

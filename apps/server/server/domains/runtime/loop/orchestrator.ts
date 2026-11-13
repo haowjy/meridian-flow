@@ -79,6 +79,11 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
+import type {
+  GenerateRequest,
+  GenerateResult,
+  Gateway as LlmGateway,
+} from "@meridian-flow/gateway";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { DocumentRevisions } from "../../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -102,8 +107,8 @@ import {
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { AskService } from "../asks/ask-service.js";
+import type { ModelTokenRateSource } from "../costing/pricing.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
-import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
@@ -273,6 +278,7 @@ export interface OrchestratorDeps {
   toolRegistry: ToolRegistry;
   workContext: WorkContextReader;
   billingUsage: BillingUsagePolicy;
+  rateSource: ModelTokenRateSource;
   childRunCoordinator: ChildRunCoordinator;
   eventSink: EventSink;
   wakeIfRunnable(threadId: ThreadId): Promise<void>;
@@ -535,7 +541,10 @@ async function runDrainTurn(
 ): Promise<PreparedLoop> {
   const treeBudget =
     input.treeBudget ?? createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) });
-  const accounting = createTurnAccounting({ billingUsage: deps.billingUsage });
+  const accounting = createTurnAccounting({
+    billingUsage: deps.billingUsage,
+    rateSource: deps.rateSource,
+  });
   let preparationError: Error | MeridianError | null = null;
   const setup = await deps.delivery.adoptBatch(
     input.lease,
@@ -1760,7 +1769,10 @@ async function executeLoop({
 }): Promise<Turn> {
   const { gateway, repos, eventWriter } = deps;
   const eventSink = deps.eventSink;
-  const turnAccounting = createTurnAccounting({ billingUsage: deps.billingUsage });
+  const turnAccounting = createTurnAccounting({
+    billingUsage: deps.billingUsage,
+    rateSource: deps.rateSource,
+  });
   const { prefixCacheStateFor } = createPrefixCacheStateService({ repos });
 
   // The loop is the only writer of the lease phase, so `authority.read` cannot

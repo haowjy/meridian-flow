@@ -2,10 +2,10 @@
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue, Thread } from "@meridian/contracts/threads";
+import type { TokenizerFamily } from "@meridian-flow/gateway";
 import type { z } from "zod";
 import type { OwnerLookup } from "../../context/index.js";
 import type { ThreadRepositories, ThreadStatusReader } from "../../threads/ports/repositories.js";
-import type { TokenizerFamily } from "../gateway/index.js";
 import { renderThreadHistoryOutput } from "../spawn/history-result.js";
 import { readThreadHistory, ThreadHistoryInputSchema } from "../spawn/thread-history.js";
 import {

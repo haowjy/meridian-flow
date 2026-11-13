@@ -2,17 +2,13 @@
 
 import { readFile } from "node:fs/promises";
 import { deflateSync } from "node:zlib";
+import type { GenerateRequest, GenerateResult, StreamEvent } from "@meridian-flow/gateway";
 import { applyDevEnvToProcess } from "../../../tools/dev/lib/dev-env";
-import type {
-  GenerateRequest,
-  GenerateResult,
-  StreamEvent,
-} from "../server/domains/runtime/gateway/index.js";
-import { createGatewayFromEnv } from "../server/domains/runtime/gateway/index.js";
 import {
   CJK_CODE_POINT_TOKEN_RATES,
   estimateRequestTokens,
 } from "../server/domains/runtime/loop/compaction/index.js";
+import { createGatewayFromEnv } from "../server/lib/gateway/create-from-env.js";
 
 /** The final result of a stream; an error event throws. */
 async function collect(events: AsyncIterable<StreamEvent>): Promise<GenerateResult> {
@@ -155,7 +151,7 @@ function buildRequest(corpus: CorpusDefinition, imageData: string): GenerateRequ
 }
 
 async function completeToolTranscript(
-  gateway: import("../server/domains/runtime/gateway/index.js").Gateway,
+  gateway: import("@meridian-flow/gateway").Gateway,
   corpus: CorpusDefinition,
   request: GenerateRequest,
   model: string,

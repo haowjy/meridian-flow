@@ -2,6 +2,7 @@
 import { splitDocumentFile } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
+import type { TokenizerFamily } from "@meridian-flow/gateway";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
   compactionFailureMetadata,
@@ -9,7 +10,6 @@ import {
   turnFailedCopy,
 } from "../../threads/index.js";
 import { orderTurnsByPosition } from "../../threads/order-turns.js";
-import type { TokenizerFamily } from "../gateway/index.js";
 import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import type { DocumentTextPolicy } from "../tools/document-text.js";

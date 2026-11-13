@@ -3,19 +3,8 @@
  * failed reply keeps as `turn.metadata.providerError`. Shared by server, app, and dev CLI.
  */
 
+import type { JsonValue, ProviderErrorResponse } from "@meridian-flow/gateway/shapes";
 import { z } from "zod";
-import type { JsonValue } from "./index.js";
-
-/**
- * The provider's own status and message, kept as owner-scoped debug evidence for
- * `./mf thread view`. Never enters event payloads or model context, and the app
- * never shows the message.
- */
-export type ProviderErrorResponse = {
-  /** HTTP status; null when the provider reported the failure inside the stream. */
-  status: number | null;
-  message: string;
-};
 
 const ProviderErrorResponseCodec: z.ZodType<ProviderErrorResponse> = z.object({
   status: z.number().int().nullable(),
