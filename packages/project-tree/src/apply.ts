@@ -368,7 +368,8 @@ export function discardedBy(doc: Y.Doc, discarded: string): DiscardedBy {
  * Restoring a Discard: a Discard is final, so its records stay discarded and the Work gets fresh
  * pending copies of them, on `draft` (the Work's current branch, which may not be the one the
  * Discard closed), after anything it drafted since (so on a fact both touched, the restored
- * change wins). A copy has a new id and the same node id; `carries` names the original, `restores`
+ * change wins; each pending record a copy overrides is settled discarded under `command`, so
+ * restoring that command brings it back as a copy that wins in turn). A copy has a new id and the same node id; `carries` names the original, `restores`
  * the Discard and `restoredBy` who restored it, while `actor` stays who drafted it. A
  * record whose node cannot be acted on once the copies are in (purged, or its create is not in
  * force and no copy brings it back) is left out and returned. Once.
@@ -378,8 +379,10 @@ export function restoreDiscard(
   discarded: string,
   by: Actor,
   draft: string,
+  command: string,
 ): { copies: TreeRecord[]; leftOut: TreeRecord[] } | "superseded" {
   const { doc } = writer;
+  assertNewCommand(doc, command);
   const { records, restored } = discardedBy(doc, discarded);
   if (restored || records.length === 0) return "superseded";
   // The node a copy acts on stands in its Work's view, or the Discard held its create and the
@@ -404,7 +407,19 @@ export function restoreDiscard(
         } as TreeRecord),
       );
   }
-  writer.transact(() => recordsOf(doc).push(copies));
+  // A create or delete overrides nothing; a restore overrides a pending delete of the node.
+  const overrides = (copy: TreeRecord, pending: TreeRecord) =>
+    copy.node === pending.node &&
+    (copy.type === "restore"
+      ? pending.type === "delete"
+      : (copy.type === "rename" || copy.type === "move") && pending.type === copy.type);
+  const overridden = pendingRecords(doc, draft)
+    .filter((pending) => copies.some((copy) => overrides(copy, pending)))
+    .map((pending) => pending.id);
+  writer.transact(() => {
+    writer.settle(by, overridden, "discarded", { command });
+    recordsOf(doc).push(copies);
+  });
   return { copies, leftOut };
 }
 

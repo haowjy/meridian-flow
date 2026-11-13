@@ -10,9 +10,11 @@ import {
   applyDraft,
   childrenOf,
   discardDraft,
+  discardedBy,
   fingerprint,
   LIVE,
   moveBetweenLists,
+  pendingRecords,
   recordsOf,
   replayView,
   restoreDiscard,
@@ -995,7 +997,7 @@ describe("part 5: what a document is, and a move between two lists", () => {
     const command = cmd();
     discardDraft(t.w, "work-1", WRITER, command);
     expect(undoChange(t.w, D, CHAT, created.id)).toBe("superseded");
-    const restored = restoreDiscard(t.w, command, WRITER, "work-1");
+    const restored = restoreDiscard(t.w, command, WRITER, "work-1", cmd());
     if (restored === "superseded") throw new Error("expected copies");
     const [copy] = restored.copies;
     expect(copy).toMatchObject({ carries: created.id });
@@ -1025,10 +1027,30 @@ describe("part 5: what a document is, and a move between two lists", () => {
     t.w.rename(D, CHAT, ch, "Draft name");
     const command = cmd();
     discardDraft(t.w, "work-1", WRITER, command);
-    const restored = restoreDiscard(t.w, command, WRITER, "work-2");
+    const restored = restoreDiscard(t.w, command, WRITER, "work-2", cmd());
     if (restored === "superseded") throw new Error("expected copies");
     expect(restored.copies.map((copy) => copy.draft)).toEqual(["work-2"]);
     expect(t.at(ch, { draft: "work-2" })?.displayName).toBe("Draft name");
     expect(t.at(ch, D)?.displayName).toBe("Chapter 1");
+  });
+
+  it("35. restores a Discard over a newer draft: the newer record is discarded under the restore, and restoring that brings it back", () => {
+    const t = start();
+    const ch = t.chapter("Chapter 1");
+    t.w.rename(D, CHAT, ch, "Old");
+    const first = cmd();
+    discardDraft(t.w, "work-1", WRITER, first);
+    t.w.rename(D, CHAT, ch, "New");
+    expect(t.at(ch, D)?.displayName).toBe("New");
+    const restore = cmd();
+    expect(restoreDiscard(t.w, first, WRITER, "work-1", restore)).not.toBe("superseded");
+    expect(t.at(ch, D)?.displayName).toBe("Old");
+    expect(pendingRecords(t.doc, "work-1").map((op) => op.type === "rename" && op.name)).toEqual([
+      "Old",
+    ]);
+    const second = discardedBy(t.doc, restore);
+    expect(second.records.map((op) => op.type === "rename" && op.name)).toEqual(["New"]);
+    expect(restoreDiscard(t.w, restore, WRITER, "work-1", cmd())).not.toBe("superseded");
+    expect(t.at(ch, D)?.displayName).toBe("New");
   });
 });

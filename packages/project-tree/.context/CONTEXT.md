@@ -74,6 +74,13 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
   type and the record that last set its place, with the values just before it. Undo of a rename
   or move is allowed only while that record is still the last, and the opposite record carries
   those values. Apply's copies take their `from` against the copies before them.
+- **`carries` says which record a record stands for.** An Apply's live copy and a restored
+  Discard's pending copy each carry the root original's id, flattened (a copy of a copy names the
+  same root). Undo of R takes back the last record in the view that is R or carries R, and writes
+  `undoes` as that record's root, so the replay's setter stack, pending set and Trash entries
+  (`from`) all match by the root. If none is in the view (still discarded, applied away,
+  superseded), Undo answers `superseded`. Undo of an Apply and `restoreEntry` use the same match.
+  `restores`, `restoredBy`, `appliedBy` and `fromDraft` say who and from where, not which record.
 - **Whoever makes a record numbers a clash it can see** (`nameAmong`, Apply too); the replay
   numbers only the clashes nobody saw.
 - **A repeated command is the caller's to answer.** The package throws when a command id was
@@ -86,9 +93,13 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
   everything its command settled, the superseded records too, and refuses as superseded when a
   record it would restore no longer fits (its node purged, or its folder gone).
 - **A Discard is final.** `restoreDiscard` appends fresh pending copies of what the command
-  settled, under the same Work's branch: new record ids, the same node ids, `restores` naming the
-  Discard and `restoredBy` who restored it (server only; `actor` stays who drafted it). They land after anything drafted since, so the restored change wins on a
-  fact both touched, and nothing is refused. A copy whose node cannot be acted
+  settled, on the branch the caller names (the Work's current one, which may differ from the one the
+  Discard closed): new record ids, the same node ids, `carries` naming the
+  original, `restores` the Discard and `restoredBy` who restored it (server only; `actor` stays who drafted it). They land after anything drafted since, so the restored change wins on a
+  fact both touched; each pending record a copy overrides (same node, same fact: a rename's name
+  and type, a move's place; a restore overrides a pending delete; a create or delete overrides
+  nothing) is settled discarded under the restoring command, so restoring that command brings it
+  back as a copy that wins in turn. Nothing is refused. A copy whose node cannot be acted
   on once the copies are in (purged, or its create is held by another Discard) is left out and
   returned. A Discard restores once (`discardedBy(...).restored`); `discardedBy` lists what a
   Discard settled and the nodes it created, for Trash.
