@@ -29,7 +29,6 @@ export function ImportHeaderAction({
   };
   const button = (
     <IconButton
-      data-import-status={status ?? undefined}
       label={label}
       onClick={phone ? () => setOpen(true) : undefined}
       className="relative"

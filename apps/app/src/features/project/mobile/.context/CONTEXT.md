@@ -15,7 +15,8 @@ Mobile consumes typed `ProjectViewProps`. Leaves never parse or construct URLs.
 The route parent owns push/replace and invalid-address rendering. The phone has
 the desktop's two places, one on screen at a time: main fills the screen and
 shows what the address names (a document, a chat, `/chats`'s new-chat composer,
-or Recently opened), and the side is a bottom Sheet over it. Settings and Trash
+Recent chats at `/chats/recent`, or Recently opened), and the side is a bottom Sheet over it. The
+phone has no recent door, so Recent chats opens only from its address. Settings and Trash
 are query surfaces over main; the drawer's Trash row shows the Trash list in the
 drawer, and a row there shows its read-only document in main. Only the recognized owner/item/change/settings/trash
 selectors are accepted.

@@ -29,7 +29,9 @@ export type NavigationDrawerProps = {
   contextLive: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
-  /** The chat on screen, whose notes the Scratch tab lists. */
+  /** Who owns main's document when it is a Work's Scratch note. */
+  activeContextWork: string | null;
+  /** The chat on screen: its row reads as current. */
   chatThreadId: string | null;
 };
 
@@ -43,6 +45,7 @@ export function NavigationDrawer({
   contextLive,
   activeContextScheme,
   activeContextPath,
+  activeContextWork,
   chatThreadId,
 }: NavigationDrawerProps) {
   const openDocument = useOpenProjectDocument(projectId);
@@ -134,6 +137,7 @@ export function NavigationDrawer({
                   contextLive={contextLive}
                   activeScheme={activeContextScheme}
                   activePath={activeContextPath}
+                  activeWorkId={activeContextWork}
                   onSelectFile={handleSelectFile}
                   scopeWorkId={scope.workId}
                   onPicked={() => onOpenChange(false)}

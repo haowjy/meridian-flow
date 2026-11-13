@@ -141,9 +141,10 @@ Core shell expectations:
 - A search box is `SearchField` (`SettledSearchField` when typing must not re-render the list it
   filters); a picker's is `PickerSearch`.
 - The name above a list or a group of its rows is `ListSection` (or `ListSectionHeader`
-  over a pane's own scroller): the uppercase group label on the rows' text edge, actions
-  shown on hover, and, when it folds, a `FoldToggle` whose chevron leads the label. A list section's fold is remembered per tab with
-  `useSectionFold`; the docked Scratch keeps its open state as a device preference.
+  over a pane's own scroller): the uppercase group label on the rows' text edge, its actions
+  always shown, and, when it folds, a `FoldToggle` whose chevron leads the label. A list
+  section's fold is remembered per tab with `useSectionFold`. A sidebar list's search is the
+  borderless `SearchField` (`quiet`) row above its heading.
 - A list's rows are `ListRow`. In the sidebar and page lists a row's kind is its `icon`,
   one slot and one glyph size; pickers keep their 16 px glyphs in `leading`. The line that stands in for the rows (loading, empty, no matches) is
   `ListLine`, placed where the rows go, so its text starts where theirs would. A search

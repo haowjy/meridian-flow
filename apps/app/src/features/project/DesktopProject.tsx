@@ -21,6 +21,7 @@ import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranc
 import { cn } from "@/lib/utils";
 import { ChatPaneController } from "./ChatPaneController";
 import { ChatSurface } from "./chat/ChatSurface";
+import { RecentChatsLanding } from "./chat/RecentChatsLanding";
 import { useShownDocuments } from "./context/account-feature-context";
 import { DocumentHost, MainDocumentStatus } from "./context/DocumentHost";
 import { RecentDocumentsLanding } from "./context/RecentDocumentsLanding";
@@ -124,15 +125,9 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const open = props.onOpenContextTarget;
   const openInMain = useOpenInMain(projectId, open);
   const onNewDocument = useNewDocument(projectId, props.contextLive ? open : null);
-  const onShowRecents = props.routeCommands.showEditorRecents;
+  const showDocumentRecents = () => void props.routeCommands.showEditorRecents({ replace: false });
   const mainKey = mainTab ? mainTabKey({ kind: "document", document: mainTab }) : null;
-  const tabCommands = useMainTabCommands({
-    projectId,
-    kind: "document",
-    open,
-    mainKey,
-    onShowRecents,
-  });
+  const tabCommands = useMainTabCommands({ projectId, kind: "document", open, mainKey });
 
   // Each document has its own host, so the draft that takes the focus when its controls show is
   // kept here.
@@ -158,7 +153,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               kind="document"
               open={open}
               mainTab={{ kind: "document", document: tab }}
-              onShowRecents={onShowRecents}
+              onShowRecents={showDocumentRecents}
               onNew={onNewDocument}
               sidebarToggle={sidebarToggle}
               sideToggle={sideToggle}
@@ -178,7 +173,9 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const sideChat = side.item?.kind === "chat" ? side.item : null;
   const chatThread = useHostChatId();
   const chatOnScreen = useChatOnScreen();
-  const chatInMain = mainChat !== null;
+  // Recent chats is the chat lane's page with no chat: main shows it in its own host.
+  const chatRecents = mainChat?.kind === "chat-recents";
+  const chatInMain = mainChat !== null && !chatRecents;
   const chatHost: SlotGridHost = {
     key: "chat",
     slot: chatInMain ? "center" : sideChat && sideOpen ? "side" : null,
@@ -204,7 +201,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                   projectId={projectId}
                   threadId={chatThread}
                   open={open}
-                  onShowRecents={onShowRecents}
                   sidebarToggle={sidebarToggle}
                   contextToggle={sideToggle}
                 />
@@ -256,52 +252,71 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     ...documentHosts,
     chatHost,
   ];
-  if (!mainChat && !mainTab)
+  // Main's own page when it holds no document or chat: its lane's recent page, a removed
+  // address, or the Trash.
+  if (chatRecents || (!mainChat && !mainTab))
     hosts.push({
       key: "main",
       slot: "center",
       children: (
         <main className="flex min-h-0 flex-1 flex-col">
-          <MainHeader
-            projectId={projectId}
-            kind="document"
-            open={open}
-            landing={!main.document.requested && !trashedId}
-            current={
-              trashedId ? (
-                <UntabbedChip
-                  icon={Trash2}
-                  name={trashedName ?? t`Trash`}
-                  onClose={tabCommands.closeMain}
-                />
-              ) : main.document.requested && mask.issue && mask.issue !== "loading" ? (
-                <UntabbedChip
-                  icon={FileQuestion}
-                  name={main.document.path ? pathLeafName(main.document.path) : t`Unavailable`}
-                  onClose={tabCommands.closeMain}
-                />
-              ) : undefined
-            }
-            onShowRecents={onShowRecents}
-            onNew={onNewDocument}
-            sidebarToggle={sidebarToggle}
-            sideToggle={sideToggle}
-          />
+          {chatRecents ? (
+            <MainHeader
+              projectId={projectId}
+              kind="chat"
+              open={open}
+              landing
+              onShowRecents={() => void chat.openChatRecents()}
+              onNew={() => void chat.openNewChat()}
+              sidebarToggle={sidebarToggle}
+              sideToggle={sideToggle}
+            />
+          ) : (
+            <MainHeader
+              projectId={projectId}
+              kind="document"
+              open={open}
+              landing={!main.document.requested && !trashedId}
+              current={
+                trashedId ? (
+                  <UntabbedChip
+                    icon={Trash2}
+                    name={trashedName ?? t`Trash`}
+                    onClose={tabCommands.closeMain}
+                  />
+                ) : main.document.requested && mask.issue && mask.issue !== "loading" ? (
+                  <UntabbedChip
+                    icon={FileQuestion}
+                    name={main.document.path ? pathLeafName(main.document.path) : t`Unavailable`}
+                    onClose={tabCommands.closeMain}
+                  />
+                ) : undefined
+              }
+              onShowRecents={showDocumentRecents}
+              onNew={onNewDocument}
+              sidebarToggle={sidebarToggle}
+              sideToggle={sideToggle}
+            />
+          )}
           <div className="page-sheet relative flex min-h-0 flex-1 flex-col">
-            <ProjectRouteBoundary {...mask}>
-              {!props.contextLive ? null : trashedId ? (
-                <TrashedDocument key={trashedId} projectId={projectId} documentId={trashedId} />
-              ) : main.document.requested ? (
-                <MainDocumentStatus projectId={projectId} main={main.document} />
-              ) : (
-                <RecentDocumentsLanding
-                  projectId={projectId}
-                  editorWorkId={props.editorWorkId}
-                  onNewDocument={onNewDocument}
-                  holdsRemovedNotice
-                />
-              )}
-            </ProjectRouteBoundary>
+            {chatRecents ? (
+              <RecentChatsLanding projectId={projectId} />
+            ) : (
+              <ProjectRouteBoundary {...mask}>
+                {!props.contextLive ? null : trashedId ? (
+                  <TrashedDocument key={trashedId} projectId={projectId} documentId={trashedId} />
+                ) : main.document.requested ? (
+                  <MainDocumentStatus projectId={projectId} main={main.document} />
+                ) : (
+                  <RecentDocumentsLanding
+                    projectId={projectId}
+                    editorWorkId={props.editorWorkId}
+                    onNewDocument={onNewDocument}
+                    holdsRemovedNotice
+                  />
+                )}
+              </ProjectRouteBoundary>
+            )}
           </div>
         </main>
       ),

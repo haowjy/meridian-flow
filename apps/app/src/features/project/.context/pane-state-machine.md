@@ -12,14 +12,13 @@ code disagree, one of them is a bug.
 
 ## State
 
-- **main**: an item, or its kind's empty page (the editor with no document; the new-chat composer,
-  which is also the project's home).
+- **main**: an item, or one of its kind's empty pages: in Write, Recently opened (the editor with
+  no document); in Chat, the new-chat composer, which is also the project's home, or Recent chats.
 - **side**: an item of the **other** kind from main, or its empty state. Beside a document the side
   holds a chat (empty: a new chat's composer); beside a chat it holds a document (empty: the
   document list). Main's kind is never in the side: no two chats, no two documents on screen.
 - **slots**: one per kind, the last item of that kind on screen in either pane, or none. Main's
-  arrival writes its kind's slot (none on its empty page: the editor with no document, the new-chat
-  composer); a pick or link into the side writes the other. **The side shows the slot of the kind
+  arrival writes its kind's slot (none on an empty page); a pick or link into the side writes the other. **The side shows the slot of the kind
   main is not.** That is the whole of "the side takes what main left": a change of kind needs no
   swap step, because the slot of the kind main left already holds main's last item.
 - **current document**, **current chat**: the last item of each kind main showed, which is each
@@ -68,7 +67,8 @@ same rule (`placeIn(kind, main)`); only the sidebar, outside every pane, opens i
 | Pick inside main or the side | main's kind: `openMain(X)`; the other kind: `openSide(X)` |
 | Pick in the side's picker | `openSide(X)`; it lists only the other kind |
 | Write or Chat switch to kind k | `openMain(slot of k ?? current of k ?? empty page of k)`: the panes swap kinds, the side's item first |
-| Close main's tab | main shows the next tab of its kind, else its empty page; the side stays |
+| Close main's tab | main shows the next tab of its kind, else its empty page (Recently opened; in Chat, the new-chat composer); the side stays |
+| The band's recent door (clock) | main shows its mode's recent page: Recently opened in Write, Recent chats in Chat; the mode and the side stay |
 | Delete or remove the side's item | the side shows its empty state |
 | A chat tab's chat is deleted (here or in another window) | its tab closes; a chat delete's `project-chats-hint` names the chat ids, so those tabs close with no request; a Work delete (ids unknown) and a catalog-channel reconnect (hints may be lost) send `recheckTabs`, and mount does the same, each running the owner-gate probe over the tabs main isn't showing as one batch. Ordinary lifecycle hints and a restore leave tabs alone. The hub is in process: with several server instances a delete's hint reaches only windows on the same instance until their next reconnect; nothing polls |
 
@@ -87,6 +87,31 @@ stateDiagram-v2
   state "Chat · side document" as C
   W --> C: open a chat in main (side takes main's document)
   C --> W: open a document in main (side takes main's chat)
+```
+
+Each mode's pages in main, the side left out. The door and the band's New reach a mode's empty
+pages; picking a row opens an item, and closing main's last tab leaves for the first empty page.
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  state Write {
+    landing: Recently opened
+    document: a document
+    landing --> document: pick a row
+    document --> landing: door, or close the last tab
+  }
+  state Chat {
+    composer: New chat
+    recents: Recent chats
+    thread: a chat
+    composer --> thread: send
+    recents --> thread: pick a row
+    thread --> recents: door
+    composer --> recents: door
+    recents --> composer: New chat
+    thread --> composer: New chat, or close the last tab
+  }
 ```
 
 ## Example
