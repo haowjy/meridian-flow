@@ -15,20 +15,20 @@ flowchart LR
   workspace["workspace<br/><small>projects and Works</small>"]:::context
   account["account<br/><small>credits</small>"]:::context
   files["files<br/><small>bytes and image previews</small>"]:::context
-  browser -->|"http: 1. sends the message"| runtime
-  runtime -->|"port: 2. saves the writer's turn"| threads
-  runtime -->|"call: 3. loads the Agent and its skills"| packages
-  runtime -->|"model: 4. asks for a reply"| models
-  runtime -->|"port: 5. runs the model's tool calls on documents"| documents
-  runtime -->|"port: 6. saves each turn and block"| threads
-  threads -->|"ws: 7. streams the events"| browser
-  threads -->|"sql: journals the events"| postgres
-  runtime -->|"call: reads pending notices"| notices
-  threads -->|"call: queues a notice when a chat changes Work"| notices
-  threads -->|"call: binds the chosen Agent to a new chat"| packages
-  runtime -->|"port: reads the chat's Work"| workspace
-  runtime -->|"port: charges credits for the turn"| account
-  runtime -->|"port: loads image previews for the model"| files
+  browser -->|"1. sends the message"| runtime
+  runtime -->|"2. saves the writer's turn"| threads
+  runtime -->|"3. loads the Agent and its skills"| packages
+  runtime -->|"4. asks for a reply"| models
+  runtime -->|"5. runs the model's tool calls on documents"| documents
+  runtime -->|"6. saves each turn and block"| threads
+  threads -->|"7. streams the events"| browser
+  threads -->|"journals the events"| postgres
+  runtime -->|"reads pending notices"| notices
+  threads -->|"queues a notice when a chat changes Work"| notices
+  threads -->|"binds the chosen Agent to a new chat"| packages
+  runtime -->|"reads the chat's Work"| workspace
+  runtime -->|"charges credits for the turn"| account
+  runtime -->|"loads image previews for the model"| files
 ```
 
 ## runtime

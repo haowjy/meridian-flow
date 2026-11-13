@@ -12,16 +12,16 @@ flowchart LR
   shared["shared<br/><small>UI and rich text</small>"]:::context
   conversation["conversation<br/><small>chat</small>"]:::context
   server["server<br/><small>the Yjs socket</small>"]:::context
-  project -->|"call: 1. opens a document in a tab"| editor
-  editor -->|"call: 2. binds the document session"| core
-  core -->|"ws: 3. connects the Yjs socket"| server
-  server -->|"ws: 4. sends live and draft updates"| core
-  draft-review -->|"call: 5. opens the draft room"| core
-  editor -->|"call: shows review controls from"| draft-review
-  links -->|"call: finds link targets in"| core
-  editor -->|"call: follows links with"| links
-  conversation -->|"call: shows Drafted-documents cards from"| draft-review
-  editor -->|"call: renders with"| shared
+  project -->|"1. opens a document in a tab"| editor
+  editor -->|"2. binds the document session"| core
+  core -->|"3. connects the Yjs socket"| server
+  server -->|"4. sends live and draft updates"| core
+  draft-review -->|"5. opens the draft room"| core
+  editor -->|"shows review controls from"| draft-review
+  links -->|"finds link targets in"| core
+  editor -->|"follows links with"| links
+  conversation -->|"shows Drafted-documents cards from"| draft-review
+  editor -->|"renders with"| shared
 ```
 
 ## editor

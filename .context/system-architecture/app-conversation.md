@@ -11,15 +11,15 @@ flowchart LR
   shared["shared<br/><small>UI and rich text</small>"]:::context
   documents["documents<br/><small>draft review cards</small>"]:::context
   server["server<br/><small>HTTP and sockets</small>"]:::context
-  chat -->|"call: 1. sends the message"| client
-  client -->|"http: 2. posts it to the server"| server
-  server -->|"ws: 3. streams the events"| client
-  chat -->|"call: 4. draws the transcript from the thread store"| client
-  chat -->|"call: picks the Agent with"| agents
-  project -->|"call: shows the chat beside the document"| chat
-  chat -->|"call: renders Markdown with"| shared
-  chat -->|"call: shows Drafted-documents cards from"| documents
-  chat -->|"call: opens documents and Works in"| project
+  chat -->|"1. sends the message"| client
+  client -->|"2. posts it to the server"| server
+  server -->|"3. streams the events"| client
+  chat -->|"4. draws the transcript from the thread store"| client
+  chat -->|"picks the Agent with"| agents
+  project -->|"shows the chat beside the document"| chat
+  chat -->|"renders Markdown with"| shared
+  chat -->|"shows Drafted-documents cards from"| documents
+  chat -->|"opens documents and Works in"| project
 ```
 
 ## chat

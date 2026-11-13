@@ -12,15 +12,15 @@ flowchart LR
   documents["documents<br/><small>the writer's documents</small>"]:::context
   postgres["postgres<br/><small>the one database</small>"]:::context
   objectstore["objectstore<br/><small>file bytes</small>"]:::context
-  browser -->|"http: 1. opens a project"| projects
-  browser -->|"http: 2. asks for the open documents"| working-set
-  browser -->|"http: 3. asks for recent documents"| recent-documents
-  recent-documents -->|"port: reads the document catalog"| documents
-  projects -->|"port: archives and deletes a Work's documents"| documents
-  projects -->|"files: purges a deleted Work's bytes"| objectstore
-  conversation -->|"port: gates each write on the chat's Work"| projects
-  projects -->|"sql: keeps projects and Works"| postgres
-  working-set -->|"sql: saves a snapshot per account"| postgres
+  browser -->|"1. opens a project"| projects
+  browser -->|"2. asks for the open documents"| working-set
+  browser -->|"3. asks for recent documents"| recent-documents
+  recent-documents -->|"reads the document catalog"| documents
+  projects -->|"archives and deletes a Work's documents"| documents
+  projects -->|"purges a deleted Work's bytes"| objectstore
+  conversation -->|"gates each write on the chat's Work"| projects
+  projects -->|"keeps projects and Works"| postgres
+  working-set -->|"saves a snapshot per account"| postgres
 ```
 
 ## projects

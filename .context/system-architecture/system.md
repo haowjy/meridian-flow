@@ -21,20 +21,20 @@ flowchart LR
   www["www<br/><small>the public landing site</small>"]:::service
   mf["mf<br/><small>command-line client for debugging</small>"]:::client
   ci["ci<br/><small>builds, tests, migrates</small>"]:::external
-  browser -->|"http: 1. sends the message"| server
-  server -->|"model: 2. asks for a reply"| models
-  server -->|"sql: 3. saves the reply and its edits"| postgres
-  server -->|"ws: 4. streams the reply and the edits"| browser
-  browser -->|"http: loads the pages"| app
-  app -->|"http: signs the writer in"| workos
-  server -->|"http: checks the session"| workos
-  app -->|"http: fetches data while rendering a page"| server
-  browser -->|"files: uploads and downloads files"| objectstore
-  server -->|"files: stores and fetches bytes"| objectstore
-  server <-->|"http: checkout, payment webhook"| stripe
-  www -->|"http: links to sign-in"| app
-  mf -->|"http: asks what the app asks"| server
-  ci -->|"sql: applies migrations"| postgres
+  browser -->|"1. sends the message"| server
+  server -->|"2. asks for a reply"| models
+  server -->|"3. saves the reply and its edits"| postgres
+  server -->|"4. streams the reply and the edits"| browser
+  browser -->|"loads the pages"| app
+  app -->|"signs the writer in"| workos
+  server -->|"checks the session"| workos
+  app -->|"fetches data while rendering a page"| server
+  browser -->|"uploads and downloads files"| objectstore
+  server -->|"stores and fetches bytes"| objectstore
+  server <-->|"checkout, payment webhook"| stripe
+  www -->|"links to sign-in"| app
+  mf -->|"asks what the app asks"| server
+  ci -->|"applies migrations"| postgres
 ```
 
 ## browser

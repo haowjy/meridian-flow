@@ -21,19 +21,19 @@ flowchart TB
   contracts["contracts<br/><small>the shapes that cross the wire</small>"]:::package
   design-tokens["design-tokens<br/><small>the one place for colours</small>"]:::package
   yjs-inspect["yjs-inspect<br/><small>safe summaries of sync traffic</small>"]:::package
-  app -->|"call: 1. follows a chat with"| thread-client
-  app -->|"call: keeps documents locally with"| resource-replica
-  app -->|"call: encodes the writer's text with"| markup
-  server -->|"call: 2. applies the model's edits with"| agent-edit
-  server -->|"call: 3. saves everything with"| database
-  agent-edit -->|"call: reads and writes text with"| markup
-  thread-client -->|"call: reads link rules from"| markup
-  markup -->|"call: builds documents from"| prosemirror-schema
-  app -->|"call: mirrors the schema of"| prosemirror-schema
-  database -->|"call: types its columns with"| contracts
-  app -->|"call: takes colours from"| design-tokens
-  www -->|"call: takes colours from"| design-tokens
-  app -->|"call: debug overlay reads sync with"| yjs-inspect
+  app -->|"1. follows a chat with"| thread-client
+  app -->|"keeps documents locally with"| resource-replica
+  app -->|"encodes the writer's text with"| markup
+  server -->|"2. applies the model's edits with"| agent-edit
+  server -->|"3. saves everything with"| database
+  agent-edit -->|"reads and writes text with"| markup
+  thread-client -->|"reads link rules from"| markup
+  markup -->|"builds documents from"| prosemirror-schema
+  app -->|"mirrors the schema of"| prosemirror-schema
+  database -->|"types its columns with"| contracts
+  app -->|"takes colours from"| design-tokens
+  www -->|"takes colours from"| design-tokens
+  app -->|"debug overlay reads sync with"| yjs-inspect
 ```
 
 ## app

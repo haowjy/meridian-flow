@@ -12,15 +12,15 @@ flowchart LR
   documents["documents<br/><small>editor and draft review</small>"]:::context
   core["core<br/><small>the editor core</small>"]:::context
   client["client<br/><small>HTTP clients</small>"]:::context
-  conversation -->|"call: 1. renders a message with"| rich-content
-  rich-content -->|"call: 2. uses the document codec bridge in"| core
-  rich-content -->|"call: 3. draws with the primitives in"| components
-  components -->|"call: reads data through"| client
-  components -->|"call: draws editor surfaces from"| core
-  hooks -->|"call: uses helpers from"| lib
-  lib -->|"call: keeps optimistic thread state in"| client
-  documents -->|"call: renders text with"| rich-content
-  components -->|"call: uses helpers from"| lib
+  conversation -->|"1. renders a message with"| rich-content
+  rich-content -->|"2. uses the document codec bridge in"| core
+  rich-content -->|"3. draws with the primitives in"| components
+  components -->|"reads data through"| client
+  components -->|"draws editor surfaces from"| core
+  hooks -->|"uses helpers from"| lib
+  lib -->|"keeps optimistic thread state in"| client
+  documents -->|"renders text with"| rich-content
+  components -->|"uses helpers from"| lib
 ```
 
 ## components

@@ -22,23 +22,23 @@ flowchart LR
   models["models<br/><small>the AI providers</small>"]:::context
   postgres["postgres<br/><small>the one database</small>"]:::context
   objectstore["objectstore<br/><small>file bytes</small>"]:::context
-  browser -->|"http: 1. sends the message"| routes
-  routes -->|"port: 2. admits it and wakes the run"| conversation
-  conversation -->|"model: 3. asks for a reply"| models
-  conversation -->|"port: 4. reads and edits documents for the model"| documents
-  documents -->|"sql: 5. journals the edit"| postgres
-  conversation -->|"ws: 6. streams the reply"| browser
-  documents -->|"ws: 7. pushes the edit to open documents"| browser
-  lib -->|"port: builds the domains for"| routes
-  conversation -->|"sql: saves turns and the event journal"| postgres
-  conversation -->|"port: reads the chat's Work"| workspace
-  conversation -->|"port: charges credits"| account
-  conversation -->|"port: loads image previews for the model"| files
-  documents -->|"port: asks which Work owns a draft"| workspace
-  workspace -->|"port: archives and deletes a Work's documents"| documents
-  files -->|"port: writes an imported tree"| documents
-  files -->|"files: stores and reads bytes"| objectstore
-  documents -->|"files: copies binary bytes"| objectstore
+  browser -->|"1. sends the message"| routes
+  routes -->|"2. admits it and wakes the run"| conversation
+  conversation -->|"3. asks for a reply"| models
+  conversation -->|"4. reads and edits documents for the model"| documents
+  documents -->|"5. journals the edit"| postgres
+  conversation -->|"6. streams the reply"| browser
+  documents -->|"7. pushes the edit to open documents"| browser
+  lib -->|"builds the domains for"| routes
+  conversation -->|"saves turns and the event journal"| postgres
+  conversation -->|"reads the chat's Work"| workspace
+  conversation -->|"charges credits"| account
+  conversation -->|"loads image previews for the model"| files
+  documents -->|"asks which Work owns a draft"| workspace
+  workspace -->|"archives and deletes a Work's documents"| documents
+  files -->|"writes an imported tree"| documents
+  files -->|"stores and reads bytes"| objectstore
+  documents -->|"copies binary bytes"| objectstore
 ```
 
 ## conversation

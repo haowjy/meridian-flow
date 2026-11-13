@@ -12,17 +12,17 @@ flowchart LR
   documents["documents<br/><small>the writer's documents</small>"]:::context
   conversation["conversation<br/><small>the model's image attachments</small>"]:::context
   objectstore["objectstore<br/><small>file bytes</small>"]:::context
-  browser -->|"http: 1. uploads the chosen files"| import
-  import -->|"port: 2. stages the bytes"| storage
-  import -->|"call: 3. classifies and makes previews"| file-intake
-  import -->|"port: 4. writes the whole tree at once"| documents
-  file-intake -->|"port: stores previews"| storage
-  storage -->|"files: puts and gets"| objectstore
-  browser -->|"http: asks for the ZIP"| export
-  export -->|"port: reads the document inventory"| documents
-  export -->|"port: reads file bytes"| storage
-  export -->|"http: streams the ZIP"| browser
-  conversation -->|"port: loads image previews"| file-intake
+  browser -->|"1. uploads the chosen files"| import
+  import -->|"2. stages the bytes"| storage
+  import -->|"3. classifies and makes previews"| file-intake
+  import -->|"4. writes the whole tree at once"| documents
+  file-intake -->|"stores previews"| storage
+  storage -->|"puts and gets"| objectstore
+  browser -->|"asks for the ZIP"| export
+  export -->|"reads the document inventory"| documents
+  export -->|"reads file bytes"| storage
+  export -->|"streams the ZIP"| browser
+  conversation -->|"loads image previews"| file-intake
 ```
 
 ## import

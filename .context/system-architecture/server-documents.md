@@ -13,20 +13,20 @@ flowchart LR
   browser["browser<br/><small>the writer's tab</small>"]:::context
   postgres["postgres<br/><small>the one database</small>"]:::context
   objectstore["objectstore<br/><small>file bytes</small>"]:::context
-  conversation -->|"port: 1. resolves the path to a document"| context
-  conversation -->|"port: 2. asks if the chat may edit it"| file-policy
-  conversation -->|"port: 3. writes under that grant"| collab
-  collab -->|"sql: 4. journals the edit at the reply's save"| postgres
-  collab -->|"ws: 5. pushes it to open rooms"| browser
-  browser -->|"ws: opens a document"| collab
-  file-policy -->|"port: reads Work facts"| workspace
-  file-policy -->|"port: reads branch rows"| collab
-  file-policy -->|"port: reads the file tree"| context
-  context -->|"port: writes whole documents through the collab engine"| collab
-  workspace -->|"port: archives and deletes a Work's documents"| context
-  files -->|"port: writes an imported tree"| context
-  context -->|"port: classifies and keeps uploaded files"| files
-  context -->|"files: copies binary bytes"| objectstore
+  conversation -->|"1. resolves the path to a document"| context
+  conversation -->|"2. asks if the chat may edit it"| file-policy
+  conversation -->|"3. writes under that grant"| collab
+  collab -->|"4. journals the edit at the reply's save"| postgres
+  collab -->|"5. pushes it to open rooms"| browser
+  browser -->|"opens a document"| collab
+  file-policy -->|"reads Work facts"| workspace
+  file-policy -->|"reads branch rows"| collab
+  file-policy -->|"reads the file tree"| context
+  context -->|"writes whole documents through the collab engine"| collab
+  workspace -->|"archives and deletes a Work's documents"| context
+  files -->|"writes an imported tree"| context
+  context -->|"classifies and keeps uploaded files"| files
+  context -->|"copies binary bytes"| objectstore
 ```
 
 ## collab

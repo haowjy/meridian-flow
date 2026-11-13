@@ -14,21 +14,21 @@ flowchart LR
   core["core<br/><small>document sessions, sockets, local replica</small>"]:::group
   shared["shared<br/><small>shared UI, helpers, rich text</small>"]:::group
   server["server<br/><small>HTTP and the two sockets</small>"]:::context
-  routes -->|"call: 1. mounts the workspace"| project
-  project -->|"call: 2. shows the chat and the composer"| conversation
-  conversation -->|"call: 3. sends the message"| client
-  client -->|"http: 4. posts it, subscribes to the thread socket"| server
-  server -->|"ws: 5. streams the reply events"| client
-  conversation -->|"call: 6. draws the events from the thread store"| client
-  server -->|"ws: 7. sends the draft edit over the Yjs socket"| core
-  documents -->|"call: 8. shows the change from the editor session"| core
-  project -->|"call: opens documents in tabs"| documents
-  project -->|"call: reads the local replica"| core
-  routes -->|"call: mounts the project list and the pages around it"| library
-  routes -->|"call: mounts the debug overlay"| debug
-  client -->|"call: reads the connection and the wire taps"| core
-  conversation -->|"call: renders text and UI with"| shared
-  documents -->|"call: renders text and UI with"| shared
+  routes -->|"1. mounts the workspace"| project
+  project -->|"2. shows the chat and the composer"| conversation
+  conversation -->|"3. sends the message"| client
+  client -->|"4. posts it, subscribes to the thread socket"| server
+  server -->|"5. streams the reply events"| client
+  conversation -->|"6. draws the events from the thread store"| client
+  server -->|"7. sends the draft edit over the Yjs socket"| core
+  documents -->|"8. shows the change from the editor session"| core
+  project -->|"opens documents in tabs"| documents
+  project -->|"reads the local replica"| core
+  routes -->|"mounts the project list and the pages around it"| library
+  routes -->|"mounts the debug overlay"| debug
+  client -->|"reads the connection and the wire taps"| core
+  conversation -->|"renders text and UI with"| shared
+  documents -->|"renders text and UI with"| shared
 ```
 
 ## routes

@@ -12,15 +12,15 @@ flowchart LR
   client["client<br/><small>HTTP clients</small>"]:::context
   documents["documents<br/><small>editor and draft review</small>"]:::context
   server["server<br/><small>the Yjs socket</small>"]:::context
-  documents -->|"call: 1. opens a document session"| core-editor
-  core-editor -->|"call: 2. asks the transport to connect"| core-transport
-  core-transport -->|"ws: connects to the server"| server
-  server -->|"ws: 3. sends updates"| core-transport
-  core-transport -->|"call: 4. reports sync status"| core-editor
-  core-resources -->|"call: opens documents through"| core-editor
-  core-resources -->|"call: catches up with the server through"| client
-  core-editor -->|"call: tracks uploads in"| core-uploads
-  core-editor -->|"call: offers suggestions from"| core-completion
+  documents -->|"1. opens a document session"| core-editor
+  core-editor -->|"2. asks the transport to connect"| core-transport
+  core-transport -->|"connects to the server"| server
+  server -->|"3. sends updates"| core-transport
+  core-transport -->|"4. reports sync status"| core-editor
+  core-resources -->|"opens documents through"| core-editor
+  core-resources -->|"catches up with the server through"| client
+  core-editor -->|"tracks uploads in"| core-uploads
+  core-editor -->|"offers suggestions from"| core-completion
 ```
 
 ## core-editor

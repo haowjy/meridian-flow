@@ -14,18 +14,18 @@ flowchart LR
   project["project<br/><small>the workspace shell</small>"]:::context
   client["client<br/><small>HTTP clients</small>"]:::context
   server["server<br/><small>HTTP</small>"]:::context
-  routes -->|"call: 1. mounts the project list"| home
-  home -->|"call: 2. opens the new-project dialog"| creation
-  home -->|"call: 3. creates the project through"| client
-  client -->|"http: asks the server to create it"| server
-  routes -->|"call: mounts the usage page"| billing
-  routes -->|"call: mounts the import entry"| import
-  home -->|"call: shows the account menu from"| account
-  project -->|"call: opens the import menu"| import
-  project -->|"call: opens the export dialog"| export
-  import -->|"call: uploads files through"| client
-  export -->|"call: asks for the ZIP through"| client
-  billing -->|"call: reads balances through"| client
+  routes -->|"1. mounts the project list"| home
+  home -->|"2. opens the new-project dialog"| creation
+  home -->|"3. creates the project through"| client
+  client -->|"asks the server to create it"| server
+  routes -->|"mounts the usage page"| billing
+  routes -->|"mounts the import entry"| import
+  home -->|"shows the account menu from"| account
+  project -->|"opens the import menu"| import
+  project -->|"opens the export dialog"| export
+  import -->|"uploads files through"| client
+  export -->|"asks for the ZIP through"| client
+  billing -->|"reads balances through"| client
 ```
 
 ## home

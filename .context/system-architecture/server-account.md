@@ -14,17 +14,17 @@ flowchart LR
   documents["documents<br/><small>the writer's documents</small>"]:::context
   workspace["workspace<br/><small>projects and Works</small>"]:::context
   files["files<br/><small>import and bytes</small>"]:::context
-  browser -->|"http: 1. starts a checkout"| billing
-  billing -->|"http: 2. creates a checkout session"| stripe
-  stripe -->|"http: 3. calls the webhook when paid"| billing
-  billing -->|"sql: 4. grants credit lots"| postgres
-  conversation -->|"port: consumes credit lots"| billing
-  browser -->|"http: reads and saves settings"| preferences
-  preferences -->|"sql: keeps settings per account"| postgres
-  conversation -->|"port: emits events"| observability
-  documents -->|"port: emits events"| observability
-  workspace -->|"port: emits events"| observability
-  files -->|"port: emits events"| observability
+  browser -->|"1. starts a checkout"| billing
+  billing -->|"2. creates a checkout session"| stripe
+  stripe -->|"3. calls the webhook when paid"| billing
+  billing -->|"4. grants credit lots"| postgres
+  conversation -->|"consumes credit lots"| billing
+  browser -->|"reads and saves settings"| preferences
+  preferences -->|"keeps settings per account"| postgres
+  conversation -->|"emits events"| observability
+  documents -->|"emits events"| observability
+  workspace -->|"emits events"| observability
+  files -->|"emits events"| observability
 ```
 
 ## billing
