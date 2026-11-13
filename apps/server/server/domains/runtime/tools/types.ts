@@ -18,7 +18,7 @@ import type {
   ReturnResultOutcome,
   SpawnResult,
 } from "@meridian/contracts/spawn";
-import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
+import type { JsonObject, JsonValue, ToolContentPart } from "@meridian/contracts/threads";
 import type { Tool } from "@meridian-flow/gateway";
 import type { z } from "zod";
 import type { FrontierLookups } from "../ports/observation-frontiers.js";
@@ -89,36 +89,33 @@ export interface ToolExecutionContext {
  * `toolCallId` matches `ToolCallInput.id` so the orchestrator can pair
  * results with their originating calls in journal events.
  *
- * `output` is always a JSON-serializable value — the executor runs every
+ * `result` is always a JSON-serializable value — the executor runs every
  * handler return value through `JSON.parse(JSON.stringify(...))` to guarantee
  * it survives serialization into journal events and wire protocols.
  *
- * `isError` is a structured flag separate from `output`. A tool handler can
+ * `isError` is a structured flag separate from `content`. A tool handler can
  * signal a recoverable error either by throwing (caught and converted by the
  * executor) or by returning `{ isError: true, output: ... }`. The executor
  * normalizes both paths into this flag so that downstream consumers
  * (orchestrator, UI) can distinguish tool errors from successful outputs
- * without inspecting the output shape.
+ * without inspecting the result shape.
  */
 export interface ToolExecutionResult {
   toolCallId: string;
-  output: JsonValue;
+  /** What the model sees, frozen when stored: the renderer's parts, or `result` as one text part. */
+  content: ToolContentPart[];
   isError?: boolean;
   /** Host metadata persisted beside the result for request reconstruction. */
   metadata?: JsonObject;
-  /** Typed return_result envelope; dispatch must not reverse-parse `output`. */
+  /** Typed return_result envelope; dispatch must not reverse-parse `content`. */
   returnResult?: ReturnResultOutcome;
-  /**
-   * The tool's typed result, always set. `output` is its rendering when the
-   * registration has `renderResult`, and the value itself otherwise. Readers
-   * use this, never `output`, which may be text.
-   */
+  /** The tool's typed value, always set: what `content` was rendered from and what the app reads. */
   result: JsonValue;
   /**
    * Host-only evidence the handler returned beside its result
    * (`{ output, evidence }` or `{ isError: true, output, evidence }`). Dispatch
    * records it only when it persists this result; an aborted, timed-out or
-   * thrown call carries none. Never part of `output`, `result` or `metadata`.
+   * thrown call carries none. Never part of `content`, `result` or `metadata`.
    */
   evidence?: ResultEvidence;
 }
@@ -297,12 +294,12 @@ export interface ToolRegistration {
   /** Maps executor-owned failures into a tool's model-facing result protocol. */
   formatExecutionError?: (error: ToolExecutionError) => unknown;
   /**
-   * Renders the handler's typed result into the text the model sees,
+   * Renders the handler's typed result into the parts the model sees,
    * given the call's parsed input (`{}` when it didn't parse). The executor
-   * stores the typed result beside the text. A refusal (`MeridianError`) never
+   * stores the typed result beside the parts. A refusal (`MeridianError`) never
    * reaches it: the executor renders refusals itself.
    */
-  renderResult?: (result: JsonValue, input: JsonObject) => string;
+  renderResult?: (result: JsonValue, input: JsonObject) => ToolContentPart[];
 }
 
 export interface ToolExecutionError {

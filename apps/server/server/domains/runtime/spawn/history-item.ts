@@ -8,8 +8,18 @@ import {
   type DocumentRevisionEvidence,
   referenceOccurrenceContent,
 } from "@meridian/contracts/protocol";
-import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
-import { isConversationTurn, isNotesStepHeldResult } from "@meridian/contracts/threads";
+import type {
+  Block,
+  JsonObject,
+  JsonValue,
+  ToolContentPart,
+  Turn,
+} from "@meridian/contracts/threads";
+import {
+  isConversationTurn,
+  isNotesStepHeldResult,
+  toolContentText,
+} from "@meridian/contracts/threads";
 import { classifyHistoryItem } from "../../threads/index.js";
 import type { BlockRepository } from "../../threads/ports/repositories.js";
 import { componentHistoryText } from "../loop/component-model-text.js";
@@ -158,8 +168,8 @@ export function describeBlock(input: {
     const documents = ((result?.metadata as JsonObject | undefined)?.documentRevisions ??
       []) as DocumentRevisionEvidence[];
     const isError = result?.isError === true;
-    // Rows from before typed results carry only `output`.
-    const typed = (result?.result ?? result?.output) as JsonValue | undefined;
+    const modelContent = (result?.content ?? []) as unknown as ToolContentPart[];
+    const typed = result?.result as JsonValue | undefined;
     const held = isNotesStepHeldResult(typed);
     const kind = registration?.historyKind;
     const summary = !result
@@ -182,19 +192,13 @@ export function describeBlock(input: {
       documents,
       ...(result
         ? {
-            rawResult: stringify(result.output as JsonValue),
+            rawResult: toolContentText(modelContent),
             result:
               (!call || !registration) && !isError
                 ? `[tool result omitted: ${!call ? "call" : "tool"} unavailable]`
-                : stringify(
-                    !held && !isError && policy
-                      ? policy.elide(
-                          { input: args, output: result.output as JsonValue, result: typed },
-                          documents,
-                          "history",
-                        ).output
-                      : (result.output as JsonValue),
-                  ),
+                : !held && !isError && policy
+                  ? policy.elide({ input: args, result: typed }, documents, "history").text
+                  : toolContentText(modelContent),
           }
         : {}),
     };

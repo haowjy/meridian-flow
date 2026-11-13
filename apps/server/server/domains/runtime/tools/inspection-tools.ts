@@ -17,6 +17,7 @@ import { historyDocumentText } from "./document-text.js";
 import { threadHistorySummary } from "./history-summaries.js";
 import { modelToolSchema } from "./model-tool-schema.js";
 import { renderRefusal } from "./refusal.js";
+import { renderAsText } from "./tool-content.js";
 import { toolFailureResult } from "./tool-executor.js";
 import type { ToolHandlerContext, ToolRegistration, ToolRegistry } from "./types.js";
 
@@ -47,7 +48,7 @@ export function createInspectionToolRegistrations(deps: {
       sequential: true,
       historySummary: threadHistorySummary,
       historyKind: "routine",
-      renderResult: renderThreadLsOutput,
+      renderResult: renderAsText(renderThreadLsOutput),
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: ToolHandlerContext) => {
@@ -79,7 +80,7 @@ export function createInspectionToolRegistrations(deps: {
       historySummary: threadHistorySummary,
       historyKind: "routine",
       documentText: historyDocumentText,
-      renderResult: renderThreadHistoryOutput,
+      renderResult: renderAsText(renderThreadHistoryOutput),
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: ToolHandlerContext) => {

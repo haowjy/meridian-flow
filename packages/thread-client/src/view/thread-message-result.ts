@@ -5,7 +5,7 @@
  * A failed call gets a row; when the turn holds its helper card (a busy
  * target), `partitionTurn` hides the row and the card stands alone.
  *
- * `tool.output` is the model's text and is never parsed here.
+ * `tool.content` is what the model saw and is never parsed here.
  */
 import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "./group-delivery-segments";

@@ -53,14 +53,14 @@ describe("reply save boundaries", () => {
             const reversed = modelResult({ command, status: "success", phase: "committed" });
             return {
               toolCallId: call.id,
-              output: renderAgentEditResult(reversed),
+              content: [{ type: "text", text: renderAgentEditResult(reversed) }],
               result: JSON.parse(JSON.stringify(reversed)),
             };
           }
           const staged = modelResult({ command, status: "success", phase: "staged" });
           return {
             toolCallId: call.id,
-            output: renderAgentEditResult(staged),
+            content: [{ type: "text", text: renderAgentEditResult(staged) }],
             result: JSON.parse(JSON.stringify(staged)),
             metadata: {
               stagedWrite: true,

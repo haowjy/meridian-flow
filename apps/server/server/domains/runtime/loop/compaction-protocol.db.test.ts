@@ -20,6 +20,7 @@ import { processDetachedWork } from "../detached-work.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
 import { grepDocumentText, readDocumentText, writeDocumentText } from "../tools/document-text.js";
+import { jsonContent } from "../tools/tool-content.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
@@ -231,6 +232,26 @@ else
                 },
           },
         });
+        const stored = isGrep
+          ? {
+              files: [
+                {
+                  uri,
+                  matches: [{ excerpt: "STALE SEARCH TEXT", blockHash: "b42" }],
+                  matchCount: 7,
+                },
+                {
+                  uri: "kb://fresh",
+                  matches: [{ excerpt: "FRESH SEARCH TEXT" }],
+                  matchCount: 1,
+                },
+              ],
+              totalFiles: 2,
+              exact: true,
+            }
+          : record.id === "failed-write"
+            ? "Write did not land"
+            : staleText;
         results.push(
           await rig.repos.blocks.create({
             turnId: answer.id,
@@ -240,26 +261,8 @@ else
             content: {
               toolCallId: record.id,
               toolName,
-              output: isGrep
-                ? {
-                    files: [
-                      {
-                        uri,
-                        matches: [{ excerpt: "STALE SEARCH TEXT", blockHash: "b42" }],
-                        matchCount: 7,
-                      },
-                      {
-                        uri: "kb://fresh",
-                        matches: [{ excerpt: "FRESH SEARCH TEXT" }],
-                        matchCount: 1,
-                      },
-                    ],
-                    totalFiles: 2,
-                    exact: true,
-                  }
-                : record.id === "failed-write"
-                  ? "Write did not land"
-                  : staleText,
+              content: jsonContent(stored),
+              ...(isGrep ? { result: stored } : {}),
               isError: record.id === "failed-write",
               metadata: {
                 documentRevisions: [
@@ -387,7 +390,7 @@ else
       });
       expect(promptBytes(rebuilt.generateRequest)).toBe(bytes);
       expect((await rig.repos.blocks.findById(results[0].id))!.content).toMatchObject({
-        output: "STALE-READ TEXT",
+        content: [{ type: "text", text: "STALE-READ TEXT" }],
       });
       usage.inputTokens = 50_000;
       rig.setThreshold(100_000);
@@ -425,7 +428,7 @@ else
       expect(secondElisions.some((elision) => elision.blockId === results[0].id)).toBe(false);
       expect(promptBytes(rig.gateway.requests.at(-1)!)).not.toContain("FRESH-READ TEXT");
       expect((await rig.repos.blocks.findById(results[1].id))!.content).toMatchObject({
-        output: "FRESH-READ TEXT",
+        content: [{ type: "text", text: "FRESH-READ TEXT" }],
       });
     });
 
@@ -520,7 +523,9 @@ else
       expect(JSON.stringify(await projected(forkAfter))).not.toContain("STALE-READ TEXT");
       expect(
         (await projected(forkAfter)).blocks.find((b) => b.id === results[0].id)?.content,
-      ).toMatchObject({ output: expect.stringContaining("Cleared at compaction") });
+      ).toMatchObject({
+        content: [{ type: "text", text: expect.stringContaining("Cleared at compaction") }],
+      });
     });
 
     it("sends no image block of a forgotten message and reads no asset for it (C11)", async () => {

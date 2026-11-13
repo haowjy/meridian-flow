@@ -11,9 +11,13 @@ the published Zod input, execution handler, capability, timeout/sequential
 flags, advertisement, typed-result renderer, and history classification.
 Composition supplies every core handler; schema-only stubs are not advertised.
 
-Dispatch returns both `output` (model text) and typed `result` (including
-errors). It persists `result` on the tool-result block/event; history, the app,
-and summaries read `result`, never parse `output`. Refusals bypass custom
+Dispatch returns both `content` (what the model saw: text parts, and media parts
+once a tool produces them) and typed `result` (including errors). A registration's
+`renderResult` returns the parts; a tool with no renderer gets its JSON as one text
+part (`tools/tool-content.ts`). `content` is frozen when the block is stored and
+nothing rewrites it (compaction's elisions replace it in the projected request only); history and compaction read it as
+text (`toolContentText`: a media part reads as its name, type and size), while the
+app reads `result` and never `content`. Refusals bypass custom
 renderers and retain details on the typed result. Executor-owned timeout/abort/
 throw failures use a registration formatter when one exists. Document handlers
 keep the typed `meridian.agent-edit.v1` envelope for these failures.

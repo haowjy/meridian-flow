@@ -66,7 +66,6 @@ describe("turn reducer", () => {
       [9, "late-c"],
     ]);
     expect(turn?.blocks.find((block) => block.blockType === "tool_use")?.content).toMatchObject({
-      output: "committed: ch1.md",
       result: { schema: "meridian.agent-edit.v1", status: "success" },
     });
     expect(turn?.createdAt).toBe(TURN_FIXTURE_NOW);

@@ -322,7 +322,11 @@ describe("inbox drain", () => {
       (block) => block.blockType === "tool_result",
     );
     expect(toolResults).toHaveLength(1);
-    expect(toolResults[0]?.content).toMatchObject({ output: { ok: true }, isError: false });
+    expect(toolResults[0]?.content).toMatchObject({
+      content: [{ type: "text", text: '{"ok":true}' }],
+      result: { ok: true },
+      isError: false,
+    });
   });
 
   it("keeps a mid-run writer-activated skill body on its adopted message across iterations", async () => {

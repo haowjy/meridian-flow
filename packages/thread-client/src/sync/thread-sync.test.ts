@@ -246,7 +246,6 @@ describe("frame order", () => {
     expect(staged?.blocks[0]?.content).toMatchObject({
       toolName: "doc_write",
       input: '{"uri":"kb://notes.md"}',
-      output: "staged",
     });
     // A real applied read lands between the two results; no reducer reset may lose the call.
     expect(h.sync.receive(read([structuredClone(staged) as Turn], "1500"))).toBe("applied");
@@ -258,7 +257,6 @@ describe("frame order", () => {
     expect(h.turn("turn-1")?.blocks[0]?.content).toMatchObject({
       toolName: "doc_write",
       input: '{"uri":"kb://notes.md"}',
-      output: "committed",
     });
     h.sync.stop();
   });

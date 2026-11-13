@@ -295,7 +295,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         find: "Beacon's Ori.",
         content: "BEACON STAGED TEXT.",
       });
-      expect(write.isError, JSON.stringify(write.output)).toBeFalsy();
+      expect(write.isError, JSON.stringify(write.content)).toBeFalsy();
 
       await s.discard(ascension, [ori]);
       const saved = (await staged.save()) as {
@@ -380,8 +380,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         removeCreateHook();
         removeEndHook();
       }
-      const made = (await created) as { isError?: boolean; output?: unknown } | null;
-      expect.soft(made?.isError, `Beacon's create: ${JSON.stringify(made?.output)}`).toBeFalsy();
+      const made = (await created) as { isError?: boolean; content?: unknown } | null;
+      expect.soft(made?.isError, `Beacon's create: ${JSON.stringify(made?.content)}`).toBeFalsy();
       expect.soft(await row(ori), "ori tombstoned").toMatchObject({ tombstone: true });
       expect
         .soft(await s.view(beacon).read("kb://carry/sub/new"), "Beacon reads its create")

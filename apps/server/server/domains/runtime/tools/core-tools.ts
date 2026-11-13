@@ -37,6 +37,7 @@ import { documentHistorySummary, workHistorySummary } from "./history-summaries.
 import { isInvalidArgumentsResult, renderInvalidArguments } from "./invalid-arguments.js";
 import { renderLsResult } from "./ls-result.js";
 import { modelToolSchema } from "./model-tool-schema.js";
+import { renderAsText } from "./tool-content.js";
 import type { RequestToolHandlerContext, ToolExecutionError, ToolRegistration } from "./types.js";
 import { renderWorkResult } from "./work-result.js";
 
@@ -282,7 +283,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       sequential: true,
       timeoutMs: 30_000,
       formatExecutionError: documentExecutionError(() => "read"),
-      renderResult: renderDocumentResult("read"),
+      renderResult: renderAsText(renderDocumentResult("read")),
     },
     {
       source: "core",
@@ -304,7 +305,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       formatExecutionError: documentExecutionError((error) =>
         agentEditResultCommand(error.arguments),
       ),
-      renderResult: renderDocumentResult("write"),
+      renderResult: renderAsText(renderDocumentResult("write")),
     },
     {
       source: "core",
@@ -323,7 +324,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         input.command === "list" || input.command === "show" ? "routine" : "receipt",
       sequential: true,
       timeoutMs: 30_000,
-      renderResult: renderWorkResult,
+      renderResult: renderAsText(renderWorkResult),
     },
     {
       source: "core",
@@ -337,7 +338,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       execution: { type: "server", handler: handlers.ls },
       historyKind: "routine",
       timeoutMs: 30_000,
-      renderResult: renderLsResult,
+      renderResult: renderAsText(renderLsResult),
     },
     {
       source: "core",
@@ -352,7 +353,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       documentText: grepDocumentText,
       historyKind: "routine",
       timeoutMs: 30_000,
-      renderResult: renderGrepResult,
+      renderResult: renderAsText(renderGrepResult),
     },
     {
       source: "core",

@@ -7,6 +7,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts";
+import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
@@ -185,8 +186,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return runtimes.script(runtime, THREAD);
     }
 
-    const text = (result: { output: unknown }) =>
-      typeof result.output === "string" ? result.output : JSON.stringify(result.output);
+    const text = (result: { content: ToolContentPart[] }) => toolContentText(result.content);
     const placement = async (id: string) =>
       (
         await db

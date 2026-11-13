@@ -342,6 +342,8 @@ export type {
 } from "./run-state.js";
 export type { TurnStatus } from "./status.js";
 export { isTerminalTurnStatus } from "./status.js";
+export type { StoredMediaPart, StoredTextPart, ToolContentPart } from "./tool-result-content.js";
+export { toolContentPartText, toolContentText } from "./tool-result-content.js";
 export type {
   TurnContextPreview,
   TurnContextPreviewFunctionTool,

@@ -77,6 +77,7 @@ import type {
   ModelResponseReceivedRow,
   OrchestratorEvent,
   Thread,
+  ToolContentPart,
   Turn,
 } from "@meridian/contracts/threads";
 import type {
@@ -120,6 +121,7 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { admitRun, readContinuation } from "../spawn/run-admission.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
+import { jsonContent, textContent } from "../tools/tool-content.js";
 import {
   type ActivatedSkillBody,
   activatedSkillMetadata,
@@ -1160,9 +1162,11 @@ async function persistToolOutcome(input: {
     input.outcome.kind === "permission_denied"
       ? { error: "permission_denied", reason: input.outcome.reason }
       : { refusal: "notes_step" };
-  const output = denied
-    ? result
-    : "Not run: before compaction only Scratch operations within the 3-call budget execute. This call will not be replayed. Finish this step without tools to start the summary.";
+  const content = denied
+    ? jsonContent(result)
+    : textContent(
+        "Not run: before compaction only Scratch operations within the 3-call budget execute. This call will not be replayed. Finish this step without tools to start the summary.",
+      );
   const extraEvents: OrchestratorEvent[] =
     input.outcome.kind === "permission_denied"
       ? [
@@ -1182,7 +1186,7 @@ async function persistToolOutcome(input: {
       sequence: blockSeq++,
       content: {
         toolCallId: input.call.id,
-        output,
+        content,
         result,
         isError: denied,
       },
@@ -1196,7 +1200,7 @@ async function persistToolOutcome(input: {
         {
           type: "tool.result",
           toolCallId: input.call.id,
-          output,
+          content,
           result,
           isError: denied,
         },
@@ -1216,8 +1220,11 @@ function stagedWriteResult(block: Block): AgentEditResultV1 | undefined {
 }
 
 /** A write's tool-result fields: the model's text and the typed result beside it. */
-function writeResultContent(result: AgentEditResultV1): { output: string; result: JsonValue } {
-  return { output: renderAgentEditResult(result), result: toJsonValue(result) };
+function writeResultContent(result: AgentEditResultV1): {
+  content: ToolContentPart[];
+  result: JsonValue;
+} {
+  return { content: textContent(renderAgentEditResult(result)), result: toJsonValue(result) };
 }
 
 async function persistUncommittedWriteResult(input: {
@@ -1239,7 +1246,7 @@ async function persistUncommittedWriteResult(input: {
   const toolCallId = content?.toolCallId ?? "";
   const staged = stagedWriteResult(input.block);
   const message = input.message ?? ["Write did not land.", input.text].join("\n\n");
-  const { output, result } = writeResultContent(
+  const { content: resultContent, result } = writeResultContent(
     modelResult({
       command: staged?.command ?? "unknown",
       status: input.reason ? "permission_denied" : (input.status ?? "internal_error"),
@@ -1262,7 +1269,7 @@ async function persistUncommittedWriteResult(input: {
         responseId: input.block.responseId,
         blockType: "tool_result",
         sequence: input.block.sequence,
-        content: { toolCallId, output, result, isError: true },
+        content: { toolCallId, content: resultContent, result, isError: true },
         provider: input.block.provider,
         status: "complete",
       });
@@ -1270,7 +1277,7 @@ async function persistUncommittedWriteResult(input: {
         result: localBlockFromEvent(block),
         events: [
           { type: "block.upserted", block },
-          { type: "tool.result", toolCallId, output, result, isError: true },
+          { type: "tool.result", toolCallId, content: resultContent, result, isError: true },
         ],
       };
     },
@@ -1308,7 +1315,7 @@ async function persistCommittedWriteResult(input: {
   const toolCallId = content?.toolCallId ?? "";
   // The settled receipt describes the same document and destination the staged result named.
   const staged = stagedWriteResult(input.block);
-  const { output, result } = writeResultContent({
+  const { content: resultContent, result } = writeResultContent({
     ...input.result,
     ...(staged?.path ? { path: staged.path } : {}),
     ...(staged?.notice ? { notice: staged.notice } : {}),
@@ -1326,7 +1333,7 @@ async function persistCommittedWriteResult(input: {
         responseId: input.block.responseId,
         blockType: "tool_result",
         sequence: input.block.sequence,
-        content: toJsonValue({ toolCallId, output, result, metadata }),
+        content: toJsonValue({ toolCallId, content: resultContent, result, metadata }),
         provider: input.block.provider,
         status: "complete",
       });
@@ -1334,7 +1341,7 @@ async function persistCommittedWriteResult(input: {
         result: localBlockFromEvent(block),
         events: [
           { type: "block.upserted", block },
-          { type: "tool.result", toolCallId, output, result },
+          { type: "tool.result", toolCallId, content: resultContent, result },
         ],
       };
     },

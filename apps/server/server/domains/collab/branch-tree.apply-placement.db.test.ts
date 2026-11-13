@@ -87,7 +87,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
       from: { path: "chapter" },
       path: "published/chapter",
     });
-    expect(moved.isError ?? false, JSON.stringify(moved.output)).toBe(false);
+    expect(moved.isError ?? false, JSON.stringify(moved.content)).toBe(false);
 
     const item = itemFor(await s.items(work), documentId);
     if (!item.tree?.revision) throw new Error("the model move has no tree revision");

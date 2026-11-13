@@ -6,6 +6,7 @@
  */
 
 import { splitHashline } from "@meridian/agent-edit";
+import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
@@ -115,8 +116,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return runtimes.script(runtime, THREAD);
     }
 
-    const text = (result: { output: unknown }) =>
-      typeof result.output === "string" ? result.output : JSON.stringify(result.output);
+    const text = (result: { content: ToolContentPart[] }) => toolContentText(result.content);
 
     it("drafts kb and manuscript, keeps scratch live, and reads the version writes change", async () => {
       const script = await startWithChapter("Writer live content.\n\nWriter aside.");
@@ -156,10 +156,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       call = (await script.begin()).call;
       const draftRead = await call("read", { path: CHAPTER });
       expect(draftRead.result).toMatchObject({ read: { version: "draft" } });
-      expect(draftRead.output).toContain("Model draft content.");
+      expect(toolContentText(draftRead.content)).toContain("Model draft content.");
       const liveRead = await call("read", { path: CHAPTER, version: "live" });
-      expect(liveRead.output).toContain("Writer live content.");
-      expect(liveRead.output).not.toContain("Model draft content.");
+      expect(toolContentText(liveRead.content)).toContain("Writer live content.");
+      expect(toolContentText(liveRead.content)).not.toContain("Model draft content.");
 
       // The last read was the draft, so the stale live hash reaches the resolver.
       await call("read", { path: CHAPTER });
@@ -251,10 +251,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { call } = await script.begin();
       const kept = await call("read", { path: CHAPTER, version: "draft" });
       expect(kept.result).toMatchObject({ read: { version: "draft" } });
-      expect(kept.output).toContain("Kept draft content.");
+      expect(toolContentText(kept.content)).toContain("Kept draft content.");
       const destination = await call("read", { path: CHAPTER });
       expect(destination.result).toMatchObject({ read: { version: "live" } });
-      expect(destination.output).toContain("Writer live content.");
+      expect(toolContentText(destination.content)).toContain("Writer live content.");
       const notes = await call("write", {
         command: "create",
         path: "scratch://notes",
@@ -323,7 +323,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
 
         const queued = await reply.call("work", { command: "write_mode", mode: "direct" });
-        expect(queued.output).toBe("AI write mode will change to direct from the next reply.");
+        expect(toolContentText(queued.content)).toBe(
+          "AI write mode will change to direct from the next reply.",
+        );
         expect(
           await db
             .select({

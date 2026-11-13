@@ -24,6 +24,7 @@ import type {
   PrefixCachePredictionState,
 } from "./prefix-cache-prediction.js";
 import type { RunState } from "./run-state.js";
+import type { ToolContentPart } from "./tool-result-content.js";
 
 export interface ModelResponseReceivedRow {
   id: string;
@@ -93,9 +94,9 @@ export type OrchestratorEvent =
   | {
       type: "tool.result";
       toolCallId: string;
-      /** What the model sees: the rendering of `result`, or `result` itself for a tool with no renderer. */
-      output: JsonValue;
-      /** The tool's typed result. Clients read this, never `output`. */
+      /** What the model saw, frozen when stored. Clients read `result`, never `content`. */
+      content: ToolContentPart[];
+      /** The tool's typed result. */
       result?: JsonValue;
       isError?: boolean;
       /** Host-only result metadata delivered beside, never inside, model-visible output. */

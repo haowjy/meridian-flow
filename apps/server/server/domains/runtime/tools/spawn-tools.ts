@@ -16,6 +16,7 @@ import { renderSpawnOutput, spawnToolResult } from "../spawn/model-spawn-result.
 import { renderThreadReportOutput } from "../spawn/model-thread-report.js";
 import { spawnHistorySummary, threadHistorySummary } from "./history-summaries.js";
 import { modelToolSchema } from "./model-tool-schema.js";
+import { renderAsText } from "./tool-content.js";
 import { toolFailureResult } from "./tool-executor.js";
 import type {
   ReturnResultToolHandlerContext,
@@ -184,7 +185,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       },
       sequential: true,
       capability: "thread_report",
-      renderResult: renderThreadReportOutput,
+      renderResult: renderAsText(renderThreadReportOutput),
       historySummary: threadHistorySummary,
       historyKind: "routine",
       advertise: true,
@@ -205,7 +206,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       },
       sequential: true,
       capability: "spawn",
-      renderResult: renderSpawnOutput,
+      renderResult: renderAsText(renderSpawnOutput),
       historySummary: spawnHistorySummary,
       advertise: true,
     },
@@ -225,7 +226,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       },
       sequential: true,
       capability: "thread_message",
-      renderResult: renderSpawnOutput,
+      renderResult: renderAsText(renderSpawnOutput),
       historySummary: spawnHistorySummary,
       advertise: true,
     },

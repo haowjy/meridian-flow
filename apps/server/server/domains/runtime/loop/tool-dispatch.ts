@@ -395,7 +395,7 @@ export async function dispatchToolCall(
       ...(settled.endsBatch ? { end: { cause: "success" as const } } : {}),
     };
   }
-  const persistedOutput = execResult.output;
+  const persistedContent = execResult.content;
   const persistedIsError = execResult.isError;
   const persistedMetadata = execResult.metadata;
   const persistedResult = execResult.result;
@@ -411,7 +411,7 @@ export async function dispatchToolCall(
         sequence: ctx.blockSeqRef.value++,
         content: {
           toolCallId: execResult.toolCallId,
-          output: persistedOutput,
+          content: persistedContent,
           result: persistedResult,
           ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
           ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
@@ -425,7 +425,7 @@ export async function dispatchToolCall(
           {
             type: "tool.result",
             toolCallId: execResult.toolCallId,
-            output: persistedOutput,
+            content: persistedContent,
             result: persistedResult,
             isError: persistedIsError,
             ...(persistedMetadata ? { metadata: persistedMetadata } : {}),

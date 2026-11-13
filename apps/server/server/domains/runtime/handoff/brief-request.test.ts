@@ -120,7 +120,7 @@ async function prepareBrief(input: { userCutoff: boolean; previousTooLarge?: boo
     sequence: 1,
     content: {
       toolCallId: "chapter-read",
-      output: "Earlier chapter text.",
+      content: [{ type: "text", text: "Earlier chapter text." }],
       isError: false,
       metadata: {
         documentRevisions: [

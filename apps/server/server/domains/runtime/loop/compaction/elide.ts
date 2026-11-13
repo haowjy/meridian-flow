@@ -1,4 +1,5 @@
 /** Plans immutable model-only document replacements at a compaction boundary. */
+
 import {
   type DocumentRevisionEvidence,
   referenceOccurrenceContent,
@@ -6,6 +7,7 @@ import {
 import { type Block, isNotesStepHeldResult, type JsonObject } from "@meridian/contracts/threads";
 import type { CompactionMetadata } from "../../../threads/index.js";
 import type { DocumentTextPolicy } from "../../tools/document-text.js";
+import { textContent } from "../../tools/tool-content.js";
 import { elideReferenceRead } from "../reference-context.js";
 import type { RetainedTurnSlice } from "./tail.js";
 
@@ -125,11 +127,7 @@ export function planModelElisions(input: {
       const { targets, treatment: why } = elision;
       const uris = [...new Set(targets.flatMap((ref) => (ref.uri ? [ref.uri] : [])))];
       const replacement = policy.elide(
-        {
-          input: toolInput,
-          output: (result.content as JsonObject).output,
-          result: (result.content as JsonObject).result,
-        },
+        { input: toolInput, result: (result.content as JsonObject).result },
         targets,
         why,
       );
@@ -142,13 +140,12 @@ export function planModelElisions(input: {
           uris,
           content: { ...(call.content as JsonObject), input: replacement.input },
         });
-      if (replacement.output !== undefined)
-        elisions.push({
-          blockId: result.id,
-          treatment,
-          uris,
-          content: { ...(result.content as JsonObject), output: replacement.output },
-        });
+      elisions.push({
+        blockId: result.id,
+        treatment,
+        uris,
+        content: { ...(result.content as JsonObject), content: textContent(replacement.text) },
+      });
     }
     for (const block of blocks) {
       const reference = referenceOccurrenceContent(block);

@@ -29,17 +29,6 @@ export function readString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-export function parseToolOutput(value: unknown): JsonValue {
-  if (typeof value === "string") {
-    try {
-      return JSON.parse(value) as JsonValue;
-    } catch {
-      return value;
-    }
-  }
-  return (value as JsonValue) ?? null;
-}
-
 export function eventH(event: object): event is { threadId: string } {
   return "threadId" in event && typeof (event as { threadId?: unknown }).threadId === "string";
 }

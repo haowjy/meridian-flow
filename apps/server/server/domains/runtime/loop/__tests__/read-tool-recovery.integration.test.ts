@@ -3,7 +3,9 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Recoverable read and write command separation
  */
+
 import { modelResult } from "@meridian/agent-edit/integration";
+import type { ToolContentPart } from "@meridian/contracts/threads";
 import type { GenerateResult } from "@meridian-flow/gateway";
 import { describe, expect, it } from "vitest";
 import {
@@ -103,7 +105,12 @@ describe("document command recovery through the runtime loop", () => {
       expect.arrayContaining([
         expect.objectContaining({
           toolCallId: "retired-read",
-          output: expect.stringContaining("Invalid arguments for write:\n- command:"),
+          content: [
+            {
+              type: "text",
+              text: expect.stringContaining("Invalid arguments for write:\n- command:"),
+            },
+          ],
           result: {
             error: "invalid_arguments",
             issues: [expect.objectContaining({ path: "command" })],
@@ -112,7 +119,12 @@ describe("document command recovery through the runtime loop", () => {
         }),
         expect.objectContaining({
           toolCallId: "read-corrected",
-          output: "status: success; path: manuscript://chapter.md; blocks: 1\n\na1b2|Chapter text.",
+          content: [
+            {
+              type: "text",
+              text: "status: success; path: manuscript://chapter.md; blocks: 1\n\na1b2|Chapter text.",
+            },
+          ],
           result: CHAPTER_READ,
           isError: undefined,
         }),
@@ -127,13 +139,16 @@ describe("document command recovery through the runtime loop", () => {
         block.blockType === "tool_result" &&
         (block.content as { toolCallId?: string } | null)?.toolCallId === "retired-read",
     );
-    const persistedOutput = (savedRejection?.content as { output?: unknown } | null)?.output;
-    expect(persistedOutput).toEqual(expect.stringContaining("Invalid arguments for write:"));
+    const persistedContent = (savedRejection?.content as { content?: ToolContentPart[] } | null)
+      ?.content;
+    expect(persistedContent).toEqual([
+      { type: "text", text: expect.stringContaining("Invalid arguments for write:") },
+    ]);
     const retryMessage = requests[1]?.messages
       .flatMap((message) => message.content)
       .find((part) => part.type === "tool_result" && part.toolCallId === "retired-read");
     expect(retryMessage).toMatchObject({
-      content: [{ type: "text", text: persistedOutput }],
+      content: persistedContent,
       isError: true,
     });
     expect(events.some((event) => event.type === "turn.completed")).toBe(true);
@@ -202,7 +217,7 @@ describe("document command recovery through the runtime loop", () => {
           type: "tool.result",
           toolCallId: "edit-denied",
           isError: true,
-          output: expect.objectContaining({ error: "permission_denied" }),
+          result: expect.objectContaining({ error: "permission_denied" }),
         }),
       ]),
     );
@@ -217,7 +232,7 @@ describe("document command recovery through the runtime loop", () => {
         candidate.blockType === "tool_result" &&
         (candidate.content as { toolCallId?: string } | null)?.toolCallId === "edit-denied",
     );
-    expect((denial?.content as { output?: unknown } | null)?.output).toMatchObject({
+    expect((denial?.content as { result?: unknown } | null)?.result).toMatchObject({
       error: "permission_denied",
     });
   });

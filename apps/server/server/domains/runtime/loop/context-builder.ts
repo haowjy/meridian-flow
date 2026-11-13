@@ -2,7 +2,13 @@
 
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
-import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
+import {
+  type Block,
+  type Thread,
+  type ToolContentPart,
+  type Turn,
+  toolContentPartText,
+} from "@meridian/contracts/threads";
 import type {
   ContentPart,
   MediaPart,
@@ -117,17 +123,16 @@ export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Messa
           messages.push(message);
           assistantParts.length = 0;
         }
-        const content = block.content as {
+        const content = block.content as unknown as {
           toolCallId?: string;
-          output?: JsonValue;
+          content: ToolContentPart[];
           isError?: boolean;
-        } | null;
-        const toolCallId = content?.toolCallId ?? "";
+        };
         messages.push(
           toolResult(
-            toolCallId,
-            toolOutputParts(content?.output ?? block.textContent ?? null),
-            content?.isError,
+            content.toolCallId ?? "",
+            storedContentParts(content.content),
+            content.isError,
           ),
         );
         continue;
@@ -235,7 +240,7 @@ function completeToolResultGroups(
         ? "Tool call cancelled; no result recorded. Side effects unknown — re-read state before retrying."
         : "Tool call did not finish; no result recorded. Side effects unknown — re-read state before retrying.";
     for (const toolCallId of missingResultIds) {
-      completed.push(toolResult(toolCallId, toolOutputParts(missingResultMessage), true));
+      completed.push(toolResult(toolCallId, [text(missingResultMessage)], true));
     }
   }
 
@@ -243,13 +248,11 @@ function completeToolResultGroups(
 }
 
 /**
- * A stored tool `output` as the one text part the model sees: strings as they are, anything else
- * as JSON. Never empty, because providers reject an empty tool result.
+ * A stored tool result's parts as the gateway's. A media part is described as text until the
+ * request builder resolves stored media to the gateway's part.
  */
-function toolOutputParts(output: unknown): [TextPart] {
-  if (typeof output === "string" && output.length > 0) return [text(output)];
-  if (typeof output === "string") return [text('""')];
-  return [text(JSON.stringify(output) ?? "null")];
+function storedContentParts(parts: readonly ToolContentPart[]): TextPart[] {
+  return parts.map((part) => text(toolContentPartText(part)));
 }
 
 function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]): ContentPart[] {

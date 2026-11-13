@@ -6,6 +6,7 @@
  * settlement. The accepted capture and ordinary tool_result share one
  * persistence transaction; capture is candidate content, not a terminal card.
  */
+
 import {
   buildInvocationCardContent,
   type ComponentBlockContent,
@@ -20,6 +21,7 @@ import type { ExecutionReportRepository } from "../../threads/ports/repositories
 import { contentForBlockInput, localBlockFromEvent } from "../loop/block-helpers.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
+import { jsonContent } from "../tools/tool-content.js";
 
 export type SpawnTranscript = {
   persistence: PersistenceDeps;
@@ -195,14 +197,14 @@ export async function persistReturnResult(
       }
       const isError = !output.ok;
       // A refusal reaches the model as its message; `result` keeps the outcome.
-      const modelOutput = output.ok ? output : output.message;
+      const content = jsonContent(output.ok ? output : output.message);
       const toolRow = contentForBlockInput({
         turnId: transcript.turnId,
         blockType: "tool_result",
         sequence: transcript.blockSeqRef.value++,
         content: {
           toolCallId: input.toolCallId,
-          output: modelOutput,
+          content,
           result: output,
           isError,
         },
@@ -213,7 +215,7 @@ export async function persistReturnResult(
         {
           type: "tool.result" as const,
           toolCallId: input.toolCallId,
-          output: modelOutput,
+          content,
           result: output,
           isError,
         },
