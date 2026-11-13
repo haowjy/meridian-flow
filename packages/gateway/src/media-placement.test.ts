@@ -77,7 +77,8 @@ const responses = (r: GenerateRequest) => {
   return Array.isArray(input) ? input : [];
 };
 const chat = (r: GenerateRequest) =>
-  toOpenAIChatCompletionParams(r, model("openai-compatible"), CALL).messages;
+  toOpenAIChatCompletionParams(r, { ...model("openai-compatible"), imageLinks: true }, CALL)
+    .messages;
 
 describe("tool result media placement", () => {
   it("Anthropic nests images and PDFs in tool_result.content, by link or as base64", () => {
@@ -167,6 +168,8 @@ describe("tool result media placement", () => {
   });
 });
 
+const gemini = (id: string): ModelInfo => ({ ...model("gemini"), id });
+
 describe("placeMedia", () => {
   it("answers link, bytes or none from the wire, the modalities and the link limit", () => {
     const chatModel = model("openai-compatible");
@@ -178,11 +181,47 @@ describe("placeMedia", () => {
       transport: "bytes",
       toolResult: "after",
     });
+    expect(placeMedia(chatModel, { mediaType: "image/png" })).toEqual({
+      transport: "bytes",
+      toolResult: "after",
+    });
+    expect(placeMedia({ ...chatModel, imageLinks: true }, { mediaType: "image/png" })).toEqual({
+      transport: "link",
+      toolResult: "after",
+    });
     expect(placeMedia({ ...chatModel, inputModalities: ["text"] }, IMAGE_LINK)).toEqual({
       transport: "none",
     });
     expect(
-      placeMedia({ ...chatModel, maxLinkBytes: 10 }, { mediaType: "image/png", sizeBytes: 11 }),
+      placeMedia(
+        { ...chatModel, imageLinks: true, maxLinkBytes: 10 },
+        { mediaType: "image/png", sizeBytes: 11 },
+      ),
     ).toEqual({ transport: "none" });
+  });
+
+  it("answers none for an image type the wire does not accept, so the caller can send a preview", () => {
+    expect(placeMedia(model("anthropic"), { mediaType: "image/heic" })).toEqual({
+      transport: "none",
+    });
+    expect(placeMedia(model("openai"), { mediaType: "image/bmp" })).toEqual({ transport: "none" });
+    expect(placeMedia(gemini("gemini-3.1-flash-lite"), { mediaType: "image/heic" })).toEqual({
+      transport: "link",
+      toolResult: "inside",
+    });
+  });
+
+  it("keys Gemini tool-result placement on the model's major version", () => {
+    const inToolResult = { mediaType: "application/pdf", inToolResult: true } as const;
+    expect(placeMedia(gemini("gemini-3.1-flash-lite"), inToolResult)).toEqual({
+      transport: "link",
+      toolResult: "inside",
+    });
+    expect(placeMedia(gemini("gemini-2.5-flash"), inToolResult)).toEqual({ transport: "none" });
+    expect(placeMedia(gemini("gemma-whatever"), inToolResult)).toEqual({ transport: "none" });
+    expect(placeMedia(gemini("gemini-2.5-flash"), { mediaType: "application/pdf" })).toEqual({
+      transport: "link",
+      toolResult: "none",
+    });
   });
 });

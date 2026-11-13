@@ -198,7 +198,7 @@ const GEMINI_4_ARGON_MODEL = {
   displayName: "Gemini 4 Argon",
   contextWindow: 1_048_576,
   maxOutputTokens: 32_768,
-  // Google's OpenAI endpoint maps `reasoning_effort` to `thinking_level`.
+  // The native API takes the effort as `thinkingConfig.thinkingLevel`.
   reasoning: { efforts: ["low", "medium", "high"] },
   inputModalities: ["text", "image", "video", "audio", "pdf"],
   // Gemini fetches a link up to 15 MB (ai.google.dev file-input docs).
@@ -319,9 +319,9 @@ export const MODEL_REGISTRY: ModelRegistry = {
     },
     {
       id: "gemini",
-      adapter: "openai-compatible",
+      adapter: "gemini",
       apiKeyEnv: "FLOW_GEMINI_API_KEY",
-      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
+      baseUrl: "https://generativelanguage.googleapis.com",
       offerings: [
         {
           model: GEMINI_4_ARGON_MODEL,
