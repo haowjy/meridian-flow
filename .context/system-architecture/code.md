@@ -1,54 +1,39 @@
 # Code
 
-The apps and packages, and which imports which. Dependencies run down: apps import packages, and
-packages import only packages lower in the list. `contracts`, `prosemirror-schema`, `yjs-inspect`
-and `design-tokens` import no workspace code. No package imports an app.
-`tools/` is outside these rules and imports server adapters directly.
+The apps sit on top and the packages under them. Apps never sit under packages: no package imports
+an app. A package uses only packages lower down: `contracts`, `prosemirror-schema`, `yjs-inspect` and
+`design-tokens` use no workspace code. The numbered arrows are what a chat message and its edits use, in order (the app follows the chat, the
+server applies the model's edits and saves them); the others are what each layer borrows. An arrow here means "calls code from", at the level of layers; the exact import breaks of
+the written rules are on [dependencies](dependencies.md). `tools/` (the `./mf` client) is outside
+these layers and is on the [system](system.md) page.
 
 ```mermaid
-flowchart LR
-  app["app"]:::module
-  server["server"]:::module
-  www["www"]:::module
-  mf["mf"]:::module
-  agent-edit["agent-edit"]:::package
-  contracts["contracts"]:::package
-  database["database"]:::package
-  design-tokens["design-tokens"]:::package
-  markup["markup"]:::package
-  prosemirror-schema["prosemirror-schema"]:::package
-  resource-replica["resource-replica"]:::package
-  thread-client["thread-client"]:::package
-  yjs-inspect["yjs-inspect"]:::package
-  app -->|"import: types, sync, editor"| agent-edit
-  app -->|"import: shared shapes"| contracts
-  app -->|"import: colours"| design-tokens
-  app -->|"import: document codec"| markup
-  app -->|"import: schema mirror"| prosemirror-schema
-  app -->|"import: local replica"| resource-replica
-  app -->|"import: thread socket"| thread-client
-  app -->|"import: debug overlay"| yjs-inspect
-  server -->|"import: edit engine"| agent-edit
-  server -->|"import: shared shapes"| contracts
-  server -->|"import: schema and queries"| database
-  server -->|"import: document codec"| markup
-  server -->|"import: schema"| prosemirror-schema
-  server -->|"import: replica policy"| resource-replica
-  server -->|"import: event types"| thread-client
-  www -->|"import: colours"| design-tokens
-  mf -->|"import: shared shapes"| contracts
-  mf -->|"import: thread socket"| thread-client
-  database -->|"import: one migration"| agent-edit
-  database -->|"import: column types"| contracts
-  database -->|"import: schema, one migration"| prosemirror-schema
-  agent-edit -->|"import: wire types"| contracts
-  agent-edit -->|"import: document codec"| markup
-  agent-edit -->|"import: schema"| prosemirror-schema
-  markup -->|"import: shared shapes"| contracts
-  markup -->|"import: schema"| prosemirror-schema
-  resource-replica -->|"import: shared shapes"| contracts
-  thread-client -->|"import: shared shapes"| contracts
-  thread-client -->|"import: link rules"| markup
+flowchart TB
+  app["app<br/><small>the writer's web app</small>"]:::module
+  server["server<br/><small>HTTP and sockets, every domain's logic</small>"]:::module
+  www["www<br/><small>the landing site</small>"]:::module
+  thread-client["thread-client<br/><small>chat events into a view model</small>"]:::package
+  resource-replica["resource-replica<br/><small>the local copy of documents</small>"]:::package
+  agent-edit["agent-edit<br/><small>the model's document reads and writes</small>"]:::package
+  markup["markup<br/><small>text to document and back</small>"]:::package
+  prosemirror-schema["prosemirror-schema<br/><small>the editor's node and mark schema</small>"]:::package
+  database["database<br/><small>Postgres schema and migrations</small>"]:::package
+  contracts["contracts<br/><small>the shapes that cross the wire</small>"]:::package
+  design-tokens["design-tokens<br/><small>the one place for colours</small>"]:::package
+  yjs-inspect["yjs-inspect<br/><small>safe summaries of sync traffic</small>"]:::package
+  app -->|"call: 1. follows a chat with"| thread-client
+  app -->|"call: keeps documents locally with"| resource-replica
+  app -->|"call: encodes the writer's text with"| markup
+  server -->|"call: 2. applies the model's edits with"| agent-edit
+  server -->|"call: 3. saves everything with"| database
+  agent-edit -->|"call: reads and writes text with"| markup
+  thread-client -->|"call: reads link rules from"| markup
+  markup -->|"call: builds documents from"| prosemirror-schema
+  app -->|"call: mirrors the schema of"| prosemirror-schema
+  database -->|"call: types its columns with"| contracts
+  app -->|"call: takes colours from"| design-tokens
+  www -->|"call: takes colours from"| design-tokens
+  app -->|"call: debug overlay reads sync with"| yjs-inspect
 ```
 
 ## app
@@ -83,15 +68,6 @@ Imports only `design-tokens`.
 - Paths: `apps/www/src`
 - Docs: [www AGENTS](../../apps/www/AGENTS.md)
 - Machines: [landing](../../apps/www/src/features/landing/.context/state-machines.md)
-
-## mf
-
-`tools/mf`: the `./mf` command-line client.
-
-Reads the same responses and thread events as the app. A wrong value in both is in the data; one only in the app is in its rendering.
-
-- Kind: module
-- Paths: `tools/mf/src`
 
 ## contracts
 

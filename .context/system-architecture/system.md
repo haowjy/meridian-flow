@@ -1,39 +1,40 @@
 # The running system
 
-What runs when a writer uses Meridian Flow, as it runs under `pnpm dev`: a browser, the app and
-the server (two Nitro processes), a landing site, Postgres, and the outside services the server
-calls. Every process sits behind a Portless HTTPS route. **Nothing is deployed yet**; the plan is
-on the [hosting page](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/hosting.md).
+What happens when a writer sends a message: the browser sends it (1), the server asks the model for a
+reply (2), saves the reply and the model's edits to the writer's documents in Postgres (3), and streams
+both back to the browser (4). Everything else on the page is what that path stands on. Under
+`pnpm dev` these are a browser, two Nitro processes (the app and the server), a landing site,
+Postgres and the outside services the server calls, each behind a Portless HTTPS route. **Nothing is
+deployed yet**; the plan is on the [hosting page](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/hosting.md).
+The full path, step by step: [a message becomes an edit](flows/message-becomes-edit.md).
 
 ```mermaid
 flowchart LR
-  browser["browser"]:::client
-  app["app"]:::service
-  server["server"]:::service
-  www["www"]:::service
-  postgres["postgres"]:::store
-  objectstore["objectstore"]:::store
-  models["models"]:::external
-  workos["workos"]:::external
-  stripe["stripe"]:::external
-  mf["mf"]:::client
-  ci["ci"]:::external
-  browser <-->|"http: pages, SSR, login"| app
-  browser <-->|"http: /api/*"| server
-  browser <-->|"ws: chat events and commands, document sync"| server
-  browser -->|"http: sign-in redirect"| workos
-  browser -->|"files: presigned upload and download"| objectstore
+  browser["browser<br/><small>the writer's tab: editor and chat</small>"]:::client
+  server["server<br/><small>runs the chat, edits documents, keeps state</small>"]:::service
+  models["models<br/><small>the AI providers</small>"]:::external
+  postgres["postgres<br/><small>the one database</small>"]:::store
+  app["app<br/><small>serves the pages, signs the writer in</small>"]:::service
+  workos["workos<br/><small>hosted sign-in</small>"]:::external
+  objectstore["objectstore<br/><small>uploaded and imported file bytes</small>"]:::store
+  stripe["stripe<br/><small>payments for credits</small>"]:::external
+  www["www<br/><small>the public landing site</small>"]:::service
+  mf["mf<br/><small>command-line client for debugging</small>"]:::client
+  ci["ci<br/><small>builds, tests, migrates</small>"]:::external
+  browser -->|"http: 1. sends the message"| server
+  server -->|"model: 2. asks for a reply"| models
+  server -->|"sql: 3. saves the reply and its edits"| postgres
+  server -->|"ws: 4. streams the reply and the edits"| browser
+  browser -->|"http: loads the pages"| app
+  app -->|"http: signs the writer in"| workos
+  server -->|"http: checks the session"| workos
+  app -->|"http: fetches data while rendering a page"| server
+  browser -->|"files: uploads and downloads files"| objectstore
+  server -->|"files: stores and fetches bytes"| objectstore
+  server <-->|"http: checkout, payment webhook"| stripe
   www -->|"http: links to sign-in"| app
-  app -->|"http: code exchange, refresh"| workos
-  app -->|"http: SSR API requests"| server
-  server -->|"http: session refresh, user lookup"| workos
-  server <-->|"sql: queries, LISTEN"| postgres
-  server <-->|"files: put, get, copy"| objectstore
-  server -->|"model: turns"| models
-  server <-->|"http: checkout, webhook in"| stripe
-  mf -->|"http: debug requests"| server
-  mf -->|"ws: thread socket"| server
-  ci -->|"sql: migrations"| postgres
+  mf -->|"http: asks what the app asks"| server
+  ci -->|"sql: applies migrations"| postgres
 ```
 
 ## browser
