@@ -201,7 +201,13 @@ function unitHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: num
     const draft = buildSide(S.blocks.slice(s0, s1));
     const hunks: Hunk[] = [];
     if (base.toks.length > ANCHOR_GAP_TOKENS || draft.toks.length > ANCHOR_GAP_TOKENS)
-      hunks.push({ from: 0, to: base.toks.length, sfrom: 0, ins: draft.toks });
+      hunks.push({
+        from: 0,
+        to: base.toks.length,
+        sfrom: 0,
+        sto: draft.toks.length,
+        ins: draft.toks,
+      });
     else tokenHunks(base, 0, base.toks.length, draft, 0, draft.toks.length, hunks);
     memo.hunks = separateBlocks(base, draft, refine(base.toks, hunks));
   }
@@ -210,6 +216,7 @@ function unitHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: num
     from: h.from + B.starts[b0],
     to: h.to + B.starts[b0],
     sfrom: h.sfrom + S.starts[s0],
+    sto: h.sto + S.starts[s0],
   });
   for (const h of memo.hunks) out.push(relocate(h));
 }
@@ -239,9 +246,8 @@ function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
       out.push(h);
       continue;
     }
-    const sto = h.sfrom + h.ins.length;
     const [b0, b1] = complete(B, h.from, h.to);
-    const [s0, s1] = complete(S, h.sfrom, sto);
+    const [s0, s1] = complete(S, h.sfrom, h.sto);
     if (b0 === b1 && s0 === s1) {
       out.push(h);
       continue;
@@ -256,7 +262,7 @@ function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
       [b0, s0],
       [bp, sp],
       [b1, s1],
-      [h.to, sto],
+      [h.to, h.sto],
     ]) {
       if (to > b || send > s) {
         const prev = out.length > start ? out.at(-1) : undefined;
@@ -264,8 +270,9 @@ function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
         // an added block plus a split's new paragraph start must not become competing insertions.
         if (prev && ((prev.from === prev.to && b === to) || (!prev.ins.length && s === send))) {
           prev.to = to;
+          prev.sto = send;
           prev.ins = S.toks.slice(prev.sfrom, send);
-        } else out.push({ from: b, to, sfrom: s, ins: S.toks.slice(s, send) });
+        } else out.push({ from: b, to, sfrom: s, sto: send, ins: S.toks.slice(s, send) });
       }
       b = to;
       s = send;
@@ -315,7 +322,7 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
   const bt = B.toks;
   const st = S.toks;
   if (b0 === b1 || s0 === s1) {
-    out.push({ from: b0, to: b1, sfrom: s0, ins: st.slice(s0, s1) });
+    out.push({ from: b0, to: b1, sfrom: s0, sto: s1, ins: st.slice(s0, s1) });
     return;
   }
   const content = (ts: Tok[], i: number, j: number) => {
@@ -412,9 +419,10 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
   let pb = b0;
   let ps = s0;
   for (const [mx, my] of [...all, [b1, s1] as [number, number]]) {
-    if (mx > pb || my > ps) out.push({ from: pb, to: mx, sfrom: ps, ins: st.slice(ps, my) });
+    if (mx > pb || my > ps)
+      out.push({ from: pb, to: mx, sfrom: ps, sto: my, ins: st.slice(ps, my) });
     if (mx < b1 && bt[mx].key !== st[my].key)
-      out.push({ from: mx, to: mx + 1, sfrom: my, ins: [st[my]] });
+      out.push({ from: mx, to: mx + 1, sfrom: my, sto: my + 1, ins: [st[my]] });
     pb = mx + 1;
     ps = my + 1;
   }
@@ -447,6 +455,7 @@ function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
       const best = cands.find(([q, s]) => boundary(q) && isBlockTok(st[s])) ?? cands[0];
       h.from = h.to = best[0];
       h.sfrom = best[1];
+      h.sto = best[1] + n;
       h.ins = st.slice(best[1], best[1] + n);
     } else if (!h.ins.length && h.from < h.to) {
       const n = h.to - h.from;
@@ -465,7 +474,7 @@ function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
       const best = cands.find(([q]) => isBlockTok(bt[q]) && boundary(q + n)) ?? cands[0];
       h.from = best[0];
       h.to = best[0] + n;
-      h.sfrom = best[1];
+      h.sfrom = h.sto = best[1];
     }
   }
 }
@@ -500,13 +509,20 @@ function refine(bt: Tok[], hunks: Hunk[]): Hunk[] {
           from: h.from + i,
           to: h.from + toI,
           sfrom: h.sfrom + j,
+          sto: h.sfrom + toJ,
           ins: h.ins.slice(j, toJ),
         });
     };
     for (const [mi, mj] of matches) {
       gap(mi, mj);
       if (bt[h.from + mi].key !== h.ins[mj].key)
-        out.push({ from: h.from + mi, to: h.from + mi + 1, sfrom: h.sfrom + mj, ins: [h.ins[mj]] });
+        out.push({
+          from: h.from + mi,
+          to: h.from + mi + 1,
+          sfrom: h.sfrom + mj,
+          sto: h.sfrom + mj + 1,
+          ins: [h.ins[mj]],
+        });
       i = mi + 1;
       j = mj + 1;
     }

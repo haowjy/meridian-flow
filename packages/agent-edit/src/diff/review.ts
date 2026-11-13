@@ -179,7 +179,7 @@ function pairMoves(diff: BlockDiff): Array<[number, number]> {
     )
       if (b < B.blocks.length && B.starts[b] >= h.from)
         removals.push({ hunk: i, node: B.blocks[b] });
-    const endsAtStart = isStart(D, h.sfrom + h.ins.length);
+    const endsAtStart = isStart(D, h.sto);
     for (let k = 0; k < h.ins.length; k++) {
       const t = h.ins[k];
       if (!isBlockTok(t)) continue;
@@ -259,7 +259,7 @@ function groupSpans(diff: BlockDiff, members: number[], clusterOf: number[]): Re
     const bFrom = first.from;
     const bTo = last.to;
     const dFrom = first.sfrom;
-    const dTo = last.sfrom + last.ins.length;
+    const dTo = last.sto;
     const baseInline = bTo > bFrom && !isBlockTok(B.toks[bFrom]);
     const draftInline = dTo > dFrom && !isBlockTok(D.toks[dFrom]);
     spans.push({
@@ -378,7 +378,7 @@ function hunkContent(diff: BlockDiff, h: Hunk): HunkContent {
   };
   const base = range(diff.base, h.from, h.to);
   keys.push(contentBoundary);
-  const draft = range(diff.draft, h.sfrom, h.sfrom + h.ins.length);
+  const draft = range(diff.draft, h.sfrom, h.sto);
   const memo = descend(hunkContents, keys);
   memo.value ??= new Map();
   const ranges = formattingRanges(diff, h);
@@ -411,7 +411,7 @@ function reviewHunk(
   content: HunkContent,
 ): ReviewHunk {
   const h = diff.hunks[index];
-  const end = h.sfrom + h.ins.length;
+  const end = h.sto;
   const inserted = h.ins.length ? { from: pos.start(h.sfrom), to: pos.end(end - 1) } : null;
   const context = content.context;
   // A whole-node highlight would also wrap another hunk's red widget, including a deletion gap.
@@ -458,7 +458,7 @@ function formattingRanges(
   if (h.from === h.to || !h.ins.length) return undefined;
   const { base: B, draft: D } = diff;
   const baseBlock = B.blockOf[h.to - 1];
-  const draftBlock = D.blockOf[h.sfrom + h.ins.length - 1];
+  const draftBlock = D.blockOf[h.sto - 1];
   const bStart = B.starts[baseBlock];
   const dStart = D.starts[draftBlock];
   const before = B.toks[bStart];
