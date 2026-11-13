@@ -47,7 +47,7 @@ function block(node: JSONContent, caret: "inside" | "after" = "inside"): SlashIn
 }
 
 function heading(level: 1 | 2 | 3): SlashInsertion {
-  return block({ type: "heading", attrs: { level } });
+  return block({ type: "paragraph", attrs: { level } });
 }
 
 /** One row per catalog id, `image` included. */
@@ -196,8 +196,19 @@ export function applySlashCommand(
     .command(({ tr, dispatch }) => {
       if (!dispatch) return true;
 
-      if (target.mode === "convert") tr.replaceWith(target.from, target.to, node);
-      else tr.insert(target.pos, node);
+      if (target.mode === "convert") {
+        const current = tr.doc.nodeAt(target.from);
+        // Same node name: retype in place, so the block keeps its Yjs element
+        // and its alignment; only the level is the writer's choice.
+        if (current?.type === node.type) {
+          tr.setNodeMarkup(target.from, undefined, {
+            ...current.attrs,
+            level: node.attrs.level,
+          });
+        } else {
+          tr.replaceWith(target.from, target.to, node);
+        }
+      } else tr.insert(target.pos, node);
 
       landCaret(tr, start, node.nodeSize, target.block.caret);
       return true;

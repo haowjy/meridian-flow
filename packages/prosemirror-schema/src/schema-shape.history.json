@@ -265,5 +265,263 @@
         }
       }
     }
+  },
+  {
+    "version": {
+      "major": 2,
+      "minor": 0,
+      "patch": 0
+    },
+    "compatibilityNote": "Removes the `heading` node; a heading is now a `paragraph` with a `level` attr (null body text, 1..6 heading) so retyping a block edits its Yjs element in place instead of replacing it. Major because a node is removed and stored `heading` elements mean something else. Pre-deploy there is no stored data to keep: dev collab state is reset, no migration.",
+    "surface": {
+      "fragmentName": "prosemirror",
+      "nodes": {
+        "blockquote": {
+          "attrs": {},
+          "content": "block+"
+        },
+        "bullet_list": {
+          "attrs": {
+            "tight": {
+              "hasDefault": true,
+              "default": false
+            }
+          },
+          "content": "list_item+"
+        },
+        "code_block": {
+          "attrs": {
+            "language": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "text*"
+        },
+        "doc": {
+          "attrs": {},
+          "content": "block+"
+        },
+        "figure": {
+          "attrs": {
+            "alt": {
+              "hasDefault": true,
+              "default": null
+            },
+            "caption": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "label": {
+              "hasDefault": true,
+              "default": null
+            },
+            "ref": {
+              "hasDefault": true,
+              "default": null
+            },
+            "src": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "uploadToken": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "hard_break": {
+          "attrs": {},
+          "content": null
+        },
+        "horizontal_rule": {
+          "attrs": {},
+          "content": null
+        },
+        "image": {
+          "attrs": {
+            "alt": {
+              "hasDefault": true,
+              "default": null
+            },
+            "ref": {
+              "hasDefault": true,
+              "default": null
+            },
+            "src": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "title": {
+              "hasDefault": true,
+              "default": null
+            },
+            "uploadToken": {
+              "hasDefault": true,
+              "default": null
+            },
+            "width": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "jsx_container": {
+          "attrs": {
+            "name": {
+              "hasDefault": false
+            },
+            "props": {
+              "hasDefault": true,
+              "default": {}
+            }
+          },
+          "content": "block+"
+        },
+        "jsx_leaf": {
+          "attrs": {
+            "name": {
+              "hasDefault": false
+            },
+            "props": {
+              "hasDefault": true,
+              "default": {}
+            }
+          },
+          "content": "text*"
+        },
+        "list_item": {
+          "attrs": {
+            "checked": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "paragraph block*"
+        },
+        "ordered_list": {
+          "attrs": {
+            "order": {
+              "hasDefault": true,
+              "default": 1
+            },
+            "tight": {
+              "hasDefault": true,
+              "default": false
+            }
+          },
+          "content": "list_item+"
+        },
+        "paragraph": {
+          "attrs": {
+            "align": {
+              "hasDefault": true,
+              "default": null
+            },
+            "level": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "inline*"
+        },
+        "table": {
+          "attrs": {
+            "align": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "table_row+"
+        },
+        "table_cell": {
+          "attrs": {
+            "alignment": {
+              "hasDefault": true,
+              "default": null
+            },
+            "colspan": {
+              "hasDefault": true,
+              "default": 1
+            },
+            "colwidth": {
+              "hasDefault": true,
+              "default": null
+            },
+            "rowspan": {
+              "hasDefault": true,
+              "default": 1
+            }
+          },
+          "content": "block+"
+        },
+        "table_header": {
+          "attrs": {
+            "alignment": {
+              "hasDefault": true,
+              "default": null
+            },
+            "colspan": {
+              "hasDefault": true,
+              "default": 1
+            },
+            "colwidth": {
+              "hasDefault": true,
+              "default": null
+            },
+            "rowspan": {
+              "hasDefault": true,
+              "default": 1
+            }
+          },
+          "content": "block+"
+        },
+        "table_row": {
+          "attrs": {},
+          "content": "(table_header | table_cell)+"
+        },
+        "text": {
+          "attrs": {},
+          "content": null
+        }
+      },
+      "marks": {
+        "code": {
+          "attrs": {},
+          "content": null
+        },
+        "em": {
+          "attrs": {},
+          "content": null
+        },
+        "link": {
+          "attrs": {
+            "href": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "ref": {
+              "hasDefault": true,
+              "default": null
+            },
+            "title": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "strike": {
+          "attrs": {},
+          "content": null
+        },
+        "strong": {
+          "attrs": {},
+          "content": null
+        }
+      }
+    }
   }
 ]

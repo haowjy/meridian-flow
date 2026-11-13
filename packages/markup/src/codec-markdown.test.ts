@@ -30,7 +30,7 @@ describe("markdown codec round-trip corpus", () => {
     const withTabs = [
       paragraph(t("mid\tsentence tab")),
       paragraph(t("\tleading tab")),
-      schema.node("heading", { level: 2 }, [t("\tindented heading")]),
+      schema.node("paragraph", { level: 2 }, [t("\tindented heading")]),
     ];
     const wire = codec.serialize(withTabs, UNSCOPED_DOCUMENT_LINKS);
 
