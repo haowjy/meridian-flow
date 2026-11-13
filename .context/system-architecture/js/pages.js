@@ -161,6 +161,9 @@ export const sourceUrl = (path) => `https://github.com/${REPO}/blob/${BRANCH}/${
 
 export const MAP_DIR = ".context/system-architecture";
 
+/** The index of the state machine pages. */
+export const STATE_MACHINES_INDEX = ".context/state-machines/index.md";
+
 /** The text with the lines inside fenced code blocks blanked, so line numbers stay. */
 export function withoutFences(text) {
   let fence = 0;

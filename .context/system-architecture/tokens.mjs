@@ -36,15 +36,23 @@ export const MIRRORED = [
 
 export const TOKENS_DIR = "packages/design-tokens/src";
 
+/** Custom properties by block, from a CSS file: selector text (whitespace-collapsed) to {name without `--`: value}. */
+export function blocks(css) {
+  const out = new Map();
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const match of text.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = match[1].replace(/\s+/g, " ").trim();
+    const props = {};
+    for (const decl of match[2].matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) props[decl[1].slice(2)] = decl[2].replace(/\s+/g, " ").trim();
+    out.set(selector, { ...out.get(selector), ...props });
+  }
+  return out;
+}
+
 /** Custom properties declared in the blocks of `css` whose selector satisfies `wanted`. */
 function declarations(css, wanted) {
   const props = {};
-  const text = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  for (const block of text.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    if (!wanted(block[1].replace(/\s+/g, " ").trim())) continue;
-    for (const decl of block[2].matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g))
-      props[decl[1].slice(2)] = decl[2].replace(/\s+/g, " ").trim();
-  }
+  for (const [selector, declared] of blocks(css)) if (wanted(selector)) Object.assign(props, declared);
   return props;
 }
 

@@ -9,8 +9,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readImports, reaches, under } from "./imports.mjs";
-import { EDGE_KINDS, item, JOURNEY_KEYS, levelLinks, linksOf, MAP_DIR, MAP_KEYS, NODE_KINDS, parsePage, pathsOf, resolveHref, slug, withoutFences } from "./js/pages.js";
-import { expectedTokens, MIRRORED } from "./tokens.mjs";
+import { EDGE_KINDS, item, JOURNEY_KEYS, levelLinks, linksOf, MAP_DIR, MAP_KEYS, NODE_KINDS, parsePage, pathsOf, resolveHref, slug, STATE_MACHINES_INDEX, withoutFences } from "./js/pages.js";
+import { blocks, expectedTokens, MIRRORED } from "./tokens.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "../..");
@@ -47,16 +47,15 @@ function headingIds(path) {
   return ids;
 }
 
-/** Checks one link from the page at `from`; returns the resolved { path, fragment } or null. */
+/** Checks one link from the page at `from`. */
 function checkLink(from, line, href) {
   const { path, fragment, url } = resolveHref(from, href);
-  if (url) return null;
+  if (url) return;
   const where = `${nameOf(from)}:${line}`;
   if (path === null) return void fail(where, `link ${href} climbs out of the repository.`);
   if (!existsSync(join(repo, path))) return void fail(where, `link ${href} points at ${path}, which doesn't exist.`);
   if (fragment && path.endsWith(".md") && !headingIds(path).has(fragment))
     fail(where, `link ${href} has no #${fragment} in ${path}.`);
-  return { path, fragment };
 }
 
 for (const path of pages.keys()) {
@@ -158,12 +157,11 @@ for (const { file, path, page } of journeys) {
 
 // ---- State machine pages ----
 
-const INDEX = ".context/state-machines/index.md";
 const indexed = new Set();
-if (!existsSync(join(repo, INDEX))) fail(INDEX, "doesn't exist.");
+if (!existsSync(join(repo, STATE_MACHINES_INDEX))) fail(STATE_MACHINES_INDEX, "doesn't exist.");
 else {
-  for (const match of read(INDEX).matchAll(/\]\(([^)\s#]+\.md)(?:#[^)]*)?\)/g)) {
-    if (!/^[a-z]+:/i.test(match[1])) indexed.add(posix.join(posix.dirname(INDEX), match[1]));
+  for (const match of read(STATE_MACHINES_INDEX).matchAll(/\]\(([^)\s#]+\.md)(?:#[^)]*)?\)/g)) {
+    if (!/^[a-z]+:/i.test(match[1])) indexed.add(posix.join(posix.dirname(STATE_MACHINES_INDEX), match[1]));
   }
 }
 const attached = new Set();
@@ -172,9 +170,9 @@ for (const { path, page } of levels)
     for (const it of s.items.filter((i) => i.key === "Machines"))
       for (const l of linksOf(it.value)) attached.add(resolveHref(path, l.href).path);
 for (const page of indexed) {
-  if (!existsSync(join(repo, page))) fail(INDEX, `links ${page}, which doesn't exist.`);
-  else if (posix.dirname(page) !== posix.dirname(INDEX) && !attached.has(page))
-    fail(INDEX, `${page} is on no box: add it to a box's Machines.`);
+  if (!existsSync(join(repo, page))) fail(STATE_MACHINES_INDEX, `links ${page}, which doesn't exist.`);
+  else if (posix.dirname(page) !== posix.dirname(STATE_MACHINES_INDEX) && !attached.has(page))
+    fail(STATE_MACHINES_INDEX, `${page} is on no box: add it to a box's Machines.`);
 }
 const written = execFileSync(
   "git",
@@ -184,7 +182,7 @@ const written = execFileSync(
   .split("\n")
   .filter(Boolean);
 for (const page of written) {
-  if (page !== INDEX && existsSync(join(repo, page)) && !indexed.has(page)) fail(page, `isn't linked by ${INDEX}: add it to the index.`);
+  if (page !== STATE_MACHINES_INDEX && existsSync(join(repo, page)) && !indexed.has(page)) fail(page, `isn't linked by ${STATE_MACHINES_INDEX}: add it to the index.`);
 }
 
 // ---- Imports ----
@@ -313,19 +311,6 @@ function stronglyConnected(adjacency) {
 }
 
 // ---- Tokens ----
-
-/** Custom properties by block, from a CSS file: selector text (whitespace-collapsed) to {name: value}. */
-function blocks(css) {
-  const out = new Map();
-  const text = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  for (const match of text.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    const selector = match[1].replace(/\s+/g, " ").trim();
-    const props = {};
-    for (const decl of match[2].matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) props[decl[1].slice(2)] = decl[2].replace(/\s+/g, " ").trim();
-    out.set(selector, { ...out.get(selector), ...props });
-  }
-  return out;
-}
 
 const { light, dark } = expectedTokens(repo);
 const mirror = blocks(readFileSync(join(here, "styles/tokens.css"), "utf8"));

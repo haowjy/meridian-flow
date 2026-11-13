@@ -5,10 +5,9 @@
  * hash is `#<journey>` or `#<journey>/<step number>`.
  */
 import { initDocView, openDoc, paintInline } from "./doc-view.js";
-import { item, JOURNEY_KEYS, linksOf, MAP_DIR, resolveHref } from "./pages.js";
+import { item, JOURNEY_KEYS, linksOf, MAP_DIR, resolveHref, STATE_MACHINES_INDEX } from "./pages.js";
 import { el, fetchPage, fetchRepoFile, loadLevels, topBar } from "./shell.js";
 
-const INDEX = ".context/state-machines/index.md";
 const JOURNEYS = `${MAP_DIR}/journeys`;
 
 const content = el("div", { class: "journeys" });
@@ -19,7 +18,7 @@ let journeys = [];
 
 async function main() {
   const levels = await loadLevels();
-  app.replaceChildren(topBar({ current: "journeys", levels, onMachines: () => openDoc(INDEX) }), workspace);
+  app.replaceChildren(topBar({ current: "journeys", levels, onMachines: () => openDoc(STATE_MACHINES_INDEX) }), workspace);
   initDocView(workspace);
   const hrefs = [...new Set(linksOf(await fetchRepoFile(`${JOURNEYS}/index.md`)).map((l) => l.href))];
   journeys = await Promise.all(

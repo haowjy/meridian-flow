@@ -85,7 +85,8 @@ Two or three sentences that orient a newcomer.
 
 ### A journey page
 
-A `#` title, a summary, then a `##` section per step with a `Does:` and a `Sees:` paragraph and
+A `#` title, a summary, then a `##` section per step with a `Does:` and a `Sees:` paragraph, an
+optional `Source:` paragraph (where the step's wording comes from, shown in the step's panel) and
 the items `Map` (links to `#<box id>` on a level page), `Machines` and later `Shot`:
 [Start a project](journeys/start-a-project.md) is a full example.
 
